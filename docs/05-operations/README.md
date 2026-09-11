@@ -15,15 +15,16 @@ This directory owns current continuation/proof only. Durable product and archite
 - Flat World and Void World creation share one application path and one Paper runtime adapter;
 - Void World uses a minimal all-air generator plus a 5×5 safe spawn platform;
 - Create World publishes registry metadata only after runtime creation succeeds and rolls back the new world when publication fails;
-- runtime `LOADED/UNLOADED/LOADING/UNLOADING` state is now a separate ephemeral owner;
+- runtime `LOADED/UNLOADED/LOADING/UNLOADING` state is a separate ephemeral owner;
 - auto-load consumes persisted `ACTIVE + autoLoad` metadata once at startup rather than polling;
 - unload moves players to a protected global fallback world before saving/unloading;
+- Teleport to World is source-implemented over the same runtime service and auto-loads an unloaded target before teleporting to world spawn;
 - Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Implement **Teleport to World** as a small use case over the existing runtime service: auto-load an unloaded target, use world spawn as the canonical destination, and keep server authority. Do not add Xaero/location selection yet; that remains a client integration step.
+Implement **World Settings** as the next canonical owner. Keep vanilla/Paper state authoritative for runtime settings, keep LazyBuilder-only preferences durable in the registry/settings metadata, expose all vanilla gamerules from the target API instead of hardcoding a static version list, and preserve `Reset to Build Ready` as an explicit action rather than a background enforcer.
 
 ## Proof State
 
-GitHub Actions `mvn verify` is green for the current creation/runtime-state source and targeted unit tests. This proves remote compilation and unit behavior only. Actual Paper generation, gamerule application, player evacuation, live load/unload, rollback, persistence semantics, Xaero interaction, client file transfer, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` is green through the Teleport to World source slice and its targeted unit tests. This proves remote compilation and unit behavior only. Actual Paper generation, gamerule application, player evacuation, live load/unload/teleport, rollback, persistence semantics, Xaero interaction, client file transfer, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.
