@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.world.application;
 
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 
+import java.util.UUID;
+
 /**
  * Runtime boundary used by World Manager application services.
  *
@@ -18,4 +20,6 @@ public interface WorldRuntimeGateway {
     void loadWorld(WorldRecord world);
 
     void unloadWorld(WorldRecord world);
+
+    void teleportPlayerToSpawn(UUID playerId, WorldRecord world);
 }
