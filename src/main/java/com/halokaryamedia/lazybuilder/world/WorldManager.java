@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world;
 import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeState;
@@ -10,6 +11,8 @@ import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeStateRegistr
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
+import com.halokaryamedia.lazybuilder.world.files.LocalWorldFileRepository;
+import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
@@ -42,6 +45,8 @@ public final class WorldManager {
     private final WorldCreationService worldCreationService;
     private final WorldTeleportService worldTeleportService;
     private final WorldSettingsService worldSettingsService;
+    private final WorldOperationCoordinator worldOperationCoordinator;
+    private final WorldFileRepository worldFileRepository;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -49,11 +54,15 @@ public final class WorldManager {
         this.buildReadyPolicy = BuildReadyPolicy.defaults();
         this.worldRegistry = new WorldRegistry();
         this.runtimeStates = new WorldRuntimeStateRegistry();
+        this.worldOperationCoordinator = new WorldOperationCoordinator();
 
-        Path registryPath = plugin.getDataFolder().toPath()
-                .resolve("world")
-                .resolve("registry.yml");
+        Path worldDataRoot = plugin.getDataFolder().toPath().resolve("world");
+        Path registryPath = worldDataRoot.resolve("registry.yml");
         this.registryPersistence = new YamlWorldRegistryPersistence(registryPath);
+        this.worldFileRepository = new LocalWorldFileRepository(
+                plugin.getServer().getWorldContainer().toPath(),
+                worldDataRoot.resolve("work")
+        );
         this.runtimeGateway = new PaperWorldRuntimeGateway(
                 plugin.getServer(),
                 () -> plugin.getConfig().getString("world-manager.fallback-world", "")
@@ -136,5 +145,13 @@ public final class WorldManager {
 
     public WorldSettingsService worldSettingsService() {
         return worldSettingsService;
+    }
+
+    public WorldOperationCoordinator worldOperationCoordinator() {
+        return worldOperationCoordinator;
+    }
+
+    public WorldFileRepository worldFileRepository() {
+        return worldFileRepository;
     }
 }

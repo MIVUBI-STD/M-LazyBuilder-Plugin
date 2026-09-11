@@ -19,17 +19,17 @@ This directory owns current continuation/proof only. Durable product and archite
 - unload moves players to a protected global fallback world before saving/unloading;
 - Teleport to World uses the same runtime service and auto-loads an unloaded target before teleporting to world spawn;
 - World Settings has one application owner for General, dynamic gamerules, Environment, Spawning, and explicit Reset to Build Ready;
-- spawning controls are Paper/vanilla-backed: natural spawning and patrol/trader/insomnia/warden/raid rules use gamerules, animals/monsters use Paper spawn flags, and ambient/water use `SpawnCategory` tick controls;
-- enabling Ambient or Water resets the relevant Paper category interval to its server/Minecraft default (`-1`); disabling uses `0`; LazyBuilder does not persist a second category-spawn state;
 - runtime settings remain Paper-authoritative while LazyBuilder-only Auto Load and Default Game Mode preferences remain durable registry metadata;
-- the gamerule catalog is discovered from the active Paper API rather than maintained as a second hardcoded version list;
-- no World Settings or spawning background polling/monitoring exists;
+- file operations now have one request-bound operation coordinator plus one path-safe local repository boundary;
+- staged file work lives under `plugins/LazyBuilder/world/work`; there is no background file watcher or idle worker;
+- snapshot copies omit `session.lock`; clone copies additionally omit `uid.dat`, `playerdata`, `advancements`, and `stats`;
+- filesystem ownership checks require world/work directories to stay directly under their configured roots and reject unsafe symbolic-link staging;
 - Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Continue with **file operations** needed by World Manager lifecycle and transfer flows. Keep filesystem work request-bound, path-safe, and off the Paper main thread where appropriate. Do not start converter/file watchers in idle runtime.
+Implement **Manage World lifecycle operations** over the existing registry/runtime/file foundations: Archive/Restore first, then Clone and Delete. Use `WorldOperationCoordinator` for conflict exclusion. Heavy filesystem copy/delete work must be dispatched away from the Paper main thread while Paper load/unload/player movement remains on the primary thread. Do not start background queues or watchers.
 
 ## Proof State
 
-GitHub Actions `mvn verify` is green through the World Settings Spawning slice and targeted unit tests. This proves remote compilation and unit behavior only. Actual Paper generation, gamerule/settings/spawning mutation, player evacuation, live load/unload/teleport, rollback, persistence semantics, Xaero interaction, client file transfer, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` is green through World Settings Spawning. The file-operations foundation has source and targeted tests but must receive its own green CI result before compile/test success is claimed. Actual Paper generation, gamerule/settings/spawning mutation, filesystem behavior on the live host, player evacuation, live load/unload/teleport, rollback, persistence semantics, Xaero interaction, client file transfer, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.

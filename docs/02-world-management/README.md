@@ -188,6 +188,42 @@ For Ambient and Water, `0` disables the relevant vanilla categories and `-1` res
 
 `Reset to Build Ready` is explicit. It reapplies the existing `BuildReadyPolicy` to the loaded Paper world and restores the durable Default Game Mode preference to the BUILD_READY value. It does not start a daemon or future enforcement loop.
 
+## File Operations Foundation
+
+World Manager now owns one path-safe local filesystem boundary for future Clone, Delete, Import, Export, and conversion workflows.
+
+```text
+WorldOperationCoordinator
+├── one active operation per world
+├── request-bound lease
+└── no scheduler / no polling / no persistent worker
+
+WorldFileRepository
+├── stage managed-world copy
+├── publish staged world
+├── delete owned world directory
+└── delete owned workspace
+```
+
+Workspaces live under `plugins/LazyBuilder/world/work/<operation-id>`. World folders are resolved only as direct children of Paper's configured world container; arbitrary user paths are never accepted by delete/publish operations.
+
+Copy profiles are explicit:
+
+```text
+SNAPSHOT
+├── keep world identity/data
+└── omit session.lock
+
+CLONE
+├── omit session.lock
+├── omit uid.dat
+└── omit playerdata / advancements / stats
+```
+
+The repository refuses symbolic-link world roots and symbolic links encountered while staging a copy. Partial staging directories are cleaned when a copy fails. Filesystem work is synchronous at this boundary by design; higher-level request services must dispatch heavy copy/delete work away from the Paper main thread. No background file watcher or idle file worker is introduced.
+
+The operation coordinator is the shared conflict guard for later Clone/Archive/Delete/Import/Export/Conversion use cases so two destructive or heavy operations cannot act on the same world at the same time. Different worlds may operate independently.
+
 ## Confirmed Capability Surface
 
 ```text
@@ -214,6 +250,8 @@ Import/export/conversion details are owned by `conversion.md`.
 - LazyBuilder-only settings are rolled back in memory if registry persistence fails.
 - Gamerule writes validate the actual Paper rule type before applying values.
 - Spawning controls map to existing Paper/vanilla controls and never introduce a background spawn monitor.
+- File operations resolve only canonical owned roots and never recursively delete a path supplied directly by a user.
+- Conflicting heavy/destructive operations on the same world are rejected by one operation coordinator.
 - Delete/archive/clone/export validate current world state.
 - Destructive operations require explicit confirmation.
 - Players must not be stranded in an unloading/deleting world.
@@ -232,10 +270,11 @@ Load / Unload                      ✅ source + CI
 Teleport to World                  ✅ source + CI
 World Settings core                ✅ source + CI
 Spawning controls                  ✅ source + CI
-→ file operations
+File operations foundation         ✅ source, CI pending
+→ Manage World lifecycle operations
 → internal conversion runtime
 → Import / Export
 → client mod + Xaero integration
 ```
 
-Remote CI proves compilation and targeted unit-test behavior for these source slices. Actual Paper generation, gamerule/settings/spawning mutation, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.
+Remote CI proves compilation and targeted unit-test behavior only when the corresponding run is green. Actual Paper generation, gamerule/settings/spawning mutation, filesystem behavior on the live server, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LOCAL_CODE/LIVE_SERVER concerns.
