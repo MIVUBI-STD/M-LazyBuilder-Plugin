@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world;
 import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
@@ -47,6 +48,7 @@ public final class WorldManager {
     private final WorldSettingsService worldSettingsService;
     private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldFileRepository worldFileRepository;
+    private final WorldLifecycleService worldLifecycleService;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -82,6 +84,13 @@ public final class WorldManager {
                 worldRuntimeService,
                 runtimeGateway,
                 buildReadyPolicy
+        );
+        this.worldLifecycleService = new WorldLifecycleService(
+                worldRegistry,
+                registryPersistence,
+                worldRuntimeService,
+                runtimeStates,
+                worldOperationCoordinator
         );
     }
 
@@ -153,5 +162,9 @@ public final class WorldManager {
 
     public WorldFileRepository worldFileRepository() {
         return worldFileRepository;
+    }
+
+    public WorldLifecycleService worldLifecycleService() {
+        return worldLifecycleService;
     }
 }
