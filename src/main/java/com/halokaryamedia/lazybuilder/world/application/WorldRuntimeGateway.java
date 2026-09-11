@@ -55,6 +55,10 @@ public interface WorldRuntimeGateway {
         throw new UnsupportedOperationException("Spawn updates are not supported by this runtime");
     }
 
+    default void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
+        throw new UnsupportedOperationException("Spawning updates are not supported by this runtime");
+    }
+
     default void applyBuildReady(WorldRecord world, BuildReadyPolicy policy) {
         throw new UnsupportedOperationException("Build Ready reset is not supported by this runtime");
     }
