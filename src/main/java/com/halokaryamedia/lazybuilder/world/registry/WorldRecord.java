@@ -14,26 +14,45 @@ public record WorldRecord(
         String displayName,
         WorldKind kind,
         WorldLifecycle lifecycle,
-        boolean autoLoad
+        boolean autoLoad,
+        String defaultGameMode
 ) {
+    public static final String DEFAULT_GAME_MODE = "CREATIVE";
+
     public WorldRecord {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(lifecycle, "lifecycle");
         folderName = validateFolderName(folderName);
         displayName = validateDisplayName(displayName);
+        defaultGameMode = validateGameMode(defaultGameMode);
+    }
+
+    public WorldRecord(
+            WorldId id,
+            String folderName,
+            String displayName,
+            WorldKind kind,
+            WorldLifecycle lifecycle,
+            boolean autoLoad
+    ) {
+        this(id, folderName, displayName, kind, lifecycle, autoLoad, DEFAULT_GAME_MODE);
     }
 
     public WorldRecord withDisplayName(String newDisplayName) {
-        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, autoLoad);
+        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, autoLoad, defaultGameMode);
     }
 
     public WorldRecord withLifecycle(WorldLifecycle newLifecycle) {
-        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, autoLoad);
+        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, autoLoad, defaultGameMode);
     }
 
     public WorldRecord withAutoLoad(boolean newAutoLoad) {
-        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newAutoLoad);
+        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newAutoLoad, defaultGameMode);
+    }
+
+    public WorldRecord withDefaultGameMode(String newDefaultGameMode) {
+        return new WorldRecord(id, folderName, displayName, kind, lifecycle, autoLoad, newDefaultGameMode);
     }
 
     private static String validateFolderName(String value) {
@@ -54,5 +73,15 @@ public record WorldRecord(
             throw new IllegalArgumentException("displayName must be non-blank");
         }
         return value;
+    }
+
+    private static String validateGameMode(String value) {
+        Objects.requireNonNull(value, "defaultGameMode");
+        String normalized = value.strip().toUpperCase(java.util.Locale.ROOT);
+        if (!normalized.equals("SURVIVAL") && !normalized.equals("CREATIVE")
+                && !normalized.equals("ADVENTURE") && !normalized.equals("SPECTATOR")) {
+            throw new IllegalArgumentException("Unsupported default game mode: " + value);
+        }
+        return normalized;
     }
 }

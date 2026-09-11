@@ -11,12 +11,13 @@ LazyBuilder World Manager is the intended native replacement for Multiverse-Core
 Each managed world has one stable LazyBuilder identity that is independent from its presentation name and runtime load state.
 
 ```text
-WorldId        → internal UUID identity
-folderName     → canonical filesystem identity
-displayName    → user-facing mutable name
-kind           → FLAT | VOID | IMPORTED
-lifecycle      → ACTIVE | ARCHIVED
-autoLoad       → durable startup preference
+WorldId          → internal UUID identity
+folderName       → canonical filesystem identity
+displayName      → user-facing mutable name
+kind             → FLAT | VOID | IMPORTED
+lifecycle        → ACTIVE | ARCHIVED
+autoLoad         → durable startup preference
+defaultGameMode  → durable world-entry preference
 ```
 
 `LOADED`, `UNLOADED`, `LOADING`, and `UNLOADING` are runtime state and must not be stored as durable registry lifecycle metadata.
@@ -95,7 +96,7 @@ spawn-chunk persistence OFF when safe through target API
 
 Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs.
 
-`default game mode = CREATIVE` is a World Manager entry policy rather than a native per-world Paper property. World Settings will become the durable owner for this preference; the teleport path must consume that value rather than changing the global server default game mode.
+`default game mode = CREATIVE` is a LazyBuilder world-entry preference rather than a global server default. Teleport to World applies the target world's durable preference after a successful teleport.
 
 ## Load / Unload
 
@@ -118,18 +119,58 @@ Unload safety is owned by the Paper runtime boundary:
 - blank fallback configuration resolves to the server's primary loaded world;
 - an explicit fallback name must already be loaded.
 
-## Teleport to World
+## World Settings
 
-`WorldTeleportService` owns the server-side use case:
+World Settings uses one `WorldSettingsService`. Opening a settings snapshot is an explicit request and may load an unloaded target once; there is no settings polling.
+
+Ownership is split by the real source of truth:
 
 ```text
-managed WorldId
-→ auto-load through WorldRuntimeService when required
-→ resolve the managed world's spawn
-→ teleport the online player
+LazyBuilder registry
+├── Auto Load
+└── Default Game Mode / world-entry preference
+
+Paper world state
+├── Difficulty
+├── PVP
+├── Time
+├── Weather
+├── Spawn Location
+└── Gamerules
 ```
 
-The destination is intentionally the world spawn for V1. Last-location-per-world behavior is not part of the contract. Xaero `Teleport to Location` remains a separate later client-integration path and will reuse the same server authority instead of creating another teleport system.
+Runtime settings are read back from Paper after load. The UI/protocol must display the canonical values returned by the server rather than assuming a requested mutation succeeded.
+
+### General
+
+Implemented source contract:
+
+- Default Game Mode;
+- Difficulty;
+- PVP;
+- Auto Load;
+- Spawn Location;
+- Set Current Position as Spawn.
+
+`Default Game Mode` is persisted with the managed-world registry and consumed by Teleport to World. `Auto Load` remains the existing durable startup preference. Other General values are Paper-owned world state.
+
+### Gamerules
+
+The full gamerule list is discovered from `GameRule.values()` in the active target API. LazyBuilder does not maintain a second static version list. Each returned rule carries its runtime type (`BOOLEAN` or `INTEGER`) and canonical current value.
+
+Common-rule presentation such as Daylight Cycle, Weather Cycle, Mob Griefing, Fire Tick, Mob Spawning, Keep Inventory, and Random Tick Speed is a client presentation concern over the same canonical gamerules. `Show All Gamerules` must use this discovered list rather than a hardcoded copy.
+
+### Environment
+
+Time and Weather mutations write directly to Paper. Time Lock, Weather Lock, Random Tick, Fire Spread, and Mob Griefing are presentations of the same canonical gamerules where applicable; do not create duplicate state for the Environment tab.
+
+### Reset to Build Ready
+
+`Reset to Build Ready` is explicit. It reapplies the existing `BuildReadyPolicy` to the loaded Paper world and restores the durable Default Game Mode preference to the BUILD_READY value. It does not start a daemon or future enforcement loop.
+
+### Spawning
+
+Natural spawning and vanilla gamerules already share the runtime boundary. Category controls for Animals, Monsters, Ambient, and Water remain the next settings slice and must use vanilla/Paper spawn controls rather than introducing a custom spawn engine.
 
 ## Confirmed Capability Surface
 
@@ -151,9 +192,11 @@ Import/export/conversion details are owned by `conversion.md`.
 ## Safety Rules
 
 - Server plugin is authoritative.
-- Paper world lifecycle calls execute on the primary server thread.
+- Paper world lifecycle and settings calls execute on the primary server thread.
 - Create never loads an existing folder as if it were a new world.
 - Registry persistence is fail-closed; malformed metadata blocks startup instead of silently discarding ownership.
+- LazyBuilder-only settings are rolled back in memory if registry persistence fails.
+- Gamerule writes validate the actual Paper rule type before applying values.
 - Delete/archive/clone/export validate current world state.
 - Destructive operations require explicit confirmation.
 - Players must not be stranded in an unloading/deleting world.
@@ -170,11 +213,12 @@ BUILD_READY policy                 ✅ source + CI
 Flat / Void creation               ✅ source + CI
 Load / Unload                      ✅ source + CI
 Teleport to World                  ✅ source + CI
-→ World Settings
+World Settings core                ✅ source, CI pending
+→ spawning category controls
 → file operations
 → internal conversion runtime
 → Import / Export
 → client mod + Xaero integration
 ```
 
-Remote CI proves compilation and targeted unit behavior for the current source slices. Actual Paper generation, gamerule application, player evacuation, world load/unload, teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.
+Remote CI proves compilation and unit-test behavior only when the corresponding run is green. Actual Paper generation, gamerule application, settings mutation, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.

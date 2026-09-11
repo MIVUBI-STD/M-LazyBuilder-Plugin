@@ -22,4 +22,40 @@ public interface WorldRuntimeGateway {
     void unloadWorld(WorldRecord world);
 
     void teleportPlayerToSpawn(UUID playerId, WorldRecord world);
+
+    default void teleportPlayerToSpawn(UUID playerId, WorldRecord world, WorldGameMode gameMode) {
+        teleportPlayerToSpawn(playerId, world);
+    }
+
+    default WorldRuntimeSettings readSettings(WorldRecord world) {
+        throw new UnsupportedOperationException("World settings are not supported by this runtime");
+    }
+
+    default void setDifficulty(WorldRecord world, WorldDifficulty difficulty) {
+        throw new UnsupportedOperationException("Difficulty updates are not supported by this runtime");
+    }
+
+    default void setPvp(WorldRecord world, boolean enabled) {
+        throw new UnsupportedOperationException("PVP updates are not supported by this runtime");
+    }
+
+    default void setTime(WorldRecord world, long ticks) {
+        throw new UnsupportedOperationException("Time updates are not supported by this runtime");
+    }
+
+    default void setWeather(WorldRecord world, WorldWeather weather) {
+        throw new UnsupportedOperationException("Weather updates are not supported by this runtime");
+    }
+
+    default void setGameRule(WorldRecord world, String ruleName, String value) {
+        throw new UnsupportedOperationException("Gamerule updates are not supported by this runtime");
+    }
+
+    default void setSpawnToPlayer(UUID playerId, WorldRecord world) {
+        throw new UnsupportedOperationException("Spawn updates are not supported by this runtime");
+    }
+
+    default void applyBuildReady(WorldRecord world, BuildReadyPolicy policy) {
+        throw new UnsupportedOperationException("Build Ready reset is not supported by this runtime");
+    }
 }

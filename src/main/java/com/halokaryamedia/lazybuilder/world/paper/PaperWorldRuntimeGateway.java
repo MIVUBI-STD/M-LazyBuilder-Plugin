@@ -1,12 +1,19 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
+import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
+import com.halokaryamedia.lazybuilder.world.application.GameRuleValueType;
+import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
+import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
+import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeSettings;
+import com.halokaryamedia.lazybuilder.world.application.WorldSpawnSetting;
 import com.halokaryamedia.lazybuilder.world.application.WorldWeather;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
+import org.bukkit.GameMode;
 import org.bukkit.GameRule;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -19,7 +26,9 @@ import org.bukkit.entity.Player;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -66,7 +75,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         }
 
         try {
-            applyBuildReady(world, policy);
+            applyBuildReadyToWorld(world, policy);
             if (record.kind() == WorldKind.VOID) {
                 createVoidSpawnPlatform(world);
             }
@@ -174,21 +183,148 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
 
     @Override
     public void teleportPlayerToSpawn(UUID playerId, WorldRecord record) {
-        requirePrimaryThread();
-        Objects.requireNonNull(playerId, "playerId");
-        Objects.requireNonNull(record, "record");
+        teleportPlayerToSpawnInternal(playerId, record, null);
+    }
 
+    @Override
+    public void teleportPlayerToSpawn(UUID playerId, WorldRecord record, WorldGameMode gameMode) {
+        teleportPlayerToSpawnInternal(playerId, record, Objects.requireNonNull(gameMode, "gameMode"));
+    }
+
+    @Override
+    public WorldRuntimeSettings readSettings(WorldRecord record) {
+        requirePrimaryThread();
+        World world = requireLoadedWorld(record);
+        Location spawn = world.getSpawnLocation();
+        List<GameRuleSetting> rules = new ArrayList<>();
+        for (GameRule<?> rule : GameRule.values()) {
+            Object value = world.getGameRuleValue(rule);
+            if (value == null) {
+                continue;
+            }
+            GameRuleValueType type;
+            if (rule.getType().equals(Boolean.class)) {
+                type = GameRuleValueType.BOOLEAN;
+            } else if (rule.getType().equals(Integer.class)) {
+                type = GameRuleValueType.INTEGER;
+            } else {
+                continue;
+            }
+            rules.add(new GameRuleSetting(rule.getName(), type, String.valueOf(value)));
+        }
+        rules.sort(Comparator.comparing(GameRuleSetting::name));
+
+        return new WorldRuntimeSettings(
+                WorldDifficulty.valueOf(world.getDifficulty().name()),
+                world.getPVP(),
+                currentWeather(world),
+                world.getTime(),
+                new WorldSpawnSetting(spawn.getX(), spawn.getY(), spawn.getZ(), spawn.getYaw(), spawn.getPitch()),
+                rules
+        );
+    }
+
+    @Override
+    public void setDifficulty(WorldRecord record, WorldDifficulty difficulty) {
+        requirePrimaryThread();
+        requireLoadedWorld(record).setDifficulty(Difficulty.valueOf(Objects.requireNonNull(difficulty, "difficulty").name()));
+    }
+
+    @Override
+    public void setPvp(WorldRecord record, boolean enabled) {
+        requirePrimaryThread();
+        requireLoadedWorld(record).setPVP(enabled);
+    }
+
+    @Override
+    public void setTime(WorldRecord record, long ticks) {
+        requirePrimaryThread();
+        requireLoadedWorld(record).setTime(ticks);
+    }
+
+    @Override
+    public void setWeather(WorldRecord record, WorldWeather weather) {
+        requirePrimaryThread();
+        applyWeather(requireLoadedWorld(record), Objects.requireNonNull(weather, "weather"));
+    }
+
+    @Override
+    public void setGameRule(WorldRecord record, String ruleName, String value) {
+        requirePrimaryThread();
+        World world = requireLoadedWorld(record);
+        GameRule<?> raw = GameRule.getByName(Objects.requireNonNull(ruleName, "ruleName"));
+        if (raw == null) {
+            throw new IllegalArgumentException("Unknown gamerule: " + ruleName);
+        }
+        String normalized = Objects.requireNonNull(value, "value").strip();
+        if (raw.getType().equals(Boolean.class)) {
+            if (!normalized.equalsIgnoreCase("true") && !normalized.equalsIgnoreCase("false")) {
+                throw new IllegalArgumentException("Boolean gamerule requires true or false: " + ruleName);
+            }
+            setRule(world, raw, Boolean.class, Boolean.parseBoolean(normalized));
+            return;
+        }
+        if (raw.getType().equals(Integer.class)) {
+            try {
+                setRule(world, raw, Integer.class, Integer.parseInt(normalized));
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("Integer gamerule requires a valid integer: " + ruleName, exception);
+            }
+            return;
+        }
+        throw new IllegalArgumentException("Unsupported gamerule type: " + raw.getType().getName());
+    }
+
+    @Override
+    public void setSpawnToPlayer(UUID playerId, WorldRecord record) {
+        requirePrimaryThread();
+        Player player = requireOnlinePlayer(playerId);
+        World world = requireLoadedWorld(record);
+        if (!player.getWorld().getUID().equals(world.getUID())) {
+            throw new IllegalStateException("Player must be inside the target world to set its spawn");
+        }
+        Location location = player.getLocation();
+        if (!world.setSpawnLocation(location.getBlockX(), location.getBlockY(), location.getBlockZ())) {
+            throw new IllegalStateException("Paper rejected world spawn update: " + record.folderName());
+        }
+    }
+
+    @Override
+    public void applyBuildReady(WorldRecord record, BuildReadyPolicy policy) {
+        requirePrimaryThread();
+        World world = requireLoadedWorld(record);
+        applyBuildReadyToWorld(world, Objects.requireNonNull(policy, "policy"));
+        world.save();
+    }
+
+    private void teleportPlayerToSpawnInternal(UUID playerId, WorldRecord record, WorldGameMode gameMode) {
+        requirePrimaryThread();
+        Player player = requireOnlinePlayer(playerId);
+        World target = requireLoadedWorld(record);
+        if (!player.teleport(target.getSpawnLocation())) {
+            throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
+        }
+        if (gameMode != null) {
+            player.setGameMode(GameMode.valueOf(gameMode.name()));
+        }
+    }
+
+    private Player requireOnlinePlayer(UUID playerId) {
+        Objects.requireNonNull(playerId, "playerId");
         Player player = server.getPlayer(playerId);
         if (player == null || !player.isOnline()) {
             throw new IllegalStateException("Player is not online: " + playerId);
         }
-        World target = server.getWorld(record.folderName());
-        if (target == null) {
+        return player;
+    }
+
+    private World requireLoadedWorld(WorldRecord record) {
+        Objects.requireNonNull(record, "record");
+        World world = server.getWorld(record.folderName());
+        if (world == null) {
             throw new IllegalStateException("Target world is not loaded: " + record.folderName());
         }
-        if (!player.teleport(target.getSpawnLocation())) {
-            throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
-        }
+        return world;
     }
 
     private World resolveFallbackWorld() {
@@ -207,7 +343,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         return server.getWorlds().get(0);
     }
 
-    private void applyBuildReady(World world, BuildReadyPolicy policy) {
+    private void applyBuildReadyToWorld(World world, BuildReadyPolicy policy) {
         world.setDifficulty(Difficulty.valueOf(policy.difficulty().name()));
         world.setPVP(policy.pvpEnabled());
         world.setSpawnFlags(policy.naturalMobSpawning(), policy.naturalMobSpawning());
@@ -226,6 +362,16 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         setBooleanRule(world, "doInsomnia", policy.insomniaEnabled());
         setBooleanRule(world, "doWardenSpawning", policy.wardenSpawning());
         setBooleanRule(world, "disableRaids", !policy.raidsEnabled());
+    }
+
+    private static WorldWeather currentWeather(World world) {
+        if (world.isThundering()) {
+            return WorldWeather.THUNDER;
+        }
+        if (world.hasStorm()) {
+            return WorldWeather.RAIN;
+        }
+        return WorldWeather.CLEAR;
     }
 
     private static void applyWeather(World world, WorldWeather weather) {
@@ -257,25 +403,31 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     @SuppressWarnings({"deprecation", "unchecked"})
-    private static <T> void setRule(World world, String name, Class<T> type, T value) {
+    private static <T> void setRule(World world, GameRule<?> raw, Class<T> type, T value) {
+        if (!raw.getType().equals(type)) {
+            throw new IllegalStateException("Unexpected gamerule type for " + raw.getName() + ": " + raw.getType().getName());
+        }
+        if (!world.setGameRule((GameRule<T>) raw, value)) {
+            throw new IllegalStateException("Paper rejected gamerule update: " + raw.getName());
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void setBooleanRule(World world, String name, boolean value) {
         GameRule<?> raw = GameRule.getByName(name);
         if (raw == null) {
             throw new IllegalStateException("Required gamerule is unavailable: " + name);
         }
-        if (!raw.getType().equals(type)) {
-            throw new IllegalStateException("Unexpected gamerule type for " + name + ": " + raw.getType().getName());
-        }
-        if (!world.setGameRule((GameRule<T>) raw, value)) {
-            throw new IllegalStateException("Paper rejected gamerule update: " + name);
-        }
+        setRule(world, raw, Boolean.class, value);
     }
 
-    private static void setBooleanRule(World world, String name, boolean value) {
-        setRule(world, name, Boolean.class, value);
-    }
-
+    @SuppressWarnings("deprecation")
     private static void setIntegerRule(World world, String name, int value) {
-        setRule(world, name, Integer.class, value);
+        GameRule<?> raw = GameRule.getByName(name);
+        if (raw == null) {
+            throw new IllegalStateException("Required gamerule is unavailable: " + name);
+        }
+        setRule(world, raw, Integer.class, value);
     }
 
     private Path worldPath(String folderName) {

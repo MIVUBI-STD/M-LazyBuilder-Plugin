@@ -52,7 +52,8 @@ public final class WorldCreationService {
                 displayName,
                 kind,
                 WorldLifecycle.ACTIVE,
-                true
+                true,
+                buildReadyPolicy.defaultGameMode().name()
         );
 
         runtime.createNewWorld(record, buildReadyPolicy);

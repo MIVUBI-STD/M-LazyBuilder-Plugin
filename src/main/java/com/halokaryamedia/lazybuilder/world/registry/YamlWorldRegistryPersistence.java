@@ -13,9 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * YAML-backed registry persistence with atomic publication where the filesystem supports it.
- */
+/** YAML-backed registry persistence with atomic publication where supported. */
 public final class YamlWorldRegistryPersistence implements WorldRegistryPersistence {
     private static final String WORLDS_PATH = "worlds";
 
@@ -58,7 +56,8 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
                         requiredString(section, "display-name"),
                         WorldKind.valueOf(requiredString(section, "kind")),
                         WorldLifecycle.valueOf(requiredString(section, "lifecycle")),
-                        section.getBoolean("auto-load", false)
+                        section.getBoolean("auto-load", false),
+                        section.getString("default-game-mode", WorldRecord.DEFAULT_GAME_MODE)
                 );
                 validation.register(record);
                 loaded.add(record);
@@ -86,6 +85,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             yaml.set(base + ".kind", world.kind().name());
             yaml.set(base + ".lifecycle", world.lifecycle().name());
             yaml.set(base + ".auto-load", world.autoLoad());
+            yaml.set(base + ".default-game-mode", world.defaultGameMode());
         }
 
         Path temporary = parent.resolve(registryFile.getFileName() + ".tmp");

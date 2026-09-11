@@ -30,7 +30,7 @@ public final class WorldTeleportService {
         WorldRecord world = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
         runtimeService.load(worldId);
-        runtime.teleportPlayerToSpawn(playerId, world);
+        runtime.teleportPlayerToSpawn(playerId, world, WorldGameMode.valueOf(world.defaultGameMode()));
         return world;
     }
 }
