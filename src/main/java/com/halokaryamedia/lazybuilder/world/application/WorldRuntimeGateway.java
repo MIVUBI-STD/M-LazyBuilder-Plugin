@@ -12,4 +12,10 @@ public interface WorldRuntimeGateway {
     void createNewWorld(WorldRecord world, BuildReadyPolicy policy);
 
     void rollbackCreatedWorld(WorldRecord world);
+
+    boolean isLoaded(WorldRecord world);
+
+    void loadWorld(WorldRecord world);
+
+    void unloadWorld(WorldRecord world);
 }
