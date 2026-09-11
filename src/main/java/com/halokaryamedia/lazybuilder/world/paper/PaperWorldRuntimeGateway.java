@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /** Paper/Bukkit implementation of the World Manager runtime boundary. */
@@ -168,6 +169,25 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         target.save();
         if (!server.unloadWorld(target, true)) {
             throw new IllegalStateException("Paper refused to unload world: " + record.folderName());
+        }
+    }
+
+    @Override
+    public void teleportPlayerToSpawn(UUID playerId, WorldRecord record) {
+        requirePrimaryThread();
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(record, "record");
+
+        Player player = server.getPlayer(playerId);
+        if (player == null || !player.isOnline()) {
+            throw new IllegalStateException("Player is not online: " + playerId);
+        }
+        World target = server.getWorld(record.folderName());
+        if (target == null) {
+            throw new IllegalStateException("Target world is not loaded: " + record.folderName());
+        }
+        if (!player.teleport(target.getSpawnLocation())) {
+            throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
         }
     }
 
