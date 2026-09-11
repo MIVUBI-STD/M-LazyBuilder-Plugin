@@ -7,6 +7,8 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -115,6 +117,10 @@ class WorldRuntimeServiceTest {
             if (failUnload) {
                 throw new IllegalStateException("unload failed");
             }
+        }
+
+        @Override
+        public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {
         }
     }
 }
