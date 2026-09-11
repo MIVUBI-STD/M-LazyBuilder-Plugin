@@ -19,10 +19,11 @@ class WorldCreationServiceTest {
     @Test
     void flatAndVoidUseOneCreationPathAndPublishRegistryState() {
         WorldRegistry registry = new WorldRegistry();
+        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeRuntime runtime = new FakeRuntime();
         BuildReadyPolicy policy = BuildReadyPolicy.defaults();
-        WorldCreationService service = new WorldCreationService(registry, persistence, runtime, policy);
+        WorldCreationService service = new WorldCreationService(registry, persistence, runtime, states, policy);
 
         WorldRecord flat = service.create("FlatBuild", "Flat Build", WorldKind.FLAT);
         WorldRecord empty = service.create("VoidBuild", "Void Build", WorldKind.VOID);
@@ -30,6 +31,8 @@ class WorldCreationServiceTest {
         assertEquals(List.of(flat, empty), registry.all());
         assertEquals(List.of(flat, empty), persistence.saved);
         assertEquals(List.of(WorldKind.FLAT, WorldKind.VOID), runtime.createdKinds);
+        assertEquals(WorldRuntimeState.LOADED, states.get(flat.id()));
+        assertEquals(WorldRuntimeState.LOADED, states.get(empty.id()));
         assertTrue(flat.autoLoad());
         assertTrue(empty.autoLoad());
         assertEquals(2, runtime.policies.size());
@@ -43,6 +46,7 @@ class WorldCreationServiceTest {
                 new WorldRegistry(),
                 new MemoryPersistence(),
                 new FakeRuntime(),
+                new WorldRuntimeStateRegistry(),
                 BuildReadyPolicy.defaults()
         );
 
@@ -51,8 +55,9 @@ class WorldCreationServiceTest {
     }
 
     @Test
-    void persistenceFailureRollsBackRuntimeAndRegistry() {
+    void persistenceFailureRollsBackRuntimeRegistryAndState() {
         WorldRegistry registry = new WorldRegistry();
+        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.failSave = true;
         FakeRuntime runtime = new FakeRuntime();
@@ -60,6 +65,7 @@ class WorldCreationServiceTest {
                 registry,
                 persistence,
                 runtime,
+                states,
                 BuildReadyPolicy.defaults()
         );
 
@@ -85,6 +91,19 @@ class WorldCreationServiceTest {
         @Override
         public void rollbackCreatedWorld(WorldRecord world) {
             rollbackCount++;
+        }
+
+        @Override
+        public boolean isLoaded(WorldRecord world) {
+            return createdKinds.contains(world.kind());
+        }
+
+        @Override
+        public void loadWorld(WorldRecord world) {
+        }
+
+        @Override
+        public void unloadWorld(WorldRecord world) {
         }
     }
 
