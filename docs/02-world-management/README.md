@@ -97,6 +97,27 @@ Do not override unrelated vanilla gamerules merely for completeness. World Setti
 
 `default game mode = CREATIVE` is a World Manager entry policy rather than a native per-world Paper property. The future teleport/world-entry path will apply that preference; creation does not mutate the global server default game mode.
 
+## Load / Unload
+
+Runtime state has one ephemeral owner:
+
+```text
+UNLOADED → LOADING → LOADED → UNLOADING → UNLOADED
+```
+
+Stable endpoints are idempotent: loading an already-loaded world and unloading an already-unloaded world are no-ops. A failed load returns state to `UNLOADED`; a failed unload returns state to `LOADED`.
+
+Startup initializes runtime state from Paper once and auto-loads only records that are both `ACTIVE` and `autoLoad=true`. This is startup work, not periodic polling.
+
+Unload safety is owned by the Paper runtime boundary:
+
+- the global fallback world cannot be unloaded;
+- players are moved to the fallback spawn before unload;
+- failure to move any player cancels the unload;
+- the target world is saved before Paper unloads it;
+- blank fallback configuration resolves to the server's primary loaded world;
+- an explicit fallback name must already be loaded.
+
 ## Confirmed Capability Surface
 
 ```text
@@ -131,10 +152,10 @@ Import/export/conversion details are owned by `conversion.md`.
 Current implementation proceeds from stable ownership outward:
 
 ```text
-world identity + registry          ✅ source
-BUILD_READY policy                 ✅ source
-Flat / Void creation               ✅ source
-→ Load / Unload
+world identity + registry          ✅ source + CI
+BUILD_READY policy                 ✅ source + CI
+Flat / Void creation               ✅ source + CI
+Load / Unload                      ✅ source + CI
 → Teleport
 → World Settings
 → file operations
@@ -143,4 +164,4 @@ Flat / Void creation               ✅ source
 → client mod + Xaero integration
 ```
 
-The current creation path is source-level work until compile/CI evidence is green; actual Paper generation, gamerule application, rollback, and persistence behavior remain unproven until LOCAL_CODE/LIVE_SERVER verification.
+Remote CI proves compilation and unit-test behavior for the current source slices. Actual Paper generation, gamerule application, player evacuation, world load/unload, rollback, and persistence behavior remain LIVE_SERVER concerns.
