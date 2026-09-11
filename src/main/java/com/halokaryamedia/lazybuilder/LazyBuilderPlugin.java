@@ -8,6 +8,7 @@ public final class LazyBuilderPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        saveDefaultConfig();
         this.worldManager = new WorldManager(this);
         this.worldManager.start();
         getLogger().info("LazyBuilder enabled.");
