@@ -18,6 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldSettingsServiceTest {
+    private static final WorldSpawningSettings DEFAULT_SPAWNING = new WorldSpawningSettings(
+            false, false, false, false, false, false, false, false, false, false
+    );
+
     @Test
     void snapshotCombinesDurablePreferencesWithRuntimeState() {
         Fixture fixture = fixture();
@@ -27,6 +31,7 @@ class WorldSettingsServiceTest {
                 WorldWeather.CLEAR,
                 6000,
                 new WorldSpawnSetting(0, 65, 0, 0, 0),
+                DEFAULT_SPAWNING,
                 List.of(new GameRuleSetting("doDaylightCycle", GameRuleValueType.BOOLEAN, "false"))
         );
 
@@ -82,6 +87,22 @@ class WorldSettingsServiceTest {
     }
 
     @Test
+    void spawningControlsDelegateAndReturnCanonicalRuntimeSnapshot() {
+        Fixture fixture = fixture();
+        fixture.runtime().runtimeSettings = runtimeSettings(DEFAULT_SPAWNING);
+
+        WorldSettingsSnapshot snapshot = fixture.service().setSpawning(
+                fixture.world().id(),
+                WorldSpawnControl.WATER,
+                false
+        );
+
+        assertEquals(WorldSpawnControl.WATER, fixture.runtime().lastSpawnControl);
+        assertFalse(fixture.runtime().lastSpawnEnabled);
+        assertEquals(DEFAULT_SPAWNING, snapshot.runtime().spawning());
+    }
+
+    @Test
     void resetToBuildReadyIsExplicitAndRestoresEntryGameModePreference() {
         Fixture fixture = fixture();
         fixture.service().setDefaultGameMode(fixture.world().id(), WorldGameMode.SURVIVAL);
@@ -91,6 +112,18 @@ class WorldSettingsServiceTest {
         assertTrue(fixture.runtime().buildReadyApplied);
         assertEquals(WorldGameMode.CREATIVE, reset.defaultGameMode());
         assertEquals("CREATIVE", fixture.registry().find(fixture.world().id()).orElseThrow().defaultGameMode());
+    }
+
+    private static WorldRuntimeSettings runtimeSettings(WorldSpawningSettings spawning) {
+        return new WorldRuntimeSettings(
+                WorldDifficulty.NORMAL,
+                false,
+                WorldWeather.CLEAR,
+                6000,
+                new WorldSpawnSetting(0, 65, 0, 0, 0),
+                spawning,
+                List.of()
+        );
     }
 
     private static Fixture fixture() {
@@ -149,20 +182,15 @@ class WorldSettingsServiceTest {
     }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
-        private WorldRuntimeSettings runtimeSettings = new WorldRuntimeSettings(
-                WorldDifficulty.NORMAL,
-                false,
-                WorldWeather.CLEAR,
-                6000,
-                new WorldSpawnSetting(0, 65, 0, 0, 0),
-                List.of()
-        );
+        private WorldRuntimeSettings runtimeSettings = runtimeSettings(DEFAULT_SPAWNING);
         private WorldDifficulty lastDifficulty;
         private boolean lastPvp;
         private long lastTime;
         private WorldWeather lastWeather;
         private String lastRule;
         private UUID lastSpawnPlayer;
+        private WorldSpawnControl lastSpawnControl;
+        private boolean lastSpawnEnabled;
         private boolean buildReadyApplied;
 
         @Override
@@ -226,6 +254,12 @@ class WorldSettingsServiceTest {
         }
 
         @Override
+        public void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
+            lastSpawnControl = control;
+            lastSpawnEnabled = enabled;
+        }
+
+        @Override
         public void applyBuildReady(WorldRecord world, BuildReadyPolicy policy) {
             buildReadyApplied = true;
             runtimeSettings = new WorldRuntimeSettings(
@@ -234,6 +268,7 @@ class WorldSettingsServiceTest {
                     policy.weather(),
                     policy.timeOfDayTicks(),
                     runtimeSettings.spawn(),
+                    runtimeSettings.spawning(),
                     runtimeSettings.gamerules()
             );
         }
