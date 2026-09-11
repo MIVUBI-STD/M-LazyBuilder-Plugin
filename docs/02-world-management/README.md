@@ -95,7 +95,7 @@ spawn-chunk persistence OFF when safe through target API
 
 Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs.
 
-`default game mode = CREATIVE` is a World Manager entry policy rather than a native per-world Paper property. The future teleport/world-entry path will apply that preference; creation does not mutate the global server default game mode.
+`default game mode = CREATIVE` is a World Manager entry policy rather than a native per-world Paper property. World Settings will become the durable owner for this preference; the teleport path must consume that value rather than changing the global server default game mode.
 
 ## Load / Unload
 
@@ -117,6 +117,19 @@ Unload safety is owned by the Paper runtime boundary:
 - the target world is saved before Paper unloads it;
 - blank fallback configuration resolves to the server's primary loaded world;
 - an explicit fallback name must already be loaded.
+
+## Teleport to World
+
+`WorldTeleportService` owns the server-side use case:
+
+```text
+managed WorldId
+→ auto-load through WorldRuntimeService when required
+→ resolve the managed world's spawn
+→ teleport the online player
+```
+
+The destination is intentionally the world spawn for V1. Last-location-per-world behavior is not part of the contract. Xaero `Teleport to Location` remains a separate later client-integration path and will reuse the same server authority instead of creating another teleport system.
 
 ## Confirmed Capability Surface
 
@@ -156,7 +169,7 @@ world identity + registry          ✅ source + CI
 BUILD_READY policy                 ✅ source + CI
 Flat / Void creation               ✅ source + CI
 Load / Unload                      ✅ source + CI
-→ Teleport
+Teleport to World                  ✅ source + CI
 → World Settings
 → file operations
 → internal conversion runtime
@@ -164,4 +177,4 @@ Load / Unload                      ✅ source + CI
 → client mod + Xaero integration
 ```
 
-Remote CI proves compilation and unit-test behavior for the current source slices. Actual Paper generation, gamerule application, player evacuation, world load/unload, rollback, and persistence behavior remain LIVE_SERVER concerns.
+Remote CI proves compilation and targeted unit behavior for the current source slices. Actual Paper generation, gamerule application, player evacuation, world load/unload, teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.
