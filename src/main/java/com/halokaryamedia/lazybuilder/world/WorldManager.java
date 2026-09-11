@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeState;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeStateRegistry;
+import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
@@ -38,6 +39,7 @@ public final class WorldManager {
     private final WorldRuntimeGateway runtimeGateway;
     private final WorldRuntimeService worldRuntimeService;
     private final WorldCreationService worldCreationService;
+    private final WorldTeleportService worldTeleportService;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -62,6 +64,7 @@ public final class WorldManager {
                 runtimeStates,
                 buildReadyPolicy
         );
+        this.worldTeleportService = new WorldTeleportService(worldRegistry, worldRuntimeService, runtimeGateway);
     }
 
     public void start() {
@@ -116,5 +119,9 @@ public final class WorldManager {
 
     public WorldCreationService worldCreationService() {
         return worldCreationService;
+    }
+
+    public WorldTeleportService worldTeleportService() {
+        return worldTeleportService;
     }
 }
