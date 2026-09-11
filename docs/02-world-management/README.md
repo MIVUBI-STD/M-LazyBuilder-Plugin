@@ -23,7 +23,7 @@ autoLoad       → durable startup preference
 
 The folder name is not renamed by a normal metadata update. Any future filesystem rename must be an explicit file/lifecycle operation so registry metadata can never get ahead of disk state. Folder uniqueness is case-insensitive to avoid ambiguous cross-platform world ownership.
 
-The current registry is the canonical in-memory owner. Persistent registry storage will be added only when the first create/import lifecycle requires durable publication; it must not become a second source of truth.
+The in-memory registry remains the canonical runtime owner. Durable metadata is persisted to `plugins/LazyBuilder/world/registry.yml` through one persistence boundary. Startup performs one bounded read; there is no registry polling or filesystem watcher. Writes publish through a temporary file and atomic move where supported.
 
 ## Create World — Confirmed V1
 
@@ -35,17 +35,33 @@ Create World
 
 Creation intentionally exposes only the world name and type. Advanced settings belong to World Settings.
 
+Both world kinds use one `WorldCreationService` path:
+
+```text
+validate identity
+→ create through Paper runtime adapter
+→ apply BUILD_READY
+→ register
+→ persist registry
+→ publish success
+```
+
+If registry publication fails after runtime creation, the new runtime world is rolled back instead of reporting a partially managed world.
+
 ### Flat World
 
-- vanilla-compatible flat generation;
-- simple build surface;
-- structures disabled;
-- automatic `BUILD_READY` profile.
+- vanilla `WorldType.FLAT` generation;
+- default vanilla flat layers;
+- structures disabled through the approved policy;
+- automatic `BUILD_READY` profile;
+- no separate custom flat generator.
 
 ### Void World
 
-- empty terrain;
-- safe spawn platform by default;
+- one minimal all-air `ChunkGenerator`;
+- vanilla noise, surface, caves, decorations, mobs, and structures disabled;
+- centered 5×5 stone spawn platform at Y=64;
+- world spawn at Y=65;
 - automatic `BUILD_READY` profile.
 
 ## BUILD_READY
@@ -77,7 +93,9 @@ raids                   OFF
 spawn-chunk persistence OFF when safe through target API
 ```
 
-Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs when world creation is implemented.
+Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs.
+
+`default game mode = CREATIVE` is a World Manager entry policy rather than a native per-world Paper property. The future teleport/world-entry path will apply that preference; creation does not mutate the global server default game mode.
 
 ## Confirmed Capability Surface
 
@@ -99,6 +117,9 @@ Import/export/conversion details are owned by `conversion.md`.
 ## Safety Rules
 
 - Server plugin is authoritative.
+- Paper world lifecycle calls execute on the primary server thread.
+- Create never loads an existing folder as if it were a new world.
+- Registry persistence is fail-closed; malformed metadata blocks startup instead of silently discarding ownership.
 - Delete/archive/clone/export validate current world state.
 - Destructive operations require explicit confirmation.
 - Players must not be stranded in an unloading/deleting world.
@@ -112,7 +133,7 @@ Current implementation proceeds from stable ownership outward:
 ```text
 world identity + registry          ✅ source
 BUILD_READY policy                 ✅ source
-→ Flat / Void creation
+Flat / Void creation               ✅ source
 → Load / Unload
 → Teleport
 → World Settings
@@ -122,4 +143,4 @@ BUILD_READY policy                 ✅ source
 → client mod + Xaero integration
 ```
 
-The current policy and registry slices are source-level work until compile/CI evidence is green; actual Paper world creation remains unproven until LIVE_SERVER verification.
+The current creation path is source-level work until compile/CI evidence is green; actual Paper generation, gamerule application, rollback, and persistence behavior remain unproven until LOCAL_CODE/LIVE_SERVER verification.
