@@ -10,12 +10,14 @@ public record WorldRuntimeSettings(
         WorldWeather weather,
         long timeOfDayTicks,
         WorldSpawnSetting spawn,
+        WorldSpawningSettings spawning,
         List<GameRuleSetting> gamerules
 ) {
     public WorldRuntimeSettings {
         Objects.requireNonNull(difficulty, "difficulty");
         Objects.requireNonNull(weather, "weather");
         Objects.requireNonNull(spawn, "spawn");
+        Objects.requireNonNull(spawning, "spawning");
         gamerules = List.copyOf(Objects.requireNonNull(gamerules, "gamerules"));
     }
 }
