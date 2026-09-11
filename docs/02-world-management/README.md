@@ -136,7 +136,8 @@ Paper world state
 ├── Time
 ├── Weather
 ├── Spawn Location
-└── Gamerules
+├── Gamerules
+└── Spawning controls
 ```
 
 Runtime settings are read back from Paper after load. The UI/protocol must display the canonical values returned by the server rather than assuming a requested mutation succeeded.
@@ -164,13 +165,28 @@ Common-rule presentation such as Daylight Cycle, Weather Cycle, Mob Griefing, Fi
 
 Time and Weather mutations write directly to Paper. Time Lock, Weather Lock, Random Tick, Fire Spread, and Mob Griefing are presentations of the same canonical gamerules where applicable; do not create duplicate state for the Environment tab.
 
+### Spawning
+
+Spawning is one presentation over Paper/vanilla state; LazyBuilder does not run a custom spawn engine.
+
+```text
+Natural Mob Spawning  → doMobSpawning gamerule
+Animals               → Paper world animal spawn flag
+Monsters              → Paper world monster spawn flag
+Ambient               → SpawnCategory.AMBIENT ticks-per-spawn
+Water                 → WATER_ANIMAL + WATER_AMBIENT + WATER_UNDERGROUND_CREATURE + AXOLOTL
+Patrol                 → doPatrolSpawning gamerule
+Wandering Trader      → doTraderSpawning gamerule
+Insomnia / Phantoms   → doInsomnia gamerule
+Warden                 → doWardenSpawning gamerule
+Raids                  → inverse disableRaids gamerule
+```
+
+For Ambient and Water, `0` disables the relevant vanilla categories and `-1` restores their server/Minecraft default interval. No previous interval is cached by LazyBuilder, so there is no hidden second source of truth. Spawning state is read only when the settings snapshot is requested or after an explicit mutation.
+
 ### Reset to Build Ready
 
 `Reset to Build Ready` is explicit. It reapplies the existing `BuildReadyPolicy` to the loaded Paper world and restores the durable Default Game Mode preference to the BUILD_READY value. It does not start a daemon or future enforcement loop.
-
-### Spawning
-
-Natural spawning and vanilla gamerules already share the runtime boundary. Category controls for Animals, Monsters, Ambient, and Water remain the next settings slice and must use vanilla/Paper spawn controls rather than introducing a custom spawn engine.
 
 ## Confirmed Capability Surface
 
@@ -197,6 +213,7 @@ Import/export/conversion details are owned by `conversion.md`.
 - Registry persistence is fail-closed; malformed metadata blocks startup instead of silently discarding ownership.
 - LazyBuilder-only settings are rolled back in memory if registry persistence fails.
 - Gamerule writes validate the actual Paper rule type before applying values.
+- Spawning controls map to existing Paper/vanilla controls and never introduce a background spawn monitor.
 - Delete/archive/clone/export validate current world state.
 - Destructive operations require explicit confirmation.
 - Players must not be stranded in an unloading/deleting world.
@@ -213,12 +230,12 @@ BUILD_READY policy                 ✅ source + CI
 Flat / Void creation               ✅ source + CI
 Load / Unload                      ✅ source + CI
 Teleport to World                  ✅ source + CI
-World Settings core                ✅ source, CI pending
-→ spawning category controls
+World Settings core                ✅ source + CI
+Spawning controls                  ✅ source + CI
 → file operations
 → internal conversion runtime
 → Import / Export
 → client mod + Xaero integration
 ```
 
-Remote CI proves compilation and unit-test behavior only when the corresponding run is green. Actual Paper generation, gamerule application, settings mutation, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.
+Remote CI proves compilation and targeted unit-test behavior for these source slices. Actual Paper generation, gamerule/settings/spawning mutation, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LIVE_SERVER concerns.
