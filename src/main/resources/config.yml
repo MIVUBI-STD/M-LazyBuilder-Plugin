@@ -1,0 +1,4 @@
+world-manager:
+  # Blank = use the server's primary loaded world as the global safety fallback.
+  # Set this to a loaded world name to choose an explicit fallback destination.
+  fallback-world: ''
