@@ -1,0 +1,6 @@
+name: LazyBuilder
+version: 0.1.0-SNAPSHOT
+main: com.halokaryamedia.lazybuilder.LazyBuilderPlugin
+api-version: '1.21'
+authors: [halokaryamedia-source]
+description: Builder-focused world management for Minecraft Java 1.21.4.
