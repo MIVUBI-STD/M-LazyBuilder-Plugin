@@ -8,26 +8,31 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
 import org.bukkit.GameRule;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.WorldType;
+import org.bukkit.entity.Player;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.function.Supplier;
 
-/** Paper/Bukkit implementation of the World Manager runtime creation boundary. */
+/** Paper/Bukkit implementation of the World Manager runtime boundary. */
 public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     private final Server server;
     private final Path worldRoot;
+    private final Supplier<String> fallbackWorldName;
 
-    public PaperWorldRuntimeGateway(Server server) {
+    public PaperWorldRuntimeGateway(Server server, Supplier<String> fallbackWorldName) {
         this.server = Objects.requireNonNull(server, "server");
         this.worldRoot = server.getWorldContainer().toPath().toAbsolutePath().normalize();
+        this.fallbackWorldName = Objects.requireNonNull(fallbackWorldName, "fallbackWorldName");
     }
 
     @Override
@@ -107,6 +112,79 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         } catch (DeleteFailure failure) {
             throw new IllegalStateException("Failed to clean rollback world: " + record.folderName(), failure.getCause());
         }
+    }
+
+    @Override
+    public boolean isLoaded(WorldRecord record) {
+        Objects.requireNonNull(record, "record");
+        return server.getWorld(record.folderName()) != null;
+    }
+
+    @Override
+    public void loadWorld(WorldRecord record) {
+        requirePrimaryThread();
+        Objects.requireNonNull(record, "record");
+        if (isLoaded(record)) {
+            return;
+        }
+
+        Path target = worldPath(record.folderName());
+        if (!Files.isDirectory(target)) {
+            throw new IllegalStateException("Managed world folder is missing: " + record.folderName());
+        }
+
+        WorldCreator creator = new WorldCreator(record.folderName());
+        if (record.kind() == WorldKind.VOID) {
+            creator.generator(VoidChunkGenerator.INSTANCE);
+        }
+
+        World loaded = server.createWorld(creator);
+        if (loaded == null) {
+            throw new IllegalStateException("Paper failed to load world: " + record.folderName());
+        }
+    }
+
+    @Override
+    public void unloadWorld(WorldRecord record) {
+        requirePrimaryThread();
+        Objects.requireNonNull(record, "record");
+        World target = server.getWorld(record.folderName());
+        if (target == null) {
+            return;
+        }
+
+        World fallback = resolveFallbackWorld();
+        if (fallback.getUID().equals(target.getUID())) {
+            throw new IllegalStateException("Cannot unload the configured fallback world: " + target.getName());
+        }
+
+        Location destination = fallback.getSpawnLocation();
+        for (Player player : target.getPlayers()) {
+            if (!player.teleport(destination)) {
+                throw new IllegalStateException("Could not move player " + player.getName() + " to fallback world");
+            }
+        }
+
+        target.save();
+        if (!server.unloadWorld(target, true)) {
+            throw new IllegalStateException("Paper refused to unload world: " + record.folderName());
+        }
+    }
+
+    private World resolveFallbackWorld() {
+        String configured = fallbackWorldName.get();
+        if (configured != null && !configured.isBlank()) {
+            World fallback = server.getWorld(configured.strip());
+            if (fallback == null) {
+                throw new IllegalStateException("Configured fallback world is not loaded: " + configured.strip());
+            }
+            return fallback;
+        }
+
+        if (server.getWorlds().isEmpty()) {
+            throw new IllegalStateException("No loaded world is available as fallback");
+        }
+        return server.getWorlds().get(0);
     }
 
     private void applyBuildReady(World world, BuildReadyPolicy policy) {
