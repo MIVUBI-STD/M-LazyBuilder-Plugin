@@ -7,7 +7,9 @@ import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeSettings;
+import com.halokaryamedia.lazybuilder.world.application.WorldSpawnControl;
 import com.halokaryamedia.lazybuilder.world.application.WorldSpawnSetting;
+import com.halokaryamedia.lazybuilder.world.application.WorldSpawningSettings;
 import com.halokaryamedia.lazybuilder.world.application.WorldWeather;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
@@ -22,6 +24,7 @@ import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.WorldType;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.SpawnCategory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -35,6 +38,13 @@ import java.util.function.Supplier;
 
 /** Paper/Bukkit implementation of the World Manager runtime boundary. */
 public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
+    private static final SpawnCategory[] WATER_CATEGORIES = {
+            SpawnCategory.WATER_ANIMAL,
+            SpawnCategory.WATER_AMBIENT,
+            SpawnCategory.WATER_UNDERGROUND_CREATURE,
+            SpawnCategory.AXOLOTL
+    };
+
     private final Server server;
     private final Path worldRoot;
     private final Supplier<String> fallbackWorldName;
@@ -220,6 +230,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
                 currentWeather(world),
                 world.getTime(),
                 new WorldSpawnSetting(spawn.getX(), spawn.getY(), spawn.getZ(), spawn.getYaw(), spawn.getPitch()),
+                readSpawning(world),
                 rules
         );
     }
@@ -290,11 +301,70 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     @Override
+    public void setSpawning(WorldRecord record, WorldSpawnControl control, boolean enabled) {
+        requirePrimaryThread();
+        World world = requireLoadedWorld(record);
+        switch (Objects.requireNonNull(control, "control")) {
+            case NATURAL -> setBooleanRule(world, "doMobSpawning", enabled);
+            case ANIMALS -> world.setSpawnFlags(world.getAllowMonsters(), enabled);
+            case MONSTERS -> world.setSpawnFlags(enabled, world.getAllowAnimals());
+            case AMBIENT -> world.setTicksPerSpawns(SpawnCategory.AMBIENT, enabled ? -1 : 0);
+            case WATER -> {
+                for (SpawnCategory category : WATER_CATEGORIES) {
+                    world.setTicksPerSpawns(category, enabled ? -1 : 0);
+                }
+            }
+            case PATROL -> setBooleanRule(world, "doPatrolSpawning", enabled);
+            case WANDERING_TRADER -> setBooleanRule(world, "doTraderSpawning", enabled);
+            case INSOMNIA -> setBooleanRule(world, "doInsomnia", enabled);
+            case WARDEN -> setBooleanRule(world, "doWardenSpawning", enabled);
+            case RAIDS -> setBooleanRule(world, "disableRaids", !enabled);
+        }
+    }
+
+    @Override
     public void applyBuildReady(WorldRecord record, BuildReadyPolicy policy) {
         requirePrimaryThread();
         World world = requireLoadedWorld(record);
         applyBuildReadyToWorld(world, Objects.requireNonNull(policy, "policy"));
         world.save();
+    }
+
+    private WorldSpawningSettings readSpawning(World world) {
+        return new WorldSpawningSettings(
+                booleanRule(world, "doMobSpawning"),
+                world.getAllowAnimals(),
+                world.getAllowMonsters(),
+                world.getTicksPerSpawns(SpawnCategory.AMBIENT) != 0,
+                waterSpawningEnabled(world),
+                booleanRule(world, "doPatrolSpawning"),
+                booleanRule(world, "doTraderSpawning"),
+                booleanRule(world, "doInsomnia"),
+                booleanRule(world, "doWardenSpawning"),
+                !booleanRule(world, "disableRaids")
+        );
+    }
+
+    private static boolean waterSpawningEnabled(World world) {
+        for (SpawnCategory category : WATER_CATEGORIES) {
+            if (world.getTicksPerSpawns(category) != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean booleanRule(World world, String name) {
+        GameRule<?> raw = GameRule.getByName(name);
+        if (raw == null || !raw.getType().equals(Boolean.class)) {
+            throw new IllegalStateException("Required boolean gamerule is unavailable: " + name);
+        }
+        Object value = world.getGameRuleValue(raw);
+        if (!(value instanceof Boolean booleanValue)) {
+            throw new IllegalStateException("Paper returned no boolean value for gamerule: " + name);
+        }
+        return booleanValue;
     }
 
     private void teleportPlayerToSpawnInternal(UUID playerId, WorldRecord record, WorldGameMode gameMode) {
