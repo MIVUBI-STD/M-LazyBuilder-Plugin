@@ -59,22 +59,19 @@ public final class WorldSettingsService {
     }
 
     public synchronized void setPvp(WorldId worldId, boolean enabled) {
-        WorldRecord world = requireLoaded(worldId);
-        runtime.setPvp(world, enabled);
+        runtime.setPvp(requireLoaded(worldId), enabled);
     }
 
     public synchronized void setTime(WorldId worldId, long ticks) {
         if (ticks < 0 || ticks >= 24000) {
             throw new IllegalArgumentException("ticks must be in range 0..23999");
         }
-        WorldRecord world = requireLoaded(worldId);
-        runtime.setTime(world, ticks);
+        runtime.setTime(requireLoaded(worldId), ticks);
     }
 
     public synchronized void setWeather(WorldId worldId, WorldWeather weather) {
         Objects.requireNonNull(weather, "weather");
-        WorldRecord world = requireLoaded(worldId);
-        runtime.setWeather(world, weather);
+        runtime.setWeather(requireLoaded(worldId), weather);
     }
 
     public synchronized void setGameRule(WorldId worldId, String ruleName, String value) {
@@ -83,14 +80,27 @@ public final class WorldSettingsService {
         if (ruleName.isBlank()) {
             throw new IllegalArgumentException("ruleName must not be blank");
         }
-        WorldRecord world = requireLoaded(worldId);
-        runtime.setGameRule(world, ruleName, value);
+        runtime.setGameRule(requireLoaded(worldId), ruleName, value);
     }
 
     public synchronized void setSpawnToPlayer(UUID playerId, WorldId worldId) {
         Objects.requireNonNull(playerId, "playerId");
+        runtime.setSpawnToPlayer(playerId, requireLoaded(worldId));
+    }
+
+    public synchronized WorldSettingsSnapshot setSpawning(
+            WorldId worldId,
+            WorldSpawnControl control,
+            boolean enabled
+    ) {
+        Objects.requireNonNull(control, "control");
         WorldRecord world = requireLoaded(worldId);
-        runtime.setSpawnToPlayer(playerId, world);
+        runtime.setSpawning(world, control, enabled);
+        return new WorldSettingsSnapshot(
+                world,
+                WorldGameMode.valueOf(world.defaultGameMode()),
+                runtime.readSettings(world)
+        );
     }
 
     public synchronized WorldSettingsSnapshot resetToBuildReady(WorldId worldId) {
