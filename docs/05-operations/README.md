@@ -4,20 +4,19 @@ This directory owns current continuation/proof only. Durable product and archite
 
 ## Current State
 
-- plugin-stack audit is in progress;
-- Multiverse has been selected as the first rebuild target;
-- native LazyBuilder World Manager is the intended replacement;
-- Create World V1 is approved as Flat World + Void World only;
-- every new world receives automatic `BUILD_READY` defaults;
-- Xaero World Map is retained for Map Preview and Teleport to Location only;
-- product design is being completed sequentially before implementation.
+- plugin-stack audit remains open for the broader legacy stack;
+- Multiverse is the first confirmed rebuild target;
+- native LazyBuilder World Manager source implementation has started;
+- World Manager runtime bootstrap is intentionally idle when unused;
+- conversion/update policy is source-defined as on-demand, bounded, stable-only, checksum/probe guarded, and rollback-capable;
+- World Manager world identity/registry foundation is the current implementation slice;
+- Create World V1 remains Flat World + Void World with automatic `BUILD_READY` defaults;
+- Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Continue the World Manager specification with **World Settings** unless the user explicitly changes priority.
-
-After the feature contracts are stable enough, implement the smallest server/client vertical slice and prove it at the appropriate execution context.
+After the registry slice has relevant source/CI proof, implement the canonical `BUILD_READY` policy owner before Paper world creation. Do not skip directly to UI, file transfer, or converter integration.
 
 ## Proof State
 
-Current decisions are specification/repository evidence only. No source build or live-server proof of World Manager behavior exists yet.
+Repository/source structure and targeted unit tests can be proven in REMOTE_GITHUB when CI runs. No claim is made yet for actual Paper world lifecycle, live world creation, Xaero interaction, client file transfer, or Java↔Bedrock conversion; those require the appropriate local/live runtime proof.
