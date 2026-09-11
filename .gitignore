@@ -1,0 +1,51 @@
+# Build output
+.gradle/
+build/
+out/
+target/
+*.class
+*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Minecraft/Paper local runtime
+server/
+run/
+logs/
+crash-reports/
+world/
+world_nether/
+world_the_end/
+plugins/
+cache/
+eula.txt
+server.properties
+banned-*.json
+ops.json
+usercache.json
+whitelist.json
+
+# Temporary/debug/profiling
+*.log
+*.tmp
+*.bak
+*.hprof
+*.jfr
+.cache/
