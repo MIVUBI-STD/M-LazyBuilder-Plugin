@@ -1,22 +1,62 @@
-# Documentation Index
+# LazyBuilder Documentation
 
-Documentation is intentionally small. Add a document only when it owns durable information that would otherwise be duplicated or repeatedly rediscovered.
+Single entry point for human and AI documentation discovery.
 
-## Canonical owners
+## Load Rule
 
-| Concern | Owner |
-|---|---|
-| Repository/task routing | `../AGENTS.md` |
-| GitHub mutation and proof rules | `../GITHUB_RULES.md` |
-| Contributor/code conventions | `../CONTRIBUTING.md` |
-| Stable project facts | `../CONTEXT.md` |
-| Architecture | `architecture.md` once implementation design is established |
-| Operational handoff | `operations.md` only when persistent operational state is needed |
+Resolve the task domain first, then load only the smallest canonical set.
 
-## Documentation rules
+```text
+PRODUCT / FLOW       → 01-product/
+WORLD MANAGEMENT     → 02-world-management/
+CLIENT UI / XAERO    → 03-client-ui/
+SYSTEM / OWNERSHIP   → 04-system/
+CURRENT OPERATIONS   → 05-operations/
+```
 
-- Keep one canonical owner for each durable rule.
-- Link to an owner instead of copying its content.
-- Do not create status archives, duplicate roadmaps, or review-history folders.
-- Git history is the historical record.
-- Documentation must describe current reality, not intended behavior that source does not implement.
+## Canonical Hierarchy
+
+```text
+docs/
+├── 01-product/            product identity, scope, end-to-end feature flow
+├── 02-world-management/   world lifecycle, create, settings, transfer, safety
+├── 03-client-ui/          client UI, keybinds, Xaero integration, interaction flow
+├── 04-system/             module/source ownership, context loading, boundaries
+└── 05-operations/         current status, next action, proof/handoff
+```
+
+## Fast Task Routing
+
+```text
+change world creation/settings/lifecycle
+→ 02-world-management/README.md
+
+change client UI/map interaction
+→ 03-client-ui/README.md
+
+change architecture/module ownership
+→ 04-system/README.md
+
+continue prior work / interpret current proof
+→ 05-operations/README.md
+```
+
+## Context Policy
+
+1. Start here only when the task domain is not already known.
+2. Read the selected domain README.
+3. Load only the canonical owner needed for the current decision.
+4. Do not preload sibling domains unless the task crosses that boundary.
+5. `05-operations/` is current-state context, not durable design authority.
+6. Git history owns superseded architecture and rationale.
+
+## Authority Roles
+
+```text
+Docs     = durable semantic policy / contracts
+Skills   = execution procedure
+Source   = implementation/runtime truth
+Ops docs = current continuation/proof only
+```
+
+One concern must have one canonical semantic owner. Link instead of duplicating rules.

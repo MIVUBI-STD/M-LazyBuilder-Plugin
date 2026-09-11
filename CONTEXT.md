@@ -2,7 +2,7 @@
 
 ## Product
 
-LazyBuilder Plugin is a Minecraft Java plugin project targeting Minecraft 1.21.4.
+LazyBuilder is a Minecraft Java 1.21.4 builder-server workspace. Its purpose is to replace difficult, legacy, or overlapping server workflows with a smaller, clearer, maintainable system.
 
 ## Repository authority
 
@@ -11,64 +11,127 @@ Local = active development / source authority
 main  = stable / release authority
 ```
 
-## Project objective
+## Engineering model
 
-The repository exists to modernize and simplify the plugin stack used by the local Minecraft server.
+LazyBuilder follows the same repository-development discipline used by the user's BuildIT/LazyDesigner repository:
 
-The working goal is not to preserve every existing plugin as-is. Existing plugins must first be audited by function, dependency, maintainability, operational complexity, and compatibility with the current server target.
+- hierarchical canonical documentation;
+- selective context loading;
+- explicit execution-context/proof ceilings;
+- one semantic owner per responsibility;
+- bounded/standard/complex development routing;
+- GitHub-first completion before local/live-server residue;
+- domain Skills only when a real responsibility exists;
+- no duplicate systems or speculative framework layers.
 
-For each existing plugin, choose the smallest stable outcome:
+The process is mirrored; product-specific implementation remains native to LazyBuilder rather than copying unrelated Blockbench/MCP architecture.
+
+## Plugin modernization objective
+
+Existing plugins are classified by the smallest stable outcome:
 
 ```text
 KEEP
-→ already suitable and maintainable
-
 UPDATE / CLEAN UP
-→ useful design, but implementation, dependency, configuration, or API usage is outdated
-
 MERGE / CONSOLIDATE
-→ multiple plugins overlap and are better owned by one clear domain
-
 REBUILD
-→ required functionality exists, but the current plugin is too legacy, fragile, or difficult to operate reliably
-
 NEW PLUGIN
-→ a new implementation is cleaner and more stable than extending or preserving legacy behavior
-
 RETIRE / REPLACE
-→ redundant, obsolete, or better served by another maintained solution
 ```
 
-The desired end state is a smaller, clearer, stable, and maintainable plugin ecosystem for Minecraft 1.21.4, with simple operation and no unnecessary duplicate systems.
+Third-party software is not preserved merely because it already exists. Rebuild is preferred when the required scope is narrow enough that a native implementation materially improves operation, ownership, and long-term maintenance.
 
-## Architecture direction
+## First confirmed rebuild: World Manager
 
-- Prefer one repository with a multi-module structure when several related custom plugins are required.
-- Plugins may remain independently deployable `.jar` files when their lifecycle or responsibility is genuinely separate.
-- Do not create a mandatory master/core runtime plugin unless real cross-plugin runtime requirements justify it.
-- Shared code should remain an internal library/module when runtime coordination is unnecessary.
-- One responsibility has one canonical owner; do not split implementation layers into separate plugins merely because they are commands, listeners, services, storage, or UI.
-- External third-party plugins that are mature and already solve a problem well should not be rebuilt without evidence of a real maintenance, compatibility, reliability, or operational problem.
+Multiverse-Core is being replaced rather than wrapped as the long-term world-management owner.
+
+Target architecture:
+
+```text
+LazyBuilder Client Mod
+        │
+        │ UI / map interaction
+        ▼
+LazyBuilder Server Plugin
+        │
+        │ world lifecycle / validation / authority
+        ▼
+Paper API / Minecraft 1.21.4
+```
+
+Multiverse may be used only as migration/reference evidence while transition is underway; it is not the intended runtime dependency of the finished World Manager.
+
+## World Manager confirmed requirements
+
+### Main surface
+
+- world map is the primary visual surface;
+- Xaero World Map is reused for map preview rather than rebuilding a full map engine;
+- the only Xaero behavior required beyond preview/navigation is **Teleport to Location**;
+- LazyBuilder owns world operations and settings.
+
+### Create World
+
+Creation is intentionally minimal:
+
+```text
+Create World
+├── Flat World
+└── Void World
+```
+
+No normal/default terrain generator is required for the current builder workflow.
+
+Every newly created world receives an internal `BUILD_READY` profile automatically. Create UI should not expose advanced world settings.
+
+### BUILD_READY defaults
+
+New builder worlds should be immediately safe and predictable for building:
+
+- structures disabled;
+- natural mob spawning disabled;
+- default game mode Creative;
+- difficulty Normal unless explicitly changed later;
+- clear weather with weather cycle disabled;
+- daylight cycle disabled and daytime selected;
+- fire tick disabled;
+- mob griefing disabled;
+- random tick speed set to 0;
+- patrol, wandering trader, insomnia/phantom, warden, and raid spawning/events disabled where supported by the target API/gamerules;
+- unnecessary spawn-chunk persistence disabled when safe for the target Paper API;
+- other unrelated vanilla gamerules remain vanilla until changed through World Settings.
+
+Flat World uses a simple vanilla-compatible flat world with structures disabled. Void World is empty terrain with a small safe spawn platform by default unless later requirements change that decision.
+
+### World Settings
+
+Advanced configuration is separated from creation and belongs to World Settings. It will own additional world behavior such as gamerules, spawn rules, and other explicit overrides.
+
+### Other confirmed World Manager capabilities
+
+- browse/select worlds;
+- teleport to world;
+- teleport to map location;
+- load/unload;
+- clone;
+- archive/delete with safety confirmation;
+- import/export;
+- world settings;
+- metadata/display information.
+
+Feature design is discussed and specified sequentially before implementation so the source remains small and intentional.
+
+## Architecture principles
+
+- one canonical owner per responsibility;
+- one execution path per behavior;
+- no mandatory master/core plugin without real runtime need;
+- related modules may share one repository but remain independently deployable when lifecycle requires it;
+- UI/client code never becomes server authority;
+- destructive world operations are server validated;
+- no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
+- source/CI proof remains distinct from live-server proof.
 
 ## Current phase
 
-Plugin inventory and architecture discovery.
-
-Feature implementation is intentionally deferred until the existing local-server plugin stack has been audited and classified. The immediate next work should establish what already exists, what remains valuable, what is legacy or overlapping, and what should become part of the LazyBuilder plugin ecosystem.
-
-## Stable engineering principles
-
-- simple, maintainable architecture;
-- one canonical owner per responsibility;
-- no duplicate systems;
-- minimal framework overhead;
-- explicit Paper/Minecraft runtime boundaries;
-- efficient runtime behavior and development workflow;
-- source/CI proof is kept distinct from live-server proof;
-- prefer maintenance simplicity over preserving legacy structure;
-- modernize incrementally when that is sufficient; rebuild only when it produces a materially cleaner and more reliable result;
-- live-server behavior must ultimately be verified on the target Minecraft 1.21.4 server before being considered production-ready.
-
-## Current non-goals
-
-Until the plugin inventory and concrete functional requirements are known, do not prebuild speculative command frameworks, persistence layers, packet/NMS abstractions, database systems, plugin APIs, compatibility layers, generic manager hierarchies, or a mandatory master plugin.
+World Manager product specification and repository-development-system alignment. Implementation should begin only after the next sequential feature contracts are sufficiently defined.
