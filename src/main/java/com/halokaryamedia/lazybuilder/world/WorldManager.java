@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.world;
 
 import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
+import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 
@@ -15,11 +16,13 @@ import java.util.Objects;
 public final class WorldManager {
     private final LazyBuilderPlugin plugin;
     private final ConversionRuntimePolicy conversionRuntimePolicy;
+    private final BuildReadyPolicy buildReadyPolicy;
     private final WorldRegistry worldRegistry;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.conversionRuntimePolicy = ConversionRuntimePolicy.defaults();
+        this.buildReadyPolicy = BuildReadyPolicy.defaults();
         this.worldRegistry = new WorldRegistry();
     }
 
@@ -35,6 +38,10 @@ public final class WorldManager {
 
     public ConversionRuntimePolicy conversionRuntimePolicy() {
         return conversionRuntimePolicy;
+    }
+
+    public BuildReadyPolicy buildReadyPolicy() {
+        return buildReadyPolicy;
     }
 
     public WorldRegistry worldRegistry() {

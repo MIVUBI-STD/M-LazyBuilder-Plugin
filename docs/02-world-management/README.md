@@ -52,6 +52,8 @@ Creation intentionally exposes only the world name and type. Advanced settings b
 
 Every created world is immediately suitable for map building.
 
+`BuildReadyPolicy` is the single source owner for the initial builder-safe defaults. It is applied during world creation or by an explicit Reset to Build Ready action; it is not a background enforcement loop. Later World Settings changes remain authoritative until the user explicitly resets them.
+
 Default policy:
 
 ```text
@@ -59,10 +61,11 @@ structures             OFF
 natural mob spawning   OFF
 default game mode      CREATIVE
 difficulty             NORMAL
+PVP                     OFF
 weather                 CLEAR
 weather cycle           OFF
 daylight cycle          OFF
-time                    DAY
+time                    DAY (6000 ticks)
 fire tick               OFF
 mob griefing            OFF
 random tick speed       0
@@ -74,7 +77,7 @@ raids                   OFF
 spawn-chunk persistence OFF when safe through target API
 ```
 
-Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides.
+Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs when world creation is implemented.
 
 ## Confirmed Capability Surface
 
@@ -107,8 +110,8 @@ Import/export/conversion details are owned by `conversion.md`.
 Current implementation proceeds from stable ownership outward:
 
 ```text
-world identity + registry
-→ BUILD_READY policy
+world identity + registry          ✅ source
+BUILD_READY policy                 ✅ source
 → Flat / Void creation
 → Load / Unload
 → Teleport
@@ -119,4 +122,4 @@ world identity + registry
 → client mod + Xaero integration
 ```
 
-The registry foundation is source-level work only until compile/CI evidence is green; Paper behavior remains unproven until LIVE_SERVER verification.
+The current policy and registry slices are source-level work until compile/CI evidence is green; actual Paper world creation remains unproven until LIVE_SERVER verification.
