@@ -100,8 +100,6 @@ public final class WorldExportService {
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
 
-            // Native fast-path is valid only for whole-world exports. Area export requires
-            // Chunker pruning even when the requested output version is the server version.
             if (task.area == null && NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
@@ -120,7 +118,7 @@ public final class WorldExportService {
             }
 
             if (task.area != null) {
-                pruning = writeAreaPruning(task.area, snapshot.getParent());
+                pruning = writeAreaPruning(task.area, snapshot);
             }
             converted = files.reserveWorkspace(UUID.randomUUID());
             try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
@@ -174,9 +172,6 @@ public final class WorldExportService {
                 + ",\"minChunkZ\":" + area.minChunkZ()
                 + ",\"maxChunkX\":" + area.maxChunkX()
                 + ",\"maxChunkZ\":" + area.maxChunkZ() + "}";
-        // Apply the same X/Z inclusion rectangle to all vanilla dimensions. Missing
-        // configs mean 'do not prune' in Chunker, which would accidentally include
-        // entire Nether/End data in an Export Area artifact.
         String json = "{\"configs\":{" +
                 "\"minecraft:overworld\":{\"include\":true,\"regions\":[" + region + "]}," +
                 "\"minecraft:the_nether\":{\"include\":true,\"regions\":[" + region + "]}," +
