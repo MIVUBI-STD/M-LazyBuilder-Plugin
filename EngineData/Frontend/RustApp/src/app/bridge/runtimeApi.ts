@@ -41,6 +41,12 @@ export type CreateWorldRequest = {
   kind: 'FLAT' | 'VOID';
 };
 
+export type CloneWorldRequest = {
+  worldId: string;
+  destinationFolder: string;
+  displayName: string;
+};
+
 export type WorldSettingsSnapshot = {
   id: string;
   displayName: string;
@@ -108,5 +114,6 @@ export const runtimeApi = {
   listWorldTasks: () => invoke<WorldTaskSnapshot[]>('world_task_list'),
   getWorldTask: (taskId: string) => invoke<WorldTaskSnapshot>('world_task', { taskId }),
   archiveWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
-  restoreWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId })
+  restoreWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId }),
+  cloneWorld: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request })
 };
