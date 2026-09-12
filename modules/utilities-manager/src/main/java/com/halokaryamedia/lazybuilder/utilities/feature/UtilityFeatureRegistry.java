@@ -37,17 +37,33 @@ public final class UtilityFeatureRegistry {
 
     public void disable(String id) {
         UtilityFeature feature = requireFeature(id);
-        if (!enabledFeatures.remove(feature)) {
+        if (!enabledFeatures.contains(feature)) {
             return;
         }
+
+        // Keep the registry state truthful if feature cleanup fails. The feature remains
+        // marked enabled so a caller may retry or report the incomplete shutdown.
         feature.disable();
+        enabledFeatures.remove(feature);
     }
 
     public void disableAll() {
+        RuntimeException failure = null;
         for (int index = enabledFeatures.size() - 1; index >= 0; index--) {
-            enabledFeatures.get(index).disable();
+            UtilityFeature feature = enabledFeatures.get(index);
+            try {
+                feature.disable();
+                enabledFeatures.remove(index);
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = new IllegalStateException("One or more utility features failed to disable cleanly");
+                }
+                failure.addSuppressed(exception);
+            }
         }
-        enabledFeatures.clear();
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     public boolean isEnabled(String id) {
