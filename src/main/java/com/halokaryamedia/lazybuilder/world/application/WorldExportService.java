@@ -1,0 +1,235 @@
+package com.halokaryamedia.lazybuilder.world.application;
+
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
+import com.halokaryamedia.lazybuilder.world.conversion.ConverterAdapter;
+import com.halokaryamedia.lazybuilder.world.files.ExportArtifactType;
+import com.halokaryamedia.lazybuilder.world.files.WorldCopyProfile;
+import com.halokaryamedia.lazybuilder.world.files.WorldExportArtifactStore;
+import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
+import com.halokaryamedia.lazybuilder.world.registry.WorldId;
+import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Phased Export World use case.
+ *
+ * <p>prepare/finish own Paper lifecycle work. executeFilePhase owns snapshot,
+ * optional conversion, packaging, and cleanup and is intended for a request-scoped worker.</p>
+ */
+public final class WorldExportService {
+    public static final String NATIVE_SERVER_FORMAT = "JAVA_1_21_4";
+
+    private final WorldRegistry registry;
+    private final WorldRuntimeService runtimeService;
+    private final WorldRuntimeStateRegistry runtimeStates;
+    private final WorldOperationCoordinator operations;
+    private final WorldFileRepository files;
+    private final WorldExportArtifactStore artifacts;
+    private final ConversionRuntimeStore conversionStore;
+    private final ConversionUpdateService updateService;
+    private final ConverterAdapter converter;
+    private final ConversionJobCoordinator conversionJobs;
+
+    public WorldExportService(
+            WorldRegistry registry,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry runtimeStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files,
+            WorldExportArtifactStore artifacts,
+            ConversionRuntimeStore conversionStore,
+            ConversionUpdateService updateService,
+            ConverterAdapter converter,
+            ConversionJobCoordinator conversionJobs
+    ) {
+        this.registry = Objects.requireNonNull(registry, "registry");
+        this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
+        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
+        this.operations = Objects.requireNonNull(operations, "operations");
+        this.files = Objects.requireNonNull(files, "files");
+        this.artifacts = Objects.requireNonNull(artifacts, "artifacts");
+        this.conversionStore = Objects.requireNonNull(conversionStore, "conversionStore");
+        this.updateService = Objects.requireNonNull(updateService, "updateService");
+        this.converter = Objects.requireNonNull(converter, "converter");
+        this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
+    }
+
+    /** Main-thread phase: validate, acquire lease, and quiesce source for a consistent snapshot. */
+    public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
+        Objects.requireNonNull(worldId, "worldId");
+        WorldRecord source = registry.find(worldId)
+                .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
+        if (source.lifecycle() != WorldLifecycle.ACTIVE) {
+            throw new IllegalStateException("Archived worlds must be restored before export: " + source.folderName());
+        }
+        String format = normalizeFormat(targetFormat);
+        String safeArtifact = validateArtifactName(artifactName);
+
+        WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
+        boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
+        try {
+            runtimeService.unload(worldId);
+            return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, wasLoaded, lease);
+        } catch (RuntimeException exception) {
+            lease.close();
+            throw exception;
+        }
+    }
+
+    /** Worker-thread phase. Whole-world export only; Export Area will provide pruning input later. */
+    public ExportResult executeFilePhase(ExportTask task) {
+        Objects.requireNonNull(task, "task");
+        task.requireOpen();
+        Path snapshot = null;
+        Path converted = null;
+        try {
+            snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
+            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
+                Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
+                task.completed = true;
+                return new ExportResult(artifact, task.targetFormat, false);
+            }
+
+            ensureConversionRuntime();
+            ConversionRuntimeStore.InstalledRuntime runtime = conversionStore.current()
+                    .orElseThrow(() -> new IllegalStateException("No verified conversion runtime is installed"));
+            boolean supported = runtime.manifest().supportedFormats().stream()
+                    .anyMatch(format -> format.equalsIgnoreCase(task.targetFormat));
+            if (!supported) {
+                throw new IllegalArgumentException("Target format is not supported by the active conversion runtime: "
+                        + task.targetFormat);
+            }
+
+            converted = files.reserveWorkspace(UUID.randomUUID());
+            try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
+                converter.convert(
+                        runtime.artifact(),
+                        new ConverterAdapter.ConversionRequest(snapshot, converted, task.targetFormat, null)
+                );
+            }
+
+            ExportArtifactType type = task.targetFormat.startsWith("BEDROCK_")
+                    ? ExportArtifactType.BEDROCK_WORLD
+                    : ExportArtifactType.JAVA_ZIP;
+            Path artifact = artifacts.packageDirectory(converted, task.artifactName, type);
+            task.completed = true;
+            return new ExportResult(artifact, task.targetFormat, true);
+        } catch (IOException | RuntimeException exception) {
+            throw new IllegalStateException("Failed to export world " + task.source.folderName()
+                    + " as " + task.targetFormat, exception);
+        } finally {
+            cleanupWorkspace(converted);
+            cleanupWorkspace(snapshot);
+        }
+    }
+
+    /** Main-thread phase: restore source load state and release the world operation lease. */
+    public void finish(ExportTask task) {
+        Objects.requireNonNull(task, "task");
+        if (task.closed) return;
+        RuntimeException failure = null;
+        if (task.wasLoaded) {
+            try {
+                runtimeService.load(task.source.id());
+            } catch (RuntimeException exception) {
+                failure = exception;
+            }
+        }
+        task.close();
+        if (failure != null) throw failure;
+    }
+
+    private void ensureConversionRuntime() throws IOException {
+        IOException updateFailure = null;
+        try {
+            updateService.checkIfDue();
+        } catch (IOException exception) {
+            updateFailure = exception;
+        }
+        if (conversionStore.current().isPresent()) return;
+        if (updateFailure != null) {
+            throw new IOException("Conversion runtime update failed and no verified runtime is installed", updateFailure);
+        }
+        throw new IOException("No verified conversion runtime is installed");
+    }
+
+    private void cleanupWorkspace(Path workspace) {
+        if (workspace == null) return;
+        try {
+            files.deleteWorkspace(workspace);
+        } catch (IOException ignored) {
+            // Cleanup failure is recoverable by the startup temp-recovery pass planned for transfer runtime.
+        }
+    }
+
+    private static String normalizeFormat(String value) {
+        Objects.requireNonNull(value, "targetFormat");
+        String normalized = value.strip().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty() || !normalized.matches("[A-Z0-9_]+")) {
+            throw new IllegalArgumentException("targetFormat must be one converter format id");
+        }
+        return normalized;
+    }
+
+    private static String validateArtifactName(String value) {
+        Objects.requireNonNull(value, "artifactName");
+        if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
+                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
+                || value.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("artifactName must be one safe file base name");
+        }
+        return value;
+    }
+
+    public record ExportResult(Path artifact, String targetFormat, boolean converted) {
+        public ExportResult {
+            artifact = Objects.requireNonNull(artifact, "artifact").toAbsolutePath().normalize();
+            targetFormat = Objects.requireNonNull(targetFormat, "targetFormat");
+        }
+    }
+
+    public static final class ExportTask {
+        private final UUID operationId;
+        private final WorldRecord source;
+        private final String targetFormat;
+        private final String artifactName;
+        private final boolean wasLoaded;
+        private final WorldOperationCoordinator.Lease lease;
+        private boolean completed;
+        private boolean closed;
+
+        private ExportTask(UUID operationId, WorldRecord source, String targetFormat, String artifactName,
+                           boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
+            this.operationId = operationId;
+            this.source = source;
+            this.targetFormat = targetFormat;
+            this.artifactName = artifactName;
+            this.wasLoaded = wasLoaded;
+            this.lease = lease;
+        }
+
+        public WorldRecord source() { return source; }
+        public String targetFormat() { return targetFormat; }
+        public boolean completed() { return completed; }
+
+        private void requireOpen() {
+            if (closed) throw new IllegalStateException("Export task is already closed");
+        }
+
+        private void close() {
+            if (!closed) {
+                lease.close();
+                closed = true;
+            }
+        }
+    }
+}

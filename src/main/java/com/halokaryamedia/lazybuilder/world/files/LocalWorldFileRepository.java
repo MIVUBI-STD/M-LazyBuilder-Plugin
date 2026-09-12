@@ -43,11 +43,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
 
         Files.createDirectories(workspaceRoot);
-        Path destination = workspacePath(operationId.toString());
-        if (Files.exists(destination)) {
-            throw new IOException("Workspace already exists: " + destination.getFileName());
-        }
-
+        Path destination = reserveWorkspace(operationId);
         try {
             copyTree(sourcePath, destination, profile);
             return destination;
@@ -62,21 +58,13 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     @Override
-    public Path stageDelete(WorldRecord world, UUID operationId) throws IOException {
-        Objects.requireNonNull(world, "world");
+    public Path reserveWorkspace(UUID operationId) throws IOException {
         Objects.requireNonNull(operationId, "operationId");
-
-        Path source = worldPath(world.folderName());
-        if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
-            throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
-        }
-
         Files.createDirectories(workspaceRoot);
         Path destination = workspacePath(operationId.toString());
         if (Files.exists(destination)) {
             throw new IOException("Workspace already exists: " + destination.getFileName());
         }
-        moveDirectory(source, destination);
         return destination;
     }
 
@@ -90,16 +78,19 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.exists(destination)) {
             throw new IOException("Destination world already exists: " + destinationFolder);
         }
-        moveDirectory(source, destination);
+
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source, destination);
+        }
     }
 
     @Override
     public void deleteWorld(WorldRecord world) throws IOException {
         Objects.requireNonNull(world, "world");
         Path target = worldPath(world.folderName());
-        if (Files.notExists(target)) {
-            return;
-        }
+        if (Files.notExists(target)) return;
         if (Files.isSymbolicLink(target)) {
             throw new IOException("Refusing to recursively delete symbolic-link world root: " + world.folderName());
         }
@@ -109,9 +100,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     @Override
     public void deleteWorkspace(Path workspace) throws IOException {
         Path target = requireDirectWorkspace(workspace);
-        if (Files.notExists(target)) {
-            return;
-        }
+        if (Files.notExists(target)) return;
         if (Files.isSymbolicLink(target)) {
             Files.delete(target);
             return;
@@ -141,9 +130,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + file);
                 }
                 Path relative = source.relativize(file);
-                if (shouldSkipFile(relative, profile)) {
-                    return FileVisitResult.CONTINUE;
-                }
+                if (shouldSkipFile(relative, profile)) return FileVisitResult.CONTINUE;
                 Files.copy(file, destination.resolve(relative), StandardCopyOption.COPY_ATTRIBUTES);
                 return FileVisitResult.CONTINUE;
             }
@@ -151,20 +138,10 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     private static boolean shouldSkipFile(Path relative, WorldCopyProfile profile) {
-        if (relative.getNameCount() == 1 && relative.getFileName().toString().equals("session.lock")) {
-            return true;
-        }
+        if (relative.getNameCount() == 1 && relative.getFileName().toString().equals("session.lock")) return true;
         return profile == WorldCopyProfile.CLONE
                 && relative.getNameCount() == 1
                 && relative.getFileName().toString().equals("uid.dat");
-    }
-
-    private static void moveDirectory(Path source, Path destination) throws IOException {
-        try {
-            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, destination);
-        }
     }
 
     private Path worldPath(String folderName) {
@@ -204,9 +181,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     private static void deleteTree(Path root) throws IOException {
-        if (Files.notExists(root)) {
-            return;
-        }
+        if (Files.notExists(root)) return;
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
@@ -216,9 +191,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
             @Override
             public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
-                if (exception != null) {
-                    throw exception;
-                }
+                if (exception != null) throw exception;
                 Files.deleteIfExists(directory);
                 return FileVisitResult.CONTINUE;
             }

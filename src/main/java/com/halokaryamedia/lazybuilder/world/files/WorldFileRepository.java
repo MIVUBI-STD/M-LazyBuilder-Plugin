@@ -10,8 +10,10 @@ import java.util.UUID;
 public interface WorldFileRepository {
     Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException;
 
-    /** Move one managed world into an owned workspace before destructive deletion is committed. */
-    Path stageDelete(WorldRecord world, UUID operationId) throws IOException;
+    /** Returns a non-existing, owned direct workspace path reserved by caller identity. */
+    default Path reserveWorkspace(UUID operationId) throws IOException {
+        throw new UnsupportedOperationException("Workspace reservation is not supported by this repository");
+    }
 
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
