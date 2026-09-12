@@ -117,11 +117,14 @@ public final class WorldManager {
         );
         long maxUploadMb = Math.max(1L,
                 plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 16_384L));
+        long transferIdleSeconds = Math.max(30L,
+                plugin.getConfig().getLong("world-manager.transfer.session-idle-seconds", 300L));
         this.transferPolicy = new TransferPolicy(
                 transferChunkBytes,
                 Math.multiplyExact(maxUploadMb, 1024L * 1024L),
                 1,
-                2
+                2,
+                Duration.ofSeconds(transferIdleSeconds)
         );
         this.transferSessionService = new TransferSessionService(
                 importsRoot, exportsRoot, transferRoot, transferPolicy
