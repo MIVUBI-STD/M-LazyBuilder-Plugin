@@ -1,0 +1,20 @@
+world-manager:
+  # Blank = use the server's primary loaded world as the global safety fallback.
+  # Set this to a loaded world name to choose an explicit fallback destination.
+  fallback-world: ''
+
+  import:
+    max-files: 200000
+    max-uncompressed-mb: 65536
+
+  conversion:
+    max-heap-mb: 3072
+    timeout-minutes: 60
+
+  transfer:
+    # Kept below Minecraft custom-payload ceilings so protocol framing has room.
+    chunk-bytes: 24576
+    # Hard cap for one uploaded .zip/.mcworld before it is accepted into world/imports.
+    max-upload-mb: 16384
+    # An inactive transfer may be reclaimed on the next request/disconnect; no polling timer is used.
+    session-idle-seconds: 300

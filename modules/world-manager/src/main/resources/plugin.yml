@@ -1,0 +1,14 @@
+name: LazyBuilder
+version: 0.1.0-SNAPSHOT
+main: com.halokaryamedia.lazybuilder.LazyBuilderPlugin
+api-version: '1.21'
+authors: [halokaryamedia-source]
+description: Builder-focused world management for Minecraft Java 1.21.4.
+
+permissions:
+  lazybuilder.world.teleport:
+    description: Teleport through LazyBuilder world/map actions.
+    default: op
+  lazybuilder.world.manage:
+    description: Manage worlds and transfer import/export artifacts.
+    default: op
