@@ -39,7 +39,7 @@ LazyBuilder application behavior is independent from how the Minecraft server be
 
 Direct LAN, normal public-IP hosting, IPv6, router port forwarding, a self-hosted VPN, or an optional third-party tunnel can all carry the same Minecraft connection without changing LazyBuilder's protocol or feature flow.
 
-Products such as Tailscale, ZeroTier, Cloudflare Tunnel, or similar are therefore optional deployment infrastructure only. LazyBuilder does not detect them, call their APIs, store their identity, or require them to function once the client can reach the Minecraft server.
+Products such as Tailscale, ZeroTier, Cloudflare Tunnel, or similar are optional deployment infrastructure only. LazyBuilder does not detect them, call their APIs, store their identity, or require them to function once the client can reach the Minecraft server.
 
 A server behind CGNAT or a firewall with no inbound route still needs some network-level route for a remote player. That cannot be solved purely by the plugin without introducing a relay, NAT-traversal service, VPN, or another externally reachable endpoint. Building such infrastructure into LazyBuilder is outside V1 because it would create a second network stack, more attack surface, persistent background work, and a new operational dependency.
 
@@ -62,6 +62,34 @@ The transfer protocol uses one seekable file channel per active local/server fil
 
 The four-chunk window is intentionally bounded. It reduces round-trip latency sensitivity without introducing an unbounded queue, permanent transfer worker, or custom TCP implementation.
 
+## Resilience contract
+
+V1 relies on the Minecraft connection for ordered/reliable delivery and therefore does not implement a second retransmission protocol. LazyBuilder handles failures at the application/session boundary instead:
+
+```text
+malformed / out-of-order request
+→ fail closed
+→ discard affected session
+
+player disconnect
+→ abort all sessions for that player
+→ close file channels
+→ remove partial upload
+
+inactive transfer
+→ reclaim on the next request from that owner after the configured idle timeout
+→ no polling timer required
+
+new upload
+→ validate declared size
+→ reject when configured size limit is exceeded
+→ reject when current transfer filesystem has insufficient usable space
+```
+
+Default idle timeout is 300 seconds and is configurable as `world-manager.transfer.session-idle-seconds`. The minimum accepted configured value is 30 seconds. Activity is refreshed only after a chunk successfully reads/writes; invalid traffic cannot keep a session alive indefinitely.
+
+There is intentionally no cross-connection resume token in V1. If the underlying Minecraft connection is lost, the partial server upload/client download is discarded and the user starts that transfer again. Resume should be added only if live large-file testing proves restart cost is materially worse than the added state/security complexity.
+
 ## Idle requirements
 
 When no player requests work:
@@ -75,7 +103,7 @@ When no player requests work:
 - no converter process;
 - no periodic network update check.
 
-All active work is request/event driven.
+All active work is request/event driven. Idle-session expiry is opportunistic and disconnect-driven rather than timer-driven.
 
 ## Security and failure behavior
 
@@ -88,6 +116,7 @@ All active work is request/event driven.
 - uploads publish only after declared size and SHA-256 match;
 - downloads are finalized client-side only after SHA-256 validation;
 - malformed/out-of-order requests discard affected session state rather than leaving a stale session;
+- stale sessions cannot permanently consume a per-owner slot once that owner sends another request;
 - disconnect and plugin shutdown close active file channels and request-owned state.
 
 Minecraft's established connection supplies the underlying ordered/reliable transport. LazyBuilder does not attempt to replace TCP, encryption at the deployment layer, authentication performed by the Minecraft server, or Internet routing.
@@ -115,4 +144,4 @@ Third-party version changes must remain absorbed at their adapter boundary whene
 
 ## Proof boundary
 
-Remote CI can prove protocol codecs, bounds, session ownership, ordered application processing, cleanup semantics, and both Paper/Fabric compilation. Real throughput, packet behavior under latency/loss, disconnect timing, large-file memory/IO characteristics, NAT routing, and Internet reachability require local/live measurement.
+Remote CI can prove protocol codecs, bounds, session ownership, ordered application processing, stale-session reclamation, disk-capacity preflight behavior at the source level, cleanup semantics, and both Paper/Fabric compilation. Real throughput, packet behavior under latency/loss, disconnect timing, multi-gigabyte filesystem behavior, NAT routing, and Internet reachability require local/live measurement.
