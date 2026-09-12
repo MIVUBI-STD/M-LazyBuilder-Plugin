@@ -104,7 +104,15 @@ Paper/Bukkit runtime mutations must run on the Paper primary thread.
 
 Heavy file work, ZIP packaging, conversion, and hashing must run off the Paper primary thread.
 
-The canonical application services define operation phases. Transport adapters only dispatch work through the shared orchestration boundary and handle transport-specific request/response delivery.
+`PaperMainThreadDispatcher` is the canonical cross-thread dispatch boundary. It:
+
+- runs inline when already on the Paper primary thread;
+- dispatches through `callSyncMethod` otherwise;
+- preserves the original service exception rather than leaking `ExecutionException`;
+- restores the interrupted flag when a waiting worker is interrupted;
+- cancels a queued future on timeout and reports a stable timeout error.
+
+`PaperLocalControlServer` and `WorldHeavyOperationOrchestrator` both use this dispatcher rather than maintaining their own timeout/error handling.
 
 ## Heavy-operation coordination
 
@@ -129,6 +137,19 @@ Fabric keeps its existing plugin-message request/response contract and per-playe
 
 `PaperMapActionPayloadAdapter` retains its area-export-specific orchestration because it has a distinct Xaero/map contract and intentionally restores player access immediately after area snapshot capture. It still delegates all export domain work to `WorldExportService`.
 
+## Shutdown behavior
+
+Transport shutdown is fail-closed:
+
+- desktop HTTP listener stops accepting requests before task-runner shutdown;
+- Fabric world-control transport marks itself stopping before unregistering channels;
+- no new heavy Fabric operation is accepted after shutdown begins;
+- a heavy operation already executing is allowed to finish its canonical service cleanup, but its response is suppressed once the transport is stopping;
+- per-player in-flight markers are cleared when the Fabric transport stops;
+- transfer and map adapters keep their own existing request/session cleanup rules.
+
+This avoids sending plugin messages from stale completion callbacks while still allowing the service-level `finish` phase to release operation leases and restore runtime state where possible.
+
 ## Bootstrap ownership
 
 `WorldManagerPlugin extends JavaPlugin` is the single canonical Paper entry point and lifecycle owner.
@@ -147,4 +168,5 @@ The historical `LazyBuilderPlugin` compatibility base has been removed. Paper ad
 8. Keep all world business logic inside World-Manager services, never inside UI or transport layers.
 9. Desktop HTTP and Fabric plugin messaging are client transports, not separate authorities.
 10. Keep shared heavy-operation phase sequencing in `WorldHeavyOperationOrchestrator`; transports own only transport concerns.
-11. CI/source proof is not a substitute for live Paper/Fabric/Desktop runtime validation.
+11. Keep cross-thread Paper dispatch semantics in `PaperMainThreadDispatcher`.
+12. CI/source proof is not a substitute for live Paper/Fabric/Desktop runtime validation.
