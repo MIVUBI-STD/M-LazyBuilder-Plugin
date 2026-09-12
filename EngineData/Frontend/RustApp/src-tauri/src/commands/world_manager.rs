@@ -8,11 +8,13 @@ use crate::engine::world_manager::{
     start_archive_world,
     start_backup_world,
     start_clone_world,
+    start_export_world,
     start_restore_world,
     unload_world,
     update_world_settings,
     CloneWorldRequest,
     CreateWorldRequest,
+    ExportWorldRequest,
     ManagedWorldSummary,
     UpdateWorldSettingsRequest,
     WorldSettingsSnapshot,
@@ -43,3 +45,5 @@ pub fn world_restore(world_id: String) -> Result<WorldTaskSnapshot, String> { st
 pub fn world_backup(world_id: String) -> Result<WorldTaskSnapshot, String> { start_backup_world(&world_id) }
 #[tauri::command]
 pub fn world_clone(request: CloneWorldRequest) -> Result<WorldTaskSnapshot, String> { start_clone_world(&request) }
+#[tauri::command]
+pub fn world_export(request: ExportWorldRequest) -> Result<WorldTaskSnapshot, String> { start_export_world(&request) }
