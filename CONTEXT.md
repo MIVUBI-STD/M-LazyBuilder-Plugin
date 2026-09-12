@@ -120,7 +120,7 @@ World-Manager is now structurally locked at source/CI proof level. Canonical arc
 
 ### Utilities-Manager
 
-Paper-side builder convenience module. Initial target scope:
+Paper-side builder convenience module. Current target scope:
 
 - advanced fly;
 - noclip;
@@ -128,11 +128,10 @@ Paper-side builder convenience module. Initial target scope:
 - iron-door toggle;
 - double-slab helper;
 - glazed-terracotta rotation helper;
-- banner creator;
-- armor-color creator;
-- special builder items;
 - spectator helpers;
 - builder-safe protections for explosions, leaves decay, farmland trample, and dragon-egg teleport behavior.
+
+Banner Creator, Armor Color Creator, and Special Builder Items are intentionally excluded because they are not used in the current workflow. Do not add a creation-tools family unless a concrete requirement appears later.
 
 Do not place world management, performance optimization, economy, home/warp/chat suites, or WorldEdit aliases in Utilities-Manager.
 
@@ -230,20 +229,24 @@ Keep each manager independently maintainable. Do not relocate or rewrite stable 
 
 ## Current phase
 
-World-Manager source architecture and its Desktop/Fabric control paths are now structurally stable and CI-green. Heavy operations use the shared orchestration boundary, Paper cross-thread calls use one dispatcher, task execution is bounded, and the legacy bootstrap compatibility layer has been removed.
+World-Manager source architecture and its Desktop/Fabric control paths are structurally stable and CI-green. Heavy operations use the shared orchestration boundary, Paper cross-thread calls use one dispatcher, task execution is bounded, and the legacy bootstrap compatibility layer has been removed.
 
-The active remote-GitHub phase now moves to **Utilities-Manager** while preserving World-Manager as a stable dependency boundary.
+The active remote-GitHub phase is **Utilities-Manager** while preserving World-Manager as a stable dependency boundary.
 
-Next bounded sequence:
+Current implemented Utilities families:
 
 ```text
-1. audit the existing Utilities-Manager skeleton and module boundary
-2. define the minimal feature lifecycle/registration contract
-3. group builder conveniences by real responsibility rather than one class per command
-4. implement the first low-risk utility slice with targeted tests
-5. expand utility features incrementally without world-management overlap
-6. keep Desktop/World-Manager changes isolated unless a concrete integration requirement appears
-7. perform LOCAL_CODE / LIVE_SERVER validation after the remote source slices are stable
+World Safety
+Movement
+Build Helpers
 ```
 
-World-Manager changes after this point require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
+Remaining planned family:
+
+```text
+Spectator
+```
+
+Creation Tools are not part of the current product scope.
+
+After the remaining bounded Utilities work is stable, perform LOCAL_CODE / LIVE_SERVER validation. World-Manager changes require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
