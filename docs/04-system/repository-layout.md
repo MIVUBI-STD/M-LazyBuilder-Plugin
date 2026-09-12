@@ -2,9 +2,7 @@
 
 ## Product identity
 
-`LazyBuilder` is the umbrella product for the complete builder-server workspace. It is **not** the name of the World Manager module.
-
-Canonical component names:
+`LazyBuilder` is the umbrella product for the complete builder-server workspace. It is not the name of the World-Manager module.
 
 ```text
 LazyBuilder
@@ -14,15 +12,49 @@ LazyBuilder
 └── Utilities-Manager
 ```
 
-External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external products and are not renamed or reimplemented by LazyBuilder.
+External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external products.
+
+## Desktop architecture
+
+LazyBuilder follows the same long-term desktop architecture pattern as TranslateIT:
+
+```text
+Svelte 5 + TypeScript + Vite + Tailwind CSS 4
+        ↓ typed product/runtime bridge
+Tauri 2 commands
+        ↓
+Rust desktop engine
+        ↓
+Windows process/filesystem + authenticated World-Manager loopback bridge
+```
+
+The transitional .NET 8/WPF app under `apps/lazybuilder-desktop` is not the target desktop architecture. It remains only until the Tauri replacement reaches feature parity and passes CI, then it is removed rather than maintained as a second desktop implementation.
+
+### Frontend ownership
+
+`EngineData/Frontend/RustApp/src/` owns presentation and application state only. Svelte must not directly start Java, scan plugin files, mutate world storage, or own Paper business behavior.
+
+### Rust desktop ownership
+
+`EngineData/Frontend/RustApp/src-tauri/src/commands/` is the thin Tauri-facing command boundary.
+
+`EngineData/Frontend/RustApp/src-tauri/src/engine/` owns reusable desktop-native behavior:
+
+- Server-Manager process/runtime work;
+- Plugin-Manager filesystem/JAR inventory work;
+- World-Manager control-client work;
+- desktop configuration/path handling.
+
+Keep `main.rs` small and do not place domain behavior in command wrappers.
 
 ## Responsibility boundaries
 
 ### Server-Manager
 
-Desktop-side responsibility:
+Desktop Rust responsibility:
 
 - start, stop, restart Paper;
+- Java 21 discovery/validation;
 - health summary;
 - CPU/RAM status;
 - basic server settings;
@@ -32,7 +64,7 @@ It is part of `LazyBuilder.exe`; it is not a Paper plugin.
 
 ### Plugin-Manager
 
-Desktop-side responsibility:
+Desktop Rust responsibility:
 
 - discover installed plugins;
 - categorize plugins by purpose;
@@ -61,49 +93,37 @@ Paper-side authority for all world lifecycle operations:
 - conversion integration;
 - map/location actions.
 
-`LazyBuilder.exe` may present World-Manager state and actions, but it must not duplicate world business logic or directly become a second filesystem owner.
+The desktop Rust runtime may call the authenticated loopback control bridge, but must not duplicate world business logic or become a second filesystem owner.
 
 ### Utilities-Manager
 
-Paper-side builder convenience module. Initial target scope:
+Paper-side builder convenience module. Initial target scope includes movement/build helpers, creation tools, spectator helpers, and builder-safe protections. It must not absorb economy, homes, chat, performance optimization, world lifecycle, or WorldEdit wrappers.
 
-- advanced fly;
-- noclip;
-- night vision;
-- iron-door toggle;
-- double-slab helper;
-- glazed-terracotta rotation helper;
-- banner creator;
-- armor-color creator;
-- special builder items;
-- spectator helpers;
-- builder-safe protections such as explosion/leaves/farmland/dragon-egg behavior.
-
-Do not add economy, homes, warps, chat suites, performance optimization, world management, or WorldEdit command wrappers to this module.
-
-## Target repository layout
+## Canonical repository layout
 
 ```text
 LazyBuilder-Plugin/
-├── apps/
-│   └── lazybuilder-desktop/
-│       └── ...
+├── EngineData/
+│   ├── Frontend/
+│   │   └── RustApp/
+│   │       ├── src/
+│   │       │   ├── App.svelte
+│   │       │   ├── pages/
+│   │       │   ├── components/
+│   │       │   ├── app/bridge/
+│   │       │   └── styles/
+│   │       └── src-tauri/
+│   │           └── src/
+│   │               ├── main.rs
+│   │               ├── app_bootstrap.rs
+│   │               ├── commands/
+│   │               └── engine/
+│   └── README.md
 ├── modules/
 │   ├── world-manager/
-│   │   ├── src/
-│   │   └── pom.xml
 │   └── utilities-manager/
-│       ├── src/
-│       └── pom.xml
 ├── client/
 │   └── fabric/
-│       ├── src/
-│       ├── build.gradle
-│       └── ...
-├── shared/
-│   ├── protocol/
-│   ├── models/
-│   └── contracts/
 ├── docs/
 ├── .github/
 ├── AGENTS.md
@@ -111,74 +131,13 @@ LazyBuilder-Plugin/
 └── README.md
 ```
 
-The directory names describe ownership, not deployment packaging.
-
-## Current-source migration map
-
-Current Paper source under:
-
-```text
-src/main/java/com/halokaryamedia/lazybuilder/world/
-```
-
-belongs to:
-
-```text
-modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/
-```
-
-This includes the existing application services, control protocol, conversion runtime, persistence, transfer/map adapters, and Paper gateways. Preserve behavior while relocating; do not rewrite working World-Manager logic merely for the folder move.
-
-Current root plugin bootstrap:
-
-```text
-src/main/java/com/halokaryamedia/lazybuilder/LazyBuilderPlugin.java
-```
-
-must become the World-Manager Paper bootstrap during migration and be renamed only when imports/resources/tests are moved consistently.
-
-Current Fabric project:
-
-```text
-client/
-```
-
-moves conceptually to:
-
-```text
-client/fabric/
-```
-
-without changing its runtime responsibility. The Fabric client remains Minecraft-side UI/input/network integration, not the desktop application.
+Paper modules remain Java/Maven modules. Fabric remains Java/Gradle. They are not rewritten in Rust merely to match the desktop runtime.
 
 ## Shared-code rule
 
-`shared/` is intentionally small. Only stable data/protocol contracts that are genuinely consumed by more than one runtime belong there.
-
-Allowed examples:
-
-```text
-ProtocolVersion
-WorldSummary
-ServerHealth
-request/response DTOs
-stable protocol contracts
-```
-
-Do not put these in `shared/`:
-
-- Paper API implementations;
-- filesystem mutation services;
-- conversion implementation;
-- desktop UI logic;
-- Fabric-specific code;
-- world business logic.
-
-One semantic owner remains mandatory.
+Only stable contracts genuinely consumed by multiple runtimes may become shared modules. Do not create a generic shared dumping ground. Paper implementation, filesystem mutation, desktop UI, Fabric-specific logic, and world business logic each keep one semantic owner.
 
 ## Runtime/deployment target
-
-Fresh local server layout:
 
 ```text
 Work Server - 1.21.4/
@@ -205,27 +164,25 @@ All world-related persistent/work files belong under `world-system/`. Paper runt
 
 ## Migration rules
 
-1. Preserve the existing World-Manager implementation and tests while moving it.
-2. Do not create a second World-Manager implementation in the desktop app.
-3. Do not create `Server-Manager.jar` or `Plugin-Manager.jar`; those responsibilities belong to the desktop app.
-4. Introduce `Utilities-Manager` as a separate Paper module instead of expanding World-Manager.
-5. Keep external build tools external.
-6. Keep Paper 1.21.4 / Java 21 as the target baseline.
-7. Complete structural relocation in bounded slices and keep source/CI green after each slice.
-8. Live-server proof remains separate from remote source/CI proof.
+1. Preserve existing World-Manager behavior and tests.
+2. Never create a second World-Manager implementation in the desktop app.
+3. Server-Manager and Plugin-Manager remain desktop domains, not Paper JARs.
+4. Tauri/Svelte/Rust is the canonical desktop target; WPF is transitional only.
+5. Migrate desktop behavior in bounded slices and remove WPF only after Tauri parity/CI proof.
+6. Keep external build tools external.
+7. Keep Paper 1.21.4 / Java 21 as the Minecraft baseline.
+8. Source/CI proof remains separate from installed Windows and live Paper validation.
 
-## Recommended relocation order
+## Migration order
 
 ```text
-1. establish parent/module build structure
-2. relocate World-Manager source/resources/tests without behavioral changes
-3. relocate Fabric project to client/fabric
-4. introduce only the shared contracts actually needed
-5. add Utilities-Manager skeleton and tests
-6. add desktop app skeleton with Server-Manager + Plugin-Manager boundaries
-7. wire desktop ↔ World-Manager control protocol
-8. package release artifacts
-9. perform LOCAL_CODE / LIVE_SERVER validation
+1. scaffold canonical Tauri/Svelte/Rust desktop source
+2. add frontend typecheck/build + Rust cargo check to CI
+3. migrate Server-Manager behavior to Rust
+4. migrate Plugin-Manager behavior to Rust
+5. migrate authenticated World-Manager control client to Rust
+6. prove Tauri desktop parity
+7. remove apps/lazybuilder-desktop WPF source and .NET CI
+8. continue World control stage 2 and Utilities-Manager features
+9. package LazyBuilder.exe and perform installed/live validation
 ```
-
-Avoid a single large rewrite commit. Structural moves should remain reviewable and reversible.
