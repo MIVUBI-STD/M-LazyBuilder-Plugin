@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
+import com.halokaryamedia.lazybuilder.world.paper.WorldHeavyOperationOrchestrator;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -28,6 +29,14 @@ public final class WorldManagerPlugin extends JavaPlugin {
         this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
         this.worldManager.start();
 
+        WorldHeavyOperationOrchestrator heavyOperations = new WorldHeavyOperationOrchestrator(
+                this,
+                worldManager.worldCloneService(),
+                worldManager.worldDeleteService(),
+                worldManager.worldExportService(),
+                worldManager.worldImportService()
+        );
+
         this.transferPayloadAdapter = new PaperTransferPayloadAdapter(this, worldManager.transferSessionService());
         this.transferPayloadAdapter.start();
 
@@ -46,11 +55,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
                 worldManager.worldRuntimeService(),
                 worldManager.worldTeleportService(),
                 worldManager.worldLifecycleService(),
-                worldManager.worldCloneService(),
-                worldManager.worldDeleteService(),
                 worldManager.worldSettingsService(),
-                worldManager.worldExportService(),
-                worldManager.worldImportService()
+                heavyOperations
         );
         this.worldControlPayloadAdapter.start();
 
@@ -65,11 +71,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
                 worldManager.worldCreationService(),
                 worldManager.worldSettingsService(),
                 worldManager.worldLifecycleService(),
-                worldManager.worldCloneService(),
                 worldManager.worldBackupService(),
-                worldManager.worldExportService(),
-                worldManager.worldImportService(),
-                worldManager.worldDeleteService(),
+                heavyOperations,
                 importUploads,
                 worldTaskRegistry,
                 worldTaskRunner
