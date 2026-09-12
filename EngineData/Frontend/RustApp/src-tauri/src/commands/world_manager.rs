@@ -9,12 +9,15 @@ use crate::engine::world_manager::{
     start_backup_world,
     start_clone_world,
     start_export_world,
+    start_import_world,
     start_restore_world,
     unload_world,
     update_world_settings,
+    upload_world_import,
     CloneWorldRequest,
     CreateWorldRequest,
     ExportWorldRequest,
+    ImportWorldRequest,
     ManagedWorldSummary,
     UpdateWorldSettingsRequest,
     WorldSettingsSnapshot,
@@ -47,3 +50,14 @@ pub fn world_backup(world_id: String) -> Result<WorldTaskSnapshot, String> { sta
 pub fn world_clone(request: CloneWorldRequest) -> Result<WorldTaskSnapshot, String> { start_clone_world(&request) }
 #[tauri::command]
 pub fn world_export(request: ExportWorldRequest) -> Result<WorldTaskSnapshot, String> { start_export_world(&request) }
+#[tauri::command]
+pub fn world_import_pick() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("Minecraft world", &["zip", "mcworld"])
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+#[tauri::command]
+pub fn world_import_upload(file_path: String) -> Result<String, String> { upload_world_import(&file_path) }
+#[tauri::command]
+pub fn world_import(request: ImportWorldRequest) -> Result<WorldTaskSnapshot, String> { start_import_world(&request) }
