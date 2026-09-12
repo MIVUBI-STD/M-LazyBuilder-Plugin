@@ -12,6 +12,11 @@ base {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
 }
 
 dependencies {
@@ -19,6 +24,8 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // Compile-only target for the version-pinned Xaero accessor. It is optional at runtime.
+    modCompileOnly "maven.modrinth:NcUtCpym:IBcL3f5W"
 }
 
 sourceSets {
