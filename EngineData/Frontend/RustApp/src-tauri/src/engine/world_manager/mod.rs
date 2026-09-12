@@ -68,9 +68,35 @@ pub struct WorldSettingsSnapshot {
     pub weather_cycle: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldTaskSnapshot {
+    pub task_id: String,
+    pub task_type: String,
+    pub world_id: Option<String>,
+    pub state: String,
+    pub progress_percent: u8,
+    pub message: String,
+    pub result: String,
+    pub error: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Deserialize)]
 struct WorldListResponse {
     worlds: Vec<ManagedWorldSummary>,
+}
+
+#[derive(Deserialize)]
+struct WorldTaskListResponse {
+    tasks: Vec<WorldTaskSnapshot>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorldTaskStartRequest<'a> {
+    world_id: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +165,30 @@ pub fn update_world_settings(
     request_json("PATCH", &path, Some(request))
 }
 
+pub fn list_world_tasks() -> Result<Vec<WorldTaskSnapshot>, String> {
+    let payload: WorldTaskListResponse = request_json("GET", "/v1/tasks", Option::<&()>::None)?;
+    Ok(payload.tasks)
+}
+
+pub fn get_world_task(task_id: &str) -> Result<WorldTaskSnapshot, String> {
+    let task_id = validate_task_id(task_id)?;
+    request_json("GET", &format!("/v1/tasks/{task_id}"), Option::<&()>::None)
+}
+
+pub fn start_archive_world(world_id: &str) -> Result<WorldTaskSnapshot, String> {
+    start_world_task("archive", world_id)
+}
+
+pub fn start_restore_world(world_id: &str) -> Result<WorldTaskSnapshot, String> {
+    start_world_task("restore", world_id)
+}
+
+fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
+    let world_id = validate_world_id(world_id)?;
+    let body = WorldTaskStartRequest { world_id };
+    request_json("POST", &format!("/v1/tasks/{operation}"), Some(&body))
+}
+
 fn request_json<T, B>(method: &str, path: &str, body: Option<&B>) -> Result<T, String>
 where
     T: DeserializeOwned,
@@ -186,6 +236,18 @@ fn validate_world_id(world_id: &str) -> Result<&str, String> {
     Ok(value)
 }
 
+fn validate_task_id(task_id: &str) -> Result<&str, String> {
+    let value = task_id.trim();
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return Err("Invalid world task id.".into());
+    }
+    Ok(value)
+}
+
 fn control_config_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_tools_dir()?.join("world-control.json"))
 }
@@ -197,6 +259,9 @@ fn save_control_options(path: &PathBuf, options: &WorldControlOptions) -> Result
     let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(options).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| error.to_string())?;
+    }
     fs::rename(&temporary, path).map_err(|error| error.to_string())?;
     Ok(())
 }
