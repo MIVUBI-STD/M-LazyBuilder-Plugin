@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.files;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
@@ -15,6 +16,8 @@ import java.util.zip.ZipOutputStream;
 
 /** Local bounded export artifact store. No watcher or background worker is owned here. */
 public final class LocalWorldExportArtifactStore implements WorldExportArtifactStore {
+    private static final int IO_BUFFER_BYTES = 64 * 1024;
+
     private final Path exportRoot;
 
     public LocalWorldExportArtifactStore(Path exportRoot) {
@@ -41,7 +44,9 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
 
         Path temporary = exportRoot.resolve("export-" + UUID.randomUUID() + ".tmp");
         try {
-            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(temporary))) {
+            try (var fileOut = Files.newOutputStream(temporary);
+                 var bufferedOut = new BufferedOutputStream(fileOut, IO_BUFFER_BYTES);
+                 ZipOutputStream zip = new ZipOutputStream(bufferedOut)) {
                 Files.walkFileTree(source, new SimpleFileVisitor<>() {
                     @Override
                     public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
