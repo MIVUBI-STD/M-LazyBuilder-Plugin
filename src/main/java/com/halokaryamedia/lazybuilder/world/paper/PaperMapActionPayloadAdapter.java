@@ -58,9 +58,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
         started = false;
 
-        // Active file/conversion work is request-bound and may already be executing.
-        // During shutdown we close only the world-operation lease and deliberately do
-        // not reload the source world while Paper is being torn down.
         activeExports.values().forEach(exportService::abandon);
         activeExports.clear();
         exportInFlight.clear();
@@ -144,19 +141,62 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
 
+        // Phase 1: capture the quiescent source. Only this copy window requires the
+        // world to remain unloaded.
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            Throwable captureFailure = null;
+            try {
+                exportService.captureSnapshot(task);
+            } catch (Throwable exception) {
+                captureFailure = exception;
+            }
+
+            if (stopping || !started) {
+                completeAbandoned(owner, task);
+                return;
+            }
+
+            Throwable finalCaptureFailure = captureFailure;
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (stopping || !started) {
+                    completeAbandoned(owner, task);
+                    return;
+                }
+                if (finalCaptureFailure != null) {
+                    finishFailure(owner, task, finalCaptureFailure);
+                    return;
+                }
+
+                try {
+                    // Restore player access immediately after the safe snapshot. The
+                    // long conversion/ZIP phase below no longer needs the live world.
+                    exportService.resumeSourceAfterSnapshot(task);
+                } catch (RuntimeException resumeFailure) {
+                    finishFailure(owner, task, resumeFailure);
+                    return;
+                }
+
+                scheduleExportProcessing(owner, request, task);
+            });
+        });
+    }
+
+    private void scheduleExportProcessing(
+            UUID owner,
+            MapActionWireProtocol.ExportArea request,
+            WorldExportService.ExportTask task
+    ) {
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             WorldExportService.ExportResult result = null;
             Throwable failure = null;
             try {
-                result = exportService.executeFilePhase(task);
+                result = exportService.processSnapshot(task);
             } catch (Throwable exception) {
                 failure = exception;
             }
 
             if (stopping || !started) {
-                activeExports.remove(owner);
-                exportInFlight.remove(owner);
-                exportService.abandon(task);
+                completeAbandoned(owner, task);
                 return;
             }
 
@@ -182,11 +222,32 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                         send(online, MapActionWireProtocol.error(finishFailure.getMessage()));
                     }
                 } finally {
-                    activeExports.remove(owner);
+                    activeExports.remove(owner, task);
                     exportInFlight.remove(owner);
                 }
             });
         });
+    }
+
+    private void finishFailure(UUID owner, WorldExportService.ExportTask task, Throwable failure) {
+        try {
+            exportService.finish(task);
+        } catch (RuntimeException finishFailure) {
+            failure.addSuppressed(finishFailure);
+        } finally {
+            activeExports.remove(owner, task);
+            exportInFlight.remove(owner);
+        }
+        Player online = plugin.getServer().getPlayer(owner);
+        if (online != null && online.isOnline()) {
+            send(online, MapActionWireProtocol.error(failure.getMessage()));
+        }
+    }
+
+    private void completeAbandoned(UUID owner, WorldExportService.ExportTask task) {
+        activeExports.remove(owner, task);
+        exportInFlight.remove(owner);
+        exportService.abandon(task);
     }
 
     private void send(Player player, byte[] payload) {
