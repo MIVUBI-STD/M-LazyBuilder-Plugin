@@ -20,16 +20,21 @@ This directory owns current continuation/proof only. Durable product and archite
 - Export Area reuses `WorldExportService`, request-local pruning, existing export artifacts, and the existing transfer channel rather than creating parallel systems;
 - map Export tracks active tasks; shutdown stops accepting new map work and releases active Export leases without starting world loads during Paper teardown;
 - `TransferSessionService` uses one seekable `FileChannel` per active file and positional reads/writes, removing reopen-and-skip-from-zero behavior for large files;
+- upload SHA-256 is accumulated while ordered chunks are written, avoiding a second full read of the completed upload before publication;
 - transfer state uses per-session synchronization rather than one global I/O lock, so unrelated clients are not intentionally serialized;
 - transfer protocol version 2 keeps 24 KiB data chunks but uses a bounded four-chunk credit window over the existing Minecraft play connection;
 - `PaperTransferPayloadAdapter` owns a bounded ordered request lane per player, preserving application order while allowing the client to pipeline a small chunk window;
 - protocol failures that identify an active transfer session clean that stale server session;
-- transfer sessions now carry a configurable idle timeout (default 300s, minimum configured value 30s); stale owner sessions are reclaimed opportunistically on the next owner request without a polling task;
+- transfer sessions carry a configurable idle timeout (default 300s, minimum configured value 30s); stale owner sessions are reclaimed opportunistically on the next owner request without a polling task;
 - upload admission checks current usable space on the transfer filesystem before accepting the declared file size, in addition to the configured upload-size ceiling;
 - the official Fabric client allows one active file transfer total at a time and mirrors the same four-chunk pipeline with positional local file I/O;
 - LazyBuilder client/server application networking is self-owned through `lazybuilder:transfer` and `lazybuilder:map`; it does not require a third-party VPN, SaaS relay, HTTP gateway, WebSocket service, cloud queue, or object store;
 - optional Tailscale/ZeroTier/tunnel products are deployment routing only and are outside LazyBuilder protocol ownership;
 - the Chunker GitHub release request remains isolated maintenance/bootstrap egress, not client/server data-plane traffic; an already verified local converter remains usable when update-network access is unavailable;
+- import extraction and export archive writes use bounded 64 KiB buffering to reduce syscall overhead during large archive operations;
+- failed import cleanup walks/deletes incrementally instead of materializing every path into an in-memory list;
+- import single-root normalization falls back cleanly when atomic directory moves are unsupported;
+- normal world unload relies on Paper's `unloadWorld(..., true)` as the single save boundary instead of forcing an additional explicit synchronous world save first;
 - `PaperTransferPayloadAdapter` and `PaperMapActionPayloadAdapter` remain adapters over canonical transfer/map/application owners;
 - optional Xaero integration remains presentation/input only and has one version-pinned fullscreen-map accessor;
 - Xaero `Teleport Here` and `Export Area` controls plus P/O fallbacks compile against the pinned 1.21.4 client target.
@@ -47,9 +52,13 @@ Export Area shutdown lease handling     hardened
 multi-client global transfer lock       removed
 per-chunk reopen/skip filesystem cost   replaced by seekable FileChannel
 one-RTT-per-chunk transfer flow         replaced by bounded 4-chunk pipeline
+upload post-transfer full-file rehash   replaced by incremental SHA-256
 long export source-world downtime       reduced to snapshot window
 stalled transfer slot/file handle       bounded by idle-session reclamation
 oversized disk admission risk           preflighted against usable transfer storage
+archive stream syscall overhead         reduced by bounded buffering
+large failed-import cleanup list        replaced by streaming tree walk
+unload duplicate synchronous save       removed
 network semantic dependency on tunnel   explicitly prohibited
 ```
 
@@ -77,12 +86,12 @@ Do not build a custom NAT traversal/relay stack into World Manager without a fut
 
 Do not add another backend subsystem before runtime evidence exists. The meaningful remaining boundary is `LOCAL_CODE` / `LIVE_SERVER` validation with Paper 1.21.4 + Fabric client + pinned Xaero.
 
-Before live execution, the remaining remote-only review should be limited to overall active-performance budgeting and user-flow consistency; do not invent new networking layers. The first live pass should then verify plugin enable/disable, real world creation/load/unload, fallback/player evacuation behavior, settings persistence, safe-surface teleport, Xaero fullscreen control placement and coordinate transform, two-corner Export Area, immediate post-snapshot world restoration, native file dialogs, large pipelined upload/download, timeout/disconnect/error recovery, converter bootstrap/update, Java↔Bedrock conversion, and `.mcworld` opening.
+Before live execution, the remaining remote-only review should be limited to user-flow consistency and test-plan ordering; the active CPU/RAM/disk/network paths have already received a bounded source-level performance pass. The first live pass should verify plugin enable/disable, real world creation/load/unload, fallback/player evacuation behavior, settings persistence, safe-surface teleport, Xaero fullscreen control placement and coordinate transform, two-corner Export Area, immediate post-snapshot world restoration, native file dialogs, large pipelined upload/download, timeout/disconnect/error recovery, converter bootstrap/update, Java↔Bedrock conversion, and `.mcworld` opening.
 
-Measure transfer throughput/CPU/RAM/disk behavior under LAN and representative remote latency before changing the current 24 KiB × 4 window. Runtime evidence, not speculation, should drive any further window tuning or resume support.
+Measure transfer throughput/CPU/RAM/disk behavior under LAN and representative remote latency before changing the current 24 KiB × 4 window. Runtime evidence, not speculation, should drive any further window tuning, ZIP-compression tradeoffs, or resumable-transfer support.
 
 ## Proof State
 
-`REMOTE_GITHUB` is green through the transfer-resilience slice: Paper Maven verification/tests and Fabric Gradle compilation pass with protocol v2, seekable transfer channels, bounded per-player request lanes, client four-chunk pipelining, split Export snapshot/processing phases, idle-session reclamation, and upload disk-capacity preflight.
+`REMOTE_GITHUB` is green through the transfer-resilience slice. The current performance-hardening head must retain the same Paper Maven verification/tests and Fabric Gradle compilation before it is treated as the new remote-ready baseline.
 
 This does **not** prove actual running-server behavior, real remote throughput, packet behavior under latency/loss, Xaero mixin/runtime transforms, native OS dialogs, multi-gigabyte filesystem behavior, live Chunker conversion quality, NAT reachability, or Java↔Bedrock fidelity. Those remain `LOCAL_CODE` / `LIVE_SERVER` proof.
