@@ -104,21 +104,36 @@ Paper/Bukkit runtime mutations must run on the Paper primary thread.
 
 Heavy file work, ZIP packaging, conversion, and hashing must run off the Paper primary thread.
 
-The canonical application services define operation phases. Transport adapters only dispatch those phases onto the correct execution context.
+The canonical application services define operation phases. Transport adapters only dispatch work through the shared orchestration boundary and handle transport-specific request/response delivery.
 
 ## Heavy-operation coordination
 
-Desktop heavy operations use `WorldTaskRunner` for bounded asynchronous execution and task observation.
+`WorldHeavyOperationOrchestrator` is the shared phased orchestration boundary for heavy operations used by both Desktop HTTP and the Fabric world-control transport.
 
-Fabric plugin-message operations currently preserve the existing request/response contract, but still delegate the actual operation phases to the same services and `WorldOperationCoordinator`. They must not duplicate service logic.
+It centralizes:
 
-Long-term consolidation should move common heavy-operation orchestration into a shared application-level coordinator without breaking the Fabric protocol or desktop task contract.
+- Clone `prepare → file phase → finish`
+- Delete `prepare → staged delete → finish`
+- Export `prepare → snapshot → source resume → package/convert → finish`
+- Import `prepare → validate/convert/publish → finish`
+- Paper main-thread dispatch for lifecycle-sensitive phases
+- finish/error combination semantics
+
+The orchestrator does **not** own domain logic or storage implementations. Those remain inside `WorldCloneService`, `WorldDeleteService`, `WorldExportService`, and `WorldImportService`.
+
+Desktop wraps the shared orchestrator with `WorldTaskRunner`, which provides bounded worker concurrency, bounded queueing, progress snapshots, and task observation.
+
+Fabric keeps its existing plugin-message request/response contract and per-player in-flight guard, while delegating the same heavy operation flow to the shared orchestrator.
+
+`Backup` remains desktop-only at this stage and directly uses `WorldBackupService`; there is no duplicate Fabric backup path to consolidate.
+
+`PaperMapActionPayloadAdapter` retains its area-export-specific orchestration because it has a distinct Xaero/map contract and intentionally restores player access immediately after area snapshot capture. It still delegates all export domain work to `WorldExportService`.
 
 ## Bootstrap ownership
 
-`WorldManagerPlugin` is the canonical Paper entry point and lifecycle owner.
+`WorldManagerPlugin extends JavaPlugin` is the single canonical Paper entry point and lifecycle owner.
 
-The historical `LazyBuilderPlugin` type is now compatibility-only and contains no bootstrap state or lifecycle behavior. Remove it after remaining adapter constructor types have been generalized away from the historical class name.
+The historical `LazyBuilderPlugin` compatibility base has been removed. Paper adapters and `WorldManager` depend only on `JavaPlugin` or explicit World-Manager services.
 
 ## Security and maintenance rules
 
@@ -131,4 +146,5 @@ The historical `LazyBuilderPlugin` type is now compatibility-only and contains n
 7. Execute Bukkit/Paper runtime mutations on the server primary thread.
 8. Keep all world business logic inside World-Manager services, never inside UI or transport layers.
 9. Desktop HTTP and Fabric plugin messaging are client transports, not separate authorities.
-10. CI/source proof is not a substitute for live Paper/Fabric/Desktop runtime validation.
+10. Keep shared heavy-operation phase sequencing in `WorldHeavyOperationOrchestrator`; transports own only transport concerns.
+11. CI/source proof is not a substitute for live Paper/Fabric/Desktop runtime validation.
