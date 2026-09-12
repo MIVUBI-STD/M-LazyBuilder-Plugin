@@ -8,7 +8,13 @@ export const runtimeProduct = {
     restart: runtimeApi.restartServer
   },
   plugins: {
-    list: runtimeApi.listPlugins
+    list: runtimeApi.listPlugins,
+    install: runtimeApi.installPlugin,
+    update: runtimeApi.updatePlugin,
+    setEnabled: runtimeApi.setPluginEnabled,
+    remove: runtimeApi.removePlugin,
+    resolveDuplicates: runtimeApi.resolvePluginDuplicates,
+    setCategory: runtimeApi.setPluginCategory
   },
   worlds: {
     list: runtimeApi.listWorlds
