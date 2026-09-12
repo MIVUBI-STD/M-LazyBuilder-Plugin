@@ -10,6 +10,9 @@ import java.util.UUID;
 public interface WorldFileRepository {
     Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException;
 
+    /** Move one managed world into an owned workspace before destructive deletion is committed. */
+    Path stageDelete(WorldRecord world, UUID operationId) throws IOException;
+
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
     void deleteWorld(WorldRecord world) throws IOException;
