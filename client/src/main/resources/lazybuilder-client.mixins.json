@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "com.halokaryamedia.lazybuilder.client.xaero",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "XaeroMapAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

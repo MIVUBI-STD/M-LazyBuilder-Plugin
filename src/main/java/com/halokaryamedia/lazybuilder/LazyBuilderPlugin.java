@@ -21,6 +21,7 @@ public final class LazyBuilderPlugin extends JavaPlugin {
 
         this.mapActionPayloadAdapter = new PaperMapActionPayloadAdapter(
                 this,
+                worldManager.worldRegistry(),
                 worldManager.worldLocationTeleportService(),
                 worldManager.worldExportService()
         );

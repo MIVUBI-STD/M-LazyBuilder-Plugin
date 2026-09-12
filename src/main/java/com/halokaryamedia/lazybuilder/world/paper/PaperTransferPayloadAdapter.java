@@ -133,7 +133,13 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
             case TransferWireProtocol.UploadChunk chunk -> {
                 var progress = transfers.acceptUploadChunk(
                         owner, chunk.sessionId(), chunk.chunkIndex(), chunk.data());
-                yield TransferWireProtocol.uploadProgress(chunk.sessionId(), progress);
+                yield TransferWireProtocol.uploadProgress(
+                        chunk.sessionId(),
+                        progress.receivedBytes(),
+                        progress.totalBytes(),
+                        progress.nextChunkIndex(),
+                        progress.totalChunks()
+                );
             }
             case TransferWireProtocol.FinishUpload finish -> {
                 Path artifact = transfers.finishUpload(owner, finish.sessionId());
@@ -149,7 +155,8 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
             }
             case TransferWireProtocol.DownloadChunkRequest chunk -> {
                 var data = transfers.readDownloadChunk(owner, chunk.sessionId(), chunk.chunkIndex());
-                yield TransferWireProtocol.downloadChunk(chunk.sessionId(), data);
+                yield TransferWireProtocol.downloadChunk(
+                        chunk.sessionId(), data.chunkIndex(), data.bytes(), data.last());
             }
             case TransferWireProtocol.FinishDownload finish -> {
                 transfers.finishDownload(owner, finish.sessionId());

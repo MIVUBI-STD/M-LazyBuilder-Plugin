@@ -5,6 +5,8 @@ import com.halokaryamedia.lazybuilder.world.application.WorldAreaSelection;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportService;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
@@ -20,6 +22,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
 
     private final LazyBuilderPlugin plugin;
+    private final WorldRegistry registry;
     private final WorldLocationTeleportService teleportService;
     private final WorldExportService exportService;
     private final Set<UUID> exportInFlight = ConcurrentHashMap.newKeySet();
@@ -27,10 +30,12 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
     public PaperMapActionPayloadAdapter(
             LazyBuilderPlugin plugin,
+            WorldRegistry registry,
             WorldLocationTeleportService teleportService,
             WorldExportService exportService
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.registry = Objects.requireNonNull(registry, "registry");
         this.teleportService = Objects.requireNonNull(teleportService, "teleportService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
     }
@@ -46,6 +51,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         if (!started) return;
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
+        exportInFlight.clear();
         started = false;
     }
 
@@ -62,9 +68,23 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         }
 
         switch (request) {
+            case MapActionWireProtocol.CurrentWorldRequest ignored -> handleCurrentWorld(player);
             case MapActionWireProtocol.TeleportLocation teleport -> handleTeleport(player, teleport);
             case MapActionWireProtocol.ExportArea export -> handleExportArea(player, export);
         }
+    }
+
+    private void handleCurrentWorld(Player player) {
+        if (!player.hasPermission(TELEPORT_PERMISSION) && !player.hasPermission(MANAGE_PERMISSION)) {
+            send(player, MapActionWireProtocol.error("Missing LazyBuilder world permission"));
+            return;
+        }
+        WorldRecord world = registry.findByFolderName(player.getWorld().getName()).orElse(null);
+        if (world == null) {
+            send(player, MapActionWireProtocol.error("Current world is not managed by LazyBuilder"));
+            return;
+        }
+        send(player, MapActionWireProtocol.currentWorld(world.id(), world.displayName(), world.folderName()));
     }
 
     private void handleTeleport(Player player, MapActionWireProtocol.TeleportLocation request) {

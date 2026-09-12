@@ -2,96 +2,72 @@ package com.halokaryamedia.lazybuilder.world.transfer;
 
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TransferWireProtocolTest {
     @Test
-    void decodesBeginUploadWithVersionedLengthPrefixedStrings() throws Exception {
-        byte[] payload = request(1, out -> {
-            string(out, "build.zip");
-            out.writeLong(42L);
-            string(out, "a".repeat(64));
-        });
+    void requestRoundTripsAcrossSharedCodec() throws Exception {
+        var begin = new TransferWireProtocol.BeginUpload("build.zip", 42L, "a".repeat(64));
+        var decodedBegin = (TransferWireProtocol.BeginUpload) TransferWireProtocol.decodeRequest(
+                TransferWireProtocol.encodeRequest(begin));
+        assertEquals(begin, decodedBegin);
 
-        var request = (TransferWireProtocol.BeginUpload) TransferWireProtocol.decodeRequest(payload);
-        assertEquals("build.zip", request.fileName());
-        assertEquals(42L, request.totalBytes());
-        assertEquals("a".repeat(64), request.sha256());
-    }
-
-    @Test
-    void decodesUploadChunkWithoutSharingMutableInput() throws Exception {
         UUID id = UUID.randomUUID();
         byte[] data = new byte[]{1, 2, 3};
-        byte[] payload = request(2, out -> {
-            uuid(out, id);
-            out.writeInt(0);
-            out.writeInt(data.length);
-            out.write(data);
-        });
-
-        var request = (TransferWireProtocol.UploadChunk) TransferWireProtocol.decodeRequest(payload);
-        assertEquals(id, request.sessionId());
-        assertEquals(0, request.chunkIndex());
-        assertArrayEquals(data, request.data());
-        byte[] returned = request.data();
+        var chunk = new TransferWireProtocol.UploadChunk(id, 0, data);
+        var decodedChunk = (TransferWireProtocol.UploadChunk) TransferWireProtocol.decodeRequest(
+                TransferWireProtocol.encodeRequest(chunk));
+        assertEquals(id, decodedChunk.sessionId());
+        assertEquals(0, decodedChunk.chunkIndex());
+        assertArrayEquals(data, decodedChunk.data());
+        byte[] returned = decodedChunk.data();
         returned[0] = 99;
-        assertArrayEquals(data, request.data());
+        assertArrayEquals(data, decodedChunk.data());
     }
 
     @Test
-    void rejectsUnknownVersionAndTrailingBytes() throws Exception {
-        byte[] wrongVersion = requestWithVersion(2, 5, out -> string(out, "build.zip"));
-        assertThrows(java.io.IOException.class, () -> TransferWireProtocol.decodeRequest(wrongVersion));
+    void responseRoundTripsForClientConsumption() throws Exception {
+        UUID id = UUID.randomUUID();
+        TransferDescriptor descriptor = new TransferDescriptor(
+                id, "build.zip", 100L, 24, 5, "b".repeat(64));
+        var accepted = (TransferWireProtocol.DownloadAccepted) TransferWireProtocol.decodeResponse(
+                TransferWireProtocol.downloadAccepted(descriptor));
+        assertEquals(descriptor, accepted.descriptor());
 
-        byte[] valid = request(5, out -> string(out, "build.zip"));
-        byte[] trailing = java.util.Arrays.copyOf(valid, valid.length + 1);
-        assertThrows(java.io.IOException.class, () -> TransferWireProtocol.decodeRequest(trailing));
+        byte[] data = new byte[]{4, 5, 6};
+        var chunk = (TransferWireProtocol.DownloadChunkData) TransferWireProtocol.decodeResponse(
+                TransferWireProtocol.downloadChunk(id, 2, data, true));
+        assertEquals(id, chunk.sessionId());
+        assertEquals(2, chunk.chunkIndex());
+        assertTrue(chunk.last());
+        assertArrayEquals(data, chunk.data());
+    }
+
+    @Test
+    void rejectsUnknownVersionAndTrailingBytesOnBothDirections() throws Exception {
+        byte[] request = TransferWireProtocol.encodeRequest(new TransferWireProtocol.BeginDownload("build.zip"));
+        byte[] wrongVersion = request.clone();
+        wrongVersion[0] = 2;
+        assertThrows(IOException.class, () -> TransferWireProtocol.decodeRequest(wrongVersion));
+
+        byte[] response = TransferWireProtocol.ack(TransferWireProtocol.opcode(
+                new TransferWireProtocol.FinishDownload(UUID.randomUUID())));
+        byte[] trailing = Arrays.copyOf(response, response.length + 1);
+        assertThrows(IOException.class, () -> TransferWireProtocol.decodeResponse(trailing));
     }
 
     @Test
     void responseChunkRemainsInsideWireCeiling() throws Exception {
         UUID id = UUID.randomUUID();
         byte[] data = new byte[TransferWireProtocol.MAX_CHUNK_BYTES];
-        byte[] payload = TransferWireProtocol.downloadChunk(
-                id,
-                new TransferSessionService.DownloadChunk(0, data, false)
-        );
-        org.junit.jupiter.api.Assertions.assertTrue(payload.length <= TransferWireProtocol.MAX_MESSAGE_BYTES);
+        byte[] payload = TransferWireProtocol.downloadChunk(id, 0, data, false);
+        assertTrue(payload.length <= TransferWireProtocol.MAX_MESSAGE_BYTES);
     }
-
-    private static byte[] request(int opcode, Writer writer) throws Exception {
-        return requestWithVersion(TransferWireProtocol.VERSION, opcode, writer);
-    }
-
-    private static byte[] requestWithVersion(int version, int opcode, Writer writer) throws Exception {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        try (DataOutputStream out = new DataOutputStream(buffer)) {
-            out.writeByte(version);
-            out.writeByte(opcode);
-            writer.write(out);
-        }
-        return buffer.toByteArray();
-    }
-
-    private static void string(DataOutputStream out, String value) throws Exception {
-        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        out.writeInt(bytes.length);
-        out.write(bytes);
-    }
-
-    private static void uuid(DataOutputStream out, UUID id) throws Exception {
-        out.writeLong(id.getMostSignificantBits());
-        out.writeLong(id.getLeastSignificantBits());
-    }
-
-    @FunctionalInterface
-    private interface Writer { void write(DataOutputStream out) throws Exception; }
 }
