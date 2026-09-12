@@ -42,6 +42,7 @@ export const runtimeApi = {
   restartServer: () => invoke<void>('server_restart'),
 
   listPlugins: () => invoke<PluginSummary[]>('plugin_list'),
+  pickPluginJar: () => invoke<string | null>('plugin_pick_jar'),
   installPlugin: (jarPath: string) => invoke<PluginInstallResult>('plugin_install', { jarPath }),
   updatePlugin: (pluginId: string, jarPath: string) =>
     invoke<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
