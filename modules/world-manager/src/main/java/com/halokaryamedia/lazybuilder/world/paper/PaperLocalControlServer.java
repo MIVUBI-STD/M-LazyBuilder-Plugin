@@ -4,12 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
 import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
-import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
-import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
-import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
-import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
@@ -59,11 +55,8 @@ public final class PaperLocalControlServer {
     private final WorldCreationService creation;
     private final WorldSettingsService settings;
     private final WorldLifecycleService lifecycle;
-    private final WorldCloneService cloneService;
     private final WorldBackupService backupService;
-    private final WorldExportService exportService;
-    private final WorldImportService importService;
-    private final WorldDeleteService deleteService;
+    private final WorldHeavyOperationOrchestrator heavyOperations;
     private final LocalControlImportUploadService importUploads;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
@@ -78,11 +71,8 @@ public final class PaperLocalControlServer {
             WorldCreationService creation,
             WorldSettingsService settings,
             WorldLifecycleService lifecycle,
-            WorldCloneService cloneService,
             WorldBackupService backupService,
-            WorldExportService exportService,
-            WorldImportService importService,
-            WorldDeleteService deleteService,
+            WorldHeavyOperationOrchestrator heavyOperations,
             LocalControlImportUploadService importUploads,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
@@ -93,11 +83,8 @@ public final class PaperLocalControlServer {
         this.creation = Objects.requireNonNull(creation, "creation");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
-        this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.backupService = Objects.requireNonNull(backupService, "backupService");
-        this.exportService = Objects.requireNonNull(exportService, "exportService");
-        this.importService = Objects.requireNonNull(importService, "importService");
-        this.deleteService = Objects.requireNonNull(deleteService, "deleteService");
+        this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
         this.importUploads = Objects.requireNonNull(importUploads, "importUploads");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
@@ -307,7 +294,8 @@ public final class PaperLocalControlServer {
                 WorldTaskType.CLONE,
                 sourceId,
                 "Clone queued.",
-                progress -> runCloneTask(sourceId, destinationFolder, displayName, progress)
+                progress -> heavyOperations.cloneWorld(
+                        sourceId, destinationFolder, displayName, progress::update).id().toString()
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -333,7 +321,8 @@ public final class PaperLocalControlServer {
                 WorldTaskType.EXPORT,
                 worldId,
                 "Export queued.",
-                progress -> runExportTask(worldId, targetFormat, artifactName, progress)
+                progress -> heavyOperations.exportWorld(
+                        worldId, targetFormat, artifactName, progress::update).artifact().getFileName().toString()
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -349,7 +338,8 @@ public final class PaperLocalControlServer {
                 WorldTaskType.IMPORT,
                 null,
                 "Import queued.",
-                progress -> runImportTask(artifactName, destinationFolder, displayName, progress)
+                progress -> heavyOperations.importWorld(
+                        artifactName, destinationFolder, displayName, progress::update).id().toString()
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -362,39 +352,10 @@ public final class PaperLocalControlServer {
                 WorldTaskType.DELETE,
                 worldId,
                 "Delete queued.",
-                progress -> runDeleteTask(worldId, confirmation, progress)
+                progress -> heavyOperations.deleteWorld(
+                        worldId, confirmation, progress::update).folderName()
         );
         sendJson(exchange, 202, taskResponse(queued));
-    }
-
-    private String runCloneTask(
-            WorldId sourceId,
-            String destinationFolder,
-            String displayName,
-            WorldTaskWork.Progress progress
-    ) throws Exception {
-        progress.update(10, "Preparing source world on Paper.");
-        WorldCloneService.CloneTask cloneTask = sync(() -> cloneService.prepare(sourceId, destinationFolder, displayName));
-        Exception failure = null;
-        WorldRecord cloned = null;
-        try {
-            progress.update(30, "Copying world files.");
-            cloned = cloneService.executeFilePhase(cloneTask);
-            progress.update(85, "Clone published; restoring source runtime state.");
-        } catch (Exception exception) {
-            failure = exception;
-        }
-        try {
-            sync(() -> {
-                cloneService.finish(cloneTask);
-                return null;
-            });
-        } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
-        }
-        if (failure != null) throw failure;
-        progress.update(95, "Clone finalized.");
-        return Objects.requireNonNull(cloned, "cloned").id().toString();
     }
 
     private String runBackupTask(WorldId worldId, WorldTaskWork.Progress progress) throws Exception {
@@ -420,98 +381,6 @@ public final class PaperLocalControlServer {
         if (failure != null) throw failure;
         progress.update(95, "Backup finalized.");
         return Objects.requireNonNull(result, "result").backupId();
-    }
-
-    private String runExportTask(
-            WorldId worldId,
-            String targetFormat,
-            String artifactName,
-            WorldTaskWork.Progress progress
-    ) throws Exception {
-        progress.update(10, "Preparing source world on Paper.");
-        WorldExportService.ExportTask exportTask = sync(() -> exportService.prepare(worldId, targetFormat, artifactName));
-        Exception failure = null;
-        WorldExportService.ExportResult result = null;
-        try {
-            progress.update(25, "Capturing consistent world snapshot.");
-            exportService.captureSnapshot(exportTask);
-            progress.update(45, "Restoring source runtime state.");
-            sync(() -> {
-                exportService.resumeSourceAfterSnapshot(exportTask);
-                return null;
-            });
-            progress.update(60, "Packaging export artifact.");
-            result = exportService.processSnapshot(exportTask);
-            progress.update(90, "Export artifact ready; finalizing task.");
-        } catch (Exception exception) {
-            failure = exception;
-        }
-        try {
-            sync(() -> {
-                exportService.finish(exportTask);
-                return null;
-            });
-        } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
-        }
-        if (failure != null) throw failure;
-        progress.update(95, "Export finalized.");
-        return Objects.requireNonNull(result, "result").artifact().getFileName().toString();
-    }
-
-    private String runImportTask(
-            String artifactName,
-            String destinationFolder,
-            String displayName,
-            WorldTaskWork.Progress progress
-    ) throws Exception {
-        progress.update(10, "Preparing import.");
-        WorldImportService.ImportTask importTask = importService.prepare(artifactName, destinationFolder, displayName);
-        Exception failure = null;
-        WorldRecord imported = null;
-        try {
-            progress.update(30, "Validating and converting import artifact.");
-            imported = importService.executeFilePhase(importTask);
-            progress.update(90, "Imported world published; finalizing task.");
-        } catch (Exception exception) {
-            failure = exception;
-        }
-        try {
-            importService.finish(importTask);
-        } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
-        }
-        if (failure != null) throw failure;
-        progress.update(95, "Import finalized.");
-        return Objects.requireNonNull(imported, "imported").id().toString();
-    }
-
-    private String runDeleteTask(
-            WorldId worldId,
-            String typedFolderName,
-            WorldTaskWork.Progress progress
-    ) throws Exception {
-        progress.update(10, "Verifying delete confirmation and fallback protection.");
-        WorldDeleteService.DeleteTask deleteTask = sync(() -> deleteService.prepare(worldId, typedFolderName));
-        Exception failure = null;
-        try {
-            progress.update(35, "Staging world for reversible deletion.");
-            deleteService.executeFilePhase(deleteTask);
-            progress.update(90, "Deletion committed; finalizing task.");
-        } catch (Exception exception) {
-            failure = exception;
-        }
-        try {
-            sync(() -> {
-                deleteService.finish(deleteTask);
-                return null;
-            });
-        } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
-        }
-        if (failure != null) throw failure;
-        progress.update(95, "Delete finalized.");
-        return typedFolderName;
     }
 
     private static Exception combine(Exception primary, Exception secondary) {
