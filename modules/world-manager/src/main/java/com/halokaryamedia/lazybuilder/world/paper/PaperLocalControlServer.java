@@ -1,6 +1,17 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
+import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
+import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
+import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
+import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
+import com.halokaryamedia.lazybuilder.world.application.WorldSpawnControl;
+import com.halokaryamedia.lazybuilder.world.application.WorldWeather;
+import com.halokaryamedia.lazybuilder.world.registry.WorldId;
+import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.sun.net.httpserver.HttpExchange;
@@ -13,31 +24,46 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Loopback-only structured bridge for the LazyBuilder desktop application.
  *
- * <p>This adapter deliberately exposes only World-Manager state. The desktop app remains a client;
- * world lifecycle/business logic stays in World-Manager services.</p>
+ * <p>The HTTP layer is deliberately thin. All world mutations are delegated to the existing
+ * World-Manager application services and marshalled onto the Paper main thread.</p>
  */
 public final class PaperLocalControlServer {
     public static final String TOKEN_ENV = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
     public static final String PORT_ENV = "LAZYBUILDER_WORLD_CONTROL_PORT";
     public static final int DEFAULT_PORT = 17842;
+    private static final Gson GSON = new Gson();
+    private static final long MAIN_THREAD_TIMEOUT_SECONDS = 30L;
 
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
     private final WorldRuntimeService runtime;
+    private final WorldCreationService creation;
+    private final WorldSettingsService settings;
 
     private HttpServer server;
     private ExecutorService executor;
 
-    public PaperLocalControlServer(JavaPlugin plugin, WorldRegistry registry, WorldRuntimeService runtime) {
+    public PaperLocalControlServer(
+            JavaPlugin plugin,
+            WorldRegistry registry,
+            WorldRuntimeService runtime,
+            WorldCreationService creation,
+            WorldSettingsService settings
+    ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.creation = Objects.requireNonNull(creation, "creation");
+        this.settings = Objects.requireNonNull(settings, "settings");
     }
 
     public void start() {
@@ -78,44 +104,194 @@ public final class PaperLocalControlServer {
     private void handleStatus(HttpExchange exchange, String token) throws IOException {
         if (!authorize(exchange, token)) return;
         if (!"GET".equals(exchange.getRequestMethod())) {
-            send(exchange, 405, "{\"error\":\"method_not_allowed\"}");
+            sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
             return;
         }
-        send(exchange, 200, "{\"status\":\"ready\",\"protocolVersion\":1}");
+        sendJson(exchange, 200, new StatusResponse("ready", 2));
     }
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
         if (!authorize(exchange, token)) return;
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            send(exchange, 405, "{\"error\":\"method_not_allowed\"}");
+
+        String relative = exchange.getRequestURI().getPath().substring("/v1/worlds".length());
+        try {
+            if (relative.isEmpty() || "/".equals(relative)) {
+                handleWorldCollection(exchange);
+                return;
+            }
+
+            String[] parts = relative.substring(1).split("/");
+            if (parts.length < 2 || parts.length > 2) {
+                sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
+                return;
+            }
+
+            WorldId worldId;
+            try {
+                worldId = WorldId.parse(parts[0]);
+            } catch (RuntimeException exception) {
+                sendError(exchange, 400, "invalid_world_id", "World id is invalid.");
+                return;
+            }
+
+            switch (parts[1]) {
+                case "load" -> handleLoad(exchange, worldId);
+                case "unload" -> handleUnload(exchange, worldId);
+                case "settings" -> handleSettings(exchange, worldId);
+                default -> sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
+            }
+        } catch (IllegalArgumentException exception) {
+            sendError(exchange, 400, "invalid_request", exception.getMessage());
+        } catch (IllegalStateException exception) {
+            sendError(exchange, 409, "world_state_conflict", exception.getMessage());
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Local World control request failed: " + exception.getMessage());
+            sendError(exchange, 500, "world_operation_failed", "World-Manager could not complete the request.");
+        }
+    }
+
+    private void handleWorldCollection(HttpExchange exchange) throws Exception {
+        if ("GET".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 200, new WorldListResponse(sync(() -> registry.all().stream()
+                    .map(this::summary)
+                    .toList())));
             return;
         }
-
-        List<WorldRecord> worlds = registry.all();
-        StringBuilder json = new StringBuilder(128 + worlds.size() * 160);
-        json.append("{\"worlds\":[");
-        for (int index = 0; index < worlds.size(); index++) {
-            if (index > 0) json.append(',');
-            WorldRecord world = worlds.get(index);
-            json.append('{')
-                    .append("\"id\":\"").append(escape(world.id().toString())).append("\",")
-                    .append("\"folderName\":\"").append(escape(world.folderName())).append("\",")
-                    .append("\"displayName\":\"").append(escape(world.displayName())).append("\",")
-                    .append("\"kind\":\"").append(world.kind().name()).append("\",")
-                    .append("\"lifecycle\":\"").append(world.lifecycle().name()).append("\",")
-                    .append("\"runtimeState\":\"").append(runtime.state(world.id()).name()).append("\",")
-                    .append("\"autoLoad\":").append(world.autoLoad()).append(',')
-                    .append("\"defaultGameMode\":\"").append(escape(world.defaultGameMode())).append("\"")
-                    .append('}');
+        if ("POST".equals(exchange.getRequestMethod())) {
+            CreateWorldRequest request = readJson(exchange, CreateWorldRequest.class);
+            if (request.folderName() == null || request.folderName().isBlank()) {
+                throw new IllegalArgumentException("folderName must not be blank");
+            }
+            String displayName = request.displayName() == null || request.displayName().isBlank()
+                    ? request.folderName()
+                    : request.displayName().trim();
+            WorldKind kind = parseCreateKind(request.kind());
+            WorldRecord created = sync(() -> creation.create(request.folderName().trim(), displayName, kind));
+            sendJson(exchange, 201, summary(created));
+            return;
         }
-        json.append("]}");
-        send(exchange, 200, json.toString());
+        sendError(exchange, 405, "method_not_allowed", "Only GET and POST are supported.");
+    }
+
+    private void handleLoad(HttpExchange exchange, WorldId worldId) throws Exception {
+        requirePost(exchange);
+        WorldRecord world = sync(() -> runtime.load(worldId));
+        sendJson(exchange, 200, summary(world));
+    }
+
+    private void handleUnload(HttpExchange exchange, WorldId worldId) throws Exception {
+        requirePost(exchange);
+        WorldRecord world = sync(() -> runtime.unload(worldId));
+        sendJson(exchange, 200, summary(world));
+    }
+
+    private void handleSettings(HttpExchange exchange, WorldId worldId) throws Exception {
+        if ("GET".equals(exchange.getRequestMethod())) {
+            WorldSettingsSnapshot snapshot = sync(() -> settings.snapshot(worldId));
+            sendJson(exchange, 200, settingsResponse(snapshot));
+            return;
+        }
+        if ("PATCH".equals(exchange.getRequestMethod())) {
+            UpdateWorldSettingsRequest request = readJson(exchange, UpdateWorldSettingsRequest.class);
+            WorldSettingsSnapshot snapshot = sync(() -> applySettings(worldId, request));
+            sendJson(exchange, 200, settingsResponse(snapshot));
+            return;
+        }
+        sendError(exchange, 405, "method_not_allowed", "Only GET and PATCH are supported.");
+    }
+
+    private WorldSettingsSnapshot applySettings(WorldId worldId, UpdateWorldSettingsRequest request) {
+        if (request.autoLoad() != null) settings.setAutoLoad(worldId, request.autoLoad());
+        if (request.defaultGameMode() != null) {
+            settings.setDefaultGameMode(worldId, WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase()));
+        }
+        if (request.timeOfDayTicks() != null) settings.setTime(worldId, request.timeOfDayTicks());
+        if (request.weather() != null) {
+            settings.setWeather(worldId, WorldWeather.valueOf(request.weather().trim().toUpperCase()));
+        }
+        if (request.naturalSpawning() != null) {
+            settings.setSpawning(worldId, WorldSpawnControl.NATURAL, request.naturalSpawning());
+        }
+        if (request.daylightCycle() != null) {
+            settings.setGameRule(worldId, "doDaylightCycle", request.daylightCycle().toString());
+        }
+        if (request.weatherCycle() != null) {
+            settings.setGameRule(worldId, "doWeatherCycle", request.weatherCycle().toString());
+        }
+        return settings.snapshot(worldId);
+    }
+
+    private ManagedWorldResponse summary(WorldRecord world) {
+        return new ManagedWorldResponse(
+                world.id().toString(),
+                world.displayName(),
+                world.kind().name(),
+                world.lifecycle().name(),
+                runtime.state(world.id()).name(),
+                world.autoLoad(),
+                world.defaultGameMode()
+        );
+    }
+
+    private static WorldKind parseCreateKind(String value) {
+        if (value == null || value.isBlank()) return WorldKind.FLAT;
+        WorldKind kind = WorldKind.valueOf(value.trim().toUpperCase());
+        if (kind == WorldKind.IMPORTED) {
+            throw new IllegalArgumentException("Create World supports only FLAT or VOID.");
+        }
+        return kind;
+    }
+
+    private static WorldSettingsResponse settingsResponse(WorldSettingsSnapshot snapshot) {
+        return new WorldSettingsResponse(
+                snapshot.world().id().toString(),
+                snapshot.world().displayName(),
+                snapshot.world().autoLoad(),
+                snapshot.defaultGameMode().name(),
+                snapshot.runtime().timeOfDayTicks(),
+                snapshot.runtime().weather().name(),
+                snapshot.runtime().spawning().naturalSpawning(),
+                gameRuleBoolean(snapshot, "doDaylightCycle"),
+                gameRuleBoolean(snapshot, "doWeatherCycle")
+        );
+    }
+
+    private static boolean gameRuleBoolean(WorldSettingsSnapshot snapshot, String name) {
+        return snapshot.runtime().gamerules().stream()
+                .filter(rule -> rule.name().equalsIgnoreCase(name))
+                .findFirst()
+                .map(GameRuleSetting::value)
+                .map(Boolean::parseBoolean)
+                .orElse(false);
+    }
+
+    private <T> T sync(Callable<T> action) throws Exception {
+        if (plugin.getServer().isPrimaryThread()) return action.call();
+        Future<T> future = plugin.getServer().getScheduler().callSyncMethod(plugin, action);
+        return future.get(MAIN_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private static <T> T readJson(HttpExchange exchange, Class<T> type) throws IOException {
+        try (var reader = new java.io.InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8)) {
+            T payload = GSON.fromJson(reader, type);
+            if (payload == null) throw new IllegalArgumentException("Request body is required.");
+            return payload;
+        } catch (JsonParseException exception) {
+            throw new IllegalArgumentException("Request body contains invalid JSON.", exception);
+        }
+    }
+
+    private static void requirePost(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
+            throw new RequestHandledException();
+        }
     }
 
     private static boolean authorize(HttpExchange exchange, String expectedToken) throws IOException {
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
         if (!constantTimeEquals("Bearer " + expectedToken, authorization)) {
-            send(exchange, 401, "{\"error\":\"unauthorized\"}");
+            sendError(exchange, 401, "unauthorized", "Authentication failed.");
             return false;
         }
         return true;
@@ -133,6 +309,14 @@ public final class PaperLocalControlServer {
             difference |= a ^ b;
         }
         return difference == 0;
+    }
+
+    private static void sendJson(HttpExchange exchange, int status, Object payload) throws IOException {
+        send(exchange, status, GSON.toJson(payload));
+    }
+
+    private static void sendError(HttpExchange exchange, int status, String code, String message) throws IOException {
+        sendJson(exchange, status, new ErrorResponse(code, message == null ? "" : message));
     }
 
     private static void send(HttpExchange exchange, int status, String json) throws IOException {
@@ -158,22 +342,39 @@ public final class PaperLocalControlServer {
         }
     }
 
-    private static String escape(String value) {
-        StringBuilder escaped = new StringBuilder(value.length() + 8);
-        for (int index = 0; index < value.length(); index++) {
-            char ch = value.charAt(index);
-            switch (ch) {
-                case '\\' -> escaped.append("\\\\");
-                case '"' -> escaped.append("\\\"");
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    if (ch < 0x20) escaped.append(String.format("\\u%04x", (int) ch));
-                    else escaped.append(ch);
-                }
-            }
-        }
-        return escaped.toString();
-    }
+    private record StatusResponse(String status, int protocolVersion) {}
+    private record ErrorResponse(String error, String message) {}
+    private record WorldListResponse(List<ManagedWorldResponse> worlds) {}
+    private record ManagedWorldResponse(
+            String id,
+            String displayName,
+            String kind,
+            String lifecycle,
+            String runtimeState,
+            boolean autoLoad,
+            String defaultGameMode
+    ) {}
+    private record CreateWorldRequest(String folderName, String displayName, String kind) {}
+    private record UpdateWorldSettingsRequest(
+            Boolean autoLoad,
+            String defaultGameMode,
+            Long timeOfDayTicks,
+            String weather,
+            Boolean naturalSpawning,
+            Boolean daylightCycle,
+            Boolean weatherCycle
+    ) {}
+    private record WorldSettingsResponse(
+            String id,
+            String displayName,
+            boolean autoLoad,
+            String defaultGameMode,
+            long timeOfDayTicks,
+            String weather,
+            boolean naturalSpawning,
+            boolean daylightCycle,
+            boolean weatherCycle
+    ) {}
+
+    private static final class RequestHandledException extends RuntimeException {}
 }
