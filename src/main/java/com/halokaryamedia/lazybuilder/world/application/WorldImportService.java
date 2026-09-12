@@ -113,6 +113,16 @@ public final class WorldImportService {
             stateInitialized = true;
             persistence.save(registry.all());
             task.completed = true;
+
+            // The uploaded archive is an inbox artifact, not durable world state.
+            // Consume it only after the managed-world publication and registry
+            // persistence have committed. A cleanup failure must not roll back an
+            // already committed world; the leftover artifact may be removed later.
+            try {
+                imports.deleteArtifact(task.artifactName);
+            } catch (IOException cleanupFailure) {
+                task.artifactCleanupFailure = cleanupFailure;
+            }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
             if (stateInitialized) runtimeStates.remove(task.destination.id());
@@ -159,6 +169,7 @@ public final class WorldImportService {
         private final WorldRecord destination;
         private boolean completed;
         private boolean closed;
+        private IOException artifactCleanupFailure;
 
         private ImportTask(UUID operationId, String artifactName, WorldRecord destination) {
             this.operationId = Objects.requireNonNull(operationId, "operationId");
@@ -168,6 +179,7 @@ public final class WorldImportService {
 
         public WorldRecord destination() { return destination; }
         public boolean completed() { return completed; }
+        public IOException artifactCleanupFailure() { return artifactCleanupFailure; }
 
         private void requireOpen() {
             if (closed) throw new IllegalStateException("Import task is already closed");
