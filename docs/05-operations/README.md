@@ -15,7 +15,7 @@ This directory owns current continuation/proof only. Durable product and archite
 - failed conversion/import paths track and clean allocated workspaces before returning failure;
 - `BUILD_READY` reset persists its durable entry-mode preference before mutating Paper runtime and attempts metadata rollback if runtime reset fails;
 - native whole-world Java 1.21.4 export keeps the direct ZIP fast path; cross-version/cross-edition and Export Area use the verified converter path;
-- Export now separates safe snapshot capture from conversion/package processing: a previously loaded source is restored immediately after the snapshot and remains available while the owned snapshot is converted/packaged;
+- Export separates safe snapshot capture from conversion/package processing: a previously loaded source is restored immediately after the snapshot and remains available while the owned snapshot is converted/packaged;
 - the EXPORT lease remains held until the operation finishes, so early source reload does not permit conflicting World Manager mutations;
 - Export Area reuses `WorldExportService`, request-local pruning, existing export artifacts, and the existing transfer channel rather than creating parallel systems;
 - map Export tracks active tasks; shutdown stops accepting new map work and releases active Export leases without starting world loads during Paper teardown;
@@ -24,6 +24,8 @@ This directory owns current continuation/proof only. Durable product and archite
 - transfer protocol version 2 keeps 24 KiB data chunks but uses a bounded four-chunk credit window over the existing Minecraft play connection;
 - `PaperTransferPayloadAdapter` owns a bounded ordered request lane per player, preserving application order while allowing the client to pipeline a small chunk window;
 - protocol failures that identify an active transfer session clean that stale server session;
+- transfer sessions now carry a configurable idle timeout (default 300s, minimum configured value 30s); stale owner sessions are reclaimed opportunistically on the next owner request without a polling task;
+- upload admission checks current usable space on the transfer filesystem before accepting the declared file size, in addition to the configured upload-size ceiling;
 - the official Fabric client allows one active file transfer total at a time and mirrors the same four-chunk pipeline with positional local file I/O;
 - LazyBuilder client/server application networking is self-owned through `lazybuilder:transfer` and `lazybuilder:map`; it does not require a third-party VPN, SaaS relay, HTTP gateway, WebSocket service, cloud queue, or object store;
 - optional Tailscale/ZeroTier/tunnel products are deployment routing only and are outside LazyBuilder protocol ownership;
@@ -46,6 +48,8 @@ multi-client global transfer lock       removed
 per-chunk reopen/skip filesystem cost   replaced by seekable FileChannel
 one-RTT-per-chunk transfer flow         replaced by bounded 4-chunk pipeline
 long export source-world downtime       reduced to snapshot window
+stalled transfer slot/file handle       bounded by idle-session reclamation
+oversized disk admission risk           preflighted against usable transfer storage
 network semantic dependency on tunnel   explicitly prohibited
 ```
 
@@ -73,12 +77,12 @@ Do not build a custom NAT traversal/relay stack into World Manager without a fut
 
 Do not add another backend subsystem before runtime evidence exists. The meaningful remaining boundary is `LOCAL_CODE` / `LIVE_SERVER` validation with Paper 1.21.4 + Fabric client + pinned Xaero.
 
-The first live pass should verify plugin enable/disable, real world creation/load/unload, fallback/player evacuation behavior, settings persistence, safe-surface teleport, Xaero fullscreen control placement and coordinate transform, two-corner Export Area, immediate post-snapshot world restoration, native file dialogs, large pipelined upload/download, disconnect/error recovery, converter bootstrap/update, Java↔Bedrock conversion, and `.mcworld` opening.
+Before live execution, the remaining remote-only review should be limited to overall active-performance budgeting and user-flow consistency; do not invent new networking layers. The first live pass should then verify plugin enable/disable, real world creation/load/unload, fallback/player evacuation behavior, settings persistence, safe-surface teleport, Xaero fullscreen control placement and coordinate transform, two-corner Export Area, immediate post-snapshot world restoration, native file dialogs, large pipelined upload/download, timeout/disconnect/error recovery, converter bootstrap/update, Java↔Bedrock conversion, and `.mcworld` opening.
 
-Measure transfer throughput/CPU/RAM/disk behavior under LAN and representative remote latency before changing the current 24 KiB × 4 window. Runtime evidence, not speculation, should drive any further window tuning.
+Measure transfer throughput/CPU/RAM/disk behavior under LAN and representative remote latency before changing the current 24 KiB × 4 window. Runtime evidence, not speculation, should drive any further window tuning or resume support.
 
 ## Proof State
 
-`REMOTE_GITHUB` is green for the efficient-flow source lineage: Paper Maven verification/tests and Fabric Gradle compilation pass with protocol v2, seekable transfer channels, bounded per-player request lanes, client four-chunk pipelining, and split Export snapshot/processing phases.
+`REMOTE_GITHUB` is green through the transfer-resilience slice: Paper Maven verification/tests and Fabric Gradle compilation pass with protocol v2, seekable transfer channels, bounded per-player request lanes, client four-chunk pipelining, split Export snapshot/processing phases, idle-session reclamation, and upload disk-capacity preflight.
 
 This does **not** prove actual running-server behavior, real remote throughput, packet behavior under latency/loss, Xaero mixin/runtime transforms, native OS dialogs, multi-gigabyte filesystem behavior, live Chunker conversion quality, NAT reachability, or Java↔Bedrock fidelity. Those remain `LOCAL_CODE` / `LIVE_SERVER` proof.
