@@ -61,13 +61,13 @@ public final class WorldDeleteService {
     }
 
     /** Main-thread phase: exact confirmation, protection check, exclusive lease, and safe unload. */
-    public DeleteTask prepare(WorldId worldId, String typedFolderName) {
+    public DeleteTask prepare(WorldId worldId, String typedConfirmation) {
         Objects.requireNonNull(worldId, "worldId");
-        Objects.requireNonNull(typedFolderName, "typedFolderName");
+        Objects.requireNonNull(typedConfirmation, "typedConfirmation");
         WorldRecord world = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
-        if (!world.folderName().equals(typedFolderName)) {
-            throw new IllegalArgumentException("Delete confirmation must exactly match world folder name");
+        if (!world.folderName().equals(typedConfirmation) && !world.displayName().equals(typedConfirmation)) {
+            throw new IllegalArgumentException("Delete confirmation must exactly match the world display name or folder name");
         }
         if (protectedWorld.test(world)) {
             throw new IllegalStateException("The active fallback/default world cannot be deleted: " + world.folderName());
