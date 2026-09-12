@@ -54,6 +54,48 @@ Server owns:
 
 The client must not become authoritative for server state.
 
+## Xaero Action Contracts
+
+Xaero integration is an input/presentation adapter only. It must never directly mutate world files or resolve teleport height on the client.
+
+### Teleport to Location
+
+The client sends only the managed `WorldId` plus the selected block-space X/Z coordinate. `WorldLocationTeleportService` loads the world on demand and delegates final resolution to the Paper server.
+
+```text
+Xaero click
+→ WorldId + blockX + blockZ
+→ permission gate
+→ WorldLocationTeleportService
+→ load world if needed
+→ Paper safe-surface resolver
+→ teleport
+```
+
+For normal/flat/imported terrain the server resolves a safe standing location from X/Z, checks the world border, requires solid non-dangerous floor plus passable feet/head space, and applies the managed world's default game mode after successful teleport. Void worlds intentionally resolve to the managed world spawn/platform rather than generating or inventing terrain at the clicked coordinate.
+
+The client must not send or choose Y for this flow.
+
+### Export Area
+
+The client sends two block-space corners. `WorldAreaSelection` normalizes them and converts inclusive block coordinates to inclusive chunk bounds using floor division, including negative coordinates.
+
+```text
+Xaero rectangle
+→ x1,z1 + x2,z2
+→ WorldAreaSelection
+→ WorldExportService.prepareArea(...)
+→ safe world snapshot
+→ internal include-region pruning
+→ normal Export packaging/transfer flow
+```
+
+Export Area is not a second export system. It uses the same `WorldExportService`, operation lease, converter runtime, artifact store, and client download path as whole-world export.
+
+Whole-world native Java 1.21.4 export keeps its direct ZIP fast path. Any Export Area request uses the verified conversion runtime even when the target remains Java 1.21.4 because pruning must be applied. The generated pruning file is request-local and never shown in the UI.
+
+The internal pruning document applies the selected chunk rectangle to overworld, Nether, and End. This avoids Chunker's missing-config behavior from accidentally retaining an entire secondary dimension while the user asked for an area-only export.
+
 ## File Transfer Protocol
 
 World file transfer is request/event driven and uses bounded chunks. The server protocol core remains separate from the Paper transport adapter so there is only one upload/download session owner.
@@ -128,4 +170,5 @@ A partial upload lives only under `plugins/LazyBuilder/world/transfer` and is ne
 - keep network payloads bounded and action-specific;
 - no continuous polling when event/delta-based updates are sufficient;
 - no permanent transfer worker or socket loop beyond the normal Minecraft connection;
-- large-file hashing and chunk I/O run only in response to transfer requests.
+- large-file hashing and chunk I/O run only in response to transfer requests;
+- map teleport and Export Area perform no work until the player explicitly acts.
