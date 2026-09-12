@@ -1,4 +1,5 @@
 using System.Windows;
+using HaloKaryaMedia.LazyBuilder.Desktop.Modules.PluginManager;
 using HaloKaryaMedia.LazyBuilder.Desktop.Modules.ServerManager;
 using HaloKaryaMedia.LazyBuilder.Desktop.Shell;
 
@@ -6,7 +7,7 @@ namespace HaloKaryaMedia.LazyBuilder.Desktop;
 
 public partial class App : Application
 {
-    private DashboardViewModel? _dashboard;
+    private ShellViewModel? _shell;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -26,17 +27,21 @@ public partial class App : Application
         }
 
         var serverManager = new ServerProcessManager(workspaceRoot, options);
-        _dashboard = new DashboardViewModel(serverManager);
+        var dashboard = new DashboardViewModel(serverManager);
+        var pluginManager = new FileSystemPluginManager(workspaceRoot);
+        var plugins = new PluginsViewModel(pluginManager);
+        await plugins.InitializeAsync();
 
-        var window = new MainWindow(_dashboard);
+        _shell = new ShellViewModel(dashboard, plugins);
+        var window = new MainWindow(_shell);
         MainWindow = window;
         window.Show();
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
-        if (_dashboard is not null)
-            await _dashboard.DisposeAsync();
+        if (_shell is not null)
+            await _shell.DisposeAsync();
         base.OnExit(e);
     }
 }
