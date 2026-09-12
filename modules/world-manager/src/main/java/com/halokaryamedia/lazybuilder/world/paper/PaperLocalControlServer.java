@@ -5,6 +5,7 @@ import com.google.gson.JsonParseException;
 import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
+import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
@@ -15,7 +16,9 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskSnapshot;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskType;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -37,7 +40,8 @@ import java.util.concurrent.TimeUnit;
  * Loopback-only structured bridge for the LazyBuilder desktop application.
  *
  * <p>The HTTP layer is deliberately thin. All world mutations are delegated to the existing
- * World-Manager application services and marshalled onto the Paper main thread.</p>
+ * World-Manager application services and marshalled onto the Paper main thread when they reach
+ * Bukkit/Paper state.</p>
  */
 public final class PaperLocalControlServer {
     public static final String TOKEN_ENV = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
@@ -51,7 +55,9 @@ public final class PaperLocalControlServer {
     private final WorldRuntimeService runtime;
     private final WorldCreationService creation;
     private final WorldSettingsService settings;
+    private final WorldLifecycleService lifecycle;
     private final WorldTaskRegistry tasks;
+    private final WorldTaskRunner taskRunner;
 
     private HttpServer server;
     private ExecutorService executor;
@@ -62,14 +68,18 @@ public final class PaperLocalControlServer {
             WorldRuntimeService runtime,
             WorldCreationService creation,
             WorldSettingsService settings,
-            WorldTaskRegistry tasks
+            WorldLifecycleService lifecycle,
+            WorldTaskRegistry tasks,
+            WorldTaskRunner taskRunner
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.creation = Objects.requireNonNull(creation, "creation");
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
+        this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
     }
 
     public void start() {
@@ -159,14 +169,33 @@ public final class PaperLocalControlServer {
 
     private void handleTasks(HttpExchange exchange, String token) throws IOException {
         if (!authorize(exchange, token)) return;
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
-            return;
-        }
 
         String relative = exchange.getRequestURI().getPath().substring("/v1/tasks".length());
+        try {
+            if ("GET".equals(exchange.getRequestMethod())) {
+                handleTaskRead(exchange, relative);
+                return;
+            }
+            if ("POST".equals(exchange.getRequestMethod())) {
+                handleTaskStart(exchange, relative);
+                return;
+            }
+            sendError(exchange, 405, "method_not_allowed", "Only GET and POST are supported.");
+        } catch (IllegalArgumentException exception) {
+            sendError(exchange, 400, "invalid_request", exception.getMessage());
+        } catch (IllegalStateException exception) {
+            sendError(exchange, 409, "task_state_conflict", exception.getMessage());
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Local World task request failed: " + exception.getMessage());
+            sendError(exchange, 500, "task_operation_failed", "World-Manager could not start the task.");
+        }
+    }
+
+    private void handleTaskRead(HttpExchange exchange, String relative) throws IOException {
         if (relative.isEmpty() || "/".equals(relative)) {
-            sendJson(exchange, 200, new TaskListResponse(tasks.recent().stream().map(PaperLocalControlServer::taskResponse).toList()));
+            sendJson(exchange, 200, new TaskListResponse(
+                    tasks.recent().stream().map(PaperLocalControlServer::taskResponse).toList()
+            ));
             return;
         }
         if (!relative.startsWith("/") || relative.indexOf('/', 1) >= 0) {
@@ -188,6 +217,50 @@ public final class PaperLocalControlServer {
             return;
         }
         sendJson(exchange, 200, taskResponse(snapshot));
+    }
+
+    private void handleTaskStart(HttpExchange exchange, String relative) throws Exception {
+        WorldTaskType type = switch (relative) {
+            case "/archive" -> WorldTaskType.ARCHIVE;
+            case "/restore" -> WorldTaskType.RESTORE;
+            default -> null;
+        };
+        if (type == null) {
+            sendError(exchange, 404, "not_found", "Unknown task operation.");
+            return;
+        }
+
+        TaskStartRequest request = readJson(exchange, TaskStartRequest.class);
+        if (request.worldId() == null || request.worldId().isBlank()) {
+            throw new IllegalArgumentException("worldId must not be blank");
+        }
+
+        WorldId worldId;
+        try {
+            worldId = WorldId.parse(request.worldId().trim());
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("World id is invalid.", exception);
+        }
+        if (registry.find(worldId).isEmpty()) {
+            throw new IllegalArgumentException("World is not managed: " + worldId);
+        }
+
+        WorldTaskSnapshot queued = taskRunner.submit(
+                type,
+                worldId,
+                type == WorldTaskType.ARCHIVE ? "Archive queued." : "Restore queued.",
+                progress -> {
+                    progress.update(20, "Dispatching lifecycle change to Paper.");
+                    WorldRecord updated = sync(() -> type == WorldTaskType.ARCHIVE
+                            ? lifecycle.archive(worldId)
+                            : lifecycle.restore(worldId));
+                    progress.update(90, type == WorldTaskType.ARCHIVE
+                            ? "World archived; finalizing task."
+                            : "World restored; finalizing task.");
+                    return updated.lifecycle().name();
+                }
+        );
+        sendJson(exchange, 202, taskResponse(queued));
     }
 
     private void handleWorldCollection(HttpExchange exchange) throws Exception {
@@ -421,6 +494,7 @@ public final class PaperLocalControlServer {
             String createdAt,
             String updatedAt
     ) {}
+    private record TaskStartRequest(String worldId) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(
             Boolean autoLoad,
