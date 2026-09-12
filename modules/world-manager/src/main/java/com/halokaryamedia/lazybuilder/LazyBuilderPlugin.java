@@ -65,6 +65,7 @@ public class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldSettingsService(),
                 worldManager.worldLifecycleService(),
                 worldManager.worldCloneService(),
+                worldManager.worldBackupService(),
                 worldTaskRegistry,
                 worldTaskRunner
         );
