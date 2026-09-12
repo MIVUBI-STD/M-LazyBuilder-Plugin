@@ -9,6 +9,7 @@ Canonical UX contract for the first-party World Manager client surface.
 ```text
 World Manager
 ├── Create
+├── Import
 ├── Refresh
 └── Managed Worlds
     ├── Teleport
@@ -16,6 +17,7 @@ World Manager
     ├── Archive / Restore
     ├── Clone
     ├── Settings
+    ├── Export
     └── Delete
 ```
 
@@ -58,12 +60,50 @@ The screen also shows canonical Weather, Time, and Spawn values from Paper as re
 
 Opening Settings may load an unloaded ACTIVE world once because Paper-owned settings are the source of truth. There is no settings polling loop.
 
+## Import
+
+Import remains one visible user flow even though it crosses two canonical server owners:
+
+```text
+Import World
+→ choose destination folder + display name
+→ native .zip/.mcworld picker
+→ lazybuilder:transfer upload
+→ server checksum publication into world/imports
+→ lazybuilder:world ImportWorld request
+→ archive validation / optional conversion
+→ publish managed world
+→ return canonical WorldSummary
+```
+
+The transfer controller exposes only an upload-completion continuation to the World Manager UI. It does not learn import/conversion semantics. If upload fails, publication is never requested.
+
+## Whole-world Export
+
+V1 exposes the native Java 1.21.4 whole-world export fast path first:
+
+```text
+Export
+→ artifact name
+→ JAVA_1_21_4
+→ safe snapshot
+→ source world restored immediately after snapshot
+→ package export artifact
+→ ExportReady(artifact)
+→ existing transfer download
+→ native Save dialog
+```
+
+The World Manager does not create a second download system. Cross-version/Bedrock conversion already exists behind the server export service, but additional target-format selection should be surfaced only after the client receives a verified supported-format catalog rather than hardcoding converter versions into UI.
+
+Export Area remains the specialized Xaero path and reuses the same export/transfer owners.
+
 ## State refresh
 
 The server returns bounded `WorldSummary` / `SettingsSnapshot` responses. Client revision changes rebuild only the open LazyBuilder screen. No background world-list refresh runs while the user is idle.
 
-## Remaining UX slice before live validation
+## Pre-test boundary
 
-Whole-world Export and Import publication still need to be surfaced through the same World Manager flow. Their file bytes must continue to use the existing transfer channel rather than creating another upload/download system.
+The first-party World Manager flow is now connected for Create, list, Teleport, Load/Unload, Archive/Restore, Clone, General Settings, permanent Delete, Import publication, and native whole-world Export. Remote development should now be limited to compile/test fixes and one final failure-path/ownership audit.
 
-After those two flows are connected, remote work should stop at a final pre-test audit. Runtime button placement, Paper lifecycle behavior, native dialogs, Xaero transforms, and real filesystem/network performance require local/live proof.
+Runtime button placement, Paper lifecycle behavior, native dialogs, Xaero transforms, converter quality, and real filesystem/network performance require local/live proof.
