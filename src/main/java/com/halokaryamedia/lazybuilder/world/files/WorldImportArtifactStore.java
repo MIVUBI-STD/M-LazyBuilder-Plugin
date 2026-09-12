@@ -9,6 +9,13 @@ public interface WorldImportArtifactStore {
 
     void sanitizeConvertedWorld(Path worldDirectory) throws IOException;
 
+    /**
+     * Removes one validated inbox artifact after a managed-world import has
+     * committed successfully. Failed imports intentionally keep the artifact so
+     * the caller may retry without re-uploading it.
+     */
+    void deleteArtifact(String artifactName) throws IOException;
+
     enum DetectedEdition { JAVA, BEDROCK }
 
     record StagedImport(Path worldDirectory, DetectedEdition edition, String trustedFormat) {
