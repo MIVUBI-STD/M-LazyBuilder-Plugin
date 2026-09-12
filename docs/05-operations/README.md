@@ -64,6 +64,26 @@ network semantic dependency on tunnel   explicitly prohibited
 
 No new idle/background subsystem was introduced by these changes.
 
+## UX Audit
+
+Canonical user flow now lives in `docs/03-client-ui/world-manager-flow.md`.
+
+The audit found one important product-boundary gap: the server/application capabilities are much more complete than the current Fabric presentation. The existing client source implements file transfer, native dialogs, managed-current-world lookup, and Xaero map actions, but it does **not** yet implement the general World Manager browser/screen promised by the product flow.
+
+The next client slice must therefore be one `lazybuilder:world` control protocol plus one minimal World Manager navigation shell:
+
+```text
+Worlds (default)
+→ Manage World
+→ Create World
+→ Import World
+→ Map / Xaero
+```
+
+Do not create separate channels for Create, Settings, Clone, Delete, or Archive. One world-control adapter must delegate to the existing application services and return canonical server state. `lazybuilder:map` remains spatial intents only; `lazybuilder:transfer` remains file bytes only.
+
+The UX contract also removes duplicate product surfaces: Import owns its upload step, Export owns its download step, Export Area remains contextual to Xaero, advanced settings do not leak into Create World, and destructive actions use one confirmation path.
+
 ## Networking Boundary
 
 Canonical networking ownership is `docs/04-system/networking.md`.
@@ -80,18 +100,28 @@ Fabric client
 
 LazyBuilder does not open a second port or require a third-party application relay. If the Minecraft server is not reachable because of CGNAT/firewall topology, deployment still needs a route such as direct port forwarding, IPv6, self-hosted routing, or an optional tunnel. That infrastructure does not change the LazyBuilder protocol.
 
-Do not build a custom NAT traversal/relay stack into World Manager without a future explicit requirement and evidence; it would add a second network plane, persistent infrastructure, and avoidable attack surface.
-
 ## Next Action
 
-Do not add another backend subsystem before runtime evidence exists. The meaningful remaining boundary is `LOCAL_CODE` / `LIVE_SERVER` validation with Paper 1.21.4 + Fabric client + pinned Xaero.
+Before live testing, implement the **minimal World Manager control surface** rather than adding another backend subsystem:
 
-Before live execution, the remaining remote-only review should be limited to user-flow consistency and test-plan ordering; the active CPU/RAM/disk/network paths have already received a bounded source-level performance pass. The first live pass should verify plugin enable/disable, real world creation/load/unload, fallback/player evacuation behavior, settings persistence, safe-surface teleport, Xaero fullscreen control placement and coordinate transform, two-corner Export Area, immediate post-snapshot world restoration, native file dialogs, large pipelined upload/download, timeout/disconnect/error recovery, converter bootstrap/update, Java↔Bedrock conversion, and `.mcworld` opening.
+```text
+lazybuilder:world protocol
+→ list canonical worlds in one snapshot
+→ create Flat/Void
+→ load/unload
+→ teleport to world
+→ archive/restore
+→ minimal Fabric Worlds screen/navigation
+```
+
+After that slice is source/CI green, extend the same channel/screen hierarchy to Settings, Clone, Export, Delete, and Import publication actions. Heavy filesystem work must keep the existing phased async boundaries.
+
+Then move to `LOCAL_CODE` / `LIVE_SERVER` validation with Paper 1.21.4 + Fabric client + pinned Xaero.
 
 Measure transfer throughput/CPU/RAM/disk behavior under LAN and representative remote latency before changing the current 24 KiB × 4 window. Runtime evidence, not speculation, should drive any further window tuning, ZIP-compression tradeoffs, or resumable-transfer support.
 
 ## Proof State
 
-`REMOTE_GITHUB` is green through the transfer-resilience slice. The current performance-hardening head must retain the same Paper Maven verification/tests and Fabric Gradle compilation before it is treated as the new remote-ready baseline.
+`REMOTE_GITHUB` is green through the previous transfer-resilience lineage. UX-flow documents are source-only contracts; they do not prove a World Manager screen because that general control UI is not implemented yet.
 
-This does **not** prove actual running-server behavior, real remote throughput, packet behavior under latency/loss, Xaero mixin/runtime transforms, native OS dialogs, multi-gigabyte filesystem behavior, live Chunker conversion quality, NAT reachability, or Java↔Bedrock fidelity. Those remain `LOCAL_CODE` / `LIVE_SERVER` proof.
+This does **not** prove actual running-server behavior, World Manager screen usability, real remote throughput, packet behavior under latency/loss, Xaero mixin/runtime transforms, native OS dialogs, multi-gigabyte filesystem behavior, live Chunker conversion quality, NAT reachability, or Java↔Bedrock fidelity. Those remain `LOCAL_CODE` / `LIVE_SERVER` proof.
