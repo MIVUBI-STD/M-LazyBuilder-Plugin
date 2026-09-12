@@ -72,6 +72,7 @@ pub struct WorldSettingsSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct WorldTaskSnapshot {
     pub task_id: String,
+    #[serde(rename = "type")]
     pub task_type: String,
     pub world_id: Option<String>,
     pub state: String,
