@@ -21,15 +21,11 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Phased Export World use case.
- *
- * <p>prepare/finish own Paper lifecycle work. executeFilePhase owns snapshot,
- * optional conversion, packaging, and cleanup and is intended for a request-scoped worker.</p>
- */
+/** Phased Export World use case shared by whole-world and Export Area requests. */
 public final class WorldExportService {
     public static final String NATIVE_SERVER_FORMAT = "JAVA_1_21_4";
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
+    private static final String PRUNING_FILE = "lazybuilder-export-area.json";
 
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
@@ -67,6 +63,14 @@ public final class WorldExportService {
     }
 
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
+        return prepare(worldId, targetFormat, artifactName, null);
+    }
+
+    public ExportTask prepareArea(WorldId worldId, String targetFormat, String artifactName, WorldAreaSelection area) {
+        return prepare(worldId, targetFormat, artifactName, Objects.requireNonNull(area, "area"));
+    }
+
+    private ExportTask prepare(WorldId worldId, String targetFormat, String artifactName, WorldAreaSelection area) {
         Objects.requireNonNull(worldId, "worldId");
         WorldRecord source = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
@@ -80,7 +84,7 @@ public final class WorldExportService {
         boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
         try {
             runtimeService.unload(worldId);
-            return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, wasLoaded, lease);
+            return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, area, wasLoaded, lease);
         } catch (RuntimeException exception) {
             lease.close();
             throw exception;
@@ -92,13 +96,17 @@ public final class WorldExportService {
         task.requireOpen();
         Path snapshot = null;
         Path converted = null;
+        Path pruning = null;
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
-            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
+
+            // Native fast-path is valid only for whole-world exports. Area export requires
+            // Chunker pruning even when the requested output version is the server version.
+            if (task.area == null && NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
                 task.completed = true;
-                return new ExportResult(artifact, task.targetFormat, false);
+                return new ExportResult(artifact, task.targetFormat, false, null);
             }
 
             ensureConversionRuntime();
@@ -111,24 +119,33 @@ public final class WorldExportService {
                         + task.targetFormat);
             }
 
+            if (task.area != null) {
+                pruning = writeAreaPruning(task.area, snapshot.getParent());
+            }
             converted = files.reserveWorkspace(UUID.randomUUID());
             try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
                 converter.convert(
                         runtime.artifact(),
-                        new ConverterAdapter.ConversionRequest(snapshot, converted, task.targetFormat, null)
+                        new ConverterAdapter.ConversionRequest(snapshot, converted, task.targetFormat, pruning)
                 );
             }
 
+            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
+                writeNativeTransferMarker(converted);
+            }
             ExportArtifactType type = task.targetFormat.startsWith("BEDROCK_")
                     ? ExportArtifactType.BEDROCK_WORLD
                     : ExportArtifactType.JAVA_ZIP;
             Path artifact = artifacts.packageDirectory(converted, task.artifactName, type);
             task.completed = true;
-            return new ExportResult(artifact, task.targetFormat, true);
+            return new ExportResult(artifact, task.targetFormat, true, task.area);
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to export world " + task.source.folderName()
                     + " as " + task.targetFormat, exception);
         } finally {
+            if (pruning != null) {
+                try { Files.deleteIfExists(pruning); } catch (IOException ignored) { }
+            }
             cleanupWorkspace(converted);
             cleanupWorkspace(snapshot);
         }
@@ -144,6 +161,29 @@ public final class WorldExportService {
         }
         task.close();
         if (failure != null) throw failure;
+    }
+
+    static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
+        Objects.requireNonNull(area, "area");
+        Path root = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
+        Files.createDirectories(root);
+        Path file = root.resolve(PRUNING_FILE).normalize();
+        if (!root.equals(file.getParent())) throw new IOException("Pruning path escaped workspace");
+
+        String region = "{\"minChunkX\":" + area.minChunkX()
+                + ",\"minChunkZ\":" + area.minChunkZ()
+                + ",\"maxChunkX\":" + area.maxChunkX()
+                + ",\"maxChunkZ\":" + area.maxChunkZ() + "}";
+        // Apply the same X/Z inclusion rectangle to all vanilla dimensions. Missing
+        // configs mean 'do not prune' in Chunker, which would accidentally include
+        // entire Nether/End data in an Export Area artifact.
+        String json = "{\"configs\":{" +
+                "\"minecraft:overworld\":{\"include\":true,\"regions\":[" + region + "]}," +
+                "\"minecraft:the_nether\":{\"include\":true,\"regions\":[" + region + "]}," +
+                "\"minecraft:the_end\":{\"include\":true,\"regions\":[" + region + "]}" +
+                "}}";
+        Files.writeString(file, json, StandardCharsets.UTF_8);
+        return file;
     }
 
     private static void writeNativeTransferMarker(Path snapshot) throws IOException {
@@ -187,7 +227,7 @@ public final class WorldExportService {
         return value;
     }
 
-    public record ExportResult(Path artifact, String targetFormat, boolean converted) {
+    public record ExportResult(Path artifact, String targetFormat, boolean converted, WorldAreaSelection area) {
         public ExportResult {
             artifact = Objects.requireNonNull(artifact, "artifact").toAbsolutePath().normalize();
             targetFormat = Objects.requireNonNull(targetFormat, "targetFormat");
@@ -199,23 +239,26 @@ public final class WorldExportService {
         private final WorldRecord source;
         private final String targetFormat;
         private final String artifactName;
+        private final WorldAreaSelection area;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
         private boolean completed;
         private boolean closed;
 
         private ExportTask(UUID operationId, WorldRecord source, String targetFormat, String artifactName,
-                           boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
+                           WorldAreaSelection area, boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
             this.operationId = operationId;
             this.source = source;
             this.targetFormat = targetFormat;
             this.artifactName = artifactName;
+            this.area = area;
             this.wasLoaded = wasLoaded;
             this.lease = lease;
         }
 
         public WorldRecord source() { return source; }
         public String targetFormat() { return targetFormat; }
+        public WorldAreaSelection area() { return area; }
         public boolean completed() { return completed; }
 
         private void requireOpen() {
