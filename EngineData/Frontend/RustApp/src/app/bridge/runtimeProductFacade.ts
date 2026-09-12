@@ -31,6 +31,7 @@ export const runtimeProduct = {
     backup: runtimeApi.backupWorld,
     clone: runtimeApi.cloneWorld,
     export: runtimeApi.exportWorld,
+    delete: runtimeApi.deleteWorld,
     pickImport: runtimeApi.pickWorldImport,
     uploadImport: runtimeApi.uploadWorldImport,
     import: runtimeApi.importWorld
