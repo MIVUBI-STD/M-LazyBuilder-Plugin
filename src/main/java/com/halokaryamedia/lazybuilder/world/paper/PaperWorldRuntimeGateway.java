@@ -185,7 +185,8 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
             }
         }
 
-        target.save();
+        // Paper's save=true unload is the single durability boundary here. Calling
+        // World#save first would force a second synchronous world save on the main thread.
         if (!server.unloadWorld(target, true)) {
             throw new IllegalStateException("Paper refused to unload world: " + record.folderName());
         }
