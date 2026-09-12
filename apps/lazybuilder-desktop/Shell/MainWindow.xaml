@@ -10,6 +10,9 @@
         <DataTemplate DataType="{x:Type shell:DashboardViewModel}">
             <views:DashboardView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type shell:WorldsViewModel}">
+            <views:WorldsView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type plugin:PluginsViewModel}">
             <views:PluginsView/>
         </DataTemplate>
