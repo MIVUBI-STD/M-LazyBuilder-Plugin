@@ -42,6 +42,14 @@ pub struct CreateWorldRequest {
     pub kind: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneWorldRequest {
+    pub world_id: String,
+    pub destination_folder: String,
+    pub display_name: String,
+}
+
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldSettingsRequest {
@@ -184,6 +192,17 @@ pub fn start_restore_world(world_id: &str) -> Result<WorldTaskSnapshot, String> 
     start_world_task("restore", world_id)
 }
 
+pub fn start_clone_world(request: &CloneWorldRequest) -> Result<WorldTaskSnapshot, String> {
+    validate_world_id(&request.world_id)?;
+    if request.destination_folder.trim().is_empty() {
+        return Err("Clone destination folder must not be empty.".into());
+    }
+    if request.display_name.trim().is_empty() {
+        return Err("Clone display name must not be empty.".into());
+    }
+    request_json("POST", "/v1/tasks/clone", Some(request))
+}
+
 fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
     let world_id = validate_world_id(world_id)?;
     let body = WorldTaskStartRequest { world_id };
@@ -228,9 +247,7 @@ where
 fn validate_world_id(world_id: &str) -> Result<&str, String> {
     let value = world_id.trim();
     if value.is_empty()
-        || !value
-            .chars()
-            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+        || !value.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-')
     {
         return Err("Invalid world id.".into());
     }
@@ -240,9 +257,7 @@ fn validate_world_id(world_id: &str) -> Result<&str, String> {
 fn validate_task_id(task_id: &str) -> Result<&str, String> {
     let value = task_id.trim();
     if value.is_empty()
-        || !value
-            .chars()
-            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+        || !value.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-')
     {
         return Err("Invalid world task id.".into());
     }
