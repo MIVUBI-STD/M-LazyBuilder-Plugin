@@ -18,6 +18,11 @@ export const runtimeProduct = {
     setCategory: runtimeApi.setPluginCategory
   },
   worlds: {
-    list: runtimeApi.listWorlds
+    list: runtimeApi.listWorlds,
+    create: runtimeApi.createWorld,
+    load: runtimeApi.loadWorld,
+    unload: runtimeApi.unloadWorld,
+    settings: runtimeApi.getWorldSettings,
+    updateSettings: runtimeApi.updateWorldSettings
   }
 };
