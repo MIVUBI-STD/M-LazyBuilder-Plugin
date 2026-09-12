@@ -25,7 +25,7 @@ Do not create a new framework layer, executor, registry, or Paper plugin merely 
 ## Feature families
 
 ```text
-Movement — planned
+Movement — implemented
   Advanced Fly
   Noclip
   Night Vision
@@ -49,6 +49,23 @@ World Safety — implemented
   Farmland trample protection
   Dragon egg interaction/teleport protection
 ```
+
+### Movement
+
+Movement is one cohesive lifecycle owner with independent ability switches and per-player reversible state.
+
+Commands:
+
+```text
+/fly [speed]      toggle Advanced Fly; optional multiplier 0.1–10.0
+/noclip           toggle stable spectator-based noclip
+/nightvision      toggle persistent builder night vision
+/nv               alias for /nightvision
+```
+
+Noclip intentionally uses Bukkit spectator mode rather than NMS collision manipulation. The player's previous game mode is restored when noclip is turned off or the feature shuts down. Advanced Fly stores and restores the previous allow-flight/flying/fly-speed state. Night Vision restores any pre-existing night-vision effect instead of deleting it permanently.
+
+### World Safety
 
 World Safety is one cohesive lifecycle owner with independently configurable protections. Explosion protection preserves the explosion itself while clearing its block-destruction list, so the feature does not become a generic entity-damage or gameplay authority. Farmland protection covers both player physical interaction and entity conversion to dirt. Dragon egg protection denies vanilla block interaction that would move the egg.
 
@@ -74,9 +91,16 @@ features:
       leaves-decay: true
       farmland-trample: true
       dragon-egg-teleport: true
+
+  movement:
+    enabled: true
+    abilities:
+      advanced-fly: true
+      noclip: true
+      night-vision: true
 ```
 
-All World Safety protections are enabled by default for the builder-server baseline, but each behavior can be disabled without disabling the whole feature family.
+Feature families are enabled by default for the builder-server baseline, while each contained behavior can be disabled independently.
 
 ## Maintenance constraints
 
