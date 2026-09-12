@@ -26,6 +26,12 @@ public final class ClientWorldController {
     public void deleteWorld(UUID worldId, String typedFolderName) {
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
     }
+    public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
+        send(new WorldControlWireProtocol.ExportWorld(worldId, targetFormat, artifactName));
+    }
+    public void importWorld(String artifactName, String destinationFolder, String displayName) {
+        send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
+    }
     public void load(UUID worldId) { send(new WorldControlWireProtocol.LoadWorld(worldId)); }
     public void unload(UUID worldId) { send(new WorldControlWireProtocol.UnloadWorld(worldId)); }
     public void teleport(UUID worldId) { send(new WorldControlWireProtocol.TeleportWorld(worldId)); }
@@ -67,6 +73,12 @@ public final class ClientWorldController {
                 synchronizeSummary(snapshot);
                 lastError = null;
                 revision++;
+            }
+            case WorldControlWireProtocol.ExportReady export -> {
+                lastError = null;
+                revision++;
+                LazyBuilderClientNetworking.notifyPlayer(
+                        "Export ready: " + export.artifactName());
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 lastError = error.message();
