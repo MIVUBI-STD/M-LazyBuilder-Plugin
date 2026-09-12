@@ -6,6 +6,7 @@ public sealed class ServerProcessManager : IServerManager, IAsyncDisposable
 {
     private readonly string _workspaceRoot;
     private readonly ServerManagerOptions _options;
+    private readonly IReadOnlyDictionary<string, string> _environmentVariables;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private Process? _process;
@@ -20,10 +21,14 @@ public sealed class ServerProcessManager : IServerManager, IAsyncDisposable
 
     public event EventHandler? SnapshotChanged;
 
-    public ServerProcessManager(string workspaceRoot, ServerManagerOptions options)
+    public ServerProcessManager(
+        string workspaceRoot,
+        ServerManagerOptions options,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _options = options.Validate();
+        _environmentVariables = environmentVariables ?? new Dictionary<string, string>();
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -41,19 +46,23 @@ public sealed class ServerProcessManager : IServerManager, IAsyncDisposable
             _expectedStop = false;
             SetState(ServerState.Starting);
 
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = javaPath,
+                WorkingDirectory = serverDirectory,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                Arguments = $"-Xms{_options.MinMemoryMb}M -Xmx{_options.MaxMemoryMb}M -jar \"{paperJar}\" nogui"
+            };
+            foreach (var pair in _environmentVariables)
+                startInfo.Environment[pair.Key] = pair.Value;
+
             var process = new Process
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = javaPath,
-                    WorkingDirectory = serverDirectory,
-                    UseShellExecute = false,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    Arguments = $"-Xms{_options.MinMemoryMb}M -Xmx{_options.MaxMemoryMb}M -jar \"{paperJar}\" nogui"
-                },
+                StartInfo = startInfo,
                 EnableRaisingEvents = true
             };
 
