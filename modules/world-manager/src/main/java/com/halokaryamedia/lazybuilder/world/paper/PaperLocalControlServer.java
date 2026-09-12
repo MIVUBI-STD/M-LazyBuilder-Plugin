@@ -98,7 +98,7 @@ public final class PaperLocalControlServer {
             if (index > 0) json.append(',');
             WorldRecord world = worlds.get(index);
             json.append('{')
-                    .append("\"id\":\"").append(escape(world.id().value())).append("\",")
+                    .append("\"id\":\"").append(escape(world.id().toString())).append("\",")
                     .append("\"folderName\":\"").append(escape(world.folderName())).append("\",")
                     .append("\"displayName\":\"").append(escape(world.displayName())).append("\",")
                     .append("\"kind\":\"").append(world.kind().name()).append("\",")
