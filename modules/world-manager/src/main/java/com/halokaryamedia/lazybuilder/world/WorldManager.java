@@ -187,7 +187,15 @@ public final class WorldManager {
         );
         this.worldDeleteService = new WorldDeleteService(
                 worldRegistry, registryPersistence, worldRuntimeService, runtimeStates,
-                worldOperationCoordinator, worldFileRepository
+                worldOperationCoordinator, worldFileRepository,
+                world -> {
+                    String configured = plugin.getConfig().getString("world-manager.fallback-world", "");
+                    if (configured != null && !configured.isBlank()) {
+                        return world.folderName().equals(configured.strip());
+                    }
+                    return !plugin.getServer().getWorlds().isEmpty()
+                            && world.folderName().equals(plugin.getServer().getWorlds().get(0).getName());
+                }
         );
         this.worldExportService = new WorldExportService(
                 worldRegistry, worldRuntimeService, runtimeStates, worldOperationCoordinator,
