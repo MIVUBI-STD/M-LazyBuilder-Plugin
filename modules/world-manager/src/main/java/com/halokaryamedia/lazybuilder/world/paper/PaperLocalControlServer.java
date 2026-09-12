@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.paper;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
+import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
@@ -36,13 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Loopback-only structured bridge for the LazyBuilder desktop application.
- *
- * <p>The HTTP layer is deliberately thin. All world mutations are delegated to the existing
- * World-Manager application services and marshalled onto the Paper main thread when they reach
- * Bukkit/Paper state.</p>
- */
+/** Loopback-only structured bridge for the LazyBuilder desktop application. */
 public final class PaperLocalControlServer {
     public static final String TOKEN_ENV = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
     public static final String PORT_ENV = "LAZYBUILDER_WORLD_CONTROL_PORT";
@@ -56,6 +51,7 @@ public final class PaperLocalControlServer {
     private final WorldCreationService creation;
     private final WorldSettingsService settings;
     private final WorldLifecycleService lifecycle;
+    private final WorldCloneService cloneService;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
 
@@ -69,6 +65,7 @@ public final class PaperLocalControlServer {
             WorldCreationService creation,
             WorldSettingsService settings,
             WorldLifecycleService lifecycle,
+            WorldCloneService cloneService,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
     ) {
@@ -78,19 +75,18 @@ public final class PaperLocalControlServer {
         this.creation = Objects.requireNonNull(creation, "creation");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
+        this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
     }
 
     public void start() {
         if (server != null) return;
-
         String token = System.getenv(TOKEN_ENV);
         if (token == null || token.isBlank()) {
             plugin.getLogger().fine("Desktop World control bridge disabled: no local control token was provided.");
             return;
         }
-
         int port = resolvePort(System.getenv(PORT_ENV));
         try {
             HttpServer created = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
@@ -112,7 +108,6 @@ public final class PaperLocalControlServer {
         HttpServer current = server;
         server = null;
         if (current != null) current.stop(0);
-
         ExecutorService currentExecutor = executor;
         executor = null;
         if (currentExecutor != null) currentExecutor.close();
@@ -129,20 +124,17 @@ public final class PaperLocalControlServer {
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
         if (!authorize(exchange, token)) return;
-
         String relative = exchange.getRequestURI().getPath().substring("/v1/worlds".length());
         try {
             if (relative.isEmpty() || "/".equals(relative)) {
                 handleWorldCollection(exchange);
                 return;
             }
-
             String[] parts = relative.substring(1).split("/");
             if (parts.length != 2) {
                 sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
                 return;
             }
-
             WorldId worldId;
             try {
                 worldId = WorldId.parse(parts[0]);
@@ -150,7 +142,6 @@ public final class PaperLocalControlServer {
                 sendError(exchange, 400, "invalid_world_id", "World id is invalid.");
                 return;
             }
-
             switch (parts[1]) {
                 case "load" -> handleLoad(exchange, worldId);
                 case "unload" -> handleUnload(exchange, worldId);
@@ -169,7 +160,6 @@ public final class PaperLocalControlServer {
 
     private void handleTasks(HttpExchange exchange, String token) throws IOException {
         if (!authorize(exchange, token)) return;
-
         String relative = exchange.getRequestURI().getPath().substring("/v1/tasks".length());
         try {
             if ("GET".equals(exchange.getRequestMethod())) {
@@ -193,16 +183,14 @@ public final class PaperLocalControlServer {
 
     private void handleTaskRead(HttpExchange exchange, String relative) throws IOException {
         if (relative.isEmpty() || "/".equals(relative)) {
-            sendJson(exchange, 200, new TaskListResponse(
-                    tasks.recent().stream().map(PaperLocalControlServer::taskResponse).toList()
-            ));
+            sendJson(exchange, 200, new TaskListResponse(tasks.recent().stream()
+                    .map(PaperLocalControlServer::taskResponse).toList()));
             return;
         }
         if (!relative.startsWith("/") || relative.indexOf('/', 1) >= 0) {
             sendError(exchange, 404, "not_found", "Unknown task route.");
             return;
         }
-
         UUID taskId;
         try {
             taskId = UUID.fromString(relative.substring(1));
@@ -210,7 +198,6 @@ public final class PaperLocalControlServer {
             sendError(exchange, 400, "invalid_task_id", "Task id is invalid.");
             return;
         }
-
         WorldTaskSnapshot snapshot = tasks.find(taskId).orElse(null);
         if (snapshot == null) {
             sendError(exchange, 404, "task_not_found", "World task was not found.");
@@ -220,6 +207,10 @@ public final class PaperLocalControlServer {
     }
 
     private void handleTaskStart(HttpExchange exchange, String relative) throws Exception {
+        if ("/clone".equals(relative)) {
+            handleCloneTaskStart(exchange);
+            return;
+        }
         WorldTaskType type = switch (relative) {
             case "/archive" -> WorldTaskType.ARCHIVE;
             case "/restore" -> WorldTaskType.RESTORE;
@@ -229,22 +220,8 @@ public final class PaperLocalControlServer {
             sendError(exchange, 404, "not_found", "Unknown task operation.");
             return;
         }
-
         TaskStartRequest request = readJson(exchange, TaskStartRequest.class);
-        if (request.worldId() == null || request.worldId().isBlank()) {
-            throw new IllegalArgumentException("worldId must not be blank");
-        }
-
-        WorldId worldId;
-        try {
-            worldId = WorldId.parse(request.worldId().trim());
-        } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("World id is invalid.", exception);
-        }
-        if (registry.find(worldId).isEmpty()) {
-            throw new IllegalArgumentException("World is not managed: " + worldId);
-        }
-
+        WorldId worldId = requireManagedWorldId(request.worldId());
         WorldTaskSnapshot queued = taskRunner.submit(
                 type,
                 worldId,
@@ -263,11 +240,80 @@ public final class PaperLocalControlServer {
         sendJson(exchange, 202, taskResponse(queued));
     }
 
+    private void handleCloneTaskStart(HttpExchange exchange) throws Exception {
+        CloneTaskStartRequest request = readJson(exchange, CloneTaskStartRequest.class);
+        WorldId sourceId = requireManagedWorldId(request.worldId());
+        String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
+        String displayName = request.displayName() == null || request.displayName().isBlank()
+                ? destinationFolder
+                : request.displayName().trim();
+
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.CLONE,
+                sourceId,
+                "Clone queued.",
+                progress -> runCloneTask(sourceId, destinationFolder, displayName, progress)
+        );
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    private String runCloneTask(
+            WorldId sourceId,
+            String destinationFolder,
+            String displayName,
+            com.halokaryamedia.lazybuilder.world.task.WorldTaskWork.Progress progress
+    ) throws Exception {
+        progress.update(10, "Preparing source world on Paper.");
+        WorldCloneService.CloneTask cloneTask = sync(() -> cloneService.prepare(sourceId, destinationFolder, displayName));
+        Exception operationFailure = null;
+        WorldRecord cloned = null;
+        try {
+            progress.update(30, "Copying world files.");
+            cloned = cloneService.executeFilePhase(cloneTask);
+            progress.update(85, "Clone published; restoring source runtime state.");
+        } catch (Exception exception) {
+            operationFailure = exception;
+        }
+
+        try {
+            sync(() -> {
+                cloneService.finish(cloneTask);
+                return null;
+            });
+        } catch (Exception finishFailure) {
+            if (operationFailure != null) {
+                operationFailure.addSuppressed(finishFailure);
+            } else {
+                operationFailure = finishFailure;
+            }
+        }
+
+        if (operationFailure != null) throw operationFailure;
+        progress.update(95, "Clone finalized.");
+        return Objects.requireNonNull(cloned, "cloned").id().toString();
+    }
+
+    private WorldId requireManagedWorldId(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("worldId must not be blank");
+        WorldId worldId;
+        try {
+            worldId = WorldId.parse(value.trim());
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("World id is invalid.", exception);
+        }
+        if (registry.find(worldId).isEmpty()) throw new IllegalArgumentException("World is not managed: " + worldId);
+        return worldId;
+    }
+
+    private static String requireNonBlank(String value, String field) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " must not be blank");
+        return value.trim();
+    }
+
     private void handleWorldCollection(HttpExchange exchange) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
             sendJson(exchange, 200, new WorldListResponse(sync(() -> registry.all().stream()
-                    .map(this::summary)
-                    .toList())));
+                    .map(this::summary).toList())));
             return;
         }
         if ("POST".equals(exchange.getRequestMethod())) {
@@ -306,14 +352,12 @@ public final class PaperLocalControlServer {
 
     private void handleSettings(HttpExchange exchange, WorldId worldId) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
-            WorldSettingsSnapshot snapshot = sync(() -> settings.snapshot(worldId));
-            sendJson(exchange, 200, settingsResponse(snapshot));
+            sendJson(exchange, 200, settingsResponse(sync(() -> settings.snapshot(worldId))));
             return;
         }
         if ("PATCH".equals(exchange.getRequestMethod())) {
             UpdateWorldSettingsRequest request = readJson(exchange, UpdateWorldSettingsRequest.class);
-            WorldSettingsSnapshot snapshot = sync(() -> applySettings(worldId, request));
-            sendJson(exchange, 200, settingsResponse(snapshot));
+            sendJson(exchange, 200, settingsResponse(sync(() -> applySettings(worldId, request))));
             return;
         }
         sendError(exchange, 405, "method_not_allowed", "Only GET and PATCH are supported.");
@@ -321,82 +365,53 @@ public final class PaperLocalControlServer {
 
     private WorldSettingsSnapshot applySettings(WorldId worldId, UpdateWorldSettingsRequest request) {
         if (request.autoLoad() != null) settings.setAutoLoad(worldId, request.autoLoad());
-        if (request.defaultGameMode() != null) {
-            settings.setDefaultGameMode(worldId, WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase()));
-        }
+        if (request.defaultGameMode() != null) settings.setDefaultGameMode(
+                worldId, WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase()));
         if (request.timeOfDayTicks() != null) settings.setTime(worldId, request.timeOfDayTicks());
-        if (request.weather() != null) {
-            settings.setWeather(worldId, WorldWeather.valueOf(request.weather().trim().toUpperCase()));
-        }
-        if (request.naturalSpawning() != null) {
-            settings.setSpawning(worldId, WorldSpawnControl.NATURAL, request.naturalSpawning());
-        }
-        if (request.daylightCycle() != null) {
-            settings.setGameRule(worldId, "doDaylightCycle", request.daylightCycle().toString());
-        }
-        if (request.weatherCycle() != null) {
-            settings.setGameRule(worldId, "doWeatherCycle", request.weatherCycle().toString());
-        }
+        if (request.weather() != null) settings.setWeather(
+                worldId, WorldWeather.valueOf(request.weather().trim().toUpperCase()));
+        if (request.naturalSpawning() != null) settings.setSpawning(
+                worldId, WorldSpawnControl.NATURAL, request.naturalSpawning());
+        if (request.daylightCycle() != null) settings.setGameRule(
+                worldId, "doDaylightCycle", request.daylightCycle().toString());
+        if (request.weatherCycle() != null) settings.setGameRule(
+                worldId, "doWeatherCycle", request.weatherCycle().toString());
         return settings.snapshot(worldId);
     }
 
     private ManagedWorldResponse summary(WorldRecord world) {
         return new ManagedWorldResponse(
-                world.id().toString(),
-                world.displayName(),
-                world.kind().name(),
-                world.lifecycle().name(),
-                runtime.state(world.id()).name(),
-                world.autoLoad(),
-                world.defaultGameMode()
-        );
+                world.id().toString(), world.displayName(), world.kind().name(), world.lifecycle().name(),
+                runtime.state(world.id()).name(), world.autoLoad(), world.defaultGameMode());
     }
 
     private static TaskResponse taskResponse(WorldTaskSnapshot snapshot) {
         return new TaskResponse(
-                snapshot.taskId().toString(),
-                snapshot.type().name(),
-                snapshot.worldId() == null ? null : snapshot.worldId().toString(),
-                snapshot.state().name(),
-                snapshot.progressPercent(),
-                snapshot.message(),
-                snapshot.result(),
-                snapshot.error(),
-                snapshot.createdAt().toString(),
-                snapshot.updatedAt().toString()
-        );
+                snapshot.taskId().toString(), snapshot.type().name(),
+                snapshot.worldId() == null ? null : snapshot.worldId().toString(), snapshot.state().name(),
+                snapshot.progressPercent(), snapshot.message(), snapshot.result(), snapshot.error(),
+                snapshot.createdAt().toString(), snapshot.updatedAt().toString());
     }
 
     private static WorldKind parseCreateKind(String value) {
         if (value == null || value.isBlank()) return WorldKind.FLAT;
         WorldKind kind = WorldKind.valueOf(value.trim().toUpperCase());
-        if (kind == WorldKind.IMPORTED) {
-            throw new IllegalArgumentException("Create World supports only FLAT or VOID.");
-        }
+        if (kind == WorldKind.IMPORTED) throw new IllegalArgumentException("Create World supports only FLAT or VOID.");
         return kind;
     }
 
     private static WorldSettingsResponse settingsResponse(WorldSettingsSnapshot snapshot) {
         return new WorldSettingsResponse(
-                snapshot.world().id().toString(),
-                snapshot.world().displayName(),
-                snapshot.world().autoLoad(),
-                snapshot.defaultGameMode().name(),
-                snapshot.runtime().timeOfDayTicks(),
-                snapshot.runtime().weather().name(),
-                snapshot.runtime().spawning().naturalSpawning(),
-                gameRuleBoolean(snapshot, "doDaylightCycle"),
-                gameRuleBoolean(snapshot, "doWeatherCycle")
-        );
+                snapshot.world().id().toString(), snapshot.world().displayName(), snapshot.world().autoLoad(),
+                snapshot.defaultGameMode().name(), snapshot.runtime().timeOfDayTicks(),
+                snapshot.runtime().weather().name(), snapshot.runtime().spawning().naturalSpawning(),
+                gameRuleBoolean(snapshot, "doDaylightCycle"), gameRuleBoolean(snapshot, "doWeatherCycle"));
     }
 
     private static boolean gameRuleBoolean(WorldSettingsSnapshot snapshot, String name) {
         return snapshot.runtime().gamerules().stream()
                 .filter(rule -> rule.name().equalsIgnoreCase(name))
-                .findFirst()
-                .map(GameRuleSetting::value)
-                .map(Boolean::parseBoolean)
-                .orElse(false);
+                .findFirst().map(GameRuleSetting::value).map(Boolean::parseBoolean).orElse(false);
     }
 
     private <T> T sync(Callable<T> action) throws Exception {
@@ -473,47 +488,17 @@ public final class PaperLocalControlServer {
     private record ErrorResponse(String error, String message) {}
     private record WorldListResponse(List<ManagedWorldResponse> worlds) {}
     private record TaskListResponse(List<TaskResponse> tasks) {}
-    private record ManagedWorldResponse(
-            String id,
-            String displayName,
-            String kind,
-            String lifecycle,
-            String runtimeState,
-            boolean autoLoad,
-            String defaultGameMode
-    ) {}
-    private record TaskResponse(
-            String taskId,
-            String type,
-            String worldId,
-            String state,
-            int progressPercent,
-            String message,
-            String result,
-            String error,
-            String createdAt,
-            String updatedAt
-    ) {}
+    private record ManagedWorldResponse(String id, String displayName, String kind, String lifecycle,
+                                        String runtimeState, boolean autoLoad, String defaultGameMode) {}
+    private record TaskResponse(String taskId, String type, String worldId, String state, int progressPercent,
+                                String message, String result, String error, String createdAt, String updatedAt) {}
     private record TaskStartRequest(String worldId) {}
+    private record CloneTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
-    private record UpdateWorldSettingsRequest(
-            Boolean autoLoad,
-            String defaultGameMode,
-            Long timeOfDayTicks,
-            String weather,
-            Boolean naturalSpawning,
-            Boolean daylightCycle,
-            Boolean weatherCycle
-    ) {}
-    private record WorldSettingsResponse(
-            String id,
-            String displayName,
-            boolean autoLoad,
-            String defaultGameMode,
-            long timeOfDayTicks,
-            String weather,
-            boolean naturalSpawning,
-            boolean daylightCycle,
-            boolean weatherCycle
-    ) {}
+    private record UpdateWorldSettingsRequest(Boolean autoLoad, String defaultGameMode, Long timeOfDayTicks,
+                                               String weather, Boolean naturalSpawning, Boolean daylightCycle,
+                                               Boolean weatherCycle) {}
+    private record WorldSettingsResponse(String id, String displayName, boolean autoLoad, String defaultGameMode,
+                                         long timeOfDayTicks, String weather, boolean naturalSpawning,
+                                         boolean daylightCycle, boolean weatherCycle) {}
 }
