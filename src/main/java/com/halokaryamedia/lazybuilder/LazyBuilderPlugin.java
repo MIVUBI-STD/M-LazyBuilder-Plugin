@@ -38,7 +38,9 @@ public final class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldLifecycleService(),
                 worldManager.worldCloneService(),
                 worldManager.worldDeleteService(),
-                worldManager.worldSettingsService()
+                worldManager.worldSettingsService(),
+                worldManager.worldExportService(),
+                worldManager.worldImportService()
         );
         this.worldControlPayloadAdapter.start();
         getLogger().info("LazyBuilder enabled.");
