@@ -16,9 +16,14 @@ import java.util.Objects;
 /** One client networking owner for both bounded LazyBuilder channels. */
 public final class LazyBuilderClientNetworking {
     private final ClientMapController mapController;
+    private final ClientTransferController transferController;
 
-    public LazyBuilderClientNetworking(ClientMapController mapController) {
+    public LazyBuilderClientNetworking(
+            ClientMapController mapController,
+            ClientTransferController transferController
+    ) {
         this.mapController = Objects.requireNonNull(mapController, "mapController");
+        this.transferController = Objects.requireNonNull(transferController, "transferController");
     }
 
     public void register() {
@@ -34,8 +39,10 @@ public final class LazyBuilderClientNetworking {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 client.execute(mapController::refreshCurrentWorld));
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
-                client.execute(mapController::reset));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+            mapController.reset();
+            transferController.reset();
+        }));
     }
 
     public static void sendMap(byte[] payload) {
@@ -56,12 +63,7 @@ public final class LazyBuilderClientNetworking {
 
     private void handleTransfer(byte[] bytes) {
         try {
-            TransferWireProtocol.Response response = TransferWireProtocol.decodeResponse(bytes);
-            // File transfer UI/controller is intentionally layered on this single decoder.
-            // Until a local file action exists, errors are still surfaced instead of ignored.
-            if (response instanceof TransferWireProtocol.ErrorResponse error) {
-                notifyPlayer("LazyBuilder transfer: " + error.message());
-            }
+            transferController.accept(TransferWireProtocol.decodeResponse(bytes));
         } catch (IOException | RuntimeException exception) {
             notifyPlayer("LazyBuilder transfer response rejected: " + exception.getMessage());
         }
