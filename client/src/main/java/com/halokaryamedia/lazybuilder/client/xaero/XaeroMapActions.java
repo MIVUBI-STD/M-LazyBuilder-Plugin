@@ -7,8 +7,8 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.gui.screen.Screen;
 import org.lwjgl.glfw.GLFW;
-import xaero.map.gui.GuiMap;
 
 import java.time.Instant;
 
@@ -18,8 +18,15 @@ import java.time.Instant;
  * <p>Xaero remains the renderer/navigation owner. LazyBuilder only samples the
  * already-rendered map camera and mouse location when an explicit key is pressed,
  * then sends server-authoritative intent through the existing map protocol.</p>
+ *
+ * <p>The adapter deliberately avoids linking against Xaero's shared ScreenBase
+ * hierarchy. That hierarchy is packaged separately by Xaero and is not exposed
+ * transitively by the Modrinth Maven artifact. Runtime matching therefore uses
+ * the exact fullscreen-map class name while the mixin accessor owns the only
+ * version-pinned field bridge.</p>
  */
 public final class XaeroMapActions {
+    private static final String XAERO_MAP_CLASS = "xaero.map.gui.GuiMap";
     private static final String CATEGORY = "key.categories.lazybuilder";
     private static final KeyBinding TELEPORT = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.lazybuilder.teleport_here", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, CATEGORY));
@@ -36,7 +43,8 @@ public final class XaeroMapActions {
     }
 
     private static void tick(MinecraftClient client) {
-        boolean mapOpen = client.currentScreen instanceof GuiMap;
+        Screen screen = client.currentScreen;
+        boolean mapOpen = isXaeroFullscreenMap(screen);
         if (!mapOpen) {
             if (wasMapOpen) firstCorner = null;
             wasMapOpen = false;
@@ -46,7 +54,7 @@ public final class XaeroMapActions {
 
         while (TELEPORT.wasPressed()) {
             try {
-                Corner point = mouseWorldPoint(client, (GuiMap) client.currentScreen);
+                Corner point = mouseWorldPoint(client, screen);
                 LazyBuilderClient.maps().teleportCurrent(point.x(), point.z());
             } catch (RuntimeException exception) {
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: " + exception.getMessage());
@@ -55,7 +63,7 @@ public final class XaeroMapActions {
 
         while (EXPORT_CORNER.wasPressed()) {
             try {
-                Corner point = mouseWorldPoint(client, (GuiMap) client.currentScreen);
+                Corner point = mouseWorldPoint(client, screen);
                 if (firstCorner == null) {
                     firstCorner = point;
                     LazyBuilderClientNetworking.notifyPlayer(
@@ -74,8 +82,14 @@ public final class XaeroMapActions {
         }
     }
 
-    static Corner mouseWorldPoint(MinecraftClient client, GuiMap map) {
-        XaeroMapAccessor accessor = (XaeroMapAccessor) map;
+    static boolean isXaeroFullscreenMap(Screen screen) {
+        return screen != null && XAERO_MAP_CLASS.equals(screen.getClass().getName());
+    }
+
+    static Corner mouseWorldPoint(MinecraftClient client, Object map) {
+        if (!(map instanceof XaeroMapAccessor accessor)) {
+            throw new IllegalStateException("Xaero map accessor is unavailable for this version");
+        }
         double mapScale = accessor.lazybuilder$getScale();
         if (!Double.isFinite(mapScale) || mapScale <= 0.0) {
             throw new IllegalStateException("Xaero map scale is unavailable");
