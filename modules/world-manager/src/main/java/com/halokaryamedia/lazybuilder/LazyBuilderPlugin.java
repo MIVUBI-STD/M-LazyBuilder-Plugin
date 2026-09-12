@@ -5,6 +5,8 @@ import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -14,6 +16,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 @Deprecated(forRemoval = false)
 public class LazyBuilderPlugin extends JavaPlugin {
     private WorldManager worldManager;
+    private WorldTaskRegistry worldTaskRegistry;
+    private WorldTaskRunner worldTaskRunner;
     private PaperTransferPayloadAdapter transferPayloadAdapter;
     private PaperMapActionPayloadAdapter mapActionPayloadAdapter;
     private PaperWorldControlPayloadAdapter worldControlPayloadAdapter;
@@ -23,6 +27,8 @@ public class LazyBuilderPlugin extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         this.worldManager = new WorldManager(this);
+        this.worldTaskRegistry = new WorldTaskRegistry();
+        this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
         this.worldManager.start();
 
         this.transferPayloadAdapter = new PaperTransferPayloadAdapter(this, worldManager.transferSessionService());
@@ -56,7 +62,8 @@ public class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldRegistry(),
                 worldManager.worldRuntimeService(),
                 worldManager.worldCreationService(),
-                worldManager.worldSettingsService()
+                worldManager.worldSettingsService(),
+                worldTaskRegistry
         );
         this.localControlServer.start();
         getLogger().info("World-Manager enabled.");
@@ -66,6 +73,9 @@ public class LazyBuilderPlugin extends JavaPlugin {
     public void onDisable() {
         if (localControlServer != null) {
             localControlServer.stop();
+        }
+        if (worldTaskRunner != null) {
+            worldTaskRunner.close();
         }
         if (worldControlPayloadAdapter != null) {
             worldControlPayloadAdapter.stop();
