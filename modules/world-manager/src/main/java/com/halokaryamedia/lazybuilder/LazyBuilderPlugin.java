@@ -54,7 +54,9 @@ public class LazyBuilderPlugin extends JavaPlugin {
         this.localControlServer = new PaperLocalControlServer(
                 this,
                 worldManager.worldRegistry(),
-                worldManager.worldRuntimeService()
+                worldManager.worldRuntimeService(),
+                worldManager.worldCreationService(),
+                worldManager.worldSettingsService()
         );
         this.localControlServer.start();
         getLogger().info("World-Manager enabled.");
