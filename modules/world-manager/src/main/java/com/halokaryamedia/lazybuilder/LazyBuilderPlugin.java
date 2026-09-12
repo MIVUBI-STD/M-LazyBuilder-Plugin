@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
+import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
@@ -16,6 +17,7 @@ public class LazyBuilderPlugin extends JavaPlugin {
     private PaperTransferPayloadAdapter transferPayloadAdapter;
     private PaperMapActionPayloadAdapter mapActionPayloadAdapter;
     private PaperWorldControlPayloadAdapter worldControlPayloadAdapter;
+    private PaperLocalControlServer localControlServer;
 
     @Override
     public void onEnable() {
@@ -48,11 +50,21 @@ public class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldImportService()
         );
         this.worldControlPayloadAdapter.start();
+
+        this.localControlServer = new PaperLocalControlServer(
+                this,
+                worldManager.worldRegistry(),
+                worldManager.worldRuntimeService()
+        );
+        this.localControlServer.start();
         getLogger().info("World-Manager enabled.");
     }
 
     @Override
     public void onDisable() {
+        if (localControlServer != null) {
+            localControlServer.stop();
+        }
         if (worldControlPayloadAdapter != null) {
             worldControlPayloadAdapter.stop();
         }
