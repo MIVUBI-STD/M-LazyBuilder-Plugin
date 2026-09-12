@@ -26,12 +26,20 @@ class WorldControlWireProtocolTest {
                 roundTrip(new WorldControlWireProtocol.CloneWorld(id, "build_copy", "Build Copy")));
         assertEquals(new WorldControlWireProtocol.DeleteWorld(id, "build"),
                 roundTrip(new WorldControlWireProtocol.DeleteWorld(id, "build")));
+        assertEquals(new WorldControlWireProtocol.GetSettings(id), roundTrip(new WorldControlWireProtocol.GetSettings(id)));
+        assertEquals(new WorldControlWireProtocol.SetAutoLoad(id, false), roundTrip(new WorldControlWireProtocol.SetAutoLoad(id, false)));
+        assertEquals(new WorldControlWireProtocol.SetDefaultMode(id, "ADVENTURE"), roundTrip(new WorldControlWireProtocol.SetDefaultMode(id, "ADVENTURE")));
+        assertEquals(new WorldControlWireProtocol.SetDifficulty(id, "HARD"), roundTrip(new WorldControlWireProtocol.SetDifficulty(id, "HARD")));
+        assertEquals(new WorldControlWireProtocol.SetPvp(id, true), roundTrip(new WorldControlWireProtocol.SetPvp(id, true)));
+        assertEquals(new WorldControlWireProtocol.ResetBuildReady(id), roundTrip(new WorldControlWireProtocol.ResetBuildReady(id)));
+        assertEquals(new WorldControlWireProtocol.SetSpawnHere(id), roundTrip(new WorldControlWireProtocol.SetSpawnHere(id)));
     }
 
     @Test
     void responsesRoundTrip() throws Exception {
+        UUID id = UUID.randomUUID();
         var world = new WorldControlWireProtocol.WorldSummary(
-                UUID.randomUUID(), "build", "Build", "FLAT", "ACTIVE", "LOADED", true, "CREATIVE");
+                id, "build", "Build", "FLAT", "ACTIVE", "LOADED", true, "CREATIVE");
         var list = new WorldControlWireProtocol.WorldList(List.of(world));
         assertEquals(list, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(list)));
 
@@ -40,6 +48,10 @@ class WorldControlWireProtocolTest {
 
         var teleported = new WorldControlWireProtocol.TeleportOk(world);
         assertEquals(teleported, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(teleported)));
+
+        var settings = new WorldControlWireProtocol.SettingsSnapshot(
+                id, true, "CREATIVE", "NORMAL", false, "CLEAR", 6000L, 0.0, 65.0, 0.0);
+        assertEquals(settings, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(settings)));
     }
 
     @Test
