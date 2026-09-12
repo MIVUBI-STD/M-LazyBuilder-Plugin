@@ -26,6 +26,8 @@
   let cloneName = '';
   let exportSource: ManagedWorldSummary | null = null;
   let exportName = '';
+  let deleteSource: ManagedWorldSummary | null = null;
+  let deleteConfirmation = '';
 
   let importPath = '';
   let importName = '';
@@ -44,6 +46,7 @@
         operationBusyWorldId = null;
         cloneSource = null;
         exportSource = null;
+        deleteSource = null;
         error = '';
         connectionStatus = 'Start the server to manage worlds';
         return;
@@ -170,9 +173,16 @@
     }
   }
 
+  function closeOperationPanels() {
+    cloneSource = null;
+    exportSource = null;
+    deleteSource = null;
+    deleteConfirmation = '';
+  }
+
   function openClone(world: ManagedWorldSummary) {
     if (importBusy) return;
-    exportSource = null;
+    closeOperationPanels();
     cloneSource = world;
     cloneName = `${world.displayName} Copy`;
   }
@@ -193,7 +203,7 @@
         destinationFolder,
         displayName
       });
-      cloneSource = null;
+      closeOperationPanels();
       cloneName = '';
       await pollTask(operationTask.taskId);
     } catch (e) {
@@ -206,7 +216,7 @@
 
   function openExport(world: ManagedWorldSummary) {
     if (importBusy) return;
-    cloneSource = null;
+    closeOperationPanels();
     exportSource = world;
     exportName = `${slugify(world.displayName) || 'world'}-export`;
   }
@@ -225,8 +235,39 @@
         targetFormat: 'JAVA_1_21_4',
         artifactName
       });
-      exportSource = null;
+      closeOperationPanels();
       exportName = '';
+      await pollTask(operationTask.taskId);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      operationBusyWorldId = null;
+      await refresh();
+    }
+  }
+
+  function openDelete(world: ManagedWorldSummary) {
+    if (importBusy) return;
+    closeOperationPanels();
+    deleteSource = world;
+    deleteConfirmation = '';
+  }
+
+  async function runDelete() {
+    if (!deleteSource || operationBusyWorldId || importBusy) return;
+    const confirmation = deleteConfirmation.trim();
+    if (confirmation !== deleteSource.displayName) return;
+    if (!window.confirm(`Permanently delete ${deleteSource.displayName}? This cannot be undone from LazyBuilder.`)) return;
+
+    operationBusyWorldId = deleteSource.id;
+    operationTask = null;
+    error = '';
+    try {
+      operationTask = await runtimeProduct.worlds.delete({
+        worldId: deleteSource.id,
+        typedFolderName: confirmation
+      });
+      closeOperationPanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
       error = String(e);
@@ -347,7 +388,7 @@
     <div class="world-form">
       <input bind:value={cloneName} disabled={operationBusyWorldId !== null || importBusy} placeholder="New world name" />
       <button disabled={operationBusyWorldId !== null || importBusy || !cloneName.trim()} onclick={runClone}>Clone</button>
-      <button disabled={operationBusyWorldId !== null || importBusy} onclick={() => (cloneSource = null)}>Cancel</button>
+      <button disabled={operationBusyWorldId !== null || importBusy} onclick={closeOperationPanels}>Cancel</button>
     </div>
     <div class="subtle">The source is temporarily unloaded while a consistent copy is created, then restored to its previous load state.</div>
   </div>
@@ -359,9 +400,24 @@
     <div class="world-form">
       <input bind:value={exportName} disabled={operationBusyWorldId !== null || importBusy} placeholder="Artifact name" />
       <button disabled={operationBusyWorldId !== null || importBusy || !exportName.trim()} onclick={runExport}>Export Java ZIP</button>
-      <button disabled={operationBusyWorldId !== null || importBusy} onclick={() => (exportSource = null)}>Cancel</button>
+      <button disabled={operationBusyWorldId !== null || importBusy} onclick={closeOperationPanels}>Cancel</button>
     </div>
     <div class="subtle">Native Java 1.21.4 export. The source is restored after the snapshot is captured while packaging continues off the Paper main thread.</div>
+  </div>
+{/if}
+
+{#if deleteSource}
+  <div class="card" style="margin-top: 12px">
+    <strong>Permanent Delete · {deleteSource.displayName}</strong>
+    <p class="subtle">Type the exact world name <strong>{deleteSource.displayName}</strong> to enable permanent deletion. The active fallback/default world is protected server-side.</p>
+    <div class="world-form">
+      <input bind:value={deleteConfirmation} disabled={operationBusyWorldId !== null || importBusy} placeholder="Exact world name" />
+      <button
+        disabled={operationBusyWorldId !== null || importBusy || deleteConfirmation.trim() !== deleteSource.displayName}
+        onclick={runDelete}
+      >Delete Permanently</button>
+      <button disabled={operationBusyWorldId !== null || importBusy} onclick={closeOperationPanels}>Cancel</button>
+    </div>
   </div>
 {/if}
 
@@ -396,6 +452,7 @@
             onclick={() => runLifecycleTask(world, 'restore')}
           >{operationBusyWorldId === world.id ? 'Working…' : 'Restore'}</button>
         {/if}
+        <button disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => openDelete(world)}>Delete</button>
       </div>
     </div>
   </div>
