@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * Phased permanent Delete use case.
@@ -28,6 +29,7 @@ public final class WorldDeleteService {
     private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
     private final WorldFileRepository files;
+    private final Predicate<WorldRecord> protectedWorld;
 
     public WorldDeleteService(
             WorldRegistry registry,
@@ -37,15 +39,28 @@ public final class WorldDeleteService {
             WorldOperationCoordinator operations,
             WorldFileRepository files
     ) {
+        this(registry, persistence, runtimeService, runtimeStates, operations, files, ignored -> false);
+    }
+
+    public WorldDeleteService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry runtimeStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files,
+            Predicate<WorldRecord> protectedWorld
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
         this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.files = Objects.requireNonNull(files, "files");
+        this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
     }
 
-    /** Main-thread phase: exact confirmation, exclusive lease, and safe unload. */
+    /** Main-thread phase: exact confirmation, protection check, exclusive lease, and safe unload. */
     public DeleteTask prepare(WorldId worldId, String typedFolderName) {
         Objects.requireNonNull(worldId, "worldId");
         Objects.requireNonNull(typedFolderName, "typedFolderName");
@@ -53,6 +68,9 @@ public final class WorldDeleteService {
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
         if (!world.folderName().equals(typedFolderName)) {
             throw new IllegalArgumentException("Delete confirmation must exactly match world folder name");
+        }
+        if (protectedWorld.test(world)) {
+            throw new IllegalStateException("The active fallback/default world cannot be deleted: " + world.folderName());
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
