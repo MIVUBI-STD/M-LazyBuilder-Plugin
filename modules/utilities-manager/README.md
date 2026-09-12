@@ -22,33 +22,35 @@ Each responsibility package may contain the listeners, commands, services, small
 
 Do not create a new framework layer, executor, registry, or Paper plugin merely because another command is added.
 
-## Planned slices
+## Feature families
 
 ```text
-Movement
+Movement — planned
   Advanced Fly
   Noclip
   Night Vision
 
-Build Helpers
+Build Helpers — planned
   Iron Door Toggle
   Double Slab Break
   Glazed Terracotta Rotate
 
-Creation Tools
+Creation Tools — planned
   Banner Creator
   Armor Color Creator
   Special Items
 
-Spectator
+Spectator — planned
   Builder spectator utilities
 
-World Safety
-  Explosion protection
+World Safety — implemented
+  Explosion block-damage protection
   Leaves decay protection
-  Farmland protection
-  Dragon egg teleport protection
+  Farmland trample protection
+  Dragon egg interaction/teleport protection
 ```
+
+World Safety is one cohesive lifecycle owner with independently configurable protections. Explosion protection preserves the explosion itself while clearing its block-destruction list, so the feature does not become a generic entity-damage or gameplay authority. Farmland protection covers both player physical interaction and entity conversion to dirt. Dragon egg protection denies vanilla block interaction that would move the egg.
 
 WorldEdit aliases, global physics disabling, redstone disabling, world lifecycle, performance optimization, and generic server administration are explicitly out of scope.
 
@@ -60,6 +62,21 @@ Feature lifecycle is fail-isolated:
 - a feature remains marked enabled when its `disable()` fails, so registry state does not falsely report successful cleanup;
 - `disableAll()` attempts every enabled feature in reverse enable order even when one cleanup fails;
 - cleanup failures are aggregated and reported by the plugin bootstrap rather than preventing unrelated feature cleanup.
+
+## Configuration
+
+```yaml
+features:
+  world-safety:
+    enabled: true
+    protections:
+      explosions: true
+      leaves-decay: true
+      farmland-trample: true
+      dragon-egg-teleport: true
+```
+
+All World Safety protections are enabled by default for the builder-server baseline, but each behavior can be disabled without disabling the whole feature family.
 
 ## Maintenance constraints
 
