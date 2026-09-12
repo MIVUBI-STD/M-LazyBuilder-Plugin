@@ -48,6 +48,34 @@ public final class MapActionWireProtocol {
         }
     }
 
+    public static byte[] teleportRequest(WorldId worldId, int blockX, int blockZ) {
+        return encode(TELEPORT_LOCATION, out -> {
+            writeWorldId(out, worldId);
+            out.writeInt(blockX);
+            out.writeInt(blockZ);
+        });
+    }
+
+    public static byte[] exportAreaRequest(
+            WorldId worldId,
+            int x1,
+            int z1,
+            int x2,
+            int z2,
+            String targetFormat,
+            String artifactName
+    ) {
+        return encode(EXPORT_AREA, out -> {
+            writeWorldId(out, worldId);
+            out.writeInt(x1);
+            out.writeInt(z1);
+            out.writeInt(x2);
+            out.writeInt(z2);
+            writeString(out, targetFormat);
+            writeString(out, artifactName);
+        });
+    }
+
     public static Request decodeRequest(byte[] payload) throws IOException {
         Objects.requireNonNull(payload, "payload");
         if (payload.length < 2 || payload.length > MAX_MESSAGE_BYTES) throw new IOException("Invalid map payload size");
@@ -103,7 +131,7 @@ public final class MapActionWireProtocol {
                 writer.write(out);
             }
             byte[] bytes = buffer.toByteArray();
-            if (bytes.length > MAX_MESSAGE_BYTES) throw new IllegalArgumentException("Map response exceeds protocol limit");
+            if (bytes.length > MAX_MESSAGE_BYTES) throw new IllegalArgumentException("Map message exceeds protocol limit");
             return bytes;
         } catch (IOException impossible) {
             throw new IllegalStateException(impossible);
