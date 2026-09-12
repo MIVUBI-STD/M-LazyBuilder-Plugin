@@ -47,6 +47,12 @@ export type CloneWorldRequest = {
   displayName: string;
 };
 
+export type ExportWorldRequest = {
+  worldId: string;
+  targetFormat: string;
+  artifactName: string;
+};
+
 export type WorldSettingsSnapshot = {
   id: string;
   displayName: string;
@@ -116,5 +122,6 @@ export const runtimeApi = {
   archiveWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
   restoreWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId }),
   backupWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_backup', { worldId }),
-  cloneWorld: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request })
+  cloneWorld: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request }),
+  exportWorld: (request: ExportWorldRequest) => invoke<WorldTaskSnapshot>('world_export', { request })
 };
