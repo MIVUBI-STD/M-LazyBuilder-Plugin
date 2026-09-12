@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder;
 import com.halokaryamedia.lazybuilder.world.WorldManager;
 import com.halokaryamedia.lazybuilder.world.paper.LocalControlImportUploadService;
 import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
+import com.halokaryamedia.lazybuilder.world.paper.PaperMainThreadDispatcher;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
@@ -29,8 +30,9 @@ public final class WorldManagerPlugin extends JavaPlugin {
         this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
         this.worldManager.start();
 
+        PaperMainThreadDispatcher mainThread = new PaperMainThreadDispatcher(this);
         WorldHeavyOperationOrchestrator heavyOperations = new WorldHeavyOperationOrchestrator(
-                this,
+                mainThread,
                 worldManager.worldCloneService(),
                 worldManager.worldDeleteService(),
                 worldManager.worldExportService(),
