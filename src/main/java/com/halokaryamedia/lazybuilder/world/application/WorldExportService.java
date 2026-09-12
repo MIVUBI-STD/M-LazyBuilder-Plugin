@@ -91,15 +91,44 @@ public final class WorldExportService {
         }
     }
 
-    public ExportResult executeFilePhase(ExportTask task) {
+    /** Worker phase 1: capture a consistent filesystem snapshot while the source is quiescent. */
+    public void captureSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         Path snapshot = null;
+        try {
+            snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
+            task.attachSnapshot(snapshot);
+        } catch (IOException | RuntimeException exception) {
+            cleanupWorkspace(snapshot);
+            throw new IllegalStateException("Failed to snapshot world " + task.source.folderName(), exception);
+        }
+    }
+
+    /**
+     * Main-thread boundary after snapshot capture. The source world can be restored
+     * immediately; conversion and packaging only consume the owned snapshot.
+     */
+    public void resumeSourceAfterSnapshot(ExportTask task) {
+        Objects.requireNonNull(task, "task");
+        task.requireOpen();
+        task.requireSnapshot();
+        if (!task.wasLoaded || task.sourceRestored) {
+            task.sourceRestored = true;
+            return;
+        }
+        runtimeService.load(task.source.id());
+        task.sourceRestored = true;
+    }
+
+    /** Worker phase 2: convert/package only from the captured snapshot. */
+    public ExportResult processSnapshot(ExportTask task) {
+        Objects.requireNonNull(task, "task");
+        task.requireOpen();
+        Path snapshot = task.beginSnapshotProcessing();
         Path converted = null;
         Path pruning = null;
         try {
-            snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
-
             if (task.area == null && NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
@@ -117,9 +146,7 @@ public final class WorldExportService {
                         + task.targetFormat);
             }
 
-            if (task.area != null) {
-                pruning = writeAreaPruning(task.area, snapshot);
-            }
+            if (task.area != null) pruning = writeAreaPruning(task.area, snapshot);
             converted = files.reserveWorkspace(UUID.randomUUID());
             try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
                 converter.convert(
@@ -128,9 +155,7 @@ public final class WorldExportService {
                 );
             }
 
-            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
-                writeNativeTransferMarker(converted);
-            }
+            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) writeNativeTransferMarker(converted);
             ExportArtifactType type = task.targetFormat.startsWith("BEDROCK_")
                     ? ExportArtifactType.BEDROCK_WORLD
                     : ExportArtifactType.JAVA_ZIP;
@@ -146,29 +171,42 @@ public final class WorldExportService {
             }
             cleanupWorkspace(converted);
             cleanupWorkspace(snapshot);
+            task.endSnapshotProcessing(snapshot);
         }
+    }
+
+    /**
+     * Compatibility helper for callers that have not yet split the snapshot and
+     * conversion phases. New Paper adapters should use captureSnapshot(),
+     * resumeSourceAfterSnapshot(), then processSnapshot().
+     */
+    public ExportResult executeFilePhase(ExportTask task) {
+        captureSnapshot(task);
+        return processSnapshot(task);
     }
 
     public void finish(ExportTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
         RuntimeException failure = null;
-        if (task.wasLoaded) {
-            try { runtimeService.load(task.source.id()); }
-            catch (RuntimeException exception) { failure = exception; }
+        if (task.wasLoaded && !task.sourceRestored) {
+            try {
+                runtimeService.load(task.source.id());
+                task.sourceRestored = true;
+            } catch (RuntimeException exception) {
+                failure = exception;
+            }
         }
-        task.close();
+        Path abandonedSnapshot = task.closeAndDetachIdleSnapshot();
+        cleanupWorkspace(abandonedSnapshot);
         if (failure != null) throw failure;
     }
 
-    /**
-     * Shutdown-only close path. It releases the operation lease without touching
-     * Paper runtime state, because a server/plugin shutdown must not start world
-     * loading while the runtime is being torn down.
-     */
+    /** Shutdown-only close path; never attempts to load a world during Paper teardown. */
     public void abandon(ExportTask task) {
         Objects.requireNonNull(task, "task");
-        task.close();
+        Path abandonedSnapshot = task.closeAndDetachIdleSnapshot();
+        cleanupWorkspace(abandonedSnapshot);
     }
 
     static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
@@ -247,8 +285,11 @@ public final class WorldExportService {
         private final WorldAreaSelection area;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
+        private volatile boolean sourceRestored;
         private volatile boolean completed;
         private volatile boolean closed;
+        private Path snapshot;
+        private boolean snapshotProcessing;
 
         private ExportTask(UUID operationId, WorldRecord source, String targetFormat, String artifactName,
                            WorldAreaSelection area, boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
@@ -265,16 +306,45 @@ public final class WorldExportService {
         public String targetFormat() { return targetFormat; }
         public WorldAreaSelection area() { return area; }
         public boolean completed() { return completed; }
+        public boolean sourceRestored() { return sourceRestored; }
 
-        private void requireOpen() {
+        private synchronized void requireOpen() {
             if (closed) throw new IllegalStateException("Export task is already closed");
         }
 
-        private synchronized void close() {
+        private synchronized void attachSnapshot(Path value) {
+            if (closed) throw new IllegalStateException("Export task closed while snapshot was being captured");
+            if (snapshot != null) throw new IllegalStateException("Export snapshot already exists");
+            snapshot = Objects.requireNonNull(value, "snapshot");
+        }
+
+        private synchronized Path requireSnapshot() {
+            if (snapshot == null) throw new IllegalStateException("Export snapshot has not been captured");
+            return snapshot;
+        }
+
+        private synchronized Path beginSnapshotProcessing() {
+            requireOpen();
+            if (snapshotProcessing) throw new IllegalStateException("Export snapshot is already processing");
+            Path value = requireSnapshot();
+            snapshotProcessing = true;
+            return value;
+        }
+
+        private synchronized void endSnapshotProcessing(Path processed) {
+            if (snapshot == processed) snapshot = null;
+            snapshotProcessing = false;
+        }
+
+        private synchronized Path closeAndDetachIdleSnapshot() {
             if (!closed) {
                 lease.close();
                 closed = true;
             }
+            if (snapshotProcessing) return null;
+            Path value = snapshot;
+            snapshot = null;
+            return value;
         }
     }
 }
