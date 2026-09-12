@@ -4,9 +4,9 @@ namespace HaloKaryaMedia.LazyBuilder.Desktop.Shell;
 
 public partial class MainWindow : Window
 {
-    public MainWindow(DashboardViewModel dashboard)
+    public MainWindow(ShellViewModel shell)
     {
         InitializeComponent();
-        DataContext = dashboard;
+        DataContext = shell;
     }
 }
