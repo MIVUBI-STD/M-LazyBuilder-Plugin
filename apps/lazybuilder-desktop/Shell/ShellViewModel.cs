@@ -10,11 +10,11 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IAsyncDisposable
     private object _currentPage;
     private string _currentSection = "Dashboard";
 
-    public ShellViewModel(DashboardViewModel dashboard, PluginsViewModel plugins)
+    public ShellViewModel(DashboardViewModel dashboard, WorldsViewModel worlds, PluginsViewModel plugins)
     {
         Dashboard = dashboard;
+        Worlds = worlds;
         Plugins = plugins;
-        Worlds = new PlaceholderPageViewModel("Worlds", "World management will be provided by World-Manager without duplicating server authority in the desktop app.");
         Settings = new PlaceholderPageViewModel("Settings", "Only server settings that help normal operation will be exposed here. Technical controls stay under Advanced.");
 
         _currentPage = Dashboard;
@@ -27,8 +27,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IAsyncDisposable
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public DashboardViewModel Dashboard { get; }
+    public WorldsViewModel Worlds { get; }
     public PluginsViewModel Plugins { get; }
-    public PlaceholderPageViewModel Worlds { get; }
     public PlaceholderPageViewModel Settings { get; }
 
     public object CurrentPage
@@ -62,10 +62,16 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         CurrentSection = section;
         CurrentPage = page;
+        if (page is WorldsViewModel worlds)
+            _ = worlds.RefreshAsync();
     }
 
     private void Raise([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-    public async ValueTask DisposeAsync() => await Dashboard.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        Worlds.Dispose();
+        await Dashboard.DisposeAsync();
+    }
 }
