@@ -19,12 +19,14 @@ LazyBuilder
 ## Repository layout
 
 ```text
-modules/world-manager/       World lifecycle, import/export, archive, settings, transfer
-modules/utilities-manager/   Small builder/server convenience features
-client/fabric/               Fabric client and in-game World-Manager surfaces
-apps/                        Desktop application work when introduced
-docs/                        Product, architecture, UI, and operational contracts
+EngineData/Frontend/RustApp/  Canonical LazyBuilder desktop app (Tauri 2 + Svelte 5 + Rust)
+modules/world-manager/        World lifecycle, import/export, archive, settings, transfer
+modules/utilities-manager/    Small builder/server convenience features
+client/fabric/                Fabric client and in-game World-Manager surfaces
+docs/                         Product, architecture, UI, and operational contracts
 ```
+
+The desktop has one source authority: `EngineData/Frontend/RustApp`. Svelte owns presentation/application state; Rust owns desktop-native process, filesystem, Plugin-Manager, Server-Manager, and World-Manager client behavior.
 
 Each manager owns its own source boundary, tests, configuration, artifact, and version. Unrelated modules must remain independently updateable.
 

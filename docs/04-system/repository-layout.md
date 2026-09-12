@@ -28,7 +28,7 @@ Rust desktop engine
 Windows process/filesystem + authenticated World-Manager loopback bridge
 ```
 
-The transitional .NET 8/WPF app under `apps/lazybuilder-desktop` is not the target desktop architecture. It remains only until the Tauri replacement reaches feature parity and passes CI, then it is removed rather than maintained as a second desktop implementation.
+`EngineData/Frontend/RustApp` is the sole desktop source authority. The previous .NET 8/WPF transition implementation has been removed after Tauri/Svelte/Rust reached parity and passed CI.
 
 ### Frontend ownership
 
@@ -162,27 +162,22 @@ Work Server - 1.21.4/
 
 All world-related persistent/work files belong under `world-system/`. Paper runtime files and plugins stay under `server/`.
 
-## Migration rules
+## Architecture rules
 
 1. Preserve existing World-Manager behavior and tests.
 2. Never create a second World-Manager implementation in the desktop app.
 3. Server-Manager and Plugin-Manager remain desktop domains, not Paper JARs.
-4. Tauri/Svelte/Rust is the canonical desktop target; WPF is transitional only.
-5. Migrate desktop behavior in bounded slices and remove WPF only after Tauri parity/CI proof.
-6. Keep external build tools external.
-7. Keep Paper 1.21.4 / Java 21 as the Minecraft baseline.
-8. Source/CI proof remains separate from installed Windows and live Paper validation.
+4. Tauri/Svelte/Rust is the sole desktop architecture.
+5. Keep external build tools external.
+6. Keep Paper 1.21.4 / Java 21 as the Minecraft baseline.
+7. Source/CI proof remains separate from installed Windows and live Paper validation.
 
-## Migration order
+## Current development order
 
 ```text
-1. scaffold canonical Tauri/Svelte/Rust desktop source
-2. add frontend typecheck/build + Rust cargo check to CI
-3. migrate Server-Manager behavior to Rust
-4. migrate Plugin-Manager behavior to Rust
-5. migrate authenticated World-Manager control client to Rust
-6. prove Tauri desktop parity
-7. remove apps/lazybuilder-desktop WPF source and .NET CI
-8. continue World control stage 2 and Utilities-Manager features
-9. package LazyBuilder.exe and perform installed/live validation
+1. Tauri/Svelte/Rust desktop parity — complete
+2. remove legacy WPF/.NET desktop — complete
+3. continue World control stage 2
+4. implement Utilities-Manager features in isolated packages
+5. package LazyBuilder.exe and perform installed/live validation
 ```
