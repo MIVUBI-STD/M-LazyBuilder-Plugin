@@ -59,6 +59,39 @@ final class UtilityFeatureRegistryTest {
         assertEquals(List.of("disable:b", "disable:a"), events);
     }
 
+    @Test
+    void failedSingleDisableKeepsFeatureMarkedEnabled() {
+        UtilityFeatureRegistry registry = new UtilityFeatureRegistry();
+        FailingFeature feature = new FailingFeature("movement");
+        registry.register(feature);
+        registry.enable("movement");
+
+        assertThrows(IllegalStateException.class, () -> registry.disable("movement"));
+
+        assertTrue(registry.isEnabled("movement"));
+    }
+
+    @Test
+    void disableAllContinuesAfterOneFeatureFails() {
+        List<String> events = new ArrayList<>();
+        UtilityFeatureRegistry registry = new UtilityFeatureRegistry();
+        registry.register(new SharedRecordingFeature("a", events));
+        registry.register(new SharedFailingFeature("b", events));
+        registry.register(new SharedRecordingFeature("c", events));
+        registry.enable("a");
+        registry.enable("b");
+        registry.enable("c");
+        events.clear();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, registry::disableAll);
+
+        assertEquals(List.of("disable:c", "disable:b", "disable:a"), events);
+        assertFalse(registry.isEnabled("a"));
+        assertTrue(registry.isEnabled("b"));
+        assertFalse(registry.isEnabled("c"));
+        assertEquals(1, failure.getSuppressed().length);
+    }
+
     private static final class RecordingFeature implements UtilityFeature {
         private final String id;
         private final List<String> events = new ArrayList<>();
@@ -83,7 +116,28 @@ final class UtilityFeatureRegistryTest {
         }
     }
 
-    private static final class SharedRecordingFeature implements UtilityFeature {
+    private static final class FailingFeature implements UtilityFeature {
+        private final String id;
+
+        private FailingFeature(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public void enable() { }
+
+        @Override
+        public void disable() {
+            throw new IllegalStateException("disable failed: " + id);
+        }
+    }
+
+    private static class SharedRecordingFeature implements UtilityFeature {
         private final String id;
         private final List<String> events;
 
@@ -105,6 +159,18 @@ final class UtilityFeatureRegistryTest {
         @Override
         public void disable() {
             events.add("disable:" + id);
+        }
+    }
+
+    private static final class SharedFailingFeature extends SharedRecordingFeature {
+        private SharedFailingFeature(String id, List<String> events) {
+            super(id, events);
+        }
+
+        @Override
+        public void disable() {
+            super.disable();
+            throw new IllegalStateException("disable failed");
         }
     }
 }
