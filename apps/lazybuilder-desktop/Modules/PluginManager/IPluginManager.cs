@@ -14,7 +14,8 @@ public sealed record PluginSummary(
     string DisplayName,
     string Version,
     string Category,
-    PluginState State
+    PluginState State,
+    string? ProblemDetail = null
 );
 
 public enum PluginState
