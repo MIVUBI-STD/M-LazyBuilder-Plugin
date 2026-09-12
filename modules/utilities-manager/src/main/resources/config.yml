@@ -6,3 +6,10 @@ features:
       leaves-decay: true
       farmland-trample: true
       dragon-egg-teleport: true
+
+  movement:
+    enabled: true
+    abilities:
+      advanced-fly: true
+      noclip: true
+      night-vision: true
