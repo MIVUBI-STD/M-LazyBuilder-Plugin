@@ -12,11 +12,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Event-driven chunk transfer owner for client uploads/downloads.
@@ -29,8 +29,8 @@ public final class TransferSessionService {
     private final Path exportsRoot;
     private final Path tempRoot;
     private final TransferPolicy policy;
-    private final Map<UUID, UploadSession> uploads = new LinkedHashMap<>();
-    private final Map<UUID, DownloadSession> downloads = new LinkedHashMap<>();
+    private final Map<UUID, UploadSession> uploads = new ConcurrentHashMap<>();
+    private final Map<UUID, DownloadSession> downloads = new ConcurrentHashMap<>();
 
     public TransferSessionService(Path importsRoot, Path exportsRoot, Path tempRoot, TransferPolicy policy) {
         this.importsRoot = ownedRoot(importsRoot, "importsRoot");
@@ -39,7 +39,7 @@ public final class TransferSessionService {
         this.policy = Objects.requireNonNull(policy, "policy");
     }
 
-    public synchronized TransferDescriptor beginUpload(
+    public TransferDescriptor beginUpload(
             UUID ownerId,
             String fileName,
             long totalBytes,
@@ -73,7 +73,7 @@ public final class TransferSessionService {
         return session.descriptor();
     }
 
-    public synchronized UploadProgress acceptUploadChunk(
+    public UploadProgress acceptUploadChunk(
             UUID ownerId,
             UUID sessionId,
             int chunkIndex,
@@ -81,51 +81,60 @@ public final class TransferSessionService {
     ) throws IOException {
         UploadSession session = requireUpload(ownerId, sessionId);
         Objects.requireNonNull(bytes, "bytes");
-        if (chunkIndex != session.nextChunkIndex) {
-            throw new IllegalArgumentException("Unexpected upload chunk index: " + chunkIndex);
-        }
-        if (bytes.length < 1 || bytes.length > session.chunkBytes) {
-            throw new IllegalArgumentException("Upload chunk size exceeds protocol limit");
-        }
-        long nextTotal = session.receivedBytes + bytes.length;
-        if (nextTotal > session.totalBytes) throw new IOException("Upload exceeded declared size");
-        if (chunkIndex < session.totalChunks - 1 && bytes.length != session.chunkBytes) {
-            throw new IllegalArgumentException("Non-final upload chunk must use full chunk size");
-        }
-
-        try (OutputStream out = Files.newOutputStream(session.partial,
-                StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-            out.write(bytes);
-        }
-        session.receivedBytes = nextTotal;
-        session.nextChunkIndex++;
-        return new UploadProgress(session.receivedBytes, session.totalBytes, session.nextChunkIndex, session.totalChunks);
-    }
-
-    public synchronized Path finishUpload(UUID ownerId, UUID sessionId) throws IOException {
-        UploadSession session = requireUpload(ownerId, sessionId);
-        try {
-            if (session.receivedBytes != session.totalBytes || session.nextChunkIndex != session.totalChunks) {
-                throw new IOException("Upload is incomplete");
+        synchronized (session) {
+            requireUpload(ownerId, sessionId, session);
+            if (chunkIndex != session.nextChunkIndex) {
+                throw new IllegalArgumentException("Unexpected upload chunk index: " + chunkIndex);
             }
-            String actual = sha256(session.partial);
-            if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
-            if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
-            move(session.partial, session.target);
-            uploads.remove(sessionId);
-            return session.target;
-        } catch (IOException | RuntimeException failure) {
-            abortUploadInternal(sessionId);
-            throw failure;
+            if (bytes.length < 1 || bytes.length > session.chunkBytes) {
+                throw new IllegalArgumentException("Upload chunk size exceeds protocol limit");
+            }
+            long nextTotal = session.receivedBytes + bytes.length;
+            if (nextTotal > session.totalBytes) throw new IOException("Upload exceeded declared size");
+            if (chunkIndex < session.totalChunks - 1 && bytes.length != session.chunkBytes) {
+                throw new IllegalArgumentException("Non-final upload chunk must use full chunk size");
+            }
+
+            try (OutputStream out = Files.newOutputStream(session.partial,
+                    StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
+                out.write(bytes);
+            }
+            session.receivedBytes = nextTotal;
+            session.nextChunkIndex++;
+            return new UploadProgress(session.receivedBytes, session.totalBytes, session.nextChunkIndex, session.totalChunks);
         }
     }
 
-    public synchronized void abortUpload(UUID ownerId, UUID sessionId) throws IOException {
-        requireUpload(ownerId, sessionId);
-        abortUploadInternal(sessionId);
+    public Path finishUpload(UUID ownerId, UUID sessionId) throws IOException {
+        UploadSession session = requireUpload(ownerId, sessionId);
+        synchronized (session) {
+            requireUpload(ownerId, sessionId, session);
+            try {
+                if (session.receivedBytes != session.totalBytes || session.nextChunkIndex != session.totalChunks) {
+                    throw new IOException("Upload is incomplete");
+                }
+                String actual = sha256(session.partial);
+                if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
+                if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
+                move(session.partial, session.target);
+                uploads.remove(sessionId, session);
+                return session.target;
+            } catch (IOException | RuntimeException failure) {
+                abortUploadInternal(sessionId, session);
+                throw failure;
+            }
+        }
     }
 
-    public synchronized TransferDescriptor beginDownload(UUID ownerId, String fileName) throws IOException {
+    public void abortUpload(UUID ownerId, UUID sessionId) throws IOException {
+        UploadSession session = requireUpload(ownerId, sessionId);
+        synchronized (session) {
+            requireUpload(ownerId, sessionId, session);
+            abortUploadInternal(sessionId, session);
+        }
+    }
+
+    public TransferDescriptor beginDownload(UUID ownerId, String fileName) throws IOException {
         Objects.requireNonNull(ownerId, "ownerId");
         String safeName = validateTransferName(fileName);
         long ownerDownloads = downloads.values().stream().filter(session -> session.ownerId.equals(ownerId)).count();
@@ -136,6 +145,10 @@ public final class TransferSessionService {
         if (!Files.isRegularFile(artifact) || Files.isSymbolicLink(artifact)) {
             throw new IOException("Export artifact does not exist: " + safeName);
         }
+
+        // Hashing can be expensive for multi-gigabyte exports. It intentionally runs
+        // outside every other transfer session's lock so one user cannot serialize all
+        // active clients while a checksum is being calculated.
         long size = Files.size(artifact);
         String digest = sha256(artifact);
         UUID sessionId = UUID.randomUUID();
@@ -147,63 +160,77 @@ public final class TransferSessionService {
         return session.descriptor();
     }
 
-    public synchronized DownloadChunk readDownloadChunk(UUID ownerId, UUID sessionId, int chunkIndex) throws IOException {
+    public DownloadChunk readDownloadChunk(UUID ownerId, UUID sessionId, int chunkIndex) throws IOException {
         DownloadSession session = requireDownload(ownerId, sessionId);
-        if (chunkIndex != session.nextChunkIndex) {
-            throw new IllegalArgumentException("Unexpected download chunk index: " + chunkIndex);
-        }
-        if (chunkIndex >= session.totalChunks) throw new IllegalArgumentException("Download chunk index out of range");
-
-        long offset = (long) chunkIndex * session.chunkBytes;
-        int expected = (int) Math.min(session.chunkBytes, session.totalBytes - offset);
-        byte[] data = new byte[expected];
-        try (InputStream in = Files.newInputStream(session.artifact)) {
-            in.skipNBytes(offset);
-            int read = 0;
-            while (read < expected) {
-                int count = in.read(data, read, expected - read);
-                if (count < 0) throw new IOException("Export artifact changed during download");
-                read += count;
+        synchronized (session) {
+            requireDownload(ownerId, sessionId, session);
+            if (chunkIndex != session.nextChunkIndex) {
+                throw new IllegalArgumentException("Unexpected download chunk index: " + chunkIndex);
             }
+            if (chunkIndex >= session.totalChunks) throw new IllegalArgumentException("Download chunk index out of range");
+
+            long offset = (long) chunkIndex * session.chunkBytes;
+            int expected = (int) Math.min(session.chunkBytes, session.totalBytes - offset);
+            byte[] data = new byte[expected];
+            try (InputStream in = Files.newInputStream(session.artifact)) {
+                in.skipNBytes(offset);
+                int read = 0;
+                while (read < expected) {
+                    int count = in.read(data, read, expected - read);
+                    if (count < 0) throw new IOException("Export artifact changed during download");
+                    read += count;
+                }
+            }
+            session.nextChunkIndex++;
+            boolean last = session.nextChunkIndex == session.totalChunks;
+            return new DownloadChunk(chunkIndex, data, last);
         }
-        session.nextChunkIndex++;
-        boolean last = session.nextChunkIndex == session.totalChunks;
-        return new DownloadChunk(chunkIndex, data, last);
     }
 
-    public synchronized void finishDownload(UUID ownerId, UUID sessionId) {
+    public void finishDownload(UUID ownerId, UUID sessionId) {
         DownloadSession session = requireDownload(ownerId, sessionId);
-        if (session.nextChunkIndex != session.totalChunks) {
-            throw new IllegalStateException("Download is incomplete");
+        synchronized (session) {
+            requireDownload(ownerId, sessionId, session);
+            if (session.nextChunkIndex != session.totalChunks) {
+                throw new IllegalStateException("Download is incomplete");
+            }
+            downloads.remove(sessionId, session);
         }
-        downloads.remove(sessionId);
     }
 
-    public synchronized void abortDownload(UUID ownerId, UUID sessionId) {
-        requireDownload(ownerId, sessionId);
-        downloads.remove(sessionId);
+    public void abortDownload(UUID ownerId, UUID sessionId) {
+        DownloadSession session = requireDownload(ownerId, sessionId);
+        synchronized (session) {
+            requireDownload(ownerId, sessionId, session);
+            downloads.remove(sessionId, session);
+        }
     }
 
-    public synchronized void abortAllForOwner(UUID ownerId) throws IOException {
+    public void abortAllForOwner(UUID ownerId) throws IOException {
         Objects.requireNonNull(ownerId, "ownerId");
-        UUID[] uploadIds = uploads.values().stream()
-                .filter(session -> session.ownerId.equals(ownerId))
-                .map(session -> session.sessionId)
-                .toArray(UUID[]::new);
         IOException failure = null;
-        for (UUID id : uploadIds) {
-            try { abortUploadInternal(id); }
-            catch (IOException exception) {
-                if (failure == null) failure = exception;
-                else failure.addSuppressed(exception);
+        for (UploadSession session : uploads.values().toArray(UploadSession[]::new)) {
+            if (!session.ownerId.equals(ownerId)) continue;
+            synchronized (session) {
+                if (uploads.get(session.sessionId) != session) continue;
+                try { abortUploadInternal(session.sessionId, session); }
+                catch (IOException exception) {
+                    if (failure == null) failure = exception;
+                    else failure.addSuppressed(exception);
+                }
             }
         }
-        downloads.entrySet().removeIf(entry -> entry.getValue().ownerId.equals(ownerId));
+        for (DownloadSession session : downloads.values().toArray(DownloadSession[]::new)) {
+            if (!session.ownerId.equals(ownerId)) continue;
+            synchronized (session) {
+                downloads.remove(session.sessionId, session);
+            }
+        }
         if (failure != null) throw failure;
     }
 
-    public synchronized int activeUploads() { return uploads.size(); }
-    public synchronized int activeDownloads() { return downloads.size(); }
+    public int activeUploads() { return uploads.size(); }
+    public int activeDownloads() { return downloads.size(); }
 
     private UploadSession requireUpload(UUID ownerId, UUID sessionId) {
         Objects.requireNonNull(ownerId, "ownerId");
@@ -211,6 +238,12 @@ public final class TransferSessionService {
         UploadSession session = uploads.get(sessionId);
         if (session == null || !session.ownerId.equals(ownerId)) throw new IllegalArgumentException("Upload session not found");
         return session;
+    }
+
+    private void requireUpload(UUID ownerId, UUID sessionId, UploadSession expected) {
+        if (uploads.get(sessionId) != expected || !expected.ownerId.equals(ownerId)) {
+            throw new IllegalArgumentException("Upload session not found");
+        }
     }
 
     private DownloadSession requireDownload(UUID ownerId, UUID sessionId) {
@@ -221,9 +254,15 @@ public final class TransferSessionService {
         return session;
     }
 
-    private void abortUploadInternal(UUID sessionId) throws IOException {
-        UploadSession session = uploads.remove(sessionId);
-        if (session != null) Files.deleteIfExists(session.partial);
+    private void requireDownload(UUID ownerId, UUID sessionId, DownloadSession expected) {
+        if (downloads.get(sessionId) != expected || !expected.ownerId.equals(ownerId)) {
+            throw new IllegalArgumentException("Download session not found");
+        }
+    }
+
+    private void abortUploadInternal(UUID sessionId, UploadSession session) throws IOException {
+        uploads.remove(sessionId, session);
+        Files.deleteIfExists(session.partial);
     }
 
     private static int chunkCount(long totalBytes, int chunkBytes) {
