@@ -14,14 +14,16 @@ import java.util.UUID;
 /**
  * Small binary protocol shared by the Paper transport and Fabric client.
  *
- * <p>Each payload is one request or one response. Upload/download chunks use
- * stop-and-wait semantics so ordering remains deterministic without a queue or
- * persistent transfer worker.</p>
+ * <p>Each payload is one request or one response. File-data requests may use a
+ * bounded credit window over Minecraft's already ordered/reliable play connection;
+ * the Paper adapter still serializes each player's application-level processing.
+ * No second socket, relay, HTTP service, or persistent transfer worker is needed.</p>
  */
 public final class TransferWireProtocol {
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     public static final int MAX_MESSAGE_BYTES = 30 * 1024;
     public static final int MAX_CHUNK_BYTES = 24 * 1024;
+    public static final int PIPELINE_WINDOW = 4;
     private static final int MAX_STRING_BYTES = 1024;
 
     private static final int BEGIN_UPLOAD = 1;
