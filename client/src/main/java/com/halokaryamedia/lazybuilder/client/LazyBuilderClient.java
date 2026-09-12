@@ -5,15 +5,15 @@ import net.fabricmc.api.ClientModInitializer;
 
 /** Fabric client entrypoint. Keeps initialization event-driven and side-local. */
 public final class LazyBuilderClient implements ClientModInitializer {
-    private static final ClientMapController MAPS = new ClientMapController();
+    private static final ClientTransferController TRANSFERS = new ClientTransferController();
+    private static final ClientMapController MAPS = new ClientMapController(TRANSFERS::downloadExport);
 
     @Override
     public void onInitializeClient() {
-        new LazyBuilderClientNetworking(MAPS).register();
+        new LazyBuilderClientNetworking(MAPS, TRANSFERS).register();
         XaeroAvailability.logStatus();
     }
 
-    public static ClientMapController maps() {
-        return MAPS;
-    }
+    public static ClientMapController maps() { return MAPS; }
+    public static ClientTransferController transfers() { return TRANSFERS; }
 }
