@@ -11,16 +11,18 @@ import java.util.UUID;
 
 /** First-party World Manager browser over one canonical world-control protocol. */
 public final class WorldManagerScreen extends Screen {
-    private static final int PAGE_SIZE = 4;
+    private static final int PAGE_SIZE = 3;
 
     private final ClientWorldController controller;
+    private final ClientTransferController transfers;
     private UUID selectedWorld;
     private int page;
     private long observedRevision;
 
-    public WorldManagerScreen(ClientWorldController controller) {
+    public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers) {
         super(Text.literal("LazyBuilder World Manager"));
         this.controller = controller;
+        this.transfers = transfers;
         this.observedRevision = controller.revision();
     }
 
@@ -55,18 +57,21 @@ public final class WorldManagerScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Create"), button -> {
             if (client != null) client.setScreen(new CreateWorldScreen(this, controller));
         }).dimensions(left, controlsY, 68, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Import"), button -> {
+            if (client != null) client.setScreen(new ImportWorldScreen(this, controller, transfers));
+        }).dimensions(left + 74, controlsY, 68, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Refresh"), button -> controller.refresh())
-                .dimensions(left + 74, controlsY, 68, 20).build());
+                .dimensions(left + 148, controlsY, 68, 20).build());
 
         if (maxPage > 0) {
             addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> {
                 page = Math.max(0, page - 1);
                 clearAndInit();
-            }).dimensions(left + 148, controlsY, 24, 20).build());
+            }).dimensions(left + 222, controlsY, 24, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
                 page = Math.min(maxPage, page + 1);
                 clearAndInit();
-            }).dimensions(left + 176, controlsY, 24, 20).build());
+            }).dimensions(left + 250, controlsY, 24, 20).build());
         }
 
         WorldControlWireProtocol.WorldSummary selected = selected();
@@ -95,9 +100,14 @@ public final class WorldManagerScreen extends Screen {
                     controller.requestSettings(selected.worldId());
                     if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, selected));
                 }).dimensions(actionX + actionWidth + gap, secondY, actionWidth, 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("Export"), button -> {
+                    if (client != null) client.setScreen(new ExportWorldScreen(this, controller, selected));
+                }).dimensions(actionX + (actionWidth + gap) * 2, secondY, actionWidth, 20).build());
+
+                int thirdY = secondY + 24;
                 addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
                     if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
-                }).dimensions(actionX + (actionWidth + gap) * 2, secondY, actionWidth, 20).build());
+                }).dimensions(actionX + actionWidth + gap, thirdY, actionWidth, 20).build());
             } else if ("ARCHIVED".equals(selected.lifecycle())) {
                 addDrawableChild(ButtonWidget.builder(Text.literal("Restore"), button -> controller.restore(selected.worldId()))
                         .dimensions(actionX, actionY, actionWidth, 20).build());
