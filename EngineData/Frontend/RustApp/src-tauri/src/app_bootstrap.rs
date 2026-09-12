@@ -24,7 +24,11 @@ pub fn run() {
             commands::world_manager::world_load,
             commands::world_manager::world_unload,
             commands::world_manager::world_settings,
-            commands::world_manager::world_update_settings
+            commands::world_manager::world_update_settings,
+            commands::world_manager::world_task_list,
+            commands::world_manager::world_task,
+            commands::world_manager::world_archive,
+            commands::world_manager::world_restore
         ])
         .run(tauri::generate_context!())
         .expect("failed to run LazyBuilder desktop runtime");
