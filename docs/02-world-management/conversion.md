@@ -34,28 +34,6 @@ on-demand conversion worker
 
 The adapter owns CLI/process details. No other World Manager source should construct converter CLI commands or depend on converter-specific file layout.
 
-## Verified upstream CLI contract
-
-The current upstream release process publishes a cross-platform `chunker-cli-<version>.jar` artifact in GitHub Releases. LazyBuilder selects that exact CLI JAR rather than Electron installers, AppImage, `.deb`, or platform GUI bundles.
-
-The verified CLI contract used by `ChunkerCliAdapter` is:
-
-```text
--i / --inputDirectory
--f / --outputFormat
--o / --outputDirectory
--p / --pruning
--m / --blockMappings
--s / --worldSettings
--c / --converterSettings
--r / --dimensionRegistry
--d / --dimensionMappings
--b / --biomeMappings
--k / --keepOriginalNBT
-```
-
-The runtime manifest exposes its version through `--version`. Adapter compatibility additionally requires the help output to contain the core input/output/pruning options. Supported writer formats are discovered from the active CLI validation catalog rather than maintained as a second LazyBuilder version list.
-
 ## Runtime model
 
 The conversion worker is not a daemon and must not remain resident while idle.
@@ -79,8 +57,6 @@ Idle requirements:
 - no map processing while World Manager UI is closed.
 
 World/file state is request/event driven. Heavy filesystem work is asynchronous; Bukkit/Paper state transitions remain on API-safe threads.
-
-The child process is heap-bounded and timeout-bounded. Process output is redirected to a request-local file while running and only a bounded tail is retained in memory, avoiding stdout pipe stalls and unbounded log retention.
 
 ## Import behavior
 
@@ -111,17 +87,29 @@ Imported gameplay/settings are preserved. `BUILD_READY` is applied only by Creat
 
 ## Export behavior
 
-World Manager chooses a native package path when no conversion is needed and the conversion worker when the target edition/version differs.
+Export is phased so Paper lifecycle work and heavy filesystem/conversion work remain separated.
 
 ```text
-same format/version
-→ native export
+prepare (Paper thread)
+→ acquire EXPORT lease
+→ unload/quiesce source when needed
 
-different version/edition
-→ conversion worker
+worker phase
+→ SNAPSHOT copy
+→ native package OR verified conversion runtime
+→ package completed artifact
+→ cleanup request workspaces
+
+finish (Paper thread)
+→ restore previous source load state
+→ release EXPORT lease
 ```
 
-Export UI exposes edition, version, and area. Converter-specific advanced settings remain at upstream defaults unless a future confirmed requirement requires an override.
+Native Java 1.21.4 export does not invoke the converter and is packaged directly as `.zip`.
+
+For a different Java version or Bedrock target, Export lazily checks for a stable conversion-runtime update, then uses the verified `current` runtime. If the update check itself fails but a verified current runtime already exists, Export continues with that current runtime instead of disabling the feature. The requested target format must exist in the runtime-discovered supported-format catalog before conversion starts.
+
+Converted Java output is packaged as `.zip`. Converted Bedrock output is packaged as `.mcworld`. Completed export artifacts are bounded to `plugins/LazyBuilder/world/exports` and never overwrite an existing artifact name.
 
 ## Export Area
 
@@ -142,6 +130,8 @@ area selection exists
 ```
 
 Exclude-region pruning is not part of the V1 user surface.
+
+The current Export World service implements whole-world export and therefore always omits pruning input. The later Xaero/client selection bridge will create the internal pruning document only when an area is actually selected; it must reuse the same Export service rather than create a second export path.
 
 Xaero remains the map/selection presentation owner. World Manager converts the selected block-space rectangle into validated chunk bounds for the converter adapter.
 
@@ -183,16 +173,9 @@ V1 permits only one active conversion job at a time. This protects CPU, memory, 
 
 ## Resource bounds
 
-The conversion worker runs in a separate JVM with a configured memory ceiling. It must not inherit an unbounded fraction of host memory.
+The conversion worker runs in a separate process/JVM with a configured memory ceiling. It must not inherit an unbounded fraction of host memory.
 
-Current server configuration keys:
-
-```text
-world-manager.conversion.max-heap-mb
-world-manager.conversion.timeout-minutes
-```
-
-The source default heap is conservative and maintainer-configurable. Conversion failure or out-of-memory must not terminate Paper.
+Default policy should prefer a conservative bounded heap, configurable by the maintainer. Conversion failure or out-of-memory must not terminate Paper.
 
 ## Automatic runtime updates
 
@@ -212,33 +195,28 @@ retained runtime = current + previous
 server restart   = not required
 ```
 
-Update checks are triggered lazily (for example, first use of Import/Export after the interval expires) rather than by a permanent timer.
-
-### Release source
-
-`GitHubChunkerReleaseSource` reads the latest stable release metadata from the official `HiveGamesOSS/Chunker` GitHub Releases endpoint and selects only the exact `chunker-cli-<tag>.jar` asset. The release-provided `sha256:` digest is mandatory. Missing CLI JAR or missing SHA-256 digest fails closed and leaves the installed runtime unchanged.
-
-Downloads use a temporary file followed by publish/move into the internal download workspace. The downloaded artifact is still independently hashed by `ConversionUpdateService` before candidate staging.
+Update checks are triggered lazily by conversion-requiring transfer work rather than by a permanent timer. Native same-version Java export bypasses the conversion updater entirely.
 
 ### Update pipeline
 
 ```text
 check release metadata
-→ select exact CLI JAR
 → if no newer stable version: stop
 → download candidate to staging
-→ verify release SHA-256
-→ probe version and CLI contract
-→ discover supported formats
-→ if PASS: candidate → current
-→ retain old current as previous
+→ verify release digest/checksum
+→ probe expected CLI/runtime capabilities
+→ query supported formats
+→ if PASS: mark candidate current for the next conversion
+→ retain previous runtime for rollback
 ```
 
 An active conversion always finishes with the runtime version it started with. Runtime replacement never occurs mid-job.
 
-If validation fails, keep the current runtime and discard/reject the candidate. Do not disable Import/Export merely because an update failed.
+If validation fails, keep the current runtime and discard/reject the candidate. Do not disable Import/Export merely because an update failed while a verified current runtime is available.
 
 ### Runtime store
+
+Conceptually:
 
 ```text
 world/runtime/converter/
@@ -251,10 +229,10 @@ Only current and previous are retained after successful stabilization; stale can
 
 ### Supported format catalog
 
-The World Manager version list is discovered from the verified runtime instead of hardcoded. A converter update that only adds supported Minecraft versions therefore does not require a LazyBuilder release.
+The World Manager version list is discovered from the verified runtime rather than hardcoded where possible. A converter update that only adds supported Minecraft versions therefore does not require a LazyBuilder release.
 
-If the converter changes its CLI/API contract incompatibly, the compatibility probe rejects the candidate until `ChunkerCliAdapter` is updated in LazyBuilder.
+If the converter changes its CLI/API contract incompatibly, the compatibility probe rejects the candidate until `ConverterAdapter` is updated in LazyBuilder.
 
 ## Proof boundary
 
-Remote/source proof may establish contracts, release parsing, adapter isolation, update state transitions, checksum behavior, supported-format parsing, and deterministic CLI command construction. Real runtime download, CLI process execution, conversion quality, Paper world lifecycle, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
+Remote/source proof may establish contracts, adapter isolation, update state transitions, checksum behavior, deterministic parsing, phased export ownership, and artifact packaging logic. Live conversion quality, Paper world lifecycle, `.mcworld` opening, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
