@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
 import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
@@ -62,6 +63,7 @@ public final class PaperLocalControlServer {
     private final WorldBackupService backupService;
     private final WorldExportService exportService;
     private final WorldImportService importService;
+    private final WorldDeleteService deleteService;
     private final LocalControlImportUploadService importUploads;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
@@ -80,6 +82,7 @@ public final class PaperLocalControlServer {
             WorldBackupService backupService,
             WorldExportService exportService,
             WorldImportService importService,
+            WorldDeleteService deleteService,
             LocalControlImportUploadService importUploads,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
@@ -94,6 +97,7 @@ public final class PaperLocalControlServer {
         this.backupService = Objects.requireNonNull(backupService, "backupService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
         this.importService = Objects.requireNonNull(importService, "importService");
+        this.deleteService = Objects.requireNonNull(deleteService, "deleteService");
         this.importUploads = Objects.requireNonNull(importUploads, "importUploads");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
@@ -264,6 +268,7 @@ public final class PaperLocalControlServer {
             case "/backup" -> handleBackupTaskStart(exchange);
             case "/export" -> handleExportTaskStart(exchange);
             case "/import" -> handleImportTaskStart(exchange);
+            case "/delete" -> handleDeleteTaskStart(exchange);
             case "/archive", "/restore" -> handleLifecycleTaskStart(exchange, relative);
             default -> sendError(exchange, 404, "not_found", "Unknown task operation.");
         }
@@ -345,6 +350,19 @@ public final class PaperLocalControlServer {
                 null,
                 "Import queued.",
                 progress -> runImportTask(artifactName, destinationFolder, displayName, progress)
+        );
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    private void handleDeleteTaskStart(HttpExchange exchange) throws Exception {
+        DeleteTaskStartRequest request = readJson(exchange, DeleteTaskStartRequest.class);
+        WorldId worldId = requireManagedWorldId(request.worldId());
+        String confirmation = requireNonBlank(request.typedFolderName(), "typedFolderName");
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.DELETE,
+                worldId,
+                "Delete queued.",
+                progress -> runDeleteTask(worldId, confirmation, progress)
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -466,6 +484,34 @@ public final class PaperLocalControlServer {
         if (failure != null) throw failure;
         progress.update(95, "Import finalized.");
         return Objects.requireNonNull(imported, "imported").id().toString();
+    }
+
+    private String runDeleteTask(
+            WorldId worldId,
+            String typedFolderName,
+            WorldTaskWork.Progress progress
+    ) throws Exception {
+        progress.update(10, "Verifying delete confirmation and fallback protection.");
+        WorldDeleteService.DeleteTask deleteTask = sync(() -> deleteService.prepare(worldId, typedFolderName));
+        Exception failure = null;
+        try {
+            progress.update(35, "Staging world for reversible deletion.");
+            deleteService.executeFilePhase(deleteTask);
+            progress.update(90, "Deletion committed; finalizing task.");
+        } catch (Exception exception) {
+            failure = exception;
+        }
+        try {
+            sync(() -> {
+                deleteService.finish(deleteTask);
+                return null;
+            });
+        } catch (Exception finishFailure) {
+            failure = combine(failure, finishFailure);
+        }
+        if (failure != null) throw failure;
+        progress.update(95, "Delete finalized.");
+        return typedFolderName;
     }
 
     private static Exception combine(Exception primary, Exception secondary) {
@@ -676,6 +722,7 @@ public final class PaperLocalControlServer {
     private record CloneTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
     private record ImportTaskStartRequest(String artifactName, String destinationFolder, String displayName) {}
+    private record DeleteTaskStartRequest(String worldId, String typedFolderName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(Boolean autoLoad, String defaultGameMode, Long timeOfDayTicks,
                                                String weather, Boolean naturalSpawning, Boolean daylightCycle,
