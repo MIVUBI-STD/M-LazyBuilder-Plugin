@@ -121,7 +121,7 @@ public final class PaperLocalControlServer {
             }
 
             String[] parts = relative.substring(1).split("/");
-            if (parts.length < 2 || parts.length > 2) {
+            if (parts.length != 2) {
                 sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
                 return;
             }
@@ -174,13 +174,19 @@ public final class PaperLocalControlServer {
     }
 
     private void handleLoad(HttpExchange exchange, WorldId worldId) throws Exception {
-        requirePost(exchange);
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
+            return;
+        }
         WorldRecord world = sync(() -> runtime.load(worldId));
         sendJson(exchange, 200, summary(world));
     }
 
     private void handleUnload(HttpExchange exchange, WorldId worldId) throws Exception {
-        requirePost(exchange);
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
+            return;
+        }
         WorldRecord world = sync(() -> runtime.unload(worldId));
         sendJson(exchange, 200, summary(world));
     }
@@ -281,13 +287,6 @@ public final class PaperLocalControlServer {
         }
     }
 
-    private static void requirePost(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
-            throw new RequestHandledException();
-        }
-    }
-
     private static boolean authorize(HttpExchange exchange, String expectedToken) throws IOException {
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
         if (!constantTimeEquals("Bearer " + expectedToken, authorization)) {
@@ -375,6 +374,4 @@ public final class PaperLocalControlServer {
             boolean daylightCycle,
             boolean weatherCycle
     ) {}
-
-    private static final class RequestHandledException extends RuntimeException {}
 }
