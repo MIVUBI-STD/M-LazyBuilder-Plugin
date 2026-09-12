@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font-family: Inter, "Segoe UI", sans-serif; }
+button { font: inherit; }
+.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100%; }
+.sidebar { border-right: 1px solid var(--border); padding: 20px; }
+.sidebar nav { display: grid; gap: 8px; }
+.sidebar button { border: 0; border-radius: 10px; padding: 11px 12px; text-align: left; background: transparent; color: var(--text); cursor: pointer; }
+.sidebar button.active, .sidebar button:hover { background: var(--surface-2); }
+.content { padding: 32px; overflow: auto; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.label { color: var(--muted); font-size: 13px; }
+.value { font-size: 24px; margin-top: 6px; }
+.actions { display: flex; gap: 10px; margin-top: 22px; }
+.actions button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.subtle { color: var(--muted); }
