@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
+import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
@@ -45,8 +46,11 @@ public final class PaperLocalControlServer {
     public static final String TOKEN_ENV = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
     public static final String PORT_ENV = "LAZYBUILDER_WORLD_CONTROL_PORT";
     public static final int DEFAULT_PORT = 17842;
+
     private static final Gson GSON = new Gson();
     private static final long MAIN_THREAD_TIMEOUT_SECONDS = 30L;
+    private static final String IMPORT_FILE_HEADER = "X-LazyBuilder-File-Name";
+    private static final String IMPORT_SHA_HEADER = "X-LazyBuilder-Sha256";
 
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
@@ -57,6 +61,8 @@ public final class PaperLocalControlServer {
     private final WorldCloneService cloneService;
     private final WorldBackupService backupService;
     private final WorldExportService exportService;
+    private final WorldImportService importService;
+    private final LocalControlImportUploadService importUploads;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
 
@@ -73,6 +79,8 @@ public final class PaperLocalControlServer {
             WorldCloneService cloneService,
             WorldBackupService backupService,
             WorldExportService exportService,
+            WorldImportService importService,
+            LocalControlImportUploadService importUploads,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
     ) {
@@ -85,6 +93,8 @@ public final class PaperLocalControlServer {
         this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.backupService = Objects.requireNonNull(backupService, "backupService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
+        this.importService = Objects.requireNonNull(importService, "importService");
+        this.importUploads = Objects.requireNonNull(importUploads, "importUploads");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
     }
@@ -96,6 +106,7 @@ public final class PaperLocalControlServer {
             plugin.getLogger().fine("Desktop World control bridge disabled: no local control token was provided.");
             return;
         }
+
         int port = resolvePort(System.getenv(PORT_ENV));
         try {
             HttpServer created = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
@@ -104,6 +115,7 @@ public final class PaperLocalControlServer {
             created.createContext("/v1/status", exchange -> handleStatus(exchange, token));
             created.createContext("/v1/worlds", exchange -> handleWorlds(exchange, token));
             created.createContext("/v1/tasks", exchange -> handleTasks(exchange, token));
+            created.createContext("/v1/imports/upload", exchange -> handleImportUpload(exchange, token));
             created.start();
             server = created;
             executor = createdExecutor;
@@ -117,6 +129,8 @@ public final class PaperLocalControlServer {
         HttpServer current = server;
         server = null;
         if (current != null) current.stop(0);
+        importUploads.stop();
+
         ExecutorService currentExecutor = executor;
         executor = null;
         if (currentExecutor != null) currentExecutor.close();
@@ -164,6 +178,35 @@ public final class PaperLocalControlServer {
         } catch (Exception exception) {
             plugin.getLogger().warning("Local World control request failed: " + exception.getMessage());
             sendError(exchange, 500, "world_operation_failed", "World-Manager could not complete the request.");
+        }
+    }
+
+    private void handleImportUpload(HttpExchange exchange, String token) throws IOException {
+        if (!authorize(exchange, token)) return;
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
+            return;
+        }
+
+        try {
+            String fileName = requireNonBlank(exchange.getRequestHeaders().getFirst(IMPORT_FILE_HEADER), "fileName");
+            String sha256 = requireNonBlank(exchange.getRequestHeaders().getFirst(IMPORT_SHA_HEADER), "sha256");
+            String contentLength = requireNonBlank(exchange.getRequestHeaders().getFirst("Content-Length"), "Content-Length");
+            long totalBytes;
+            try {
+                totalBytes = Long.parseLong(contentLength);
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException("Content-Length must be a valid positive integer", exception);
+            }
+            var result = importUploads.upload(fileName, totalBytes, sha256, exchange.getRequestBody());
+            sendJson(exchange, 201, new ImportUploadResponse(result.fileName(), result.totalBytes()));
+        } catch (IllegalArgumentException exception) {
+            sendError(exchange, 400, "invalid_upload", exception.getMessage());
+        } catch (IllegalStateException exception) {
+            sendError(exchange, 409, "upload_conflict", exception.getMessage());
+        } catch (Exception exception) {
+            plugin.getLogger().warning("Local World import upload failed: " + exception.getMessage());
+            sendError(exchange, 500, "upload_failed", "World-Manager could not store the import artifact.");
         }
     }
 
@@ -216,27 +259,18 @@ public final class PaperLocalControlServer {
     }
 
     private void handleTaskStart(HttpExchange exchange, String relative) throws Exception {
-        if ("/clone".equals(relative)) {
-            handleCloneTaskStart(exchange);
-            return;
+        switch (relative) {
+            case "/clone" -> handleCloneTaskStart(exchange);
+            case "/backup" -> handleBackupTaskStart(exchange);
+            case "/export" -> handleExportTaskStart(exchange);
+            case "/import" -> handleImportTaskStart(exchange);
+            case "/archive", "/restore" -> handleLifecycleTaskStart(exchange, relative);
+            default -> sendError(exchange, 404, "not_found", "Unknown task operation.");
         }
-        if ("/backup".equals(relative)) {
-            handleBackupTaskStart(exchange);
-            return;
-        }
-        if ("/export".equals(relative)) {
-            handleExportTaskStart(exchange);
-            return;
-        }
-        WorldTaskType type = switch (relative) {
-            case "/archive" -> WorldTaskType.ARCHIVE;
-            case "/restore" -> WorldTaskType.RESTORE;
-            default -> null;
-        };
-        if (type == null) {
-            sendError(exchange, 404, "not_found", "Unknown task operation.");
-            return;
-        }
+    }
+
+    private void handleLifecycleTaskStart(HttpExchange exchange, String relative) throws Exception {
+        WorldTaskType type = "/archive".equals(relative) ? WorldTaskType.ARCHIVE : WorldTaskType.RESTORE;
         TaskStartRequest request = readJson(exchange, TaskStartRequest.class);
         WorldId worldId = requireManagedWorldId(request.worldId());
         WorldTaskSnapshot queued = taskRunner.submit(
@@ -299,6 +333,22 @@ public final class PaperLocalControlServer {
         sendJson(exchange, 202, taskResponse(queued));
     }
 
+    private void handleImportTaskStart(HttpExchange exchange) throws Exception {
+        ImportTaskStartRequest request = readJson(exchange, ImportTaskStartRequest.class);
+        String artifactName = requireNonBlank(request.artifactName(), "artifactName");
+        String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
+        String displayName = request.displayName() == null || request.displayName().isBlank()
+                ? destinationFolder
+                : request.displayName().trim();
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.IMPORT,
+                null,
+                "Import queued.",
+                progress -> runImportTask(artifactName, destinationFolder, displayName, progress)
+        );
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
     private String runCloneTask(
             WorldId sourceId,
             String destinationFolder,
@@ -307,14 +357,14 @@ public final class PaperLocalControlServer {
     ) throws Exception {
         progress.update(10, "Preparing source world on Paper.");
         WorldCloneService.CloneTask cloneTask = sync(() -> cloneService.prepare(sourceId, destinationFolder, displayName));
-        Exception operationFailure = null;
+        Exception failure = null;
         WorldRecord cloned = null;
         try {
             progress.update(30, "Copying world files.");
             cloned = cloneService.executeFilePhase(cloneTask);
             progress.update(85, "Clone published; restoring source runtime state.");
         } catch (Exception exception) {
-            operationFailure = exception;
+            failure = exception;
         }
         try {
             sync(() -> {
@@ -322,10 +372,9 @@ public final class PaperLocalControlServer {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
-            else operationFailure = finishFailure;
+            failure = combine(failure, finishFailure);
         }
-        if (operationFailure != null) throw operationFailure;
+        if (failure != null) throw failure;
         progress.update(95, "Clone finalized.");
         return Objects.requireNonNull(cloned, "cloned").id().toString();
     }
@@ -333,14 +382,14 @@ public final class PaperLocalControlServer {
     private String runBackupTask(WorldId worldId, WorldTaskWork.Progress progress) throws Exception {
         progress.update(10, "Preparing source world on Paper.");
         WorldBackupService.BackupTask backupTask = sync(() -> backupService.prepare(worldId));
-        Exception operationFailure = null;
+        Exception failure = null;
         WorldBackupService.BackupResult result = null;
         try {
             progress.update(30, "Creating consistent world snapshot.");
             result = backupService.executeFilePhase(backupTask);
             progress.update(85, "Backup stored; restoring source runtime state.");
         } catch (Exception exception) {
-            operationFailure = exception;
+            failure = exception;
         }
         try {
             sync(() -> {
@@ -348,10 +397,9 @@ public final class PaperLocalControlServer {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
-            else operationFailure = finishFailure;
+            failure = combine(failure, finishFailure);
         }
-        if (operationFailure != null) throw operationFailure;
+        if (failure != null) throw failure;
         progress.update(95, "Backup finalized.");
         return Objects.requireNonNull(result, "result").backupId();
     }
@@ -364,7 +412,7 @@ public final class PaperLocalControlServer {
     ) throws Exception {
         progress.update(10, "Preparing source world on Paper.");
         WorldExportService.ExportTask exportTask = sync(() -> exportService.prepare(worldId, targetFormat, artifactName));
-        Exception operationFailure = null;
+        Exception failure = null;
         WorldExportService.ExportResult result = null;
         try {
             progress.update(25, "Capturing consistent world snapshot.");
@@ -378,7 +426,7 @@ public final class PaperLocalControlServer {
             result = exportService.processSnapshot(exportTask);
             progress.update(90, "Export artifact ready; finalizing task.");
         } catch (Exception exception) {
-            operationFailure = exception;
+            failure = exception;
         }
         try {
             sync(() -> {
@@ -386,12 +434,44 @@ public final class PaperLocalControlServer {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
-            else operationFailure = finishFailure;
+            failure = combine(failure, finishFailure);
         }
-        if (operationFailure != null) throw operationFailure;
+        if (failure != null) throw failure;
         progress.update(95, "Export finalized.");
         return Objects.requireNonNull(result, "result").artifact().getFileName().toString();
+    }
+
+    private String runImportTask(
+            String artifactName,
+            String destinationFolder,
+            String displayName,
+            WorldTaskWork.Progress progress
+    ) throws Exception {
+        progress.update(10, "Preparing import.");
+        WorldImportService.ImportTask importTask = importService.prepare(artifactName, destinationFolder, displayName);
+        Exception failure = null;
+        WorldRecord imported = null;
+        try {
+            progress.update(30, "Validating and converting import artifact.");
+            imported = importService.executeFilePhase(importTask);
+            progress.update(90, "Imported world published; finalizing task.");
+        } catch (Exception exception) {
+            failure = exception;
+        }
+        try {
+            importService.finish(importTask);
+        } catch (Exception finishFailure) {
+            failure = combine(failure, finishFailure);
+        }
+        if (failure != null) throw failure;
+        progress.update(95, "Import finalized.");
+        return Objects.requireNonNull(imported, "imported").id().toString();
+    }
+
+    private static Exception combine(Exception primary, Exception secondary) {
+        if (primary == null) return secondary;
+        primary.addSuppressed(secondary);
+        return primary;
     }
 
     private WorldId requireManagedWorldId(String value) {
@@ -438,8 +518,7 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
             return;
         }
-        WorldRecord world = sync(() -> runtime.load(worldId));
-        sendJson(exchange, 200, summary(world));
+        sendJson(exchange, 200, summary(sync(() -> runtime.load(worldId))));
     }
 
     private void handleUnload(HttpExchange exchange, WorldId worldId) throws Exception {
@@ -447,8 +526,7 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
             return;
         }
-        WorldRecord world = sync(() -> runtime.unload(worldId));
-        sendJson(exchange, 200, summary(world));
+        sendJson(exchange, 200, summary(sync(() -> runtime.unload(worldId))));
     }
 
     private void handleSettings(HttpExchange exchange, WorldId worldId) throws Exception {
@@ -587,6 +665,7 @@ public final class PaperLocalControlServer {
 
     private record StatusResponse(String status, int protocolVersion) {}
     private record ErrorResponse(String error, String message) {}
+    private record ImportUploadResponse(String fileName, long totalBytes) {}
     private record WorldListResponse(List<ManagedWorldResponse> worlds) {}
     private record TaskListResponse(List<TaskResponse> tasks) {}
     private record ManagedWorldResponse(String id, String displayName, String kind, String lifecycle,
@@ -596,6 +675,7 @@ public final class PaperLocalControlServer {
     private record TaskStartRequest(String worldId) {}
     private record CloneTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
+    private record ImportTaskStartRequest(String artifactName, String destinationFolder, String displayName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(Boolean autoLoad, String defaultGameMode, Long timeOfDayTicks,
                                                String weather, Boolean naturalSpawning, Boolean daylightCycle,
