@@ -19,10 +19,10 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Compile and test Paper plugin
+      - name: Compile and test Paper modules
         run: mvn --batch-mode --no-transfer-progress verify
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.12'
       - name: Compile Fabric client
-        run: gradle -p client --no-daemon build
+        run: gradle -p client/fabric --no-daemon build
