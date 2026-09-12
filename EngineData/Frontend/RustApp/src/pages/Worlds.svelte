@@ -111,6 +111,22 @@
     }
   }
 
+  async function runBackup(world: ManagedWorldSummary) {
+    if (operationBusyWorldId) return;
+    operationBusyWorldId = world.id;
+    operationTask = null;
+    error = '';
+    try {
+      operationTask = await runtimeProduct.worlds.backup(world.id);
+      await pollTask(operationTask.taskId);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      operationBusyWorldId = null;
+      await refresh();
+    }
+  }
+
   function openClone(world: ManagedWorldSummary) {
     cloneSource = world;
     cloneName = `${world.displayName} Copy`;
@@ -230,6 +246,7 @@
   <div class="card" style="margin-top: 12px">
     <strong>{operationTask.taskType} · {operationTask.state}</strong>
     <div class="subtle">{operationTask.progressPercent}% · {operationTask.message}</div>
+    {#if operationTask.result}<div class="subtle">Result: {operationTask.result}</div>{/if}
     {#if operationTask.error}<div style="color: var(--danger)">{operationTask.error}</div>{/if}
   </div>
 {/if}
@@ -264,6 +281,7 @@
           onclick={() => openSettings(world)}
         >Settings</button>
         {#if world.lifecycle === 'ACTIVE'}
+          <button disabled={busy || operationBusyWorldId !== null} onclick={() => runBackup(world)}>Backup</button>
           <button disabled={busy || operationBusyWorldId !== null} onclick={() => openClone(world)}>Clone</button>
           <button
             disabled={busy || operationBusyWorldId !== null}
