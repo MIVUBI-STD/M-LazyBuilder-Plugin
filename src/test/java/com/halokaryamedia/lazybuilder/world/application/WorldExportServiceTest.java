@@ -1,7 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.application;
 
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
-import com.halokaryamedia.lazybuilder.world.conversion.ConversionRelease;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionReleaseSource;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeManifest;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
@@ -26,7 +25,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -100,6 +98,7 @@ class WorldExportServiceTest {
             Files.writeString(path.resolve("level.dat"), "data");
             return path;
         }
+        @Override public Path stageDelete(WorldRecord world, UUID operationId) { return root.resolve(operationId.toString()); }
         @Override public Path reserveWorkspace(UUID operationId) { return root.resolve(operationId.toString()); }
         @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) {}
         @Override public void deleteWorld(WorldRecord world) {}
