@@ -1,7 +1,5 @@
 # LazyBuilder
 
-LazyBuilder is a Paper 1.21.4 world-management plugin focused on builder workflows.
+LazyBuilder is a Minecraft Java 1.21.4 Paper/Fabric world-management rebuild focused on stable, low-idle-overhead server workflows and a thin client UI.
 
-The active development branch is `Local`. Product behavior and implementation contracts live under `docs/`.
-
-Current World Manager work includes native world lifecycle, settings, safe file operations, internal conversion runtime integration, phased export support, and upcoming import/client-transfer integration. Live-server proof remains separate from remote compilation/unit-test proof.
+Development authority is the `Local` branch. See `AGENTS.md` and `docs/` for routing, architecture, and proof boundaries.
