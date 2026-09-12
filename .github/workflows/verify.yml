@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  server-and-client:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,10 +19,31 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Compile and test Paper plugin
+      - name: Compile and test Paper modules
         run: mvn --batch-mode --no-transfer-progress verify
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.12'
       - name: Compile Fabric client
-        run: gradle -p client --no-daemon build
+        run: gradle -p client/fabric --no-daemon build
+
+  tauri-desktop:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: EngineData/Frontend/RustApp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Typecheck Svelte frontend
+        run: npm run typecheck
+      - name: Build Svelte frontend
+        run: npm run build:frontend
+      - name: Generate Tauri icon assets
+        run: npx tauri icon src-tauri/app-icon.svg
+      - name: Check Rust/Tauri backend
+        run: cargo check --manifest-path src-tauri/Cargo.toml

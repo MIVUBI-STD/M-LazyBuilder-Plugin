@@ -1,0 +1,14 @@
+name: World-Manager
+version: 0.1.0-SNAPSHOT
+main: com.halokaryamedia.lazybuilder.WorldManagerPlugin
+api-version: '1.21'
+authors: [halokaryamedia-source]
+description: LazyBuilder world lifecycle and management module for Minecraft Java 1.21.4.
+
+permissions:
+  lazybuilder.world.teleport:
+    description: Teleport through World-Manager world/map actions.
+    default: op
+  lazybuilder.world.manage:
+    description: Manage worlds and transfer import/export artifacts.
+    default: op

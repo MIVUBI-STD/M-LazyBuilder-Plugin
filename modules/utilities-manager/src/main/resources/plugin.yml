@@ -1,0 +1,6 @@
+name: Utilities-Manager
+version: ${project.version}
+main: com.halokaryamedia.lazybuilder.utilities.UtilitiesManagerPlugin
+api-version: '1.21'
+author: Halo Karya Media
+description: Modular builder/server utility features for the LazyBuilder suite.
