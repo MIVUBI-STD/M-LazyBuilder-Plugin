@@ -37,9 +37,7 @@ public sealed class ServerProcessManager : IServerManager, IAsyncDisposable
             string paperJar = Path.Combine(serverDirectory, _options.PaperJar);
             if (!File.Exists(paperJar)) throw new FileNotFoundException("Paper server JAR was not found.", paperJar);
 
-            string javaPath = JavaRuntimeLocator.Resolve(_options.JavaPath);
-            await JavaRuntimeValidator.ValidateJava21Async(javaPath, cancellationToken);
-
+            string javaPath = await JavaRuntimeLocator.ResolveAsync(_options.JavaPath, cancellationToken);
             _expectedStop = false;
             SetState(ServerState.Starting);
 
