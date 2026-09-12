@@ -36,14 +36,24 @@ public final class ConversionUpdateService {
     public synchronized UpdateResult checkIfDue() throws IOException {
         Instant now = clock.instant();
         if (policy.updateMode() == ConversionRuntimePolicy.UpdateMode.MANUAL) return UpdateResult.NOT_DUE;
-        if (store.lastUpdateCheck().map(last -> last.plus(policy.minimumCheckInterval()).isAfter(now)).orElse(false)) {
+
+        // A fresh installation without a verified runtime must never be locked out by
+        // the normal update throttle. A transient metadata/network failure may record
+        // an attempt timestamp, but bootstrap calls keep retrying until a verified
+        // current runtime exists.
+        boolean hasVerifiedRuntime = store.current().isPresent();
+        if (hasVerifiedRuntime
+                && store.lastUpdateCheck().map(last -> last.plus(policy.minimumCheckInterval()).isAfter(now)).orElse(false)) {
             return UpdateResult.NOT_DUE;
         }
+
         store.recordUpdateCheck(now);
         var release = releaseSource.latestStable();
         if (release.isEmpty()) return UpdateResult.NO_RELEASE;
         var current = store.current();
-        if (current.isPresent() && current.get().manifest().version().equals(release.get().version())) return UpdateResult.UP_TO_DATE;
+        if (current.isPresent() && current.get().manifest().version().equals(release.get().version())) {
+            return UpdateResult.UP_TO_DATE;
+        }
         if (policy.updateMode() == ConversionRuntimePolicy.UpdateMode.NOTIFY_ONLY) return UpdateResult.UPDATE_AVAILABLE;
 
         Files.createDirectories(downloadRoot);

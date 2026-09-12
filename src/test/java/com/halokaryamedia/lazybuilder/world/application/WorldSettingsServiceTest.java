@@ -114,6 +114,33 @@ class WorldSettingsServiceTest {
         assertEquals("CREATIVE", fixture.registry().find(fixture.world().id()).orElseThrow().defaultGameMode());
     }
 
+    @Test
+    void failedBuildReadyMetadataSaveLeavesRuntimeUntouched() {
+        Fixture fixture = fixture();
+        fixture.service().setDefaultGameMode(fixture.world().id(), WorldGameMode.SURVIVAL);
+        fixture.runtime().buildReadyApplied = false;
+        fixture.persistence().failNextSave = true;
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().resetToBuildReady(fixture.world().id()));
+
+        assertFalse(fixture.runtime().buildReadyApplied);
+        assertEquals("SURVIVAL", fixture.registry().find(fixture.world().id()).orElseThrow().defaultGameMode());
+    }
+
+    @Test
+    void runtimeFailureRollsBackBuildReadyMetadataPreference() {
+        Fixture fixture = fixture();
+        fixture.service().setDefaultGameMode(fixture.world().id(), WorldGameMode.SURVIVAL);
+        fixture.runtime().failBuildReady = true;
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().resetToBuildReady(fixture.world().id()));
+
+        assertEquals("SURVIVAL", fixture.registry().find(fixture.world().id()).orElseThrow().defaultGameMode());
+        assertEquals("SURVIVAL", fixture.persistence().saved.getFirst().defaultGameMode());
+    }
+
     private static WorldRuntimeSettings runtimeSettings(WorldSpawningSettings spawning) {
         return new WorldRuntimeSettings(
                 WorldDifficulty.NORMAL,
@@ -192,6 +219,7 @@ class WorldSettingsServiceTest {
         private WorldSpawnControl lastSpawnControl;
         private boolean lastSpawnEnabled;
         private boolean buildReadyApplied;
+        private boolean failBuildReady;
 
         @Override
         public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {
@@ -261,6 +289,7 @@ class WorldSettingsServiceTest {
 
         @Override
         public void applyBuildReady(WorldRecord world, BuildReadyPolicy policy) {
+            if (failBuildReady) throw new IllegalStateException("runtime reset failure");
             buildReadyApplied = true;
             runtimeSettings = new WorldRuntimeSettings(
                     policy.difficulty(),

@@ -21,19 +21,19 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Client-side stop-and-wait transfer coordinator. Server sessions remain authoritative;
- * local state only tracks the file selected by this client and one request chain.
+ * local state only tracks one explicit transfer operation at a time.
  */
 public final class ClientTransferController {
     private Upload upload;
     private Download download;
 
     public void chooseAndUploadImport() {
-        if (upload != null) throw new IllegalStateException("An upload is already active");
+        requireIdle();
         ClientFileDialogs.chooseImport().thenAccept(optional -> optional.ifPresent(this::beginUpload));
     }
 
     public void downloadExport(String fileName) {
-        if (download != null) throw new IllegalStateException("A download is already active");
+        requireIdle();
         ClientFileDialogs.chooseExportDestination(fileName).thenAccept(optional ->
                 optional.ifPresent(destination -> beginDownload(fileName, destination)));
     }
@@ -63,6 +63,12 @@ public final class ClientTransferController {
         cleanupLocalDownload();
     }
 
+    private void requireIdle() {
+        if (upload != null || download != null) {
+            throw new IllegalStateException("A file transfer is already active");
+        }
+    }
+
     private void beginUpload(Path source) {
         Path normalized = source.toAbsolutePath().normalize();
         CompletableFuture.supplyAsync(() -> {
@@ -80,6 +86,7 @@ public final class ClientTransferController {
                 return;
             }
             try {
+                requireIdle();
                 upload = new Upload(prepared.path(), null, 0, 0);
                 send(new TransferWireProtocol.BeginUpload(
                         prepared.path().getFileName().toString(), prepared.size(), prepared.sha256()));

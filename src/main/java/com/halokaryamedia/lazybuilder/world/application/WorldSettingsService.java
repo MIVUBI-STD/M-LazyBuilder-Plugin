@@ -105,11 +105,25 @@ public final class WorldSettingsService {
 
     public synchronized WorldSettingsSnapshot resetToBuildReady(WorldId worldId) {
         WorldRecord current = requireLoaded(worldId);
-        runtime.applyBuildReady(current, buildReadyPolicy);
-        WorldRecord updated = persistMetadataChange(
-                current,
-                current.withDefaultGameMode(buildReadyPolicy.defaultGameMode().name())
-        );
+        WorldRecord updated = current.withDefaultGameMode(buildReadyPolicy.defaultGameMode().name());
+
+        // Persist the durable entry-mode preference first. A persistence failure now
+        // leaves Paper runtime untouched rather than reporting failure after runtime
+        // state has already changed.
+        updated = persistMetadataChange(current, updated);
+        try {
+            runtime.applyBuildReady(updated, buildReadyPolicy);
+        } catch (RuntimeException runtimeFailure) {
+            if (!updated.equals(current)) {
+                try {
+                    persistMetadataChange(updated, current);
+                } catch (RuntimeException rollbackFailure) {
+                    runtimeFailure.addSuppressed(rollbackFailure);
+                }
+            }
+            throw new IllegalStateException("Failed to apply BUILD_READY runtime settings: " + current.folderName(), runtimeFailure);
+        }
+
         return new WorldSettingsSnapshot(
                 updated,
                 buildReadyPolicy.defaultGameMode(),

@@ -96,6 +96,7 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
             try {
                 response = handle(owner, request);
             } catch (IOException | RuntimeException exception) {
+                cleanupFailedSession(owner, request);
                 response = TransferWireProtocol.error(exception.getMessage());
             } finally {
                 inFlight.remove(owner);
@@ -167,6 +168,25 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
                 yield TransferWireProtocol.ack(TransferWireProtocol.opcode(request));
             }
         };
+    }
+
+    /**
+     * Protocol errors fail closed. If a request already identifies a live session,
+     * discard that session so the client is never wedged behind stale server state.
+     */
+    private void cleanupFailedSession(UUID owner, TransferWireProtocol.Request request) {
+        try {
+            switch (request) {
+                case TransferWireProtocol.UploadChunk chunk -> transfers.abortUpload(owner, chunk.sessionId());
+                case TransferWireProtocol.FinishUpload finish -> transfers.abortUpload(owner, finish.sessionId());
+                case TransferWireProtocol.DownloadChunkRequest chunk -> transfers.abortDownload(owner, chunk.sessionId());
+                case TransferWireProtocol.FinishDownload finish -> transfers.abortDownload(owner, finish.sessionId());
+                default -> { }
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // The failing operation may already have removed its own session. Cleanup
+            // is best-effort and must not replace the original protocol error.
+        }
     }
 
     private void send(Player player, byte[] payload) {

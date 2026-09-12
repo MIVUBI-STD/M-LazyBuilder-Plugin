@@ -3,15 +3,19 @@ package com.halokaryamedia.lazybuilder.world.files;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,15 +23,15 @@ class LocalWorldImportArtifactStoreTest {
     @TempDir Path tempDir;
 
     @Test
-    void stagesNestedNativeExportAndSanitizesIdentity() throws Exception {
+    void stagesNestedJava1214WorldAndSanitizesIdentity() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Path archive = imports.resolve("world.zip");
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
-            put(zip, "Build/level.dat", "level");
-            put(zip, "Build/region/r.0.0.mca", "region");
-            put(zip, "Build/uid.dat", "uid");
-            put(zip, "Build/session.lock", "lock");
-            put(zip, "Build/.lazybuilder-transfer.properties", "format=JAVA_1_21_4\n");
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/region/r.0.0.mca", "region".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/uid.dat", "uid".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/session.lock", "lock".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/.lazybuilder-transfer.properties", "format=JAVA_1_21_4\n".getBytes(StandardCharsets.UTF_8));
         }
 
         LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
@@ -43,10 +47,26 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void forgedTransferMarkerCannotBypassJavaVersionNormalization() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports"));
+        Path archive = imports.resolve("old-world.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "level.dat", javaLevelDat(3700));
+            put(zip, ".lazybuilder-transfer.properties", "format=JAVA_1_21_4\n".getBytes(StandardCharsets.UTF_8));
+        }
+
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        var staged = store.stageArchive("old-world.zip", tempDir.resolve("workspace"));
+
+        assertEquals(WorldImportArtifactStore.DetectedEdition.JAVA, staged.edition());
+        assertNull(staged.trustedFormat());
+    }
+
+    @Test
     void rejectsZipSlip() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(imports.resolve("bad.zip")))) {
-            put(zip, "../escape.txt", "bad");
+            put(zip, "../escape.txt", "bad".getBytes(StandardCharsets.UTF_8));
         }
         LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
         assertThrows(IOException.class, () -> store.stageArchive("bad.zip", tempDir.resolve("workspace")));
@@ -57,17 +77,34 @@ class LocalWorldImportArtifactStoreTest {
     void detectsBedrockByDbDirectory() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(imports.resolve("world.mcworld")))) {
-            put(zip, "level.dat", "bedrock-level");
-            put(zip, "db/CURRENT", "db");
+            put(zip, "level.dat", "bedrock-level".getBytes(StandardCharsets.UTF_8));
+            put(zip, "db/CURRENT", "db".getBytes(StandardCharsets.UTF_8));
         }
         LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
         var staged = store.stageArchive("world.mcworld", tempDir.resolve("workspace"));
         assertEquals(WorldImportArtifactStore.DetectedEdition.BEDROCK, staged.edition());
     }
 
-    private static void put(ZipOutputStream zip, String name, String value) throws IOException {
+    private static byte[] javaLevelDat(int dataVersion) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzip = new GZIPOutputStream(bytes);
+             DataOutputStream out = new DataOutputStream(gzip)) {
+            out.writeByte(10); // root compound
+            out.writeUTF("");
+            out.writeByte(10); // Data compound
+            out.writeUTF("Data");
+            out.writeByte(3); // DataVersion int
+            out.writeUTF("DataVersion");
+            out.writeInt(dataVersion);
+            out.writeByte(0); // end Data
+            out.writeByte(0); // end root
+        }
+        return bytes.toByteArray();
+    }
+
+    private static void put(ZipOutputStream zip, String name, byte[] value) throws IOException {
         zip.putNextEntry(new ZipEntry(name));
-        zip.write(value.getBytes(StandardCharsets.UTF_8));
+        zip.write(value);
         zip.closeEntry();
     }
 }

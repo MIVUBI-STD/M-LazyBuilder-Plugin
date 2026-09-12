@@ -161,6 +161,16 @@ public final class WorldExportService {
         if (failure != null) throw failure;
     }
 
+    /**
+     * Shutdown-only close path. It releases the operation lease without touching
+     * Paper runtime state, because a server/plugin shutdown must not start world
+     * loading while the runtime is being torn down.
+     */
+    public void abandon(ExportTask task) {
+        Objects.requireNonNull(task, "task");
+        task.close();
+    }
+
     static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
         Objects.requireNonNull(area, "area");
         Path root = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
@@ -237,8 +247,8 @@ public final class WorldExportService {
         private final WorldAreaSelection area;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
-        private boolean completed;
-        private boolean closed;
+        private volatile boolean completed;
+        private volatile boolean closed;
 
         private ExportTask(UUID operationId, WorldRecord source, String targetFormat, String artifactName,
                            WorldAreaSelection area, boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
@@ -260,7 +270,7 @@ public final class WorldExportService {
             if (closed) throw new IllegalStateException("Export task is already closed");
         }
 
-        private void close() {
+        private synchronized void close() {
             if (!closed) {
                 lease.close();
                 closed = true;

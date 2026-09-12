@@ -72,6 +72,7 @@ public final class WorldImportService {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         Path stagedInput = null;
+        Path convertedWorkspace = null;
         Path publishSource = null;
         boolean published = false;
         boolean registered = false;
@@ -90,19 +91,19 @@ public final class WorldImportService {
                 if (runtime.manifest().supportedFormats().stream().noneMatch(TARGET_FORMAT::equalsIgnoreCase)) {
                     throw new IllegalStateException("Active conversion runtime cannot write " + TARGET_FORMAT);
                 }
-                Path converted = files.reserveWorkspace(UUID.randomUUID());
+                convertedWorkspace = files.reserveWorkspace(UUID.randomUUID());
                 try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
                     converter.convert(runtime.artifact(), new ConverterAdapter.ConversionRequest(
-                            staged.worldDirectory(), converted, TARGET_FORMAT, null
+                            staged.worldDirectory(), convertedWorkspace, TARGET_FORMAT, null
                     ));
                 }
-                imports.sanitizeConvertedWorld(converted);
-                publishSource = converted;
+                imports.sanitizeConvertedWorld(convertedWorkspace);
+                publishSource = convertedWorkspace;
             }
 
             files.publishStagedWorld(publishSource, task.destination.folderName());
-            if (!publishSource.equals(stagedInput)) cleanupWorkspace(stagedInput);
-            stagedInput = null;
+            if (publishSource.equals(stagedInput)) stagedInput = null;
+            if (publishSource.equals(convertedWorkspace)) convertedWorkspace = null;
             publishSource = null;
             published = true;
 
@@ -123,6 +124,7 @@ public final class WorldImportService {
             throw new IllegalStateException("Failed to import world as " + task.destination.folderName(), exception);
         } finally {
             cleanupWorkspace(publishSource);
+            cleanupWorkspace(convertedWorkspace);
             cleanupWorkspace(stagedInput);
         }
     }

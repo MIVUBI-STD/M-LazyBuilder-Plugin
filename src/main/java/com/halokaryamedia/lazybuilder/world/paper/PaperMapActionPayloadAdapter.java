@@ -10,6 +10,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -26,7 +27,9 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     private final WorldLocationTeleportService teleportService;
     private final WorldExportService exportService;
     private final Set<UUID> exportInFlight = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, WorldExportService.ExportTask> activeExports = new ConcurrentHashMap<>();
     private volatile boolean started;
+    private volatile boolean stopping;
 
     public PaperMapActionPayloadAdapter(
             LazyBuilderPlugin plugin,
@@ -42,6 +45,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
     public void start() {
         if (started) return;
+        stopping = false;
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
         started = true;
@@ -49,15 +53,22 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
     public void stop() {
         if (!started) return;
+        stopping = true;
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
-        exportInFlight.clear();
         started = false;
+
+        // Active file/conversion work is request-bound and may already be executing.
+        // During shutdown we close only the world-operation lease and deliberately do
+        // not reload the source world while Paper is being torn down.
+        activeExports.values().forEach(exportService::abandon);
+        activeExports.clear();
+        exportInFlight.clear();
     }
 
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        if (!started || !CHANNEL.equals(channel)) return;
+        if (!started || stopping || !CHANNEL.equals(channel)) return;
 
         final MapActionWireProtocol.Request request;
         try {
@@ -108,6 +119,11 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             send(player, MapActionWireProtocol.error("Missing permission: " + MANAGE_PERMISSION));
             return;
         }
+        if (stopping) {
+            send(player, MapActionWireProtocol.error("LazyBuilder is shutting down"));
+            return;
+        }
+
         UUID owner = player.getUniqueId();
         if (!exportInFlight.add(owner)) {
             send(player, MapActionWireProtocol.error("Previous Export Area request is still processing"));
@@ -120,6 +136,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                     request.x1(), request.z1(), request.x2(), request.z2());
             task = exportService.prepareArea(
                     request.worldId(), request.targetFormat(), request.artifactName(), area);
+            activeExports.put(owner, task);
             send(player, MapActionWireProtocol.exportAccepted(request.worldId()));
         } catch (RuntimeException exception) {
             exportInFlight.remove(owner);
@@ -134,6 +151,13 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                 result = exportService.executeFilePhase(task);
             } catch (Throwable exception) {
                 failure = exception;
+            }
+
+            if (stopping || !started) {
+                activeExports.remove(owner);
+                exportInFlight.remove(owner);
+                exportService.abandon(task);
+                return;
             }
 
             WorldExportService.ExportResult finalResult = result;
@@ -158,6 +182,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                         send(online, MapActionWireProtocol.error(finishFailure.getMessage()));
                     }
                 } finally {
+                    activeExports.remove(owner);
                     exportInFlight.remove(owner);
                 }
             });

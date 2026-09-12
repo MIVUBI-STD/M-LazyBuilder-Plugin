@@ -2,21 +2,19 @@ package com.halokaryamedia.lazybuilder.world.files;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /** Path-safe ZIP/.mcworld staging for World Manager imports. */
 public final class LocalWorldImportArtifactStore implements WorldImportArtifactStore {
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
+    private static final String JAVA_1_21_4 = "JAVA_1_21_4";
 
     private final Path importsRoot;
     private final long maxEntries;
@@ -41,13 +39,21 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         try {
             extractBounded(artifact, target);
             normalizeSingleRoot(target);
-            if (!Files.isRegularFile(target.resolve("level.dat"))) {
+            Path levelDat = target.resolve("level.dat");
+            if (!Files.isRegularFile(levelDat)) {
                 throw new IOException("Import archive does not contain a Minecraft level.dat");
             }
 
             DetectedEdition edition = Files.isDirectory(target.resolve("db"))
                     ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
-            String trustedFormat = readTrustedFormat(target.resolve(TRANSFER_MARKER));
+
+            // Native Java fast-path authority comes from the actual level.dat
+            // DataVersion, not from a forgeable transfer-marker properties file.
+            String trustedFormat = edition == DetectedEdition.JAVA
+                    && JavaLevelDataVersion.read(levelDat).orElse(-1) == JavaLevelDataVersion.JAVA_1_21_4
+                    ? JAVA_1_21_4
+                    : null;
+
             sanitizeIdentity(target);
             success = true;
             return new StagedImport(target, edition, trustedFormat);
@@ -129,14 +135,6 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         } catch (IOException atomicFailure) {
             Files.move(temporary, target);
         }
-    }
-
-    private static String readTrustedFormat(Path marker) throws IOException {
-        if (Files.notExists(marker)) return null;
-        Properties properties = new Properties();
-        try (var in = Files.newInputStream(marker)) { properties.load(in); }
-        String format = properties.getProperty("format");
-        return format == null || format.isBlank() ? null : format.strip().toUpperCase(Locale.ROOT);
     }
 
     private static void sanitizeIdentity(Path root) throws IOException {
