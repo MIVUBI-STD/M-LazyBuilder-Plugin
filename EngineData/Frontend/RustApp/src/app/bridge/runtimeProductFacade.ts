@@ -29,6 +29,7 @@ export const runtimeProduct = {
     archive: runtimeApi.archiveWorld,
     restore: runtimeApi.restoreWorld,
     backup: runtimeApi.backupWorld,
-    clone: runtimeApi.cloneWorld
+    clone: runtimeApi.cloneWorld,
+    export: runtimeApi.exportWorld
   }
 };
