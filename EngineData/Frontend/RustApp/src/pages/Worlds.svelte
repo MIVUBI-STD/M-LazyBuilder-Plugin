@@ -27,6 +27,10 @@
   let exportSource: ManagedWorldSummary | null = null;
   let exportName = '';
 
+  let importPath = '';
+  let importName = '';
+  let importBusy = false;
+
   async function refresh() {
     if (busy) return;
     busy = true;
@@ -78,6 +82,42 @@
     }
   }
 
+  async function pickImport() {
+    if (!serverOnline || importBusy) return;
+    const selected = await runtimeProduct.worlds.pickImport();
+    if (!selected) return;
+    importPath = selected;
+    const fileName = selected.split(/[\\/]/).pop() || 'Imported World';
+    importName = fileName.replace(/\.(zip|mcworld)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Imported World';
+  }
+
+  async function runImport() {
+    const displayName = importName.trim();
+    if (!serverOnline || importBusy || !importPath || !displayName) return;
+    const destinationFolder = slugify(displayName);
+    if (!destinationFolder) return;
+
+    importBusy = true;
+    operationTask = null;
+    error = '';
+    try {
+      const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
+      operationTask = await runtimeProduct.worlds.import({
+        artifactName,
+        destinationFolder,
+        displayName
+      });
+      await pollTask(operationTask.taskId);
+      importPath = '';
+      importName = '';
+    } catch (e) {
+      error = String(e);
+    } finally {
+      importBusy = false;
+      await refresh();
+    }
+  }
+
   async function toggleRuntime(world: ManagedWorldSummary) {
     busy = true;
     try {
@@ -93,7 +133,7 @@
   }
 
   async function runLifecycleTask(world: ManagedWorldSummary, operation: 'archive' | 'restore') {
-    if (operationBusyWorldId) return;
+    if (operationBusyWorldId || importBusy) return;
     if (operation === 'archive' && !window.confirm(`Archive ${world.displayName}? The world will be unloaded and auto-load disabled.`)) {
       return;
     }
@@ -115,7 +155,7 @@
   }
 
   async function runBackup(world: ManagedWorldSummary) {
-    if (operationBusyWorldId) return;
+    if (operationBusyWorldId || importBusy) return;
     operationBusyWorldId = world.id;
     operationTask = null;
     error = '';
@@ -131,13 +171,14 @@
   }
 
   function openClone(world: ManagedWorldSummary) {
+    if (importBusy) return;
     exportSource = null;
     cloneSource = world;
     cloneName = `${world.displayName} Copy`;
   }
 
   async function runClone() {
-    if (!cloneSource || operationBusyWorldId) return;
+    if (!cloneSource || operationBusyWorldId || importBusy) return;
     const displayName = cloneName.trim();
     if (!displayName) return;
     const destinationFolder = slugify(displayName);
@@ -164,13 +205,14 @@
   }
 
   function openExport(world: ManagedWorldSummary) {
+    if (importBusy) return;
     cloneSource = null;
     exportSource = world;
     exportName = `${slugify(world.displayName) || 'world'}-export`;
   }
 
   async function runExport() {
-    if (!exportSource || operationBusyWorldId) return;
+    if (!exportSource || operationBusyWorldId || importBusy) return;
     const artifactName = exportName.trim();
     if (!artifactName) return;
 
@@ -265,16 +307,29 @@
 <div class="card" style="margin-top: 20px">
   <strong>Create World</strong>
   <div class="world-form">
-    <input disabled={!serverOnline || busy} bind:value={createName} placeholder="World name" />
-    <select disabled={!serverOnline || busy} bind:value={createType}>
+    <input disabled={!serverOnline || busy || importBusy} bind:value={createName} placeholder="World name" />
+    <select disabled={!serverOnline || busy || importBusy} bind:value={createType}>
       <option value="FLAT">Flat</option>
       <option value="VOID">Void</option>
     </select>
-    <button disabled={!serverOnline || busy || !createName.trim()} onclick={createWorld}>Create</button>
+    <button disabled={!serverOnline || busy || importBusy || !createName.trim()} onclick={createWorld}>Create</button>
   </div>
 </div>
 
-<div class="actions"><button disabled={busy || operationBusyWorldId !== null} onclick={refresh}>Refresh</button></div>
+<div class="card" style="margin-top: 12px">
+  <strong>Import World</strong>
+  <div class="world-form">
+    <button disabled={!serverOnline || importBusy || operationBusyWorldId !== null} onclick={pickImport}>Choose .zip / .mcworld</button>
+    <input disabled={!serverOnline || importBusy || !importPath} bind:value={importName} placeholder="Imported world name" />
+    <button disabled={!serverOnline || importBusy || operationBusyWorldId !== null || !importPath || !importName.trim()} onclick={runImport}>
+      {importBusy ? 'Importing…' : 'Import'}
+    </button>
+  </div>
+  {#if importPath}<div class="subtle">Selected: {importPath.split(/[\\/]/).pop()}</div>{/if}
+  <div class="subtle">Desktop streams the selected file through the authenticated World-Manager import inbox before the async import task starts.</div>
+</div>
+
+<div class="actions"><button disabled={busy || importBusy || operationBusyWorldId !== null} onclick={refresh}>Refresh</button></div>
 {#if error}<p style="color: var(--danger)">{error}</p>{/if}
 
 {#if operationTask}
@@ -290,9 +345,9 @@
   <div class="card" style="margin-top: 12px">
     <strong>Clone {cloneSource.displayName}</strong>
     <div class="world-form">
-      <input bind:value={cloneName} disabled={operationBusyWorldId !== null} placeholder="New world name" />
-      <button disabled={operationBusyWorldId !== null || !cloneName.trim()} onclick={runClone}>Clone</button>
-      <button disabled={operationBusyWorldId !== null} onclick={() => (cloneSource = null)}>Cancel</button>
+      <input bind:value={cloneName} disabled={operationBusyWorldId !== null || importBusy} placeholder="New world name" />
+      <button disabled={operationBusyWorldId !== null || importBusy || !cloneName.trim()} onclick={runClone}>Clone</button>
+      <button disabled={operationBusyWorldId !== null || importBusy} onclick={() => (cloneSource = null)}>Cancel</button>
     </div>
     <div class="subtle">The source is temporarily unloaded while a consistent copy is created, then restored to its previous load state.</div>
   </div>
@@ -302,9 +357,9 @@
   <div class="card" style="margin-top: 12px">
     <strong>Export {exportSource.displayName}</strong>
     <div class="world-form">
-      <input bind:value={exportName} disabled={operationBusyWorldId !== null} placeholder="Artifact name" />
-      <button disabled={operationBusyWorldId !== null || !exportName.trim()} onclick={runExport}>Export Java ZIP</button>
-      <button disabled={operationBusyWorldId !== null} onclick={() => (exportSource = null)}>Cancel</button>
+      <input bind:value={exportName} disabled={operationBusyWorldId !== null || importBusy} placeholder="Artifact name" />
+      <button disabled={operationBusyWorldId !== null || importBusy || !exportName.trim()} onclick={runExport}>Export Java ZIP</button>
+      <button disabled={operationBusyWorldId !== null || importBusy} onclick={() => (exportSource = null)}>Cancel</button>
     </div>
     <div class="subtle">Native Java 1.21.4 export. The source is restored after the snapshot is captured while packaging continues off the Paper main thread.</div>
   </div>
@@ -320,24 +375,24 @@
       </div>
       <div class="world-actions">
         <button
-          disabled={busy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
+          disabled={busy || importBusy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
           onclick={() => toggleRuntime(world)}
         >{world.runtimeState === 'LOADED' ? 'Unload' : 'Load'}</button>
         <button
-          disabled={settingsBusy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE'}
+          disabled={settingsBusy || importBusy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE'}
           onclick={() => openSettings(world)}
         >Settings</button>
         {#if world.lifecycle === 'ACTIVE'}
-          <button disabled={busy || operationBusyWorldId !== null} onclick={() => runBackup(world)}>Backup</button>
-          <button disabled={busy || operationBusyWorldId !== null} onclick={() => openClone(world)}>Clone</button>
-          <button disabled={busy || operationBusyWorldId !== null} onclick={() => openExport(world)}>Export</button>
+          <button disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => runBackup(world)}>Backup</button>
+          <button disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => openClone(world)}>Clone</button>
+          <button disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => openExport(world)}>Export</button>
           <button
-            disabled={busy || operationBusyWorldId !== null}
+            disabled={busy || importBusy || operationBusyWorldId !== null}
             onclick={() => runLifecycleTask(world, 'archive')}
           >{operationBusyWorldId === world.id ? 'Working…' : 'Archive'}</button>
         {:else if world.lifecycle === 'ARCHIVED'}
           <button
-            disabled={busy || operationBusyWorldId !== null}
+            disabled={busy || importBusy || operationBusyWorldId !== null}
             onclick={() => runLifecycleTask(world, 'restore')}
           >{operationBusyWorldId === world.id ? 'Working…' : 'Restore'}</button>
         {/if}
