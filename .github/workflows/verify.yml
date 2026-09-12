@@ -43,6 +43,8 @@ jobs:
         run: npm run typecheck
       - name: Build Svelte frontend
         run: npm run build:frontend
+      - name: Generate Tauri icon assets
+        run: npx tauri icon src-tauri/app-icon.svg
       - name: Check Rust/Tauri backend
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
