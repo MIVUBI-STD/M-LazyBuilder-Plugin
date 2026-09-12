@@ -27,6 +27,7 @@ export const runtimeProduct = {
     tasks: runtimeApi.listWorldTasks,
     task: runtimeApi.getWorldTask,
     archive: runtimeApi.archiveWorld,
-    restore: runtimeApi.restoreWorld
+    restore: runtimeApi.restoreWorld,
+    clone: runtimeApi.cloneWorld
   }
 };
