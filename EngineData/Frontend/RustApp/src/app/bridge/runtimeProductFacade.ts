@@ -30,6 +30,9 @@ export const runtimeProduct = {
     restore: runtimeApi.restoreWorld,
     backup: runtimeApi.backupWorld,
     clone: runtimeApi.cloneWorld,
-    export: runtimeApi.exportWorld
+    export: runtimeApi.exportWorld,
+    pickImport: runtimeApi.pickWorldImport,
+    uploadImport: runtimeApi.uploadWorldImport,
+    import: runtimeApi.importWorld
   }
 };
