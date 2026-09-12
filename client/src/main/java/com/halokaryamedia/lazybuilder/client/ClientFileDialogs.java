@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.client;
 
+import net.minecraft.client.MinecraftClient;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
@@ -13,7 +14,7 @@ public final class ClientFileDialogs {
     private ClientFileDialogs() {}
 
     public static CompletableFuture<Optional<Path>> chooseImport() {
-        return CompletableFuture.supplyAsync(() -> {
+        return completeOnClient(CompletableFuture.supplyAsync(() -> {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 PointerBuffer filters = stack.mallocPointer(2);
                 filters.put(stack.UTF8("*.zip"));
@@ -23,11 +24,11 @@ public final class ClientFileDialogs {
                         "Import Minecraft World", null, filters, "Minecraft worlds", false);
                 return selected == null ? Optional.empty() : Optional.of(Path.of(selected));
             }
-        });
+        }));
     }
 
     public static CompletableFuture<Optional<Path>> chooseExportDestination(String suggestedName) {
-        return CompletableFuture.supplyAsync(() -> {
+        return completeOnClient(CompletableFuture.supplyAsync(() -> {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 PointerBuffer filters = stack.mallocPointer(2);
                 filters.put(stack.UTF8("*.zip"));
@@ -37,6 +38,12 @@ public final class ClientFileDialogs {
                         "Save LazyBuilder Export", suggestedName, filters, "Minecraft worlds");
                 return selected == null ? Optional.empty() : Optional.of(Path.of(selected));
             }
-        });
+        }));
+    }
+
+    private static CompletableFuture<Optional<Path>> completeOnClient(
+            CompletableFuture<Optional<Path>> future
+    ) {
+        return future.thenApplyAsync(value -> value, MinecraftClient.getInstance()::execute);
     }
 }
