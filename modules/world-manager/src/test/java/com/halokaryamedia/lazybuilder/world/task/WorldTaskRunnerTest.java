@@ -52,6 +52,32 @@ class WorldTaskRunnerTest {
                 () -> runner.submit(WorldTaskType.CLONE, WorldId.create(), "Queued", progress -> "unused"));
     }
 
+    @Test
+    void rejectsWhenBoundedQueueIsFull() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 1, Duration.ofSeconds(1))) {
+            runner.submit(WorldTaskType.BACKUP, WorldId.create(), "first", progress -> {
+                firstStarted.countDown();
+                releaseFirst.await(2, TimeUnit.SECONDS);
+                return "first";
+            });
+            assertTrue(firstStarted.await(2, TimeUnit.SECONDS));
+
+            runner.submit(WorldTaskType.EXPORT, WorldId.create(), "queued", progress -> "queued");
+            IllegalStateException rejection = assertThrows(IllegalStateException.class,
+                    () -> runner.submit(WorldTaskType.CLONE, WorldId.create(), "overflow", progress -> "overflow"));
+            assertTrue(rejection.getMessage().contains("queue is full"));
+            assertTrue(registry.recent().stream().anyMatch(snapshot ->
+                    snapshot.state() == WorldTaskState.FAILED && snapshot.error().contains("queue is full")));
+
+            releaseFirst.countDown();
+        } finally {
+            releaseFirst.countDown();
+        }
+    }
+
     private static WorldTaskSnapshot waitForTerminal(WorldTaskRegistry registry, WorldTaskSnapshot queued) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         WorldTaskSnapshot current = queued;
