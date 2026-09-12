@@ -54,7 +54,7 @@ class TransferWireProtocolTest {
     void rejectsUnknownVersionAndTrailingBytesOnBothDirections() throws Exception {
         byte[] request = TransferWireProtocol.encodeRequest(new TransferWireProtocol.BeginDownload("build.zip"));
         byte[] wrongVersion = request.clone();
-        wrongVersion[0] = 2;
+        wrongVersion[0] = (byte) (TransferWireProtocol.VERSION == 1 ? 2 : 1);
         assertThrows(IOException.class, () -> TransferWireProtocol.decodeRequest(wrongVersion));
 
         byte[] response = TransferWireProtocol.ack(TransferWireProtocol.opcode(
@@ -69,5 +69,6 @@ class TransferWireProtocolTest {
         byte[] data = new byte[TransferWireProtocol.MAX_CHUNK_BYTES];
         byte[] payload = TransferWireProtocol.downloadChunk(id, 0, data, false);
         assertTrue(payload.length <= TransferWireProtocol.MAX_MESSAGE_BYTES);
+        assertEquals(4, TransferWireProtocol.PIPELINE_WINDOW);
     }
 }
