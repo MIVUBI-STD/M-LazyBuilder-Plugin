@@ -4,14 +4,20 @@ import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Client-side presentation state for map actions. The server remains the
  * authority for managed-world identity, teleport resolution, and export work.
  */
 public final class ClientMapController {
+    private final Consumer<String> completedExportHandler;
     private MapActionWireProtocol.CurrentWorldResult currentWorld;
     private boolean exportBusy;
+
+    public ClientMapController(Consumer<String> completedExportHandler) {
+        this.completedExportHandler = Objects.requireNonNull(completedExportHandler, "completedExportHandler");
+    }
 
     public void refreshCurrentWorld() {
         LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.currentWorldRequest());
@@ -47,8 +53,8 @@ public final class ClientMapController {
                     "Export Area started.");
             case MapActionWireProtocol.ExportComplete complete -> {
                 exportBusy = false;
-                LazyBuilderClientNetworking.notifyPlayer(
-                        "Export Area ready: " + complete.fileName());
+                LazyBuilderClientNetworking.notifyPlayer("Export Area ready: " + complete.fileName());
+                completedExportHandler.accept(complete.fileName());
             }
             case MapActionWireProtocol.ErrorResponse error -> {
                 exportBusy = false;
