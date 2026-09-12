@@ -54,24 +54,30 @@ Task history is bounded. Completed entries may be evicted when the history limit
 
 Task persistence across a full Paper restart is intentionally out of scope for the first implementation. Interrupted tasks are runtime work, not durable jobs. Durable recovery should be introduced only if a real operation later requires it.
 
-## Current read-only HTTP surface
+## Current HTTP surface
 
-The authenticated loopback bridge now exposes task observation without exposing any heavy mutation yet:
+The authenticated loopback bridge exposes task observation plus the first low-risk async lifecycle operations:
 
 ```text
-GET /v1/tasks
-GET /v1/tasks/{taskId}
+GET  /v1/tasks
+GET  /v1/tasks/{taskId}
+POST /v1/tasks/archive
+POST /v1/tasks/restore
 ```
 
-Responses are small JSON snapshots. Unknown task IDs return `404`; malformed UUIDs return `400`. The endpoints are read-only and use the same bearer token as the rest of the World-Manager bridge.
+Archive/Restore requests use a small logical payload:
 
-## Future task-start surface
+```json
+{ "worldId": "<managed-world-uuid>" }
+```
 
-Heavy operation start endpoints remain intentionally gated. When added, they use the existing `/v1/tasks/...` namespace and must return quickly with `202 Accepted` plus the queued task snapshot. The HTTP listener must not perform conversion, copy, archive, import/export, or delete work inline.
+A successful start returns `202 Accepted` with the queued task snapshot. The worker then delegates the actual lifecycle mutation to `WorldLifecycleService` on the Paper main thread. HTTP does not perform the lifecycle operation inline.
+
+Unknown task IDs return `404`; malformed UUIDs return `400`. Invalid world state conflicts return `409` through the normal task failure path.
 
 ## Threading rule
 
-Task orchestration may run outside the Paper main thread, but any operation that reaches Bukkit/Paper world APIs must dispatch that specific mutation to the Paper scheduler. Filesystem/conversion work must not occupy the main server thread.
+Task orchestration runs outside the Paper main thread, but any operation that reaches Bukkit/Paper world APIs must dispatch that specific mutation to the Paper scheduler. Archive/Restore currently dispatch the canonical `WorldLifecycleService` call through the existing synchronous Paper bridge boundary. Filesystem/conversion work must not occupy the main server thread when heavier task types are added.
 
 ## Shutdown rule
 
@@ -89,10 +95,10 @@ WorldTaskRunner is closed explicitly during plugin shutdown after the local HTTP
 
 1. task state/type/snapshot/registry contract — complete;
 2. registry tests and CI proof — complete;
-3. bounded WorldTaskRunner + explicit shutdown ownership — implemented, CI-gated;
-4. read-only task HTTP endpoints — implemented, CI-gated;
-5. wire one low-risk operation first;
-6. verify operation-specific main-thread boundaries and shutdown behavior;
-7. add the remaining heavy operations one at a time.
+3. bounded WorldTaskRunner + explicit shutdown ownership — complete;
+4. read-only task HTTP endpoints — complete;
+5. async Archive/Restore task start endpoints — implemented, CI-gated;
+6. add Rust/Tauri task observation and desktop lifecycle controls only after server-side CI is green;
+7. add clone/backup/import/export/delete one at a time after the async path proves stable.
 
 Do not expose all heavy operations at once merely because the task transport exists.
