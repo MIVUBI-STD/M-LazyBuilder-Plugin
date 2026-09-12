@@ -1,0 +1,46 @@
+<UserControl x:Class="HaloKaryaMedia.LazyBuilder.Desktop.Views.WorldsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </UserControl.Resources>
+
+    <Grid Margin="34">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,22">
+            <Button DockPanel.Dock="Right" Content="Refresh" Padding="16,8" Command="{Binding RefreshCommand}"/>
+            <StackPanel>
+                <TextBlock Text="Worlds" FontSize="28" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding ConnectionStatus}" Margin="0,6,0,0" Opacity="0.7"/>
+            </StackPanel>
+        </DockPanel>
+
+        <TextBlock Grid.Row="1"
+                   Text="{Binding LastError}"
+                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,16"/>
+
+        <Border Grid.Row="2" Padding="1">
+            <DataGrid ItemsSource="{Binding Worlds}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      CanUserAddRows="False"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="World" Binding="{Binding DisplayName}" Width="2*"/>
+                    <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="*"/>
+                    <DataGridTextColumn Header="Status" Binding="{Binding RuntimeState}" Width="*"/>
+                    <DataGridTextColumn Header="Lifecycle" Binding="{Binding Lifecycle}" Width="*"/>
+                    <DataGridCheckBoxColumn Header="Auto Load" Binding="{Binding AutoLoad}" Width="90"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</UserControl>
