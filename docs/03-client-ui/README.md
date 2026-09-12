@@ -58,6 +58,17 @@ The client must not become authoritative for server state.
 
 Xaero integration is an input/presentation adapter only. It must never directly mutate world files or resolve teleport height on the client.
 
+Server transport for map actions is now separated from file transfer:
+
+```text
+Xaero / LazyBuilder client
+→ lazybuilder:map
+→ PaperMapActionPayloadAdapter
+→ application services
+```
+
+`MapActionWireProtocol` is version `1` and bounded to 4 KiB because it carries only action intent and small responses. Teleport requests require `lazybuilder.world.teleport`; Export Area requests require `lazybuilder.world.manage`.
+
 ### Teleport to Location
 
 The client sends only the managed `WorldId` plus the selected block-space X/Z coordinate. `WorldLocationTeleportService` loads the world on demand and delegates final resolution to the Paper server.
@@ -78,11 +89,11 @@ The client must not send or choose Y for this flow.
 
 ### Export Area
 
-The client sends two block-space corners. `WorldAreaSelection` normalizes them and converts inclusive block coordinates to inclusive chunk bounds using floor division, including negative coordinates.
+The client sends two block-space corners plus the normal Export target/options. `WorldAreaSelection` normalizes the rectangle and converts inclusive block coordinates to inclusive chunk bounds using floor division, including negative coordinates.
 
 ```text
 Xaero rectangle
-→ x1,z1 + x2,z2
+→ WorldId + x1,z1 + x2,z2 + export target
 → WorldAreaSelection
 → WorldExportService.prepareArea(...)
 → safe world snapshot
@@ -95,6 +106,8 @@ Export Area is not a second export system. It uses the same `WorldExportService`
 Whole-world native Java 1.21.4 export keeps its direct ZIP fast path. Any Export Area request uses the verified conversion runtime even when the target remains Java 1.21.4 because pruning must be applied. The generated pruning file is request-local and never shown in the UI.
 
 The internal pruning document applies the selected chunk rectangle to overworld, Nether, and End. This avoids Chunker's missing-config behavior from accidentally retaining an entire secondary dimension while the user asked for an area-only export.
+
+The Paper map adapter returns `EXPORT_ACCEPTED` immediately after the main-thread prepare phase, performs snapshot/conversion work asynchronously, restores the source world through the normal finish phase, then returns `EXPORT_COMPLETE` with the export artifact file name. The client downloads that artifact through the existing transfer channel; no second file-transfer path is introduced.
 
 ## File Transfer Protocol
 
