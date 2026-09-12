@@ -3,6 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LazyBuilder" Width="1040" Height="700" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
+
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="210"/>
@@ -56,7 +60,9 @@
                     </Border>
                 </UniformGrid>
 
-                <TextBlock Text="{Binding LastError}" Visibility="{Binding HasError, Converter={x:Static BooleanToVisibilityConverter.Instance}}" Margin="0,0,0,16" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding LastError}"
+                           Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}"
+                           Margin="0,0,0,16" TextWrapping="Wrap"/>
 
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Start Server" Padding="18,10" Margin="0,0,10,0" Command="{Binding StartCommand}"/>
