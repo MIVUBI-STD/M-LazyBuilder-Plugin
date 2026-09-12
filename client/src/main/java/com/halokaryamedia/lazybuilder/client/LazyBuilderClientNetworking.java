@@ -71,7 +71,11 @@ public final class LazyBuilderClientNetworking {
 
     private void handleWorld(byte[] bytes) {
         try {
-            worldController.accept(WorldControlWireProtocol.decodeResponse(bytes));
+            WorldControlWireProtocol.Response response = WorldControlWireProtocol.decodeResponse(bytes);
+            worldController.accept(response);
+            if (response instanceof WorldControlWireProtocol.ExportReady export) {
+                transferController.downloadExport(export.artifactName());
+            }
         } catch (IOException | RuntimeException exception) {
             notifyPlayer("LazyBuilder world response rejected: " + exception.getMessage());
         }
