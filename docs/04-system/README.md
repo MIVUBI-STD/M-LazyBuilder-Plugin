@@ -7,7 +7,7 @@ Canonical owner for LazyBuilder module boundaries, source ownership, and maintai
 ```text
 LazyBuilder Client Mod
         │
-        │ bounded protocol
+        │ bounded first-party protocol
         ▼
 LazyBuilder Server Plugin
         │
@@ -15,7 +15,9 @@ LazyBuilder Server Plugin
 Paper API 1.21.4
 ```
 
-Xaero World Map is an external client integration for map preview/location interaction, not a world-state authority.
+Client/server application traffic reuses the existing Minecraft play connection. LazyBuilder does not require a separate relay, VPN service, HTTP gateway, WebSocket server, or second listening port. The canonical networking contract is [`networking.md`](networking.md).
+
+Xaero World Map is an external client integration for map preview/location interaction, not a world-state or network authority.
 
 ## Ownership Rules
 
@@ -46,7 +48,8 @@ world/
 ├── paper/           Paper/Bukkit runtime boundary
 ├── files/           safe world-file operations
 ├── conversion/      isolated conversion adapter/runtime lifecycle
-└── protocol/        typed client/server contracts when client work begins
+├── map/             shared bounded map-action wire contract
+└── transfer/        shared bounded file-transfer wire/session contract
 ```
 
 A package exists only when its responsibility exists in source. Do not create empty layers for symmetry.
@@ -88,7 +91,7 @@ Documentation records current durable behavior, ownership, and constraints. It i
 docs/01-product/          product scope and flow
 docs/02-world-management/ world behavior and feature contracts
 docs/03-client-ui/        client/Xaero presentation contracts
-docs/04-system/           architecture, ownership, maintainability
+docs/04-system/           architecture, ownership, networking, maintainability
 docs/05-operations/       current continuation/proof only
 ```
 
@@ -116,6 +119,7 @@ Use domain-local context only:
 ```text
 world behavior    → docs/02-world-management + world source
 client UI/Xaero   → docs/03-client-ui + client source
+network ownership → docs/04-system/networking.md + exact protocol/adapter source
 architecture      → this document + exact affected source owners
 current proof     → docs/05-operations only when continuation matters
 ```
@@ -129,6 +133,7 @@ Do not load all docs or all Skills as ceremony.
 - No Multiverse runtime dependency in the target World Manager.
 - Xaero dependency/integration must be isolated behind one client-side boundary so world-management server logic remains independent.
 - The conversion engine must remain behind one World Manager adapter and run on demand rather than becoming a permanent server runtime.
+- LazyBuilder application networking must remain first-party and independent of optional deployment tunnels/relays; see [`networking.md`](networking.md).
 - Third-party version changes must be absorbed at their adapter boundary whenever the product contract has not changed.
 
 ## Proof Boundary
