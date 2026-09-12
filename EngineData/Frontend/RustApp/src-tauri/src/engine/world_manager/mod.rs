@@ -31,6 +31,10 @@ pub struct CreateWorldRequest { pub folder_name: String, pub display_name: Strin
 #[serde(rename_all = "camelCase")]
 pub struct CloneWorldRequest { pub world_id: String, pub destination_folder: String, pub display_name: String }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportWorldRequest { pub world_id: String, pub target_format: String, pub artifact_name: String }
+
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldSettingsRequest {
@@ -117,6 +121,13 @@ pub fn start_clone_world(request: &CloneWorldRequest) -> Result<WorldTaskSnapsho
     if request.destination_folder.trim().is_empty() { return Err("Clone destination folder must not be empty.".into()); }
     if request.display_name.trim().is_empty() { return Err("Clone display name must not be empty.".into()); }
     request_json("POST", "/v1/tasks/clone", Some(request))
+}
+
+pub fn start_export_world(request: &ExportWorldRequest) -> Result<WorldTaskSnapshot, String> {
+    validate_world_id(&request.world_id)?;
+    if request.target_format.trim().is_empty() { return Err("Export target format must not be empty.".into()); }
+    if request.artifact_name.trim().is_empty() { return Err("Export artifact name must not be empty.".into()); }
+    request_json("POST", "/v1/tasks/export", Some(request))
 }
 
 fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
