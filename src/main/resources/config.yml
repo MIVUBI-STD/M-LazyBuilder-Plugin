@@ -12,7 +12,9 @@ world-manager:
     timeout-minutes: 60
 
   transfer:
-    # Kept below common plugin/custom-payload ceilings so future transport framing has room.
+    # Kept below Minecraft custom-payload ceilings so protocol framing has room.
     chunk-bytes: 24576
     # Hard cap for one uploaded .zip/.mcworld before it is accepted into world/imports.
     max-upload-mb: 16384
+    # An inactive transfer may be reclaimed on the next request/disconnect; no polling timer is used.
+    session-idle-seconds: 300
