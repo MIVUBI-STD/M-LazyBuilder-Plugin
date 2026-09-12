@@ -33,21 +33,24 @@ This directory owns current continuation/proof only. Durable product and archite
 - exactly one protocol request per player is processed at a time, file/hash work runs asynchronously, and server responses return on the Paper thread;
 - disconnect aborts that player's active sessions and plugin disable unregisters the channel and cleans tracked session state;
 - transfer partials live under `world/transfer`; no transfer daemon, polling loop, background socket, or persistent worker exists while idle;
-- `WorldAreaSelection` now converts Xaero/client block-corner selections into inclusive chunk bounds with correct negative-coordinate floor division;
+- `WorldAreaSelection` converts map block-corner selections into inclusive chunk bounds with correct negative-coordinate floor division;
 - `WorldExportService.prepareArea(...)` reuses the canonical Export path and emits request-local include pruning for overworld, Nether, and End rather than creating a second export system;
 - Export Area always uses the verified conversion runtime, including Java 1.21.4 targets, because pruning must be applied; whole-world Java 1.21.4 retains its native fast path;
-- `WorldLocationTeleportService` now owns server-authoritative Teleport to Location: load target world on demand, then resolve safe X/Z destination through a narrow Paper location gateway;
+- `WorldLocationTeleportService` owns server-authoritative Teleport to Location: load target world on demand, then resolve safe X/Z destination through a narrow Paper location gateway;
 - the Paper location resolver checks world border, safe solid floor, passable feet/head space, and applies the managed world's default game mode; Void worlds resolve to their existing spawn/platform instead of generating terrain at the selected coordinate;
-- Xaero remains presentation/input only and does not own world state, Y resolution, map caches, or export state.
+- `MapActionWireProtocol` and `PaperMapActionPayloadAdapter` now expose those two map intents over `lazybuilder:map` without creating new world/export authority;
+- map protocol version 1 is bounded to 4 KiB; `lazybuilder.world.teleport` gates map teleport and `lazybuilder.world.manage` gates Export Area;
+- Export Area sends an immediate accepted response, executes snapshot/conversion off-thread, then returns the finished artifact name for download through the existing transfer channel;
+- Xaero remains presentation/input only and does not own world state, Y resolution, map caches, export state, or file transfer state.
 
 ## Next Action
 
-Implement the **client-mod/Xaero adapter** that turns actual Xaero map clicks and rectangle selections into these existing server intents. Keep the adapter thin: `WorldId + X/Z` for Teleport to Location and `WorldId + two X/Z corners + export options` for Export Area.
+The remaining remote-code boundary is the actual **client mod / Xaero hook implementation** that feeds `lazybuilder:map` and `lazybuilder:transfer`. This plugin repository now defines the server protocol and authority contracts; do not invent a second client/server protocol when the client module is created.
 
-After the client adapter, audit protocol permissions and add end-to-end LOCAL/LIVE tests for real Xaero hooks, teleport safety, area conversion output, large file transfer, and Java↔Bedrock conversion.
+Before live rollout, add end-to-end LOCAL/LIVE tests for real client registration, Xaero hook availability, safe-surface teleport, Export Area conversion output, large file transfer, disconnect behavior, and Java↔Bedrock conversion.
 
 Do not create a second terrain renderer, map cache, export service, teleport authority, transfer registry, or background watcher.
 
 ## Proof State
 
-GitHub Actions `mvn verify` was green through the transfer wire protocol/Paper payload adapter source slice. Export Area and Teleport to Location server contracts have source plus targeted unit coverage in the current change and require their own green CI run before compile/test proof is promoted. Real safe-surface teleport behavior, Xaero hooks, real pruning output, live client-mod registration, network transfer, large-world conversion, `.mcworld` opening, and Paper runtime behavior remain LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` was green through the Transfer/Paper payload slice and the Export Area + Teleport to Location server-contract slice. The new `lazybuilder:map` wire/Paper adapter has targeted protocol tests in the current change and requires its own green CI result before compile/test proof is promoted. Real Xaero hooks, client-mod registration, safe-surface teleport behavior, real pruning output, network transfer, large-world conversion, `.mcworld` opening, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
