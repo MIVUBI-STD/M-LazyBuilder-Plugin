@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
-import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.WorldAreaSelection;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportService;
@@ -8,6 +7,7 @@ import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.util.Map;
@@ -22,7 +22,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     public static final String TELEPORT_PERMISSION = "lazybuilder.world.teleport";
     public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
 
-    private final LazyBuilderPlugin plugin;
+    private final JavaPlugin plugin;
     private final WorldRegistry registry;
     private final WorldLocationTeleportService teleportService;
     private final WorldExportService exportService;
@@ -32,7 +32,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     private volatile boolean stopping;
 
     public PaperMapActionPayloadAdapter(
-            LazyBuilderPlugin plugin,
+            JavaPlugin plugin,
             WorldRegistry registry,
             WorldLocationTeleportService teleportService,
             WorldExportService exportService
@@ -141,8 +141,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        // Phase 1: capture the quiescent source. Only this copy window requires the
-        // world to remain unloaded.
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Throwable captureFailure = null;
             try {
@@ -168,8 +166,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                 }
 
                 try {
-                    // Restore player access immediately after the safe snapshot. The
-                    // long conversion/ZIP phase below no longer needs the live world.
                     exportService.resumeSourceAfterSnapshot(task);
                 } catch (RuntimeException resumeFailure) {
                     finishFailure(owner, task, resumeFailure);
