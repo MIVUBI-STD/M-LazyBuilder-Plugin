@@ -12,6 +12,7 @@ pub fn run() {
             commands::server_manager::server_stop,
             commands::server_manager::server_restart,
             commands::plugin_manager::plugin_list,
+            commands::plugin_manager::plugin_pick_jar,
             commands::plugin_manager::plugin_install,
             commands::plugin_manager::plugin_update,
             commands::plugin_manager::plugin_set_enabled,
