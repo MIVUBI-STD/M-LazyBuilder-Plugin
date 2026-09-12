@@ -78,6 +78,11 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         sanitizeIdentity(root);
     }
 
+    @Override
+    public void deleteArtifact(String artifactName) throws IOException {
+        Files.deleteIfExists(resolveArtifact(artifactName));
+    }
+
     private Path resolveArtifact(String artifactName) throws IOException {
         String safe = validateSingleName(artifactName);
         String lower = safe.toLowerCase(Locale.ROOT);
