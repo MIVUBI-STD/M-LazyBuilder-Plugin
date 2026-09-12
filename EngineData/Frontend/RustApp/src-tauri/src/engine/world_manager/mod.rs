@@ -34,7 +34,7 @@ pub struct ManagedWorldSummary {
     pub default_game_mode: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateWorldRequest {
     pub folder_name: String,
@@ -42,7 +42,7 @@ pub struct CreateWorldRequest {
     pub kind: String,
 }
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldSettingsRequest {
     pub auto_load: Option<bool>,
@@ -135,65 +135,55 @@ pub fn update_world_settings(
     world_id: &str,
     request: &UpdateWorldSettingsRequest,
 ) -> Result<WorldSettingsSnapshot, String> {
-    if let Some(ticks) = request.time_of_day_ticks {
-        if ticks >= 24_000 {
-            return Err("Time must be between 0 and 23999 ticks.".into());
-        }
-    }
     let path = format!("/v1/worlds/{}/settings", validate_world_id(world_id)?);
     request_json("PATCH", &path, Some(request))
 }
 
-fn request_json<TBody, TResult>(method: &str, path: &str, body: Option<&TBody>) -> Result<TResult, String>
+fn request_json<T, B>(method: &str, path: &str, body: Option<&B>) -> Result<T, String>
 where
-    TBody: Serialize + ?Sized,
-    TResult: DeserializeOwned,
+    T: DeserializeOwned,
+    B: Serialize + ?Sized,
 {
     let options = load_or_create_control_options()?;
     let url = format!("http://127.0.0.1:{}{}", options.port, path);
     let authorization = format!("Bearer {}", options.token);
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
-        .timeout_read(Duration::from_secs(30))
-        .timeout_write(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(8))
+        .timeout_write(Duration::from_secs(8))
         .build();
 
-    let request = agent.request(method, &url)
-        .set("Authorization", &authorization)
-        .set("Accept", "application/json");
-
-    let result = match body {
-        Some(payload) => request.set("Content-Type", "application/json").send_json(payload),
+    let request = agent.request(method, &url).set("Authorization", &authorization);
+    let response = match body {
+        Some(payload) => request.send_json(ureq::json!(payload)),
         None => request.call(),
     };
 
-    match result {
+    match response {
         Ok(response) => response
-            .into_json::<TResult>()
+            .into_json::<T>()
             .map_err(|error| format!("Invalid World-Manager response: {error}")),
-        Err(ureq::Error::Status(status, response)) => {
-            let parsed = response.into_json::<ErrorResponse>().ok();
-            if let Some(error) = parsed {
-                Err(format!("{}: {}", error.error, error.message))
-            } else {
-                Err(format!("World-Manager rejected the request with HTTP {status}."))
+        Err(ureq::Error::Status(_, response)) => {
+            let parsed = response.into_json::<ErrorResponse>();
+            match parsed {
+                Ok(error) => Err(format!("World-Manager {}: {}", error.error, error.message)),
+                Err(_) => Err("World-Manager request failed.".into()),
             }
         }
         Err(error) => Err(format!("World-Manager control bridge unavailable: {error}")),
     }
 }
 
-fn validate_world_id(value: &str) -> Result<&str, String> {
-    let trimmed = value.trim();
-    let valid = trimmed.len() == 36
-        && trimmed.chars().enumerate().all(|(index, ch)| {
-            matches!(index, 8 | 13 | 18 | 23) && ch == '-' ||
-                !matches!(index, 8 | 13 | 18 | 23) && ch.is_ascii_hexdigit()
-        });
-    if !valid {
-        return Err("World id is invalid.".into());
+fn validate_world_id(world_id: &str) -> Result<&str, String> {
+    let value = world_id.trim();
+    if value.is_empty()
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return Err("Invalid world id.".into());
     }
-    Ok(trimmed)
+    Ok(value)
 }
 
 fn control_config_path() -> Result<PathBuf, String> {
@@ -207,9 +197,6 @@ fn save_control_options(path: &PathBuf, options: &WorldControlOptions) -> Result
     let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(options).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    if path.exists() {
-        fs::remove_file(path).map_err(|error| error.to_string())?;
-    }
     fs::rename(&temporary, path).map_err(|error| error.to_string())?;
     Ok(())
 }
