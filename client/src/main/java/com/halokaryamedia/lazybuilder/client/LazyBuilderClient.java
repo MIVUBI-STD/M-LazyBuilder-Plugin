@@ -13,7 +13,7 @@ public final class LazyBuilderClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         new LazyBuilderClientNetworking(WORLDS, MAPS, TRANSFERS).register();
-        WorldManagerClientUi.register(WORLDS);
+        WorldManagerClientUi.register(WORLDS, TRANSFERS);
         XaeroAvailability.logStatus();
         if (XaeroAvailability.isAvailable()) {
             XaeroMapActions.register();
