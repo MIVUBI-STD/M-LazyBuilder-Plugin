@@ -32,11 +32,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /** Loopback-only structured bridge for the LazyBuilder desktop application. */
 public final class PaperLocalControlServer {
@@ -45,11 +42,11 @@ public final class PaperLocalControlServer {
     public static final int DEFAULT_PORT = 17842;
 
     private static final Gson GSON = new Gson();
-    private static final long MAIN_THREAD_TIMEOUT_SECONDS = 30L;
     private static final String IMPORT_FILE_HEADER = "X-LazyBuilder-File-Name";
     private static final String IMPORT_SHA_HEADER = "X-LazyBuilder-Sha256";
 
     private final JavaPlugin plugin;
+    private final PaperMainThreadDispatcher mainThread;
     private final WorldRegistry registry;
     private final WorldRuntimeService runtime;
     private final WorldCreationService creation;
@@ -78,6 +75,7 @@ public final class PaperLocalControlServer {
             WorldTaskRunner taskRunner
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.mainThread = new PaperMainThreadDispatcher(plugin);
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.creation = Objects.requireNonNull(creation, "creation");
@@ -271,7 +269,7 @@ public final class PaperLocalControlServer {
                 type == WorldTaskType.ARCHIVE ? "Archive queued." : "Restore queued.",
                 progress -> {
                     progress.update(20, "Dispatching lifecycle change to Paper.");
-                    WorldRecord updated = sync(() -> type == WorldTaskType.ARCHIVE
+                    WorldRecord updated = mainThread.call(() -> type == WorldTaskType.ARCHIVE
                             ? lifecycle.archive(worldId)
                             : lifecycle.restore(worldId));
                     progress.update(90, type == WorldTaskType.ARCHIVE
@@ -360,7 +358,7 @@ public final class PaperLocalControlServer {
 
     private String runBackupTask(WorldId worldId, WorldTaskWork.Progress progress) throws Exception {
         progress.update(10, "Preparing source world on Paper.");
-        WorldBackupService.BackupTask backupTask = sync(() -> backupService.prepare(worldId));
+        WorldBackupService.BackupTask backupTask = mainThread.call(() -> backupService.prepare(worldId));
         Exception failure = null;
         WorldBackupService.BackupResult result = null;
         try {
@@ -371,7 +369,7 @@ public final class PaperLocalControlServer {
             failure = exception;
         }
         try {
-            sync(() -> {
+            mainThread.call(() -> {
                 backupService.finish(backupTask);
                 return null;
             });
@@ -408,7 +406,7 @@ public final class PaperLocalControlServer {
 
     private void handleWorldCollection(HttpExchange exchange) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
-            sendJson(exchange, 200, new WorldListResponse(sync(() -> registry.all().stream()
+            sendJson(exchange, 200, new WorldListResponse(mainThread.call(() -> registry.all().stream()
                     .map(this::summary).toList())));
             return;
         }
@@ -421,7 +419,7 @@ public final class PaperLocalControlServer {
                     ? request.folderName()
                     : request.displayName().trim();
             WorldKind kind = parseCreateKind(request.kind());
-            WorldRecord created = sync(() -> creation.create(request.folderName().trim(), displayName, kind));
+            WorldRecord created = mainThread.call(() -> creation.create(request.folderName().trim(), displayName, kind));
             sendJson(exchange, 201, summary(created));
             return;
         }
@@ -433,7 +431,7 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
             return;
         }
-        sendJson(exchange, 200, summary(sync(() -> runtime.load(worldId))));
+        sendJson(exchange, 200, summary(mainThread.call(() -> runtime.load(worldId))));
     }
 
     private void handleUnload(HttpExchange exchange, WorldId worldId) throws Exception {
@@ -441,17 +439,17 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
             return;
         }
-        sendJson(exchange, 200, summary(sync(() -> runtime.unload(worldId))));
+        sendJson(exchange, 200, summary(mainThread.call(() -> runtime.unload(worldId))));
     }
 
     private void handleSettings(HttpExchange exchange, WorldId worldId) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
-            sendJson(exchange, 200, settingsResponse(sync(() -> settings.snapshot(worldId))));
+            sendJson(exchange, 200, settingsResponse(mainThread.call(() -> settings.snapshot(worldId))));
             return;
         }
         if ("PATCH".equals(exchange.getRequestMethod())) {
             UpdateWorldSettingsRequest request = readJson(exchange, UpdateWorldSettingsRequest.class);
-            sendJson(exchange, 200, settingsResponse(sync(() -> applySettings(worldId, request))));
+            sendJson(exchange, 200, settingsResponse(mainThread.call(() -> applySettings(worldId, request))));
             return;
         }
         sendError(exchange, 405, "method_not_allowed", "Only GET and PATCH are supported.");
@@ -506,12 +504,6 @@ public final class PaperLocalControlServer {
         return snapshot.runtime().gamerules().stream()
                 .filter(rule -> rule.name().equalsIgnoreCase(name))
                 .findFirst().map(GameRuleSetting::value).map(Boolean::parseBoolean).orElse(false);
-    }
-
-    private <T> T sync(Callable<T> action) throws Exception {
-        if (plugin.getServer().isPrimaryThread()) return action.call();
-        Future<T> future = plugin.getServer().getScheduler().callSyncMethod(plugin, action);
-        return future.get(MAIN_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private static <T> T readJson(HttpExchange exchange, Class<T> type) throws IOException {
