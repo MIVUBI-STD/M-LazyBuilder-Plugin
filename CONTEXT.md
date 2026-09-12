@@ -116,6 +116,8 @@ World-Manager owns:
 
 The desktop app may present these actions but must not duplicate World-Manager business logic or become a second filesystem authority.
 
+World-Manager is now structurally locked at source/CI proof level. Canonical architecture is recorded in `docs/04-system/world-manager-architecture-lock.md`. Live Paper/Desktop/Fabric proof remains a separate later stage.
+
 ### Utilities-Manager
 
 Paper-side builder convenience module. Initial target scope:
@@ -201,18 +203,17 @@ Worlds delegates to World-Manager. Plugins delegates to Plugin-Manager.
 
 Canonical repository layout is documented in `docs/04-system/repository-layout.md`.
 
-Target top-level structure:
+Current primary source boundaries:
 
 ```text
-apps/lazybuilder-desktop/
+EngineData/Frontend/RustApp/
 modules/world-manager/
 modules/utilities-manager/
 client/fabric/
-shared/
 docs/
 ```
 
-The existing working World-Manager implementation must be structurally relocated rather than rewritten without reason. Current Fabric code similarly moves under `client/fabric/` while retaining its Minecraft-side responsibility.
+Keep each manager independently maintainable. Do not relocate or rewrite stable World-Manager source merely for symmetry.
 
 ## Architecture principles
 
@@ -229,20 +230,20 @@ The existing working World-Manager implementation must be structurally relocated
 
 ## Current phase
 
-Repository restructuring and product renaming are now the active remote-GitHub phase.
+World-Manager source architecture and its Desktop/Fabric control paths are now structurally stable and CI-green. Heavy operations use the shared orchestration boundary, Paper cross-thread calls use one dispatcher, task execution is bounded, and the legacy bootstrap compatibility layer has been removed.
 
-The next bounded implementation sequence is:
+The active remote-GitHub phase now moves to **Utilities-Manager** while preserving World-Manager as a stable dependency boundary.
+
+Next bounded sequence:
 
 ```text
-1. establish parent/module build structure
-2. relocate existing World-Manager source/resources/tests without behavior changes
-3. relocate Fabric project to client/fabric
-4. introduce only genuinely shared protocol/models
-5. add Utilities-Manager skeleton
-6. add LazyBuilder desktop skeleton with Server-Manager + Plugin-Manager boundaries
-7. wire desktop control to existing World-Manager authority
-8. package release artifacts
-9. perform LOCAL_CODE / LIVE_SERVER validation
+1. audit the existing Utilities-Manager skeleton and module boundary
+2. define the minimal feature lifecycle/registration contract
+3. group builder conveniences by real responsibility rather than one class per command
+4. implement the first low-risk utility slice with targeted tests
+5. expand utility features incrementally without world-management overlap
+6. keep Desktop/World-Manager changes isolated unless a concrete integration requirement appears
+7. perform LOCAL_CODE / LIVE_SERVER validation after the remote source slices are stable
 ```
 
-Each structural slice should remain source/CI green before continuing. Live-server proof remains separate.
+World-Manager changes after this point require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
