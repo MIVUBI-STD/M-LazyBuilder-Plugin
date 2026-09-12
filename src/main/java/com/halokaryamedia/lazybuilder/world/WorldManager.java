@@ -13,10 +13,16 @@ import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeState;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeStateRegistry;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
+import com.halokaryamedia.lazybuilder.world.conversion.ChunkerCliAdapter;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionReleaseSource;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
+import com.halokaryamedia.lazybuilder.world.conversion.ConverterAdapter;
+import com.halokaryamedia.lazybuilder.world.conversion.GitHubChunkerReleaseSource;
 import com.halokaryamedia.lazybuilder.world.conversion.LocalConversionRuntimeStore;
+import com.halokaryamedia.lazybuilder.world.conversion.OnDemandProcessRunner;
 import com.halokaryamedia.lazybuilder.world.files.LocalWorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
@@ -28,6 +34,8 @@ import com.halokaryamedia.lazybuilder.world.registry.YamlWorldRegistryPersistenc
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Level;
@@ -38,6 +46,8 @@ public final class WorldManager {
     private final ConversionRuntimePolicy conversionRuntimePolicy;
     private final ConversionRuntimeStore conversionRuntimeStore;
     private final ConversionJobCoordinator conversionJobCoordinator;
+    private final ConverterAdapter converterAdapter;
+    private final ConversionUpdateService conversionUpdateService;
     private final BuildReadyPolicy buildReadyPolicy;
     private final WorldRegistry worldRegistry;
     private final WorldRegistryPersistence registryPersistence;
@@ -64,12 +74,34 @@ public final class WorldManager {
 
         Path worldDataRoot = plugin.getDataFolder().toPath().resolve("world");
         Path registryPath = worldDataRoot.resolve("registry.yml");
+        Path conversionRoot = worldDataRoot.resolve("runtime").resolve("converter");
         this.registryPersistence = new YamlWorldRegistryPersistence(registryPath);
         this.worldFileRepository = new LocalWorldFileRepository(
                 plugin.getServer().getWorldContainer().toPath(),
                 worldDataRoot.resolve("work")
         );
-        this.conversionRuntimeStore = new LocalConversionRuntimeStore(worldDataRoot.resolve("runtime").resolve("converter"));
+        this.conversionRuntimeStore = new LocalConversionRuntimeStore(conversionRoot);
+
+        int conversionHeapMb = plugin.getConfig().getInt("world-manager.conversion.max-heap-mb", 3072);
+        long conversionTimeoutMinutes = plugin.getConfig().getLong("world-manager.conversion.timeout-minutes", 60L);
+        this.converterAdapter = new ChunkerCliAdapter(
+                ChunkerCliAdapter.currentJavaExecutable(),
+                conversionHeapMb,
+                Duration.ofSeconds(30),
+                Duration.ofMinutes(Math.max(1L, conversionTimeoutMinutes)),
+                new OnDemandProcessRunner()
+        );
+        GitHubChunkerReleaseSource releaseSource = new GitHubChunkerReleaseSource();
+        this.conversionUpdateService = new ConversionUpdateService(
+                conversionRuntimePolicy,
+                conversionRuntimeStore,
+                releaseSource,
+                releaseSource,
+                converterAdapter,
+                conversionRoot.resolve("downloads"),
+                Clock.systemUTC()
+        );
+
         this.runtimeGateway = new PaperWorldRuntimeGateway(
                 plugin.getServer(),
                 () -> plugin.getConfig().getString("world-manager.fallback-world", "")
@@ -131,6 +163,8 @@ public final class WorldManager {
     public ConversionRuntimePolicy conversionRuntimePolicy() { return conversionRuntimePolicy; }
     public ConversionRuntimeStore conversionRuntimeStore() { return conversionRuntimeStore; }
     public ConversionJobCoordinator conversionJobCoordinator() { return conversionJobCoordinator; }
+    public ConverterAdapter converterAdapter() { return converterAdapter; }
+    public ConversionUpdateService conversionUpdateService() { return conversionUpdateService; }
     public BuildReadyPolicy buildReadyPolicy() { return buildReadyPolicy; }
     public WorldRegistry worldRegistry() { return worldRegistry; }
     public WorldRuntimeService worldRuntimeService() { return worldRuntimeService; }
