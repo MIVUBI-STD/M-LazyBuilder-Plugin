@@ -38,6 +38,7 @@ sourceSets {
             include 'com/halokaryamedia/lazybuilder/world/transfer/TransferWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/world/transfer/TransferDescriptor.java'
             include 'com/halokaryamedia/lazybuilder/world/map/MapActionWireProtocol.java'
+            include 'com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/world/registry/WorldId.java'
         }
     }
