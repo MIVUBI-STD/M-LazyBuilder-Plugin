@@ -3,12 +3,14 @@ package com.halokaryamedia.lazybuilder;
 import com.halokaryamedia.lazybuilder.world.WorldManager;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
+import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class LazyBuilderPlugin extends JavaPlugin {
     private WorldManager worldManager;
     private PaperTransferPayloadAdapter transferPayloadAdapter;
     private PaperMapActionPayloadAdapter mapActionPayloadAdapter;
+    private PaperWorldControlPayloadAdapter worldControlPayloadAdapter;
 
     @Override
     public void onEnable() {
@@ -26,11 +28,24 @@ public final class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldExportService()
         );
         this.mapActionPayloadAdapter.start();
+
+        this.worldControlPayloadAdapter = new PaperWorldControlPayloadAdapter(
+                this,
+                worldManager.worldRegistry(),
+                worldManager.worldCreationService(),
+                worldManager.worldRuntimeService(),
+                worldManager.worldTeleportService(),
+                worldManager.worldLifecycleService()
+        );
+        this.worldControlPayloadAdapter.start();
         getLogger().info("LazyBuilder enabled.");
     }
 
     @Override
     public void onDisable() {
+        if (worldControlPayloadAdapter != null) {
+            worldControlPayloadAdapter.stop();
+        }
         if (mapActionPayloadAdapter != null) {
             mapActionPayloadAdapter.stop();
         }
