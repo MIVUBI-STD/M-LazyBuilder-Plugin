@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
-import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferDescriptor;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
@@ -8,6 +7,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
@@ -35,14 +35,14 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
     public static final int PIPELINE_WINDOW = TransferWireProtocol.PIPELINE_WINDOW;
     private static final int MAX_QUEUED_REQUESTS = PIPELINE_WINDOW * 2 + 4;
 
-    private final LazyBuilderPlugin plugin;
+    private final JavaPlugin plugin;
     private final TransferSessionService transfers;
     private final Map<UUID, Queue<TransferWireProtocol.Request>> requestQueues = new ConcurrentHashMap<>();
     private final Set<UUID> draining = ConcurrentHashMap.newKeySet();
     private final Set<UUID> knownOwners = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
 
-    public PaperTransferPayloadAdapter(LazyBuilderPlugin plugin, TransferSessionService transfers) {
+    public PaperTransferPayloadAdapter(JavaPlugin plugin, TransferSessionService transfers) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.transfers = Objects.requireNonNull(transfers, "transfers");
     }
