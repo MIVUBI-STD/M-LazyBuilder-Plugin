@@ -33,6 +33,10 @@ class WorldControlWireProtocolTest {
         assertEquals(new WorldControlWireProtocol.SetPvp(id, true), roundTrip(new WorldControlWireProtocol.SetPvp(id, true)));
         assertEquals(new WorldControlWireProtocol.ResetBuildReady(id), roundTrip(new WorldControlWireProtocol.ResetBuildReady(id)));
         assertEquals(new WorldControlWireProtocol.SetSpawnHere(id), roundTrip(new WorldControlWireProtocol.SetSpawnHere(id)));
+        assertEquals(new WorldControlWireProtocol.ExportWorld(id, "JAVA_1_21_4", "build-export"),
+                roundTrip(new WorldControlWireProtocol.ExportWorld(id, "JAVA_1_21_4", "build-export")));
+        assertEquals(new WorldControlWireProtocol.ImportWorld("incoming.zip", "incoming", "Incoming"),
+                roundTrip(new WorldControlWireProtocol.ImportWorld("incoming.zip", "incoming", "Incoming")));
     }
 
     @Test
@@ -52,6 +56,9 @@ class WorldControlWireProtocolTest {
         var settings = new WorldControlWireProtocol.SettingsSnapshot(
                 id, true, "CREATIVE", "NORMAL", false, "CLEAR", 6000L, 0.0, 65.0, 0.0);
         assertEquals(settings, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(settings)));
+
+        var export = new WorldControlWireProtocol.ExportReady(id, "build-export.zip", "JAVA_1_21_4");
+        assertEquals(export, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(export)));
     }
 
     @Test
