@@ -7,6 +7,14 @@ pub fn plugin_list(state: State<'_, PluginManagerState>) -> Result<Vec<PluginSum
 }
 
 #[tauri::command]
+pub fn plugin_pick_jar() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("Paper plugin", &["jar"])
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub fn plugin_install(state: State<'_, PluginManagerState>, jar_path: String) -> Result<PluginInstallResult, String> {
     state.install(&jar_path)
 }
