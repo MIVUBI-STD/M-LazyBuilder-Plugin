@@ -6,12 +6,8 @@ import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Shared phased orchestration for heavy World-Manager operations used by both
@@ -22,22 +18,20 @@ import java.util.concurrent.TimeUnit;
  * failure combination so transports do not implement the same workflow twice.</p>
  */
 public final class WorldHeavyOperationOrchestrator {
-    private static final long MAIN_THREAD_TIMEOUT_SECONDS = 30L;
-
-    private final JavaPlugin plugin;
+    private final PaperMainThreadDispatcher mainThread;
     private final WorldCloneService cloneService;
     private final WorldDeleteService deleteService;
     private final WorldExportService exportService;
     private final WorldImportService importService;
 
     public WorldHeavyOperationOrchestrator(
-            JavaPlugin plugin,
+            PaperMainThreadDispatcher mainThread,
             WorldCloneService cloneService,
             WorldDeleteService deleteService,
             WorldExportService exportService,
             WorldImportService importService
     ) {
-        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.mainThread = Objects.requireNonNull(mainThread, "mainThread");
         this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.deleteService = Objects.requireNonNull(deleteService, "deleteService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
@@ -52,7 +46,8 @@ public final class WorldHeavyOperationOrchestrator {
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Preparing source world on Paper.");
-        WorldCloneService.CloneTask task = sync(() -> cloneService.prepare(sourceId, destinationFolder, displayName));
+        WorldCloneService.CloneTask task = mainThread.call(
+                () -> cloneService.prepare(sourceId, destinationFolder, displayName));
         Exception failure = null;
         WorldRecord cloned = null;
         try {
@@ -63,7 +58,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            sync(() -> {
+            mainThread.call(() -> {
                 cloneService.finish(task);
                 return null;
             });
@@ -82,7 +77,8 @@ public final class WorldHeavyOperationOrchestrator {
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Verifying delete confirmation and fallback protection.");
-        WorldDeleteService.DeleteTask task = sync(() -> deleteService.prepare(worldId, typedFolderName));
+        WorldDeleteService.DeleteTask task = mainThread.call(
+                () -> deleteService.prepare(worldId, typedFolderName));
         WorldRecord deleted = task.world();
         Exception failure = null;
         try {
@@ -93,7 +89,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            sync(() -> {
+            mainThread.call(() -> {
                 deleteService.finish(task);
                 return null;
             });
@@ -113,14 +109,15 @@ public final class WorldHeavyOperationOrchestrator {
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Preparing source world on Paper.");
-        WorldExportService.ExportTask task = sync(() -> exportService.prepare(worldId, targetFormat, artifactName));
+        WorldExportService.ExportTask task = mainThread.call(
+                () -> exportService.prepare(worldId, targetFormat, artifactName));
         Exception failure = null;
         WorldExportService.ExportResult result = null;
         try {
             reporter.update(25, "Capturing consistent world snapshot.");
             exportService.captureSnapshot(task);
             reporter.update(45, "Restoring source runtime state.");
-            sync(() -> {
+            mainThread.call(() -> {
                 exportService.resumeSourceAfterSnapshot(task);
                 return null;
             });
@@ -131,7 +128,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            sync(() -> {
+            mainThread.call(() -> {
                 exportService.finish(task);
                 return null;
             });
@@ -169,12 +166,6 @@ public final class WorldHeavyOperationOrchestrator {
         if (failure != null) throw failure;
         reporter.update(95, "Import finalized.");
         return Objects.requireNonNull(imported, "imported");
-    }
-
-    private <T> T sync(Callable<T> action) throws Exception {
-        if (plugin.getServer().isPrimaryThread()) return action.call();
-        Future<T> future = plugin.getServer().getScheduler().callSyncMethod(plugin, action);
-        return future.get(MAIN_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private static Exception combine(Exception primary, Exception secondary) {
