@@ -4,3 +4,29 @@ main: com.halokaryamedia.lazybuilder.utilities.UtilitiesManagerPlugin
 api-version: '1.21'
 author: Halo Karya Media
 description: Modular builder/server utility features for the LazyBuilder suite.
+
+commands:
+  fly:
+    description: Toggle LazyBuilder Advanced Fly, optionally with a speed multiplier.
+    usage: /fly [speed]
+    permission: lazybuilder.utilities.fly
+  noclip:
+    description: Toggle stable spectator-based noclip movement.
+    usage: /noclip
+    permission: lazybuilder.utilities.noclip
+  nightvision:
+    description: Toggle persistent builder night vision.
+    usage: /nightvision
+    aliases: [nv]
+    permission: lazybuilder.utilities.nightvision
+
+permissions:
+  lazybuilder.utilities.fly:
+    description: Use Utilities-Manager Advanced Fly.
+    default: op
+  lazybuilder.utilities.noclip:
+    description: Use Utilities-Manager spectator-based Noclip.
+    default: op
+  lazybuilder.utilities.nightvision:
+    description: Use Utilities-Manager Night Vision.
+    default: op
