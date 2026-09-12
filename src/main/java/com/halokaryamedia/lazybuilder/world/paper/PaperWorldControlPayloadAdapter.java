@@ -4,8 +4,12 @@ import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
+import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
+import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
+import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
+import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -37,6 +41,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldLifecycleService lifecycle;
     private final WorldCloneService cloneService;
     private final WorldDeleteService deleteService;
+    private final WorldSettingsService settingsService;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
     private volatile boolean stopping;
@@ -49,7 +54,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             WorldTeleportService teleport,
             WorldLifecycleService lifecycle,
             WorldCloneService cloneService,
-            WorldDeleteService deleteService
+            WorldDeleteService deleteService,
+            WorldSettingsService settingsService
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -59,6 +65,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.deleteService = Objects.requireNonNull(deleteService, "deleteService");
+        this.settingsService = Objects.requireNonNull(settingsService, "settingsService");
     }
 
     public void start() {
@@ -110,9 +117,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         return switch (request) {
             case WorldControlWireProtocol.ListWorlds ignored -> {
                 requireAnyWorldPermission(player);
-                List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream()
-                        .map(this::summary)
-                        .toList();
+                List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream().map(this::summary).toList();
                 yield new WorldControlWireProtocol.WorldList(worlds);
             }
             case WorldControlWireProtocol.CreateWorld create -> {
@@ -133,8 +138,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             }
             case WorldControlWireProtocol.TeleportWorld teleportRequest -> {
                 requireTeleport(player);
-                WorldRecord world = teleport.teleportToWorld(
-                        player.getUniqueId(), new WorldId(teleportRequest.worldId()));
+                WorldRecord world = teleport.teleportToWorld(player.getUniqueId(), new WorldId(teleportRequest.worldId()));
                 yield new WorldControlWireProtocol.TeleportOk(summary(world));
             }
             case WorldControlWireProtocol.ArchiveWorld archive -> {
@@ -147,127 +151,112 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 WorldRecord world = lifecycle.restore(new WorldId(restore.worldId()));
                 yield new WorldControlWireProtocol.WorldChanged("RESTORE", summary(world));
             }
+            case WorldControlWireProtocol.GetSettings settings -> {
+                requireManage(player);
+                yield settingsSummary(settingsService.snapshot(new WorldId(settings.worldId())));
+            }
+            case WorldControlWireProtocol.SetAutoLoad setting -> {
+                requireManage(player);
+                settingsService.setAutoLoad(new WorldId(setting.worldId()), setting.enabled());
+                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
+            }
+            case WorldControlWireProtocol.SetDefaultMode setting -> {
+                requireManage(player);
+                settingsService.setDefaultGameMode(new WorldId(setting.worldId()),
+                        WorldGameMode.valueOf(setting.gameMode().toUpperCase(Locale.ROOT)));
+                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
+            }
+            case WorldControlWireProtocol.SetDifficulty setting -> {
+                requireManage(player);
+                settingsService.setDifficulty(new WorldId(setting.worldId()),
+                        WorldDifficulty.valueOf(setting.difficulty().toUpperCase(Locale.ROOT)));
+                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
+            }
+            case WorldControlWireProtocol.SetPvp setting -> {
+                requireManage(player);
+                settingsService.setPvp(new WorldId(setting.worldId()), setting.enabled());
+                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
+            }
+            case WorldControlWireProtocol.ResetBuildReady setting -> {
+                requireManage(player);
+                yield settingsSummary(settingsService.resetToBuildReady(new WorldId(setting.worldId())));
+            }
+            case WorldControlWireProtocol.SetSpawnHere setting -> {
+                requireManage(player);
+                settingsService.setSpawnToPlayer(player.getUniqueId(), new WorldId(setting.worldId()));
+                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
+            }
             case WorldControlWireProtocol.CloneWorld ignored -> throw new IllegalStateException("Clone must use async path");
             case WorldControlWireProtocol.DeleteWorld ignored -> throw new IllegalStateException("Delete must use async path");
         };
     }
 
     private void handleClone(Player player, WorldControlWireProtocol.CloneWorld request) {
-        try {
-            requireManage(player);
-        } catch (RuntimeException exception) {
-            send(player, WorldControlWireProtocol.error(exception.getMessage()));
-            return;
-        }
+        try { requireManage(player); } catch (RuntimeException exception) { send(player, WorldControlWireProtocol.error(exception.getMessage())); return; }
         UUID owner = player.getUniqueId();
-        if (!heavyInFlight.add(owner)) {
-            send(player, WorldControlWireProtocol.error("Another World Manager file operation is still processing"));
-            return;
-        }
-
+        if (!heavyInFlight.add(owner)) { send(player, WorldControlWireProtocol.error("Another World Manager file operation is still processing")); return; }
         final WorldCloneService.CloneTask task;
-        try {
-            task = cloneService.prepare(
-                    new WorldId(request.sourceWorldId()), request.destinationFolder(), request.displayName());
-        } catch (RuntimeException exception) {
-            heavyInFlight.remove(owner);
-            send(player, WorldControlWireProtocol.error(exception.getMessage()));
-            return;
-        }
+        try { task = cloneService.prepare(new WorldId(request.sourceWorldId()), request.destinationFolder(), request.displayName()); }
+        catch (RuntimeException exception) { heavyInFlight.remove(owner); send(player, WorldControlWireProtocol.error(exception.getMessage())); return; }
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            WorldRecord result = null;
-            Throwable failure = null;
-            try {
-                result = cloneService.executeFilePhase(task);
-            } catch (Throwable exception) {
-                failure = exception;
-            }
-            WorldRecord finalResult = result;
-            Throwable finalFailure = failure;
+            WorldRecord result = null; Throwable failure = null;
+            try { result = cloneService.executeFilePhase(task); } catch (Throwable exception) { failure = exception; }
+            WorldRecord finalResult = result; Throwable finalFailure = failure;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 Throwable outcome = finalFailure;
-                try {
-                    cloneService.finish(task);
-                } catch (Throwable finishFailure) {
-                    if (outcome == null) outcome = finishFailure;
-                    else outcome.addSuppressed(finishFailure);
-                }
+                try { cloneService.finish(task); } catch (Throwable finishFailure) { if (outcome == null) outcome = finishFailure; else outcome.addSuppressed(finishFailure); }
                 try {
                     Player online = plugin.getServer().getPlayer(owner);
                     if (online == null || !online.isOnline()) return;
                     if (outcome != null) send(online, WorldControlWireProtocol.error(outcome.getMessage()));
                     else send(online, encode(new WorldControlWireProtocol.WorldChanged("CLONE", summary(finalResult))));
-                } finally {
-                    heavyInFlight.remove(owner);
-                }
+                } finally { heavyInFlight.remove(owner); }
             });
         });
     }
 
     private void handleDelete(Player player, WorldControlWireProtocol.DeleteWorld request) {
-        try {
-            requireManage(player);
-        } catch (RuntimeException exception) {
-            send(player, WorldControlWireProtocol.error(exception.getMessage()));
-            return;
-        }
+        try { requireManage(player); } catch (RuntimeException exception) { send(player, WorldControlWireProtocol.error(exception.getMessage())); return; }
         UUID owner = player.getUniqueId();
-        if (!heavyInFlight.add(owner)) {
-            send(player, WorldControlWireProtocol.error("Another World Manager file operation is still processing"));
-            return;
-        }
-
+        if (!heavyInFlight.add(owner)) { send(player, WorldControlWireProtocol.error("Another World Manager file operation is still processing")); return; }
         final WorldDeleteService.DeleteTask task;
         final WorldControlWireProtocol.WorldSummary deletedSummary;
         try {
             task = deleteService.prepare(new WorldId(request.worldId()), request.typedFolderName());
             deletedSummary = summary(task.world());
-        } catch (RuntimeException exception) {
-            heavyInFlight.remove(owner);
-            send(player, WorldControlWireProtocol.error(exception.getMessage()));
-            return;
-        }
+        } catch (RuntimeException exception) { heavyInFlight.remove(owner); send(player, WorldControlWireProtocol.error(exception.getMessage())); return; }
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Throwable failure = null;
-            try {
-                deleteService.executeFilePhase(task);
-            } catch (Throwable exception) {
-                failure = exception;
-            }
+            try { deleteService.executeFilePhase(task); } catch (Throwable exception) { failure = exception; }
             Throwable finalFailure = failure;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 Throwable outcome = finalFailure;
-                try {
-                    deleteService.finish(task);
-                } catch (Throwable finishFailure) {
-                    if (outcome == null) outcome = finishFailure;
-                    else outcome.addSuppressed(finishFailure);
-                }
+                try { deleteService.finish(task); } catch (Throwable finishFailure) { if (outcome == null) outcome = finishFailure; else outcome.addSuppressed(finishFailure); }
                 try {
                     Player online = plugin.getServer().getPlayer(owner);
                     if (online == null || !online.isOnline()) return;
                     if (outcome != null) send(online, WorldControlWireProtocol.error(outcome.getMessage()));
                     else send(online, encode(new WorldControlWireProtocol.WorldChanged("DELETE", deletedSummary)));
-                } finally {
-                    heavyInFlight.remove(owner);
-                }
+                } finally { heavyInFlight.remove(owner); }
             });
         });
     }
 
     private WorldControlWireProtocol.WorldSummary summary(WorldRecord world) {
         return new WorldControlWireProtocol.WorldSummary(
-                world.id().value(),
-                world.folderName(),
-                world.displayName(),
-                world.kind().name(),
-                world.lifecycle().name(),
-                runtime.state(world.id()).name(),
-                world.autoLoad(),
-                world.defaultGameMode()
-        );
+                world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
+                world.lifecycle().name(), runtime.state(world.id()).name(), world.autoLoad(), world.defaultGameMode());
+    }
+
+    private static WorldControlWireProtocol.SettingsSnapshot settingsSummary(WorldSettingsSnapshot snapshot) {
+        var runtime = snapshot.runtime();
+        var spawn = runtime.spawn();
+        return new WorldControlWireProtocol.SettingsSnapshot(
+                snapshot.world().id().value(), snapshot.world().autoLoad(), snapshot.defaultGameMode().name(),
+                runtime.difficulty().name(), runtime.pvpEnabled(), runtime.weather().name(), runtime.timeOfDayTicks(),
+                spawn.x(), spawn.y(), spawn.z());
     }
 
     private void requireAnyWorldPermission(Player player) {
@@ -277,20 +266,14 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private static void requirePermission(Player player, String permission) {
-        if (!player.hasPermission(permission)) {
-            throw new IllegalStateException("Missing permission: " + permission);
-        }
+        if (!player.hasPermission(permission)) throw new IllegalStateException("Missing permission: " + permission);
     }
-
     private static void requireManage(Player player) { requirePermission(player, MANAGE_PERMISSION); }
     private static void requireTeleport(Player player) { requirePermission(player, TELEPORT_PERMISSION); }
 
     private static byte[] encode(WorldControlWireProtocol.Response response) {
-        try {
-            return WorldControlWireProtocol.encodeResponse(response);
-        } catch (IOException impossible) {
-            throw new IllegalStateException(impossible);
-        }
+        try { return WorldControlWireProtocol.encodeResponse(response); }
+        catch (IOException impossible) { throw new IllegalStateException(impossible); }
     }
 
     private void send(Player player, byte[] payload) {
