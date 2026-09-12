@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
+import com.halokaryamedia.lazybuilder.world.paper.LocalControlImportUploadService;
 import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMapActionPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
@@ -57,6 +58,10 @@ public class LazyBuilderPlugin extends JavaPlugin {
         );
         this.worldControlPayloadAdapter.start();
 
+        LocalControlImportUploadService importUploads = new LocalControlImportUploadService(
+                worldManager.transferSessionService(),
+                worldManager.transferPolicy()
+        );
         this.localControlServer = new PaperLocalControlServer(
                 this,
                 worldManager.worldRegistry(),
@@ -67,6 +72,8 @@ public class LazyBuilderPlugin extends JavaPlugin {
                 worldManager.worldCloneService(),
                 worldManager.worldBackupService(),
                 worldManager.worldExportService(),
+                worldManager.worldImportService(),
+                importUploads,
                 worldTaskRegistry,
                 worldTaskRunner
         );
