@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.utilities;
 
 import com.halokaryamedia.lazybuilder.utilities.feature.UtilityFeatureRegistry;
+import com.halokaryamedia.lazybuilder.utilities.feature.buildhelpers.BuildHelpersFeature;
+import com.halokaryamedia.lazybuilder.utilities.feature.buildhelpers.BuildHelpersSettings;
 import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementFeature;
 import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementSettings;
 import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetyFeature;
@@ -28,17 +30,23 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         featureRegistry.register(new WorldSafetyFeature(this, worldSafetySettings));
 
         ConfigurationSection movementSection = getConfig().getConfigurationSection("features.movement");
-        if (movementSection == null) {
-            movementSection = getConfig().createSection("features.movement");
-        }
+        if (movementSection == null) movementSection = getConfig().createSection("features.movement");
         MovementSettings movementSettings = MovementSettings.from(movementSection);
         featureRegistry.register(new MovementFeature(this, movementSettings));
+
+        ConfigurationSection buildHelpersSection = getConfig().getConfigurationSection("features.build-helpers");
+        if (buildHelpersSection == null) buildHelpersSection = getConfig().createSection("features.build-helpers");
+        BuildHelpersSettings buildHelpersSettings = BuildHelpersSettings.from(buildHelpersSection);
+        featureRegistry.register(new BuildHelpersFeature(this, buildHelpersSettings));
 
         if (getConfig().getBoolean("features.world-safety.enabled", true)) {
             featureRegistry.enable(WorldSafetyFeature.ID);
         }
         if (getConfig().getBoolean("features.movement.enabled", true)) {
             featureRegistry.enable(MovementFeature.ID);
+        }
+        if (getConfig().getBoolean("features.build-helpers.enabled", true)) {
+            featureRegistry.enable(BuildHelpersFeature.ID);
         }
 
         getLogger().info("Utilities-Manager enabled with "
