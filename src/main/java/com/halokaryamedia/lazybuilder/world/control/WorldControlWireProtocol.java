@@ -35,11 +35,14 @@ public final class WorldControlWireProtocol {
     private static final int SET_PVP = 14;
     private static final int RESET_BUILD_READY = 15;
     private static final int SET_SPAWN_HERE = 16;
+    private static final int EXPORT_WORLD = 17;
+    private static final int IMPORT_WORLD = 18;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
     private static final int TELEPORT_OK = 103;
     private static final int SETTINGS = 104;
+    private static final int EXPORT_READY = 105;
     private static final int ERROR = 127;
 
     private WorldControlWireProtocol() {}
@@ -47,7 +50,7 @@ public final class WorldControlWireProtocol {
     public sealed interface Request permits ListWorlds, CreateWorld, LoadWorld, UnloadWorld,
             TeleportWorld, ArchiveWorld, RestoreWorld, CloneWorld, DeleteWorld,
             GetSettings, SetAutoLoad, SetDefaultMode, SetDifficulty, SetPvp,
-            ResetBuildReady, SetSpawnHere {}
+            ResetBuildReady, SetSpawnHere, ExportWorld, ImportWorld {}
 
     public record ListWorlds() implements Request {}
 
@@ -91,7 +94,23 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot, ErrorResponse {}
+    public record ExportWorld(UUID worldId, String targetFormat, String artifactName) implements Request {
+        public ExportWorld {
+            Objects.requireNonNull(worldId, "worldId");
+            targetFormat = requireString(targetFormat, "targetFormat");
+            artifactName = requireString(artifactName, "artifactName");
+        }
+    }
+
+    public record ImportWorld(String artifactName, String destinationFolder, String displayName) implements Request {
+        public ImportWorld {
+            artifactName = requireString(artifactName, "artifactName");
+            destinationFolder = requireString(destinationFolder, "destinationFolder");
+            displayName = requireString(displayName, "displayName");
+        }
+    }
+
+    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot, ExportReady, ErrorResponse {}
 
     public record WorldSummary(
             UUID worldId,
@@ -131,6 +150,14 @@ public final class WorldControlWireProtocol {
             defaultGameMode = requireString(defaultGameMode, "defaultGameMode");
             difficulty = requireString(difficulty, "difficulty");
             weather = requireString(weather, "weather");
+        }
+    }
+
+    public record ExportReady(UUID worldId, String artifactName, String targetFormat) implements Response {
+        public ExportReady {
+            Objects.requireNonNull(worldId, "worldId");
+            artifactName = requireString(artifactName, "artifactName");
+            targetFormat = requireString(targetFormat, "targetFormat");
         }
     }
 
@@ -187,6 +214,16 @@ public final class WorldControlWireProtocol {
                     writeUuid(out, delete.worldId());
                     writeString(out, delete.typedFolderName());
                 }
+                case ExportWorld export -> {
+                    writeUuid(out, export.worldId());
+                    writeString(out, export.targetFormat());
+                    writeString(out, export.artifactName());
+                }
+                case ImportWorld importWorld -> {
+                    writeString(out, importWorld.artifactName());
+                    writeString(out, importWorld.destinationFolder());
+                    writeString(out, importWorld.displayName());
+                }
             }
         });
     }
@@ -211,6 +248,8 @@ public final class WorldControlWireProtocol {
                 case SET_PVP -> new SetPvp(readUuid(in), in.readBoolean());
                 case RESET_BUILD_READY -> new ResetBuildReady(readUuid(in));
                 case SET_SPAWN_HERE -> new SetSpawnHere(readUuid(in));
+                case EXPORT_WORLD -> new ExportWorld(readUuid(in), readString(in), readString(in));
+                case IMPORT_WORLD -> new ImportWorld(readString(in), readString(in), readString(in));
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -225,6 +264,7 @@ public final class WorldControlWireProtocol {
             case WorldChanged ignored -> WORLD_CHANGED;
             case TeleportOk ignored -> TELEPORT_OK;
             case SettingsSnapshot ignored -> SETTINGS;
+            case ExportReady ignored -> EXPORT_READY;
             case ErrorResponse ignored -> ERROR;
         };
         return write(opcode, out -> {
@@ -239,6 +279,11 @@ public final class WorldControlWireProtocol {
                 }
                 case TeleportOk ok -> writeWorld(out, ok.world());
                 case SettingsSnapshot settings -> writeSettings(out, settings);
+                case ExportReady export -> {
+                    writeUuid(out, export.worldId());
+                    writeString(out, export.artifactName());
+                    writeString(out, export.targetFormat());
+                }
                 case ErrorResponse error -> writeString(out, error.message());
             }
         });
@@ -258,6 +303,7 @@ public final class WorldControlWireProtocol {
                 case WORLD_CHANGED -> new WorldChanged(readString(in), readWorld(in));
                 case TELEPORT_OK -> new TeleportOk(readWorld(in));
                 case SETTINGS -> readSettings(in);
+                case EXPORT_READY -> new ExportReady(readUuid(in), readString(in), readString(in));
                 case ERROR -> new ErrorResponse(readString(in));
                 default -> throw new IOException("Unknown world-control response opcode: " + opcode);
             };
@@ -292,6 +338,8 @@ public final class WorldControlWireProtocol {
             case SetPvp ignored -> SET_PVP;
             case ResetBuildReady ignored -> RESET_BUILD_READY;
             case SetSpawnHere ignored -> SET_SPAWN_HERE;
+            case ExportWorld ignored -> EXPORT_WORLD;
+            case ImportWorld ignored -> IMPORT_WORLD;
         };
     }
 
