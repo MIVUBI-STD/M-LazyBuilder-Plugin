@@ -27,12 +27,31 @@ jobs:
       - name: Compile Fabric client
         run: gradle -p client/fabric --no-daemon build
 
-  desktop:
+  tauri-desktop:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: EngineData/Frontend/RustApp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Typecheck Svelte frontend
+        run: npm run typecheck
+      - name: Build Svelte frontend
+        run: npm run build:frontend
+      - name: Check Rust/Tauri backend
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  legacy-wpf-transition:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Compile LazyBuilder desktop
+      - name: Compile transitional WPF source until Tauri parity is proven
         run: dotnet build apps/lazybuilder-desktop/LazyBuilder.Desktop.csproj --configuration Release
