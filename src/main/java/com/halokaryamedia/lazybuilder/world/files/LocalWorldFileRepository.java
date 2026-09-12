@@ -62,6 +62,25 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     @Override
+    public Path stageDelete(WorldRecord world, UUID operationId) throws IOException {
+        Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(operationId, "operationId");
+
+        Path source = worldPath(world.folderName());
+        if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
+            throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
+        }
+
+        Files.createDirectories(workspaceRoot);
+        Path destination = workspacePath(operationId.toString());
+        if (Files.exists(destination)) {
+            throw new IOException("Workspace already exists: " + destination.getFileName());
+        }
+        moveDirectory(source, destination);
+        return destination;
+    }
+
+    @Override
     public void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException {
         Path source = requireDirectWorkspace(stagedWorld);
         Path destination = worldPath(destinationFolder);
@@ -71,12 +90,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.exists(destination)) {
             throw new IOException("Destination world already exists: " + destinationFolder);
         }
-
-        try {
-            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, destination);
-        }
+        moveDirectory(source, destination);
     }
 
     @Override
@@ -143,6 +157,14 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         return profile == WorldCopyProfile.CLONE
                 && relative.getNameCount() == 1
                 && relative.getFileName().toString().equals("uid.dat");
+    }
+
+    private static void moveDirectory(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source, destination);
+        }
     }
 
     private Path worldPath(String folderName) {
