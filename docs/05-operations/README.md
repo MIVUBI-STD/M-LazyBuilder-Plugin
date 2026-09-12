@@ -23,24 +23,25 @@ This directory owns current continuation/proof only. Durable product and archite
 - cross-version/cross-edition export lazily checks the converter runtime, validates target support, and invokes one conversion job;
 - Bedrock conversion output is packaged as `.mcworld`; Java output is packaged as `.zip`;
 - completed export files are bounded to `plugins/LazyBuilder/world/exports`; request work remains under `world/work`;
-- Import World is source-implemented as one request-bound import slot with bounded `.zip`/`.mcworld` extraction under owned workspace paths;
-- import rejects traversal, excessive entry counts, and excessive uncompressed size, requires `level.dat`, detects Java vs Bedrock layout, strips `session.lock`/`uid.dat`, and never overwrites an existing managed world;
-- trusted LazyBuilder Java 1.21.4 exports use the native import path; unknown external Java and Bedrock input are conservatively normalized through the verified converter runtime to `JAVA_1_21_4`;
-- imported worlds receive fresh identity and publish as `IMPORTED + ACTIVE + UNLOADED + Auto Load OFF`; `BUILD_READY` is not applied automatically;
-- client/server file transfer now has one transport-agnostic `TransferSessionService` with strict ordered chunks, per-client concurrency limits, declared-size enforcement, SHA-256 verification, and atomic upload publication into `world/imports`;
-- downloads are explicit request/response sessions over existing artifacts in `world/exports`; the server computes immutable session metadata and sends no data until the client requests the next ordered chunk;
+- Import World is source-implemented with bounded `.zip`/`.mcworld` extraction under owned workspace paths and fresh registry identity;
+- trusted LazyBuilder Java 1.21.4 exports use native import; unknown external Java and Bedrock input normalize through the verified converter runtime to `JAVA_1_21_4`;
+- imported worlds publish as `IMPORTED + ACTIVE + UNLOADED + Auto Load OFF`; `BUILD_READY` is not applied automatically;
+- client/server file transfer uses one `TransferSessionService` with ordered chunks, per-client limits, declared-size enforcement, SHA-256 verification, and atomic upload publication;
+- `PaperTransferPayloadAdapter` now maps Minecraft plugin/custom payload traffic on `lazybuilder:transfer` directly onto that transfer owner;
+- transfer payloads are protocol-versioned and bounded to 30 KiB with a 24 KiB maximum data chunk;
+- `lazybuilder.world.manage` gates upload/download payload use;
+- exactly one protocol request per player is processed at a time, file/hash work runs asynchronously, and server responses return on the Paper thread;
+- disconnect aborts that player's active sessions and plugin disable unregisters the channel and cleans tracked session state;
 - transfer partials live under `world/transfer`; no transfer daemon, polling loop, background socket, or persistent worker exists while idle;
-- whole-world export supplies no pruning configuration; Export Area remains a later Xaero/client input layer over the same export service;
+- whole-world export supplies no pruning configuration; Export Area remains a Xaero/client input layer over the same export service;
 - Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Implement the thin **Minecraft client-mod/Paper payload adapter** over the existing transfer session owner, including disconnect/cancel cleanup and permission gates. Do not create another transfer registry or file state owner.
+Implement the **Xaero Export Area selection bridge** and **Teleport to Location** coordinate flow. The client should supply only validated world/coordinate or two-corner selection intent; the server remains authoritative for permissions, world state, safe-Y resolution, and conversion of block-space selection into export chunk bounds.
 
-After transport wiring, add the Xaero Export Area selection bridge and Teleport to Location coordinate flow. Keep all transfer behavior event-driven and identical over LAN/Tailscale/remote connections.
-
-Do not expose Chunker as a separate product surface. Do not add an idle daemon, periodic updater, file watcher, or persistent conversion worker.
+Do not create a second terrain renderer, map cache, export service, or teleport authority. Reuse the existing World Export and Teleport services, and keep Xaero-specific integration isolated behind one client adapter boundary.
 
 ## Proof State
 
-GitHub Actions `mvn verify` is green through the Import World source slice. The transfer protocol core has source and targeted tests in the current change and requires its own green CI run before compile/test proof is promoted. Real network payload transport, large-file transfer, disconnect behavior, live CLI conversion, `.mcworld` opening, Xaero integration, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` is green through the transfer wire protocol/Paper payload adapter source slice. This proves remote compile and unit behavior only. Real client-mod registration, network payload transport, large-file transfer, disconnect behavior, live CLI conversion, `.mcworld` opening, Xaero hooks, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
