@@ -5,6 +5,7 @@ public sealed class FileSystemPluginManager : IPluginManager
     private readonly string _pluginsDirectory;
     private readonly string _disabledDirectory;
     private readonly string _backupDirectory;
+    private readonly PluginCategoryRegistry _categories;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
 
     public FileSystemPluginManager(string workspaceRoot)
@@ -13,6 +14,7 @@ public sealed class FileSystemPluginManager : IPluginManager
         _pluginsDirectory = Path.Combine(root, "server", "plugins");
         _disabledDirectory = Path.Combine(root, "server", "plugins-disabled");
         _backupDirectory = Path.Combine(root, "tools", "lazybuilder", "plugin-backups");
+        _categories = new PluginCategoryRegistry(root);
     }
 
     public Task<IReadOnlyList<PluginSummary>> ListAsync(CancellationToken cancellationToken = default)
@@ -68,7 +70,7 @@ public sealed class FileSystemPluginManager : IPluginManager
                 primary.Metadata.CanonicalId,
                 primary.Metadata.Name,
                 primary.Metadata.Version,
-                PluginCategoryRegistry.Resolve(primary.Metadata.CanonicalId, primary.Metadata.Name),
+                _categories.Resolve(primary.Metadata.CanonicalId, primary.Metadata.Name),
                 state,
                 problem,
                 candidateFiles
@@ -210,7 +212,7 @@ public sealed class FileSystemPluginManager : IPluginManager
             Directory.CreateDirectory(_backupDirectory);
             string stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
             int index = 0;
-            foreach (var duplicate in existing.Where(item => !ReferenceEquals(item, keep)))
+            foreach (var duplicate in existing.Where(item => !string.Equals(item.Path, keep.Path, StringComparison.OrdinalIgnoreCase)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 string baseName = Path.GetFileNameWithoutExtension(duplicate.Path);
@@ -221,6 +223,19 @@ public sealed class FileSystemPluginManager : IPluginManager
 
             return new PluginInstallResult(true, canonicalId,
                 $"Duplicate JARs resolved. Keeping {requestedFile}. Restart required.", true);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    public async Task SetCategoryAsync(string pluginId, string category, CancellationToken cancellationToken = default)
+    {
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            await _categories.SetOverrideAsync(pluginId, category, cancellationToken);
         }
         finally
         {
