@@ -18,20 +18,24 @@ This directory owns current continuation/proof only. Durable product and archite
 - Archive/Restore, Clone, and Delete are source-implemented with rollback-oriented ownership;
 - conversion runtime uses a bounded current/previous/candidate store, stable CLI release source, checksum/compatibility gates, and a globally single conversion job;
 - child-process execution remains request-bound; no converter process exists while idle;
-- Export World is now phased around a quiescent SNAPSHOT copy and one per-world EXPORT lease;
-- native Java 1.21.4 export bypasses the converter and packages directly as ZIP;
-- cross-version/cross-edition export lazily checks the converter runtime, continues with the already verified current runtime if an update check fails, validates target support, and invokes one conversion job;
+- Export World is phased around a quiescent SNAPSHOT copy and one per-world EXPORT lease;
+- native Java 1.21.4 export bypasses the converter, packages directly as ZIP, and adds an internal transfer marker only to the snapshot artifact;
+- cross-version/cross-edition export lazily checks the converter runtime, validates target support, and invokes one conversion job;
 - Bedrock conversion output is packaged as `.mcworld`; Java output is packaged as `.zip`;
 - completed export files are bounded to `plugins/LazyBuilder/world/exports`; request work remains under `world/work`;
+- Import World is source-implemented as one request-bound import slot with bounded `.zip`/`.mcworld` extraction under owned workspace paths;
+- import rejects traversal, excessive entry counts, and excessive uncompressed size, requires `level.dat`, detects Java vs Bedrock layout, strips `session.lock`/`uid.dat`, and never overwrites an existing managed world;
+- trusted LazyBuilder Java 1.21.4 exports use the native import path; unknown external Java and Bedrock input are conservatively normalized through the verified converter runtime to `JAVA_1_21_4`;
+- imported worlds receive fresh identity and publish as `IMPORTED + ACTIVE + UNLOADED + Auto Load OFF`; `BUILD_READY` is not applied automatically;
 - whole-world export supplies no pruning configuration; Export Area remains a later Xaero/client input layer over the same export service;
 - Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Implement **Import World** around validated temporary input. Same-format Java 1.21.4 input should publish natively; older Java and Bedrock input should go through the same verified conversion runtime. Register only after validation/publish succeeds, never overwrite an existing world, and default imported worlds to ACTIVE + UNLOADED + Auto Load OFF.
+Implement the **client/server transfer protocol** for bounded upload/download of World Manager import/export artifacts, then add the Xaero Export Area selection bridge and Teleport to Location coordinate flow. The protocol must be chunked/event-driven, work identically over LAN/Tailscale/remote connections, and stay idle when no transfer is active.
 
-After Import, add the protocol/client transfer layer and Export Area coordinate-to-pruning bridge. Do not expose Chunker as a separate product surface and do not add an idle daemon, periodic updater, file watcher, or persistent conversion worker.
+Do not expose Chunker as a separate product surface. Do not add an idle daemon, periodic updater, file watcher, or persistent conversion worker.
 
 ## Proof State
 
-GitHub Actions was green through the concrete converter adapter/update source. The Export World source slice has targeted unit coverage in the current change and requires its own green CI result before compile/test proof is promoted. Real runtime download, live CLI conversion, large-world snapshot/package behavior, client transfer, `.mcworld` opening, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` is green through the Import World source slice, including bounded archive extraction and native-import publication tests. This proves remote compile/unit behavior only. Real runtime download, live CLI conversion, large-world import/export, network file transfer, `.mcworld` opening, Xaero integration, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
