@@ -11,6 +11,7 @@ import java.util.UUID;
 public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private String lastError;
+    private long revision;
 
     public void refresh() {
         send(new WorldControlWireProtocol.ListWorlds());
@@ -32,19 +33,23 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.WorldList list -> {
                 worlds = list.worlds();
                 lastError = null;
+                revision++;
             }
             case WorldControlWireProtocol.WorldChanged changed -> {
                 replace(changed.world());
                 lastError = null;
+                revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
                         "World " + changed.action().toLowerCase() + ": " + changed.world().displayName());
             }
             case WorldControlWireProtocol.TeleportOk ok -> {
                 replace(ok.world());
                 lastError = null;
+                revision++;
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 lastError = error.message();
+                revision++;
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder world: " + error.message());
             }
         }
@@ -53,10 +58,12 @@ public final class ClientWorldController {
     public void reset() {
         worlds = List.of();
         lastError = null;
+        revision++;
     }
 
     public List<WorldControlWireProtocol.WorldSummary> worlds() { return worlds; }
     public String lastError() { return lastError; }
+    public long revision() { return revision; }
 
     private void replace(WorldControlWireProtocol.WorldSummary updated) {
         boolean found = false;
