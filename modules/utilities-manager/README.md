@@ -11,7 +11,6 @@ com.halokaryamedia.lazybuilder.utilities
   feature/
     movement/
     buildhelpers/
-    creationtools/
     spectator/
     worldsafety/
 ```
@@ -35,11 +34,6 @@ Build Helpers — implemented
   Double Slab Break
   Glazed Terracotta Rotate
 
-Creation Tools — planned
-  Banner Creator
-  Armor Color Creator
-  Special Items
-
 Spectator — planned
   Builder spectator utilities
 
@@ -49,6 +43,8 @@ World Safety — implemented
   Farmland trample protection
   Dragon egg interaction/teleport protection
 ```
+
+Banner Creator, Armor Color Creator, and Special Builder Items are intentionally **out of scope** because they are not used in the current builder-server workflow. Do not add a `creationtools` feature family unless a concrete requirement appears later.
 
 ### Movement
 
