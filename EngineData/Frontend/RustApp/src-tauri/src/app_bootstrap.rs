@@ -29,6 +29,7 @@ pub fn run() {
             commands::world_manager::world_task,
             commands::world_manager::world_archive,
             commands::world_manager::world_restore,
+            commands::world_manager::world_backup,
             commands::world_manager::world_clone
         ])
         .run(tauri::generate_context!())
