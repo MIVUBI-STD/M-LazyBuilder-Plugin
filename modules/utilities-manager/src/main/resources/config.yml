@@ -13,3 +13,13 @@ features:
       advanced-fly: true
       noclip: true
       night-vision: true
+
+  build-helpers:
+    enabled: true
+    helpers:
+      iron-door-toggle: true
+      double-slab-break: true
+      glazed-terracotta-rotate: true
+    interaction:
+      require-sneak-for-slab: true
+      require-sneak-for-rotate: true
