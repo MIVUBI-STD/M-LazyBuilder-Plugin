@@ -5,6 +5,7 @@
 
   let snapshot: ServerSnapshot = { state: 'Offline', health: 'Offline', cpuLoadPercent: 0, usedMemoryBytes: 0, maxMemoryBytes: 0 };
   let error = '';
+  let busy = false;
 
   async function refresh() {
     try { snapshot = await runtimeProduct.server.snapshot(); error = ''; }
@@ -12,11 +13,19 @@
   }
 
   async function action(run: () => Promise<void>) {
+    if (busy) return;
+    busy = true;
     try { await run(); await refresh(); error = ''; }
     catch (e) { error = String(e); }
+    finally { busy = false; }
   }
 
-  onMount(refresh);
+  onMount(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2000);
+    return () => window.clearInterval(timer);
+  });
+
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
 </script>
 
@@ -30,7 +39,7 @@
 </div>
 {#if error}<p style="color: var(--danger)">{error}</p>{/if}
 <div class="actions">
-  <button onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
-  <button onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
-  <button onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
+  <button disabled={busy || !['Offline', 'Crashed'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
+  <button disabled={busy || !['Starting', 'Online'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
+  <button disabled={busy || snapshot.state !== 'Online'} onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
 </div>
