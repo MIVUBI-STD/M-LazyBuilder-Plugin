@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
 import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
@@ -55,6 +56,7 @@ public final class PaperLocalControlServer {
     private final WorldLifecycleService lifecycle;
     private final WorldCloneService cloneService;
     private final WorldBackupService backupService;
+    private final WorldExportService exportService;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
 
@@ -70,6 +72,7 @@ public final class PaperLocalControlServer {
             WorldLifecycleService lifecycle,
             WorldCloneService cloneService,
             WorldBackupService backupService,
+            WorldExportService exportService,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
     ) {
@@ -81,6 +84,7 @@ public final class PaperLocalControlServer {
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
         this.backupService = Objects.requireNonNull(backupService, "backupService");
+        this.exportService = Objects.requireNonNull(exportService, "exportService");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
     }
@@ -220,6 +224,10 @@ public final class PaperLocalControlServer {
             handleBackupTaskStart(exchange);
             return;
         }
+        if ("/export".equals(relative)) {
+            handleExportTaskStart(exchange);
+            return;
+        }
         WorldTaskType type = switch (relative) {
             case "/archive" -> WorldTaskType.ARCHIVE;
             case "/restore" -> WorldTaskType.RESTORE;
@@ -273,6 +281,20 @@ public final class PaperLocalControlServer {
                 worldId,
                 "Backup queued.",
                 progress -> runBackupTask(worldId, progress)
+        );
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    private void handleExportTaskStart(HttpExchange exchange) throws Exception {
+        ExportTaskStartRequest request = readJson(exchange, ExportTaskStartRequest.class);
+        WorldId worldId = requireManagedWorldId(request.worldId());
+        String targetFormat = requireNonBlank(request.targetFormat(), "targetFormat");
+        String artifactName = requireNonBlank(request.artifactName(), "artifactName");
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.EXPORT,
+                worldId,
+                "Export queued.",
+                progress -> runExportTask(worldId, targetFormat, artifactName, progress)
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -332,6 +354,44 @@ public final class PaperLocalControlServer {
         if (operationFailure != null) throw operationFailure;
         progress.update(95, "Backup finalized.");
         return Objects.requireNonNull(result, "result").backupId();
+    }
+
+    private String runExportTask(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldTaskWork.Progress progress
+    ) throws Exception {
+        progress.update(10, "Preparing source world on Paper.");
+        WorldExportService.ExportTask exportTask = sync(() -> exportService.prepare(worldId, targetFormat, artifactName));
+        Exception operationFailure = null;
+        WorldExportService.ExportResult result = null;
+        try {
+            progress.update(25, "Capturing consistent world snapshot.");
+            exportService.captureSnapshot(exportTask);
+            progress.update(45, "Restoring source runtime state.");
+            sync(() -> {
+                exportService.resumeSourceAfterSnapshot(exportTask);
+                return null;
+            });
+            progress.update(60, "Packaging export artifact.");
+            result = exportService.processSnapshot(exportTask);
+            progress.update(90, "Export artifact ready; finalizing task.");
+        } catch (Exception exception) {
+            operationFailure = exception;
+        }
+        try {
+            sync(() -> {
+                exportService.finish(exportTask);
+                return null;
+            });
+        } catch (Exception finishFailure) {
+            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
+            else operationFailure = finishFailure;
+        }
+        if (operationFailure != null) throw operationFailure;
+        progress.update(95, "Export finalized.");
+        return Objects.requireNonNull(result, "result").artifact().getFileName().toString();
     }
 
     private WorldId requireManagedWorldId(String value) {
@@ -535,6 +595,7 @@ public final class PaperLocalControlServer {
                                 String message, String result, String error, String createdAt, String updatedAt) {}
     private record TaskStartRequest(String worldId) {}
     private record CloneTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
+    private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(Boolean autoLoad, String defaultGameMode, Long timeOfDayTicks,
                                                String weather, Boolean naturalSpawning, Boolean daylightCycle,
