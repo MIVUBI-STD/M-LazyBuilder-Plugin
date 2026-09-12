@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  server-and-client:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,3 +26,13 @@ jobs:
           gradle-version: '8.12'
       - name: Compile Fabric client
         run: gradle -p client/fabric --no-daemon build
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile LazyBuilder desktop
+        run: dotnet build apps/lazybuilder-desktop/LazyBuilder.Desktop.csproj --configuration Release
