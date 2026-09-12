@@ -8,8 +8,8 @@ public record TransferPolicy(
         int maxConcurrentDownloads
 ) {
     public TransferPolicy {
-        if (chunkBytes < 1024 || chunkBytes > 1024 * 1024) {
-            throw new IllegalArgumentException("chunkBytes must be between 1 KiB and 1 MiB");
+        if (chunkBytes < 1 || chunkBytes > 1024 * 1024) {
+            throw new IllegalArgumentException("chunkBytes must be between 1 byte and 1 MiB");
         }
         if (maxUploadBytes < 1) throw new IllegalArgumentException("maxUploadBytes must be positive");
         if (maxConcurrentUploads < 1) throw new IllegalArgumentException("maxConcurrentUploads must be positive");
