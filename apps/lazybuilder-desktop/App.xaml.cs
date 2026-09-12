@@ -1,6 +1,7 @@
 using System.Windows;
 using HaloKaryaMedia.LazyBuilder.Desktop.Modules.PluginManager;
 using HaloKaryaMedia.LazyBuilder.Desktop.Modules.ServerManager;
+using HaloKaryaMedia.LazyBuilder.Desktop.Modules.WorldManager;
 using HaloKaryaMedia.LazyBuilder.Desktop.Shell;
 
 namespace HaloKaryaMedia.LazyBuilder.Desktop;
@@ -26,13 +27,22 @@ public partial class App : Application
             options = new ServerManagerOptions();
         }
 
-        var serverManager = new ServerProcessManager(workspaceRoot, options);
+        var worldControlOptions = await new WorldControlConfigStore(workspaceRoot).LoadOrCreateAsync();
+        var paperEnvironment = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["LAZYBUILDER_WORLD_CONTROL_TOKEN"] = worldControlOptions.Token,
+            ["LAZYBUILDER_WORLD_CONTROL_PORT"] = worldControlOptions.Port.ToString()
+        };
+
+        var serverManager = new ServerProcessManager(workspaceRoot, options, paperEnvironment);
         var dashboard = new DashboardViewModel(serverManager);
+        var worldControl = new HttpWorldManagerControlClient(worldControlOptions);
+        var worlds = new WorldsViewModel(worldControl, serverManager);
         var pluginManager = new FileSystemPluginManager(workspaceRoot);
         var plugins = new PluginsViewModel(pluginManager);
         await plugins.InitializeAsync();
 
-        _shell = new ShellViewModel(dashboard, plugins);
+        _shell = new ShellViewModel(dashboard, worlds, plugins);
         var window = new MainWindow(_shell);
         MainWindow = window;
         window.Show();
