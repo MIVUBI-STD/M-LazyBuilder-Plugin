@@ -3,37 +3,41 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 /** Client presentation state for the general World Manager surface. */
 public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
+    private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
     private String lastError;
     private long revision;
 
-    public void refresh() {
-        send(new WorldControlWireProtocol.ListWorlds());
-    }
-
+    public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
     public void create(String folderName, String displayName, String kind) {
         send(new WorldControlWireProtocol.CreateWorld(folderName, displayName, kind));
     }
-
     public void cloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
         send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
     }
-
     public void deleteWorld(UUID worldId, String typedFolderName) {
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
     }
-
     public void load(UUID worldId) { send(new WorldControlWireProtocol.LoadWorld(worldId)); }
     public void unload(UUID worldId) { send(new WorldControlWireProtocol.UnloadWorld(worldId)); }
     public void teleport(UUID worldId) { send(new WorldControlWireProtocol.TeleportWorld(worldId)); }
     public void archive(UUID worldId) { send(new WorldControlWireProtocol.ArchiveWorld(worldId)); }
     public void restore(UUID worldId) { send(new WorldControlWireProtocol.RestoreWorld(worldId)); }
+    public void requestSettings(UUID worldId) { send(new WorldControlWireProtocol.GetSettings(worldId)); }
+    public void setAutoLoad(UUID worldId, boolean enabled) { send(new WorldControlWireProtocol.SetAutoLoad(worldId, enabled)); }
+    public void setDefaultMode(UUID worldId, String mode) { send(new WorldControlWireProtocol.SetDefaultMode(worldId, mode)); }
+    public void setDifficulty(UUID worldId, String difficulty) { send(new WorldControlWireProtocol.SetDifficulty(worldId, difficulty)); }
+    public void setPvp(UUID worldId, boolean enabled) { send(new WorldControlWireProtocol.SetPvp(worldId, enabled)); }
+    public void resetBuildReady(UUID worldId) { send(new WorldControlWireProtocol.ResetBuildReady(worldId)); }
+    public void setSpawnHere(UUID worldId) { send(new WorldControlWireProtocol.SetSpawnHere(worldId)); }
 
     public void accept(WorldControlWireProtocol.Response response) {
         Objects.requireNonNull(response, "response");
@@ -44,8 +48,10 @@ public final class ClientWorldController {
                 revision++;
             }
             case WorldControlWireProtocol.WorldChanged changed -> {
-                if ("DELETE".equals(changed.action())) remove(changed.world().worldId());
-                else replace(changed.world());
+                if ("DELETE".equals(changed.action())) {
+                    remove(changed.world().worldId());
+                    settings.remove(changed.world().worldId());
+                } else replace(changed.world());
                 lastError = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
@@ -53,6 +59,12 @@ public final class ClientWorldController {
             }
             case WorldControlWireProtocol.TeleportOk ok -> {
                 replace(ok.world());
+                lastError = null;
+                revision++;
+            }
+            case WorldControlWireProtocol.SettingsSnapshot snapshot -> {
+                settings.put(snapshot.worldId(), snapshot);
+                synchronizeSummary(snapshot);
                 lastError = null;
                 revision++;
             }
@@ -66,13 +78,25 @@ public final class ClientWorldController {
 
     public void reset() {
         worlds = List.of();
+        settings.clear();
         lastError = null;
         revision++;
     }
 
     public List<WorldControlWireProtocol.WorldSummary> worlds() { return worlds; }
+    public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public String lastError() { return lastError; }
     public long revision() { return revision; }
+
+    private void synchronizeSummary(WorldControlWireProtocol.SettingsSnapshot snapshot) {
+        for (WorldControlWireProtocol.WorldSummary world : worlds) {
+            if (!world.worldId().equals(snapshot.worldId())) continue;
+            replace(new WorldControlWireProtocol.WorldSummary(
+                    world.worldId(), world.folderName(), world.displayName(), world.kind(), world.lifecycle(),
+                    "LOADED", snapshot.autoLoad(), snapshot.defaultGameMode()));
+            return;
+        }
+    }
 
     private void replace(WorldControlWireProtocol.WorldSummary updated) {
         boolean found = false;
@@ -81,9 +105,7 @@ public final class ClientWorldController {
             if (world.worldId().equals(updated.worldId())) {
                 builder.add(updated);
                 found = true;
-            } else {
-                builder.add(world);
-            }
+            } else builder.add(world);
         }
         if (!found) builder.add(updated);
         worlds = List.copyOf(builder);
