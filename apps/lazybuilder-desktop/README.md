@@ -1,44 +1,34 @@
 # LazyBuilder Desktop
 
-`LazyBuilder.exe` is the Windows desktop entry point for the LazyBuilder suite.
+`LazyBuilder.exe` is the Windows desktop entry point for the LazyBuilder server workspace.
 
-## Technology
+## Ownership
 
-The desktop app targets .NET 8 WPF. The server workspace is Windows-first, so WPF gives a small, mature native desktop surface without bundling a browser/Electron runtime. Visual styling may follow a clean Modrinth-like navigation pattern, but the app keeps LazyBuilder's own branding and interaction model.
-
-## Module boundaries
+The desktop app owns only desktop concerns:
 
 ```text
-LazyBuilder Desktop
-├── Shell
-├── Server-Manager
-└── Plugin-Manager
+Server-Manager
+  start / stop / restart Paper
+  Java 21 discovery and validation
+  process crash state
+  CPU / RAM health sampling
+  manager configuration
+
+Plugin-Manager
+  scan plugin JARs
+  categorize plugins
+  install / update
+  enable / disable through restart-safe file placement
+  dependency and compatibility checks
+  duplicate detection and safe resolution
+  preserve plugin data by default on removal
 ```
 
-World lifecycle is **not** implemented here. The Worlds page is a client surface for the Paper `World-Manager` authority.
+World lifecycle is **not** implemented here. The future `Worlds` page must call the Paper `World-Manager` through a structured local control bridge so the desktop app never becomes a second world authority.
 
-### Server-Manager
+## Navigation
 
-Owns only:
-- Paper process start/stop/restart;
-- safe stop through Paper stdin;
-- process/crash state;
-- CPU/RAM health summary;
-- basic server settings and paths required to launch Paper.
-
-### Plugin-Manager
-
-Owns only:
-- plugin discovery and categorization;
-- add/update validation;
-- duplicate prevention;
-- dependency/compatibility warnings;
-- restart-safe enable/disable;
-- safe removal while preserving plugin data by default.
-
-## UI scope
-
-Primary navigation stays intentionally small:
+The normal UI stays deliberately small:
 
 ```text
 Dashboard
@@ -47,8 +37,43 @@ Plugins
 Settings
 ```
 
-Dashboard shows only server state, health, CPU, RAM, and start/stop/restart actions. Logs, JVM details, raw Paper configuration, and diagnostics belong under contextual problem views or Settings > Advanced.
+Dashboard exposes only server state, health, CPU, RAM, and Start / Stop / Restart.
 
-## Maintenance rule
+Plugins exposes normal plugin-management tasks. Technical metadata belongs behind detail/advanced surfaces rather than the primary list.
 
-Server-Manager and Plugin-Manager are feature modules inside one desktop executable. They must not import each other's implementation packages. Shared desktop contracts live under a narrow `Core`/contracts layer only when genuinely needed by both modules.
+## Workspace assumption
+
+The packaged executable is intended to live at the LazyBuilder workspace root next to `server/`, `world-system/`, and `tools/`.
+
+For development, set:
+
+```text
+LAZYBUILDER_WORKSPACE_ROOT=<workspace path>
+```
+
+to explicitly point the desktop app at a test workspace.
+
+## Runtime files
+
+Desktop-only state is stored under:
+
+```text
+tools/lazybuilder/
+├── server-manager.json
+├── plugin-registry.json
+└── plugin-backups/
+```
+
+Paper configuration remains owned by Paper/server files. World storage remains owned by World-Manager and `world-system/`.
+
+## Maintenance rules
+
+- no hot plugin unload/reload hacks;
+- no automatic dependency downloads in the first version;
+- no background polling while Paper is offline;
+- one owner for Java validation, plugin inventory, and world lifecycle;
+- file mutations use bounded/atomic operations where practical;
+- corrupt plugin JARs are surfaced as `Problem` instead of silently ignored;
+- duplicate plugin JARs must be resolved explicitly and removed copies are backed up first;
+- category overrides are persistent but never rewrite plugin metadata;
+- CI compile proof is separate from live Paper/runtime proof.
