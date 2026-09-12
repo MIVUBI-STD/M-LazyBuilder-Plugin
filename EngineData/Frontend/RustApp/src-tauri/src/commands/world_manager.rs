@@ -8,6 +8,7 @@ use crate::engine::world_manager::{
     start_archive_world,
     start_backup_world,
     start_clone_world,
+    start_delete_world,
     start_export_world,
     start_import_world,
     start_restore_world,
@@ -16,6 +17,7 @@ use crate::engine::world_manager::{
     upload_world_import,
     CloneWorldRequest,
     CreateWorldRequest,
+    DeleteWorldRequest,
     ExportWorldRequest,
     ImportWorldRequest,
     ManagedWorldSummary,
@@ -50,6 +52,8 @@ pub fn world_backup(world_id: String) -> Result<WorldTaskSnapshot, String> { sta
 pub fn world_clone(request: CloneWorldRequest) -> Result<WorldTaskSnapshot, String> { start_clone_world(&request) }
 #[tauri::command]
 pub fn world_export(request: ExportWorldRequest) -> Result<WorldTaskSnapshot, String> { start_export_world(&request) }
+#[tauri::command]
+pub fn world_delete(request: DeleteWorldRequest) -> Result<WorldTaskSnapshot, String> { start_delete_world(&request) }
 #[tauri::command]
 pub fn world_import_pick() -> Option<String> {
     rfd::FileDialog::new()
