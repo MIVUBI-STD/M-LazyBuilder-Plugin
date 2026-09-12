@@ -1,8 +1,10 @@
 use crate::engine::paths;
 use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::fs::{self, File};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const TOKEN_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
@@ -35,6 +37,10 @@ pub struct CloneWorldRequest { pub world_id: String, pub destination_folder: Str
 #[serde(rename_all = "camelCase")]
 pub struct ExportWorldRequest { pub world_id: String, pub target_format: String, pub artifact_name: String }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportWorldRequest { pub artifact_name: String, pub destination_folder: String, pub display_name: String }
+
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldSettingsRequest {
@@ -65,6 +71,7 @@ pub struct WorldTaskSnapshot {
 #[derive(Deserialize)] struct WorldTaskListResponse { tasks: Vec<WorldTaskSnapshot> }
 #[derive(Serialize)] #[serde(rename_all = "camelCase")] struct WorldTaskStartRequest<'a> { world_id: &'a str }
 #[derive(Deserialize)] struct ErrorResponse { error: String, message: String }
+#[derive(Deserialize)] #[serde(rename_all = "camelCase")] struct ImportUploadResponse { file_name: String, total_bytes: u64 }
 
 pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
     let path = control_config_path()?;
@@ -130,6 +137,57 @@ pub fn start_export_world(request: &ExportWorldRequest) -> Result<WorldTaskSnaps
     request_json("POST", "/v1/tasks/export", Some(request))
 }
 
+pub fn start_import_world(request: &ImportWorldRequest) -> Result<WorldTaskSnapshot, String> {
+    if request.artifact_name.trim().is_empty() { return Err("Import artifact name must not be empty.".into()); }
+    if request.destination_folder.trim().is_empty() { return Err("Import destination folder must not be empty.".into()); }
+    if request.display_name.trim().is_empty() { return Err("Import display name must not be empty.".into()); }
+    request_json("POST", "/v1/tasks/import", Some(request))
+}
+
+pub fn upload_world_import(file_path: &str) -> Result<String, String> {
+    let path = PathBuf::from(file_path);
+    if !path.is_file() { return Err("Selected world import file does not exist.".into()); }
+    let file_name = path.file_name().and_then(|value| value.to_str())
+        .ok_or_else(|| "Selected world import filename is invalid.".to_string())?;
+    let lower = file_name.to_ascii_lowercase();
+    if !lower.ends_with(".zip") && !lower.ends_with(".mcworld") {
+        return Err("World import file must be .zip or .mcworld.".into());
+    }
+    let total_bytes = fs::metadata(&path).map_err(|error| error.to_string())?.len();
+    if total_bytes == 0 { return Err("World import file is empty.".into()); }
+    let sha256 = sha256_file(&path)?;
+    let options = load_or_create_control_options()?;
+    let url = format!("http://127.0.0.1:{}/v1/imports/upload", options.port);
+    let authorization = format!("Bearer {}", options.token);
+    let file = File::open(&path).map_err(|error| error.to_string())?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(2))
+        .timeout_read(Duration::from_secs(30))
+        .timeout_write(Duration::from_secs(300))
+        .build();
+    let response = agent
+        .post(&url)
+        .set("Authorization", &authorization)
+        .set("Content-Type", "application/octet-stream")
+        .set("Content-Length", &total_bytes.to_string())
+        .set("X-LazyBuilder-File-Name", file_name)
+        .set("X-LazyBuilder-Sha256", &sha256)
+        .send(file);
+    match response {
+        Ok(response) => {
+            let uploaded = response.into_json::<ImportUploadResponse>()
+                .map_err(|error| format!("Invalid World-Manager upload response: {error}"))?;
+            if uploaded.total_bytes != total_bytes { return Err("World-Manager upload size confirmation mismatch.".into()); }
+            Ok(uploaded.file_name)
+        }
+        Err(ureq::Error::Status(_, response)) => match response.into_json::<ErrorResponse>() {
+            Ok(error) => Err(format!("World-Manager {}: {}", error.error, error.message)),
+            Err(_) => Err("World-Manager import upload failed.".into()),
+        },
+        Err(error) => Err(format!("World-Manager import upload unavailable: {error}")),
+    }
+}
+
 fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
     let world_id = validate_world_id(world_id)?;
     let body = WorldTaskStartRequest { world_id };
@@ -154,6 +212,18 @@ where T: DeserializeOwned, B: Serialize + ?Sized {
         },
         Err(error) => Err(format!("World-Manager control bridge unavailable: {error}")),
     }
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 { break; }
+        digest.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 fn validate_world_id(world_id: &str) -> Result<&str, String> {
