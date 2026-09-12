@@ -23,6 +23,10 @@ export const runtimeProduct = {
     load: runtimeApi.loadWorld,
     unload: runtimeApi.unloadWorld,
     settings: runtimeApi.getWorldSettings,
-    updateSettings: runtimeApi.updateWorldSettings
+    updateSettings: runtimeApi.updateWorldSettings,
+    tasks: runtimeApi.listWorldTasks,
+    task: runtimeApi.getWorldTask,
+    archive: runtimeApi.archiveWorld,
+    restore: runtimeApi.restoreWorld
   }
 };
