@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.paper;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.halokaryamedia.lazybuilder.world.application.GameRuleSetting;
+import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
@@ -20,6 +21,7 @@ import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskSnapshot;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskType;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskWork;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -52,6 +54,7 @@ public final class PaperLocalControlServer {
     private final WorldSettingsService settings;
     private final WorldLifecycleService lifecycle;
     private final WorldCloneService cloneService;
+    private final WorldBackupService backupService;
     private final WorldTaskRegistry tasks;
     private final WorldTaskRunner taskRunner;
 
@@ -66,6 +69,7 @@ public final class PaperLocalControlServer {
             WorldSettingsService settings,
             WorldLifecycleService lifecycle,
             WorldCloneService cloneService,
+            WorldBackupService backupService,
             WorldTaskRegistry tasks,
             WorldTaskRunner taskRunner
     ) {
@@ -76,6 +80,7 @@ public final class PaperLocalControlServer {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
+        this.backupService = Objects.requireNonNull(backupService, "backupService");
         this.tasks = Objects.requireNonNull(tasks, "tasks");
         this.taskRunner = Objects.requireNonNull(taskRunner, "taskRunner");
     }
@@ -211,6 +216,10 @@ public final class PaperLocalControlServer {
             handleCloneTaskStart(exchange);
             return;
         }
+        if ("/backup".equals(relative)) {
+            handleBackupTaskStart(exchange);
+            return;
+        }
         WorldTaskType type = switch (relative) {
             case "/archive" -> WorldTaskType.ARCHIVE;
             case "/restore" -> WorldTaskType.RESTORE;
@@ -247,7 +256,6 @@ public final class PaperLocalControlServer {
         String displayName = request.displayName() == null || request.displayName().isBlank()
                 ? destinationFolder
                 : request.displayName().trim();
-
         WorldTaskSnapshot queued = taskRunner.submit(
                 WorldTaskType.CLONE,
                 sourceId,
@@ -257,11 +265,23 @@ public final class PaperLocalControlServer {
         sendJson(exchange, 202, taskResponse(queued));
     }
 
+    private void handleBackupTaskStart(HttpExchange exchange) throws Exception {
+        TaskStartRequest request = readJson(exchange, TaskStartRequest.class);
+        WorldId worldId = requireManagedWorldId(request.worldId());
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.BACKUP,
+                worldId,
+                "Backup queued.",
+                progress -> runBackupTask(worldId, progress)
+        );
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
     private String runCloneTask(
             WorldId sourceId,
             String destinationFolder,
             String displayName,
-            com.halokaryamedia.lazybuilder.world.task.WorldTaskWork.Progress progress
+            WorldTaskWork.Progress progress
     ) throws Exception {
         progress.update(10, "Preparing source world on Paper.");
         WorldCloneService.CloneTask cloneTask = sync(() -> cloneService.prepare(sourceId, destinationFolder, displayName));
@@ -274,23 +294,44 @@ public final class PaperLocalControlServer {
         } catch (Exception exception) {
             operationFailure = exception;
         }
-
         try {
             sync(() -> {
                 cloneService.finish(cloneTask);
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (operationFailure != null) {
-                operationFailure.addSuppressed(finishFailure);
-            } else {
-                operationFailure = finishFailure;
-            }
+            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
+            else operationFailure = finishFailure;
         }
-
         if (operationFailure != null) throw operationFailure;
         progress.update(95, "Clone finalized.");
         return Objects.requireNonNull(cloned, "cloned").id().toString();
+    }
+
+    private String runBackupTask(WorldId worldId, WorldTaskWork.Progress progress) throws Exception {
+        progress.update(10, "Preparing source world on Paper.");
+        WorldBackupService.BackupTask backupTask = sync(() -> backupService.prepare(worldId));
+        Exception operationFailure = null;
+        WorldBackupService.BackupResult result = null;
+        try {
+            progress.update(30, "Creating consistent world snapshot.");
+            result = backupService.executeFilePhase(backupTask);
+            progress.update(85, "Backup stored; restoring source runtime state.");
+        } catch (Exception exception) {
+            operationFailure = exception;
+        }
+        try {
+            sync(() -> {
+                backupService.finish(backupTask);
+                return null;
+            });
+        } catch (Exception finishFailure) {
+            if (operationFailure != null) operationFailure.addSuppressed(finishFailure);
+            else operationFailure = finishFailure;
+        }
+        if (operationFailure != null) throw operationFailure;
+        progress.update(95, "Backup finalized.");
+        return Objects.requireNonNull(result, "result").backupId();
     }
 
     private WorldId requireManagedWorldId(String value) {
