@@ -5,6 +5,7 @@ public interface IPluginManager
     Task<IReadOnlyList<PluginSummary>> ListAsync(CancellationToken cancellationToken = default);
     Task<PluginInstallResult> InstallAsync(string jarPath, CancellationToken cancellationToken = default);
     Task<PluginInstallResult> UpdateAsync(string pluginId, string jarPath, CancellationToken cancellationToken = default);
+    Task<PluginInstallResult> ResolveDuplicatesAsync(string pluginId, string keepJarFileName, CancellationToken cancellationToken = default);
     Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default);
     Task RemoveAsync(string pluginId, bool removeData, CancellationToken cancellationToken = default);
 }
@@ -15,7 +16,8 @@ public sealed record PluginSummary(
     string Version,
     string Category,
     PluginState State,
-    string? ProblemDetail = null
+    string? ProblemDetail = null,
+    IReadOnlyList<string>? CandidateFiles = null
 );
 
 public enum PluginState
