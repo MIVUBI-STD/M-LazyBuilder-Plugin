@@ -8,6 +8,8 @@ import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
+import com.halokaryamedia.lazybuilder.world.application.WorldLocationGateway;
+import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
@@ -30,6 +32,7 @@ import com.halokaryamedia.lazybuilder.world.files.LocalWorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldExportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
+import com.halokaryamedia.lazybuilder.world.paper.PaperWorldLocationGateway;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
@@ -63,9 +66,11 @@ public final class WorldManager {
     private final WorldRegistryPersistence registryPersistence;
     private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldRuntimeGateway runtimeGateway;
+    private final WorldLocationGateway locationGateway;
     private final WorldRuntimeService worldRuntimeService;
     private final WorldCreationService worldCreationService;
     private final WorldTeleportService worldTeleportService;
+    private final WorldLocationTeleportService worldLocationTeleportService;
     private final WorldSettingsService worldSettingsService;
     private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldFileRepository worldFileRepository;
@@ -147,11 +152,15 @@ public final class WorldManager {
                 plugin.getServer(),
                 () -> plugin.getConfig().getString("world-manager.fallback-world", "")
         );
+        this.locationGateway = new PaperWorldLocationGateway(plugin.getServer());
         this.worldRuntimeService = new WorldRuntimeService(worldRegistry, runtimeStates, runtimeGateway);
         this.worldCreationService = new WorldCreationService(
                 worldRegistry, registryPersistence, runtimeGateway, runtimeStates, buildReadyPolicy
         );
         this.worldTeleportService = new WorldTeleportService(worldRegistry, worldRuntimeService, runtimeGateway);
+        this.worldLocationTeleportService = new WorldLocationTeleportService(
+                worldRegistry, worldRuntimeService, locationGateway
+        );
         this.worldSettingsService = new WorldSettingsService(
                 worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy
         );
@@ -223,6 +232,7 @@ public final class WorldManager {
     public WorldRuntimeService worldRuntimeService() { return worldRuntimeService; }
     public WorldCreationService worldCreationService() { return worldCreationService; }
     public WorldTeleportService worldTeleportService() { return worldTeleportService; }
+    public WorldLocationTeleportService worldLocationTeleportService() { return worldLocationTeleportService; }
     public WorldSettingsService worldSettingsService() { return worldSettingsService; }
     public WorldOperationCoordinator worldOperationCoordinator() { return worldOperationCoordinator; }
     public WorldFileRepository worldFileRepository() { return worldFileRepository; }
