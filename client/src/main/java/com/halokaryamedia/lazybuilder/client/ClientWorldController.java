@@ -21,6 +21,14 @@ public final class ClientWorldController {
         send(new WorldControlWireProtocol.CreateWorld(folderName, displayName, kind));
     }
 
+    public void cloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
+        send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
+    }
+
+    public void deleteWorld(UUID worldId, String typedFolderName) {
+        send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
+    }
+
     public void load(UUID worldId) { send(new WorldControlWireProtocol.LoadWorld(worldId)); }
     public void unload(UUID worldId) { send(new WorldControlWireProtocol.UnloadWorld(worldId)); }
     public void teleport(UUID worldId) { send(new WorldControlWireProtocol.TeleportWorld(worldId)); }
@@ -36,7 +44,8 @@ public final class ClientWorldController {
                 revision++;
             }
             case WorldControlWireProtocol.WorldChanged changed -> {
-                replace(changed.world());
+                if ("DELETE".equals(changed.action())) remove(changed.world().worldId());
+                else replace(changed.world());
                 lastError = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
@@ -78,6 +87,10 @@ public final class ClientWorldController {
         }
         if (!found) builder.add(updated);
         worlds = List.copyOf(builder);
+    }
+
+    private void remove(UUID worldId) {
+        worlds = worlds.stream().filter(world -> !world.worldId().equals(worldId)).toList();
     }
 
     private static void send(WorldControlWireProtocol.Request request) {
