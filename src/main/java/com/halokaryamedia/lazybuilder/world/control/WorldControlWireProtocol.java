@@ -28,16 +28,26 @@ public final class WorldControlWireProtocol {
     private static final int RESTORE = 7;
     private static final int CLONE = 8;
     private static final int DELETE = 9;
+    private static final int GET_SETTINGS = 10;
+    private static final int SET_AUTO_LOAD = 11;
+    private static final int SET_DEFAULT_MODE = 12;
+    private static final int SET_DIFFICULTY = 13;
+    private static final int SET_PVP = 14;
+    private static final int RESET_BUILD_READY = 15;
+    private static final int SET_SPAWN_HERE = 16;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
     private static final int TELEPORT_OK = 103;
+    private static final int SETTINGS = 104;
     private static final int ERROR = 127;
 
     private WorldControlWireProtocol() {}
 
     public sealed interface Request permits ListWorlds, CreateWorld, LoadWorld, UnloadWorld,
-            TeleportWorld, ArchiveWorld, RestoreWorld, CloneWorld, DeleteWorld {}
+            TeleportWorld, ArchiveWorld, RestoreWorld, CloneWorld, DeleteWorld,
+            GetSettings, SetAutoLoad, SetDefaultMode, SetDifficulty, SetPvp,
+            ResetBuildReady, SetSpawnHere {}
 
     public record ListWorlds() implements Request {}
 
@@ -54,6 +64,17 @@ public final class WorldControlWireProtocol {
     public record TeleportWorld(UUID worldId) implements Request { public TeleportWorld { Objects.requireNonNull(worldId); } }
     public record ArchiveWorld(UUID worldId) implements Request { public ArchiveWorld { Objects.requireNonNull(worldId); } }
     public record RestoreWorld(UUID worldId) implements Request { public RestoreWorld { Objects.requireNonNull(worldId); } }
+    public record GetSettings(UUID worldId) implements Request { public GetSettings { Objects.requireNonNull(worldId); } }
+    public record SetAutoLoad(UUID worldId, boolean enabled) implements Request { public SetAutoLoad { Objects.requireNonNull(worldId); } }
+    public record SetDefaultMode(UUID worldId, String gameMode) implements Request {
+        public SetDefaultMode { Objects.requireNonNull(worldId); gameMode = requireString(gameMode, "gameMode"); }
+    }
+    public record SetDifficulty(UUID worldId, String difficulty) implements Request {
+        public SetDifficulty { Objects.requireNonNull(worldId); difficulty = requireString(difficulty, "difficulty"); }
+    }
+    public record SetPvp(UUID worldId, boolean enabled) implements Request { public SetPvp { Objects.requireNonNull(worldId); } }
+    public record ResetBuildReady(UUID worldId) implements Request { public ResetBuildReady { Objects.requireNonNull(worldId); } }
+    public record SetSpawnHere(UUID worldId) implements Request { public SetSpawnHere { Objects.requireNonNull(worldId); } }
 
     public record CloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) implements Request {
         public CloneWorld {
@@ -70,7 +91,7 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, ErrorResponse {}
+    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot, ErrorResponse {}
 
     public record WorldSummary(
             UUID worldId,
@@ -90,6 +111,26 @@ public final class WorldControlWireProtocol {
             lifecycle = requireString(lifecycle, "lifecycle");
             runtimeState = requireString(runtimeState, "runtimeState");
             defaultGameMode = requireString(defaultGameMode, "defaultGameMode");
+        }
+    }
+
+    public record SettingsSnapshot(
+            UUID worldId,
+            boolean autoLoad,
+            String defaultGameMode,
+            String difficulty,
+            boolean pvpEnabled,
+            String weather,
+            long timeOfDayTicks,
+            double spawnX,
+            double spawnY,
+            double spawnZ
+    ) implements Response {
+        public SettingsSnapshot {
+            Objects.requireNonNull(worldId, "worldId");
+            defaultGameMode = requireString(defaultGameMode, "defaultGameMode");
+            difficulty = requireString(difficulty, "difficulty");
+            weather = requireString(weather, "weather");
         }
     }
 
@@ -130,6 +171,13 @@ public final class WorldControlWireProtocol {
                 case TeleportWorld teleport -> writeUuid(out, teleport.worldId());
                 case ArchiveWorld archive -> writeUuid(out, archive.worldId());
                 case RestoreWorld restore -> writeUuid(out, restore.worldId());
+                case GetSettings settings -> writeUuid(out, settings.worldId());
+                case SetAutoLoad setting -> { writeUuid(out, setting.worldId()); out.writeBoolean(setting.enabled()); }
+                case SetDefaultMode setting -> { writeUuid(out, setting.worldId()); writeString(out, setting.gameMode()); }
+                case SetDifficulty setting -> { writeUuid(out, setting.worldId()); writeString(out, setting.difficulty()); }
+                case SetPvp setting -> { writeUuid(out, setting.worldId()); out.writeBoolean(setting.enabled()); }
+                case ResetBuildReady setting -> writeUuid(out, setting.worldId());
+                case SetSpawnHere setting -> writeUuid(out, setting.worldId());
                 case CloneWorld clone -> {
                     writeUuid(out, clone.sourceWorldId());
                     writeString(out, clone.destinationFolder());
@@ -156,6 +204,13 @@ public final class WorldControlWireProtocol {
                 case RESTORE -> new RestoreWorld(readUuid(in));
                 case CLONE -> new CloneWorld(readUuid(in), readString(in), readString(in));
                 case DELETE -> new DeleteWorld(readUuid(in), readString(in));
+                case GET_SETTINGS -> new GetSettings(readUuid(in));
+                case SET_AUTO_LOAD -> new SetAutoLoad(readUuid(in), in.readBoolean());
+                case SET_DEFAULT_MODE -> new SetDefaultMode(readUuid(in), readString(in));
+                case SET_DIFFICULTY -> new SetDifficulty(readUuid(in), readString(in));
+                case SET_PVP -> new SetPvp(readUuid(in), in.readBoolean());
+                case RESET_BUILD_READY -> new ResetBuildReady(readUuid(in));
+                case SET_SPAWN_HERE -> new SetSpawnHere(readUuid(in));
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -169,6 +224,7 @@ public final class WorldControlWireProtocol {
             case WorldList ignored -> WORLDS;
             case WorldChanged ignored -> WORLD_CHANGED;
             case TeleportOk ignored -> TELEPORT_OK;
+            case SettingsSnapshot ignored -> SETTINGS;
             case ErrorResponse ignored -> ERROR;
         };
         return write(opcode, out -> {
@@ -182,6 +238,7 @@ public final class WorldControlWireProtocol {
                     writeWorld(out, changed.world());
                 }
                 case TeleportOk ok -> writeWorld(out, ok.world());
+                case SettingsSnapshot settings -> writeSettings(out, settings);
                 case ErrorResponse error -> writeString(out, error.message());
             }
         });
@@ -200,6 +257,7 @@ public final class WorldControlWireProtocol {
                 }
                 case WORLD_CHANGED -> new WorldChanged(readString(in), readWorld(in));
                 case TELEPORT_OK -> new TeleportOk(readWorld(in));
+                case SETTINGS -> readSettings(in);
                 case ERROR -> new ErrorResponse(readString(in));
                 default -> throw new IOException("Unknown world-control response opcode: " + opcode);
             };
@@ -227,6 +285,13 @@ public final class WorldControlWireProtocol {
             case RestoreWorld ignored -> RESTORE;
             case CloneWorld ignored -> CLONE;
             case DeleteWorld ignored -> DELETE;
+            case GetSettings ignored -> GET_SETTINGS;
+            case SetAutoLoad ignored -> SET_AUTO_LOAD;
+            case SetDefaultMode ignored -> SET_DEFAULT_MODE;
+            case SetDifficulty ignored -> SET_DIFFICULTY;
+            case SetPvp ignored -> SET_PVP;
+            case ResetBuildReady ignored -> RESET_BUILD_READY;
+            case SetSpawnHere ignored -> SET_SPAWN_HERE;
         };
     }
 
@@ -245,6 +310,25 @@ public final class WorldControlWireProtocol {
         return new WorldSummary(
                 readUuid(in), readString(in), readString(in), readString(in),
                 readString(in), readString(in), in.readBoolean(), readString(in));
+    }
+
+    private static void writeSettings(DataOutputStream out, SettingsSnapshot settings) throws IOException {
+        writeUuid(out, settings.worldId());
+        out.writeBoolean(settings.autoLoad());
+        writeString(out, settings.defaultGameMode());
+        writeString(out, settings.difficulty());
+        out.writeBoolean(settings.pvpEnabled());
+        writeString(out, settings.weather());
+        out.writeLong(settings.timeOfDayTicks());
+        out.writeDouble(settings.spawnX());
+        out.writeDouble(settings.spawnY());
+        out.writeDouble(settings.spawnZ());
+    }
+
+    private static SettingsSnapshot readSettings(DataInputStream in) throws IOException {
+        return new SettingsSnapshot(
+                readUuid(in), in.readBoolean(), readString(in), readString(in), in.readBoolean(),
+                readString(in), in.readLong(), in.readDouble(), in.readDouble(), in.readDouble());
     }
 
     private static DataInputStream input(byte[] payload) throws IOException {
