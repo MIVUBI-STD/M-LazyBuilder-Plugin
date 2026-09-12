@@ -60,27 +60,43 @@ World/file state is request/event driven. Heavy filesystem work is asynchronous;
 
 ## Import behavior
 
-World Manager detects the incoming world edition/version and chooses the cheapest safe path.
+Import is request-bound and publishes no world until archive validation and any required conversion succeed.
 
 ```text
-same target format/version
-→ native import
+prepare
+→ reserve destination identity
+→ reject duplicate destination
+→ acquire one import slot
 
-different Java version
-→ conversion worker
+worker phase
+→ resolve one artifact from world/imports
+→ bounded ZIP/.mcworld extraction
+→ zip-slip / file-count / uncompressed-size validation
+→ normalize one optional top-level world folder
+→ require level.dat
+→ detect Java vs Bedrock from staged world layout
+→ remove session.lock / uid.dat
+→ native publish OR verified conversion to JAVA_1_21_4
+→ publish world folder
+→ register fresh WorldId
+→ persist registry
+→ initialize UNLOADED
 
-Bedrock input targeting Java server
-→ conversion worker
+finish
+→ release import slot
 ```
 
-Import must validate into temporary storage before publishing the world directory or registry entry. Existing worlds are never overwritten in V1.
+Accepted V1 upload artifacts are `.zip` and `.mcworld`. Arbitrary host paths are never accepted by the import service. Import extraction is bounded by configurable file-count and uncompressed-size limits and always happens inside an owned request workspace.
 
-Imported worlds default to:
+A native Java 1.21.4 export produced by LazyBuilder carries a small internal transfer marker in the packaged snapshot. On re-import, that marker is consumed and removed, allowing the server to trust the same-format native path without invoking the converter. Unknown external Java archives are handled conservatively: if their exact target format is not trusted, they are normalized through the verified converter runtime rather than guessed. Bedrock input always targets Java 1.21.4 through the converter.
+
+Existing worlds are never overwritten in V1. Imported worlds always receive fresh LazyBuilder identity and default to:
 
 ```text
 runtime   = UNLOADED
 autoLoad  = OFF
 lifecycle = ACTIVE
+kind      = IMPORTED
 ```
 
 Imported gameplay/settings are preserved. `BUILD_READY` is applied only by Create World or by an explicit Reset to Build Ready action.
@@ -105,7 +121,7 @@ finish (Paper thread)
 → release EXPORT lease
 ```
 
-Native Java 1.21.4 export does not invoke the converter and is packaged directly as `.zip`.
+Native Java 1.21.4 export does not invoke the converter and is packaged directly as `.zip`. The snapshot receives the internal transfer marker used only to recognize a future trusted same-format LazyBuilder import; the live source world is never modified.
 
 For a different Java version or Bedrock target, Export lazily checks for a stable conversion-runtime update, then uses the verified `current` runtime. If the update check itself fails but a verified current runtime already exists, Export continues with that current runtime instead of disabling the feature. The requested target format must exist in the runtime-discovered supported-format catalog before conversion starts.
 
@@ -160,14 +176,15 @@ Do not create separate local-PC and remote-server product flows unless evidence 
 
 ## Operation locking
 
-Conflicting operations on the same world must be rejected or queued through one World Manager operation owner.
+Conflicting operations on the same managed world must be rejected through the existing World Manager operation owner. Import has no source managed world, so V1 uses one request-bound import slot while conversion remains separately guarded by the global `ConversionJobCoordinator`.
 
 Examples of conflicts:
 
 - delete during export;
 - archive during conversion;
 - clone while a destructive swap is active;
-- simultaneous conversions competing for the same output.
+- simultaneous conversions competing for the same output;
+- two imports trying to publish at once.
 
 V1 permits only one active conversion job at a time. This protects CPU, memory, and disk I/O and keeps progress semantics simple.
 
@@ -175,7 +192,7 @@ V1 permits only one active conversion job at a time. This protects CPU, memory, 
 
 The conversion worker runs in a separate process/JVM with a configured memory ceiling. It must not inherit an unbounded fraction of host memory.
 
-Default policy should prefer a conservative bounded heap, configurable by the maintainer. Conversion failure or out-of-memory must not terminate Paper.
+Import archive extraction is also bounded. Current default source limits are 200,000 archive entries and 65,536 MiB uncompressed data, both configurable under `world-manager.import`.
 
 ## Automatic runtime updates
 
@@ -195,7 +212,7 @@ retained runtime = current + previous
 server restart   = not required
 ```
 
-Update checks are triggered lazily by conversion-requiring transfer work rather than by a permanent timer. Native same-version Java export bypasses the conversion updater entirely.
+Update checks are triggered lazily by conversion-requiring transfer work rather than by a permanent timer. Trusted same-version Java import/export bypasses the conversion updater entirely.
 
 ### Update pipeline
 
@@ -216,8 +233,6 @@ If validation fails, keep the current runtime and discard/reject the candidate. 
 
 ### Runtime store
 
-Conceptually:
-
 ```text
 world/runtime/converter/
 ├── current/
@@ -235,4 +250,4 @@ If the converter changes its CLI/API contract incompatibly, the compatibility pr
 
 ## Proof boundary
 
-Remote/source proof may establish contracts, adapter isolation, update state transitions, checksum behavior, deterministic parsing, phased export ownership, and artifact packaging logic. Live conversion quality, Paper world lifecycle, `.mcworld` opening, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
+Remote/source proof may establish contracts, adapter isolation, update state transitions, checksum behavior, deterministic parsing, phased transfer ownership, safe archive extraction, and packaging logic. Live conversion quality, Paper world lifecycle, `.mcworld` opening, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
