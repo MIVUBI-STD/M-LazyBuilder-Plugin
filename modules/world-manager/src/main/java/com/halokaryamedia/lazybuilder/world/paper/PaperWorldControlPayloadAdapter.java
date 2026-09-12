@@ -77,6 +77,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
         started = false;
+        heavyInFlight.clear();
     }
 
     @Override
@@ -248,6 +249,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private boolean beginHeavy(Player player) {
+        if (!started || stopping) return false;
         try {
             requireManage(player);
         } catch (RuntimeException exception) {
@@ -263,28 +265,46 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private <T> void scheduleHeavy(Player player, HeavyWork<T> work, HeavyResponse<T> response) {
         UUID owner = player.getUniqueId();
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            T result = null;
-            Exception failure = null;
-            try {
-                result = work.run();
-            } catch (Exception exception) {
-                failure = exception;
+        try {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                T result = null;
+                Exception failure = null;
+                try {
+                    result = work.run();
+                } catch (Exception exception) {
+                    failure = exception;
+                }
+
+                if (stopping || !started) {
+                    heavyInFlight.remove(owner);
+                    return;
+                }
+
+                T finalResult = result;
+                Exception finalFailure = failure;
+                try {
+                    plugin.getServer().getScheduler().runTask(plugin, () -> completeHeavy(owner, () -> {
+                        if (finalFailure != null) return WorldControlWireProtocol.error(finalFailure.getMessage());
+                        return response.encode(finalResult);
+                    }));
+                } catch (RuntimeException scheduleFailure) {
+                    heavyInFlight.remove(owner);
+                }
+            });
+        } catch (RuntimeException scheduleFailure) {
+            heavyInFlight.remove(owner);
+            if (started && !stopping && player.isOnline()) {
+                send(player, WorldControlWireProtocol.error("World Manager is shutting down"));
             }
-            T finalResult = result;
-            Exception finalFailure = failure;
-            plugin.getServer().getScheduler().runTask(plugin, () -> completeHeavy(owner, () -> {
-                if (finalFailure != null) return WorldControlWireProtocol.error(finalFailure.getMessage());
-                return response.encode(finalResult);
-            }));
-        });
+        }
     }
 
     private void completeHeavy(UUID owner, ResponseSupplier responseSupplier) {
         try {
+            if (stopping || !started) return;
             Player online = plugin.getServer().getPlayer(owner);
-            byte[] response = responseSupplier.get();
-            if (online != null && online.isOnline()) send(online, response);
+            if (online == null || !online.isOnline()) return;
+            send(online, responseSupplier.get());
         } finally {
             heavyInFlight.remove(owner);
         }
