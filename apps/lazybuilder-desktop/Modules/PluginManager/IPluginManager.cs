@@ -6,6 +6,7 @@ public interface IPluginManager
     Task<PluginInstallResult> InstallAsync(string jarPath, CancellationToken cancellationToken = default);
     Task<PluginInstallResult> UpdateAsync(string pluginId, string jarPath, CancellationToken cancellationToken = default);
     Task<PluginInstallResult> ResolveDuplicatesAsync(string pluginId, string keepJarFileName, CancellationToken cancellationToken = default);
+    Task SetCategoryAsync(string pluginId, string category, CancellationToken cancellationToken = default);
     Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default);
     Task RemoveAsync(string pluginId, bool removeData, CancellationToken cancellationToken = default);
 }
