@@ -39,10 +39,12 @@ public sealed class FileSystemPluginManager : IPluginManager
             var primary = candidates.OrderByDescending(item => item.State == PluginState.Enabled).First();
             PluginState state = primary.State;
             string? problem = null;
+            IReadOnlyList<string>? candidateFiles = null;
 
             if (candidates.Count > 1)
             {
                 state = PluginState.Problem;
+                candidateFiles = candidates.Select(item => Path.GetFileName(item.Path)).ToArray();
                 problem = "Duplicate plugin JARs detected: " + string.Join(", ",
                     candidates.Select(item => $"{item.Metadata.Version} ({Path.GetFileName(item.Path)})"));
             }
@@ -68,7 +70,8 @@ public sealed class FileSystemPluginManager : IPluginManager
                 primary.Metadata.Version,
                 PluginCategoryRegistry.Resolve(primary.Metadata.CanonicalId, primary.Metadata.Name),
                 state,
-                problem
+                problem,
+                candidateFiles
             ));
         }
 
@@ -154,7 +157,7 @@ public sealed class FileSystemPluginManager : IPluginManager
                 return new PluginInstallResult(false, canonicalId, "Plugin is not installed.", false);
             if (existing.Count > 1)
                 return new PluginInstallResult(false, canonicalId,
-                    "Duplicate plugin versions must be resolved before updating. Keep only one JAR, then retry.", false);
+                    "Duplicate plugin versions must be resolved before updating. Keep one JAR from the duplicate list, then retry.", false);
 
             string? dependencyProblem = GetDependencyProblem(incoming, canonicalId);
             if (dependencyProblem is not null)
@@ -175,6 +178,49 @@ public sealed class FileSystemPluginManager : IPluginManager
 
             return new PluginInstallResult(true, canonicalId,
                 $"Updated {current.Metadata.Version} → {incoming.Version}. Restart required.", true);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    public async Task<PluginInstallResult> ResolveDuplicatesAsync(
+        string pluginId,
+        string keepJarFileName,
+        CancellationToken cancellationToken = default)
+    {
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            string canonicalId = PluginId.Normalize(pluginId);
+            string requestedFile = Path.GetFileName(keepJarFileName);
+            if (!string.Equals(requestedFile, keepJarFileName, StringComparison.Ordinal))
+                return new PluginInstallResult(false, canonicalId, "Invalid plugin filename.", false);
+
+            var existing = FindAllById(canonicalId).ToList();
+            if (existing.Count < 2)
+                return new PluginInstallResult(false, canonicalId, "No duplicate plugin JARs were found.", false);
+
+            var keep = existing.SingleOrDefault(item =>
+                string.Equals(Path.GetFileName(item.Path), requestedFile, StringComparison.OrdinalIgnoreCase));
+            if (keep is null)
+                return new PluginInstallResult(false, canonicalId, "Selected JAR is not one of the duplicate candidates.", false);
+
+            Directory.CreateDirectory(_backupDirectory);
+            string stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+            int index = 0;
+            foreach (var duplicate in existing.Where(item => !ReferenceEquals(item, keep)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string baseName = Path.GetFileNameWithoutExtension(duplicate.Path);
+                string backup = Path.Combine(_backupDirectory, $"{baseName}-duplicate-{stamp}-{index++}.jar");
+                File.Copy(duplicate.Path, backup, overwrite: false);
+                File.Delete(duplicate.Path);
+            }
+
+            return new PluginInstallResult(true, canonicalId,
+                $"Duplicate JARs resolved. Keeping {requestedFile}. Restart required.", true);
         }
         finally
         {
