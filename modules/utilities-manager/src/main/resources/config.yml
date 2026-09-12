@@ -1,3 +1,8 @@
-# Utilities-Manager starts with an intentionally small configuration surface.
-# Feature-specific settings are added under their owning feature when implemented.
-features: {}
+features:
+  world-safety:
+    enabled: true
+    protections:
+      explosions: true
+      leaves-decay: true
+      farmland-trample: true
+      dragon-egg-teleport: true
