@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
+import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
@@ -25,8 +26,10 @@ import com.halokaryamedia.lazybuilder.world.conversion.LocalConversionRuntimeSto
 import com.halokaryamedia.lazybuilder.world.conversion.OnDemandProcessRunner;
 import com.halokaryamedia.lazybuilder.world.files.LocalWorldExportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.LocalWorldFileRepository;
+import com.halokaryamedia.lazybuilder.world.files.LocalWorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldExportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
+import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
@@ -62,10 +65,12 @@ public final class WorldManager {
     private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldFileRepository worldFileRepository;
     private final WorldExportArtifactStore worldExportArtifactStore;
+    private final WorldImportArtifactStore worldImportArtifactStore;
     private final WorldLifecycleService worldLifecycleService;
     private final WorldCloneService worldCloneService;
     private final WorldDeleteService worldDeleteService;
     private final WorldExportService worldExportService;
+    private final WorldImportService worldImportService;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -85,6 +90,11 @@ public final class WorldManager {
                 worldDataRoot.resolve("work")
         );
         this.worldExportArtifactStore = new LocalWorldExportArtifactStore(worldDataRoot.resolve("exports"));
+        long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 200_000L));
+        long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 65_536L));
+        this.worldImportArtifactStore = new LocalWorldImportArtifactStore(
+                worldDataRoot.resolve("imports"), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
+        );
         this.conversionRuntimeStore = new LocalConversionRuntimeStore(conversionRoot);
 
         int conversionHeapMb = plugin.getConfig().getInt("world-manager.conversion.max-heap-mb", 3072);
@@ -131,16 +141,14 @@ public final class WorldManager {
                 worldOperationCoordinator, worldFileRepository
         );
         this.worldExportService = new WorldExportService(
-                worldRegistry,
-                worldRuntimeService,
-                runtimeStates,
-                worldOperationCoordinator,
-                worldFileRepository,
-                worldExportArtifactStore,
-                conversionRuntimeStore,
-                conversionUpdateService,
-                converterAdapter,
-                conversionJobCoordinator
+                worldRegistry, worldRuntimeService, runtimeStates, worldOperationCoordinator,
+                worldFileRepository, worldExportArtifactStore, conversionRuntimeStore,
+                conversionUpdateService, converterAdapter, conversionJobCoordinator
+        );
+        this.worldImportService = new WorldImportService(
+                worldRegistry, registryPersistence, runtimeStates, worldFileRepository,
+                worldImportArtifactStore, conversionRuntimeStore, conversionUpdateService,
+                converterAdapter, conversionJobCoordinator
         );
     }
 
@@ -191,8 +199,10 @@ public final class WorldManager {
     public WorldOperationCoordinator worldOperationCoordinator() { return worldOperationCoordinator; }
     public WorldFileRepository worldFileRepository() { return worldFileRepository; }
     public WorldExportArtifactStore worldExportArtifactStore() { return worldExportArtifactStore; }
+    public WorldImportArtifactStore worldImportArtifactStore() { return worldImportArtifactStore; }
     public WorldLifecycleService worldLifecycleService() { return worldLifecycleService; }
     public WorldCloneService worldCloneService() { return worldCloneService; }
     public WorldDeleteService worldDeleteService() { return worldDeleteService; }
     public WorldExportService worldExportService() { return worldExportService; }
+    public WorldImportService worldImportService() { return worldImportService; }
 }

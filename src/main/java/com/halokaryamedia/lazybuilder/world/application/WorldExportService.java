@@ -14,6 +14,8 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Objects;
@@ -27,6 +29,7 @@ import java.util.UUID;
  */
 public final class WorldExportService {
     public static final String NATIVE_SERVER_FORMAT = "JAVA_1_21_4";
+    private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
 
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
@@ -63,7 +66,6 @@ public final class WorldExportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /** Main-thread phase: validate, acquire lease, and quiesce source for a consistent snapshot. */
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
         Objects.requireNonNull(worldId, "worldId");
         WorldRecord source = registry.find(worldId)
@@ -85,7 +87,6 @@ public final class WorldExportService {
         }
     }
 
-    /** Worker-thread phase. Whole-world export only; Export Area will provide pruning input later. */
     public ExportResult executeFilePhase(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -94,6 +95,7 @@ public final class WorldExportService {
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
             if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
+                writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
                 task.completed = true;
                 return new ExportResult(artifact, task.targetFormat, false);
@@ -132,29 +134,27 @@ public final class WorldExportService {
         }
     }
 
-    /** Main-thread phase: restore source load state and release the world operation lease. */
     public void finish(ExportTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
         RuntimeException failure = null;
         if (task.wasLoaded) {
-            try {
-                runtimeService.load(task.source.id());
-            } catch (RuntimeException exception) {
-                failure = exception;
-            }
+            try { runtimeService.load(task.source.id()); }
+            catch (RuntimeException exception) { failure = exception; }
         }
         task.close();
         if (failure != null) throw failure;
     }
 
+    private static void writeNativeTransferMarker(Path snapshot) throws IOException {
+        Files.writeString(snapshot.resolve(TRANSFER_MARKER),
+                "format=" + NATIVE_SERVER_FORMAT + "\n", StandardCharsets.UTF_8);
+    }
+
     private void ensureConversionRuntime() throws IOException {
         IOException updateFailure = null;
-        try {
-            updateService.checkIfDue();
-        } catch (IOException exception) {
-            updateFailure = exception;
-        }
+        try { updateService.checkIfDue(); }
+        catch (IOException exception) { updateFailure = exception; }
         if (conversionStore.current().isPresent()) return;
         if (updateFailure != null) {
             throw new IOException("Conversion runtime update failed and no verified runtime is installed", updateFailure);
@@ -164,11 +164,8 @@ public final class WorldExportService {
 
     private void cleanupWorkspace(Path workspace) {
         if (workspace == null) return;
-        try {
-            files.deleteWorkspace(workspace);
-        } catch (IOException ignored) {
-            // Cleanup failure is recoverable by the startup temp-recovery pass planned for transfer runtime.
-        }
+        try { files.deleteWorkspace(workspace); }
+        catch (IOException ignored) { }
     }
 
     private static String normalizeFormat(String value) {
