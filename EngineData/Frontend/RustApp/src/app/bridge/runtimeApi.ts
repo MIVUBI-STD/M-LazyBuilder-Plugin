@@ -59,6 +59,11 @@ export type ImportWorldRequest = {
   displayName: string;
 };
 
+export type DeleteWorldRequest = {
+  worldId: string;
+  typedFolderName: string;
+};
+
 export type WorldSettingsSnapshot = {
   id: string;
   displayName: string;
@@ -130,6 +135,7 @@ export const runtimeApi = {
   backupWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_backup', { worldId }),
   cloneWorld: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request }),
   exportWorld: (request: ExportWorldRequest) => invoke<WorldTaskSnapshot>('world_export', { request }),
+  deleteWorld: (request: DeleteWorldRequest) => invoke<WorldTaskSnapshot>('world_delete', { request }),
   pickWorldImport: () => invoke<string | null>('world_import_pick'),
   uploadWorldImport: (filePath: string) => invoke<string>('world_import_upload', { filePath }),
   importWorld: (request: ImportWorldRequest) => invoke<WorldTaskSnapshot>('world_import', { request })
