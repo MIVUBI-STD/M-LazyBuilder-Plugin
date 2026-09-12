@@ -1,10 +1,16 @@
 package com.halokaryamedia.lazybuilder.world.files;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -15,6 +21,7 @@ import java.util.zip.ZipInputStream;
 public final class LocalWorldImportArtifactStore implements WorldImportArtifactStore {
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
     private static final String JAVA_1_21_4 = "JAVA_1_21_4";
+    private static final int IO_BUFFER_BYTES = 64 * 1024;
 
     private final Path importsRoot;
     private final long maxEntries;
@@ -87,8 +94,10 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private void extractBounded(Path archive, Path target) throws IOException {
         long entries = 0;
         long totalBytes = 0;
-        byte[] buffer = new byte[8192];
-        try (InputStream raw = Files.newInputStream(archive); ZipInputStream zip = new ZipInputStream(raw)) {
+        byte[] buffer = new byte[IO_BUFFER_BYTES];
+        try (InputStream fileIn = Files.newInputStream(archive);
+             BufferedInputStream bufferedIn = new BufferedInputStream(fileIn, IO_BUFFER_BYTES);
+             ZipInputStream zip = new ZipInputStream(bufferedIn)) {
             for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
                 String name = entry.getName().replace('\\', '/');
@@ -101,7 +110,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 }
                 Path parent = output.getParent();
                 if (parent != null) Files.createDirectories(parent);
-                try (var out = Files.newOutputStream(output)) {
+                try (var fileOut = Files.newOutputStream(output);
+                     var out = new BufferedOutputStream(fileOut, IO_BUFFER_BYTES)) {
                     for (int read; (read = zip.read(buffer)) >= 0;) {
                         if (read == 0) continue;
                         totalBytes += read;
@@ -128,12 +138,16 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Path nested = children.getFirst();
         Path temporary = target.resolveSibling(target.getFileName() + "-normalize");
         if (Files.exists(temporary)) throw new IOException("Import normalization workspace already exists");
-        Files.move(nested, temporary, StandardCopyOption.ATOMIC_MOVE);
+        moveDirectory(nested, temporary);
         deleteTree(target);
+        moveDirectory(temporary, target);
+    }
+
+    private static void moveDirectory(Path source, Path target) throws IOException {
         try {
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailure) {
-            Files.move(temporary, target);
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source, target);
         }
     }
 
@@ -155,8 +169,19 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     private static void deleteTree(Path root) throws IOException {
         if (Files.notExists(root)) return;
-        try (var paths = Files.walk(root)) {
-            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
-        }
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
+                if (exception != null) throw exception;
+                Files.deleteIfExists(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
