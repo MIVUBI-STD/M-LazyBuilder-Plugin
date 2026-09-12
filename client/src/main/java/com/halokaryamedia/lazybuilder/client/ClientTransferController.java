@@ -6,7 +6,8 @@ import net.minecraft.client.MinecraftClient;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,14 +15,19 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Client-side stop-and-wait transfer coordinator. Server sessions remain authoritative;
- * local state only tracks one explicit transfer operation at a time.
+ * Client-side bounded transfer coordinator. Server sessions remain authoritative;
+ * local state tracks one explicit transfer operation at a time.
+ *
+ * <p>Chunks use one seekable channel per active file and the protocol-owned
+ * bounded credit window. This avoids reopen/skip I/O and one RTT per individual
+ * 24 KiB payload while keeping memory and queue depth bounded.</p>
  */
 public final class ClientTransferController {
     private Upload upload;
@@ -44,22 +50,24 @@ public final class ClientTransferController {
             case TransferWireProtocol.UploadAccepted accepted -> onUploadAccepted(accepted.descriptor());
             case TransferWireProtocol.UploadProgressResponse progress -> onUploadProgress(progress);
             case TransferWireProtocol.UploadFinished finished -> {
+                Upload state = upload;
                 upload = null;
+                closeQuietly(state == null ? null : state.channel);
                 LazyBuilderClientNetworking.notifyPlayer("Upload complete: " + finished.fileName());
             }
             case TransferWireProtocol.DownloadAccepted accepted -> onDownloadAccepted(accepted.descriptor());
             case TransferWireProtocol.DownloadChunkData chunk -> onDownloadChunk(chunk);
             case TransferWireProtocol.Ack ignored -> onAck();
             case TransferWireProtocol.ErrorResponse error -> {
+                cleanupLocalUpload();
                 cleanupLocalDownload();
-                upload = null;
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder transfer: " + error.message());
             }
         }
     }
 
     public void reset() {
-        upload = null;
+        cleanupLocalUpload();
         cleanupLocalDownload();
     }
 
@@ -87,133 +95,193 @@ public final class ClientTransferController {
             }
             try {
                 requireIdle();
-                upload = new Upload(prepared.path(), null, 0, 0);
+                upload = new Upload(prepared.path());
                 send(new TransferWireProtocol.BeginUpload(
                         prepared.path().getFileName().toString(), prepared.size(), prepared.sha256()));
             } catch (Exception exception) {
-                upload = null;
+                cleanupLocalUpload();
                 LazyBuilderClientNetworking.notifyPlayer("Could not start upload: " + exception.getMessage());
             }
         }));
     }
 
     private void onUploadAccepted(TransferDescriptor descriptor) {
-        if (upload == null) return;
-        upload = new Upload(upload.source(), descriptor, 0, 0);
-        sendUploadChunk(0);
-    }
-
-    private void onUploadProgress(TransferWireProtocol.UploadProgressResponse progress) {
-        if (upload == null || upload.descriptor() == null
-                || !upload.descriptor().sessionId().equals(progress.sessionId())) return;
-        if (progress.nextChunkIndex() >= progress.totalChunks()) {
-            send(new TransferWireProtocol.FinishUpload(progress.sessionId()));
-        } else {
-            sendUploadChunk(progress.nextChunkIndex());
+        Upload state = upload;
+        if (state == null) return;
+        try {
+            state.descriptor = descriptor;
+            state.channel = FileChannel.open(state.source, StandardOpenOption.READ);
+            pumpUploadBatch(state);
+        } catch (IOException exception) {
+            abortUpload("Could not open import file: " + exception.getMessage());
         }
     }
 
-    private void sendUploadChunk(int index) {
+    private void onUploadProgress(TransferWireProtocol.UploadProgressResponse progress) {
         Upload state = upload;
-        if (state == null || state.descriptor() == null) return;
+        if (state == null || state.descriptor == null
+                || !state.descriptor.sessionId().equals(progress.sessionId())) return;
+        state.acknowledged = Math.max(state.acknowledged, progress.nextChunkIndex());
+        if (state.acknowledged >= progress.totalChunks()) {
+            if (!state.finishSent) {
+                state.finishSent = true;
+                send(new TransferWireProtocol.FinishUpload(progress.sessionId()));
+            }
+            return;
+        }
+        if (!state.batchReadInFlight && state.acknowledged >= state.nextChunkToSend) {
+            pumpUploadBatch(state);
+        }
+    }
+
+    private void pumpUploadBatch(Upload state) {
+        if (upload != state || state.descriptor == null || state.channel == null || state.batchReadInFlight) return;
+        int start = state.nextChunkToSend;
+        if (start >= state.descriptor.totalChunks()) return;
+        int end = Math.min(start + TransferWireProtocol.PIPELINE_WINDOW, state.descriptor.totalChunks());
+        state.batchReadInFlight = true;
+
         CompletableFuture.supplyAsync(() -> {
             try {
-                TransferDescriptor descriptor = state.descriptor();
-                long offset = (long) index * descriptor.chunkBytes();
-                int length = (int) Math.min(descriptor.chunkBytes(), descriptor.totalBytes() - offset);
-                byte[] bytes = new byte[length];
-                try (InputStream in = Files.newInputStream(state.source())) {
-                    in.skipNBytes(offset);
-                    int read = 0;
-                    while (read < length) {
-                        int count = in.read(bytes, read, length - read);
-                        if (count < 0) throw new IOException("Import file changed while uploading");
-                        read += count;
-                    }
+                List<byte[]> batch = new ArrayList<>(end - start);
+                for (int index = start; index < end; index++) {
+                    long offset = (long) index * state.descriptor.chunkBytes();
+                    int length = (int) Math.min(
+                            state.descriptor.chunkBytes(), state.descriptor.totalBytes() - offset);
+                    byte[] bytes = new byte[length];
+                    readFully(state.channel, ByteBuffer.wrap(bytes), offset);
+                    batch.add(bytes);
                 }
-                return bytes;
+                return batch;
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
-        }).whenComplete((bytes, failure) -> clientExecute(() -> {
+        }).whenComplete((batch, failure) -> clientExecute(() -> {
+            if (upload != state) return;
+            state.batchReadInFlight = false;
             if (failure != null) {
                 abortUpload("Upload read failed: " + rootMessage(failure));
                 return;
             }
-            Upload current = upload;
-            if (current == null || current.descriptor() == null) return;
-            send(new TransferWireProtocol.UploadChunk(current.descriptor().sessionId(), index, bytes));
+            try {
+                for (int i = 0; i < batch.size(); i++) {
+                    send(new TransferWireProtocol.UploadChunk(
+                            state.descriptor.sessionId(), start + i, batch.get(i)));
+                }
+                state.nextChunkToSend = end;
+            } catch (RuntimeException exception) {
+                abortUpload("Upload send failed: " + exception.getMessage());
+            }
         }));
     }
 
     private void beginDownload(String fileName, Path destination) {
         Path target = destination.toAbsolutePath().normalize();
         Path partial = target.resolveSibling(target.getFileName() + ".part");
-        download = new Download(fileName, target, partial, null, false);
+        download = new Download(fileName, target, partial);
         send(new TransferWireProtocol.BeginDownload(fileName));
     }
 
     private void onDownloadAccepted(TransferDescriptor descriptor) {
-        if (download == null) return;
+        Download state = download;
+        if (state == null) return;
         try {
-            Files.deleteIfExists(download.partial());
-            Path parent = download.partial().getParent();
+            Files.deleteIfExists(state.partial);
+            Path parent = state.partial.getParent();
             if (parent != null) Files.createDirectories(parent);
-            Files.createFile(download.partial());
-            download = new Download(download.fileName(), download.target(), download.partial(), descriptor, false);
-            send(new TransferWireProtocol.DownloadChunkRequest(descriptor.sessionId(), 0));
+            state.channel = FileChannel.open(state.partial,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE);
+            state.descriptor = descriptor;
+            requestDownloadBatch(state);
         } catch (IOException exception) {
             abortDownload("Could not create local export file: " + exception.getMessage());
         }
     }
 
+    private void requestDownloadBatch(Download state) {
+        if (download != state || state.descriptor == null || state.awaitingFinishAck) return;
+        int start = state.nextChunkToRequest;
+        if (start >= state.descriptor.totalChunks()) return;
+        int end = Math.min(start + TransferWireProtocol.PIPELINE_WINDOW, state.descriptor.totalChunks());
+        state.batchStart = start;
+        state.batchEnd = end;
+        state.receivedInBatch = 0;
+        state.pendingWrites = 0;
+        state.batchSawLast = false;
+        state.nextChunkToRequest = end;
+        for (int index = start; index < end; index++) {
+            send(new TransferWireProtocol.DownloadChunkRequest(state.descriptor.sessionId(), index));
+        }
+    }
+
     private void onDownloadChunk(TransferWireProtocol.DownloadChunkData chunk) {
         Download state = download;
-        if (state == null || state.descriptor() == null
-                || !state.descriptor().sessionId().equals(chunk.sessionId())) return;
+        if (state == null || state.descriptor == null || state.channel == null
+                || !state.descriptor.sessionId().equals(chunk.sessionId())) return;
+        if (chunk.chunkIndex() < state.batchStart || chunk.chunkIndex() >= state.batchEnd) {
+            abortDownload("Download response arrived outside the active pipeline window");
+            return;
+        }
+
+        state.receivedInBatch++;
+        state.pendingWrites++;
+        state.batchSawLast |= chunk.last();
+        long offset = (long) chunk.chunkIndex() * state.descriptor.chunkBytes();
         CompletableFuture.runAsync(() -> {
-            try (OutputStream out = Files.newOutputStream(state.partial(),
-                    StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-                out.write(chunk.data());
+            try {
+                writeFully(state.channel, ByteBuffer.wrap(chunk.data()), offset);
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
         }).whenComplete((ignored, failure) -> clientExecute(() -> {
+            if (download != state) return;
+            state.pendingWrites--;
             if (failure != null) {
                 abortDownload("Download write failed: " + rootMessage(failure));
                 return;
             }
-            Download current = download;
-            if (current == null || current.descriptor() == null) return;
-            if (chunk.last()) {
-                download = new Download(current.fileName(), current.target(), current.partial(), current.descriptor(), true);
-                send(new TransferWireProtocol.FinishDownload(chunk.sessionId()));
-            } else {
-                send(new TransferWireProtocol.DownloadChunkRequest(chunk.sessionId(), chunk.chunkIndex() + 1));
-            }
+            completeDownloadBatchIfReady(state);
         }));
+    }
+
+    private void completeDownloadBatchIfReady(Download state) {
+        int expected = state.batchEnd - state.batchStart;
+        if (state.receivedInBatch != expected || state.pendingWrites != 0) return;
+        if (state.batchSawLast || state.nextChunkToRequest >= state.descriptor.totalChunks()) {
+            state.awaitingFinishAck = true;
+            send(new TransferWireProtocol.FinishDownload(state.descriptor.sessionId()));
+        } else {
+            requestDownloadBatch(state);
+        }
     }
 
     private void onAck() {
         Download state = download;
-        if (state == null || !state.awaitingFinishAck() || state.descriptor() == null) return;
+        if (state == null || !state.awaitingFinishAck || state.descriptor == null) return;
+        state.awaitingFinishAck = false;
         CompletableFuture.runAsync(() -> {
             try {
-                String actual = sha256(state.partial());
-                if (!actual.equalsIgnoreCase(state.descriptor().sha256())) {
+                if (state.channel != null) {
+                    state.channel.force(false);
+                    state.channel.close();
+                }
+                String actual = sha256(state.partial);
+                if (!actual.equalsIgnoreCase(state.descriptor.sha256())) {
                     throw new IOException("Downloaded export checksum mismatch");
                 }
-                move(state.partial(), state.target());
+                move(state.partial, state.target);
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
         }).whenComplete((ignored, failure) -> clientExecute(() -> {
+            if (download != state) return;
             if (failure != null) {
                 cleanupLocalDownload();
                 LazyBuilderClientNetworking.notifyPlayer("Could not finalize export: " + rootMessage(failure));
                 return;
             }
-            String name = state.target().getFileName().toString();
+            String name = state.target.getFileName().toString();
             download = null;
             LazyBuilderClientNetworking.notifyPlayer("Export saved: " + name);
         }));
@@ -222,8 +290,9 @@ public final class ClientTransferController {
     private void abortUpload(String message) {
         Upload state = upload;
         upload = null;
-        if (state != null && state.descriptor() != null) {
-            send(new TransferWireProtocol.AbortUpload(state.descriptor().sessionId()));
+        closeQuietly(state == null ? null : state.channel);
+        if (state != null && state.descriptor != null) {
+            send(new TransferWireProtocol.AbortUpload(state.descriptor.sessionId()));
         }
         LazyBuilderClientNetworking.notifyPlayer(message);
     }
@@ -231,20 +300,28 @@ public final class ClientTransferController {
     private void abortDownload(String message) {
         Download state = download;
         download = null;
-        if (state != null && state.descriptor() != null) {
-            send(new TransferWireProtocol.AbortDownload(state.descriptor().sessionId()));
+        closeQuietly(state == null ? null : state.channel);
+        if (state != null && state.descriptor != null) {
+            send(new TransferWireProtocol.AbortDownload(state.descriptor.sessionId()));
         }
         if (state != null) {
-            try { Files.deleteIfExists(state.partial()); } catch (IOException ignored) { }
+            try { Files.deleteIfExists(state.partial); } catch (IOException ignored) { }
         }
         LazyBuilderClientNetworking.notifyPlayer(message);
+    }
+
+    private void cleanupLocalUpload() {
+        Upload state = upload;
+        upload = null;
+        closeQuietly(state == null ? null : state.channel);
     }
 
     private void cleanupLocalDownload() {
         Download state = download;
         download = null;
+        closeQuietly(state == null ? null : state.channel);
         if (state != null) {
-            try { Files.deleteIfExists(state.partial()); } catch (IOException ignored) { }
+            try { Files.deleteIfExists(state.partial); } catch (IOException ignored) { }
         }
     }
 
@@ -253,6 +330,26 @@ public final class ClientTransferController {
             LazyBuilderClientNetworking.sendTransfer(TransferWireProtocol.encodeRequest(request));
         } catch (IOException exception) {
             throw new IllegalStateException("Could not encode transfer request", exception);
+        }
+    }
+
+    private static void readFully(FileChannel channel, ByteBuffer target, long position) throws IOException {
+        long cursor = position;
+        while (target.hasRemaining()) {
+            int read = channel.read(target, cursor);
+            if (read < 0) throw new IOException("Import file changed while uploading");
+            if (read == 0) continue;
+            cursor += read;
+        }
+    }
+
+    private static void writeFully(FileChannel channel, ByteBuffer source, long position) throws IOException {
+        long cursor = position;
+        while (source.hasRemaining()) {
+            int written = channel.write(source, cursor);
+            if (written < 0) throw new IOException("Local export channel closed while writing");
+            if (written == 0) continue;
+            cursor += written;
         }
     }
 
@@ -277,6 +374,11 @@ public final class ClientTransferController {
         catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
     }
 
+    private static void closeQuietly(FileChannel channel) {
+        if (channel == null) return;
+        try { channel.close(); } catch (IOException ignored) { }
+    }
+
     private static void clientExecute(Runnable task) {
         MinecraftClient.getInstance().execute(task);
     }
@@ -288,12 +390,39 @@ public final class ClientTransferController {
     }
 
     private record PreparedUpload(Path path, long size, String sha256) {}
-    private record Upload(Path source, TransferDescriptor descriptor, int nextChunk, long sentBytes) {}
-    private record Download(
-            String fileName,
-            Path target,
-            Path partial,
-            TransferDescriptor descriptor,
-            boolean awaitingFinishAck
-    ) {}
+
+    private static final class Upload {
+        private final Path source;
+        private TransferDescriptor descriptor;
+        private FileChannel channel;
+        private int nextChunkToSend;
+        private int acknowledged;
+        private boolean batchReadInFlight;
+        private boolean finishSent;
+
+        private Upload(Path source) {
+            this.source = source;
+        }
+    }
+
+    private static final class Download {
+        private final String fileName;
+        private final Path target;
+        private final Path partial;
+        private TransferDescriptor descriptor;
+        private FileChannel channel;
+        private int nextChunkToRequest;
+        private int batchStart;
+        private int batchEnd;
+        private int receivedInBatch;
+        private int pendingWrites;
+        private boolean batchSawLast;
+        private boolean awaitingFinishAck;
+
+        private Download(String fileName, Path target, Path partial) {
+            this.fileName = fileName;
+            this.target = target;
+            this.partial = partial;
+        }
+    }
 }
