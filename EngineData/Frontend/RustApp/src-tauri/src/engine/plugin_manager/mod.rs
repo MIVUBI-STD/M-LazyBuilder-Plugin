@@ -410,10 +410,14 @@ fn read_metadata(path: &Path) -> Result<PluginMetadata, String> {
 
     let file = File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("Invalid plugin JAR: {error}"))?;
-    let mut entry = match archive.by_name("plugin.yml") {
-        Ok(entry) => entry,
-        Err(_) => archive.by_name("paper-plugin.yml").map_err(|_| "JAR does not contain plugin.yml or paper-plugin.yml".to_string())?,
+    let metadata_entry_name = if archive.file_names().any(|name| name == "plugin.yml") {
+        "plugin.yml"
+    } else if archive.file_names().any(|name| name == "paper-plugin.yml") {
+        "paper-plugin.yml"
+    } else {
+        return Err("JAR does not contain plugin.yml or paper-plugin.yml".to_string());
     };
+    let mut entry = archive.by_name(metadata_entry_name).map_err(|error| format!("Failed to read plugin metadata: {error}"))?;
     let mut text = String::new();
     entry.read_to_string(&mut text).map_err(|error| error.to_string())?;
     let parsed: PluginYaml = serde_yaml::from_str(&text).map_err(|error| format!("Invalid plugin metadata: {error}"))?;
