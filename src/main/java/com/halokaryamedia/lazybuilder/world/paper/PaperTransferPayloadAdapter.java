@@ -12,7 +12,10 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,18 +24,21 @@ import java.util.logging.Level;
 /**
  * Thin Bukkit plugin-message adapter for the World Manager transfer owner.
  *
- * <p>All file I/O is dispatched to request-scoped async scheduler work. The
- * client uses stop-and-wait semantics, so at most one transfer request per
- * player may be in flight at a time. No polling loop or persistent worker is
- * created.</p>
+ * <p>File I/O runs on request-scoped Paper async work. A small per-player FIFO
+ * lane preserves protocol order while allowing the client to keep a bounded
+ * number of chunks in flight, avoiding one network round trip per 24 KiB chunk.
+ * No dedicated worker, polling loop, socket, or permanent executor is created.</p>
  */
 public final class PaperTransferPayloadAdapter implements PluginMessageListener, Listener {
     public static final String CHANNEL = "lazybuilder:transfer";
     public static final String PERMISSION = "lazybuilder.world.manage";
+    public static final int PIPELINE_WINDOW = TransferWireProtocol.PIPELINE_WINDOW;
+    private static final int MAX_QUEUED_REQUESTS = PIPELINE_WINDOW * 2 + 4;
 
     private final LazyBuilderPlugin plugin;
     private final TransferSessionService transfers;
-    private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Queue<TransferWireProtocol.Request>> requestQueues = new ConcurrentHashMap<>();
+    private final Set<UUID> draining = ConcurrentHashMap.newKeySet();
     private final Set<UUID> knownOwners = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
 
@@ -57,7 +63,8 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
 
         UUID[] owners = knownOwners.toArray(UUID[]::new);
         knownOwners.clear();
-        inFlight.clear();
+        requestQueues.clear();
+        draining.clear();
         for (UUID owner : owners) {
             try {
                 transfers.abortAllForOwner(owner);
@@ -85,34 +92,72 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
             return;
         }
 
-        if (!inFlight.add(owner)) {
-            send(player, TransferWireProtocol.error("Previous transfer request is still processing"));
-            return;
-        }
         knownOwners.add(owner);
-
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            byte[] response;
-            try {
-                response = handle(owner, request);
-            } catch (IOException | RuntimeException exception) {
-                cleanupFailedSession(owner, request);
-                response = TransferWireProtocol.error(exception.getMessage());
-            } finally {
-                inFlight.remove(owner);
+        Queue<TransferWireProtocol.Request> queue = requestQueues.computeIfAbsent(owner, ignored -> new ArrayDeque<>());
+        synchronized (queue) {
+            if (queue.size() >= MAX_QUEUED_REQUESTS) {
+                send(player, TransferWireProtocol.error("Transfer pipeline window exceeded"));
+                return;
             }
-            byte[] finalResponse = response;
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                Player online = plugin.getServer().getPlayer(owner);
-                if (online != null && online.isOnline()) send(online, finalResponse);
-            });
+            queue.add(request);
+        }
+        scheduleDrain(owner);
+    }
+
+    private void scheduleDrain(UUID owner) {
+        if (!started || !draining.add(owner)) return;
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> drain(owner));
+    }
+
+    private void drain(UUID owner) {
+        try {
+            while (started) {
+                Queue<TransferWireProtocol.Request> queue = requestQueues.get(owner);
+                if (queue == null) return;
+                TransferWireProtocol.Request request;
+                synchronized (queue) {
+                    request = queue.poll();
+                    if (request == null) {
+                        requestQueues.remove(owner, queue);
+                        return;
+                    }
+                }
+
+                byte[] response;
+                try {
+                    response = handle(owner, request);
+                } catch (IOException | RuntimeException exception) {
+                    cleanupFailedSession(owner, request);
+                    response = TransferWireProtocol.error(exception.getMessage());
+                    synchronized (queue) {
+                        queue.clear();
+                    }
+                }
+                sendOnMain(owner, response);
+            }
+        } finally {
+            draining.remove(owner);
+            Queue<TransferWireProtocol.Request> queue = requestQueues.get(owner);
+            if (started && queue != null) {
+                synchronized (queue) {
+                    if (!queue.isEmpty()) scheduleDrain(owner);
+                }
+            }
+        }
+    }
+
+    private void sendOnMain(UUID owner, byte[] payload) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            Player online = plugin.getServer().getPlayer(owner);
+            if (online != null && online.isOnline()) send(online, payload);
         });
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID owner = event.getPlayer().getUniqueId();
-        inFlight.remove(owner);
+        requestQueues.remove(owner);
+        draining.remove(owner);
         knownOwners.remove(owner);
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
@@ -170,10 +215,7 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
         };
     }
 
-    /**
-     * Protocol errors fail closed. If a request already identifies a live session,
-     * discard that session so the client is never wedged behind stale server state.
-     */
+    /** Protocol errors fail closed so stale session state never wedges a client. */
     private void cleanupFailedSession(UUID owner, TransferWireProtocol.Request request) {
         try {
             switch (request) {
@@ -184,8 +226,7 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
                 default -> { }
             }
         } catch (IOException | RuntimeException ignored) {
-            // The failing operation may already have removed its own session. Cleanup
-            // is best-effort and must not replace the original protocol error.
+            // Failing operations may already have removed their own session.
         }
     }
 
