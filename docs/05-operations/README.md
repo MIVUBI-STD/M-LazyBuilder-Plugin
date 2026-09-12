@@ -38,19 +38,24 @@ This directory owns current continuation/proof only. Durable product and archite
 - Export Area always uses the verified conversion runtime, including Java 1.21.4 targets, because pruning must be applied; whole-world Java 1.21.4 retains its native fast path;
 - `WorldLocationTeleportService` owns server-authoritative Teleport to Location: load target world on demand, then resolve safe X/Z destination through a narrow Paper location gateway;
 - the Paper location resolver checks world border, safe solid floor, passable feet/head space, and applies the managed world's default game mode; Void worlds resolve to their existing spawn/platform instead of generating terrain at the selected coordinate;
-- `MapActionWireProtocol` and `PaperMapActionPayloadAdapter` now expose those two map intents over `lazybuilder:map` without creating new world/export authority;
-- map protocol version 1 is bounded to 4 KiB; `lazybuilder.world.teleport` gates map teleport and `lazybuilder.world.manage` gates Export Area;
-- Export Area sends an immediate accepted response, executes snapshot/conversion off-thread, then returns the finished artifact name for download through the existing transfer channel;
-- Xaero remains presentation/input only and does not own world state, Y resolution, map caches, export state, or file transfer state.
+- `MapActionWireProtocol` and `PaperMapActionPayloadAdapter` expose map intents over `lazybuilder:map` without creating new world/export authority;
+- the repository now contains a Java 21 / Minecraft 1.21.4 Fabric client module that compiles in CI alongside the Paper plugin;
+- client networking mirrors the two server protocols instead of creating a second wire contract, and resolves the managed current world from the server after join;
+- `ClientTransferController` implements native import-file selection, SHA-256 preparation, stop-and-wait upload, export save destination, `.part` download publication, and final checksum validation;
+- the optional Xaero adapter is isolated behind one version-pinned accessor for fullscreen-map `cameraX`, `cameraZ`, and `scale`; non-map client functionality does not require Xaero at runtime;
+- the Xaero fullscreen map receives `Teleport Here` and `Export Area` controls; selection clicks send only X/Z intent and two-corner intent to server authority, while P/O remain fallback shortcuts;
+- all remote source slices through the current Fabric/Xaero control implementation have passed Paper Maven verification and Fabric Gradle compilation.
 
 ## Next Action
 
-The remaining remote-code boundary is the actual **client mod / Xaero hook implementation** that feeds `lazybuilder:map` and `lazybuilder:transfer`. This plugin repository now defines the server protocol and authority contracts; do not invent a second client/server protocol when the client module is created.
+The meaningful remaining boundary is **LOCAL/LIVE client-server validation**, not another backend subsystem. Validate the built Paper plugin and Fabric client together on Minecraft 1.21.4 with the pinned Xaero World Map version.
 
-Before live rollout, add end-to-end LOCAL/LIVE tests for real client registration, Xaero hook availability, safe-surface teleport, Export Area conversion output, large file transfer, disconnect behavior, and Java↔Bedrock conversion.
+The first live pass should verify client registration, current-world handshake, Xaero fullscreen control placement, map-coordinate transform, safe-surface teleport, two-corner Export Area, converter output, native save/open dialogs, upload/download checksums, disconnect cleanup, and Java↔Bedrock conversion on representative worlds.
 
-Do not create a second terrain renderer, map cache, export service, teleport authority, transfer registry, or background watcher.
+Only runtime evidence should drive further Xaero UI positioning or compatibility changes. Do not add a second terrain renderer, map cache, export service, teleport authority, transfer registry, background watcher, or speculative compatibility layer.
 
 ## Proof State
 
-GitHub Actions `mvn verify` was green through the Transfer/Paper payload slice and the Export Area + Teleport to Location server-contract slice. The new `lazybuilder:map` wire/Paper adapter has targeted protocol tests in the current change and requires its own green CI result before compile/test proof is promoted. Real Xaero hooks, client-mod registration, safe-surface teleport behavior, real pruning output, network transfer, large-world conversion, `.mcworld` opening, and live Paper behavior remain LOCAL_CODE/LIVE_SERVER proof.
+`REMOTE_GITHUB` proof is green through both the Paper plugin and Fabric client compile path. The Paper suite reports 70 tests passing, and the Fabric module compiles with the current version-pinned Xaero adapter and screen controls.
+
+This does **not** prove actual in-game button placement, map coordinate correctness on a running Xaero client, native OS dialog behavior, real network transfer of large worlds, live Chunker conversion, `.mcworld` opening, or Paper gameplay/runtime behavior. Those remain `LOCAL_CODE` / `LIVE_SERVER` work.

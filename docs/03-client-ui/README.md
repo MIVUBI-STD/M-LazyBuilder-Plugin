@@ -54,11 +54,47 @@ Server owns:
 
 The client must not become authoritative for server state.
 
+## Implemented Fabric Client Slice
+
+The repository now contains a Minecraft 1.21.4 Fabric client module under `client/`. It reuses the same `MapActionWireProtocol` and `TransferWireProtocol` contracts as the Paper plugin rather than defining a parallel protocol.
+
+```text
+Fabric client
+├── ClientMapController
+├── ClientTransferController
+├── ClientFileDialogs
+├── lazybuilder:map payload
+├── lazybuilder:transfer payload
+└── optional Xaero adapter
+```
+
+The client resolves the managed current world from the server after joining. Import uses a native `.zip`/`.mcworld` file picker, computes SHA-256 off the render thread, then uses the existing stop-and-wait upload flow. Export uses the server artifact name, a native save destination, `.part` publication, and checksum verification before the local file is finalized.
+
+Xaero integration is optional at runtime. The version-pinned adapter matches the fullscreen map class and accesses only `cameraX`, `cameraZ`, and `scale` through one isolated mixin accessor. Missing Xaero must not disable non-map LazyBuilder functionality.
+
+The fullscreen map currently adds two primary controls:
+
+```text
+Teleport Here
+→ arm selection
+→ click map location
+→ server resolves safe Y and teleports
+
+Export Area
+→ arm selection
+→ click corner 1
+→ click corner 2
+→ server exports selected area
+→ existing transfer path downloads result
+```
+
+`P` (Teleport Here) and `O` (Export Area corners) remain bounded fallback shortcuts. Selection clicks are consumed only while a LazyBuilder map action is armed so normal Xaero navigation remains untouched otherwise.
+
 ## Xaero Action Contracts
 
 Xaero integration is an input/presentation adapter only. It must never directly mutate world files or resolve teleport height on the client.
 
-Server transport for map actions is now separated from file transfer:
+Server transport for map actions is separated from file transfer:
 
 ```text
 Xaero / LazyBuilder client
@@ -181,7 +217,7 @@ A partial upload lives only under `plugins/LazyBuilder/world/transfer` and is ne
 - request summaries first, details on demand;
 - do not duplicate Xaero map caches/data when integration can reuse them safely;
 - keep network payloads bounded and action-specific;
-- no continuous polling when event/delta-based updates are sufficient;
+- no continuous polling when event/delta updates suffice;
 - no permanent transfer worker or socket loop beyond the normal Minecraft connection;
 - large-file hashing and chunk I/O run only in response to transfer requests;
 - map teleport and Export Area perform no work until the player explicitly acts.
