@@ -4,7 +4,8 @@
   import type {
     ManagedWorldSummary,
     WorldSettingsSnapshot,
-    UpdateWorldSettingsRequest
+    UpdateWorldSettingsRequest,
+    WorldTaskSnapshot
   } from '../app/bridge/runtimeApi';
 
   let worlds: ManagedWorldSummary[] = [];
@@ -19,6 +20,9 @@
   let settings: WorldSettingsSnapshot | null = null;
   let settingsBusy = false;
 
+  let lifecycleBusyWorldId: string | null = null;
+  let lifecycleTask: WorldTaskSnapshot | null = null;
+
   async function refresh() {
     if (busy) return;
     busy = true;
@@ -28,6 +32,8 @@
       if (!serverOnline) {
         worlds = [];
         settings = null;
+        lifecycleTask = null;
+        lifecycleBusyWorldId = null;
         error = '';
         connectionStatus = 'Start the server to manage worlds';
         return;
@@ -80,6 +86,43 @@
     } finally {
       busy = false;
       await refresh();
+    }
+  }
+
+  async function runLifecycleTask(world: ManagedWorldSummary, operation: 'archive' | 'restore') {
+    if (lifecycleBusyWorldId) return;
+    if (operation === 'archive' && !window.confirm(`Archive ${world.displayName}? The world will be unloaded and auto-load disabled.`)) {
+      return;
+    }
+
+    lifecycleBusyWorldId = world.id;
+    lifecycleTask = null;
+    error = '';
+    try {
+      lifecycleTask = operation === 'archive'
+        ? await runtimeProduct.worlds.archive(world.id)
+        : await runtimeProduct.worlds.restore(world.id);
+      await pollLifecycleTask(lifecycleTask.taskId);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      lifecycleBusyWorldId = null;
+      await refresh();
+    }
+  }
+
+  async function pollLifecycleTask(taskId: string) {
+    while (true) {
+      const task = await runtimeProduct.worlds.task(taskId);
+      lifecycleTask = task;
+      if (task.state === 'SUCCEEDED') {
+        error = '';
+        return;
+      }
+      if (task.state === 'FAILED') {
+        throw new Error(task.error || task.message || 'World lifecycle task failed.');
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
     }
   }
 
@@ -141,8 +184,16 @@
   </div>
 </div>
 
-<div class="actions"><button disabled={busy} onclick={refresh}>Refresh</button></div>
+<div class="actions"><button disabled={busy || lifecycleBusyWorldId !== null} onclick={refresh}>Refresh</button></div>
 {#if error}<p style="color: var(--danger)">{error}</p>{/if}
+
+{#if lifecycleTask}
+  <div class="card" style="margin-top: 12px">
+    <strong>{lifecycleTask.taskType} · {lifecycleTask.state}</strong>
+    <div class="subtle">{lifecycleTask.progressPercent}% · {lifecycleTask.message}</div>
+    {#if lifecycleTask.error}<div style="color: var(--danger)">{lifecycleTask.error}</div>{/if}
+  </div>
+{/if}
 
 {#each worlds as world}
   <div class="card" style="margin-top: 12px">
@@ -154,10 +205,24 @@
       </div>
       <div class="world-actions">
         <button
-          disabled={busy || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
+          disabled={busy || lifecycleBusyWorldId !== null || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
           onclick={() => toggleRuntime(world)}
         >{world.runtimeState === 'LOADED' ? 'Unload' : 'Load'}</button>
-        <button disabled={settingsBusy || world.lifecycle !== 'ACTIVE'} onclick={() => openSettings(world)}>Settings</button>
+        <button
+          disabled={settingsBusy || lifecycleBusyWorldId !== null || world.lifecycle !== 'ACTIVE'}
+          onclick={() => openSettings(world)}
+        >Settings</button>
+        {#if world.lifecycle === 'ACTIVE'}
+          <button
+            disabled={busy || lifecycleBusyWorldId !== null}
+            onclick={() => runLifecycleTask(world, 'archive')}
+          >{lifecycleBusyWorldId === world.id ? 'Working…' : 'Archive'}</button>
+        {:else if world.lifecycle === 'ARCHIVED'}
+          <button
+            disabled={busy || lifecycleBusyWorldId !== null}
+            onclick={() => runLifecycleTask(world, 'restore')}
+          >{lifecycleBusyWorldId === world.id ? 'Working…' : 'Restore'}</button>
+        {/if}
       </div>
     </div>
   </div>
