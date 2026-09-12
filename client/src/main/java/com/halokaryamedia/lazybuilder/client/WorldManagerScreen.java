@@ -91,6 +91,10 @@ public final class WorldManagerScreen extends Screen {
                 addDrawableChild(ButtonWidget.builder(Text.literal("Clone"), button -> {
                     if (client != null) client.setScreen(new CloneWorldScreen(this, controller, selected));
                 }).dimensions(actionX, secondY, actionWidth, 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("Settings"), button -> {
+                    controller.requestSettings(selected.worldId());
+                    if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, selected));
+                }).dimensions(actionX + actionWidth + gap, secondY, actionWidth, 20).build());
                 addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
                     if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
                 }).dimensions(actionX + (actionWidth + gap) * 2, secondY, actionWidth, 20).build());
