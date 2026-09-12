@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /** First-party World Manager browser over one canonical world-control protocol. */
 public final class WorldManagerScreen extends Screen {
-    private static final int PAGE_SIZE = 6;
+    private static final int PAGE_SIZE = 4;
 
     private final ClientWorldController controller;
     private UUID selectedWorld;
@@ -51,7 +51,7 @@ public final class WorldManagerScreen extends Screen {
             y += 24;
         }
 
-        int controlsY = Math.min(height - 76, 42 + PAGE_SIZE * 24 + 8);
+        int controlsY = 42 + PAGE_SIZE * 24 + 8;
         addDrawableChild(ButtonWidget.builder(Text.literal("Create"), button -> {
             if (client != null) client.setScreen(new CreateWorldScreen(this, controller));
         }).dimensions(left, controlsY, 68, 20).build());
@@ -86,9 +86,20 @@ public final class WorldManagerScreen extends Screen {
                 }).dimensions(actionX + actionWidth + gap, actionY, actionWidth, 20).build());
                 addDrawableChild(ButtonWidget.builder(Text.literal("Archive"), button -> confirmArchive(selected))
                         .dimensions(actionX + (actionWidth + gap) * 2, actionY, actionWidth, 20).build());
+
+                int secondY = actionY + 24;
+                addDrawableChild(ButtonWidget.builder(Text.literal("Clone"), button -> {
+                    if (client != null) client.setScreen(new CloneWorldScreen(this, controller, selected));
+                }).dimensions(actionX, secondY, actionWidth, 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
+                    if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
+                }).dimensions(actionX + (actionWidth + gap) * 2, secondY, actionWidth, 20).build());
             } else if ("ARCHIVED".equals(selected.lifecycle())) {
                 addDrawableChild(ButtonWidget.builder(Text.literal("Restore"), button -> controller.restore(selected.worldId()))
-                        .dimensions(actionX + actionWidth + gap, actionY, actionWidth, 20).build());
+                        .dimensions(actionX, actionY, actionWidth, 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
+                    if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
+                }).dimensions(actionX + (actionWidth + gap) * 2, actionY, actionWidth, 20).build());
             }
         }
 
