@@ -115,5 +115,6 @@ export const runtimeApi = {
   getWorldTask: (taskId: string) => invoke<WorldTaskSnapshot>('world_task', { taskId }),
   archiveWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
   restoreWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId }),
+  backupWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_backup', { worldId }),
   cloneWorld: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request })
 };
