@@ -31,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * requests for the same owner and are always removed on disconnect/shutdown.</p>
  */
 public final class TransferSessionService {
+    private static final int HASH_BUFFER_BYTES = 64 * 1024;
+
     private final Path importsRoot;
     private final Path exportsRoot;
     private final Path tempRoot;
@@ -81,7 +83,7 @@ public final class TransferSessionService {
             int chunks = chunkCount(totalBytes, policy.chunkBytes());
             UploadSession session = new UploadSession(
                     sessionId, ownerId, safeName, target, partial, totalBytes, digest,
-                    policy.chunkBytes(), chunks, channel, clock.instant()
+                    policy.chunkBytes(), chunks, channel, newSha256Digest(), clock.instant()
             );
             uploads.put(sessionId, session);
             return session.descriptor();
@@ -111,6 +113,7 @@ public final class TransferSessionService {
             }
 
             writeFully(session.channel, ByteBuffer.wrap(bytes), session.receivedBytes);
+            session.digest.update(bytes);
             session.receivedBytes = nextTotal;
             session.nextChunkIndex++;
             session.lastActivity = clock.instant();
@@ -129,7 +132,7 @@ public final class TransferSessionService {
                 }
                 session.channel.force(false);
                 session.channel.close();
-                String actual = sha256(session.partial);
+                String actual = HexFormat.of().formatHex(session.digest.digest());
                 if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
                 move(session.partial, session.target);
@@ -377,17 +380,23 @@ public final class TransferSessionService {
         return target;
     }
 
-    private static String sha256(Path file) throws IOException {
+    private static MessageDigest newSha256Digest() {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = Files.newInputStream(file)) {
-                byte[] buffer = new byte[8192];
-                for (int read; (read = in.read(buffer)) >= 0;) if (read > 0) digest.update(buffer, 0, read);
-            }
-            return HexFormat.of().formatHex(digest.digest());
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    private static String sha256(Path file) throws IOException {
+        MessageDigest digest = newSha256Digest();
+        try (InputStream in = Files.newInputStream(file)) {
+            byte[] buffer = new byte[HASH_BUFFER_BYTES];
+            for (int read; (read = in.read(buffer)) >= 0;) {
+                if (read > 0) digest.update(buffer, 0, read);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     private static void move(Path source, Path target) throws IOException {
@@ -426,13 +435,14 @@ public final class TransferSessionService {
         private final int chunkBytes;
         private final int totalChunks;
         private final FileChannel channel;
+        private final MessageDigest digest;
         private long receivedBytes;
         private int nextChunkIndex;
         private Instant lastActivity;
 
         private UploadSession(UUID sessionId, UUID ownerId, String fileName, Path target, Path partial,
                               long totalBytes, String sha256, int chunkBytes, int totalChunks,
-                              FileChannel channel, Instant lastActivity) {
+                              FileChannel channel, MessageDigest digest, Instant lastActivity) {
             this.sessionId = sessionId;
             this.ownerId = ownerId;
             this.fileName = fileName;
@@ -443,6 +453,7 @@ public final class TransferSessionService {
             this.chunkBytes = chunkBytes;
             this.totalChunks = totalChunks;
             this.channel = channel;
+            this.digest = digest;
             this.lastActivity = lastActivity;
         }
 
