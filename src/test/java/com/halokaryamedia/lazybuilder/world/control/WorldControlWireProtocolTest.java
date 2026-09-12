@@ -22,6 +22,10 @@ class WorldControlWireProtocolTest {
         assertEquals(new WorldControlWireProtocol.TeleportWorld(id), roundTrip(new WorldControlWireProtocol.TeleportWorld(id)));
         assertEquals(new WorldControlWireProtocol.ArchiveWorld(id), roundTrip(new WorldControlWireProtocol.ArchiveWorld(id)));
         assertEquals(new WorldControlWireProtocol.RestoreWorld(id), roundTrip(new WorldControlWireProtocol.RestoreWorld(id)));
+        assertEquals(new WorldControlWireProtocol.CloneWorld(id, "build_copy", "Build Copy"),
+                roundTrip(new WorldControlWireProtocol.CloneWorld(id, "build_copy", "Build Copy")));
+        assertEquals(new WorldControlWireProtocol.DeleteWorld(id, "build"),
+                roundTrip(new WorldControlWireProtocol.DeleteWorld(id, "build")));
     }
 
     @Test
