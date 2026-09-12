@@ -2,7 +2,8 @@ package com.halokaryamedia.lazybuilder.world.transfer;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +23,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * Event-driven chunk transfer owner for client uploads/downloads.
  *
  * <p>No polling loop, socket worker, or background cleanup thread is owned here.
- * Network adapters call these methods only in response to explicit protocol events.</p>
+ * Network adapters call these methods only in response to explicit protocol events.
+ * Each active transfer keeps one seekable file channel open so chunk I/O is O(n)
+ * over the transferred bytes instead of repeatedly reopening and skipping from the
+ * beginning of a multi-gigabyte file.</p>
  */
 public final class TransferSessionService {
     private final Path importsRoot;
@@ -64,13 +68,23 @@ public final class TransferSessionService {
         UUID sessionId = UUID.randomUUID();
         Path partial = directChild(tempRoot, sessionId + ".upload.part");
         Files.deleteIfExists(partial);
-        Files.createFile(partial);
-        int chunks = chunkCount(totalBytes, policy.chunkBytes());
-        UploadSession session = new UploadSession(
-                sessionId, ownerId, safeName, target, partial, totalBytes, digest, policy.chunkBytes(), chunks
-        );
-        uploads.put(sessionId, session);
-        return session.descriptor();
+        FileChannel channel = null;
+        try {
+            channel = FileChannel.open(partial,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE);
+            int chunks = chunkCount(totalBytes, policy.chunkBytes());
+            UploadSession session = new UploadSession(
+                    sessionId, ownerId, safeName, target, partial, totalBytes, digest,
+                    policy.chunkBytes(), chunks, channel
+            );
+            uploads.put(sessionId, session);
+            return session.descriptor();
+        } catch (IOException | RuntimeException failure) {
+            closeQuietly(channel);
+            Files.deleteIfExists(partial);
+            throw failure;
+        }
     }
 
     public UploadProgress acceptUploadChunk(
@@ -95,10 +109,7 @@ public final class TransferSessionService {
                 throw new IllegalArgumentException("Non-final upload chunk must use full chunk size");
             }
 
-            try (OutputStream out = Files.newOutputStream(session.partial,
-                    StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
-                out.write(bytes);
-            }
+            writeFully(session.channel, ByteBuffer.wrap(bytes), session.receivedBytes);
             session.receivedBytes = nextTotal;
             session.nextChunkIndex++;
             return new UploadProgress(session.receivedBytes, session.totalBytes, session.nextChunkIndex, session.totalChunks);
@@ -113,6 +124,8 @@ public final class TransferSessionService {
                 if (session.receivedBytes != session.totalBytes || session.nextChunkIndex != session.totalChunks) {
                     throw new IOException("Upload is incomplete");
                 }
+                session.channel.force(false);
+                session.channel.close();
                 String actual = sha256(session.partial);
                 if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
@@ -120,7 +133,11 @@ public final class TransferSessionService {
                 uploads.remove(sessionId, session);
                 return session.target;
             } catch (IOException | RuntimeException failure) {
-                abortUploadInternal(sessionId, session);
+                try {
+                    abortUploadInternal(sessionId, session);
+                } catch (IOException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
                 throw failure;
             }
         }
@@ -146,18 +163,25 @@ public final class TransferSessionService {
             throw new IOException("Export artifact does not exist: " + safeName);
         }
 
-        // Hashing can be expensive for multi-gigabyte exports. It intentionally runs
-        // outside every other transfer session's lock so one user cannot serialize all
-        // active clients while a checksum is being calculated.
+        // Hash once before publication. This remains outside every other session's
+        // lock so one large artifact cannot serialize unrelated transfers.
         long size = Files.size(artifact);
         String digest = sha256(artifact);
         UUID sessionId = UUID.randomUUID();
         int chunks = chunkCount(size, policy.chunkBytes());
-        DownloadSession session = new DownloadSession(
-                sessionId, ownerId, safeName, artifact, size, digest, policy.chunkBytes(), chunks
-        );
-        downloads.put(sessionId, session);
-        return session.descriptor();
+        FileChannel channel = null;
+        try {
+            channel = FileChannel.open(artifact, StandardOpenOption.READ);
+            DownloadSession session = new DownloadSession(
+                    sessionId, ownerId, safeName, artifact, size, digest,
+                    policy.chunkBytes(), chunks, channel
+            );
+            downloads.put(sessionId, session);
+            return session.descriptor();
+        } catch (IOException | RuntimeException failure) {
+            closeQuietly(channel);
+            throw failure;
+        }
     }
 
     public DownloadChunk readDownloadChunk(UUID ownerId, UUID sessionId, int chunkIndex) throws IOException {
@@ -172,22 +196,14 @@ public final class TransferSessionService {
             long offset = (long) chunkIndex * session.chunkBytes;
             int expected = (int) Math.min(session.chunkBytes, session.totalBytes - offset);
             byte[] data = new byte[expected];
-            try (InputStream in = Files.newInputStream(session.artifact)) {
-                in.skipNBytes(offset);
-                int read = 0;
-                while (read < expected) {
-                    int count = in.read(data, read, expected - read);
-                    if (count < 0) throw new IOException("Export artifact changed during download");
-                    read += count;
-                }
-            }
+            readFully(session.channel, ByteBuffer.wrap(data), offset);
             session.nextChunkIndex++;
             boolean last = session.nextChunkIndex == session.totalChunks;
             return new DownloadChunk(chunkIndex, data, last);
         }
     }
 
-    public void finishDownload(UUID ownerId, UUID sessionId) {
+    public void finishDownload(UUID ownerId, UUID sessionId) throws IOException {
         DownloadSession session = requireDownload(ownerId, sessionId);
         synchronized (session) {
             requireDownload(ownerId, sessionId, session);
@@ -195,14 +211,16 @@ public final class TransferSessionService {
                 throw new IllegalStateException("Download is incomplete");
             }
             downloads.remove(sessionId, session);
+            session.channel.close();
         }
     }
 
-    public void abortDownload(UUID ownerId, UUID sessionId) {
+    public void abortDownload(UUID ownerId, UUID sessionId) throws IOException {
         DownloadSession session = requireDownload(ownerId, sessionId);
         synchronized (session) {
             requireDownload(ownerId, sessionId, session);
             downloads.remove(sessionId, session);
+            session.channel.close();
         }
     }
 
@@ -214,16 +232,15 @@ public final class TransferSessionService {
             synchronized (session) {
                 if (uploads.get(session.sessionId) != session) continue;
                 try { abortUploadInternal(session.sessionId, session); }
-                catch (IOException exception) {
-                    if (failure == null) failure = exception;
-                    else failure.addSuppressed(exception);
-                }
+                catch (IOException exception) { failure = combine(failure, exception); }
             }
         }
         for (DownloadSession session : downloads.values().toArray(DownloadSession[]::new)) {
             if (!session.ownerId.equals(ownerId)) continue;
             synchronized (session) {
-                downloads.remove(session.sessionId, session);
+                if (!downloads.remove(session.sessionId, session)) continue;
+                try { session.channel.close(); }
+                catch (IOException exception) { failure = combine(failure, exception); }
             }
         }
         if (failure != null) throw failure;
@@ -262,7 +279,32 @@ public final class TransferSessionService {
 
     private void abortUploadInternal(UUID sessionId, UploadSession session) throws IOException {
         uploads.remove(sessionId, session);
-        Files.deleteIfExists(session.partial);
+        IOException failure = null;
+        try { session.channel.close(); }
+        catch (IOException exception) { failure = exception; }
+        try { Files.deleteIfExists(session.partial); }
+        catch (IOException exception) { failure = combine(failure, exception); }
+        if (failure != null) throw failure;
+    }
+
+    private static void writeFully(FileChannel channel, ByteBuffer source, long position) throws IOException {
+        long cursor = position;
+        while (source.hasRemaining()) {
+            int written = channel.write(source, cursor);
+            if (written < 0) throw new IOException("Upload channel closed while writing");
+            if (written == 0) continue;
+            cursor += written;
+        }
+    }
+
+    private static void readFully(FileChannel channel, ByteBuffer target, long position) throws IOException {
+        long cursor = position;
+        while (target.hasRemaining()) {
+            int read = channel.read(target, cursor);
+            if (read < 0) throw new IOException("Export artifact changed during download");
+            if (read == 0) continue;
+            cursor += read;
+        }
     }
 
     private static int chunkCount(long totalBytes, int chunkBytes) {
@@ -324,6 +366,17 @@ public final class TransferSessionService {
         catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
     }
 
+    private static IOException combine(IOException first, IOException next) {
+        if (first == null) return next;
+        first.addSuppressed(next);
+        return first;
+    }
+
+    private static void closeQuietly(FileChannel channel) {
+        if (channel == null) return;
+        try { channel.close(); } catch (IOException ignored) { }
+    }
+
     public record UploadProgress(long receivedBytes, long totalBytes, int nextChunkIndex, int totalChunks) {}
 
     public record DownloadChunk(int chunkIndex, byte[] bytes, boolean last) {
@@ -343,11 +396,13 @@ public final class TransferSessionService {
         private final String sha256;
         private final int chunkBytes;
         private final int totalChunks;
+        private final FileChannel channel;
         private long receivedBytes;
         private int nextChunkIndex;
 
         private UploadSession(UUID sessionId, UUID ownerId, String fileName, Path target, Path partial,
-                              long totalBytes, String sha256, int chunkBytes, int totalChunks) {
+                              long totalBytes, String sha256, int chunkBytes, int totalChunks,
+                              FileChannel channel) {
             this.sessionId = sessionId;
             this.ownerId = ownerId;
             this.fileName = fileName;
@@ -357,6 +412,7 @@ public final class TransferSessionService {
             this.sha256 = sha256;
             this.chunkBytes = chunkBytes;
             this.totalChunks = totalChunks;
+            this.channel = channel;
         }
 
         private TransferDescriptor descriptor() {
@@ -373,10 +429,12 @@ public final class TransferSessionService {
         private final String sha256;
         private final int chunkBytes;
         private final int totalChunks;
+        private final FileChannel channel;
         private int nextChunkIndex;
 
         private DownloadSession(UUID sessionId, UUID ownerId, String fileName, Path artifact,
-                                long totalBytes, String sha256, int chunkBytes, int totalChunks) {
+                                long totalBytes, String sha256, int chunkBytes, int totalChunks,
+                                FileChannel channel) {
             this.sessionId = sessionId;
             this.ownerId = ownerId;
             this.fileName = fileName;
@@ -385,6 +443,7 @@ public final class TransferSessionService {
             this.sha256 = sha256;
             this.chunkBytes = chunkBytes;
             this.totalChunks = totalChunks;
+            this.channel = channel;
         }
 
         private TransferDescriptor descriptor() {
