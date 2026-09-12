@@ -38,6 +38,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 import com.halokaryamedia.lazybuilder.world.registry.YamlWorldRegistryPersistence;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferPolicy;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
+import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -103,8 +104,12 @@ public final class WorldManager {
                 importsRoot, maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
         );
 
-        int transferChunkBytes = Math.max(1024,
-                plugin.getConfig().getInt("world-manager.transfer.chunk-bytes", 24 * 1024));
+        int configuredTransferChunkBytes = plugin.getConfig().getInt(
+                "world-manager.transfer.chunk-bytes", TransferWireProtocol.MAX_CHUNK_BYTES);
+        int transferChunkBytes = Math.min(
+                TransferWireProtocol.MAX_CHUNK_BYTES,
+                Math.max(1024, configuredTransferChunkBytes)
+        );
         long maxUploadMb = Math.max(1L,
                 plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 16_384L));
         this.transferPolicy = new TransferPolicy(
