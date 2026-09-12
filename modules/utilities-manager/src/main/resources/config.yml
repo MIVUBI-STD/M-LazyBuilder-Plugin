@@ -1,0 +1,3 @@
+# Utilities-Manager starts with an intentionally small configuration surface.
+# Feature-specific settings are added under their owning feature when implemented.
+features: {}
