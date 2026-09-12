@@ -1,8 +1,22 @@
-# LazyBuilder Plugin — Stable Context
+# LazyBuilder — Stable Context
 
 ## Product
 
-LazyBuilder is a Minecraft Java 1.21.4 builder-server workspace. Its purpose is to replace difficult, legacy, or overlapping server workflows with a smaller, clearer, maintainable system.
+LazyBuilder is the umbrella product for a Minecraft Java 1.21.4 builder-server workspace. Its purpose is to replace difficult, legacy, or overlapping server workflows with a smaller, clearer, maintainable system.
+
+LazyBuilder is **not** the World Manager module name.
+
+Canonical component naming:
+
+```text
+LazyBuilder
+├── Server-Manager
+├── Plugin-Manager
+├── World-Manager
+└── Utilities-Manager
+```
+
+External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external and are not renamed or rebuilt by LazyBuilder unless a separate explicit decision is made later.
 
 ## Repository authority
 
@@ -26,65 +40,101 @@ LazyBuilder follows the same repository-development discipline used by the user'
 
 The process is mirrored; product-specific implementation remains native to LazyBuilder rather than copying unrelated Blockbench/MCP architecture.
 
-## Plugin modernization objective
+## Server workspace target
 
-Existing plugins are classified by the smallest stable outcome:
-
-```text
-KEEP
-UPDATE / CLEAN UP
-MERGE / CONSOLIDATE
-REBUILD
-NEW PLUGIN
-RETIRE / REPLACE
-```
-
-Third-party software is not preserved merely because it already exists. Rebuild is preferred when the required scope is narrow enough that a native implementation materially improves operation, ownership, and long-term maintenance.
-
-## First confirmed rebuild: World Manager
-
-Multiverse-Core is being replaced rather than wrapped as the long-term world-management owner.
-
-Target architecture:
+Fresh local-server layout:
 
 ```text
-LazyBuilder Client Mod
-        │
-        │ UI / map interaction
-        ▼
-LazyBuilder Server Plugin
-        │
-        │ world lifecycle / validation / authority
-        ▼
-Paper API / Minecraft 1.21.4
+Work Server - 1.21.4/
+├── LazyBuilder.exe
+├── server/
+│   ├── paper.jar
+│   └── plugins/
+├── world-system/
+│   ├── worlds/
+│   ├── imports/
+│   ├── exports/
+│   ├── backups/
+│   ├── archives/
+│   └── work/
+├── tools/
+│   └── lazybuilder/
+└── README-Server.txt
 ```
 
-Multiverse may be used only as migration/reference evidence while transition is underway; it is not the intended runtime dependency of the finished World Manager.
+All world-related lifecycle data lives under `world-system/`; Paper/runtime/plugin files stay under `server/`.
 
-## World Manager confirmed requirements
+The default server world is a clean BUILD_READY flat builder world. Nether and End are disabled by default because this server is build-focused.
 
-### Main surface
+## Component ownership
 
-- world map is the primary visual surface;
-- Xaero World Map is reused for map preview rather than rebuilding a full map engine;
-- the only Xaero behavior required beyond preview/navigation is **Teleport to Location**;
-- LazyBuilder owns world operations and settings.
+### Server-Manager
 
-### Create World
+Lives in `LazyBuilder.exe` and owns only server-process/desktop concerns:
 
-Creation is intentionally minimal:
+- start/stop/restart Paper safely;
+- health summary;
+- CPU/RAM status;
+- basic server settings;
+- crash/process handling.
 
-```text
-Create World
-├── Flat World
-└── Void World
-```
+It is not a Paper plugin.
 
-No normal/default terrain generator is required for the current builder workflow.
+### Plugin-Manager
 
-Every newly created world receives an internal `BUILD_READY` profile automatically. Create UI should not expose advanced world settings.
+Lives in `LazyBuilder.exe` and owns plugin-file management:
 
-### BUILD_READY defaults
+- plugin discovery;
+- functional categorization;
+- install/update;
+- duplicate-version prevention;
+- dependency/compatibility checks;
+- enable/disable using restart-safe file movement;
+- safe removal while preserving plugin data by default.
+
+It is not a Paper plugin.
+
+### World-Manager
+
+Paper-side authority for world lifecycle. Multiverse-Core and VoidWorld are replaced rather than wrapped as long-term authorities.
+
+World-Manager owns:
+
+- browse/select worlds;
+- create Flat/Void worlds;
+- BUILD_READY application;
+- teleport to world/map location;
+- load/unload;
+- clone;
+- backup;
+- archive/restore;
+- safe delete;
+- import/export;
+- world settings;
+- conversion integration;
+- metadata/display state.
+
+The desktop app may present these actions but must not duplicate World-Manager business logic or become a second filesystem authority.
+
+### Utilities-Manager
+
+Paper-side builder convenience module. Initial target scope:
+
+- advanced fly;
+- noclip;
+- night vision;
+- iron-door toggle;
+- double-slab helper;
+- glazed-terracotta rotation helper;
+- banner creator;
+- armor-color creator;
+- special builder items;
+- spectator helpers;
+- builder-safe protections for explosions, leaves decay, farmland trample, and dragon-egg teleport behavior.
+
+Do not place world management, performance optimization, economy, home/warp/chat suites, or WorldEdit aliases in Utilities-Manager.
+
+## BUILD_READY defaults
 
 New builder worlds should be immediately safe and predictable for building:
 
@@ -103,35 +153,96 @@ New builder worlds should be immediately safe and predictable for building:
 
 Flat World uses a simple vanilla-compatible flat world with structures disabled. Void World is empty terrain with a small safe spawn platform by default unless later requirements change that decision.
 
-### World Settings
+## Plugin modernization decisions
 
-Advanced configuration is separated from creation and belongs to World Settings. It will own additional world behavior such as gamerules, spawn rules, and other explicit overrides.
+Current baseline direction:
 
-### Other confirmed World Manager capabilities
+```text
+KEEP / EXTERNAL BUILD TOOLS
+- Axiom
+- FastAsyncWorldEdit
+- FastAsyncVoxelSniper
+- ezEdits
+- MetaBrushes
 
-- browse/select worlds;
-- teleport to world;
-- teleport to map location;
-- load/unload;
-- clone;
-- archive/delete with safety confirmation;
-- import/export;
-- world settings;
-- metadata/display information.
+REPLACE WITH LAZYBUILDER MODULES
+- Multiverse-Core -> World-Manager
+- VoidWorld -> World-Manager
+- BuildersUtilities -> Utilities-Manager target scope
 
-Feature design is discussed and specified sequentially before implementation so the source remains small and intentional.
+REMOVE FROM NEW BASELINE
+- EssentialsX
+- EssentialsXChat
+- LightOptimizer
+- MasterOptimizer
+- ChunkManager
+- PlaceholderAPI (no current required consumer)
+- SimpleCloud-Placeholder
+```
+
+Performance authority is Paper 1.21.4 native configuration rather than generic optimizer plugins.
+
+## Desktop UX direction
+
+Primary navigation is intentionally small:
+
+```text
+Dashboard
+Worlds
+Plugins
+Settings
+```
+
+Dashboard only shows server state/health plus CPU/RAM and start/stop/restart actions. Technical details, logs, console, Java/JVM settings, and diagnostics belong under contextual problem views or Advanced settings rather than primary navigation.
+
+Worlds delegates to World-Manager. Plugins delegates to Plugin-Manager.
+
+## Repository layout direction
+
+Canonical repository layout is documented in `docs/04-system/repository-layout.md`.
+
+Target top-level structure:
+
+```text
+apps/lazybuilder-desktop/
+modules/world-manager/
+modules/utilities-manager/
+client/fabric/
+shared/
+docs/
+```
+
+The existing working World-Manager implementation must be structurally relocated rather than rewritten without reason. Current Fabric code similarly moves under `client/fabric/` while retaining its Minecraft-side responsibility.
 
 ## Architecture principles
 
 - one canonical owner per responsibility;
 - one execution path per behavior;
-- no mandatory master/core plugin without real runtime need;
+- no mandatory master/core Paper plugin without real runtime need;
 - related modules may share one repository but remain independently deployable when lifecycle requires it;
-- UI/client code never becomes server authority;
+- desktop/client UI never becomes server authority;
 - destructive world operations are server validated;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
-- source/CI proof remains distinct from live-server proof.
+- source/CI proof remains distinct from live-server proof;
+- no runtime hot-reload hacks for Paper plugins;
+- no background optimizer layer without demonstrated need.
 
 ## Current phase
 
-World Manager product specification and repository-development-system alignment. Implementation should begin only after the next sequential feature contracts are sufficiently defined.
+Repository restructuring and product renaming are now the active remote-GitHub phase.
+
+The next bounded implementation sequence is:
+
+```text
+1. establish parent/module build structure
+2. relocate existing World-Manager source/resources/tests without behavior changes
+3. relocate Fabric project to client/fabric
+4. introduce only genuinely shared protocol/models
+5. add Utilities-Manager skeleton
+6. add LazyBuilder desktop skeleton with Server-Manager + Plugin-Manager boundaries
+7. wire desktop control to existing World-Manager authority
+8. package release artifacts
+9. perform LOCAL_CODE / LIVE_SERVER validation
+```
+
+Each structural slice should remain source/CI green before continuing. Live-server proof remains separate.
