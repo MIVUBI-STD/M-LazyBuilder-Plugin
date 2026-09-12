@@ -20,16 +20,19 @@ This directory owns current continuation/proof only. Durable product and archite
 - Spawning remains Paper/vanilla-backed without a custom spawn engine;
 - file operations have one request-bound operation coordinator plus one path-safe local repository boundary;
 - staged file work lives under `plugins/LazyBuilder/world/work`; there is no background file watcher or idle worker;
-- snapshot copies omit `session.lock`; clone copies additionally omit `uid.dat`, `playerdata`, `advancements`, and `stats`;
-- Archive/Restore is now a metadata lifecycle operation: Archive unloads, disables Auto Load, and marks `ARCHIVED` without moving the world folder; Restore marks `ACTIVE`, remains unloaded, and keeps Auto Load OFF;
-- archive persistence failure rolls registry metadata back and restores the previous loaded state when possible;
-- all Archive operations use the same per-world conflict lease used by future Clone/Delete/Import/Export/Conversion;
+- Archive/Restore is implemented as metadata lifecycle without moving world folders;
+- Clone is phased: prepare/unload on Paper, sanitized copy/publish on a request worker, then source load-state restoration; clones receive fresh identity and Auto Load OFF;
+- Delete is phased and reversible before commit: the owned world folder is moved into an owned workspace, durable registry removal is committed, then the workspace is deleted;
+- Clone/Delete use the same per-world conflict lease as Archive and future Import/Export/Conversion;
+- Clone/Delete source and targeted unit tests pass `mvn verify` remotely;
 - Xaero World Map remains limited to Map Preview, location interaction, and the approved Export Area presentation boundary.
 
 ## Next Action
 
-Implement **Clone**, then **Delete**, over the existing file repository and operation coordinator. Clone should stage a sanitized copy, publish only after copy success, register a fresh world identity with Auto Load OFF, and avoid playerdata/advancements/stats. Delete must require an unloaded target, delete only the registry-owned direct world folder, and remove registry metadata only after filesystem deletion succeeds. Heavy copy/delete I/O must stay off the Paper main thread in the eventual command/protocol execution layer.
+Implement the **internal conversion runtime** inside World Manager: converter runtime store, stable-release update metadata, compatibility/checksum gate, on-demand process lifecycle, cancellation/timeout, and one-job-at-a-time ownership. Keep the converter process absent while idle. Do not expose Chunker as a separate user-facing product or menu.
+
+After the runtime boundary is stable, connect Import / Export to the existing file-operation and conversion owners.
 
 ## Proof State
 
-GitHub Actions `mvn verify` is green through the file-operations foundation. The Archive/Restore lifecycle slice has source and targeted tests but must receive its own green CI result before compile/test success is claimed. Actual Paper generation, live archive player evacuation/unload, filesystem behavior on the live host, Xaero interaction, client file transfer, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.
+GitHub Actions `mvn verify` is green through Clone/Delete source and targeted unit tests. This proves remote compilation and unit behavior only. Actual Paper world generation/lifecycle, multi-gigabyte filesystem behavior, player evacuation, live clone/delete, Xaero interaction, client file transfer, converter execution, and Java↔Bedrock conversion still require the appropriate LOCAL_CODE/LIVE_SERVER proof.
