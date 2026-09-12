@@ -79,12 +79,14 @@ public final class XaeroMapActions {
             }
         }).dimensions(BUTTON_X, EXPORT_BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
 
-        ScreenMouseEvents.allowMouseClick(screen).register((target, event) -> {
-            if (event.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT || mode == SelectionMode.IDLE) return true;
-            if (insideControl(event.x(), event.y())) return true;
+        // Fabric API 0.119.4 / Minecraft 1.21.4 exposes the pre-MouseButtonEvent
+        // callback shape: screen, mouseX, mouseY, button.
+        ScreenMouseEvents.allowMouseClick(screen).register((target, mouseX, mouseY, button) -> {
+            if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT || mode == SelectionMode.IDLE) return true;
+            if (insideControl(mouseX, mouseY)) return true;
 
             try {
-                Corner point = mouseWorldPoint(client, target, event.x(), event.y());
+                Corner point = mouseWorldPoint(client, target, mouseX, mouseY);
                 switch (mode) {
                     case TELEPORT -> {
                         resetSelection();
