@@ -26,6 +26,8 @@ public final class WorldControlWireProtocol {
     private static final int TELEPORT = 5;
     private static final int ARCHIVE = 6;
     private static final int RESTORE = 7;
+    private static final int CLONE = 8;
+    private static final int DELETE = 9;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
@@ -35,7 +37,7 @@ public final class WorldControlWireProtocol {
     private WorldControlWireProtocol() {}
 
     public sealed interface Request permits ListWorlds, CreateWorld, LoadWorld, UnloadWorld,
-            TeleportWorld, ArchiveWorld, RestoreWorld {}
+            TeleportWorld, ArchiveWorld, RestoreWorld, CloneWorld, DeleteWorld {}
 
     public record ListWorlds() implements Request {}
 
@@ -52,6 +54,21 @@ public final class WorldControlWireProtocol {
     public record TeleportWorld(UUID worldId) implements Request { public TeleportWorld { Objects.requireNonNull(worldId); } }
     public record ArchiveWorld(UUID worldId) implements Request { public ArchiveWorld { Objects.requireNonNull(worldId); } }
     public record RestoreWorld(UUID worldId) implements Request { public RestoreWorld { Objects.requireNonNull(worldId); } }
+
+    public record CloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) implements Request {
+        public CloneWorld {
+            Objects.requireNonNull(sourceWorldId, "sourceWorldId");
+            destinationFolder = requireString(destinationFolder, "destinationFolder");
+            displayName = requireString(displayName, "displayName");
+        }
+    }
+
+    public record DeleteWorld(UUID worldId, String typedFolderName) implements Request {
+        public DeleteWorld {
+            Objects.requireNonNull(worldId, "worldId");
+            typedFolderName = requireString(typedFolderName, "typedFolderName");
+        }
+    }
 
     public sealed interface Response permits WorldList, WorldChanged, TeleportOk, ErrorResponse {}
 
@@ -113,6 +130,15 @@ public final class WorldControlWireProtocol {
                 case TeleportWorld teleport -> writeUuid(out, teleport.worldId());
                 case ArchiveWorld archive -> writeUuid(out, archive.worldId());
                 case RestoreWorld restore -> writeUuid(out, restore.worldId());
+                case CloneWorld clone -> {
+                    writeUuid(out, clone.sourceWorldId());
+                    writeString(out, clone.destinationFolder());
+                    writeString(out, clone.displayName());
+                }
+                case DeleteWorld delete -> {
+                    writeUuid(out, delete.worldId());
+                    writeString(out, delete.typedFolderName());
+                }
             }
         });
     }
@@ -128,6 +154,8 @@ public final class WorldControlWireProtocol {
                 case TELEPORT -> new TeleportWorld(readUuid(in));
                 case ARCHIVE -> new ArchiveWorld(readUuid(in));
                 case RESTORE -> new RestoreWorld(readUuid(in));
+                case CLONE -> new CloneWorld(readUuid(in), readString(in), readString(in));
+                case DELETE -> new DeleteWorld(readUuid(in), readString(in));
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -197,6 +225,8 @@ public final class WorldControlWireProtocol {
             case TeleportWorld ignored -> TELEPORT;
             case ArchiveWorld ignored -> ARCHIVE;
             case RestoreWorld ignored -> RESTORE;
+            case CloneWorld ignored -> CLONE;
+            case DeleteWorld ignored -> DELETE;
         };
     }
 
