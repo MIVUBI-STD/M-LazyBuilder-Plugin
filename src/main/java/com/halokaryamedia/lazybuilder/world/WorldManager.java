@@ -13,7 +13,10 @@ import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeState;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeStateRegistry;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimePolicy;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
+import com.halokaryamedia.lazybuilder.world.conversion.LocalConversionRuntimeStore;
 import com.halokaryamedia.lazybuilder.world.files.LocalWorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
@@ -29,16 +32,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.logging.Level;
 
-/**
- * Canonical server-side owner for World Manager runtime coordination.
- *
- * <p>Startup performs one bounded registry read plus requested auto-loads only.
- * No converter process, polling loop, file watcher, preview generator, or
- * repeated world scan is started while the feature is idle.</p>
- */
+/** Canonical server-side owner for World Manager runtime coordination. */
 public final class WorldManager {
     private final LazyBuilderPlugin plugin;
     private final ConversionRuntimePolicy conversionRuntimePolicy;
+    private final ConversionRuntimeStore conversionRuntimeStore;
+    private final ConversionJobCoordinator conversionJobCoordinator;
     private final BuildReadyPolicy buildReadyPolicy;
     private final WorldRegistry worldRegistry;
     private final WorldRegistryPersistence registryPersistence;
@@ -61,6 +60,7 @@ public final class WorldManager {
         this.worldRegistry = new WorldRegistry();
         this.runtimeStates = new WorldRuntimeStateRegistry();
         this.worldOperationCoordinator = new WorldOperationCoordinator();
+        this.conversionJobCoordinator = new ConversionJobCoordinator();
 
         Path worldDataRoot = plugin.getDataFolder().toPath().resolve("world");
         Path registryPath = worldDataRoot.resolve("registry.yml");
@@ -69,48 +69,29 @@ public final class WorldManager {
                 plugin.getServer().getWorldContainer().toPath(),
                 worldDataRoot.resolve("work")
         );
+        this.conversionRuntimeStore = new LocalConversionRuntimeStore(worldDataRoot.resolve("runtime").resolve("converter"));
         this.runtimeGateway = new PaperWorldRuntimeGateway(
                 plugin.getServer(),
                 () -> plugin.getConfig().getString("world-manager.fallback-world", "")
         );
         this.worldRuntimeService = new WorldRuntimeService(worldRegistry, runtimeStates, runtimeGateway);
         this.worldCreationService = new WorldCreationService(
-                worldRegistry,
-                registryPersistence,
-                runtimeGateway,
-                runtimeStates,
-                buildReadyPolicy
+                worldRegistry, registryPersistence, runtimeGateway, runtimeStates, buildReadyPolicy
         );
         this.worldTeleportService = new WorldTeleportService(worldRegistry, worldRuntimeService, runtimeGateway);
         this.worldSettingsService = new WorldSettingsService(
-                worldRegistry,
-                registryPersistence,
-                worldRuntimeService,
-                runtimeGateway,
-                buildReadyPolicy
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy
         );
         this.worldLifecycleService = new WorldLifecycleService(
-                worldRegistry,
-                registryPersistence,
-                worldRuntimeService,
-                runtimeStates,
-                worldOperationCoordinator
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates, worldOperationCoordinator
         );
         this.worldCloneService = new WorldCloneService(
-                worldRegistry,
-                registryPersistence,
-                worldRuntimeService,
-                runtimeStates,
-                worldOperationCoordinator,
-                worldFileRepository
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates,
+                worldOperationCoordinator, worldFileRepository
         );
         this.worldDeleteService = new WorldDeleteService(
-                worldRegistry,
-                registryPersistence,
-                worldRuntimeService,
-                runtimeStates,
-                worldOperationCoordinator,
-                worldFileRepository
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates,
+                worldOperationCoordinator, worldFileRepository
         );
     }
 
@@ -140,59 +121,25 @@ public final class WorldManager {
                 }
             }
         }
-
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size() + " managed worlds.");
     }
 
     public void stop() {
-        // Current services are request-bound and own no persistent background workers.
+        // Conversion/file workers are request-bound; there is no idle process to stop.
     }
 
-    public ConversionRuntimePolicy conversionRuntimePolicy() {
-        return conversionRuntimePolicy;
-    }
-
-    public BuildReadyPolicy buildReadyPolicy() {
-        return buildReadyPolicy;
-    }
-
-    public WorldRegistry worldRegistry() {
-        return worldRegistry;
-    }
-
-    public WorldRuntimeService worldRuntimeService() {
-        return worldRuntimeService;
-    }
-
-    public WorldCreationService worldCreationService() {
-        return worldCreationService;
-    }
-
-    public WorldTeleportService worldTeleportService() {
-        return worldTeleportService;
-    }
-
-    public WorldSettingsService worldSettingsService() {
-        return worldSettingsService;
-    }
-
-    public WorldOperationCoordinator worldOperationCoordinator() {
-        return worldOperationCoordinator;
-    }
-
-    public WorldFileRepository worldFileRepository() {
-        return worldFileRepository;
-    }
-
-    public WorldLifecycleService worldLifecycleService() {
-        return worldLifecycleService;
-    }
-
-    public WorldCloneService worldCloneService() {
-        return worldCloneService;
-    }
-
-    public WorldDeleteService worldDeleteService() {
-        return worldDeleteService;
-    }
+    public ConversionRuntimePolicy conversionRuntimePolicy() { return conversionRuntimePolicy; }
+    public ConversionRuntimeStore conversionRuntimeStore() { return conversionRuntimeStore; }
+    public ConversionJobCoordinator conversionJobCoordinator() { return conversionJobCoordinator; }
+    public BuildReadyPolicy buildReadyPolicy() { return buildReadyPolicy; }
+    public WorldRegistry worldRegistry() { return worldRegistry; }
+    public WorldRuntimeService worldRuntimeService() { return worldRuntimeService; }
+    public WorldCreationService worldCreationService() { return worldCreationService; }
+    public WorldTeleportService worldTeleportService() { return worldTeleportService; }
+    public WorldSettingsService worldSettingsService() { return worldSettingsService; }
+    public WorldOperationCoordinator worldOperationCoordinator() { return worldOperationCoordinator; }
+    public WorldFileRepository worldFileRepository() { return worldFileRepository; }
+    public WorldLifecycleService worldLifecycleService() { return worldLifecycleService; }
+    public WorldCloneService worldCloneService() { return worldCloneService; }
+    public WorldDeleteService worldDeleteService() { return worldDeleteService; }
 }
