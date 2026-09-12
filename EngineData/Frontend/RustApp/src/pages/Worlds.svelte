@@ -24,6 +24,8 @@
   let operationTask: WorldTaskSnapshot | null = null;
   let cloneSource: ManagedWorldSummary | null = null;
   let cloneName = '';
+  let exportSource: ManagedWorldSummary | null = null;
+  let exportName = '';
 
   async function refresh() {
     if (busy) return;
@@ -37,6 +39,7 @@
         operationTask = null;
         operationBusyWorldId = null;
         cloneSource = null;
+        exportSource = null;
         error = '';
         connectionStatus = 'Start the server to manage worlds';
         return;
@@ -128,6 +131,7 @@
   }
 
   function openClone(world: ManagedWorldSummary) {
+    exportSource = null;
     cloneSource = world;
     cloneName = `${world.displayName} Copy`;
   }
@@ -150,6 +154,37 @@
       });
       cloneSource = null;
       cloneName = '';
+      await pollTask(operationTask.taskId);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      operationBusyWorldId = null;
+      await refresh();
+    }
+  }
+
+  function openExport(world: ManagedWorldSummary) {
+    cloneSource = null;
+    exportSource = world;
+    exportName = `${slugify(world.displayName) || 'world'}-export`;
+  }
+
+  async function runExport() {
+    if (!exportSource || operationBusyWorldId) return;
+    const artifactName = exportName.trim();
+    if (!artifactName) return;
+
+    operationBusyWorldId = exportSource.id;
+    operationTask = null;
+    error = '';
+    try {
+      operationTask = await runtimeProduct.worlds.export({
+        worldId: exportSource.id,
+        targetFormat: 'JAVA_1_21_4',
+        artifactName
+      });
+      exportSource = null;
+      exportName = '';
       await pollTask(operationTask.taskId);
     } catch (e) {
       error = String(e);
@@ -263,6 +298,18 @@
   </div>
 {/if}
 
+{#if exportSource}
+  <div class="card" style="margin-top: 12px">
+    <strong>Export {exportSource.displayName}</strong>
+    <div class="world-form">
+      <input bind:value={exportName} disabled={operationBusyWorldId !== null} placeholder="Artifact name" />
+      <button disabled={operationBusyWorldId !== null || !exportName.trim()} onclick={runExport}>Export Java ZIP</button>
+      <button disabled={operationBusyWorldId !== null} onclick={() => (exportSource = null)}>Cancel</button>
+    </div>
+    <div class="subtle">Native Java 1.21.4 export. The source is restored after the snapshot is captured while packaging continues off the Paper main thread.</div>
+  </div>
+{/if}
+
 {#each worlds as world}
   <div class="card" style="margin-top: 12px">
     <div class="world-row">
@@ -283,6 +330,7 @@
         {#if world.lifecycle === 'ACTIVE'}
           <button disabled={busy || operationBusyWorldId !== null} onclick={() => runBackup(world)}>Backup</button>
           <button disabled={busy || operationBusyWorldId !== null} onclick={() => openClone(world)}>Clone</button>
+          <button disabled={busy || operationBusyWorldId !== null} onclick={() => openExport(world)}>Export</button>
           <button
             disabled={busy || operationBusyWorldId !== null}
             onclick={() => runLifecycleTask(world, 'archive')}
