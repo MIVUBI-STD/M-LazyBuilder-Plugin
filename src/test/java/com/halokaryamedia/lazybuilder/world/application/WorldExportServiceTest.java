@@ -36,7 +36,7 @@ class WorldExportServiceTest {
     @TempDir Path tempDir;
 
     @Test
-    void nativeExportQuiescesPackagesAndRestoresLoadedWorldWithoutConverter() throws Exception {
+    void nativeExportRestoresLoadedWorldImmediatelyAfterSnapshot() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE, true);
         registry.register(world);
@@ -61,16 +61,26 @@ class WorldExportServiceTest {
                 store, updates, converter, new ConversionJobCoordinator()
         );
 
-        WorldExportService.ExportTask task = service.prepare(world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        WorldExportService.ExportTask task = service.prepare(
+                world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
         assertEquals(WorldRuntimeState.UNLOADED, states.get(world.id()));
-        WorldExportService.ExportResult result = service.executeFilePhase(task);
+
+        service.captureSnapshot(task);
+        assertEquals(WorldRuntimeState.UNLOADED, states.get(world.id()));
+
+        service.resumeSourceAfterSnapshot(task);
+        assertEquals(WorldRuntimeState.LOADED, states.get(world.id()));
+        assertTrue(task.sourceRestored());
+        assertEquals(1, runtime.unloadCount);
+        assertEquals(1, runtime.loadCount);
+
+        WorldExportService.ExportResult result = service.processSnapshot(task);
+        assertEquals(WorldRuntimeState.LOADED, states.get(world.id()));
         service.finish(task);
 
         assertFalse(result.converted());
         assertEquals(ExportArtifactType.JAVA_ZIP, artifacts.lastType);
         assertTrue(task.completed());
-        assertEquals(WorldRuntimeState.LOADED, states.get(world.id()));
-        assertEquals(1, runtime.unloadCount);
         assertEquals(1, runtime.loadCount);
         assertFalse(operations.isBusy(world.id()));
         assertEquals(WorldCopyProfile.SNAPSHOT, files.lastProfile);
