@@ -35,6 +35,34 @@ export type ManagedWorldSummary = {
   defaultGameMode: string;
 };
 
+export type CreateWorldRequest = {
+  folderName: string;
+  displayName: string;
+  kind: 'FLAT' | 'VOID';
+};
+
+export type WorldSettingsSnapshot = {
+  id: string;
+  displayName: string;
+  autoLoad: boolean;
+  defaultGameMode: string;
+  timeOfDayTicks: number;
+  weather: string;
+  naturalSpawning: boolean;
+  daylightCycle: boolean;
+  weatherCycle: boolean;
+};
+
+export type UpdateWorldSettingsRequest = Partial<{
+  autoLoad: boolean;
+  defaultGameMode: string;
+  timeOfDayTicks: number;
+  weather: string;
+  naturalSpawning: boolean;
+  daylightCycle: boolean;
+  weatherCycle: boolean;
+}>;
+
 export const runtimeApi = {
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
   startServer: () => invoke<void>('server_start'),
@@ -55,5 +83,13 @@ export const runtimeApi = {
   setPluginCategory: (pluginId: string, category: string) =>
     invoke<void>('plugin_set_category', { pluginId, category }),
 
-  listWorlds: () => invoke<ManagedWorldSummary[]>('world_list')
+  listWorlds: () => invoke<ManagedWorldSummary[]>('world_list'),
+  createWorld: (request: CreateWorldRequest) =>
+    invoke<ManagedWorldSummary>('world_create', { request }),
+  loadWorld: (worldId: string) => invoke<ManagedWorldSummary>('world_load', { worldId }),
+  unloadWorld: (worldId: string) => invoke<ManagedWorldSummary>('world_unload', { worldId }),
+  getWorldSettings: (worldId: string) =>
+    invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
+  updateWorldSettings: (worldId: string, request: UpdateWorldSettingsRequest) =>
+    invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request })
 };
