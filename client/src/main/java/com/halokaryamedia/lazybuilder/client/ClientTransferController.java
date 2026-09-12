@@ -20,6 +20,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * Client-side bounded transfer coordinator. Server sessions remain authoritative;
@@ -30,12 +31,26 @@ import java.util.concurrent.CompletableFuture;
  * 24 KiB payload while keeping memory and queue depth bounded.</p>
  */
 public final class ClientTransferController {
+    private static final Consumer<String> NO_UPLOAD_CALLBACK = ignored -> { };
+
     private Upload upload;
     private Download download;
+    private Consumer<String> uploadFinished = NO_UPLOAD_CALLBACK;
 
     public void chooseAndUploadImport() {
+        chooseAndUploadImport(NO_UPLOAD_CALLBACK);
+    }
+
+    public void chooseAndUploadImport(Consumer<String> onUploaded) {
         requireIdle();
-        ClientFileDialogs.chooseImport().thenAccept(optional -> optional.ifPresent(this::beginUpload));
+        uploadFinished = Objects.requireNonNull(onUploaded, "onUploaded");
+        ClientFileDialogs.chooseImport().thenAccept(optional -> clientExecute(() -> {
+            if (optional.isEmpty()) {
+                uploadFinished = NO_UPLOAD_CALLBACK;
+                return;
+            }
+            beginUpload(optional.get());
+        }));
     }
 
     public void downloadExport(String fileName) {
@@ -53,7 +68,10 @@ public final class ClientTransferController {
                 Upload state = upload;
                 upload = null;
                 closeQuietly(state == null ? null : state.channel);
+                Consumer<String> callback = uploadFinished;
+                uploadFinished = NO_UPLOAD_CALLBACK;
                 LazyBuilderClientNetworking.notifyPlayer("Upload complete: " + finished.fileName());
+                callback.accept(finished.fileName());
             }
             case TransferWireProtocol.DownloadAccepted accepted -> onDownloadAccepted(accepted.descriptor());
             case TransferWireProtocol.DownloadChunkData chunk -> onDownloadChunk(chunk);
@@ -90,6 +108,7 @@ public final class ClientTransferController {
             }
         }).whenComplete((prepared, failure) -> clientExecute(() -> {
             if (failure != null) {
+                uploadFinished = NO_UPLOAD_CALLBACK;
                 LazyBuilderClientNetworking.notifyPlayer("Could not prepare import file: " + rootMessage(failure));
                 return;
             }
@@ -290,6 +309,7 @@ public final class ClientTransferController {
     private void abortUpload(String message) {
         Upload state = upload;
         upload = null;
+        uploadFinished = NO_UPLOAD_CALLBACK;
         closeQuietly(state == null ? null : state.channel);
         if (state != null && state.descriptor != null) {
             send(new TransferWireProtocol.AbortUpload(state.descriptor.sessionId()));
@@ -313,6 +333,7 @@ public final class ClientTransferController {
     private void cleanupLocalUpload() {
         Upload state = upload;
         upload = null;
+        uploadFinished = NO_UPLOAD_CALLBACK;
         closeQuietly(state == null ? null : state.channel);
     }
 
