@@ -25,11 +25,9 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Compile-only Xaero surface. World Map extends Xaero's shared ScreenBase
-    // classes, which are supplied by the Minimap artifact in the official
-    // Xaero stack. Both remain optional at runtime for LazyBuilder.
+    // Optional compile-only surface for the version-pinned Xaero accessor.
+    // Runtime LazyBuilder remains usable without Xaero installed.
     modCompileOnly "maven.modrinth:NcUtCpym:IBcL3f5W"
-    modCompileOnly "maven.modrinth:1bokaNcj:TFfNbUts"
 }
 
 sourceSets {
