@@ -11,6 +11,8 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -25,31 +27,33 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>No polling loop, socket worker, or background cleanup thread is owned here.
  * Network adapters call these methods only in response to explicit protocol events.
  * Each active transfer keeps one seekable file channel open so chunk I/O is O(n)
- * over the transferred bytes instead of repeatedly reopening and skipping from the
- * beginning of a multi-gigabyte file.</p>
+ * over transferred bytes. Stale sessions are expired opportunistically on later
+ * requests for the same owner and are always removed on disconnect/shutdown.</p>
  */
 public final class TransferSessionService {
     private final Path importsRoot;
     private final Path exportsRoot;
     private final Path tempRoot;
     private final TransferPolicy policy;
+    private final Clock clock;
     private final Map<UUID, UploadSession> uploads = new ConcurrentHashMap<>();
     private final Map<UUID, DownloadSession> downloads = new ConcurrentHashMap<>();
 
     public TransferSessionService(Path importsRoot, Path exportsRoot, Path tempRoot, TransferPolicy policy) {
+        this(importsRoot, exportsRoot, tempRoot, policy, Clock.systemUTC());
+    }
+
+    TransferSessionService(Path importsRoot, Path exportsRoot, Path tempRoot, TransferPolicy policy, Clock clock) {
         this.importsRoot = ownedRoot(importsRoot, "importsRoot");
         this.exportsRoot = ownedRoot(exportsRoot, "exportsRoot");
         this.tempRoot = ownedRoot(tempRoot, "tempRoot");
         this.policy = Objects.requireNonNull(policy, "policy");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    public TransferDescriptor beginUpload(
-            UUID ownerId,
-            String fileName,
-            long totalBytes,
-            String sha256
-    ) throws IOException {
+    public TransferDescriptor beginUpload(UUID ownerId, String fileName, long totalBytes, String sha256) throws IOException {
         Objects.requireNonNull(ownerId, "ownerId");
+        expireIdleSessions(ownerId);
         String safeName = validateImportFileName(fileName);
         String digest = validateSha256(sha256);
         if (totalBytes < 1 || totalBytes > policy.maxUploadBytes()) {
@@ -62,6 +66,9 @@ public final class TransferSessionService {
 
         Files.createDirectories(importsRoot);
         Files.createDirectories(tempRoot);
+        if (Files.getFileStore(tempRoot).getUsableSpace() < totalBytes) {
+            throw new IOException("Insufficient disk space for declared upload size");
+        }
         Path target = directChild(importsRoot, safeName);
         if (Files.exists(target)) throw new IOException("Import artifact already exists: " + safeName);
 
@@ -70,13 +77,11 @@ public final class TransferSessionService {
         Files.deleteIfExists(partial);
         FileChannel channel = null;
         try {
-            channel = FileChannel.open(partial,
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE);
+            channel = FileChannel.open(partial, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
             int chunks = chunkCount(totalBytes, policy.chunkBytes());
             UploadSession session = new UploadSession(
                     sessionId, ownerId, safeName, target, partial, totalBytes, digest,
-                    policy.chunkBytes(), chunks, channel
+                    policy.chunkBytes(), chunks, channel, clock.instant()
             );
             uploads.put(sessionId, session);
             return session.descriptor();
@@ -87,12 +92,8 @@ public final class TransferSessionService {
         }
     }
 
-    public UploadProgress acceptUploadChunk(
-            UUID ownerId,
-            UUID sessionId,
-            int chunkIndex,
-            byte[] bytes
-    ) throws IOException {
+    public UploadProgress acceptUploadChunk(UUID ownerId, UUID sessionId, int chunkIndex, byte[] bytes) throws IOException {
+        expireIdleSessions(ownerId);
         UploadSession session = requireUpload(ownerId, sessionId);
         Objects.requireNonNull(bytes, "bytes");
         synchronized (session) {
@@ -112,11 +113,13 @@ public final class TransferSessionService {
             writeFully(session.channel, ByteBuffer.wrap(bytes), session.receivedBytes);
             session.receivedBytes = nextTotal;
             session.nextChunkIndex++;
+            session.lastActivity = clock.instant();
             return new UploadProgress(session.receivedBytes, session.totalBytes, session.nextChunkIndex, session.totalChunks);
         }
     }
 
     public Path finishUpload(UUID ownerId, UUID sessionId) throws IOException {
+        expireIdleSessions(ownerId);
         UploadSession session = requireUpload(ownerId, sessionId);
         synchronized (session) {
             requireUpload(ownerId, sessionId, session);
@@ -133,11 +136,8 @@ public final class TransferSessionService {
                 uploads.remove(sessionId, session);
                 return session.target;
             } catch (IOException | RuntimeException failure) {
-                try {
-                    abortUploadInternal(sessionId, session);
-                } catch (IOException cleanupFailure) {
-                    failure.addSuppressed(cleanupFailure);
-                }
+                try { abortUploadInternal(sessionId, session); }
+                catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
                 throw failure;
             }
         }
@@ -153,6 +153,7 @@ public final class TransferSessionService {
 
     public TransferDescriptor beginDownload(UUID ownerId, String fileName) throws IOException {
         Objects.requireNonNull(ownerId, "ownerId");
+        expireIdleSessions(ownerId);
         String safeName = validateTransferName(fileName);
         long ownerDownloads = downloads.values().stream().filter(session -> session.ownerId.equals(ownerId)).count();
         if (ownerDownloads >= policy.maxConcurrentDownloads()) {
@@ -163,8 +164,6 @@ public final class TransferSessionService {
             throw new IOException("Export artifact does not exist: " + safeName);
         }
 
-        // Hash once before publication. This remains outside every other session's
-        // lock so one large artifact cannot serialize unrelated transfers.
         long size = Files.size(artifact);
         String digest = sha256(artifact);
         UUID sessionId = UUID.randomUUID();
@@ -174,7 +173,7 @@ public final class TransferSessionService {
             channel = FileChannel.open(artifact, StandardOpenOption.READ);
             DownloadSession session = new DownloadSession(
                     sessionId, ownerId, safeName, artifact, size, digest,
-                    policy.chunkBytes(), chunks, channel
+                    policy.chunkBytes(), chunks, channel, clock.instant()
             );
             downloads.put(sessionId, session);
             return session.descriptor();
@@ -185,6 +184,7 @@ public final class TransferSessionService {
     }
 
     public DownloadChunk readDownloadChunk(UUID ownerId, UUID sessionId, int chunkIndex) throws IOException {
+        expireIdleSessions(ownerId);
         DownloadSession session = requireDownload(ownerId, sessionId);
         synchronized (session) {
             requireDownload(ownerId, sessionId, session);
@@ -198,12 +198,14 @@ public final class TransferSessionService {
             byte[] data = new byte[expected];
             readFully(session.channel, ByteBuffer.wrap(data), offset);
             session.nextChunkIndex++;
+            session.lastActivity = clock.instant();
             boolean last = session.nextChunkIndex == session.totalChunks;
             return new DownloadChunk(chunkIndex, data, last);
         }
     }
 
     public void finishDownload(UUID ownerId, UUID sessionId) throws IOException {
+        expireIdleSessions(ownerId);
         DownloadSession session = requireDownload(ownerId, sessionId);
         synchronized (session) {
             requireDownload(ownerId, sessionId, session);
@@ -248,6 +250,33 @@ public final class TransferSessionService {
 
     public int activeUploads() { return uploads.size(); }
     public int activeDownloads() { return downloads.size(); }
+
+    private void expireIdleSessions(UUID ownerId) throws IOException {
+        Instant now = clock.instant();
+        IOException failure = null;
+        for (UploadSession session : uploads.values().toArray(UploadSession[]::new)) {
+            if (!session.ownerId.equals(ownerId) || !expired(session.lastActivity, now)) continue;
+            synchronized (session) {
+                if (uploads.get(session.sessionId) != session || !expired(session.lastActivity, now)) continue;
+                try { abortUploadInternal(session.sessionId, session); }
+                catch (IOException exception) { failure = combine(failure, exception); }
+            }
+        }
+        for (DownloadSession session : downloads.values().toArray(DownloadSession[]::new)) {
+            if (!session.ownerId.equals(ownerId) || !expired(session.lastActivity, now)) continue;
+            synchronized (session) {
+                if (downloads.get(session.sessionId) != session || !expired(session.lastActivity, now)) continue;
+                downloads.remove(session.sessionId, session);
+                try { session.channel.close(); }
+                catch (IOException exception) { failure = combine(failure, exception); }
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
+    private boolean expired(Instant lastActivity, Instant now) {
+        return !lastActivity.plus(policy.idleTimeout()).isAfter(now);
+    }
 
     private UploadSession requireUpload(UUID ownerId, UUID sessionId) {
         Objects.requireNonNull(ownerId, "ownerId");
@@ -399,10 +428,11 @@ public final class TransferSessionService {
         private final FileChannel channel;
         private long receivedBytes;
         private int nextChunkIndex;
+        private Instant lastActivity;
 
         private UploadSession(UUID sessionId, UUID ownerId, String fileName, Path target, Path partial,
                               long totalBytes, String sha256, int chunkBytes, int totalChunks,
-                              FileChannel channel) {
+                              FileChannel channel, Instant lastActivity) {
             this.sessionId = sessionId;
             this.ownerId = ownerId;
             this.fileName = fileName;
@@ -413,6 +443,7 @@ public final class TransferSessionService {
             this.chunkBytes = chunkBytes;
             this.totalChunks = totalChunks;
             this.channel = channel;
+            this.lastActivity = lastActivity;
         }
 
         private TransferDescriptor descriptor() {
@@ -431,10 +462,11 @@ public final class TransferSessionService {
         private final int totalChunks;
         private final FileChannel channel;
         private int nextChunkIndex;
+        private Instant lastActivity;
 
         private DownloadSession(UUID sessionId, UUID ownerId, String fileName, Path artifact,
                                 long totalBytes, String sha256, int chunkBytes, int totalChunks,
-                                FileChannel channel) {
+                                FileChannel channel, Instant lastActivity) {
             this.sessionId = sessionId;
             this.ownerId = ownerId;
             this.fileName = fileName;
@@ -444,6 +476,7 @@ public final class TransferSessionService {
             this.chunkBytes = chunkBytes;
             this.totalChunks = totalChunks;
             this.channel = channel;
+            this.lastActivity = lastActivity;
         }
 
         private TransferDescriptor descriptor() {
