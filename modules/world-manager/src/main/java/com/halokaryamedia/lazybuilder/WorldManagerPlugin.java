@@ -8,9 +8,10 @@ import com.halokaryamedia.lazybuilder.world.paper.PaperTransferPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapter;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
+import org.bukkit.plugin.java.JavaPlugin;
 
 /** Canonical Paper entry point and lifecycle owner for the World-Manager module. */
-public final class WorldManagerPlugin extends LazyBuilderPlugin {
+public final class WorldManagerPlugin extends JavaPlugin {
     private WorldManager worldManager;
     private WorldTaskRegistry worldTaskRegistry;
     private WorldTaskRunner worldTaskRunner;
@@ -79,24 +80,12 @@ public final class WorldManagerPlugin extends LazyBuilderPlugin {
 
     @Override
     public void onDisable() {
-        if (localControlServer != null) {
-            localControlServer.stop();
-        }
-        if (worldTaskRunner != null) {
-            worldTaskRunner.close();
-        }
-        if (worldControlPayloadAdapter != null) {
-            worldControlPayloadAdapter.stop();
-        }
-        if (mapActionPayloadAdapter != null) {
-            mapActionPayloadAdapter.stop();
-        }
-        if (transferPayloadAdapter != null) {
-            transferPayloadAdapter.stop();
-        }
-        if (worldManager != null) {
-            worldManager.stop();
-        }
+        if (localControlServer != null) localControlServer.stop();
+        if (worldTaskRunner != null) worldTaskRunner.close();
+        if (worldControlPayloadAdapter != null) worldControlPayloadAdapter.stop();
+        if (mapActionPayloadAdapter != null) mapActionPayloadAdapter.stop();
+        if (transferPayloadAdapter != null) transferPayloadAdapter.stop();
+        if (worldManager != null) worldManager.stop();
         getLogger().info("World-Manager disabled.");
     }
 }
