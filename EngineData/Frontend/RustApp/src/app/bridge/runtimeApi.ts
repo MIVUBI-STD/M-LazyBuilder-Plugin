@@ -63,6 +63,19 @@ export type UpdateWorldSettingsRequest = Partial<{
   weatherCycle: boolean;
 }>;
 
+export type WorldTaskSnapshot = {
+  taskId: string;
+  taskType: string;
+  worldId?: string | null;
+  state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  progressPercent: number;
+  message: string;
+  result: string;
+  error: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const runtimeApi = {
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
   startServer: () => invoke<void>('server_start'),
@@ -91,5 +104,9 @@ export const runtimeApi = {
   getWorldSettings: (worldId: string) =>
     invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
   updateWorldSettings: (worldId: string, request: UpdateWorldSettingsRequest) =>
-    invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request })
+    invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
+  listWorldTasks: () => invoke<WorldTaskSnapshot[]>('world_task_list'),
+  getWorldTask: (taskId: string) => invoke<WorldTaskSnapshot>('world_task', { taskId }),
+  archiveWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
+  restoreWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId })
 };
