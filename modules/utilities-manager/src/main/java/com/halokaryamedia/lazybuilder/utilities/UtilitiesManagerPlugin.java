@@ -1,16 +1,13 @@
 package com.halokaryamedia.lazybuilder.utilities;
 
 import com.halokaryamedia.lazybuilder.utilities.feature.UtilityFeatureRegistry;
+import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetyFeature;
+import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetySettings;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.logging.Level;
 
-/**
- * Paper bootstrap for LazyBuilder Utilities-Manager.
- *
- * <p>The bootstrap owns only module lifecycle. Each utility feature is registered as an
- * independent component and may be changed without coupling unrelated feature slices.</p>
- */
+/** Paper bootstrap for LazyBuilder Utilities-Manager. */
 public final class UtilitiesManagerPlugin extends JavaPlugin {
     private UtilityFeatureRegistry featureRegistry;
 
@@ -19,10 +16,20 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         saveDefaultConfig();
         this.featureRegistry = new UtilityFeatureRegistry();
 
-        // Feature modules are registered here as they are implemented. The registry keeps
-        // lifecycle independent so one feature can be updated or disabled without owning
-        // another feature's implementation.
-        getLogger().info("Utilities-Manager enabled.");
+        WorldSafetySettings worldSafetySettings = new WorldSafetySettings(
+                getConfig().getBoolean("features.world-safety.protections.explosions", true),
+                getConfig().getBoolean("features.world-safety.protections.leaves-decay", true),
+                getConfig().getBoolean("features.world-safety.protections.farmland-trample", true),
+                getConfig().getBoolean("features.world-safety.protections.dragon-egg-teleport", true)
+        );
+        featureRegistry.register(new WorldSafetyFeature(this, worldSafetySettings));
+
+        if (getConfig().getBoolean("features.world-safety.enabled", true)) {
+            featureRegistry.enable(WorldSafetyFeature.ID);
+        }
+
+        getLogger().info("Utilities-Manager enabled with "
+                + featureRegistry.registeredFeatureIds().size() + " registered feature family.");
     }
 
     @Override
