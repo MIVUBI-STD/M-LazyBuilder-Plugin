@@ -7,9 +7,13 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 /** Minimal whole-world export surface. Native Java fast path is the V1 default. */
 public final class ExportWorldScreen extends Screen {
     private static final String NATIVE_FORMAT = "JAVA_1_21_4";
+    private static final DateTimeFormatter EXPORT_SUFFIX = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private final Screen parent;
     private final ClientWorldController controller;
@@ -35,7 +39,7 @@ public final class ExportWorldScreen extends Screen {
         int left = center - fieldWidth / 2;
 
         artifactName = new TextFieldWidget(textRenderer, left, 92, fieldWidth, 20, Text.literal("Artifact Name"));
-        artifactName.setText(world.folderName());
+        artifactName.setText(world.folderName() + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
         artifactName.setMaxLength(96);
         addDrawableChild(artifactName);
 
