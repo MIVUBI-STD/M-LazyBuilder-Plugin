@@ -41,6 +41,10 @@ pub struct ExportWorldRequest { pub world_id: String, pub target_format: String,
 #[serde(rename_all = "camelCase")]
 pub struct ImportWorldRequest { pub artifact_name: String, pub destination_folder: String, pub display_name: String }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteWorldRequest { pub world_id: String, pub typed_folder_name: String }
+
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldSettingsRequest {
@@ -142,6 +146,12 @@ pub fn start_import_world(request: &ImportWorldRequest) -> Result<WorldTaskSnaps
     if request.destination_folder.trim().is_empty() { return Err("Import destination folder must not be empty.".into()); }
     if request.display_name.trim().is_empty() { return Err("Import display name must not be empty.".into()); }
     request_json("POST", "/v1/tasks/import", Some(request))
+}
+
+pub fn start_delete_world(request: &DeleteWorldRequest) -> Result<WorldTaskSnapshot, String> {
+    validate_world_id(&request.world_id)?;
+    if request.typed_folder_name.trim().is_empty() { return Err("Delete confirmation must not be empty.".into()); }
+    request_json("POST", "/v1/tasks/delete", Some(request))
 }
 
 pub fn upload_world_import(file_path: &str) -> Result<String, String> {
