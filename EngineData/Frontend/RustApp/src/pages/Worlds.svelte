@@ -20,8 +20,10 @@
   let settings: WorldSettingsSnapshot | null = null;
   let settingsBusy = false;
 
-  let lifecycleBusyWorldId: string | null = null;
-  let lifecycleTask: WorldTaskSnapshot | null = null;
+  let operationBusyWorldId: string | null = null;
+  let operationTask: WorldTaskSnapshot | null = null;
+  let cloneSource: ManagedWorldSummary | null = null;
+  let cloneName = '';
 
   async function refresh() {
     if (busy) return;
@@ -32,8 +34,9 @@
       if (!serverOnline) {
         worlds = [];
         settings = null;
-        lifecycleTask = null;
-        lifecycleBusyWorldId = null;
+        operationTask = null;
+        operationBusyWorldId = null;
+        cloneSource = null;
         error = '';
         connectionStatus = 'Start the server to manage worlds';
         return;
@@ -60,10 +63,7 @@
     if (!displayName) return;
     busy = true;
     try {
-      const folderName = displayName
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'world';
+      const folderName = slugify(displayName) || 'world';
       await runtimeProduct.worlds.create({ folderName, displayName, kind: createType });
       createName = '';
       error = '';
@@ -90,37 +90,69 @@
   }
 
   async function runLifecycleTask(world: ManagedWorldSummary, operation: 'archive' | 'restore') {
-    if (lifecycleBusyWorldId) return;
+    if (operationBusyWorldId) return;
     if (operation === 'archive' && !window.confirm(`Archive ${world.displayName}? The world will be unloaded and auto-load disabled.`)) {
       return;
     }
 
-    lifecycleBusyWorldId = world.id;
-    lifecycleTask = null;
+    operationBusyWorldId = world.id;
+    operationTask = null;
     error = '';
     try {
-      lifecycleTask = operation === 'archive'
+      operationTask = operation === 'archive'
         ? await runtimeProduct.worlds.archive(world.id)
         : await runtimeProduct.worlds.restore(world.id);
-      await pollLifecycleTask(lifecycleTask.taskId);
+      await pollTask(operationTask.taskId);
     } catch (e) {
       error = String(e);
     } finally {
-      lifecycleBusyWorldId = null;
+      operationBusyWorldId = null;
       await refresh();
     }
   }
 
-  async function pollLifecycleTask(taskId: string) {
+  function openClone(world: ManagedWorldSummary) {
+    cloneSource = world;
+    cloneName = `${world.displayName} Copy`;
+  }
+
+  async function runClone() {
+    if (!cloneSource || operationBusyWorldId) return;
+    const displayName = cloneName.trim();
+    if (!displayName) return;
+    const destinationFolder = slugify(displayName);
+    if (!destinationFolder) return;
+
+    operationBusyWorldId = cloneSource.id;
+    operationTask = null;
+    error = '';
+    try {
+      operationTask = await runtimeProduct.worlds.clone({
+        worldId: cloneSource.id,
+        destinationFolder,
+        displayName
+      });
+      cloneSource = null;
+      cloneName = '';
+      await pollTask(operationTask.taskId);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      operationBusyWorldId = null;
+      await refresh();
+    }
+  }
+
+  async function pollTask(taskId: string) {
     while (true) {
       const task = await runtimeProduct.worlds.task(taskId);
-      lifecycleTask = task;
+      operationTask = task;
       if (task.state === 'SUCCEEDED') {
         error = '';
         return;
       }
       if (task.state === 'FAILED') {
-        throw new Error(task.error || task.message || 'World lifecycle task failed.');
+        throw new Error(task.error || task.message || 'World task failed.');
       }
       await new Promise((resolve) => window.setTimeout(resolve, 750));
     }
@@ -161,6 +193,13 @@
     }
   }
 
+  function slugify(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 3000);
@@ -184,14 +223,26 @@
   </div>
 </div>
 
-<div class="actions"><button disabled={busy || lifecycleBusyWorldId !== null} onclick={refresh}>Refresh</button></div>
+<div class="actions"><button disabled={busy || operationBusyWorldId !== null} onclick={refresh}>Refresh</button></div>
 {#if error}<p style="color: var(--danger)">{error}</p>{/if}
 
-{#if lifecycleTask}
+{#if operationTask}
   <div class="card" style="margin-top: 12px">
-    <strong>{lifecycleTask.taskType} · {lifecycleTask.state}</strong>
-    <div class="subtle">{lifecycleTask.progressPercent}% · {lifecycleTask.message}</div>
-    {#if lifecycleTask.error}<div style="color: var(--danger)">{lifecycleTask.error}</div>{/if}
+    <strong>{operationTask.taskType} · {operationTask.state}</strong>
+    <div class="subtle">{operationTask.progressPercent}% · {operationTask.message}</div>
+    {#if operationTask.error}<div style="color: var(--danger)">{operationTask.error}</div>{/if}
+  </div>
+{/if}
+
+{#if cloneSource}
+  <div class="card" style="margin-top: 12px">
+    <strong>Clone {cloneSource.displayName}</strong>
+    <div class="world-form">
+      <input bind:value={cloneName} disabled={operationBusyWorldId !== null} placeholder="New world name" />
+      <button disabled={operationBusyWorldId !== null || !cloneName.trim()} onclick={runClone}>Clone</button>
+      <button disabled={operationBusyWorldId !== null} onclick={() => (cloneSource = null)}>Cancel</button>
+    </div>
+    <div class="subtle">The source is temporarily unloaded while a consistent copy is created, then restored to its previous load state.</div>
   </div>
 {/if}
 
@@ -205,23 +256,24 @@
       </div>
       <div class="world-actions">
         <button
-          disabled={busy || lifecycleBusyWorldId !== null || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
+          disabled={busy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE' || !['LOADED', 'UNLOADED'].includes(world.runtimeState)}
           onclick={() => toggleRuntime(world)}
         >{world.runtimeState === 'LOADED' ? 'Unload' : 'Load'}</button>
         <button
-          disabled={settingsBusy || lifecycleBusyWorldId !== null || world.lifecycle !== 'ACTIVE'}
+          disabled={settingsBusy || operationBusyWorldId !== null || world.lifecycle !== 'ACTIVE'}
           onclick={() => openSettings(world)}
         >Settings</button>
         {#if world.lifecycle === 'ACTIVE'}
+          <button disabled={busy || operationBusyWorldId !== null} onclick={() => openClone(world)}>Clone</button>
           <button
-            disabled={busy || lifecycleBusyWorldId !== null}
+            disabled={busy || operationBusyWorldId !== null}
             onclick={() => runLifecycleTask(world, 'archive')}
-          >{lifecycleBusyWorldId === world.id ? 'Working…' : 'Archive'}</button>
+          >{operationBusyWorldId === world.id ? 'Working…' : 'Archive'}</button>
         {:else if world.lifecycle === 'ARCHIVED'}
           <button
-            disabled={busy || lifecycleBusyWorldId !== null}
+            disabled={busy || operationBusyWorldId !== null}
             onclick={() => runLifecycleTask(world, 'restore')}
-          >{lifecycleBusyWorldId === world.id ? 'Working…' : 'Restore'}</button>
+          >{operationBusyWorldId === world.id ? 'Working…' : 'Restore'}</button>
         {/if}
       </div>
     </div>
