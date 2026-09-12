@@ -6,6 +6,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -110,7 +115,48 @@ class TransferSessionServiceTest {
         assertEquals(0, service.activeUploads());
     }
 
+    @Test
+    void idleUploadIsReclaimedOnNextOwnerRequestWithoutPolling() throws Exception {
+        MutableClock clock = new MutableClock(Instant.parse("2026-09-12T00:00:00Z"));
+        Path transfer = tempDir.resolve("transfer");
+        TransferSessionService service = new TransferSessionService(
+                tempDir.resolve("imports"), tempDir.resolve("exports"), transfer,
+                new TransferPolicy(4, 1024, 1, 1, Duration.ofSeconds(30)),
+                clock
+        );
+        UUID owner = UUID.randomUUID();
+        TransferDescriptor stale = service.beginUpload(owner, "stale.zip", 4, sha256(new byte[]{1,2,3,4}));
+        service.acceptUploadChunk(owner, stale.sessionId(), 0, new byte[]{1,2,3,4});
+        assertEquals(1, service.activeUploads());
+
+        clock.advance(Duration.ofSeconds(31));
+        TransferDescriptor replacement = service.beginUpload(
+                owner, "replacement.zip", 4, sha256(new byte[]{5,6,7,8}));
+
+        assertEquals(1, service.activeUploads());
+        assertFalse(Files.exists(transfer.resolve(stale.sessionId() + ".upload.part")));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.finishUpload(owner, stale.sessionId()));
+        service.abortUpload(owner, replacement.sessionId());
+    }
+
     private static String sha256(byte[] bytes) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return this; }
+        @Override public Instant instant() { return instant; }
     }
 }
