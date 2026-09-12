@@ -9,6 +9,7 @@ export const runtimeProduct = {
   },
   plugins: {
     list: runtimeApi.listPlugins,
+    pickJar: runtimeApi.pickPluginJar,
     install: runtimeApi.installPlugin,
     update: runtimeApi.updatePlugin,
     setEnabled: runtimeApi.setPluginEnabled,
