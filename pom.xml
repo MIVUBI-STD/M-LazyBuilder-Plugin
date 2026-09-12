@@ -68,5 +68,6 @@
 
     <modules>
         <module>modules/world-manager</module>
+        <module>modules/utilities-manager</module>
     </modules>
 </project>
