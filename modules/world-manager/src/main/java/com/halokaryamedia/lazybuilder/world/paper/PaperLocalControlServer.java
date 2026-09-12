@@ -14,6 +14,8 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskSnapshot;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -24,6 +26,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,6 +51,7 @@ public final class PaperLocalControlServer {
     private final WorldRuntimeService runtime;
     private final WorldCreationService creation;
     private final WorldSettingsService settings;
+    private final WorldTaskRegistry tasks;
 
     private HttpServer server;
     private ExecutorService executor;
@@ -57,13 +61,15 @@ public final class PaperLocalControlServer {
             WorldRegistry registry,
             WorldRuntimeService runtime,
             WorldCreationService creation,
-            WorldSettingsService settings
+            WorldSettingsService settings,
+            WorldTaskRegistry tasks
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.creation = Objects.requireNonNull(creation, "creation");
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.tasks = Objects.requireNonNull(tasks, "tasks");
     }
 
     public void start() {
@@ -82,6 +88,7 @@ public final class PaperLocalControlServer {
             created.setExecutor(createdExecutor);
             created.createContext("/v1/status", exchange -> handleStatus(exchange, token));
             created.createContext("/v1/worlds", exchange -> handleWorlds(exchange, token));
+            created.createContext("/v1/tasks", exchange -> handleTasks(exchange, token));
             created.start();
             server = created;
             executor = createdExecutor;
@@ -107,7 +114,7 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
             return;
         }
-        sendJson(exchange, 200, new StatusResponse("ready", 2));
+        sendJson(exchange, 200, new StatusResponse("ready", 1));
     }
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
@@ -148,6 +155,39 @@ public final class PaperLocalControlServer {
             plugin.getLogger().warning("Local World control request failed: " + exception.getMessage());
             sendError(exchange, 500, "world_operation_failed", "World-Manager could not complete the request.");
         }
+    }
+
+    private void handleTasks(HttpExchange exchange, String token) throws IOException {
+        if (!authorize(exchange, token)) return;
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
+            return;
+        }
+
+        String relative = exchange.getRequestURI().getPath().substring("/v1/tasks".length());
+        if (relative.isEmpty() || "/".equals(relative)) {
+            sendJson(exchange, 200, new TaskListResponse(tasks.recent().stream().map(PaperLocalControlServer::taskResponse).toList()));
+            return;
+        }
+        if (!relative.startsWith("/") || relative.indexOf('/', 1) >= 0) {
+            sendError(exchange, 404, "not_found", "Unknown task route.");
+            return;
+        }
+
+        UUID taskId;
+        try {
+            taskId = UUID.fromString(relative.substring(1));
+        } catch (IllegalArgumentException exception) {
+            sendError(exchange, 400, "invalid_task_id", "Task id is invalid.");
+            return;
+        }
+
+        WorldTaskSnapshot snapshot = tasks.find(taskId).orElse(null);
+        if (snapshot == null) {
+            sendError(exchange, 404, "task_not_found", "World task was not found.");
+            return;
+        }
+        sendJson(exchange, 200, taskResponse(snapshot));
     }
 
     private void handleWorldCollection(HttpExchange exchange) throws Exception {
@@ -236,6 +276,21 @@ public final class PaperLocalControlServer {
                 runtime.state(world.id()).name(),
                 world.autoLoad(),
                 world.defaultGameMode()
+        );
+    }
+
+    private static TaskResponse taskResponse(WorldTaskSnapshot snapshot) {
+        return new TaskResponse(
+                snapshot.taskId().toString(),
+                snapshot.type().name(),
+                snapshot.worldId() == null ? null : snapshot.worldId().toString(),
+                snapshot.state().name(),
+                snapshot.progressPercent(),
+                snapshot.message(),
+                snapshot.result(),
+                snapshot.error(),
+                snapshot.createdAt().toString(),
+                snapshot.updatedAt().toString()
         );
     }
 
@@ -344,6 +399,7 @@ public final class PaperLocalControlServer {
     private record StatusResponse(String status, int protocolVersion) {}
     private record ErrorResponse(String error, String message) {}
     private record WorldListResponse(List<ManagedWorldResponse> worlds) {}
+    private record TaskListResponse(List<TaskResponse> tasks) {}
     private record ManagedWorldResponse(
             String id,
             String displayName,
@@ -352,6 +408,18 @@ public final class PaperLocalControlServer {
             String runtimeState,
             boolean autoLoad,
             String defaultGameMode
+    ) {}
+    private record TaskResponse(
+            String taskId,
+            String type,
+            String worldId,
+            String state,
+            int progressPercent,
+            String message,
+            String result,
+            String error,
+            String createdAt,
+            String updatedAt
     ) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(
