@@ -2,7 +2,9 @@ package com.halokaryamedia.lazybuilder.world;
 
 import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
+import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
+import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
@@ -49,6 +51,8 @@ public final class WorldManager {
     private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldFileRepository worldFileRepository;
     private final WorldLifecycleService worldLifecycleService;
+    private final WorldCloneService worldCloneService;
+    private final WorldDeleteService worldDeleteService;
 
     public WorldManager(LazyBuilderPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -91,6 +95,22 @@ public final class WorldManager {
                 worldRuntimeService,
                 runtimeStates,
                 worldOperationCoordinator
+        );
+        this.worldCloneService = new WorldCloneService(
+                worldRegistry,
+                registryPersistence,
+                worldRuntimeService,
+                runtimeStates,
+                worldOperationCoordinator,
+                worldFileRepository
+        );
+        this.worldDeleteService = new WorldDeleteService(
+                worldRegistry,
+                registryPersistence,
+                worldRuntimeService,
+                runtimeStates,
+                worldOperationCoordinator,
+                worldFileRepository
         );
     }
 
@@ -166,5 +186,13 @@ public final class WorldManager {
 
     public WorldLifecycleService worldLifecycleService() {
         return worldLifecycleService;
+    }
+
+    public WorldCloneService worldCloneService() {
+        return worldCloneService;
+    }
+
+    public WorldDeleteService worldDeleteService() {
+        return worldDeleteService;
     }
 }
