@@ -36,6 +36,8 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 import com.halokaryamedia.lazybuilder.world.registry.YamlWorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.transfer.TransferPolicy;
+import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -53,6 +55,8 @@ public final class WorldManager {
     private final ConversionJobCoordinator conversionJobCoordinator;
     private final ConverterAdapter converterAdapter;
     private final ConversionUpdateService conversionUpdateService;
+    private final TransferPolicy transferPolicy;
+    private final TransferSessionService transferSessionService;
     private final BuildReadyPolicy buildReadyPolicy;
     private final WorldRegistry worldRegistry;
     private final WorldRegistryPersistence registryPersistence;
@@ -84,19 +88,36 @@ public final class WorldManager {
         Path worldDataRoot = plugin.getDataFolder().toPath().resolve("world");
         Path registryPath = worldDataRoot.resolve("registry.yml");
         Path conversionRoot = worldDataRoot.resolve("runtime").resolve("converter");
+        Path importsRoot = worldDataRoot.resolve("imports");
+        Path exportsRoot = worldDataRoot.resolve("exports");
+        Path transferRoot = worldDataRoot.resolve("transfer");
         this.registryPersistence = new YamlWorldRegistryPersistence(registryPath);
         this.worldFileRepository = new LocalWorldFileRepository(
                 plugin.getServer().getWorldContainer().toPath(),
                 worldDataRoot.resolve("work")
         );
-        this.worldExportArtifactStore = new LocalWorldExportArtifactStore(worldDataRoot.resolve("exports"));
+        this.worldExportArtifactStore = new LocalWorldExportArtifactStore(exportsRoot);
         long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 200_000L));
         long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 65_536L));
         this.worldImportArtifactStore = new LocalWorldImportArtifactStore(
-                worldDataRoot.resolve("imports"), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
+                importsRoot, maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
         );
-        this.conversionRuntimeStore = new LocalConversionRuntimeStore(conversionRoot);
 
+        int transferChunkBytes = Math.max(1024,
+                plugin.getConfig().getInt("world-manager.transfer.chunk-bytes", 24 * 1024));
+        long maxUploadMb = Math.max(1L,
+                plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 16_384L));
+        this.transferPolicy = new TransferPolicy(
+                transferChunkBytes,
+                Math.multiplyExact(maxUploadMb, 1024L * 1024L),
+                1,
+                2
+        );
+        this.transferSessionService = new TransferSessionService(
+                importsRoot, exportsRoot, transferRoot, transferPolicy
+        );
+
+        this.conversionRuntimeStore = new LocalConversionRuntimeStore(conversionRoot);
         int conversionHeapMb = plugin.getConfig().getInt("world-manager.conversion.max-heap-mb", 3072);
         long conversionTimeoutMinutes = plugin.getConfig().getLong("world-manager.conversion.timeout-minutes", 60L);
         this.converterAdapter = new ChunkerCliAdapter(
@@ -182,7 +203,7 @@ public final class WorldManager {
     }
 
     public void stop() {
-        // Conversion/file workers are request-bound; there is no idle process to stop.
+        // Transfer/conversion/file workers are request-bound; there is no idle process to stop.
     }
 
     public ConversionRuntimePolicy conversionRuntimePolicy() { return conversionRuntimePolicy; }
@@ -190,6 +211,8 @@ public final class WorldManager {
     public ConversionJobCoordinator conversionJobCoordinator() { return conversionJobCoordinator; }
     public ConverterAdapter converterAdapter() { return converterAdapter; }
     public ConversionUpdateService conversionUpdateService() { return conversionUpdateService; }
+    public TransferPolicy transferPolicy() { return transferPolicy; }
+    public TransferSessionService transferSessionService() { return transferSessionService; }
     public BuildReadyPolicy buildReadyPolicy() { return buildReadyPolicy; }
     public WorldRegistry worldRegistry() { return worldRegistry; }
     public WorldRuntimeService worldRuntimeService() { return worldRuntimeService; }
