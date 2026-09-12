@@ -13,8 +13,12 @@ public interface WorldImportArtifactStore {
      * Removes one validated inbox artifact after a managed-world import has
      * committed successfully. Failed imports intentionally keep the artifact so
      * the caller may retry without re-uploading it.
+     *
+     * <p>The default no-op keeps lightweight test doubles/source adapters
+     * compatible. The local production store overrides this with real bounded
+     * deletion.</p>
      */
-    void deleteArtifact(String artifactName) throws IOException;
+    default void deleteArtifact(String artifactName) throws IOException { }
 
     enum DetectedEdition { JAVA, BEDROCK }
 
