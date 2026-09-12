@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.world;
 
-import com.halokaryamedia.lazybuilder.LazyBuilderPlugin;
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
 import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
@@ -45,6 +44,7 @@ import com.halokaryamedia.lazybuilder.world.registry.YamlWorldRegistryPersistenc
 import com.halokaryamedia.lazybuilder.world.transfer.TransferPolicy;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -56,7 +56,7 @@ import java.util.logging.Level;
 
 /** Canonical server-side owner for World Manager runtime coordination. */
 public final class WorldManager {
-    private final LazyBuilderPlugin plugin;
+    private final JavaPlugin plugin;
     private final ConversionRuntimePolicy conversionRuntimePolicy;
     private final ConversionRuntimeStore conversionRuntimeStore;
     private final ConversionJobCoordinator conversionJobCoordinator;
@@ -87,7 +87,7 @@ public final class WorldManager {
     private final WorldExportService worldExportService;
     private final WorldImportService worldImportService;
 
-    public WorldManager(LazyBuilderPlugin plugin) {
+    public WorldManager(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.conversionRuntimePolicy = ConversionRuntimePolicy.defaults();
         this.buildReadyPolicy = BuildReadyPolicy.defaults();
