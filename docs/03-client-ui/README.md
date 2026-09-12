@@ -4,9 +4,7 @@ Canonical owner for LazyBuilder client-side interaction and map integration.
 
 ## UI Direction
 
-LazyBuilder uses a dedicated client mod for modern UI rather than relying on Bukkit inventory GUIs as the primary experience.
-
-The UI should remain simple:
+LazyBuilder uses a dedicated Minecraft 1.21.4 Fabric client for modern UI rather than Bukkit inventory GUIs as the primary experience.
 
 ```text
 open LazyBuilder
@@ -15,48 +13,17 @@ open LazyBuilder
 → close back to normal gameplay
 ```
 
-Do not reproduce Axiom's full editor UI. Use its clarity only where useful. Do not clone Xaero World Map.
-
-## Xaero Scope
-
-Xaero World Map is retained specifically because its map preview is already mature.
-
-Required integration surface:
-
-```text
-Map Preview
-Teleport to Location
-Export Area selection
-```
-
-Features such as minimap, waypoint ecosystems, entity radar, route planning, or a new map renderer are outside LazyBuilder ownership unless a later requirement explicitly changes scope.
+Do not reproduce Axiom's full editor UI and do not clone Xaero World Map. Reuse Xaero only for mature map presentation/input.
 
 ## Responsibility Boundary
 
-Client owns:
+Client owns screen/layout, keybind/open-close behavior, world/map selection presentation, map-location input, native file picker/save dialog, and local presentation preferences.
 
-- screen/layout;
-- keybind/open-close behavior;
-- world/map selection presentation;
-- user input for map-location teleport;
-- native file picker/save dialog;
-- local presentation preferences.
+Server owns permissions, managed-world existence/state, safe teleport resolution, lifecycle operations, settings persistence/mutation, import/export validation, transfer ordering/limits/checksums, and final filesystem publication.
 
-Server owns:
-
-- permissions;
-- world existence/state;
-- safe teleport resolution;
-- create/load/unload/clone/archive/delete;
-- settings persistence and mutation;
-- export/import validation;
-- transfer session limits, ordering, size validation, and checksum verification.
-
-The client must not become authoritative for server state.
+The client is never authoritative for server state.
 
 ## Implemented Fabric Client Slice
-
-The repository now contains a Minecraft 1.21.4 Fabric client module under `client/`. It reuses the same `MapActionWireProtocol` and `TransferWireProtocol` contracts as the Paper plugin rather than defining a parallel protocol.
 
 ```text
 Fabric client
@@ -68,11 +35,27 @@ Fabric client
 └── optional Xaero adapter
 ```
 
-The client resolves the managed current world from the server after joining. Import uses a native `.zip`/`.mcworld` file picker, computes SHA-256 off the render thread, then uses the existing stop-and-wait upload flow. Export uses the server artifact name, a native save destination, `.part` publication, and checksum verification before the local file is finalized.
+The client reuses `MapActionWireProtocol` and `TransferWireProtocol`; no parallel wire contract exists. After join it resolves the managed current world from the server.
 
-Xaero integration is optional at runtime. The version-pinned adapter matches the fullscreen map class and accesses only `cameraX`, `cameraZ`, and `scale` through one isolated mixin accessor. Missing Xaero must not disable non-map LazyBuilder functionality.
+Import opens a native `.zip`/`.mcworld` picker, computes SHA-256 off the render thread, then uploads through the bounded stop-and-wait transfer path. Export receives a server artifact name, asks for a native save destination, writes to `.part`, validates the final SHA-256, and only then publishes the local file.
 
-The fullscreen map currently adds two primary controls:
+The official client permits **one active file transfer total** at a time: one upload or one download. This intentionally avoids ambiguous generic-error recovery and keeps the V1 flow deterministic.
+
+## Xaero Scope
+
+Required integration surface:
+
+```text
+Map Preview
+Teleport to Location
+Export Area selection
+```
+
+Minimap features, waypoint ecosystems, entity radar, route planning, and a second terrain renderer remain outside LazyBuilder ownership.
+
+Xaero integration is optional at runtime. One version-pinned mixin accessor reads fullscreen-map `cameraX`, `cameraZ`, and `scale`; missing Xaero must not disable non-map LazyBuilder functionality.
+
+The fullscreen map adds:
 
 ```text
 Teleport Here
@@ -88,13 +71,9 @@ Export Area
 → existing transfer path downloads result
 ```
 
-`P` (Teleport Here) and `O` (Export Area corners) remain bounded fallback shortcuts. Selection clicks are consumed only while a LazyBuilder map action is armed so normal Xaero navigation remains untouched otherwise.
+`P` and `O` remain fallback shortcuts. LazyBuilder consumes map clicks only while one of its actions is armed.
 
-## Xaero Action Contracts
-
-Xaero integration is an input/presentation adapter only. It must never directly mutate world files or resolve teleport height on the client.
-
-Server transport for map actions is separated from file transfer:
+## Map Action Contract
 
 ```text
 Xaero / LazyBuilder client
@@ -103,103 +82,93 @@ Xaero / LazyBuilder client
 → application services
 ```
 
-`MapActionWireProtocol` is version `1` and bounded to 4 KiB because it carries only action intent and small responses. Teleport requests require `lazybuilder.world.teleport`; Export Area requests require `lazybuilder.world.manage`.
+`MapActionWireProtocol` version 1 is bounded to 4 KiB. Teleport requires `lazybuilder.world.teleport`; Export Area requires `lazybuilder.world.manage`.
 
 ### Teleport to Location
 
-The client sends only the managed `WorldId` plus the selected block-space X/Z coordinate. `WorldLocationTeleportService` loads the world on demand and delegates final resolution to the Paper server.
+Client sends only `WorldId + blockX + blockZ`.
 
 ```text
 Xaero click
-→ WorldId + blockX + blockZ
-→ permission gate
+→ server permission gate
 → WorldLocationTeleportService
 → load world if needed
 → Paper safe-surface resolver
 → teleport
 ```
 
-For normal/flat/imported terrain the server resolves a safe standing location from X/Z, checks the world border, requires solid non-dangerous floor plus passable feet/head space, and applies the managed world's default game mode after successful teleport. Void worlds intentionally resolve to the managed world spawn/platform rather than generating or inventing terrain at the clicked coordinate.
-
-The client must not send or choose Y for this flow.
+The server checks world border, solid/non-dangerous floor and passable feet/head space. Void worlds resolve to their existing managed spawn/platform instead of inventing terrain. Client never chooses Y.
 
 ### Export Area
 
-The client sends two block-space corners plus the normal Export target/options. `WorldAreaSelection` normalizes the rectangle and converts inclusive block coordinates to inclusive chunk bounds using floor division, including negative coordinates.
+Client sends two block-space corners plus normal export target/options. `WorldAreaSelection` normalizes inclusive bounds with correct negative-coordinate floor division.
 
 ```text
 Xaero rectangle
-→ WorldId + x1,z1 + x2,z2 + export target
+→ WorldId + x1,z1 + x2,z2 + target
 → WorldAreaSelection
 → WorldExportService.prepareArea(...)
-→ safe world snapshot
-→ internal include-region pruning
-→ normal Export packaging/transfer flow
+→ safe snapshot
+→ request-local include pruning
+→ normal Export packaging
+→ normal transfer download
 ```
 
-Export Area is not a second export system. It uses the same `WorldExportService`, operation lease, converter runtime, artifact store, and client download path as whole-world export.
+Export Area is not a second export subsystem. It reuses the canonical Export service, operation lease, converter runtime, artifact store, and transfer path.
 
-Whole-world native Java 1.21.4 export keeps its direct ZIP fast path. Any Export Area request uses the verified conversion runtime even when the target remains Java 1.21.4 because pruning must be applied. The generated pruning file is request-local and never shown in the UI.
-
-The internal pruning document applies the selected chunk rectangle to overworld, Nether, and End. This avoids Chunker's missing-config behavior from accidentally retaining an entire secondary dimension while the user asked for an area-only export.
-
-The Paper map adapter returns `EXPORT_ACCEPTED` immediately after the main-thread prepare phase, performs snapshot/conversion work asynchronously, restores the source world through the normal finish phase, then returns `EXPORT_COMPLETE` with the export artifact file name. The client downloads that artifact through the existing transfer channel; no second file-transfer path is introduced.
+The Paper adapter acknowledges accepted work after the main-thread prepare phase, runs snapshot/conversion asynchronously, then returns `EXPORT_COMPLETE`. During plugin/server shutdown it stops accepting new map work and releases tracked Export leases without trying to load worlds while Paper is tearing down.
 
 ## File Transfer Protocol
 
-World file transfer is request/event driven and uses bounded chunks. The server protocol core remains separate from the Paper transport adapter so there is only one upload/download session owner.
-
 ```text
 Client Mod
-→ Minecraft custom/plugin payload
 → lazybuilder:transfer
 → PaperTransferPayloadAdapter
 → TransferSessionService
 → world/imports or world/exports
 ```
 
-The Paper adapter is intentionally thin:
+Contract:
 
-- channel: `lazybuilder:transfer`;
-- protocol version: `1`;
-- permission gate: `lazybuilder.world.manage`;
-- maximum wire payload: 30 KiB;
-- maximum file-data chunk: 24 KiB;
+- protocol version 1;
+- permission `lazybuilder.world.manage`;
+- maximum wire payload 30 KiB;
+- maximum file-data chunk 24 KiB;
 - one in-flight protocol request per player;
-- file/hash work is dispatched off the Paper main thread;
-- server responses are sent back on the Paper thread;
-- disconnect aborts all transfer sessions for that player;
-- plugin disable unregisters the channel and cleans tracked sessions;
-- malformed, oversized, out-of-order, or unauthorized requests fail closed.
+- file/hash work off the Paper main thread;
+- responses returned on the Paper thread;
+- malformed/oversized/out-of-order/unauthorized requests fail closed;
+- a failed request that identifies an active session cleans that stale server session;
+- disconnect aborts that player's sessions;
+- plugin disable unregisters the channel and cleans tracked transfer state.
 
-Upload uses stop-and-wait semantics:
+Upload:
 
 ```text
-client file picker
-→ BEGIN_UPLOAD(fileName, size, sha256)
-→ UPLOAD_ACCEPTED(sessionId, chunk size, total chunks)
+BEGIN_UPLOAD(fileName, size, sha256)
+→ UPLOAD_ACCEPTED
 → UPLOAD_CHUNK(index, bytes)
 → UPLOAD_PROGRESS
-→ repeat only after progress response
+→ ...
 → FINISH_UPLOAD
 → checksum verify
 → atomic publish into world/imports
 ```
 
-Download uses the same request/response pattern:
+Download:
 
 ```text
-request export artifact
-→ BEGIN_DOWNLOAD(fileName)
-→ DOWNLOAD_ACCEPTED(sessionId, size, sha256, chunk size)
+BEGIN_DOWNLOAD(fileName)
+→ DOWNLOAD_ACCEPTED
 → DOWNLOAD_CHUNK(sessionId, index)
 → DOWNLOAD_CHUNK_DATA
-→ repeat only after chunk response
+→ ...
 → FINISH_DOWNLOAD
-→ client native save dialog writes local file
+→ local checksum verify
+→ final local file
 ```
 
-The binary frame is versioned and length-prefixed; UUIDs use two 64-bit values and strings are UTF-8. The client mod must mirror `TransferWireProtocol` rather than inventing a second framing scheme.
+`TransferSessionService` uses per-session synchronization rather than one global monitor. A large checksum/read/write for one client therefore does not intentionally serialize unrelated clients. There is still no permanent transfer worker, maintenance timer, or background socket beyond the Minecraft connection.
 
 Current server defaults:
 
@@ -210,14 +179,19 @@ download sessions/client 2
 max upload             configurable, default 16 GiB
 ```
 
-A partial upload lives only under `plugins/LazyBuilder/world/transfer` and is never visible to Import World until size and SHA-256 validation pass. Upload names are limited to `.zip` and `.mcworld`. Existing import artifacts are not overwritten.
+The official LazyBuilder client is stricter than the server capacity and runs only one transfer total at a time.
+
+A partial upload lives only under `plugins/LazyBuilder/world/transfer` and is never visible to Import until size and SHA-256 validation pass. Existing import artifacts are not overwritten.
 
 ## Efficiency
 
-- request summaries first, details on demand;
-- do not duplicate Xaero map caches/data when integration can reuse them safely;
-- keep network payloads bounded and action-specific;
-- no continuous polling when event/delta updates suffice;
-- no permanent transfer worker or socket loop beyond the normal Minecraft connection;
-- large-file hashing and chunk I/O run only in response to transfer requests;
-- map teleport and Export Area perform no work until the player explicitly acts.
+- no duplicate Xaero map cache or renderer;
+- bounded, action-specific network payloads;
+- no continuous polling when event-driven state is sufficient;
+- no permanent transfer worker or custom socket loop;
+- hashing/chunk I/O exists only for explicit requests;
+- Teleport and Export Area perform no work until the user acts.
+
+## Proof Boundary
+
+CI proves the Paper source/tests and Fabric/Xaero compile surface. Actual Xaero mixin application, button placement, mouse→world transform, native Windows dialogs, real network transfer, and gameplay behavior still require local/live validation.

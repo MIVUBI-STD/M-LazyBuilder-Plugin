@@ -76,6 +76,7 @@ worker phase
 → require level.dat
 → detect Java vs Bedrock from staged world layout
 → remove session.lock / uid.dat
+→ validate Java DataVersion when considering native fast path
 → native publish OR verified conversion to JAVA_1_21_4
 → publish world folder
 → register fresh WorldId
@@ -88,7 +89,9 @@ finish
 
 Accepted V1 upload artifacts are `.zip` and `.mcworld`. Arbitrary host paths are never accepted by the import service. Import extraction is bounded by configurable file-count and uncompressed-size limits and always happens inside an owned request workspace.
 
-A native Java 1.21.4 export produced by LazyBuilder carries a small internal transfer marker in the packaged snapshot. On re-import, that marker is consumed and removed, allowing the server to trust the same-format native path without invoking the converter. Unknown external Java archives are handled conservatively: if their exact target format is not trusted, they are normalized through the verified converter runtime rather than guessed. Bedrock input always targets Java 1.21.4 through the converter.
+The Java 1.21.4 native fast path is authorized by the actual `level.dat` `DataVersion` (`4189`), not by a user-editable marker file. Legacy `.lazybuilder-transfer.properties` metadata may still be removed during sanitization, but it is not trusted as proof of edition/version. Java archives whose DataVersion is absent, malformed, or not 1.21.4 are normalized through the verified converter runtime. Bedrock input always targets Java 1.21.4 through the converter.
+
+Any workspace allocated for conversion is tracked before the converter starts and is cleaned on both success and failure. Partial converter output therefore does not become durable world state or accumulate silently under `world/work` after a failed request.
 
 Existing worlds are never overwritten in V1. Imported worlds always receive fresh LazyBuilder identity and default to:
 
@@ -121,11 +124,13 @@ finish (Paper thread)
 → release EXPORT lease
 ```
 
-Native Java 1.21.4 export does not invoke the converter and is packaged directly as `.zip`. The snapshot receives the internal transfer marker used only to recognize a future trusted same-format LazyBuilder import; the live source world is never modified.
+Native Java 1.21.4 export does not invoke the converter and is packaged directly as `.zip`. Import does not rely on export provenance metadata for this fast path; it validates the world DataVersion itself.
 
 For a different Java version or Bedrock target, Export lazily checks for a stable conversion-runtime update, then uses the verified `current` runtime. If the update check itself fails but a verified current runtime already exists, Export continues with that current runtime instead of disabling the feature. The requested target format must exist in the runtime-discovered supported-format catalog before conversion starts.
 
 Converted Java output is packaged as `.zip`. Converted Bedrock output is packaged as `.mcworld`. Completed export artifacts are bounded to `plugins/LazyBuilder/world/exports` and never overwrite an existing artifact name.
+
+If plugin/server shutdown begins while an Export Area request is active, the adapter stops accepting new work and releases tracked operation leases without attempting to reload worlds during Paper teardown. Normal running-server completion still restores the previous source load state through `finish(...)`.
 
 ## Export Area
 
@@ -147,7 +152,7 @@ area selection exists
 
 Exclude-region pruning is not part of the V1 user surface.
 
-The current Export World service implements whole-world export and therefore always omits pruning input. The later Xaero/client selection bridge will create the internal pruning document only when an area is actually selected; it must reuse the same Export service rather than create a second export path.
+Export Area reuses the canonical Export service. The internal pruning document exists only for a request that actually contains an area selection and remains inside request-owned workspace state.
 
 Xaero remains the map/selection presentation owner. World Manager converts the selected block-space rectangle into validated chunk bounds for the converter adapter.
 
@@ -173,6 +178,8 @@ Normal user operations may include import, export, save-to-client, rename transf
 The client mod may open the native file picker/save dialog. Files are streamed between client and server through the LazyBuilder protocol so the same flow works whether client and server share a machine or connect remotely.
 
 Do not create separate local-PC and remote-server product flows unless evidence requires different transport behavior.
+
+The official client permits one active file-transfer operation at a time. Server transfer sessions remain bounded per owner and use per-session synchronization, so hashing or I/O for one user's large artifact does not hold a global lock across unrelated clients.
 
 ## Operation locking
 
@@ -204,7 +211,8 @@ Default policy:
 mode             = Automatic Stable
 channel          = stable releases only
 idle polling     = none
-check frequency  = at most once per 24h
+normal check     = at most once per 24h when a verified runtime exists
+bootstrap retry  = each user-triggered conversion request until one verified runtime exists
 checksum         = required
 compatibility    = required
 rollback         = enabled
@@ -212,7 +220,9 @@ retained runtime = current + previous
 server restart   = not required
 ```
 
-Update checks are triggered lazily by conversion-requiring transfer work rather than by a permanent timer. Trusted same-version Java import/export bypasses the conversion updater entirely.
+Update checks are triggered lazily by conversion-requiring transfer work rather than by a permanent timer. Same-version Java import/export bypasses the conversion updater when the staged world is verified as Java 1.21.4.
+
+A transient network/release-metadata failure on a fresh installation must not create a 24-hour lockout. The normal update interval is enforced only after a verified `current` runtime exists; bootstrap may retry on the next explicit conversion request.
 
 ### Update pipeline
 
@@ -250,4 +260,4 @@ If the converter changes its CLI/API contract incompatibly, the compatibility pr
 
 ## Proof boundary
 
-Remote/source proof may establish contracts, adapter isolation, update state transitions, checksum behavior, deterministic parsing, phased transfer ownership, safe archive extraction, and packaging logic. Live conversion quality, Paper world lifecycle, `.mcworld` opening, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
+Remote/source proof may establish contracts, adapter isolation, update state transitions, checksum behavior, DataVersion gating, deterministic parsing, phased transfer ownership, safe archive extraction, workspace cleanup, and packaging logic. Live conversion quality, Paper world lifecycle, `.mcworld` opening, client file dialogs, large-file transfer, and real Java↔Bedrock results require local/live runtime proof.
