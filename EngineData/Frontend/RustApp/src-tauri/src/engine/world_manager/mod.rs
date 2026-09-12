@@ -1,6 +1,6 @@
 use crate::engine::paths;
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -34,9 +34,49 @@ pub struct ManagedWorldSummary {
     pub default_game_mode: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateWorldRequest {
+    pub folder_name: String,
+    pub display_name: String,
+    pub kind: String,
+}
+
+#[derive(Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWorldSettingsRequest {
+    pub auto_load: Option<bool>,
+    pub default_game_mode: Option<String>,
+    pub time_of_day_ticks: Option<u64>,
+    pub weather: Option<String>,
+    pub natural_spawning: Option<bool>,
+    pub daylight_cycle: Option<bool>,
+    pub weather_cycle: Option<bool>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldSettingsSnapshot {
+    pub id: String,
+    pub display_name: String,
+    pub auto_load: bool,
+    pub default_game_mode: String,
+    pub time_of_day_ticks: u64,
+    pub weather: String,
+    pub natural_spawning: bool,
+    pub daylight_cycle: bool,
+    pub weather_cycle: bool,
+}
+
 #[derive(Deserialize)]
 struct WorldListResponse {
     worlds: Vec<ManagedWorldSummary>,
+}
+
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: String,
+    message: String,
 }
 
 pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
@@ -61,26 +101,99 @@ pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
 }
 
 pub fn list_worlds() -> Result<Vec<ManagedWorldSummary>, String> {
-    let options = load_or_create_control_options()?;
-    let url = format!("http://127.0.0.1:{}/v1/worlds", options.port);
-    let authorization = format!("Bearer {}", options.token);
+    let payload: WorldListResponse = request_json("GET", "/v1/worlds", Option::<&()>::None)?;
+    Ok(payload.worlds)
+}
 
+pub fn create_world(request: &CreateWorldRequest) -> Result<ManagedWorldSummary, String> {
+    if request.folder_name.trim().is_empty() {
+        return Err("World folder name must not be empty.".into());
+    }
+    let kind = request.kind.trim().to_uppercase();
+    if kind != "FLAT" && kind != "VOID" {
+        return Err("World type must be Flat or Void.".into());
+    }
+    request_json("POST", "/v1/worlds", Some(request))
+}
+
+pub fn load_world(world_id: &str) -> Result<ManagedWorldSummary, String> {
+    let path = format!("/v1/worlds/{}/load", validate_world_id(world_id)?);
+    request_json("POST", &path, Option::<&()>::None)
+}
+
+pub fn unload_world(world_id: &str) -> Result<ManagedWorldSummary, String> {
+    let path = format!("/v1/worlds/{}/unload", validate_world_id(world_id)?);
+    request_json("POST", &path, Option::<&()>::None)
+}
+
+pub fn get_world_settings(world_id: &str) -> Result<WorldSettingsSnapshot, String> {
+    let path = format!("/v1/worlds/{}/settings", validate_world_id(world_id)?);
+    request_json("GET", &path, Option::<&()>::None)
+}
+
+pub fn update_world_settings(
+    world_id: &str,
+    request: &UpdateWorldSettingsRequest,
+) -> Result<WorldSettingsSnapshot, String> {
+    if let Some(ticks) = request.time_of_day_ticks {
+        if ticks >= 24_000 {
+            return Err("Time must be between 0 and 23999 ticks.".into());
+        }
+    }
+    let path = format!("/v1/worlds/{}/settings", validate_world_id(world_id)?);
+    request_json("PATCH", &path, Some(request))
+}
+
+fn request_json<TBody, TResult>(method: &str, path: &str, body: Option<&TBody>) -> Result<TResult, String>
+where
+    TBody: Serialize + ?Sized,
+    TResult: DeserializeOwned,
+{
+    let options = load_or_create_control_options()?;
+    let url = format!("http://127.0.0.1:{}{}", options.port, path);
+    let authorization = format!("Bearer {}", options.token);
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
-        .timeout_read(Duration::from_secs(4))
-        .timeout_write(Duration::from_secs(4))
+        .timeout_read(Duration::from_secs(30))
+        .timeout_write(Duration::from_secs(10))
         .build();
 
-    let response = agent
-        .get(&url)
+    let request = agent.request(method, &url)
         .set("Authorization", &authorization)
-        .call()
-        .map_err(|error| format!("World-Manager control bridge unavailable: {error}"))?;
+        .set("Accept", "application/json");
 
-    let payload: WorldListResponse = response
-        .into_json()
-        .map_err(|error| format!("Invalid World-Manager response: {error}"))?;
-    Ok(payload.worlds)
+    let result = match body {
+        Some(payload) => request.set("Content-Type", "application/json").send_json(payload),
+        None => request.call(),
+    };
+
+    match result {
+        Ok(response) => response
+            .into_json::<TResult>()
+            .map_err(|error| format!("Invalid World-Manager response: {error}")),
+        Err(ureq::Error::Status(status, response)) => {
+            let parsed = response.into_json::<ErrorResponse>().ok();
+            if let Some(error) = parsed {
+                Err(format!("{}: {}", error.error, error.message))
+            } else {
+                Err(format!("World-Manager rejected the request with HTTP {status}."))
+            }
+        }
+        Err(error) => Err(format!("World-Manager control bridge unavailable: {error}")),
+    }
+}
+
+fn validate_world_id(value: &str) -> Result<&str, String> {
+    let trimmed = value.trim();
+    let valid = trimmed.len() == 36
+        && trimmed.chars().enumerate().all(|(index, ch)| {
+            matches!(index, 8 | 13 | 18 | 23) && ch == '-' ||
+                !matches!(index, 8 | 13 | 18 | 23) && ch.is_ascii_hexdigit()
+        });
+    if !valid {
+        return Err("World id is invalid.".into());
+    }
+    Ok(trimmed)
 }
 
 fn control_config_path() -> Result<PathBuf, String> {
@@ -94,6 +207,9 @@ fn save_control_options(path: &PathBuf, options: &WorldControlOptions) -> Result
     let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(options).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| error.to_string())?;
+    }
     fs::rename(&temporary, path).map_err(|error| error.to_string())?;
     Ok(())
 }
