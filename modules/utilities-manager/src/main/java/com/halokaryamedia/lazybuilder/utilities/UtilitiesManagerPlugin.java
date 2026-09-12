@@ -3,6 +3,8 @@ package com.halokaryamedia.lazybuilder.utilities;
 import com.halokaryamedia.lazybuilder.utilities.feature.UtilityFeatureRegistry;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.logging.Level;
+
 /**
  * Paper bootstrap for LazyBuilder Utilities-Manager.
  *
@@ -26,7 +28,12 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         if (featureRegistry != null) {
-            featureRegistry.disableAll();
+            try {
+                featureRegistry.disableAll();
+            } catch (RuntimeException exception) {
+                getLogger().log(Level.SEVERE,
+                        "One or more Utilities-Manager features did not disable cleanly.", exception);
+            }
         }
         getLogger().info("Utilities-Manager disabled.");
     }
