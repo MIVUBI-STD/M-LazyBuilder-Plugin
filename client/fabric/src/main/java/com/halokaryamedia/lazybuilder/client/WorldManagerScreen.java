@@ -10,8 +10,6 @@ import java.util.UUID;
 
 /** Daily-use managed-world workspace reached from the fullscreen map. */
 public final class WorldManagerScreen extends Screen {
-    private static final int PAGE_SIZE = 7;
-
     private final Screen parent;
     private final ClientWorldController controller;
     private final ClientTransferController transfers;
@@ -20,6 +18,7 @@ public final class WorldManagerScreen extends Screen {
     private int page;
     private long observedRevision;
     private boolean requestedInitialRefresh;
+    private boolean compactDetail;
 
     public WorldManagerScreen(
             Screen parent,
@@ -48,64 +47,91 @@ public final class WorldManagerScreen extends Screen {
         observedRevision = controller.revision();
 
         List<WorldControlWireProtocol.WorldSummary> worlds = controller.worlds();
-        int maxPage = worlds.isEmpty() ? 0 : (worlds.size() - 1) / PAGE_SIZE;
+        Layout l = layout();
+        int pageSize = pageSize(l);
+        int maxPage = worlds.isEmpty() ? 0 : (worlds.size() - 1) / pageSize;
         page = Math.max(0, Math.min(page, maxPage));
 
         if (selectedWorld != null && worlds.stream().noneMatch(world -> world.worldId().equals(selectedWorld))) {
             selectedWorld = null;
+            compactDetail = false;
         }
         if (selectedWorld == null && !worlds.isEmpty()) selectedWorld = worlds.get(0).worldId();
 
-        Layout l = layout();
         boolean busy = operationBusy();
+        if (!l.compact || !compactDetail) addWorldListControls(l, worlds, pageSize, maxPage, busy);
 
-        LbButtonWidget add = LbUi.button(l.left + 14, 58, 112, 22, "+ Add World",
+        WorldControlWireProtocol.WorldSummary selected = selected();
+        if (selected != null && (!l.compact || compactDetail)) addWorldActions(l, selected, busy);
+
+        if (l.compact && compactDetail) {
+            addDrawableChild(LbUi.button(l.left + 12, l.bottom + 8, 104, 20, "Back to Worlds",
+                    LbButtonWidget.Style.GHOST, () -> {
+                        compactDetail = false;
+                        clearAndInit();
+                    }));
+        }
+
+        addDrawableChild(LbUi.button(l.right - 104, l.bottom + 8, 94, 20, "Back to Map",
+                LbButtonWidget.Style.GHOST, this::returnToMap));
+    }
+
+    private void addWorldListControls(
+            Layout l,
+            List<WorldControlWireProtocol.WorldSummary> worlds,
+            int pageSize,
+            int maxPage,
+            boolean busy
+    ) {
+        int paneLeft = l.listLeft();
+        int paneWidth = l.listPaneWidth();
+
+        LbButtonWidget add = LbUi.button(paneLeft + 14, 58, 112, 22, "+ Add World",
                 LbButtonWidget.Style.PRIMARY,
                 () -> { if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers)); });
         add.active = !busy;
         addDrawableChild(add);
 
-        LbButtonWidget refresh = LbUi.button(l.left + 132, 58, 76, 22, "Refresh",
-                LbButtonWidget.Style.GHOST, controller::refresh);
+        LbButtonWidget refresh = LbUi.button(paneLeft + 132, 58, Math.max(64, Math.min(76, paneWidth - 146)), 22,
+                "Refresh", LbButtonWidget.Style.GHOST, controller::refresh);
         refresh.active = !busy;
         addDrawableChild(refresh);
 
-        int start = page * PAGE_SIZE;
-        int end = Math.min(start + PAGE_SIZE, worlds.size());
+        int start = page * pageSize;
+        int end = Math.min(start + pageSize, worlds.size());
         int y = 96;
         for (int i = start; i < end; i++) {
             WorldControlWireProtocol.WorldSummary world = worlds.get(i);
             boolean selected = world.worldId().equals(selectedWorld);
             String state = "LOADED".equals(world.runtimeState()) ? "   • Loaded" : "";
             LbButtonWidget row = LbUi.button(
-                    l.left + 14, y, l.listWidth - 28, 26,
+                    paneLeft + 14, y, paneWidth - 28, 26,
                     world.displayName() + state,
                     selected ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.SECONDARY,
-                    () -> { selectedWorld = world.worldId(); clearAndInit(); });
+                    () -> {
+                        selectedWorld = world.worldId();
+                        if (l.compact) compactDetail = true;
+                        clearAndInit();
+                    });
             addDrawableChild(row);
             y += 32;
         }
 
         if (maxPage > 0) {
-            addDrawableChild(LbUi.button(l.left + 14, l.bottom - 30, 34, 20, "‹",
+            addDrawableChild(LbUi.button(paneLeft + 14, l.bottom - 30, 34, 20, "‹",
                     LbButtonWidget.Style.GHOST,
                     () -> { page = Math.max(0, page - 1); clearAndInit(); }));
-            addDrawableChild(LbUi.button(l.left + 54, l.bottom - 30, 34, 20, "›",
+            addDrawableChild(LbUi.button(paneLeft + 54, l.bottom - 30, 34, 20, "›",
                     LbButtonWidget.Style.GHOST,
                     () -> { page = Math.min(maxPage, page + 1); clearAndInit(); }));
         }
-
-        WorldControlWireProtocol.WorldSummary selected = selected();
-        if (selected != null) addWorldActions(l, selected, busy);
-
-        addDrawableChild(LbUi.button(l.right - 104, l.bottom + 10, 94, 20, "Back to Map",
-                LbButtonWidget.Style.GHOST, this::returnToMap));
     }
 
     private void addWorldActions(Layout l, WorldControlWireProtocol.WorldSummary world, boolean busy) {
-        int x = l.detailLeft + 22;
-        int contentWidth = Math.max(210, l.detailWidth - 44);
-        int half = (contentWidth - 10) / 2;
+        int x = l.detailPaneLeft() + 22;
+        int contentWidth = Math.max(1, l.detailPaneWidth() - 44);
+        boolean narrow = contentWidth < 270;
+        int half = narrow ? contentWidth : (contentWidth - 10) / 2;
         int y = 126;
 
         if ("ACTIVE".equals(world.lifecycle())) {
@@ -115,7 +141,9 @@ public final class WorldManagerScreen extends Screen {
             addDrawableChild(teleport);
 
             String loadLabel = "LOADED".equals(world.runtimeState()) ? "Unload" : "Load";
-            LbButtonWidget load = LbUi.button(x + half + 10, y, half, 26, loadLabel,
+            int loadX = narrow ? x : x + half + 10;
+            int loadY = narrow ? y + 34 : y;
+            LbButtonWidget load = LbUi.button(loadX, loadY, half, 26, loadLabel,
                     LbButtonWidget.Style.SECONDARY,
                     () -> {
                         if ("LOADED".equals(world.runtimeState())) controller.unload(world.worldId());
@@ -124,7 +152,7 @@ public final class WorldManagerScreen extends Screen {
             load.active = !busy;
             addDrawableChild(load);
 
-            y += 38;
+            y += narrow ? 72 : 38;
             LbButtonWidget export = LbUi.button(x, y, contentWidth, 26, "Export World",
                     LbButtonWidget.Style.SECONDARY,
                     () -> { if (client != null) client.setScreen(new ExportWorldScreen(this, controller, world)); });
@@ -132,32 +160,7 @@ public final class WorldManagerScreen extends Screen {
             addDrawableChild(export);
 
             y += 46;
-            LbButtonWidget settings = LbUi.button(x, y, half, 24, "Settings",
-                    LbButtonWidget.Style.GHOST,
-                    () -> {
-                        controller.requestSettings(world.worldId());
-                        if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world));
-                    });
-            settings.active = !busy;
-            addDrawableChild(settings);
-
-            LbButtonWidget clone = LbUi.button(x + half + 10, y, half, 24, "Clone",
-                    LbButtonWidget.Style.GHOST,
-                    () -> { if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world)); });
-            clone.active = !busy;
-            addDrawableChild(clone);
-
-            y += 34;
-            LbButtonWidget archive = LbUi.button(x, y, half, 24, "Archive",
-                    LbButtonWidget.Style.GHOST, () -> confirmArchive(world));
-            archive.active = !busy;
-            addDrawableChild(archive);
-
-            LbButtonWidget delete = LbUi.button(x + half + 10, y, half, 24, "Delete",
-                    LbButtonWidget.Style.DANGER,
-                    () -> { if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world)); });
-            delete.active = !busy;
-            addDrawableChild(delete);
+            addManagementActions(l, world, busy, x, y, contentWidth, half, narrow);
         } else if ("ARCHIVED".equals(world.lifecycle())) {
             LbButtonWidget restore = LbUi.button(x, y, contentWidth, 26, "Restore World",
                     LbButtonWidget.Style.PRIMARY, () -> controller.restore(world.worldId()));
@@ -171,6 +174,48 @@ public final class WorldManagerScreen extends Screen {
             delete.active = !busy;
             addDrawableChild(delete);
         }
+    }
+
+    private void addManagementActions(
+            Layout l,
+            WorldControlWireProtocol.WorldSummary world,
+            boolean busy,
+            int x,
+            int y,
+            int contentWidth,
+            int half,
+            boolean narrow
+    ) {
+        LbButtonWidget settings = LbUi.button(x, y, half, 24, "Settings",
+                LbButtonWidget.Style.GHOST,
+                () -> {
+                    controller.requestSettings(world.worldId());
+                    if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world));
+                });
+        settings.active = !busy;
+        addDrawableChild(settings);
+
+        int cloneX = narrow ? x : x + half + 10;
+        int cloneY = narrow ? y + 32 : y;
+        LbButtonWidget clone = LbUi.button(cloneX, cloneY, half, 24, "Clone",
+                LbButtonWidget.Style.GHOST,
+                () -> { if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world)); });
+        clone.active = !busy;
+        addDrawableChild(clone);
+
+        int nextY = y + (narrow ? 64 : 34);
+        LbButtonWidget archive = LbUi.button(x, nextY, half, 24, "Archive",
+                LbButtonWidget.Style.GHOST, () -> confirmArchive(world));
+        archive.active = !busy;
+        addDrawableChild(archive);
+
+        int deleteX = narrow ? x : x + half + 10;
+        int deleteY = narrow ? nextY + 32 : nextY;
+        LbButtonWidget delete = LbUi.button(deleteX, deleteY, half, 24, "Delete",
+                LbButtonWidget.Style.DANGER,
+                () -> { if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world)); });
+        delete.active = !busy;
+        addDrawableChild(delete);
     }
 
     private void confirmArchive(WorldControlWireProtocol.WorldSummary world) {
@@ -196,42 +241,59 @@ public final class WorldManagerScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         LbUi.background(context, width, height);
         Layout l = layout();
-        LbUi.panel(context, l.left, 34, l.listWidth, l.bottom - 34);
-        LbUi.elevatedPanel(context, l.detailLeft, 34, l.detailWidth, l.bottom - 34);
-        LbUi.divider(context, l.left + 14, 88, l.left + l.listWidth - 14);
-
         context.drawTextWithShadow(textRenderer, Text.literal("LAZYBUILDER"), l.left, 14, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal("Managed Worlds"), l.left + 14, 42, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Daily workspace"), l.left + 14, 72, LbUi.TEXT_MUTED);
 
-        WorldControlWireProtocol.WorldSummary selected = selected();
-        if (selected != null) {
-            int tx = l.detailLeft + 22;
-            context.drawTextWithShadow(textRenderer, Text.literal(selected.displayName()), tx, 52, LbUi.TEXT_PRIMARY);
-            String status = titleCase(selected.lifecycle()) + "  •  " + titleCase(selected.runtimeState());
-            context.drawTextWithShadow(textRenderer, Text.literal(status), tx, 72,
-                    "LOADED".equals(selected.runtimeState()) ? LbUi.SUCCESS : LbUi.TEXT_SECONDARY);
-            context.drawTextWithShadow(textRenderer, Text.literal("Type  " + titleCase(selected.kind())), tx, 92, LbUi.TEXT_MUTED);
-            context.drawTextWithShadow(textRenderer, Text.literal("Folder  " + selected.folderName()), tx, 106, LbUi.TEXT_MUTED);
-            LbUi.divider(context, tx, 114, l.right - 22);
-            context.drawTextWithShadow(textRenderer, Text.literal("Primary Actions"), tx, 120, LbUi.TEXT_SECONDARY);
-            context.drawTextWithShadow(textRenderer, Text.literal("Management"), tx, 220, LbUi.TEXT_MUTED);
-        } else if (controller.worlds().isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("No managed worlds yet"),
-                    l.left + l.listWidth / 2, 132, LbUi.TEXT_SECONDARY);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Add a world to begin building"),
-                    l.left + l.listWidth / 2, 150, LbUi.TEXT_MUTED);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Choose or create a world from the left"),
-                    l.detailLeft + l.detailWidth / 2, 120, LbUi.TEXT_MUTED);
-        }
+        if (!l.compact || !compactDetail) renderWorldListPane(context, l);
+        if (!l.compact || compactDetail) renderDetailPane(context, l);
 
         renderOperationStatus(context, l);
-        if (controller.lastError() != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
-                    l.detailLeft + l.detailWidth / 2, l.bottom - 18, LbUi.DANGER_BRIGHT);
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    private void renderWorldListPane(DrawContext context, Layout l) {
+        int paneLeft = l.listLeft();
+        int paneWidth = l.listPaneWidth();
+        LbUi.panel(context, paneLeft, 34, paneWidth, l.bottom - 34);
+        LbUi.divider(context, paneLeft + 14, 88, paneLeft + paneWidth - 14);
+        context.drawTextWithShadow(textRenderer, Text.literal("Managed Worlds"), paneLeft + 14, 42, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Choose a world to work on"), paneLeft + 14, 72, LbUi.TEXT_MUTED);
+
+        if (controller.worlds().isEmpty()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("No worlds yet"),
+                    paneLeft + paneWidth / 2, 132, LbUi.TEXT_SECONDARY);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Use + Add World to begin"),
+                    paneLeft + paneWidth / 2, 150, LbUi.TEXT_MUTED);
+        }
+    }
+
+    private void renderDetailPane(DrawContext context, Layout l) {
+        int detailLeft = l.detailPaneLeft();
+        int detailWidth = l.detailPaneWidth();
+        LbUi.elevatedPanel(context, detailLeft, 34, detailWidth, l.bottom - 34);
+
+        WorldControlWireProtocol.WorldSummary selected = selected();
+        if (selected == null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Choose a world"),
+                    detailLeft + detailWidth / 2, 120, LbUi.TEXT_MUTED);
+            return;
         }
 
-        super.render(context, mouseX, mouseY, delta);
+        int tx = detailLeft + 22;
+        context.drawTextWithShadow(textRenderer, Text.literal(selected.displayName()), tx, 52, LbUi.TEXT_PRIMARY);
+        String status = titleCase(selected.lifecycle()) + "  •  " + titleCase(selected.runtimeState());
+        context.drawTextWithShadow(textRenderer, Text.literal(status), tx, 72,
+                "LOADED".equals(selected.runtimeState()) ? LbUi.SUCCESS : LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Type  " + titleCase(selected.kind())), tx, 92, LbUi.TEXT_MUTED);
+        if (detailWidth >= 260) {
+            context.drawTextWithShadow(textRenderer, Text.literal("Folder  " + selected.folderName()), tx, 106, LbUi.TEXT_MUTED);
+        }
+        LbUi.divider(context, tx, 114, detailLeft + detailWidth - 22);
+        context.drawTextWithShadow(textRenderer, Text.literal("Actions"), tx, 120, LbUi.TEXT_SECONDARY);
+
+        if (controller.lastError() != null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
+                    detailLeft + detailWidth / 2, l.bottom - 18, LbUi.DANGER_BRIGHT);
+        }
     }
 
     private void renderOperationStatus(DrawContext context, Layout l) {
@@ -248,12 +310,13 @@ public final class WorldManagerScreen extends Screen {
         }
         if (label == null) return;
 
+        int paneLeft = (!l.compact || compactDetail) ? l.detailPaneLeft() : l.listLeft();
+        int paneWidth = (!l.compact || compactDetail) ? l.detailPaneWidth() : l.listPaneWidth();
         int y = l.bottom - 42;
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
-                l.detailLeft + l.detailWidth / 2, y, LbUi.TEXT_SECONDARY);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), paneLeft + paneWidth / 2, y, LbUi.TEXT_SECONDARY);
         if (percent >= 0) {
-            int barWidth = Math.min(280, l.detailWidth - 44);
-            int x = l.detailLeft + (l.detailWidth - barWidth) / 2;
+            int barWidth = Math.max(80, Math.min(280, paneWidth - 44));
+            int x = paneLeft + (paneWidth - barWidth) / 2;
             LbUi.progress(context, x, y + 14, barWidth, percent);
         }
     }
@@ -262,15 +325,25 @@ public final class WorldManagerScreen extends Screen {
         return controller.activityMessage() != null || transfers.status().active();
     }
 
+    private int pageSize(Layout l) {
+        return Math.max(2, Math.min(7, (l.bottom - 126) / 32));
+    }
+
     private Layout layout() {
-        int totalWidth = Math.min(820, Math.max(560, width - 54));
+        boolean compact = width < 560;
+        int totalWidth = Math.max(280, Math.min(820, width - 24));
         int left = (width - totalWidth) / 2;
         int right = left + totalWidth;
-        int listWidth = Math.min(280, Math.max(220, totalWidth / 3));
+        int bottom = Math.max(170, height - 42);
+
+        if (compact) {
+            return new Layout(left, right, totalWidth, left, totalWidth, bottom, true);
+        }
+
+        int listWidth = Math.min(280, Math.max(210, totalWidth / 3));
         int detailLeft = left + listWidth + 12;
         int detailWidth = right - detailLeft;
-        int bottom = height - 42;
-        return new Layout(left, right, listWidth, detailLeft, detailWidth, bottom);
+        return new Layout(left, right, listWidth, detailLeft, detailWidth, bottom, false);
     }
 
     private void returnToMap() {
@@ -281,6 +354,11 @@ public final class WorldManagerScreen extends Screen {
 
     @Override
     public void close() {
+        if (layout().compact && compactDetail) {
+            compactDetail = false;
+            clearAndInit();
+            return;
+        }
         returnToMap();
     }
 
@@ -298,5 +376,18 @@ public final class WorldManagerScreen extends Screen {
         return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
     }
 
-    private record Layout(int left, int right, int listWidth, int detailLeft, int detailWidth, int bottom) {}
+    private record Layout(
+            int left,
+            int right,
+            int listWidth,
+            int detailLeft,
+            int detailWidth,
+            int bottom,
+            boolean compact
+    ) {
+        int listLeft() { return left; }
+        int listPaneWidth() { return compact ? right - left : listWidth; }
+        int detailPaneLeft() { return compact ? left : detailLeft; }
+        int detailPaneWidth() { return compact ? right - left : detailWidth; }
+    }
 }
