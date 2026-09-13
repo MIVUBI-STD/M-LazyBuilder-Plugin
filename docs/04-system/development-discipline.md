@@ -1,6 +1,6 @@
 # Minimum-Flow Development Discipline
 
-Canonical execution discipline for LazyBuilder development. This is the repo-local adaptation of the proven "do the least that correctly solves the problem" approach used across related projects.
+Canonical execution discipline for LazyBuilder development. This is the repo-local adaptation of a "do the least that correctly solves the problem" approach.
 
 This document owns **how much to build**. Domain Skills own **where and how to execute within their boundary**.
 
@@ -30,7 +30,7 @@ Stop at the first level that fully satisfies the requirement:
 7. Add a new abstraction/system only when repeated responsibility proves it is necessary
 ```
 
-Do not skip directly to a new manager, registry, cache, router, config system, compatibility layer, scheduler, background worker, or dependency.
+Do not skip directly to a new manager, registry, cache, router, config system, compatibility layer, scheduler, background worker, dependency, or specialist Skill.
 
 ## Before Editing
 
@@ -59,10 +59,38 @@ If current behavior already satisfies the requirement, `No change required` is a
 
 When two owners appear to overlap, prefer consolidating responsibility over coordinating two permanent authorities.
 
+## Ambiguity Resolution
+
+There is no meta development Skill. Resolve ambiguity directly before loading a specialist:
+
+```text
+state competing semantic owners
+→ gather only evidence that can separate them
+→ identify first wrong owner / smallest contract boundary
+→ choose one primary specialist from skill-routing.md
+→ continue under that owner
+```
+
+If success criteria themselves are unclear, write a temporary development contract in the working notes/reasoning only:
+
+```text
+Goal
+Success metric
+Non-goal / forbidden proxy
+First evidence required
+In scope / out of scope
+Execution partition
+Proof required
+STOP condition
+```
+
+Do not create a durable planning layer merely to represent ambiguity.
+
 ## Context Economy
 
 ```text
 AGENTS.md
+→ development-discipline.md
 → exact specialist (only if procedure materially helps)
 → canonical domain doc
 → exact source/evidence
@@ -126,7 +154,7 @@ owner A decides/changes its contract
 → owner B consumes it
 ```
 
-Do not keep multiple specialists active for the same decision. `lazybuilder-development-brief` may resolve ambiguity, then it exits before implementation continues under the selected owner.
+Do not keep multiple specialists active for the same decision.
 
 ## STOP Conditions
 
