@@ -6,7 +6,6 @@ pub mod paper_performance;
 pub mod paper_provider;
 pub mod paths;
 pub mod plugin_manager;
-pub mod plugin_problem;
 pub mod provisioning;
 pub mod resource_settings;
 pub mod runtime_updates;
