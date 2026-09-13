@@ -5,16 +5,18 @@
   import Plugins from './pages/Plugins.svelte';
   import Settings from './pages/Settings.svelte';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
-  import type { WorkspaceEntry, WorkspaceState } from './app/bridge/runtimeApi';
+  import type { WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Dashboard' | 'Worlds' | 'Plugins' | 'Settings';
   let page: Page = 'Dashboard';
   let workspaceState: WorkspaceState = { active: null, recent: [] };
+  let provisioning: WorkspaceProvisioningStatus | null = null;
   let loadingWorkspace = true;
   let workspaceError = '';
   let createName = '';
   let createParent = '';
   let creating = false;
+  let acceptingEula = false;
 
   const pages: Page[] = ['Dashboard', 'Worlds', 'Plugins', 'Settings'];
 
@@ -23,8 +25,10 @@
     workspaceError = '';
     try {
       workspaceState = await runtimeProduct.workspace.state();
+      provisioning = workspaceState.active ? await runtimeProduct.workspace.provisioningStatus() : null;
     } catch (error) {
       workspaceError = String(error);
+      provisioning = null;
     } finally {
       loadingWorkspace = false;
     }
@@ -76,6 +80,29 @@
     }
   }
 
+  async function switchServer() {
+    workspaceError = '';
+    try {
+      await runtimeProduct.workspace.close();
+      page = 'Dashboard';
+      await refreshWorkspaceState();
+    } catch (error) {
+      workspaceError = String(error);
+    }
+  }
+
+  async function acceptEula() {
+    acceptingEula = true;
+    workspaceError = '';
+    try {
+      provisioning = await runtimeProduct.workspace.acceptEula();
+    } catch (error) {
+      workspaceError = String(error);
+    } finally {
+      acceptingEula = false;
+    }
+  }
+
   onMount(refreshWorkspaceState);
 </script>
 
@@ -87,7 +114,7 @@
       <div class="launcher-heading">
         <p class="eyebrow">LazyBuilder</p>
         <h1>Minecraft Server Workspace</h1>
-        <p>Create a new managed server or open one you already use with LazyBuilder.</p>
+        <p>Create a new managed server or open an existing LazyBuilder workspace.</p>
       </div>
 
       {#if workspaceError}
@@ -107,13 +134,14 @@
             <button class="secondary" onclick={chooseCreateLocation}>Browse…</button>
           </div>
         </label>
+        <p class="hint">LazyBuilder will create the server folder inside this location.</p>
         <button class="primary" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>
           {creating ? 'Creating…' : 'Create Server'}
         </button>
       </div>
 
       <div class="open-row">
-        <button class="secondary wide" onclick={openServer}>Open Existing Server</button>
+        <button class="secondary wide" onclick={openServer}>Open Existing LazyBuilder Server</button>
       </div>
 
       {#if workspaceState.recent.length > 0}
@@ -140,6 +168,7 @@
         <small>Active Server</small>
         <strong>{workspaceState.active.name}</strong>
         <span title={workspaceState.active.path}>{workspaceState.active.path}</span>
+        <button class="switch-button" onclick={switchServer}>Switch Server</button>
       </div>
       <nav>
         {#each pages as item}
@@ -149,6 +178,34 @@
     </aside>
 
     <main class="content">
+      {#if workspaceError}
+        <div class="error-box workspace-error">{workspaceError}</div>
+      {/if}
+
+      {#if provisioning && !provisioning.ready}
+        <section class="provision-card">
+          <div>
+            <small>Server Setup</small>
+            <strong>{provisioning.nextStep}</strong>
+          </div>
+          <div class="provision-steps">
+            <span class:done={provisioning.workspaceCreated}>Workspace</span>
+            <span class:done={provisioning.paperReady}>Paper</span>
+            <span class:done={provisioning.coreModulesReady}>Core Modules</span>
+            <span class:done={provisioning.configReady}>Config</span>
+            <span class:done={provisioning.eulaAccepted}>EULA</span>
+          </div>
+          {#if !provisioning.eulaAccepted}
+            <div class="eula-row">
+              <p>Before the Minecraft server can run, you must explicitly accept the Minecraft EULA.</p>
+              <button class="secondary" disabled={acceptingEula} onclick={acceptEula}>
+                {acceptingEula ? 'Saving…' : 'I Agree to the Minecraft EULA'}
+              </button>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
       {#if page === 'Dashboard'}
         <Dashboard />
       {:else if page === 'Worlds'}
@@ -178,7 +235,7 @@
   .launcher-heading p { margin: 0; color: #aeb4bd; }
   .eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 12px; }
 
-  .create-panel, .recent-panel {
+  .create-panel, .recent-panel, .provision-card {
     display: grid;
     gap: 14px;
     padding: 22px;
@@ -199,6 +256,7 @@
     color: #f3f4f6;
   }
   .location-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .hint { margin: -4px 0 0; color: #7f8792; font-size: 12px; }
   button { cursor: pointer; }
   button:disabled { cursor: default; opacity: .45; }
   .primary, .secondary {
@@ -211,6 +269,7 @@
   .wide { width: 100%; }
   .open-row { display: flex; }
   .error-box { padding: 12px 14px; border-radius: 9px; background: #31191b; border: 1px solid #70343a; color: #ffd9dc; font-size: 13px; }
+  .workspace-error { margin-bottom: 14px; }
 
   .recent-server {
     display: flex;
@@ -238,4 +297,28 @@
   }
   .active-workspace small { opacity: .6; }
   .active-workspace span { font-size: 11px; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switch-button {
+    margin-top: 7px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.13);
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+  }
+
+  .provision-card { margin-bottom: 18px; }
+  .provision-card > div:first-child { display: grid; gap: 3px; }
+  .provision-card small { color: #8f97a2; }
+  .provision-steps { display: flex; gap: 8px; flex-wrap: wrap; }
+  .provision-steps span {
+    padding: 6px 9px;
+    border-radius: 999px;
+    background: #252a30;
+    color: #8f97a2;
+    font-size: 12px;
+  }
+  .provision-steps span.done { color: #f3f4f6; background: #343a42; }
+  .eula-row { display: grid; gap: 10px; border-top: 1px solid #2d3238; padding-top: 14px; }
+  .eula-row p { margin: 0; color: #aeb4bd; font-size: 13px; line-height: 1.5; }
 </style>
