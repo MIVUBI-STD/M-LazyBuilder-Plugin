@@ -12,6 +12,8 @@ pub fn run() {
         .manage(PluginManagerState::default())
         .invoke_handler(tauri::generate_handler![
             commands::workspace::workspace_state,
+            commands::workspace::workspace_provisioning_status,
+            commands::workspace::workspace_accept_eula,
             commands::workspace::workspace_pick_parent,
             commands::workspace::workspace_create,
             commands::workspace::workspace_open_picker,
