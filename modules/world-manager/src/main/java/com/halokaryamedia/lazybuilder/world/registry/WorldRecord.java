@@ -6,7 +6,7 @@ import java.util.Objects;
  * Durable LazyBuilder metadata for one managed world.
  *
  * <p>The world folder is filesystem identity and is not a presentation name.
- * Runtime load state is intentionally not stored here.</p>
+ * Runtime load state is intentionally not stored here; Paper is the runtime authority.</p>
  */
 public record WorldRecord(
         WorldId id,
@@ -14,7 +14,6 @@ public record WorldRecord(
         String displayName,
         WorldKind kind,
         WorldLifecycle lifecycle,
-        boolean autoLoad,
         String defaultGameMode
 ) {
     public static final String DEFAULT_GAME_MODE = "CREATIVE";
@@ -33,26 +32,21 @@ public record WorldRecord(
             String folderName,
             String displayName,
             WorldKind kind,
-            WorldLifecycle lifecycle,
-            boolean autoLoad
+            WorldLifecycle lifecycle
     ) {
-        this(id, folderName, displayName, kind, lifecycle, autoLoad, DEFAULT_GAME_MODE);
+        this(id, folderName, displayName, kind, lifecycle, DEFAULT_GAME_MODE);
     }
 
     public WorldRecord withDisplayName(String newDisplayName) {
-        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, autoLoad, defaultGameMode);
+        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, defaultGameMode);
     }
 
     public WorldRecord withLifecycle(WorldLifecycle newLifecycle) {
-        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, autoLoad, defaultGameMode);
-    }
-
-    public WorldRecord withAutoLoad(boolean newAutoLoad) {
-        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newAutoLoad, defaultGameMode);
+        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, defaultGameMode);
     }
 
     public WorldRecord withDefaultGameMode(String newDefaultGameMode) {
-        return new WorldRecord(id, folderName, displayName, kind, lifecycle, autoLoad, newDefaultGameMode);
+        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newDefaultGameMode);
     }
 
     private static String validateFolderName(String value) {
