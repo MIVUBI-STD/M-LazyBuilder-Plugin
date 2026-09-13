@@ -19,19 +19,33 @@ public final class AddWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelWidth = Math.min(520, width - 48);
+        boolean stacked = width < 520;
+        int panelWidth = Math.max(280, Math.min(520, width - 32));
         int left = width / 2 - panelWidth / 2;
-        int cardWidth = (panelWidth - 42) / 2;
-        int cardY = 100;
 
+        if (stacked) {
+            int cardWidth = panelWidth;
+            int firstY = 92;
+            int secondY = 202;
+            addDrawableChild(LbUi.button(left + 16, firstY + 66, cardWidth - 32, 26,
+                    "Create New World", LbButtonWidget.Style.PRIMARY,
+                    () -> { if (client != null) client.setScreen(new CreateWorldScreen(parent, worlds)); }));
+            addDrawableChild(LbUi.button(left + 16, secondY + 66, cardWidth - 32, 26,
+                    "Import Existing World", LbButtonWidget.Style.SECONDARY,
+                    () -> { if (client != null) client.setScreen(new ImportWorldScreen(parent, worlds, transfers)); }));
+            addDrawableChild(LbUi.button(width / 2 - 48, secondY + 112, 96, 22,
+                    "Back", LbButtonWidget.Style.GHOST, this::close));
+            return;
+        }
+
+        int cardWidth = (panelWidth - 14) / 2;
+        int cardY = 100;
         addDrawableChild(LbUi.button(left + 14, cardY + 72, cardWidth - 28, 28,
                 "Create New World", LbButtonWidget.Style.PRIMARY,
                 () -> { if (client != null) client.setScreen(new CreateWorldScreen(parent, worlds)); }));
-
-        addDrawableChild(LbUi.button(left + cardWidth + 28, cardY + 72, cardWidth - 28, 28,
+        addDrawableChild(LbUi.button(left + cardWidth + 14, cardY + 72, cardWidth - 28, 28,
                 "Import Existing World", LbButtonWidget.Style.SECONDARY,
                 () -> { if (client != null) client.setScreen(new ImportWorldScreen(parent, worlds, transfers)); }));
-
         addDrawableChild(LbUi.button(width / 2 - 48, cardY + 126, 96, 22,
                 "Back", LbButtonWidget.Style.GHOST, this::close));
     }
@@ -39,29 +53,44 @@ public final class AddWorldScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         LbUi.background(context, width, height);
-        int panelWidth = Math.min(520, width - 48);
+        boolean stacked = width < 520;
+        int panelWidth = Math.max(280, Math.min(520, width - 32));
         int left = width / 2 - panelWidth / 2;
-        int cardWidth = (panelWidth - 42) / 2;
-        int cardY = 100;
 
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Add World"), width / 2, 28, LbUi.TEXT_PRIMARY);
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.literal("Choose the quickest path for the world you want to work on."),
                 width / 2, 50, LbUi.TEXT_SECONDARY);
 
-        LbUi.elevatedPanel(context, left, cardY, cardWidth, 108);
-        LbUi.elevatedPanel(context, left + cardWidth + 14, cardY, cardWidth, 108);
-
-        context.drawTextWithShadow(textRenderer, Text.literal("CREATE"), left + 14, cardY + 14, LbUi.ACCENT_BRIGHT);
-        context.drawTextWithShadow(textRenderer, Text.literal("Start clean"), left + 14, cardY + 32, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Flat or void build world"), left + 14, cardY + 50, LbUi.TEXT_MUTED);
-
-        int rightCard = left + cardWidth + 14;
-        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT"), rightCard + 14, cardY + 14, LbUi.TEXT_SECONDARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Use an existing world"), rightCard + 14, cardY + 32, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal(".zip or .mcworld from your PC"), rightCard + 14, cardY + 50, LbUi.TEXT_MUTED);
+        if (stacked) {
+            int firstY = 92;
+            int secondY = 202;
+            LbUi.elevatedPanel(context, left, firstY, panelWidth, 102);
+            LbUi.elevatedPanel(context, left, secondY, panelWidth, 102);
+            renderCreateCard(context, left, firstY);
+            renderImportCard(context, left, secondY);
+        } else {
+            int cardWidth = (panelWidth - 14) / 2;
+            int cardY = 100;
+            LbUi.elevatedPanel(context, left, cardY, cardWidth, 108);
+            LbUi.elevatedPanel(context, left + cardWidth + 14, cardY, cardWidth, 108);
+            renderCreateCard(context, left, cardY);
+            renderImportCard(context, left + cardWidth + 14, cardY);
+        }
 
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private void renderCreateCard(DrawContext context, int x, int y) {
+        context.drawTextWithShadow(textRenderer, Text.literal("CREATE"), x + 14, y + 14, LbUi.ACCENT_BRIGHT);
+        context.drawTextWithShadow(textRenderer, Text.literal("Start clean"), x + 14, y + 32, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Flat or void build world"), x + 14, y + 50, LbUi.TEXT_MUTED);
+    }
+
+    private void renderImportCard(DrawContext context, int x, int y) {
+        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT"), x + 14, y + 14, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Use an existing world"), x + 14, y + 32, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal(".zip or .mcworld from your PC"), x + 14, y + 50, LbUi.TEXT_MUTED);
     }
 
     @Override
