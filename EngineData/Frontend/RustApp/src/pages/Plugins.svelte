@@ -24,7 +24,7 @@
     const query = search.trim().toLowerCase();
     return plugins
       .filter((plugin) => !isCore(plugin))
-      .filter((plugin) => !query || `${plugin.displayName} ${plugin.category} ${plugin.version}`.toLowerCase().includes(query));
+      .filter((plugin) => !query || `${plugin.displayName} ${plugin.version}`.toLowerCase().includes(query));
   }
 
   function friendlyError(value: unknown) {
@@ -55,8 +55,8 @@
     if (busy) return;
     if (!canMutate()) {
       error = serverState === 'Detached'
-        ? 'The server is running externally. Stop it before changing plugin files.'
-        : `Stop the server before changing plugins. Current state: ${serverState}.`;
+        ? 'The server is running externally. Stop it before changing plugins.'
+        : 'Stop the server before changing plugins.';
       return;
     }
     busy = true;
@@ -134,189 +134,197 @@
   <header class="page-header">
     <div>
       <h2>Plugins</h2>
-      <p>Add and manage Paper plugins without touching the server folder manually.</p>
+      <p>Add only what this build server needs.</p>
     </div>
     <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>+ Add plugin</button>
   </header>
 
   {#if !canMutate()}
     <div class="notice warning">
-      {serverState === 'Detached'
-        ? 'Plugin changes are locked because the server is running externally. Stop it first.'
-        : `Plugin changes are locked while the server is ${serverState.toLowerCase()}. Stop the server first.`}
+      <strong>Stop the server to edit plugins</strong>
+      <span>{serverState === 'Detached' ? 'The server is currently running outside LazyBuilder.' : 'Installed plugins stay visible while the server is running.'}</span>
     </div>
   {/if}
-  {#if message}<div class="notice success" aria-live="polite">{message}</div>{/if}
+  {#if message}<div class="notice success">{message}</div>{/if}
   {#if error}<div class="notice error" role="alert">{error}</div>{/if}
 
+  {#if plugins.filter((plugin) => !isCore(plugin)).length > 0}
+    <div class="toolbar">
+      <label class="search-field" aria-label="Search plugins">
+        <span aria-hidden="true">⌕</span>
+        <input bind:value={search} placeholder="Search plugins" />
+      </label>
+      <span>{serverPlugins().length} shown</span>
+    </div>
+  {/if}
+
+  {#if serverPlugins().length > 0}
+    <div class="plugin-list">
+      {#each serverPlugins() as plugin}
+        <article class="plugin-row" class:has-problem={plugin.state === 'Problem' || isInvalid(plugin)}>
+          <div class="plugin-icon">{plugin.displayName.slice(0, 1).toUpperCase()}</div>
+          <div class="plugin-main">
+            <strong>{plugin.displayName}</strong>
+            <span>{plugin.version || 'Unknown version'}</span>
+
+            {#if hasDuplicates(plugin)}
+              <div class="problem-card">
+                <strong>Multiple plugin files found</strong>
+                <span>Choose which JAR LazyBuilder should keep.</span>
+                <div class="problem-actions">
+                  <select
+                    disabled={busy || !canMutate()}
+                    value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]}
+                    onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}
+                  >
+                    {#each plugin.candidateFiles ?? [] as candidate}<option value={candidate}>{candidate}</option>{/each}
+                  </select>
+                  <button disabled={busy || !canMutate()} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
+                </div>
+              </div>
+            {:else if isInvalid(plugin)}
+              <div class="problem-card danger-card">
+                <strong>Broken plugin file</strong>
+                <span>{plugin.candidateFiles?.[0] || 'LazyBuilder could not read this JAR.'}</span>
+              </div>
+            {:else if plugin.problemDetail}
+              <small class="problem-text">{plugin.problemDetail}</small>
+            {/if}
+          </div>
+
+          <div class="row-tools">
+            <span class="state-pill" class:disabled={!isInvalid(plugin) && plugin.state !== 'Enabled'} class:problem={isInvalid(plugin) || plugin.state === 'Problem'}>
+              {isInvalid(plugin) ? 'Needs attention' : plugin.state}
+            </span>
+            <details class="row-menu">
+              <summary aria-label={`Manage ${plugin.displayName}`} title="Manage plugin">•••</summary>
+              <div class="menu-popover">
+                {#if !isInvalid(plugin)}
+                  {#if plugin.state !== 'Problem'}
+                    <button disabled={busy || !canMutate()} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable' : 'Enable'}</button>
+                    <button disabled={busy || !canMutate()} onclick={() => updatePlugin(plugin)}>Replace plugin file…</button>
+                  {/if}
+                  <button class="danger" disabled={busy || !canMutate() || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove plugin</button>
+                {:else}
+                  <button class="danger" disabled={busy || !canMutate() || !plugin.candidateFiles?.[0]} onclick={() => removeProblemPlugin(plugin)}>Remove broken file</button>
+                {/if}
+              </div>
+            </details>
+          </div>
+        </article>
+      {/each}
+    </div>
+  {:else if plugins.filter((plugin) => !isCore(plugin)).length > 0 && search.trim()}
+    <section class="search-empty">
+      <strong>No matching plugins</strong>
+      <span>Try another name.</span>
+      <button onclick={() => (search = '')}>Clear search</button>
+    </section>
+  {:else if !error}
+    <section class="empty-state">
+      <div class="empty-icon">+</div>
+      <h3>No extra plugins</h3>
+      <p>This server can stay simple. Add a plugin only when your builders need one.</p>
+      <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>Add plugin</button>
+    </section>
+  {/if}
+
   {#if plugins.some(isCore)}
-    <section class="section-block">
-      <div class="section-heading">
-        <div><h3>LazyBuilder components</h3><p>Required components are maintained automatically.</p></div>
-      </div>
-      <div class="plugin-list core-list">
+    <details class="system-components">
+      <summary>LazyBuilder system components</summary>
+      <p>These required components are maintained automatically.</p>
+      <div class="system-list">
         {#each plugins.filter(isCore) as plugin}
-          <div class="plugin-row">
+          <div>
             <div class="plugin-icon core">L</div>
-            <div class="plugin-main">
-              <strong>{plugin.displayName}</strong>
-              <span>{plugin.version} · Required</span>
-              {#if plugin.problemDetail}<small class="problem">{plugin.problemDetail}</small>{/if}
-            </div>
+            <span><strong>{plugin.displayName}</strong><small>{plugin.version} · Required</small></span>
             <span class="state-pill" class:problem={plugin.state === 'Problem'}>{plugin.state === 'Enabled' ? 'Ready' : plugin.state}</span>
           </div>
         {/each}
       </div>
-    </section>
+    </details>
   {/if}
-
-  <section class="section-block">
-    <div class="section-heading plugin-section-heading">
-      <div><h3>Server plugins</h3><p>{plugins.filter((plugin) => !isCore(plugin)).length} installed</p></div>
-      {#if plugins.filter((plugin) => !isCore(plugin)).length > 0}
-        <label class="search-field" aria-label="Search plugins">
-          <span aria-hidden="true">⌕</span>
-          <input bind:value={search} placeholder="Search plugins" />
-        </label>
-      {/if}
-    </div>
-
-    {#if serverPlugins().length > 0}
-      <div class="plugin-list">
-        {#each serverPlugins() as plugin}
-          <div class="plugin-row expanded" class:has-problem={plugin.state === 'Problem'}>
-            <div class="plugin-icon">{plugin.displayName.slice(0, 1).toUpperCase()}</div>
-            <div class="plugin-main">
-              <strong>{plugin.displayName}</strong>
-              <span>{plugin.version} · {plugin.category}</span>
-              {#if plugin.problemDetail}<small class="problem">{plugin.problemDetail}</small>{/if}
-
-              {#if hasDuplicates(plugin)}
-                <div class="duplicate-box">
-                  <strong>Multiple JARs detected</strong>
-                  <span>Choose the JAR you want LazyBuilder to keep.</span>
-                  <div>
-                    <select
-                      disabled={busy || !canMutate()}
-                      value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]}
-                      onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}
-                    >
-                      {#each plugin.candidateFiles ?? [] as candidate}<option value={candidate}>{candidate}</option>{/each}
-                    </select>
-                    <button disabled={busy || !canMutate()} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
-                  </div>
-                </div>
-              {:else if isInvalid(plugin) && plugin.candidateFiles?.[0]}
-                <div class="problem-file">Broken JAR: {plugin.candidateFiles[0]}</div>
-              {/if}
-            </div>
-
-            <div class="row-tools">
-              <span class="state-pill" class:disabled={!isInvalid(plugin) && plugin.state !== 'Enabled'} class:problem={isInvalid(plugin) || plugin.state === 'Problem'}>
-                {isInvalid(plugin) ? 'Broken JAR' : plugin.state}
-              </span>
-              <details class="row-menu">
-                <summary aria-label={`Actions for ${plugin.displayName}`} title="Plugin actions">•••</summary>
-                <div class="menu-popover">
-                  {#if !isInvalid(plugin)}
-                    {#if plugin.state !== 'Problem'}
-                      <button disabled={busy || !canMutate()} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable plugin' : 'Enable plugin'}</button>
-                      <button disabled={busy || !canMutate()} onclick={() => updatePlugin(plugin)}>Replace JAR…</button>
-                    {/if}
-                    <button class="danger" disabled={busy || !canMutate() || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove plugin</button>
-                  {:else}
-                    <button class="danger" disabled={busy || !canMutate() || !plugin.candidateFiles?.[0]} onclick={() => removeProblemPlugin(plugin)}>Remove broken JAR</button>
-                  {/if}
-                </div>
-              </details>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if plugins.filter((plugin) => !isCore(plugin)).length > 0 && search.trim()}
-      <div class="search-empty"><strong>No plugins found</strong><span>Try a different name.</span><button onclick={() => (search = '')}>Clear search</button></div>
-    {:else if !error}
-      <div class="empty-state">
-        <div class="empty-icon">+</div>
-        <strong>No server plugins installed</strong>
-        <p>Add a Paper plugin JAR when your build server needs one.</p>
-        <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>Add plugin</button>
-      </div>
-    {/if}
-  </section>
 </section>
 
 <style>
-  .plugins-page { width: min(920px, 100%); }
-  .page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 20px; }
-  .page-header h2 { margin: 0; font-size: 18px; }
-  .page-header p, .section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
-  .primary { min-height: var(--control-height); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 8px 13px; background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 120ms ease; }
-  .primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
-  .primary:active:not(:disabled) { transform: scale(.98); }
+  .plugins-page { width:min(920px,100%); }
+  .page-header { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:18px; }
+  .page-header h2 { margin:0; font-size:18px; }
+  .page-header p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+  .primary { min-height:var(--control-height); border:1px solid var(--accent); border-radius:var(--radius-sm); padding:8px 13px; background:var(--accent); color:var(--accent-ink); font-weight:700; cursor:pointer; }
+  .primary:hover:not(:disabled) { background:var(--accent-hover); }
 
-  .notice { margin-bottom: 12px; padding: 11px 13px; border-radius: var(--radius); font-size: 12px; }
-  .notice.success { border: 1px solid var(--accent-border); background: var(--accent-soft); color: #b9e5c7; }
-  .notice.warning { border: 1px solid #655626; background: var(--warning-bg); color: #e3cf8d; }
-  .notice.error { border: 1px solid #70343a; background: var(--danger-bg); color: #ffd9dc; }
+  .notice { display:grid; gap:2px; margin-bottom:12px; padding:11px 12px; border-radius:var(--radius-sm); font-size:11px; }
+  .notice strong { font-size:12px; }
+  .notice.success { border:1px solid var(--accent-border); background:var(--accent-soft); color:#b9e5c7; }
+  .notice.warning { border:1px solid #655626; background:var(--warning-bg); color:#e3cf8d; }
+  .notice.error { border:1px solid #70343a; background:var(--danger-bg); color:#ffd9dc; }
 
-  .section-block { margin-top: 20px; }
-  .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 10px; }
-  .section-heading h3 { margin: 0; font-size: 13px; }
-  .plugin-section-heading { align-items: center; }
+  .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .toolbar>span { color:var(--muted-2); font-size:10px; white-space:nowrap; }
+  .search-field { min-width:220px; flex:1; min-height:var(--control-height); display:flex; align-items:center; gap:8px; padding:0 11px; border:1px solid var(--border-soft); border-radius:var(--radius-sm); background:var(--surface); color:var(--muted); }
+  .search-field:focus-within { border-color:color-mix(in srgb,var(--accent) 45%,var(--border)); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent); }
+  .search-field input { min-width:0; flex:1; border:0; outline:0; background:transparent; color:var(--text); padding:0; }
 
-  .search-field { width: min(320px, 48%); min-height: var(--control-height); display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--muted); box-shadow: var(--shadow-inset); }
-  .search-field:focus-within { border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
-  .search-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); padding: 0; }
+  .plugin-list { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-card); }
+  .plugin-row { position:relative; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; min-height:64px; padding:11px 13px; border-bottom:1px solid var(--border-soft); transition:background-color 120ms ease; }
+  .plugin-row:last-child { border-bottom:0; }
+  .plugin-row:hover { background:rgba(255,255,255,.018); }
+  .plugin-row.has-problem { background:color-mix(in srgb,var(--danger-bg) 48%,var(--surface)); }
+  .plugin-icon { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); color:var(--text-soft); font-weight:800; }
+  .plugin-icon.core { border-color:var(--accent-border); background:var(--accent-soft); color:var(--accent); }
+  .plugin-main { min-width:0; display:grid; gap:2px; }
+  .plugin-main>strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+  .plugin-main>span { color:var(--muted); font-size:10px; }
+  .problem-text { margin-top:4px; color:#ff9ba3; font-size:10px; }
 
-  .plugin-list { overflow: visible; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
-  .plugin-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 11px 13px; border-bottom: 1px solid var(--border-soft); transition: background-color 120ms ease; }
-  .plugin-row:last-child { border-bottom: 0; }
-  .plugin-row:hover { background: rgba(255,255,255,.016); }
-  .plugin-row.has-problem { background: var(--danger-bg); }
-  .plugin-icon { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--text-soft); font-weight: 800; }
-  .plugin-icon.core { border-color: var(--accent-border); background: #16301f; color: var(--accent); }
-  .plugin-main { min-width: 0; display: grid; flex: 1; gap: 2px; }
-  .plugin-main > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-  .plugin-main > span { color: var(--muted); font-size: 11px; }
-  .problem { margin-top: 4px; color: #ff9ba3; font-size: 11px; }
-  .problem-file { margin-top: 6px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
+  .state-pill { padding:4px 7px; border-radius:999px; background:#173321; color:#9fdaae; font-size:9px; font-weight:750; white-space:nowrap; }
+  .state-pill.disabled { background:var(--surface-3); color:var(--muted); }
+  .state-pill.problem { background:#3a2024; color:#ffafb5; }
+  .row-tools { display:flex; align-items:center; gap:6px; }
+  .row-menu { position:relative; }
+  .row-menu summary { width:34px; height:32px; display:grid; place-items:center; border-radius:var(--radius-sm); color:var(--muted); cursor:pointer; list-style:none; font-weight:800; }
+  .row-menu summary::-webkit-details-marker { display:none; }
+  .row-menu summary:hover,.row-menu[open] summary { background:var(--surface-2); color:var(--text); }
+  .menu-popover { position:absolute; z-index:20; right:0; top:38px; width:190px; display:grid; gap:2px; padding:6px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); box-shadow:var(--shadow-popover); }
+  .menu-popover button { width:100%; min-height:34px; padding:7px 9px; border-radius:7px; background:transparent; color:var(--text-soft); text-align:left; cursor:pointer; font-size:11px; }
+  .menu-popover button:hover:not(:disabled) { background:var(--surface-3); color:var(--text); }
+  .menu-popover button.danger { color:#f1a5aa; }
 
-  .state-pill { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: #173321; color: #9fdaae; font-size: 10px; font-weight: 700; }
-  .state-pill.disabled { background: var(--surface-3); color: #9ba1a7; }
-  .state-pill.problem { background: #3a2024; color: #ffafb5; }
+  .problem-card { display:grid; gap:3px; margin-top:7px; padding:9px; border:1px solid #5f5125; border-radius:var(--radius-sm); background:var(--warning-bg); }
+  .problem-card>strong { color:#e5d59d; font-size:10px; }
+  .problem-card>span { color:#bdae7b; font-size:10px; overflow-wrap:anywhere; }
+  .problem-card.danger-card { border-color:#6c363d; background:var(--danger-bg); }
+  .problem-actions { display:flex; gap:7px; margin-top:3px; }
+  .problem-actions select { min-width:0; flex:1; padding:6px 8px; }
+  .problem-actions button { border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:var(--surface-2); color:var(--text-soft); cursor:pointer; font-size:10px; }
 
-  .row-tools { display: flex; align-items: center; gap: 7px; }
-  .row-menu { position: relative; }
-  .row-menu summary { width: 34px; height: 34px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--muted); cursor: pointer; list-style: none; font-weight: 800; letter-spacing: .08em; }
-  .row-menu summary::-webkit-details-marker { display: none; }
-  .row-menu summary:hover, .row-menu[open] summary { background: var(--surface-2); color: var(--text); }
-  .menu-popover { position: absolute; z-index: 8; right: 0; top: 40px; width: 184px; display: grid; gap: 3px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--shadow-popover); }
-  .menu-popover button { width: 100%; min-height: 34px; padding: 7px 9px; border-radius: 7px; background: transparent; color: var(--text-soft); text-align: left; cursor: pointer; font-size: 11px; }
-  .menu-popover button:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
-  .menu-popover button.danger { color: #f1a5aa; }
+  .empty-state,.search-empty { min-height:230px; display:grid; place-content:center; justify-items:center; text-align:center; border:1px dashed var(--border); border-radius:var(--radius); background:var(--bg-elevated); }
+  .search-empty { min-height:160px; gap:3px; color:var(--muted); font-size:11px; }
+  .search-empty strong { color:var(--text); font-size:13px; }
+  .search-empty button { margin-top:6px; background:transparent; color:var(--accent); cursor:pointer; }
+  .empty-icon { width:42px; height:42px; display:grid; place-items:center; margin-bottom:9px; border-radius:11px; background:var(--surface-2); color:var(--muted); font-size:19px; }
+  .empty-state h3 { margin:0; font-size:14px; }
+  .empty-state p { max-width:400px; margin:5px 0 14px; color:var(--muted); font-size:11px; }
 
-  .duplicate-box { display: grid; gap: 6px; margin-top: 8px; padding: 9px; border: 1px solid #5f5125; border-radius: var(--radius-sm); background: var(--warning-bg); }
-  .duplicate-box > strong { color: #e5d59d; font-size: 10px; }
-  .duplicate-box > span { color: #bdae7b; font-size: 10px; }
-  .duplicate-box > div { display: flex; gap: 7px; }
-  .duplicate-box select { min-width: 0; flex: 1; min-height: 34px; border: 1px solid var(--border); border-radius: 7px; padding: 7px 8px; background: var(--bg-elevated); color: var(--text); font-size: 11px; }
-  .duplicate-box button { border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; background: var(--surface-2); color: var(--text-soft); cursor: pointer; font-size: 11px; }
+  .system-components { margin-top:18px; color:var(--muted); }
+  .system-components>summary { width:max-content; color:var(--muted); font-size:11px; cursor:pointer; }
+  .system-components>p { margin:6px 0 9px; color:var(--muted-2); font-size:10px; }
+  .system-list { border:1px solid var(--border-soft); border-radius:var(--radius-sm); background:var(--bg-elevated); }
+  .system-list>div { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:10px; padding:9px 10px; border-bottom:1px solid var(--border-soft); }
+  .system-list>div:last-child { border-bottom:0; }
+  .system-list>div>span:nth-child(2) { min-width:0; display:grid; gap:1px; }
+  .system-list strong { color:var(--text-soft); font-size:11px; }
+  .system-list small { color:var(--muted-2); font-size:9px; }
+  .system-list .plugin-icon { width:30px; height:30px; font-size:10px; }
 
-  .empty-state, .search-empty { min-height: 220px; display: grid; place-content: center; justify-items: center; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
-  .search-empty { min-height: 160px; gap: 3px; color: var(--muted); font-size: 11px; }
-  .search-empty strong { color: var(--text-soft); font-size: 13px; }
-  .search-empty button { margin-top: 7px; background: transparent; color: var(--accent); cursor: pointer; }
-  .empty-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 10px; border-radius: 11px; background: var(--surface-2); color: var(--muted); font-size: 20px; }
-  .empty-state strong { font-size: 14px; }
-  .empty-state p { margin: 5px 0 14px; color: var(--muted); font-size: 11px; }
-
-  button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
-
-  @media (max-width: 820px) {
-    .page-header, .plugin-section-heading { align-items: stretch; flex-direction: column; }
-    .search-field { width: 100%; }
-    .plugin-row.expanded { align-items: flex-start; flex-wrap: wrap; }
-    .row-tools { margin-left: auto; }
+  button:disabled,select:disabled { opacity:.5; cursor:not-allowed; }
+  @media (max-width:760px) {
+    .page-header { align-items:stretch; flex-direction:column; }
+    .toolbar { align-items:stretch; flex-direction:column; }
+    .toolbar>span { display:none; }
+    .plugin-row { grid-template-columns:auto minmax(0,1fr); }
+    .row-tools { grid-column:2; justify-content:flex-start; }
+    .problem-actions { flex-direction:column; }
   }
 </style>
