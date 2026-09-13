@@ -124,6 +124,55 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
     })
 }
 
+/// Removes obsolete/disabled copies of LazyBuilder-owned core modules after the
+/// canonical bundled pair has been published successfully. Core modules have a
+/// single runtime owner and must never coexist as multiple Paper plugin JARs.
+pub fn remove_stale_core_jars(workspace: &Path) -> Result<(), String> {
+    let plugins = workspace.join("server").join("plugins");
+    let disabled = workspace
+        .join("tools")
+        .join("lazybuilder")
+        .join("disabled-plugins");
+    let legacy_disabled = workspace.join("server").join("plugins-disabled");
+
+    remove_stale_from_directory(&plugins, true)?;
+    remove_stale_from_directory(&disabled, false)?;
+    remove_stale_from_directory(&legacy_disabled, false)?;
+    Ok(())
+}
+
+fn remove_stale_from_directory(directory: &Path, keep_canonical: bool) -> Result<(), String> {
+    if !directory.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".jar") {
+            continue;
+        }
+        let is_core = lower.starts_with("world-manager-") || lower.starts_with("utilities-manager-");
+        if !is_core {
+            continue;
+        }
+        let canonical = name.eq_ignore_ascii_case(WORLD_FILE_NAME)
+            || name.eq_ignore_ascii_case(UTILITIES_FILE_NAME);
+        if keep_canonical && canonical {
+            continue;
+        }
+        fs::remove_file(&path).map_err(|e| {
+            format!("Could not retire stale LazyBuilder core module {}: {e}", path.display())
+        })?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct ModuleInstall {
     source: PathBuf,
@@ -390,6 +439,31 @@ mod tests {
         assert!(error.contains("not a file"));
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
         let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn stale_core_jars_are_removed_but_canonical_pair_is_preserved() {
+        let workspace = test_root("core-stale-cleanup");
+        let plugins = workspace.join("server").join("plugins");
+        let disabled = workspace.join("tools").join("lazybuilder").join("disabled-plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&disabled).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"current-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"current-utilities").unwrap();
+        fs::write(plugins.join("World-Manager-0.0.9.jar"), b"stale-world").unwrap();
+        fs::write(disabled.join(UTILITIES_FILE_NAME), b"disabled-current-name").unwrap();
+        fs::write(disabled.join("Utilities-Manager-0.0.9.jar"), b"stale-utilities").unwrap();
+        fs::write(plugins.join("Some-Plugin-1.0.jar"), b"third-party").unwrap();
+
+        remove_stale_core_jars(&workspace).unwrap();
+
+        assert!(plugins.join(WORLD_FILE_NAME).is_file());
+        assert!(plugins.join(UTILITIES_FILE_NAME).is_file());
+        assert!(!plugins.join("World-Manager-0.0.9.jar").exists());
+        assert!(!disabled.join(UTILITIES_FILE_NAME).exists());
+        assert!(!disabled.join("Utilities-Manager-0.0.9.jar").exists());
+        assert!(plugins.join("Some-Plugin-1.0.jar").is_file());
         let _ = fs::remove_dir_all(workspace);
     }
 }
