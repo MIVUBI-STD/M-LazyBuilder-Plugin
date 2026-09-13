@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -27,38 +26,43 @@ public final class CreateWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int panelWidth = Math.min(360, width - 50);
-        int left = center - panelWidth / 2;
-        int fieldWidth = panelWidth - 32;
-        int fieldLeft = left + 16;
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
+        int fieldLeft = left + 28;
+        int fieldWidth = panelWidth - 56;
 
-        displayName = new TextFieldWidget(textRenderer, fieldLeft, 100, fieldWidth, 22, Text.literal("World Name"));
-        displayName.setPlaceholder(Text.literal("New World"));
+        displayName = new TextFieldWidget(textRenderer, fieldLeft, 108, fieldWidth, 24, Text.literal("World Name"));
+        displayName.setPlaceholder(Text.literal("New build world"));
         displayName.setMaxLength(96);
+        displayName.setDrawsBackground(false);
+        displayName.setEditableColor(LbUi.TEXT_PRIMARY);
+        displayName.setUneditableColor(LbUi.TEXT_DISABLED);
         displayName.active = !submitting;
         addDrawableChild(displayName);
 
-        ButtonWidget type = ButtonWidget.builder(typeLabel(), button -> {
-            voidWorld = !voidWorld;
-            button.setMessage(typeLabel());
-        }).dimensions(fieldLeft, 142, fieldWidth, 22).build();
+        LbButtonWidget type = LbUi.button(fieldLeft, 152, fieldWidth, 26,
+                typeLabel().getString(), LbButtonWidget.Style.SECONDARY,
+                () -> {
+                    if (submitting) return;
+                    voidWorld = !voidWorld;
+                    clearAndInit();
+                });
         type.active = !submitting;
         addDrawableChild(type);
 
-        ButtonWidget create = ButtonWidget.builder(Text.literal(submitting ? "Creating…" : "Create World"), button -> submit())
-                .dimensions(fieldLeft, 180, fieldWidth, 24).build();
+        LbButtonWidget create = LbUi.button(fieldLeft, 194, fieldWidth, 28,
+                submitting ? "Creating…" : "Create World", LbButtonWidget.Style.PRIMARY, this::submit);
         create.active = !submitting;
         addDrawableChild(create);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(submitting ? "Back" : "Cancel"), button -> close())
-                .dimensions(center - 50, 216, 100, 20).build());
+        addDrawableChild(LbUi.button(width / 2 - 50, 238, 100, 22,
+                submitting ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
 
         if (!submitting) setInitialFocus(displayName);
     }
 
     private Text typeLabel() {
-        return Text.literal("World Type: " + (voidWorld ? "Void" : "Flat"));
+        return Text.literal("World Type   " + (voidWorld ? "Void" : "Flat"));
     }
 
     private void submit() {
@@ -92,9 +96,7 @@ public final class CreateWorldScreen extends Screen {
             clearAndInit();
             return;
         }
-        if (controller.activityMessage() == null) {
-            if (client != null) client.setScreen(parent);
-        }
+        if (controller.activityMessage() == null && client != null) client.setScreen(parent);
     }
 
     private String availableFolderName(String display) {
@@ -124,26 +126,32 @@ public final class CreateWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        int center = width / 2;
-        int panelWidth = Math.min(360, width - 50);
-        int left = center - panelWidth / 2;
-        context.fill(left, 38, left + panelWidth, 252, 0xB9191E25);
-        super.render(context, mouseX, mouseY, delta);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
+        LbUi.elevatedPanel(context, left, 28, panelWidth, 270);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, center, 52, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Create a managed build world."), center, 70, 0xAEB7C4);
-        context.drawTextWithShadow(textRenderer, Text.literal("World Name"), displayName.getX(), 88, 0xAEB7C4);
+        context.drawTextWithShadow(textRenderer, Text.literal("CREATE WORLD"), left + 24, 46, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("Start a clean build workspace"), left + 24, 64, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("Only choose what matters. Internal folder naming is automatic."),
+                left + 24, 82, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("World name"), left + 28, 96, LbUi.TEXT_MUTED);
+        LbUi.field(context, displayName, validation != null);
+
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(voidWorld ? "Void is best for freeform builds." : "Flat is best for normal build maps."),
+                left + 28, 184, LbUi.TEXT_MUTED);
 
         if (submitting && controller.activityMessage() != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()), center, 238, 0xD8DEE9);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()),
+                    width / 2, 272, LbUi.TEXT_SECONDARY);
         } else if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), center, 238, 0xFF7777);
-        } else {
-            context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal("Server folder is generated automatically from the world name."), center, 238, 0x7F8996);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
+                    width / 2, 272, LbUi.DANGER_BRIGHT);
         }
+
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
