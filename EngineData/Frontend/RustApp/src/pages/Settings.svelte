@@ -29,13 +29,7 @@
 
   const gb = (mb: number) => mb / 1024;
   const ramStep = () => profile.safeMaxMemoryMb >= 8192 ? 512 : 256;
-  const selectedLabel = () => preset === 'Custom' ? 'Custom' : preset;
-  const startupRamFor = (maxMb: number) => {
-    if (maxMb <= 4096) return 1024;
-    if (maxMb <= 8192) return 2048;
-    if (maxMb <= 12288) return 3072;
-    return Math.min(4096, maxMb);
-  };
+  const selectedLabel = () => preset === 'Custom' ? 'Custom memory' : preset;
 
   function syncFromProfile(next: ServerResourceProfile) {
     profile = next;
@@ -83,7 +77,7 @@
         message = 'Settings saved and server restarted.';
       } else {
         message = snapshot.state === 'Online'
-          ? 'Settings saved. Restart the server to apply them.'
+          ? 'Settings saved. Restart the server when you are ready to apply them.'
           : 'Settings saved.';
       }
     } catch (e) {
@@ -102,13 +96,13 @@
 
 <section class="page-head">
   <div>
-    <h1>Server settings</h1>
-    <p>Configure how much memory this server can use.</p>
+    <h2>Server settings</h2>
+    <p>Choose how much memory LazyBuilder should give this server.</p>
   </div>
 </section>
 
 {#if error}
-  <div class="notice error-notice"><strong>Couldn’t save settings</strong><span>{error}</span></div>
+  <div class="notice error-notice" role="alert"><strong>Couldn’t save settings</strong><span>{error}</span></div>
 {/if}
 {#if message}
   <div class="notice success-notice"><span>{message}</span></div>
@@ -116,8 +110,8 @@
 
 <section class="settings-section">
   <div class="section-copy">
-    <h2>Performance</h2>
-    <p>Choose a memory profile based on the size of your builds and workloads.</p>
+    <h3>Performance profile</h3>
+    <p>Use a preset unless this server has a specific memory requirement.</p>
   </div>
 
   <div class="preset-list">
@@ -134,7 +128,7 @@
       <span class="radio-dot"></span>
       <span class="preset-copy">
         <strong>Boost</strong>
-        <small>More memory headroom for large builds, generation and imports.</small>
+        <small>Extra headroom for large builds, world generation and imports.</small>
       </span>
       <span class="preset-value">{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</span>
     </button>
@@ -143,8 +137,8 @@
 
 <section class="settings-section">
   <div class="section-copy">
-    <h2>Memory</h2>
-    <p>Set a custom maximum only when you need more control.</p>
+    <h3>Custom memory</h3>
+    <p>Adjust this only when your build workload needs something different.</p>
   </div>
 
   <div class="memory-panel">
@@ -153,7 +147,7 @@
         <span class="label">Maximum memory</span>
         <strong>{gb(ramMb).toFixed(1)} GB</strong>
       </div>
-      <span class="safe-limit">Up to {gb(profile.safeMaxMemoryMb).toFixed(1)} GB recommended</span>
+      <span class="safe-limit">Recommended limit: {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span>
     </div>
     <input
       aria-label="Maximum server RAM allocation"
@@ -165,30 +159,18 @@
       oninput={markCustom}
     />
     <div class="range-labels"><span>1 GB</span><span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span></div>
-  </div>
-</section>
-
-<section class="settings-section compact-section">
-  <div class="section-copy">
-    <h2>System</h2>
-    <p>Detected hardware available to this server.</p>
-  </div>
-  <div class="system-grid">
-    <div><span>System memory</span><strong>{gb(profile.totalMemoryMb).toFixed(1)} GB</strong></div>
-    <div><span>Reserved for Windows</span><strong>{gb(profile.reservedSystemMemoryMb).toFixed(1)} GB</strong></div>
-    <div><span>CPU</span><strong>{profile.logicalProcessors} logical cores</strong></div>
-    <div><span>CPU scheduling</span><strong>Automatic</strong></div>
+    <p class="memory-help">LazyBuilder keeps enough memory reserved for Windows automatically.</p>
   </div>
 </section>
 
 {#if profile.warning}
-  <div class="warning-card"><strong>Resource warning</strong><p>{profile.warning}</p></div>
+  <div class="warning-card"><strong>Memory warning</strong><p>{profile.warning}</p></div>
 {/if}
 
 <div class="apply-bar">
   <div class="apply-summary">
     <strong>{selectedLabel()}</strong>
-    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup · {gb(ramMb).toFixed(1)} GB maximum</span>
+    <span>{gb(ramMb).toFixed(1)} GB maximum memory</span>
   </div>
   <div class="apply-actions">
     <button class="secondary" disabled={busy} onclick={() => save(false)}>{busy ? 'Saving…' : 'Save changes'}</button>
@@ -199,56 +181,56 @@
 </div>
 
 <style>
-  .page-head { margin-bottom:24px; }
-  .page-head h1 { margin:0; font-size:26px; letter-spacing:-.02em; }
-  .page-head p { margin:6px 0 0; color:var(--muted); font-size:13px; }
-  .notice { display:grid; gap:3px; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-size:13px; }
-  .error-notice { border:1px solid #713940; background:#321b1f; color:#ffdadd; }
-  .success-notice { border:1px solid #315d40; background:#172b1d; color:#a8e5b8; }
-  .settings-section { display:grid; grid-template-columns:210px minmax(0,1fr); gap:34px; padding:22px 0; border-top:1px solid var(--border); }
-  .settings-section:first-of-type { border-top:0; padding-top:0; }
-  .section-copy h2 { margin:0; font-size:15px; }
-  .section-copy p { margin:6px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
-  .preset-list { display:grid; border:1px solid var(--border); border-radius:11px; overflow:hidden; background:var(--surface); }
-  .preset-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; min-height:72px; padding:12px 14px; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); text-align:left; cursor:pointer; }
-  .preset-row:last-child { border-bottom:0; }
-  .preset-row:hover:not(:disabled) { background:rgba(255,255,255,.02); }
-  .preset-row.selected { background:rgba(96,205,123,.055); }
-  .radio-dot { width:16px; height:16px; border:2px solid #66717b; border-radius:50%; position:relative; }
-  .preset-row.selected .radio-dot { border-color:var(--accent); }
-  .preset-row.selected .radio-dot::after { content:''; position:absolute; inset:3px; border-radius:50%; background:var(--accent); }
-  .preset-copy { display:grid; gap:4px; }
-  .preset-copy small { color:var(--muted); font-size:11px; }
-  .preset-value { color:#cbd2d8; font-size:12px; font-weight:700; }
-  .memory-panel { padding:16px; border:1px solid var(--border); border-radius:11px; background:var(--surface); }
-  .memory-head { display:flex; justify-content:space-between; align-items:flex-end; gap:18px; }
-  .memory-head > div { display:grid; gap:4px; }
-  .memory-head strong { font-size:22px; }
-  .label, .safe-limit { color:var(--muted); font-size:11px; }
-  input[type='range'] { width:100%; margin:20px 0 5px; accent-color:var(--accent); }
-  .range-labels { display:flex; justify-content:space-between; color:var(--muted); font-size:10px; }
-  .system-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--border); border-radius:11px; overflow:hidden; background:var(--surface); }
-  .system-grid div { display:grid; gap:4px; padding:13px 14px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); }
-  .system-grid div:nth-child(2n) { border-right:0; }
-  .system-grid div:nth-last-child(-n+2) { border-bottom:0; }
-  .system-grid span { color:var(--muted); font-size:11px; }
-  .system-grid strong { font-size:13px; }
-  .warning-card { margin-top:16px; padding:12px 14px; border:1px solid #6b5730; border-radius:10px; background:#2b2518; color:#ebd9aa; font-size:12px; }
-  .warning-card p { margin:5px 0 0; }
-  .apply-bar { position:sticky; bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:18px; margin-top:24px; padding:11px 12px; border:1px solid var(--border); border-radius:11px; background:rgba(25,29,33,.94); backdrop-filter:blur(14px); box-shadow:0 12px 34px rgba(0,0,0,.28); }
-  .apply-summary { display:grid; gap:3px; }
-  .apply-summary span { color:var(--muted); font-size:11px; }
-  .apply-actions { display:flex; gap:8px; }
-  .primary, .secondary { border-radius:9px; padding:9px 13px; font-weight:650; cursor:pointer; }
-  .primary { border:1px solid var(--accent); background:var(--accent); color:#07120b; }
-  .secondary { border:1px solid var(--border); background:var(--surface-2); color:var(--text); }
-  button:disabled { cursor:default; opacity:.48; }
-  @media (max-width:760px) {
-    .settings-section { grid-template-columns:1fr; gap:12px; }
-    .system-grid { grid-template-columns:1fr; }
-    .system-grid div { border-right:0; border-bottom:1px solid var(--border) !important; }
-    .system-grid div:last-child { border-bottom:0 !important; }
-    .apply-bar { flex-direction:column; align-items:stretch; }
-    .apply-actions { justify-content:flex-end; }
+  .page-head { margin-bottom: 20px; }
+  .page-head h2 { margin: 0; font-size: 18px; }
+  .page-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+  .notice { display: grid; gap: 3px; padding: 12px 14px; border-radius: var(--radius); margin-bottom: 14px; font-size: 12px; }
+  .error-notice { border: 1px solid #713940; background: #321b1f; color: #ffdadd; }
+  .success-notice { border: 1px solid var(--accent-border); background: var(--accent-soft); color: #a8e5b8; }
+
+  .settings-section { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 34px; padding: 22px 0; border-top: 1px solid var(--border-soft); }
+  .settings-section:first-of-type { border-top: 0; padding-top: 0; }
+  .section-copy h3 { margin: 0; font-size: 13px; }
+  .section-copy p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+  .preset-list { display: grid; border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-card); }
+  .preset-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 72px; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+  .preset-row:last-child { border-bottom: 0; }
+  .preset-row:hover:not(:disabled) { background: var(--surface-2); }
+  .preset-row.selected { background: var(--accent-soft); }
+  .radio-dot { width: 16px; height: 16px; border: 2px solid #66717b; border-radius: 50%; position: relative; }
+  .preset-row.selected .radio-dot { border-color: var(--accent); }
+  .preset-row.selected .radio-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); }
+  .preset-copy { display: grid; gap: 4px; }
+  .preset-copy small { color: var(--muted); font-size: 11px; }
+  .preset-value { color: var(--text-soft); font-size: 12px; font-weight: 700; }
+
+  .memory-panel { padding: 16px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .memory-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; }
+  .memory-head > div { display: grid; gap: 4px; }
+  .memory-head strong { font-size: 22px; }
+  .label, .safe-limit { color: var(--muted); font-size: 11px; }
+  input[type='range'] { width: 100%; margin: 20px 0 5px; accent-color: var(--accent); }
+  .range-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+  .memory-help { margin: 12px 0 0; color: var(--muted-2); font-size: 10px; }
+
+  .warning-card { margin-top: 16px; padding: 12px 14px; border: 1px solid #6b5730; border-radius: var(--radius); background: var(--warning-bg); color: #ebd9aa; font-size: 12px; }
+  .warning-card p { margin: 5px 0 0; }
+
+  .apply-bar { position: sticky; bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 24px; padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(24,27,30,.94); backdrop-filter: blur(14px); box-shadow: var(--shadow-popover); }
+  .apply-summary { display: grid; gap: 3px; }
+  .apply-summary span { color: var(--muted); font-size: 11px; }
+  .apply-actions { display: flex; gap: 8px; }
+  .primary, .secondary { min-height: 38px; border-radius: var(--radius-sm); padding: 8px 13px; font-weight: 650; cursor: pointer; }
+  .primary { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  .secondary { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+  .primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .secondary:hover:not(:disabled) { background: var(--surface-3); }
+  button:disabled { cursor: default; opacity: .48; }
+
+  @media (max-width: 760px) {
+    .settings-section { grid-template-columns: 1fr; gap: 12px; }
+    .apply-bar { flex-direction: column; align-items: stretch; }
+    .apply-actions { justify-content: flex-end; }
   }
 </style>
