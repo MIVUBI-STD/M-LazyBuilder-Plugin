@@ -28,9 +28,13 @@ import java.util.zip.GZIPOutputStream;
  *
  * <p>This is presentation state only. It never loads chunks and never becomes
  * authoritative for server world state. New columns are queued while the map
- * renders and sampled with a per-frame budget, avoiding the old behaviour that
- * rescanned the entire visible map synchronously every frame. Samples survive
- * screen closes and reconnects per managed-world + dimension scope.</p>
+ * renders and sampled with a per-frame budget. Samples survive screen closes
+ * and reconnects per managed-world + dimension scope.</p>
+ *
+ * <p>Far zoom levels derive a small multi-sample LOD pixel from the same base
+ * column cache instead of taking one isolated block for a very large map cell.
+ * That keeps roads, shorelines and large structures readable while preserving
+ * one canonical terrain-memory owner.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int FORMAT_VERSION = 1;
@@ -71,10 +75,25 @@ public final class ClientMapSurfaceCache {
         SurfaceSample cached = samples.get(key);
         if (cached != null) return cached;
 
-        if (world.getChunkManager().isChunkLoaded(blockX >> 4, blockZ >> 4) && pending.size() < MAX_PENDING) {
-            pending.add(key);
-        }
+        queueIfLoaded(world, blockX, blockZ, key);
         return SurfaceSample.UNEXPLORED;
+    }
+
+    /**
+     * Produces a map LOD pixel from the canonical base-column cache.
+     * A five-point footprint is intentionally bounded; all missing points are
+     * queued and later sampled through the normal per-frame budget.
+     */
+    public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
+        if (span <= 2) return sample(world, blockX, blockZ);
+
+        int offset = Math.max(1, span / 3);
+        SurfaceSample center = sample(world, blockX, blockZ);
+        SurfaceSample nw = sample(world, blockX - offset, blockZ - offset);
+        SurfaceSample ne = sample(world, blockX + offset, blockZ - offset);
+        SurfaceSample sw = sample(world, blockX - offset, blockZ + offset);
+        SurfaceSample se = sample(world, blockX + offset, blockZ + offset);
+        return blend(center, nw, ne, sw, se);
     }
 
     /** Samples a bounded amount of queued terrain on the client thread. */
@@ -112,6 +131,37 @@ public final class ClientMapSurfaceCache {
         CompletableFuture.runAsync(() -> writeSnapshot(destination, snapshot));
     }
 
+    private void queueIfLoaded(ClientWorld world, int blockX, int blockZ, long key) {
+        if (pending.size() >= MAX_PENDING) return;
+        if (!world.getChunkManager().isChunkLoaded(blockX >> 4, blockZ >> 4)) return;
+        pending.add(key);
+    }
+
+    private static SurfaceSample blend(SurfaceSample... values) {
+        long red = 0;
+        long green = 0;
+        long blue = 0;
+        long height = 0;
+        int count = 0;
+
+        for (SurfaceSample value : values) {
+            if (value == null || !value.explored()) continue;
+            int color = value.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += value.height();
+            count++;
+        }
+        if (count == 0) return SurfaceSample.UNEXPLORED;
+
+        int color = 0xFF000000
+                | ((int) (red / count) << 16)
+                | ((int) (green / count) << 8)
+                | (int) (blue / count);
+        return new SurfaceSample(color, (int) (height / count), true);
+    }
+
     private static SurfaceSample readSurface(ClientWorld world, int x, int z) {
         int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
         int blockY = Math.max(world.getBottomY(), topY - 1);
@@ -122,8 +172,6 @@ public final class ClientMapSurfaceCache {
                 ? UNEXPLORED_COLOR
                 : mapColor.getRenderColor(MapColor.Brightness.NORMAL);
 
-        // Small relief cue similar to mature world-map renderers: higher slopes
-        // brighten one side and darken the opposite without changing block hue.
         int west = world.getTopY(Heightmap.Type.WORLD_SURFACE, x - 1, z);
         int north = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z - 1);
         int slope = Integer.compare((topY - west) + (topY - north), 0);
