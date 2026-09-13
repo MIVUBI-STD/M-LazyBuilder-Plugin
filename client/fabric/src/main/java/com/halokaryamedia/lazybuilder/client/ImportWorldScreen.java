@@ -58,7 +58,7 @@ public final class ImportWorldScreen extends Screen {
         try {
             transfers.chooseAndUploadImport(artifactName -> {
                 String baseName = baseName(artifactName);
-                String folder = folderName(baseName);
+                String folder = availableFolderName(baseName);
                 String finalDisplay = requestedDisplay.isBlank() ? baseName : requestedDisplay;
                 worlds.importWorld(artifactName, folder, finalDisplay);
                 if (client != null) client.setScreen(parent);
@@ -92,6 +92,23 @@ public final class ImportWorldScreen extends Screen {
         else if (lower.endsWith(".zip")) name = name.substring(0, name.length() - 4);
         name = name.strip();
         return name.isEmpty() ? "Imported World" : name;
+    }
+
+    private String availableFolderName(String baseName) {
+        String base = folderName(baseName);
+        String candidate = base;
+        int suffix = 2;
+        while (folderExists(candidate)) {
+            String tail = "_" + suffix++;
+            int prefixLength = Math.min(base.length(), Math.max(1, 64 - tail.length()));
+            candidate = base.substring(0, prefixLength) + tail;
+        }
+        return candidate;
+    }
+
+    private boolean folderExists(String candidate) {
+        return worlds.worlds().stream()
+                .anyMatch(world -> world.folderName().equalsIgnoreCase(candidate));
     }
 
     private static String folderName(String baseName) {
