@@ -14,14 +14,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
 
-/**
- * Phased permanent Delete use case.
- *
- * <p>prepare/finish own Paper lifecycle work. executeFilePhase moves the world
- * into an owned workspace, commits registry removal, then removes that workspace.
- * Heavy filesystem work is therefore request-bound and can run off the Paper
- * main thread without creating an idle worker.</p>
- */
+/** Phased permanent Delete use case with reversible publication before commit. */
 public final class WorldDeleteService {
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
@@ -60,7 +53,6 @@ public final class WorldDeleteService {
         this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
     }
 
-    /** Main-thread phase: exact confirmation, protection check, exclusive lease, and safe unload. */
     public DeleteTask prepare(WorldId worldId, String typedConfirmation) {
         Objects.requireNonNull(worldId, "worldId");
         Objects.requireNonNull(typedConfirmation, "typedConfirmation");
@@ -84,7 +76,6 @@ public final class WorldDeleteService {
         }
     }
 
-    /** Worker-thread phase: reversible staging, durable metadata commit, then physical cleanup. */
     public void executeFilePhase(DeleteTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -103,6 +94,7 @@ public final class WorldDeleteService {
             try {
                 files.deleteWorkspace(staged);
             } catch (IOException cleanupFailure) {
+                task.cleanupWorkspace = staged;
                 task.cleanupFailure = cleanupFailure;
             }
         } catch (IOException | RuntimeException exception) {
@@ -117,7 +109,11 @@ public final class WorldDeleteService {
         }
     }
 
-    /** Main-thread phase: restore runtime after failure if possible and release the lease. */
+    /**
+     * Finalization never reports an already committed delete as failed merely because
+     * temporary workspace cleanup was delayed. It retries cleanup once and keeps the
+     * warning on the task for diagnostics/maintenance.
+     */
     public void finish(DeleteTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
@@ -130,17 +126,20 @@ public final class WorldDeleteService {
                 failure = exception;
             }
         }
-        task.close();
 
-        if (failure != null) {
-            throw failure;
+        if (task.committed && task.cleanupWorkspace != null) {
+            try {
+                files.deleteWorkspace(task.cleanupWorkspace);
+                task.cleanupWorkspace = null;
+                task.cleanupFailure = null;
+            } catch (IOException retryFailure) {
+                if (task.cleanupFailure != null) retryFailure.addSuppressed(task.cleanupFailure);
+                task.cleanupFailure = retryFailure;
+            }
         }
-        if (task.cleanupFailure != null) {
-            throw new IllegalStateException(
-                    "World deletion committed but workspace cleanup failed: " + task.world.folderName(),
-                    task.cleanupFailure
-            );
-        }
+
+        task.close();
+        if (failure != null) throw failure;
     }
 
     public static final class DeleteTask {
@@ -150,6 +149,7 @@ public final class WorldDeleteService {
         private final WorldOperationCoordinator.Lease lease;
         private boolean committed;
         private boolean closed;
+        private Path cleanupWorkspace;
         private IOException cleanupFailure;
 
         private DeleteTask(
@@ -166,11 +166,10 @@ public final class WorldDeleteService {
 
         public WorldRecord world() { return world; }
         public boolean committed() { return committed; }
+        public IOException cleanupFailure() { return cleanupFailure; }
 
         private void requireOpen() {
-            if (closed) {
-                throw new IllegalStateException("Delete task is already closed");
-            }
+            if (closed) throw new IllegalStateException("Delete task is already closed");
         }
 
         private void close() {
