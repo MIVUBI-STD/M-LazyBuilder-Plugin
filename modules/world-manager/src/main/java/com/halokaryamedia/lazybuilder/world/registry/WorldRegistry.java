@@ -1,15 +1,18 @@
 package com.halokaryamedia.lazybuilder.world.registry;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /** Canonical in-memory owner for LazyBuilder-managed world metadata. */
 public final class WorldRegistry {
     private final Map<WorldId, WorldRecord> worlds = new LinkedHashMap<>();
+    private final Set<String> reservedFolders = new HashSet<>();
 
     public synchronized void register(WorldRecord world) {
         Objects.requireNonNull(world, "world");
@@ -33,6 +36,24 @@ public final class WorldRegistry {
 
     public synchronized List<WorldRecord> all() {
         return List.copyOf(worlds.values());
+    }
+
+    /**
+     * Reserves one destination folder while Create/Clone/Import is publishing it.
+     * This prevents two concurrent publication paths from both passing the initial
+     * registry check before either has durably registered the destination.
+     */
+    public synchronized FolderReservation reserveFolder(String folderName) {
+        Objects.requireNonNull(folderName, "folderName");
+        if (folderName.isBlank()) {
+            throw new IllegalArgumentException("folderName must not be blank");
+        }
+        String key = folderKey(folderName);
+        ensureFolderAvailable(folderName, null);
+        if (!reservedFolders.add(key)) {
+            throw new IllegalStateException("World folder is already being prepared: " + folderName);
+        }
+        return new FolderReservation(key);
     }
 
     /**
@@ -70,5 +91,25 @@ public final class WorldRegistry {
 
     private static String folderKey(String folderName) {
         return folderName.toLowerCase(Locale.ROOT);
+    }
+
+    public final class FolderReservation implements AutoCloseable {
+        private final String key;
+        private boolean closed;
+
+        private FolderReservation(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public void close() {
+            synchronized (WorldRegistry.this) {
+                if (closed) return;
+                if (!reservedFolders.remove(key)) {
+                    throw new IllegalStateException("World folder reservation ownership changed unexpectedly: " + key);
+                }
+                closed = true;
+            }
+        }
     }
 }
