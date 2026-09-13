@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -17,11 +16,7 @@ public final class DeleteWorldScreen extends Screen {
     private boolean submitting;
     private long observedRevision;
 
-    public DeleteWorldScreen(
-            Screen parent,
-            ClientWorldController controller,
-            WorldControlWireProtocol.WorldSummary world
-    ) {
+    public DeleteWorldScreen(Screen parent, ClientWorldController controller, WorldControlWireProtocol.WorldSummary world) {
         super(Text.literal("Delete World"));
         this.parent = parent;
         this.controller = controller;
@@ -31,25 +26,25 @@ public final class DeleteWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int panelWidth = Math.min(380, width - 50);
-        int left = center - panelWidth / 2;
-        int fieldWidth = panelWidth - 32;
-        int fieldLeft = left + 16;
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
 
-        confirmation = new TextFieldWidget(textRenderer, fieldLeft, 126, fieldWidth, 22, Text.literal("Confirm Folder Name"));
+        confirmation = new TextFieldWidget(textRenderer, left + 28, 138, panelWidth - 56, 24, Text.literal("Confirm Folder Name"));
         confirmation.setPlaceholder(Text.literal(world.folderName()));
         confirmation.setMaxLength(128);
+        confirmation.setDrawsBackground(false);
+        confirmation.setEditableColor(LbUi.TEXT_PRIMARY);
+        confirmation.setUneditableColor(LbUi.TEXT_DISABLED);
         confirmation.active = !submitting;
         addDrawableChild(confirmation);
 
-        ButtonWidget delete = ButtonWidget.builder(Text.literal(submitting ? "Deleting…" : "Delete Permanently"), button -> submit())
-                .dimensions(fieldLeft, 168, fieldWidth, 24).build();
+        LbButtonWidget delete = LbUi.button(left + 28, 184, panelWidth - 56, 28,
+                submitting ? "Deleting…" : "Delete Permanently", LbButtonWidget.Style.DANGER, this::submit);
         delete.active = !submitting;
         addDrawableChild(delete);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(submitting ? "Back" : "Cancel"), button -> close())
-                .dimensions(center - 50, 206, 100, 20).build());
+        addDrawableChild(LbUi.button(width / 2 - 50, 228, 100, 22,
+                submitting ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!submitting) setInitialFocus(confirmation);
     }
 
@@ -88,27 +83,29 @@ public final class DeleteWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        int center = width / 2;
-        int panelWidth = Math.min(380, width - 50);
-        int left = center - panelWidth / 2;
-        context.fill(left, 36, left + panelWidth, 250, 0xC21D1719);
-        super.render(context, mouseX, mouseY, delta);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
+        LbUi.elevatedPanel(context, left, 30, panelWidth, 276);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, center, 50, 0xFF7777);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("This permanently removes " + world.displayName() + "."), center, 72, 0xE6E6E6);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("This action cannot be undone."), center, 88, 0xFF9B9B);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Type exactly: " + world.folderName()), center, 106, 0xAEB7C4);
-        context.drawTextWithShadow(textRenderer, Text.literal("Folder confirmation"), confirmation.getX(), 114, 0xAEB7C4);
+        context.drawTextWithShadow(textRenderer, Text.literal("DELETE WORLD"), left + 24, 48, LbUi.DANGER_BRIGHT);
+        context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 24, 68, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("This permanently removes the managed world and cannot be undone."),
+                left + 24, 88, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Type exactly"), left + 28, 112, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(world.folderName()), left + 28, 126, LbUi.WARNING);
+        LbUi.field(context, confirmation, validation != null);
 
         if (submitting && controller.activityMessage() != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()), center, 236, 0xD8DEE9);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()),
+                    width / 2, 272, LbUi.TEXT_SECONDARY);
         } else if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), center, 236, 0xFF7777);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
+                    width / 2, 272, LbUi.DANGER_BRIGHT);
         }
+
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
