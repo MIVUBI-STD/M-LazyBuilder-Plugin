@@ -8,8 +8,8 @@ softdepend: [Chunky]
 
 commands:
   lazyperf:
-    description: LazyBuilder build-server performance tools.
-    usage: /lazyperf status|pregen|pause|continue|cancel|profile|profilelag
+    description: LazyBuilder build-server optimization tools.
+    usage: /lazyperf status|pregen|pause|continue|cancel
     permission: lazybuilder.performance.manage
 
 permissions:
@@ -20,5 +20,5 @@ permissions:
     description: Manage worlds and transfer import/export artifacts.
     default: op
   lazybuilder.performance.manage:
-    description: Manage LazyBuilder build-server performance tools.
+    description: Manage LazyBuilder build-server optimization tools.
     default: op
