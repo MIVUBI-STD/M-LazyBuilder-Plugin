@@ -131,7 +131,7 @@ pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
     })
 }
 
-pub fn runtime_resources(_configured_min_memory_mb: u64, _configured_max_memory_mb: u64) -> Result<RuntimeResources, String> {
+pub fn runtime_resources() -> Result<RuntimeResources, String> {
     let hardware = hardware();
     let config = server_config::load()?;
     let max_memory_mb = config
