@@ -1,4 +1,4 @@
-use crate::engine::{core_modules, java_runtime, paper_provider, server_config, workspace_registry};
+use crate::engine::{core_modules, java_runtime, paper_provider, runtime_updates, server_config, workspace_registry};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,16 +16,17 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
     let workspace = workspace_registry::active_workspace()?;
     crate::engine::paths::ensure_runtime_layout()?;
 
+    // Prepare Server is intentionally idempotent. Each owner either verifies an
+    // existing valid asset or repairs only the asset it owns.
     let java = java_runtime::ensure_managed_java()?;
     server_config::ensure_java_path(&java)?;
     let paper_build = resolve_or_provision_paper(&workspace)?;
-
-    // Core JAR publication remains provisional until workspace metadata is updated.
-    // Dropping this transaction on any later error restores the previous JAR pair.
-    let core_transaction = core_modules::begin_sync(&workspace, resource_dir)?;
     ensure_server_properties(&workspace)?;
-    update_workspace_manifest(&workspace, paper_build, core_modules::CORE_VERSION)?;
-    core_transaction.finalize();
+
+    // Core publication has one authority. Runtime maintenance and initial
+    // provisioning both use the same transactional sync/metadata path.
+    runtime_updates::ensure_core_current(resource_dir)?;
+    update_paper_manifest_if_known(&workspace, paper_build)?;
 
     Ok(ProvisionResult {
         java_path: java.display().to_string(),
@@ -56,34 +57,53 @@ fn resolve_or_provision_paper(workspace: &Path) -> Result<Option<u64>, String> {
 
 fn ensure_server_properties(workspace: &Path) -> Result<(), String> {
     let path = workspace.join("server").join("server.properties");
-    if path.is_file() { return Ok(()); }
+    if path.is_file() {
+        return Ok(());
+    }
     let text = "# Managed baseline created by LazyBuilder\nserver-port=25565\nonline-mode=true\nenable-command-block=true\nspawn-protection=0\nview-distance=10\nsimulation-distance=10\n";
     fs::write(path, text).map_err(|e| e.to_string())
 }
 
-fn update_workspace_manifest(workspace: &Path, paper_build: Option<u64>, core_version: &str) -> Result<(), String> {
+fn update_paper_manifest_if_known(workspace: &Path, paper_build: Option<u64>) -> Result<(), String> {
+    let Some(paper_build) = paper_build else {
+        // Adopted/unknown Paper builds remain unknown until the explicit Paper
+        // update path establishes an authoritative build number.
+        return Ok(());
+    };
+
     let path = workspace.join("tools").join("lazybuilder").join("config").join("workspace.json");
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    if let Some(build) = paper_build {
-        value["paperBuild"] = Value::from(build);
+    if value.get("paperBuild").and_then(Value::as_u64) == Some(paper_build) {
+        return Ok(());
     }
-    value["worldManagerVersion"] = Value::String(core_version.into());
-    value["utilitiesManagerVersion"] = Value::String(core_version.into());
+    value["paperBuild"] = Value::from(paper_build);
     write_json_atomic(&path, &value)
 }
 
 fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     let temporary = PathBuf::from(format!("{}.tmp", path.display()));
     let backup = PathBuf::from(format!("{}.previous", path.display()));
-    fs::write(&temporary, serde_json::to_string_pretty(value).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::write(
+        &temporary,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     if path.exists() {
         let _ = fs::remove_file(&backup);
         fs::rename(path, &backup).map_err(|e| e.to_string())?;
         match fs::rename(&temporary, path) {
-            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
-            Err(error) => { let _ = fs::rename(&backup, path); Err(error.to_string()) }
+            Ok(()) => {
+                let _ = fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&backup, path);
+                Err(error.to_string())
+            }
         }
     } else {
         fs::rename(temporary, path).map_err(|e| e.to_string())
@@ -111,11 +131,29 @@ mod tests {
         fs::write(
             config.join("workspace.json"),
             r#"{"paperBuild":null,"worldManagerVersion":null,"utilitiesManagerVersion":null}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let build = resolve_or_provision_paper(&workspace).unwrap();
         assert_eq!(build, None);
         assert_eq!(fs::read(server.join("paper.jar")).unwrap(), b"adopted-paper");
+
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn known_paper_build_metadata_write_is_idempotent() {
+        let workspace = test_root("paper-metadata-idempotent");
+        let config = workspace.join("tools").join("lazybuilder").join("config");
+        fs::create_dir_all(&config).unwrap();
+        let manifest = config.join("workspace.json");
+        fs::write(&manifest, r#"{"paperBuild":123}"#).unwrap();
+
+        update_paper_manifest_if_known(&workspace, Some(123)).unwrap();
+        let first = fs::read_to_string(&manifest).unwrap();
+        update_paper_manifest_if_known(&workspace, Some(123)).unwrap();
+        let second = fs::read_to_string(&manifest).unwrap();
+        assert_eq!(first, second);
 
         let _ = fs::remove_dir_all(workspace);
     }
