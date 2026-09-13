@@ -29,6 +29,10 @@
   let notice = '';
   let busy = false;
 
+  function friendlyError(value: unknown) {
+    return String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
+  }
+
   function category(message: string) {
     const value = message.toLowerCase();
     if (value.includes('java')) return 'Java';
@@ -59,7 +63,7 @@
     if (state === 'Starting') return 'Paper is starting. This usually takes a few seconds.';
     if (state === 'Stopping') return 'Waiting for Paper to shut down safely.';
     if (state === 'Restarting') return 'The server is restarting.';
-    if (state === 'Detached') return 'Paper is running outside the current LazyBuilder session.';
+    if (state === 'Detached') return 'Paper is still running, but this launcher session no longer owns its console.';
     if (state === 'Crashed') return 'The previous server process stopped unexpectedly.';
     return 'Start the server when you are ready to build.';
   }
@@ -77,16 +81,15 @@
       await Promise.all([refreshRuntime(), refreshPreflight()]);
       error = '';
     } catch (e) {
-      error = String(e);
+      error = friendlyError(e);
     }
   }
 
   async function pollRuntime() {
     try {
       await refreshRuntime();
-      error = '';
     } catch (e) {
-      error = String(e);
+      if (!error) error = friendlyError(e);
     }
   }
 
@@ -94,20 +97,26 @@
     if (busy) return;
     busy = true;
     notice = '';
+    error = '';
     try {
       await run();
       await refreshAll();
-      error = '';
     } catch (e) {
-      error = String(e);
-      await refreshAll();
+      const operationError = friendlyError(e);
+      try {
+        await Promise.all([refreshRuntime(), refreshPreflight()]);
+      } catch {
+        // Keep the original action error. It is the most useful message to the user.
+      }
+      error = operationError;
     } finally {
       busy = false;
     }
   }
 
-  async function recoverDetached() {
+  async function stopDetachedProcess() {
     if (busy || snapshot.state !== 'Detached') return;
+    if (!window.confirm('Stop the externally running Paper process? This will terminate that server process so LazyBuilder can manage the server again.')) return;
     busy = true;
     error = '';
     notice = '';
@@ -116,7 +125,7 @@
       notice = result.message;
       await refreshAll();
     } catch (e) {
-      error = String(e);
+      error = friendlyError(e);
     } finally {
       busy = false;
     }
@@ -156,7 +165,7 @@
       {:else if snapshot.state === 'Stopping'}
         <button class="secondary-action" disabled>Stopping…</button>
       {:else if snapshot.state === 'Detached'}
-        <button class="secondary-action" disabled={busy} onclick={recoverDetached}>Recover control</button>
+        <button class="stop-button" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
       {/if}
     </div>
   </header>
@@ -231,11 +240,11 @@
     <section class="attention-card">
       <div class="attention-heading">
         <div>
-          <strong>Server is running externally</strong>
-          <p>LazyBuilder will not start another Paper process while this one is active.</p>
+          <strong>Server is running outside this launcher session</strong>
+          <p>LazyBuilder cannot recover the old console connection. Stopping the verified Paper process is required before this launcher can start and own a new managed instance.</p>
         </div>
       </div>
-      <button class="secondary-action" disabled={busy} onclick={recoverDetached}>Recover server process</button>
+      <button class="stop-button" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
     </section>
   {/if}
 </section>
