@@ -4,7 +4,7 @@ Canonical owner for the user-facing World Manager navigation and operation flow.
 
 ## Goal
 
-The World Manager UI must expose the existing server/application capabilities through one predictable client surface. The client is presentation/input only; it must not create a second lifecycle, settings, transfer, or filesystem authority.
+The World Manager UI exposes server/application capabilities through one predictable client surface. The client is presentation/input only; it must not create a second lifecycle, settings, transfer, registry, or filesystem authority.
 
 ## Primary navigation
 
@@ -17,34 +17,27 @@ Open LazyBuilder
    └── Map / Xaero
 ```
 
-`Worlds` is the default landing surface. Do not require the user to choose between separate command, file, conversion, or runtime products.
+`Worlds` is the default landing surface.
 
 ## Worlds
 
-Each row/card represents one canonical managed `WorldId` and should show only decision-relevant state:
+Each row/card represents one canonical managed `WorldId` and shows decision-relevant state:
 
 ```text
 Display Name
-folder name (secondary)
+folder name
 ACTIVE / ARCHIVED
 LOADED / UNLOADED
 kind
 ```
 
-Primary row action:
-
-```text
-ACTIVE + LOADED/UNLOADED → Teleport
-ARCHIVED                 → Restore
-```
-
-Secondary actions open one `Manage World` surface rather than placing every operation in the world list.
+Primary actions come from canonical server state. Secondary actions open the existing management screens rather than creating per-command subsystems.
 
 ## Manage World
 
 ```text
 Manage World
-├── Open / Teleport
+├── Teleport
 ├── Settings
 ├── Clone
 ├── Export
@@ -55,74 +48,70 @@ Manage World
 
 Rules:
 
-- show actions from canonical server state; do not infer success locally;
-- disable or hide impossible actions instead of allowing a request that is known to be invalid;
-- destructive actions (`Archive`, `Delete`) require explicit confirmation;
-- `Delete` confirmation must use the canonical folder name because the server already requires exact confirmation;
-- long operations return to one operation/progress state rather than opening a second subsystem screen;
-- completion refreshes the affected world from the server.
+- show actions from canonical server state;
+- do not infer success locally;
+- destructive actions require explicit confirmation;
+- Delete confirmation must satisfy the server's exact-name guard;
+- long operations use canonical operation/task state;
+- completion refreshes affected state from the server.
 
 ## Create World
 
-Creation remains intentionally small:
-
 ```text
 Create World
-→ Name
+→ World Folder
+→ Display Name
 → Type: Flat | Void
 → Create
 ```
 
-No advanced world settings are duplicated here. Successful creation returns the new canonical world, which is already loaded and BUILD_READY.
+Advanced settings are intentionally not duplicated into Create. New worlds use canonical BUILD_READY defaults.
 
 ## Import World
 
 ```text
 Import World
+→ destination folder + display name
 → native file picker (.zip / .mcworld)
-→ upload
-→ server validation / conversion if required
-→ choose destination world identity/name when required by product flow
+→ bounded transfer upload
+→ server validation / optional conversion
 → publish as managed world
-→ show result
+→ return canonical world state
 ```
 
-The file picker and upload are transport details of one Import operation. Do not expose a separate "Upload Manager" product surface.
+The picker and upload are transport details of one Import flow. There is no separate Upload Manager.
 
 ## Export World
 
-Whole-world export is reached from `Manage World → Export`.
+Whole-world Export is reached from the managed-world surface.
 
 ```text
 Export
-→ choose target format/version
-→ optional artifact name
-→ server export
+→ artifact name
+→ native Java 1.21.4 target in current UI
+→ safe server snapshot/package
 → existing transfer download
 → native save dialog
 ```
 
-`Export Area` remains a map/Xaero action because spatial selection belongs to map presentation. It must still use the same export service and transfer path as whole-world export.
+Additional target formats should only be surfaced when the client receives a verified supported-format catalog. `Export Area` remains a map/Xaero action because spatial selection belongs to map presentation, while still reusing the same Export and transfer owners.
 
 ## Settings
 
-Settings use one server snapshot and one canonical mutation path.
+Settings use one server snapshot and one canonical mutation path. The compact current surface includes:
 
 ```text
-World Settings
-├── General
-├── Environment
-├── Spawning
-└── Gamerules
+Auto Load
+Default Game Mode
+Difficulty
+PVP
+Set Current Position as Spawn
+Reset to BUILD_READY
 ```
 
-The client must display the server-returned value after a mutation. Common toggles are presentations of the same Paper/registry values; they are not additional client state.
-
-`Reset to Build Ready` is one explicit action with confirmation. It is not a mode or background enforcement toggle.
+The client displays server-returned state after mutation. It does not maintain a second settings store or polling loop.
 
 ## Map / Xaero
-
-Map remains a contextual tool, not the root management UI.
 
 ```text
 Xaero fullscreen map
@@ -130,52 +119,60 @@ Xaero fullscreen map
 └── Export Area
 ```
 
-A map action should not require the user to reopen World Manager when the managed current world is already resolved by the server.
+Map actions remain contextual and spatial. They do not replace the general World Manager surface.
 
 ## Operation feedback
 
-Use four UI states consistently:
+Use consistent bounded states:
 
 ```text
 idle
-requesting
+requesting / running
 success
 error
 ```
 
-For long operations add bounded progress/status when the server can provide meaningful progress. Do not fake percentages for filesystem copy or converter work when no authoritative progress exists.
-
-Errors should identify the action and recovery step without exposing host filesystem paths or stack traces.
+Do not fake progress percentages when the server has no authoritative progress value. Errors should identify the failed action and recovery step without exposing host filesystem paths or stack traces.
 
 ## Channel / protocol shape
 
-The dedicated World Manager UI should use one first-party world-control protocol surface for lifecycle/settings/listing operations rather than one channel per button.
-
-Existing specialized channels remain specialized:
-
 ```text
+lazybuilder:world     World Manager list/create/manage/settings intents
 lazybuilder:map       spatial map intents only
 lazybuilder:transfer  file bytes only
-lazybuilder:world     World Manager list/create/manage/settings intents
 ```
 
-`lazybuilder:world` must delegate to the existing `WorldManager` application services. It must not implement duplicate business logic, registry state, operation locking, or file operations.
+`lazybuilder:world` delegates to existing World-Manager services. It does not own duplicate business logic, registry state, operation locking, conversion, or file operations.
 
 ## Current implementation boundary
 
-The current Fabric source already implements networking, native transfer dialogs, transfer state, and Xaero map actions. A general-purpose World Manager screen/control channel is not yet implemented. Therefore the next client-development slice should be `lazybuilder:world` plus the minimal world browser/navigation shell above, not additional map or transfer infrastructure.
+The first-party Fabric World Manager is source-implemented for:
+
+```text
+list / refresh
+create Flat / Void
+teleport
+load / unload
+archive / restore
+clone
+settings
+permanent delete
+import publication
+native Java 1.21.4 whole-world export
+```
+
+Native file dialogs, transfer controllers, Xaero actions, and the dedicated `lazybuilder:world` control path are also source-implemented. Remote CI proves compilation/tests only; runtime UI and Paper behavior still require live validation.
 
 ## Efficiency rules
 
-- list worlds only on screen open/explicit refresh or after a relevant mutation;
+- list worlds only on screen open, explicit refresh, or after relevant mutation;
 - no world-list polling;
 - no settings polling;
 - no client-side shadow registry;
 - no directory scanning on the client;
-- one request for one user action;
-- reuse server-returned snapshots instead of issuing multiple per-row detail requests;
+- reuse server-returned snapshots;
 - expensive file/conversion work remains server-side and request-bound.
 
 ## Proof boundary
 
-Remote CI can prove protocol encoding, state mapping, navigation compilation, and server delegation. Layout quality, input behavior, native file dialogs, Xaero placement, and perceived responsiveness require live client testing.
+Remote CI can prove protocol encoding, source wiring, state mapping, navigation compilation, and server delegation. Layout quality, actual input behavior, native dialogs, Xaero placement/transforms, real transfer behavior, and perceived responsiveness require `LOCAL_CODE` / `LIVE_SERVER` testing.

@@ -4,9 +4,7 @@
 
 LazyBuilder is the umbrella product for a Minecraft Java 1.21.4 builder-server workspace. Its purpose is to replace difficult, legacy, or overlapping server workflows with a smaller, clearer, maintainable system.
 
-LazyBuilder is **not** the World Manager module name.
-
-Canonical component naming:
+Canonical components:
 
 ```text
 LazyBuilder
@@ -16,7 +14,7 @@ LazyBuilder
 └── Utilities-Manager
 ```
 
-External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external and are not renamed or rebuilt by LazyBuilder unless a separate explicit decision is made later.
+External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external and are not rebuilt unless a separate explicit requirement appears.
 
 ## Repository authority
 
@@ -25,24 +23,19 @@ Local = active development / source authority
 main  = stable / release authority
 ```
 
+Do not create side development branches unless the user explicitly requests isolation.
+
 ## Engineering model
 
-LazyBuilder follows the same repository-development discipline used by the user's BuildIT/LazyDesigner repository:
-
-- hierarchical canonical documentation;
-- selective context loading;
-- explicit execution-context/proof ceilings;
 - one semantic owner per responsibility;
-- bounded/standard/complex development routing;
-- GitHub-first completion before local/live-server residue;
-- domain Skills only when a real responsibility exists;
-- no duplicate systems or speculative framework layers.
-
-The process is mirrored; product-specific implementation remains native to LazyBuilder rather than copying unrelated Blockbench/MCP architecture.
+- one primary execution path per behavior;
+- no duplicate managers, registries, schedulers, config systems, or filesystem authorities;
+- modules remain independently maintainable;
+- source/CI proof is distinct from local/live runtime proof;
+- no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
+- no idle/background subsystem without a concrete need.
 
 ## Server workspace target
-
-Fresh local-server layout:
 
 ```text
 Work Server - 1.21.4/
@@ -62,19 +55,17 @@ Work Server - 1.21.4/
 └── README-Server.txt
 ```
 
-All world-related lifecycle data lives under `world-system/`; Paper/runtime/plugin files stay under `server/`.
-
-The default server world is a clean BUILD_READY flat builder world. Nether and End are disabled by default because this server is build-focused.
+World lifecycle data belongs under `world-system/`; Paper/runtime/plugin files stay under `server/`. Some current source paths remain transitional and should only be migrated as an explicit bounded compatibility-safe slice.
 
 ## Component ownership
 
 ### Server-Manager
 
-Lives in `LazyBuilder.exe` and owns only server-process/desktop concerns:
+Desktop-native authority for:
 
-- start/stop/restart Paper safely;
-- health summary;
-- CPU/RAM status;
+- start/stop/restart Paper;
+- health and CPU/RAM summary;
+- Java/runtime discovery;
 - basic server settings;
 - crash/process handling.
 
@@ -82,80 +73,114 @@ It is not a Paper plugin.
 
 ### Plugin-Manager
 
-Lives in `LazyBuilder.exe` and owns plugin-file management:
+Desktop-native authority for:
 
-- plugin discovery;
-- functional categorization;
+- plugin inventory/category;
 - install/update;
-- duplicate-version prevention;
+- duplicate prevention;
 - dependency/compatibility checks;
-- enable/disable using restart-safe file movement;
-- safe removal while preserving plugin data by default.
+- restart-safe enable/disable;
+- safe removal with plugin data preserved by default.
 
 It is not a Paper plugin.
 
 ### World-Manager
 
-Paper-side authority for world lifecycle. Multiverse-Core and VoidWorld are replaced rather than wrapped as long-term authorities.
-
-World-Manager owns:
+Paper-side authority for world lifecycle and files. It owns:
 
 - browse/select worlds;
-- create Flat/Void worlds;
+- create Flat/Void;
 - BUILD_READY application;
-- teleport to world/map location;
+- teleport;
 - load/unload;
 - clone;
 - backup;
 - archive/restore;
 - safe delete;
-- import/export;
-- world settings;
-- conversion integration;
-- metadata/display state.
+- import/export/conversion;
+- settings and managed metadata.
 
-The desktop app may present these actions but must not duplicate World-Manager business logic or become a second filesystem authority.
+Desktop and Fabric only present/control these services through explicit transport contracts. They do not duplicate World-Manager business logic or filesystem ownership.
 
-World-Manager is structurally locked at source/CI proof level. Canonical architecture is recorded in `docs/04-system/world-manager-architecture-lock.md`. Live Paper/Desktop/Fabric proof remains a separate later stage.
+World-Manager source architecture is structurally locked at `REMOTE_GITHUB` proof level. Canonical rules live in `docs/04-system/world-manager-architecture-lock.md`.
 
 ### Utilities-Manager
 
-Paper-side builder convenience module. Current target scope:
+Paper-side builder convenience module. Current locked scope:
 
-- advanced fly;
-- noclip;
-- night vision;
-- iron-door toggle;
-- double-slab helper;
-- glazed-terracotta rotation helper;
-- builder-safe protections for explosions, leaves decay, farmland trample, and dragon-egg teleport behavior.
+```text
+World Safety
+- explosion block protection
+- leaves decay protection
+- farmland trample protection
+- dragon egg teleport protection
 
-Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family are intentionally excluded from the current product scope. Movement/Noclip already owns the LazyBuilder-specific spectator movement transition, while normal Minecraft/Paper spectator controls own camera targeting. Do not add overlapping spectator controls unless a concrete missing capability appears later.
+Movement
+- Advanced Fly
+- Noclip
+- Night Vision
 
-Do not place world management, performance optimization, economy, home/warp/chat suites, or WorldEdit aliases in Utilities-Manager.
+Build Helpers
+- Iron Door Toggle
+- Double Slab Break
+- Glazed Terracotta Rotate
+```
+
+Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family are intentionally excluded. Movement/Noclip already owns LazyBuilder-specific spectator movement transition; normal Minecraft/Paper spectator controls own camera targeting.
+
+Utilities-Manager source architecture is structurally locked at `REMOTE_GITHUB` proof level. Canonical rules live in `docs/04-system/utilities-manager-architecture-lock.md`.
+
+## Client / Desktop boundaries
+
+Desktop canonical source:
+
+```text
+EngineData/Frontend/RustApp/
+```
+
+Stack:
+
+- Tauri 2
+- Svelte 5
+- TypeScript
+- Rust native backend
+
+Fabric client canonical source:
+
+```text
+client/fabric/
+```
+
+World control channels remain separated by responsibility:
+
+```text
+lazybuilder:world     general world control/state
+lazybuilder:map       spatial Xaero/map intents
+lazybuilder:transfer  file bytes
+```
+
+The first-party Fabric World Manager surface is source-implemented for list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, and native Java 1.21.4 whole-world Export. Xaero remains contextual for Teleport Here and Export Area.
 
 ## BUILD_READY defaults
 
-New builder worlds should be immediately safe and predictable for building:
+New builder worlds target:
 
 - structures disabled;
 - natural mob spawning disabled;
-- default game mode Creative;
-- difficulty Normal unless explicitly changed later;
+- Creative default game mode;
+- Normal difficulty unless explicitly changed;
 - clear weather with weather cycle disabled;
 - daylight cycle disabled and daytime selected;
 - fire tick disabled;
 - mob griefing disabled;
-- random tick speed set to 0;
-- patrol, wandering trader, insomnia/phantom, warden, and raid spawning/events disabled where supported by the target API/gamerules;
-- unnecessary spawn-chunk persistence disabled when safe for the target Paper API;
-- other unrelated vanilla gamerules remain vanilla until changed through World Settings.
+- random tick speed 0;
+- patrol/trader/insomnia/warden/raid events disabled where supported;
+- unnecessary spawn-chunk persistence disabled when safe;
+- unrelated vanilla gamerules left vanilla until changed.
 
-Flat World uses a simple vanilla-compatible flat world with structures disabled. Void World is empty terrain with a small safe spawn platform by default unless later requirements change that decision.
+Flat uses a simple vanilla-compatible flat preset. Void is empty terrain with a small safe spawn platform.
 
-## Plugin modernization decisions
-
-Current baseline direction:
+## Plugin modernization direction
 
 ```text
 KEEP / EXTERNAL BUILD TOOLS
@@ -168,7 +193,7 @@ KEEP / EXTERNAL BUILD TOOLS
 REPLACE WITH LAZYBUILDER MODULES
 - Multiverse-Core -> World-Manager
 - VoidWorld -> World-Manager
-- BuildersUtilities -> Utilities-Manager target scope
+- BuildersUtilities -> Utilities-Manager current locked scope
 
 REMOVE FROM NEW BASELINE
 - EssentialsX
@@ -182,62 +207,40 @@ REMOVE FROM NEW BASELINE
 
 Performance authority is Paper 1.21.4 native configuration rather than generic optimizer plugins.
 
-## Desktop UX direction
+## Current proof state
 
-Primary navigation is intentionally small:
-
-```text
-Dashboard
-Worlds
-Plugins
-Settings
-```
-
-Dashboard only shows server state/health plus CPU/RAM and start/stop/restart actions. Technical details, logs, console, Java/JVM settings, and diagnostics belong under contextual problem views or Advanced settings rather than primary navigation.
-
-Worlds delegates to World-Manager. Plugins delegates to Plugin-Manager.
-
-## Repository layout direction
-
-Canonical repository layout is documented in `docs/04-system/repository-layout.md`.
-
-Current primary source boundaries:
+Latest locked source gate is green for:
 
 ```text
-EngineData/Frontend/RustApp/
-modules/world-manager/
-modules/utilities-manager/
-client/fabric/
-docs/
+Paper modules/tests
+Fabric client build
+Tauri/Svelte/Rust desktop checks
 ```
 
-Keep each manager independently maintainable. Do not relocate or rewrite stable World-Manager source merely for symmetry.
-
-## Architecture principles
-
-- one canonical owner per responsibility;
-- one execution path per behavior;
-- no mandatory master/core Paper plugin without real runtime need;
-- related modules may share one repository but remain independently deployable when lifecycle requires it;
-- desktop/client UI never becomes server authority;
-- destructive world operations are server validated;
-- no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
-- source/CI proof remains distinct from live-server proof;
-- no runtime hot-reload hacks for Paper plugins;
-- no background optimizer layer without demonstrated need.
+This proves source/CI health only. It does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
 
 ## Current phase
 
-World-Manager source architecture and its Desktop/Fabric control paths are structurally stable. Utilities-Manager now has the intended remote-source feature set:
+Remote structural work is complete enough to stop adding speculative scope. The next phase is:
 
 ```text
-World Safety
-Movement
-Build Helpers
+LOCAL_CODE
+↓
+LIVE_SERVER
 ```
 
-Creation Tools and custom Spectator helpers are intentionally out of scope because they do not add required capability to the current builder workflow.
+Validate the current artifacts as one integrated builder-server workflow, record only reproducible runtime defects, and fix those defects directly in `Local`.
 
-A compile issue in the initial glazed-terracotta rotation implementation was corrected by using explicit cardinal `BlockFace` rotation compatible with the current Paper API. The latest source must be considered source/CI-stable only after the current `Local` verification run completes successfully.
+Priority validation:
 
-After the current CI gate is green, the next stage is LOCAL_CODE / LIVE_SERVER validation of the three Utilities families plus the already locked World-Manager flows. World-Manager changes require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
+```text
+1. Desktop start/stop/restart + Java/runtime paths
+2. World-Manager enable/control bridges
+3. Fabric World Manager lifecycle UI
+4. Import/Export + transfer + native dialogs
+5. Xaero Teleport Here / Export Area
+6. Utilities World Safety / Movement / Build Helpers
+7. restart/shutdown persistence and cleanup
+```
+
+Do not expand World-Manager or Utilities-Manager scope unless live validation reveals a concrete missing capability or defect.

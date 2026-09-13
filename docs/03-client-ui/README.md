@@ -23,25 +23,32 @@ Server owns permissions, managed-world existence/state, safe teleport resolution
 
 The client is never authoritative for server state.
 
-## Implemented Fabric Client Slice
+## Implemented Fabric Client Surface
 
 ```text
 Fabric client
+├── WorldManagerScreen
+├── CreateWorldScreen
+├── ImportWorldScreen
+├── WorldSettingsScreen
+├── CloneWorldScreen
+├── ExportWorldScreen
+├── DeleteWorldScreen
+├── ClientWorldController
 ├── ClientMapController
 ├── ClientTransferController
 ├── ClientFileDialogs
+├── lazybuilder:world payload
 ├── lazybuilder:map payload
 ├── lazybuilder:transfer payload
 └── optional Xaero adapter
 ```
 
-The client reuses `MapActionWireProtocol` and `TransferWireProtocol`; no parallel wire contract exists. After join it resolves the managed current world from the server.
+The first-party World Manager surface is connected for canonical world list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, and native Java 1.21.4 whole-world Export. The client does not maintain a second world registry and does not own world files.
 
-Import opens a native `.zip`/`.mcworld` picker, computes SHA-256 off the render thread, then uploads through the bounded transfer pipeline. Export receives a server artifact name, asks for a native save destination, writes to `.part`, validates the final SHA-256, and only then publishes the local file.
+Import opens a native `.zip`/`.mcworld` picker, computes SHA-256 off the render thread, uploads through the bounded transfer pipeline, then asks the canonical world-control path to publish the validated import. Export reuses the existing transfer download and native save dialog rather than creating a second download subsystem.
 
 The official client permits **one active file transfer total** at a time: one upload or one download. This intentionally keeps recovery deterministic.
-
-A general World Manager browser/screen and its world-control protocol are **not implemented yet**. Do not treat the existing map/transfer slice as the complete product UI. The next client-facing implementation should add one `lazybuilder:world` control surface that delegates to existing server application services instead of adding more specialized channels or duplicating world logic.
 
 ## Xaero Scope
 
@@ -75,59 +82,28 @@ Export Area
 
 `P` and `O` remain fallback shortcuts. LazyBuilder consumes map clicks only while one of its actions is armed.
 
-## Map Action Contract
+## Channel Ownership
 
 ```text
-Xaero / LazyBuilder client
-→ lazybuilder:map
-→ PaperMapActionPayloadAdapter
-→ application services
+lazybuilder:world     canonical world list/create/manage/settings intents
+lazybuilder:map       spatial map intents only
+lazybuilder:transfer  file bytes only
 ```
 
-`MapActionWireProtocol` version 1 is bounded to 4 KiB. Teleport requires `lazybuilder.world.teleport`; Export Area requires `lazybuilder.world.manage`.
+`lazybuilder:world` delegates to existing World-Manager services and must not implement duplicate lifecycle, settings, locking, conversion, or filesystem logic.
 
-### Teleport to Location
+`lazybuilder:map` remains spatial only. `Export Area` reuses the canonical Export service, operation lease, converter runtime, artifact store, and transfer path.
 
-Client sends only `WorldId + blockX + blockZ`.
+`lazybuilder:transfer` remains file transport only. It does not learn Import/Export business semantics.
 
-```text
-Xaero click
-→ server permission gate
-→ WorldLocationTeleportService
-→ load world if needed
-→ Paper safe-surface resolver
-→ teleport
-```
-
-The server checks world border, solid/non-dangerous floor and passable feet/head space. Void worlds resolve to their existing managed spawn/platform instead of inventing terrain. Client never chooses Y.
-
-### Export Area
-
-Client sends two block-space corners plus normal export target/options. `WorldAreaSelection` normalizes inclusive bounds with correct negative-coordinate floor division.
-
-```text
-Xaero rectangle
-→ WorldId + x1,z1 + x2,z2 + target
-→ WorldAreaSelection
-→ WorldExportService.prepareArea(...)
-→ safe snapshot
-→ request-local include pruning
-→ normal Export packaging
-→ normal transfer download
-```
-
-Export Area is not a second export subsystem. It reuses the canonical Export service, operation lease, converter runtime, artifact store, and transfer path.
-
-The Paper adapter acknowledges accepted work after the main-thread prepare phase, captures the quiescent snapshot asynchronously, restores the source world immediately after snapshot capture, then runs conversion/package work from the owned snapshot. During plugin/server shutdown it stops accepting new map work and releases tracked Export leases without trying to load worlds while Paper is tearing down.
-
-## File Transfer Protocol
+## File Transfer Contract
 
 ```text
 Client Mod
 → lazybuilder:transfer
 → PaperTransferPayloadAdapter
 → TransferSessionService
-→ world/imports or world/exports
+→ managed import/export storage
 ```
 
 Contract:
@@ -141,25 +117,22 @@ Contract:
 - one seekable file channel per active transfer;
 - file/hash work off the Paper main thread;
 - malformed/oversized/out-of-order/unauthorized requests fail closed;
-- a failed request that identifies an active session cleans that stale server session;
-- disconnect aborts that player's sessions;
+- failed requests tied to an active session clean stale server state;
+- disconnect aborts the player's sessions;
 - idle sessions expire opportunistically without a polling thread;
 - plugin disable unregisters the channel and cleans tracked transfer state.
-
-The official LazyBuilder client is stricter than server capacity and runs only one transfer total at a time.
-
-A partial upload lives only under `plugins/LazyBuilder/world/transfer` and is never visible to Import until size and SHA-256 validation pass. Existing import artifacts are not overwritten.
 
 ## Efficiency
 
 - no duplicate Xaero map cache or renderer;
-- bounded, action-specific network payloads;
-- no continuous polling when event-driven state is sufficient;
+- no background world-list or settings polling;
+- no client-side shadow registry;
 - no permanent transfer worker or custom socket loop;
 - hashing/chunk I/O exists only for explicit requests;
-- Teleport and Export Area perform no work until the user acts;
-- future World Manager screens must refresh on open/explicit mutation rather than poll server state.
+- list/settings refresh on screen open, explicit refresh, or relevant mutation;
+- one user action maps to one canonical request path;
+- expensive file/conversion work remains server-side and request-bound.
 
 ## Proof Boundary
 
-CI proves the Paper source/tests and Fabric/Xaero compile surface. Actual World Manager screen layout, Xaero mixin application, button placement, mouse→world transform, native Windows dialogs, real network transfer, and perceived responsiveness require local/live validation.
+Remote CI proves Paper source/tests plus Fabric protocol/screen compilation. It does **not** prove runtime screen behavior, button placement, Xaero mixin application, mouse→world transforms, native Windows dialogs, real file transfer, converter quality, or perceived responsiveness. Those require `LOCAL_CODE` / `LIVE_SERVER` validation.
