@@ -2,6 +2,7 @@ import { runtimeApi } from './runtimeApi';
 
 export const runtimeProduct = {
   server: {
+    preflight: runtimeApi.getServerPreflight,
     snapshot: runtimeApi.getServerSnapshot,
     start: runtimeApi.startServer,
     stop: runtimeApi.stopServer,
