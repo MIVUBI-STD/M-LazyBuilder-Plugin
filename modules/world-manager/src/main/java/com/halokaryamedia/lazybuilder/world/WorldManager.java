@@ -2,9 +2,9 @@ package com.halokaryamedia.lazybuilder.world;
 
 import com.halokaryamedia.lazybuilder.world.application.BuildReadyPolicy;
 import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
-import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
+import com.halokaryamedia.lazybuilder.world.application.WorldDuplicateService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
@@ -84,7 +84,7 @@ public final class WorldManager {
     private final WorldExportArtifactStore worldExportArtifactStore;
     private final WorldImportArtifactStore worldImportArtifactStore;
     private final WorldLifecycleService worldLifecycleService;
-    private final WorldCloneService worldCloneService;
+    private final WorldDuplicateService worldDuplicateService;
     private final WorldBackupService worldBackupService;
     private final WorldDeleteService worldDeleteService;
     private final WorldExportService worldExportService;
@@ -169,7 +169,7 @@ public final class WorldManager {
                 worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy);
         this.worldLifecycleService = new WorldLifecycleService(
                 worldRegistry, registryPersistence, worldRuntimeService, worldOperationCoordinator);
-        this.worldCloneService = new WorldCloneService(
+        this.worldDuplicateService = new WorldDuplicateService(
                 worldRegistry, registryPersistence, worldRuntimeService,
                 worldOperationCoordinator, worldFileRepository);
         this.worldBackupService = new WorldBackupService(
@@ -291,7 +291,7 @@ public final class WorldManager {
     public WorldExportArtifactStore worldExportArtifactStore() { return worldExportArtifactStore; }
     public WorldImportArtifactStore worldImportArtifactStore() { return worldImportArtifactStore; }
     public WorldLifecycleService worldLifecycleService() { return worldLifecycleService; }
-    public WorldCloneService worldCloneService() { return worldCloneService; }
+    public WorldDuplicateService worldDuplicateService() { return worldDuplicateService; }
     public WorldBackupService worldBackupService() { return worldBackupService; }
     public WorldDeleteService worldDeleteService() { return worldDeleteService; }
     public WorldExportService worldExportService() { return worldExportService; }
