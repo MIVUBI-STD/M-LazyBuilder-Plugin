@@ -1,5 +1,5 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{adoption, java_runtime, provisioning, workspace_registry};
+use crate::engine::{adoption, java_runtime, provisioning, runtime_updates, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
@@ -28,6 +28,29 @@ pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
 pub fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
     let resource_dir = app.path().resource_dir().ok();
     provisioning::provision_active(resource_dir.as_deref())
+}
+
+#[tauri::command]
+pub fn workspace_runtime_update_status() -> Result<runtime_updates::RuntimeUpdateStatus, String> {
+    runtime_updates::status()
+}
+
+#[tauri::command]
+pub fn workspace_update_paper(
+    state: State<'_, ServerManagerState>,
+) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
+    ensure_runtime_update_allowed(&state)?;
+    runtime_updates::update_paper()
+}
+
+#[tauri::command]
+pub fn workspace_sync_core(
+    app: AppHandle,
+    state: State<'_, ServerManagerState>,
+) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
+    ensure_runtime_update_allowed(&state)?;
+    let resource_dir = app.path().resource_dir().ok();
+    runtime_updates::sync_core(resource_dir.as_deref())
 }
 
 #[tauri::command]
@@ -122,11 +145,15 @@ fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
     if workspace_registry::current()?.is_none() {
         return Ok(());
     }
+    ensure_runtime_update_allowed(state)
+}
+
+fn ensure_runtime_update_allowed(state: &ServerManagerState) -> Result<(), String> {
     let snapshot = state.snapshot()?;
     match snapshot.state.as_str() {
         "Offline" | "Crashed" => Ok(()),
         other => Err(format!(
-            "Stop the active server before switching workspaces. Current server state: {other}."
+            "Stop the active server before changing workspace runtime files. Current server state: {other}."
         )),
     }
 }
