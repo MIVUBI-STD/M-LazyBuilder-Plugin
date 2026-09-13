@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.world.paper;
 
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
+import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
@@ -36,6 +37,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldTeleportService teleport;
     private final WorldLifecycleService lifecycle;
     private final WorldSettingsService settingsService;
+    private final WorldExportService exportService;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
@@ -48,6 +50,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             WorldTeleportService teleport,
             WorldLifecycleService lifecycle,
             WorldSettingsService settingsService,
+            WorldExportService exportService,
             WorldHeavyOperationOrchestrator heavyOperations
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -56,6 +59,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.teleport = Objects.requireNonNull(teleport, "teleport");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.settingsService = Objects.requireNonNull(settingsService, "settingsService");
+        this.exportService = Objects.requireNonNull(exportService, "exportService");
         this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
     }
 
@@ -118,6 +122,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 requireAnyWorldPermission(player);
                 List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream().map(this::summary).toList();
                 yield new WorldControlWireProtocol.WorldList(worlds);
+            }
+            case WorldControlWireProtocol.GetExportFormats ignored -> {
+                requireManage(player);
+                yield new WorldControlWireProtocol.ExportFormats(exportService.supportedFormats());
             }
             case WorldControlWireProtocol.CreateWorld create -> {
                 requireManage(player);
