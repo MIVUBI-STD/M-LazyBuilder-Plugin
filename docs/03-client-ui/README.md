@@ -32,7 +32,7 @@ mouse wheel           cursor-anchored animated zoom
 CTRL + wheel          precise/fine zoom
 + / -                 alternative zoom controls
 middle mouse          recenter on player
-right click           "Choose an Option" contextual menu at cursor
+right click           contextual menu at cursor
 ESC                    close context first, then selection, then map
 player marker          directional arrow, not a generic square
 hover                  live X/Z map coordinates
@@ -43,6 +43,7 @@ area selection         visible overlay + explicit confirmation
 far zoom               aggregate multiple terrain samples; never one isolated block per large cell
 close zoom             increase screen-pixel density so roads/buildings do not become coarse square cells
 coordinate transform   use the same continuous camera scale for pan, hover, selection and player marker
+large worlds            old explored regions remain available without retaining the whole map in RAM
 ```
 
 LazyBuilder-specific context options currently replace Xaero-only waypoint/player-radar actions:
@@ -54,7 +55,7 @@ Center Map Here
 Copy Coordinates
 ```
 
-This is intentional product substitution, not a different interaction model. Unsupported Xaero ecosystems (waypoints, minimap radar, claims, cave-map layers) must not be represented by dead buttons.
+Unsupported Xaero ecosystems such as waypoint/radar/claims/cave-map features must not appear as dead controls.
 
 ## Responsibility Boundary
 
@@ -68,6 +69,8 @@ The client is never authoritative for server world state.
 
 ```text
 Fabric client
+├── LazyBuilderClientUi
+├── LbUi / LbButtonWidget
 ├── WorldMapScreen
 ├── ClientMapSurfaceCache
 ├── WorldManagerScreen
@@ -87,11 +90,9 @@ Fabric client
 └── lazybuilder:transfer payload
 ```
 
-The old `MapPreviewScreen` / `MapPreviewClientUi` path was removed so there is one map entry and one map presentation owner.
+The old preview path and old WorldManager-named client entry class were removed so there is one map entry and one current UI owner.
 
 ## World Map Behaviour
-
-The fullscreen map follows the familiar Xaero control model:
 
 ```text
 left-drag          pan camera
@@ -107,13 +108,11 @@ Copy Coordinates   copy selected X/Z to clipboard
 Worlds             open secondary World Manager without losing map camera
 ```
 
-The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard. The cursor uses a subtle map crosshair rather than a large generic UI cursor while the map is active.
+The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard. The map and World Manager use the first-party LazyBuilder visual system instead of vanilla button chrome.
 
 ### Map rendering density
 
-`WorldMapScreen` now decouples map camera scale from raw render-cell size. Close zoom renders with smaller screen cells, medium zoom uses an intermediate cell size, and wide zoom increases the cell footprint while retaining the same continuous world-coordinate transform.
-
-This matters because fixed 4-pixel cells made the map visibly blocky even when the underlying terrain sample was correct. Adaptive density keeps close-range roads/buildings readable without making far-zoom rendering unbounded.
+`WorldMapScreen` decouples map camera scale from raw render-cell size. Close zoom renders with smaller screen cells, medium zoom uses an intermediate cell size, and wide zoom increases the cell footprint while retaining the same continuous world-coordinate transform.
 
 All coordinate-sensitive operations use the same `blocksPerPixel` transform:
 
@@ -129,30 +128,33 @@ screen-to-world conversion
 
 No action is allowed to maintain a second coordinate transform.
 
-### Map memory and LOD
+### Regional map memory and LOD
 
-`ClientMapSurfaceCache` stores presentation-only terrain samples per managed-world + dimension scope.
+`ClientMapSurfaceCache` stores presentation-only terrain samples per managed-world + dimension scope. Persistent map memory is no longer one whole-scope snapshot. It is partitioned into sparse **128x128-block regional files**.
 
 Rules:
 
 - never force-load chunks;
 - only sample terrain already available to the client;
 - queue missing visible samples and process them with a per-frame budget;
-- retain bounded in-memory map data;
-- persist compressed sampled map memory under the LazyBuilder client data folder;
-- separate every managed world and dimension;
+- keep only a bounded LRU set of map regions resident in memory;
+- load regional files asynchronously instead of blocking the render thread;
+- flush dirty regional snapshots through one ordered async write lane;
+- keep every managed world and dimension isolated;
+- do not persist the temporary `unmanaged` identity;
+- preserve live samples if an older disk load completes afterward;
+- migrate the previous version-1 whole-scope snapshot into regional files once;
 - use Minecraft map colours plus lightweight relief shading;
 - at wider zoom levels blend a bounded multi-point footprint from the same canonical base-column cache;
-- do not create a second LOD persistence system;
-- persisted map data is never server authority.
+- persisted map data remains presentation state and never server authority.
 
-The multi-sample LOD path is specifically required so roads, coastlines, terrain boundaries and large structures do not collapse into the colour of one arbitrary block at wide zoom. Missing LOD points enter the same bounded sampling queue, keeping frame work predictable.
+The regional model removes the previous failure mode where a very large explored world eventually lost its oldest remembered areas merely because one global in-memory LRU reached its column limit. Old regions can leave RAM and later load again from disk when the camera revisits them.
 
-This prevents the previous synchronous full-visible-map sampling behaviour and allows explored terrain to remain visible after closing/reopening the map or restarting the client.
+The multi-sample LOD path remains the only LOD source; there is no second map database or pyramid persistence system.
 
 ## World Manager
 
-World Manager is secondary to the map and is reached through `Worlds`.
+World Manager is secondary to the map and reached through `Worlds`. Wide screens use a two-pane list/detail workspace; narrow logical resolutions use a single-pane list → detail flow so GUI Scale does not push actions off-screen.
 
 ```text
 Worlds
@@ -170,34 +172,31 @@ Worlds
     └── Delete
 ```
 
-Returning from World Manager restores the existing map screen rather than constructing a new one, preserving camera/zoom/selection presentation state.
+Builder-facing screens avoid internal folder/registry/transfer terminology except where a destructive safety guard genuinely requires it.
 
 ## Import
 
-Import is file-first:
-
 ```text
 Import Existing World
-→ optional display name
+→ optional world name
 → native .zip/.mcworld picker
 → prepare/hash off render thread
 → bounded transfer upload + visible progress
-→ derive internal destination folder automatically
 → server validation / optional conversion
 → publish managed world
 ```
 
-Internal destination-folder naming is not exposed as a normal user decision. Duplicate names are resolved by the server-side import path.
+Internal destination-folder naming is automatic.
 
 ## Whole-world Export
 
 ```text
 Export World
-→ artifact name
+→ user-facing file name
 → server snapshot/package
 → ExportReady
-→ existing transfer download
 → native Save As dialog
+→ existing transfer download
 → checksum/finalize local file
 ```
 
@@ -210,12 +209,6 @@ lazybuilder:world     canonical world list/create/manage/settings intents
 lazybuilder:map       spatial map intents only
 lazybuilder:transfer  file bytes only
 ```
-
-`lazybuilder:world` delegates to World Manager services and must not implement duplicate lifecycle, settings, locking, conversion, or filesystem logic.
-
-`lazybuilder:map` remains spatial only. `Export Area` reuses canonical export and transfer owners.
-
-`lazybuilder:transfer` remains transport only. It does not learn Import/Export business semantics.
 
 ## File Transfer Contract
 
@@ -238,25 +231,22 @@ Contract:
 - one seekable file channel per active transfer;
 - file/hash work off the Paper main thread;
 - malformed/oversized/out-of-order/unauthorized requests fail closed;
-- failed requests tied to an active session clean stale server state;
 - disconnect aborts the player's sessions;
-- idle sessions expire opportunistically without a polling thread;
-- plugin disable unregisters the channel and cleans tracked transfer state.
+- plugin disable cleans tracked transfer state.
 
 ## Efficiency
 
 - one fullscreen map owner and one map entry path;
 - bounded map sampling per frame;
-- adaptive screen-pixel density instead of forcing maximum close-zoom sampling everywhere;
-- one canonical base-column cache reused by close and far zoom levels;
+- adaptive screen-pixel density;
+- regional map persistence with bounded resident memory;
+- asynchronous regional reads and ordered asynchronous writes;
 - persistent map memory only for observed client terrain;
 - no background world-list/settings polling;
 - no client-side shadow world registry;
 - no permanent transfer worker or custom socket loop;
-- hashing/chunk I/O exists only for explicit requests;
-- list/settings refresh on screen open, explicit refresh, or relevant mutation;
 - expensive file/conversion work remains server-side and request-bound.
 
 ## Proof Boundary
 
-The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, close-range and far-zoom terrain readability, continuous coordinate transforms while zooming/panning, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
+Implementation remains ahead of proof. Final validation must cover Fabric compilation, actual map rendering/input, regional cache migration/read/write/eviction, revisiting old explored regions, close-range and far-zoom terrain readability, cursor-anchored zoom, context-menu ordering, player-arrow orientation, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, responsive World Manager navigation, and the full flow on a live 1.21.4 client/server pair.
