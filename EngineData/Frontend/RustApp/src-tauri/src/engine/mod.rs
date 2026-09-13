@@ -5,4 +5,5 @@ pub mod process_identity;
 pub mod resource_settings;
 pub mod server_manager;
 pub mod startup_guard;
+pub mod workspace_registry;
 pub mod world_manager;
