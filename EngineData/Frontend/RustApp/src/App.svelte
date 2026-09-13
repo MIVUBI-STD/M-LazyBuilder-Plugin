@@ -16,6 +16,7 @@
   let createName = '';
   let createParent = '';
   let creating = false;
+  let provisioningServer = false;
   let acceptingEula = false;
 
   const pages: Page[] = ['Dashboard', 'Worlds', 'Plugins', 'Settings'];
@@ -88,6 +89,20 @@
       await refreshWorkspaceState();
     } catch (error) {
       workspaceError = String(error);
+    }
+  }
+
+  async function prepareServer() {
+    provisioningServer = true;
+    workspaceError = '';
+    try {
+      const result = await runtimeProduct.workspace.provision();
+      provisioning = result.status;
+    } catch (error) {
+      workspaceError = String(error);
+      try { provisioning = await runtimeProduct.workspace.provisioningStatus(); } catch { /* preserve primary error */ }
+    } finally {
+      provisioningServer = false;
     }
   }
 
@@ -190,14 +205,23 @@
           </div>
           <div class="provision-steps">
             <span class:done={provisioning.workspaceCreated}>Workspace</span>
+            <span class:done={provisioning.javaReady}>Java 21</span>
             <span class:done={provisioning.paperReady}>Paper</span>
             <span class:done={provisioning.coreModulesReady}>Core Modules</span>
             <span class:done={provisioning.configReady}>Config</span>
             <span class:done={provisioning.eulaAccepted}>EULA</span>
           </div>
-          {#if !provisioning.eulaAccepted}
+
+          {#if !provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady}
+            <div class="prepare-row">
+              <p>LazyBuilder will prepare a managed Java 21 runtime, the latest stable Paper 1.21.4 build, and matching LazyBuilder core modules.</p>
+              <button class="primary" disabled={provisioningServer} onclick={prepareServer}>
+                {provisioningServer ? 'Preparing Server…' : 'Prepare Server'}
+              </button>
+            </div>
+          {:else if !provisioning.eulaAccepted}
             <div class="eula-row">
-              <p>Before the Minecraft server can run, you must explicitly accept the Minecraft EULA.</p>
+              <p>Server files are ready. Before Minecraft can run, you must explicitly accept the Minecraft EULA.</p>
               <button class="secondary" disabled={acceptingEula} onclick={acceptEula}>
                 {acceptingEula ? 'Saving…' : 'I Agree to the Minecraft EULA'}
               </button>
@@ -228,97 +252,42 @@
     background: var(--app-bg, #101214);
     color: var(--text, #f3f4f6);
   }
-
   .launcher.loading { font-size: 14px; opacity: 0.75; }
   .launcher-card { width: min(760px, 100%); display: grid; gap: 22px; }
   .launcher-heading h1 { margin: 4px 0 8px; font-size: 34px; }
   .launcher-heading p { margin: 0; color: #aeb4bd; }
   .eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 12px; }
-
   .create-panel, .recent-panel, .provision-card {
-    display: grid;
-    gap: 14px;
-    padding: 22px;
-    border: 1px solid #2d3238;
-    border-radius: 14px;
-    background: #171a1e;
+    display: grid; gap: 14px; padding: 22px; border: 1px solid #2d3238;
+    border-radius: 14px; background: #171a1e;
   }
-
   .create-panel h2, .recent-panel h2 { margin: 0; font-size: 18px; }
   label { display: grid; gap: 7px; font-size: 13px; color: #c6cbd2; }
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 11px 12px;
-    border-radius: 8px;
-    border: 1px solid #343a42;
-    background: #101214;
-    color: #f3f4f6;
-  }
+  input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 8px; border: 1px solid #343a42; background: #101214; color: #f3f4f6; }
   .location-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .hint { margin: -4px 0 0; color: #7f8792; font-size: 12px; }
   button { cursor: pointer; }
   button:disabled { cursor: default; opacity: .45; }
-  .primary, .secondary {
-    border-radius: 8px;
-    padding: 11px 14px;
-    font-weight: 650;
-  }
+  .primary, .secondary { border-radius: 8px; padding: 11px 14px; font-weight: 650; }
   .primary { border: 1px solid #f3f4f6; background: #f3f4f6; color: #111315; }
   .secondary { border: 1px solid #3a4048; background: #20242a; color: #f3f4f6; }
   .wide { width: 100%; }
   .open-row { display: flex; }
   .error-box { padding: 12px 14px; border-radius: 9px; background: #31191b; border: 1px solid #70343a; color: #ffd9dc; font-size: 13px; }
   .workspace-error { margin-bottom: 14px; }
-
-  .recent-server {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    width: 100%;
-    text-align: left;
-    padding: 12px 0;
-    border: 0;
-    border-top: 1px solid #2b3036;
-    background: transparent;
-    color: inherit;
-  }
+  .recent-server { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; text-align: left; padding: 12px 0; border: 0; border-top: 1px solid #2b3036; background: transparent; color: inherit; }
   .recent-server span:first-child { min-width: 0; display: grid; gap: 4px; }
   .recent-server small { color: #8f97a2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .active-workspace {
-    display: grid;
-    gap: 4px;
-    margin: 14px 0 18px;
-    padding: 10px;
-    border-radius: 8px;
-    background: rgba(255,255,255,.04);
-  }
+  .active-workspace { display: grid; gap: 4px; margin: 14px 0 18px; padding: 10px; border-radius: 8px; background: rgba(255,255,255,.04); }
   .active-workspace small { opacity: .6; }
   .active-workspace span { font-size: 11px; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .switch-button {
-    margin-top: 7px;
-    padding: 7px 9px;
-    border-radius: 6px;
-    border: 1px solid rgba(255,255,255,.13);
-    background: transparent;
-    color: inherit;
-    font-size: 12px;
-  }
-
+  .switch-button { margin-top: 7px; padding: 7px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,.13); background: transparent; color: inherit; font-size: 12px; }
   .provision-card { margin-bottom: 18px; }
   .provision-card > div:first-child { display: grid; gap: 3px; }
   .provision-card small { color: #8f97a2; }
   .provision-steps { display: flex; gap: 8px; flex-wrap: wrap; }
-  .provision-steps span {
-    padding: 6px 9px;
-    border-radius: 999px;
-    background: #252a30;
-    color: #8f97a2;
-    font-size: 12px;
-  }
+  .provision-steps span { padding: 6px 9px; border-radius: 999px; background: #252a30; color: #8f97a2; font-size: 12px; }
   .provision-steps span.done { color: #f3f4f6; background: #343a42; }
-  .eula-row { display: grid; gap: 10px; border-top: 1px solid #2d3238; padding-top: 14px; }
-  .eula-row p { margin: 0; color: #aeb4bd; font-size: 13px; line-height: 1.5; }
+  .prepare-row, .eula-row { display: grid; gap: 10px; border-top: 1px solid #2d3238; padding-top: 14px; }
+  .prepare-row p, .eula-row p { margin: 0; color: #aeb4bd; font-size: 13px; line-height: 1.5; }
 </style>
