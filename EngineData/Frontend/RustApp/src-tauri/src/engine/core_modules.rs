@@ -123,12 +123,6 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
     })
 }
 
-pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), String> {
-    let transaction = begin_sync(workspace, app_resource_dir)?;
-    transaction.finalize();
-    Ok(())
-}
-
 struct ModuleInstall {
     source: PathBuf,
     target: PathBuf,
@@ -184,13 +178,24 @@ impl ModuleInstall {
         if !self.had_target {
             return Ok(());
         }
-        if self.backup.exists() {
-            fs::remove_file(&self.backup).map_err(|e| e.to_string())?;
+
+        let incoming = self.backup.with_extension("previous.incoming");
+        if incoming.exists() {
+            fs::remove_file(&incoming).map_err(|e| e.to_string())?;
         }
-        fs::copy(&self.target, &self.backup).map_err(|e| {
-            format!("Could not back up core module {}: {e}", self.target.display())
+        fs::copy(&self.target, &incoming).map_err(|e| {
+            format!("Could not stage core rollback backup {}: {e}", self.target.display())
         })?;
-        Ok(())
+        if !files_equal(&self.target, &incoming)? {
+            let _ = fs::remove_file(&incoming);
+            return Err(format!(
+                "Core rollback backup verification failed: {}",
+                self.target.display()
+            ));
+        }
+        replace_file(&incoming, &self.backup).map_err(|e| {
+            format!("Could not publish core rollback backup {}: {e}", self.backup.display())
+        })
     }
 
     fn commit(&mut self) -> Result<(), String> {
@@ -228,6 +233,30 @@ fn cleanup_staged(modules: &[ModuleInstall]) {
         if module.staged.exists() {
             let _ = fs::remove_file(&module.staged);
         }
+        let incoming_backup = module.backup.with_extension("previous.incoming");
+        if incoming_backup.exists() {
+            let _ = fs::remove_file(incoming_backup);
+        }
+    }
+}
+
+fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        let previous = destination.with_extension("previous.swap");
+        let _ = fs::remove_file(&previous);
+        fs::rename(destination, &previous).map_err(|e| e.to_string())?;
+        match fs::rename(source, destination) {
+            Ok(()) => {
+                let _ = fs::remove_file(previous);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&previous, destination);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(source, destination).map_err(|e| e.to_string())
     }
 }
 
@@ -308,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_replaces_core_modules_and_keeps_previous_backup() {
+    fn finalized_transaction_replaces_core_modules_and_keeps_previous_backup() {
         let resource_root = test_root("core-sync-resources");
         let workspace = test_root("core-sync-workspace");
         resource_tree(&resource_root, b"new-world", b"new-utilities");
@@ -316,7 +345,7 @@ mod tests {
         fs::create_dir_all(&plugins).unwrap();
         fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
         fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
-        sync(&workspace, Some(&resource_root)).unwrap();
+        begin_sync(&workspace, Some(&resource_root)).unwrap().finalize();
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
         assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
         let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
@@ -347,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_preflights_both_targets_before_replacing_either_module() {
+    fn begin_sync_preflights_both_targets_before_replacing_either_module() {
         let resource_root = test_root("core-preflight-resources");
         let workspace = test_root("core-preflight-workspace");
         resource_tree(&resource_root, b"new-world", b"new-utilities");
@@ -355,7 +384,7 @@ mod tests {
         fs::create_dir_all(&plugins).unwrap();
         fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
         fs::create_dir_all(plugins.join(UTILITIES_FILE_NAME)).unwrap();
-        let error = sync(&workspace, Some(&resource_root)).unwrap_err();
+        let error = begin_sync(&workspace, Some(&resource_root)).unwrap_err();
         assert!(error.contains("not a file"));
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
         let _ = fs::remove_dir_all(resource_root);
