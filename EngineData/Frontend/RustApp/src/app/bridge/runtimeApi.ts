@@ -31,19 +31,6 @@ export type ServerProcessMetrics = {
   diskWriteBytes: number;
 };
 
-export type JfrStatus = {
-  available: boolean;
-  running: boolean;
-  pid?: number | null;
-  recordingPath: string;
-  message: string;
-};
-
-export type JfrStartRequest = {
-  durationSeconds: number;
-  maxSizeMb: number;
-};
-
 export type DetachedRecoveryResult = {
   pid: number;
   stopped: boolean;
@@ -178,9 +165,6 @@ export const runtimeApi = {
   getServerPreflight: () => invoke<ServerPreflight>('server_preflight'),
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
   getServerProcessMetrics: () => invoke<ServerProcessMetrics>('server_process_metrics'),
-  getJfrStatus: () => invoke<JfrStatus>('performance_jfr_status'),
-  startJfr: (request: JfrStartRequest) => invoke<JfrStatus>('performance_jfr_start', { request }),
-  stopJfr: () => invoke<JfrStatus>('performance_jfr_stop'),
   startServer: () => invoke<void>('server_start'),
   stopServer: () => invoke<void>('server_stop'),
   restartServer: () => invoke<void>('server_restart'),
