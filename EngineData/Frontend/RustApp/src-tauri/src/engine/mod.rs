@@ -1,4 +1,5 @@
 pub mod paths;
 pub mod plugin_manager;
+pub mod resource_settings;
 pub mod server_manager;
 pub mod world_manager;
