@@ -1,7 +1,9 @@
 package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
+import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceCommand;
 import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceController;
+import com.halokaryamedia.lazybuilder.world.paper.ChunkPregenerationController;
 import com.halokaryamedia.lazybuilder.world.paper.LocalControlImportUploadService;
 import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMainThreadDispatcher;
@@ -11,6 +13,7 @@ import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapte
 import com.halokaryamedia.lazybuilder.world.paper.WorldHeavyOperationOrchestrator;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /** Canonical Paper entry point and lifecycle owner for the World-Manager module. */
@@ -34,6 +37,16 @@ public final class WorldManagerPlugin extends JavaPlugin {
 
         this.buildPerformanceController = new BuildPerformanceController(this, worldManager.worldRegistry());
         this.buildPerformanceController.start();
+
+        ChunkPregenerationController pregeneration = new ChunkPregenerationController(
+                getServer(), worldManager.worldRegistry());
+        BuildPerformanceCommand performanceCommand = new BuildPerformanceCommand(pregeneration);
+        PluginCommand lazyperf = getCommand("lazyperf");
+        if (lazyperf == null) {
+            throw new IllegalStateException("lazyperf command is missing from plugin.yml");
+        }
+        lazyperf.setExecutor(performanceCommand);
+        lazyperf.setTabCompleter(performanceCommand);
 
         PaperMainThreadDispatcher mainThread = new PaperMainThreadDispatcher(this);
         WorldHeavyOperationOrchestrator heavyOperations = new WorldHeavyOperationOrchestrator(
@@ -85,7 +98,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
                 worldTaskRunner
         );
         this.localControlServer.start();
-        getLogger().info("World-Manager enabled.");
+        getLogger().info("World-Manager enabled. Chunky integration: "
+                + (pregeneration.available() ? "available" : "optional/not installed") + ".");
     }
 
     @Override
