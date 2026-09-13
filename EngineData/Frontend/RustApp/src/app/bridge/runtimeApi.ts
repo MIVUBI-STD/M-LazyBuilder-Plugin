@@ -136,7 +136,7 @@ export type CreateWorldRequest = { folderName: string; displayName: string; kind
 export type CloneWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
 export type ExportWorldRequest = { worldId: string; targetFormat: string; artifactName: string };
 export type ImportWorldRequest = { artifactName: string; destinationFolder: string; displayName: string };
-export type DeleteWorldRequest = { worldId: string; typedFolderName: string };
+export type DeleteWorldRequest = { worldId: string; typedDisplayName: string };
 
 export type WorldSettingsSnapshot = {
   id: string;
