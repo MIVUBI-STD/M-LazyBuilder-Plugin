@@ -41,11 +41,6 @@ public final class WorldSettingsService {
         );
     }
 
-    public synchronized WorldRecord setAutoLoad(WorldId worldId, boolean autoLoad) {
-        WorldRecord current = requireWorld(worldId);
-        return persistMetadataChange(current, current.withAutoLoad(autoLoad));
-    }
-
     public synchronized WorldRecord setDefaultGameMode(WorldId worldId, WorldGameMode gameMode) {
         Objects.requireNonNull(gameMode, "gameMode");
         WorldRecord current = requireWorld(worldId);
@@ -54,8 +49,7 @@ public final class WorldSettingsService {
 
     public synchronized void setDifficulty(WorldId worldId, WorldDifficulty difficulty) {
         Objects.requireNonNull(difficulty, "difficulty");
-        WorldRecord world = requireLoaded(worldId);
-        runtime.setDifficulty(world, difficulty);
+        runtime.setDifficulty(requireLoaded(worldId), difficulty);
     }
 
     public synchronized void setPvp(WorldId worldId, boolean enabled) {
@@ -77,9 +71,7 @@ public final class WorldSettingsService {
     public synchronized void setGameRule(WorldId worldId, String ruleName, String value) {
         Objects.requireNonNull(ruleName, "ruleName");
         Objects.requireNonNull(value, "value");
-        if (ruleName.isBlank()) {
-            throw new IllegalArgumentException("ruleName must not be blank");
-        }
+        if (ruleName.isBlank()) throw new IllegalArgumentException("ruleName must not be blank");
         runtime.setGameRule(requireLoaded(worldId), ruleName, value);
     }
 
@@ -107,9 +99,6 @@ public final class WorldSettingsService {
         WorldRecord current = requireLoaded(worldId);
         WorldRecord updated = current.withDefaultGameMode(buildReadyPolicy.defaultGameMode().name());
 
-        // Persist the durable entry-mode preference first. A persistence failure now
-        // leaves Paper runtime untouched rather than reporting failure after runtime
-        // state has already changed.
         updated = persistMetadataChange(current, updated);
         try {
             runtime.applyBuildReady(updated, buildReadyPolicy);
@@ -144,9 +133,7 @@ public final class WorldSettingsService {
     }
 
     private WorldRecord persistMetadataChange(WorldRecord previous, WorldRecord updated) {
-        if (previous.equals(updated)) {
-            return previous;
-        }
+        if (previous.equals(updated)) return previous;
         registry.updateMetadata(updated);
         try {
             persistence.save(registry.all());
