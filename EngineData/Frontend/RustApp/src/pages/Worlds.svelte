@@ -7,6 +7,7 @@
   let search = '';
   let error = '';
   let busy = false;
+  let serverState = 'Offline';
   let serverOnline = false;
   let startingServer = false;
   let operationBusyWorldId: string | null = null;
@@ -34,6 +35,10 @@
 
   function slugify(value: string) {
     return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function folderName(value: string, prefix: string) {
+    return slugify(value) || `${prefix}-${Date.now().toString(36)}`;
   }
 
   function kindLabel(world: ManagedWorldSummary) {
@@ -68,6 +73,7 @@
     busy = true;
     try {
       const snapshot = await runtimeProduct.server.snapshot();
+      serverState = snapshot.state;
       serverOnline = snapshot.state === 'Online';
       if (!serverOnline) {
         worlds = [];
@@ -88,7 +94,7 @@
   }
 
   async function startServer() {
-    if (startingServer || serverOnline) return;
+    if (startingServer || serverOnline || ['Starting', 'Restarting', 'Stopping'].includes(serverState)) return;
     startingServer = true;
     error = '';
     try {
@@ -98,11 +104,13 @@
         return;
       }
       await runtimeProduct.server.start();
-      for (let i = 0; i < 20; i += 1) {
+      serverState = 'Starting';
+      for (let i = 0; i < 120; i += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 750));
         const snapshot = await runtimeProduct.server.snapshot();
+        serverState = snapshot.state;
         if (snapshot.state === 'Online') break;
-        if (snapshot.state === 'Offline' || snapshot.state === 'Crashed') break;
+        if (['Offline', 'Crashed', 'Detached'].includes(snapshot.state)) break;
       }
       await refresh();
     } catch (e) {
@@ -118,7 +126,7 @@
     busy = true;
     error = '';
     try {
-      await runtimeProduct.worlds.create({ folderName: slugify(displayName) || 'world', displayName, kind: createType });
+      await runtimeProduct.worlds.create({ folderName: folderName(displayName, 'world'), displayName, kind: createType });
       createOpen = false;
       createName = '';
     } catch (e) {
@@ -150,7 +158,7 @@
     error = '';
     try {
       const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
-      operationTask = await runtimeProduct.worlds.import({ artifactName, destinationFolder: slugify(displayName), displayName });
+      operationTask = await runtimeProduct.worlds.import({ artifactName, destinationFolder: folderName(displayName, 'imported-world'), displayName });
       importOpen = false;
       await pollTask(operationTask.taskId);
       importPath = '';
@@ -225,10 +233,14 @@
     settingsBusy = true;
     error = '';
     try {
+      const timeOfDayTicks = Number(settings.timeOfDayTicks);
+      if (!Number.isFinite(timeOfDayTicks) || timeOfDayTicks < 0 || timeOfDayTicks > 23999) {
+        throw new Error('Time must be between 0 and 23999.');
+      }
       const request: UpdateWorldSettingsRequest = {
         autoLoad: settings.autoLoad,
         defaultGameMode: settings.defaultGameMode,
-        timeOfDayTicks: Number(settings.timeOfDayTicks),
+        timeOfDayTicks: Math.round(timeOfDayTicks),
         weather: settings.weather,
         naturalSpawning: settings.naturalSpawning,
         daylightCycle: settings.daylightCycle,
@@ -249,7 +261,7 @@
     operationBusyWorldId = cloneSource.id;
     error = '';
     try {
-      operationTask = await runtimeProduct.worlds.clone({ worldId: cloneSource.id, destinationFolder: slugify(cloneName), displayName: cloneName.trim() });
+      operationTask = await runtimeProduct.worlds.clone({ worldId: cloneSource.id, destinationFolder: folderName(cloneName, 'world-copy'), displayName: cloneName.trim() });
       closePanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
@@ -316,9 +328,9 @@
       <div class="state-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5zM4 7.5l8 4.5 8-4.5M12 12v9" /></svg>
       </div>
-      <h3>Start the server to manage worlds</h3>
-      <p>World changes need the server running. Start it here and stay on this page.</p>
-      <button class="primary" disabled={startingServer} onclick={startServer}>{startingServer ? 'Starting…' : 'Start server'}</button>
+      <h3>{['Starting', 'Restarting'].includes(serverState) ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Start the server to manage worlds'}</h3>
+      <p>{['Starting', 'Restarting', 'Stopping'].includes(serverState) ? 'World controls will become available when the server is ready.' : 'World changes need the server running. Start it here and stay on this page.'}</p>
+      <button class="primary" disabled={startingServer || ['Starting', 'Restarting', 'Stopping'].includes(serverState)} onclick={startServer}>{startingServer || ['Starting', 'Restarting'].includes(serverState) ? 'Starting…' : serverState === 'Stopping' ? 'Stopping…' : 'Start server'}</button>
     </section>
   {:else}
     {#if operationTask && ['QUEUED', 'RUNNING'].includes(operationTask.state)}
@@ -408,11 +420,11 @@
 </section>
 
 {#if createOpen}
-  <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && (createOpen = false)}>
+  <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !busy && (createOpen = false)}>
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-world-title">
-      <div class="modal-head"><div><h2 id="create-world-title">Create world</h2><p>Start with a simple space made for building.</p></div><button class="icon-button" aria-label="Close" onclick={() => (createOpen = false)}>×</button></div>
-      <label>World name<input bind:value={createName} placeholder="Build World" autofocus /></label>
-      <label>World type<select bind:value={createType}><option value="FLAT">Flat — normal building surface</option><option value="VOID">Void — empty building space</option></select></label>
+      <div class="modal-head"><div><h2 id="create-world-title">Create world</h2><p>Start with a simple space made for building.</p></div><button class="icon-button" aria-label="Close" disabled={busy} onclick={() => (createOpen = false)}>×</button></div>
+      <label>World name<input bind:value={createName} placeholder="Build World" autofocus disabled={busy} /></label>
+      <label>World type<select bind:value={createType} disabled={busy}><option value="FLAT">Flat — normal building surface</option><option value="VOID">Void — empty building space</option></select></label>
       <div class="modal-actions"><button class="secondary" disabled={busy} onclick={() => (createOpen = false)}>Cancel</button><button class="primary" disabled={busy || !createName.trim()} onclick={createWorld}>{busy ? 'Creating…' : 'Create world'}</button></div>
     </section>
   </div>
