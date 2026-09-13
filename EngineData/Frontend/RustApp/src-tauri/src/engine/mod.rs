@@ -1,7 +1,11 @@
+pub mod core_modules;
+pub mod java_runtime;
 pub mod paper_performance;
+pub mod paper_provider;
 pub mod paths;
 pub mod plugin_manager;
 pub mod process_identity;
+pub mod provisioning;
 pub mod resource_settings;
 pub mod server_manager;
 pub mod startup_guard;
