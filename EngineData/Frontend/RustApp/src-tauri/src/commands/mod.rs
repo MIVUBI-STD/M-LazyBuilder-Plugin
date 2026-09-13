@@ -1,3 +1,4 @@
+pub mod performance_diagnostics;
 pub mod plugin_manager;
 pub mod resource_settings;
 pub mod server_manager;
