@@ -1,6 +1,7 @@
 pub mod paper_performance;
 pub mod paths;
 pub mod plugin_manager;
+pub mod process_identity;
 pub mod resource_settings;
 pub mod server_manager;
 pub mod startup_guard;
