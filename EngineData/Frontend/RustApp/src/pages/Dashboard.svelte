@@ -49,13 +49,31 @@
   const cpuUsage = () => metrics.available ? metrics.cpuPercent : snapshot.cpuLoadPercent;
   const ramUsage = () => metrics.available ? metrics.processMemoryBytes : snapshot.usedMemoryBytes;
 
-  async function refresh() {
+  async function refreshRuntime() {
+    const [server, processMetrics] = await Promise.all([
+      runtimeProduct.server.snapshot(),
+      runtimeProduct.server.metrics()
+    ]);
+    snapshot = server;
+    metrics = processMetrics;
+  }
+
+  async function refreshPreflight() {
+    preflight = await runtimeProduct.server.preflight();
+  }
+
+  async function refreshAll() {
     try {
-      [snapshot, preflight, metrics] = await Promise.all([
-        runtimeProduct.server.snapshot(),
-        runtimeProduct.server.preflight(),
-        runtimeProduct.server.metrics()
-      ]);
+      await Promise.all([refreshRuntime(), refreshPreflight()]);
+      error = '';
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function pollRuntime() {
+    try {
+      await refreshRuntime();
       error = '';
     } catch (e) {
       error = String(e);
@@ -68,11 +86,11 @@
     notice = '';
     try {
       await run();
-      await refresh();
+      await refreshAll();
       error = '';
     } catch (e) {
       error = String(e);
-      await refresh();
+      await refreshAll();
     } finally {
       busy = false;
     }
@@ -86,7 +104,7 @@
     try {
       const result = await runtimeProduct.server.recoverDetached();
       notice = result.message;
-      await refresh();
+      await refreshAll();
     } catch (e) {
       error = String(e);
     } finally {
@@ -95,8 +113,8 @@
   }
 
   onMount(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
+    void refreshAll();
+    const timer = window.setInterval(() => void pollRuntime(), 2000);
     return () => window.clearInterval(timer);
   });
 
