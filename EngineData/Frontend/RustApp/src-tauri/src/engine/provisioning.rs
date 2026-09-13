@@ -1,4 +1,4 @@
-use crate::engine::{core_modules, java_runtime, paper_provider, workspace_registry};
+use crate::engine::{core_modules, java_runtime, paper_provider, server_config, workspace_registry};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
     crate::engine::paths::ensure_runtime_layout()?;
 
     let java = java_runtime::ensure_managed_java()?;
-    ensure_server_manager_config(&workspace, &java)?;
+    server_config::ensure_java_path(&java)?;
     let paper_build = resolve_or_provision_paper(&workspace)?;
 
     // Core JAR publication remains provisional until workspace metadata is updated.
@@ -59,31 +59,6 @@ fn ensure_server_properties(workspace: &Path) -> Result<(), String> {
     if path.is_file() { return Ok(()); }
     let text = "# Managed baseline created by LazyBuilder\nserver-port=25565\nonline-mode=true\nenable-command-block=true\nspawn-protection=0\nview-distance=10\nsimulation-distance=10\n";
     fs::write(path, text).map_err(|e| e.to_string())
-}
-
-fn ensure_server_manager_config(workspace: &Path, java: &Path) -> Result<(), String> {
-    let path = workspace.join("tools").join("lazybuilder").join("config").join("server-manager.json");
-    if path.is_file() {
-        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        let current = value.get("javaPath").and_then(Value::as_str).unwrap_or("");
-        if current.trim().is_empty() || !Path::new(current).is_file() {
-            value["javaPath"] = Value::String(java.display().to_string());
-            write_json_atomic(&path, &value)?;
-        }
-        return Ok(());
-    }
-
-    let value = serde_json::json!({
-        "javaPath": java.display().to_string(),
-        "serverDirectory": "server",
-        "paperJar": "paper.jar",
-        "minMemoryMb": 1024,
-        "maxMemoryMb": 4096,
-        "gracefulStopTimeoutSeconds": 30,
-        "startupTimeoutSeconds": 90
-    });
-    write_json_atomic(&path, &value)
 }
 
 fn update_workspace_manifest(workspace: &Path, paper_build: Option<u64>, core_version: &str) -> Result<(), String> {
