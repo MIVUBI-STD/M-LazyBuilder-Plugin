@@ -7,7 +7,8 @@ User-authorized work proceeds through verified checkpoints; never claim proof ab
 - `Local` is working authority; `main` changes only by explicit promotion.
 - Material GitHub work follows `GITHUB_RULES.md`.
 - Canonical documentation starts at `docs/README.md`; resolve one domain before loading deeper context.
-- Current readiness is always resolved from `docs/05-operations/current-verification.md`, the current `Local` HEAD, and the latest `Verify` run for that exact SHA. Older completion reports are historical snapshots only.
+- Canonical specialist/jobdesk routing is `docs/04-system/skill-routing.md`.
+- Current readiness is resolved from current `Local` source plus `docs/05-operations/` only when continuation/proof is material.
 
 ## Execution Context Gate
 
@@ -24,12 +25,15 @@ Use the lowest sufficient provable context. `LIVE_SERVER` is never assumed.
 For read-only inspection:
 
 ```text
-AGENTS.md → GITHUB_RULES.md core rules
+AGENTS.md
+→ GITHUB_RULES.md core rules when GitHub execution matters
+→ docs/04-system/skill-routing.md when ownership is not already obvious
 → smallest canonical owner/evidence
-→ current Local HEAD + matching Verify run when readiness matters
 → CONTEXT.md / docs/05-operations only when continuity matters
 → report → STOP
 ```
+
+Do not preload all docs/Skills for an audit.
 
 ## Development Gate
 
@@ -56,42 +60,73 @@ Proof required
 STOP condition
 ```
 
-Use `.agents/skills/lazybuilder-development-brief/SKILL.md` only when architecture, cross-owner ambiguity, or unresolved success criteria prevent a reliable Standard contract.
+Use `.agents/skills/lazybuilder-development-brief/SKILL.md` only when architecture, cross-owner ambiguity, or unresolved success criteria prevents a reliable Standard contract. Clear optimization/audit work does not become Complex merely because several files are involved.
 
 ## Domain Routing
 
 ```text
 product / feature intent          → docs/01-product/
 world lifecycle / create/settings → docs/02-world-management/
-client UI / Xaero integration     → docs/03-client-ui/
+Fabric client UI / Xaero          → docs/03-client-ui/
 system / ownership / boundaries   → docs/04-system/
 current continuation / proof      → docs/05-operations/
 ```
 
-When world-management source work begins, use `.agents/skills/lazybuilder-world-management/SKILL.md`. For client UI/Xaero integration work, use `.agents/skills/lazybuilder-client-ui/SKILL.md`.
+## Specialist Routing
+
+Load exactly one primary specialist when its execution procedure materially helps. Add another only when semantic ownership actually changes.
+
+```text
+architecture/cross-owner ambiguity
+→ lazybuilder-development-brief
+
+workspace / provisioning / Java / Paper / core / server process / recovery / resources
+→ lazybuilder-desktop-runtime
+
+Tauri/Svelte desktop presentation and frontend bridge
+→ lazybuilder-desktop-ui
+
+third-party Paper plugin lifecycle
+→ lazybuilder-plugin-management
+
+World Manager / Paper world behavior / import-export-conversion
+→ lazybuilder-world-management
+
+Fabric client UI / Xaero
+→ lazybuilder-client-ui
+
+shared Paper/Fabric request-result/wire contract
+→ lazybuilder-protocol
+```
+
+Canonical jobdesk details: `docs/04-system/skill-routing.md`.
+
+Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, or other implementation mechanics. Route them to the semantic owner above.
 
 ## Architecture Discipline
 
 - One responsibility has one canonical owner and one primary execution path.
-- Do not create duplicate managers, registries, caches, routers, config systems, schedulers, or compatibility layers without evidence.
+- Do not create duplicate managers, registries, caches, routers, config systems, schedulers, process markers, or compatibility layers without evidence.
 - Shared Paper/Fabric transport contracts are owned by `shared/protocol`; client code must not compile implementation source directly from a Paper module.
 - Commands/UI/listeners are adapters; business rules live in explicit application/domain owners.
 - Keep Paper/Bukkit access at infrastructure boundaries where practical.
 - Prefer small explicit contracts over global/static coordination.
 - Extract abstractions only after a real repeated responsibility exists.
+- Internal maintenance stays internal unless it represents a real user decision.
 
 ## Source Precedence
 
 ```text
 current user requirement
 → current source/proof
-→ current Local HEAD + exact-SHA Verify evidence
 → nearest AGENTS.md
 → canonical domain doc
 → matching Skill
 → current operations state when material
 → history
 ```
+
+Source is implementation truth; docs/Skills must not preserve a stale model against current source evidence.
 
 ## Proof Ceiling
 
@@ -101,11 +136,12 @@ LOCAL_CODE    → compile/unit/integration/build claims
 LIVE_SERVER   → enable/disable, world lifecycle, teleport, persistence, gameplay/runtime claims
 ```
 
-A successful workflow for an older SHA never proves the current HEAD. Cancelled, skipped, queued, in-progress, or failed required jobs are not PASS.
+Use the cheapest proof capable of falsifying the changed claim. A green unrelated check is not acceptance evidence.
 
 ## Work Discipline
 
 - Diagnose before editing; fix the first wrong owner.
+- Prefer deletion/consolidation when accepted behavior can stay unchanged.
 - Complete GitHub-verifiable work before escalating local/server residue.
 - Reuse fresh evidence; no reassurance scans.
 - One coherent outcome should normally be one reviewable commit.
@@ -116,14 +152,15 @@ A successful workflow for an older SHA never proves the current HEAD. Cancelled,
 
 ```text
 repository routing       → AGENTS.md
+specialist/jobdesk map   → docs/04-system/skill-routing.md
 GitHub execution         → GITHUB_RULES.md
 stable project facts     → CONTEXT.md
 documentation entry      → docs/README.md
 product scope            → docs/01-product/
 world management         → docs/02-world-management/
-client UI                → docs/03-client-ui/
+Fabric client UI         → docs/03-client-ui/
 system ownership         → docs/04-system/
-current operations       → docs/05-operations/current-verification.md
+current operations       → docs/05-operations/
 shared wire contracts    → shared/protocol/
 ```
 
