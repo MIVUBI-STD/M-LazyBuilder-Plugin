@@ -1,7 +1,10 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
+pub const WORKSPACE_ENV: &str = "LAZYBUILDER_WORKSPACE_ROOT";
+
 pub fn workspace_root() -> Result<PathBuf, String> {
-    if let Ok(configured) = std::env::var("LAZYBUILDER_WORKSPACE_ROOT") {
+    if let Ok(configured) = std::env::var(WORKSPACE_ENV) {
         let path = PathBuf::from(configured);
         if path.is_dir() {
             return Ok(path);
@@ -38,4 +41,43 @@ fn find_workspace(start: &Path) -> Option<PathBuf> {
 
 pub fn lazybuilder_tools_dir() -> Result<PathBuf, String> {
     Ok(workspace_root()?.join("tools").join("lazybuilder"))
+}
+
+pub fn lazybuilder_config_dir() -> Result<PathBuf, String> {
+    Ok(lazybuilder_tools_dir()?.join("config"))
+}
+
+pub fn lazybuilder_cache_dir() -> Result<PathBuf, String> {
+    Ok(lazybuilder_tools_dir()?.join("cache"))
+}
+
+pub fn lazybuilder_logs_dir() -> Result<PathBuf, String> {
+    Ok(lazybuilder_tools_dir()?.join("logs"))
+}
+
+pub fn world_system_dir() -> Result<PathBuf, String> {
+    Ok(workspace_root()?.join("world-system"))
+}
+
+pub fn worlds_dir() -> Result<PathBuf, String> {
+    Ok(world_system_dir()?.join("worlds"))
+}
+
+pub fn ensure_runtime_layout() -> Result<(), String> {
+    let directories = [
+        worlds_dir()?,
+        world_system_dir()?.join("imports"),
+        world_system_dir()?.join("exports"),
+        world_system_dir()?.join("backups"),
+        world_system_dir()?.join("archives"),
+        world_system_dir()?.join("work"),
+        lazybuilder_config_dir()?,
+        lazybuilder_cache_dir()?,
+        lazybuilder_logs_dir()?,
+    ];
+
+    for directory in directories {
+        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
