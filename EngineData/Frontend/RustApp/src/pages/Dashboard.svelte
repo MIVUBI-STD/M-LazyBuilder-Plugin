@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerPreflight, ServerProcessMetrics, ServerSnapshot } from '../app/bridge/runtimeApi';
+  import type { ServerPreflight, ServerSnapshot } from '../app/bridge/runtimeApi';
 
   let snapshot: ServerSnapshot = {
     state: 'Offline',
@@ -11,14 +11,6 @@
     maxMemoryBytes: 0,
     pid: null,
     logPath: ''
-  };
-  let metrics: ServerProcessMetrics = {
-    available: false,
-    pid: null,
-    cpuPercent: 0,
-    processMemoryBytes: 0,
-    diskReadBytes: 0,
-    diskWriteBytes: 0
   };
   let preflight: ServerPreflight = {
     ready: false,
@@ -46,16 +38,8 @@
     return 'Runtime';
   }
 
-  const cpuUsage = () => metrics.available ? metrics.cpuPercent : snapshot.cpuLoadPercent;
-  const ramUsage = () => metrics.available ? metrics.processMemoryBytes : snapshot.usedMemoryBytes;
-
   async function refreshRuntime() {
-    const [server, processMetrics] = await Promise.all([
-      runtimeProduct.server.snapshot(),
-      runtimeProduct.server.metrics()
-    ]);
-    snapshot = server;
-    metrics = processMetrics;
+    snapshot = await runtimeProduct.server.snapshot();
   }
 
   async function refreshPreflight() {
@@ -114,7 +98,7 @@
 
   onMount(() => {
     void refreshAll();
-    const timer = window.setInterval(() => void pollRuntime(), 2000);
+    const timer = window.setInterval(() => void pollRuntime(), 5000);
     return () => window.clearInterval(timer);
   });
 
@@ -127,8 +111,8 @@
 <div class="cards">
   <div class="card"><div class="label">Server</div><div class="value">{snapshot.state}</div></div>
   <div class="card"><div class="label">Health</div><div class="value">{snapshot.health}</div></div>
-  <div class="card"><div class="label">CPU</div><div class="value">{cpuUsage().toFixed(1)}%</div></div>
-  <div class="card"><div class="label">RAM</div><div class="value">{gb(ramUsage()).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
+  <div class="card"><div class="label">CPU</div><div class="value">{snapshot.cpuLoadPercent.toFixed(1)}%</div></div>
+  <div class="card"><div class="label">RAM</div><div class="value">{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
 </div>
 
 <div class="actions" style="margin-top: 16px">
