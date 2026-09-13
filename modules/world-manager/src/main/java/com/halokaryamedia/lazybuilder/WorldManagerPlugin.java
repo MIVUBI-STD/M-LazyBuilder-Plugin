@@ -78,7 +78,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
         PaperMainThreadDispatcher mainThread = new PaperMainThreadDispatcher(this);
         WorldHeavyOperationOrchestrator heavyOperations = new WorldHeavyOperationOrchestrator(
                 mainThread,
-                worldManager.worldCloneService(),
+                worldManager.worldDuplicateService(),
                 worldManager.worldDeleteService(),
                 worldManager.worldExportService(),
                 worldManager.worldImportService()
