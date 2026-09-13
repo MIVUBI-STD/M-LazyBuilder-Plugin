@@ -29,6 +29,7 @@
     "targets": ["nsis"],
     "resources": ["resources/core"],
     "windows": {
+      "allowDowngrades": false,
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English"]
