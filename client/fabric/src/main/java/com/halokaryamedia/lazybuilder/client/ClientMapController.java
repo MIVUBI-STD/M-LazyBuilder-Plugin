@@ -14,6 +14,8 @@ public final class ClientMapController {
     private final Consumer<String> completedExportHandler;
     private MapActionWireProtocol.CurrentWorldResult currentWorld;
     private boolean exportBusy;
+    private String lastError;
+    private long revision;
 
     public ClientMapController(Consumer<String> completedExportHandler) {
         this.completedExportHandler = Objects.requireNonNull(completedExportHandler, "completedExportHandler");
@@ -49,6 +51,8 @@ public final class ClientMapController {
         }
         WorldId worldId = current.worldId();
         exportBusy = true;
+        lastError = null;
+        revision++;
         LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.exportAreaRequest(
                 worldId, x1, z1, x2, z2, targetFormat, artifactName));
     }
@@ -56,18 +60,33 @@ public final class ClientMapController {
     public void accept(MapActionWireProtocol.Response response) {
         Objects.requireNonNull(response, "response");
         switch (response) {
-            case MapActionWireProtocol.CurrentWorldResult current -> currentWorld = current;
-            case MapActionWireProtocol.TeleportOk teleport -> LazyBuilderClientNetworking.notifyPlayer(
-                    "Teleported to " + floor(teleport.x()) + ", " + floor(teleport.y()) + ", " + floor(teleport.z()));
-            case MapActionWireProtocol.ExportAccepted ignored -> LazyBuilderClientNetworking.notifyPlayer(
-                    "Export Area started.");
+            case MapActionWireProtocol.CurrentWorldResult current -> {
+                currentWorld = current;
+                lastError = null;
+                revision++;
+            }
+            case MapActionWireProtocol.TeleportOk teleport -> {
+                lastError = null;
+                revision++;
+                LazyBuilderClientNetworking.notifyPlayer(
+                        "Teleported to " + floor(teleport.x()) + ", " + floor(teleport.y()) + ", " + floor(teleport.z()));
+            }
+            case MapActionWireProtocol.ExportAccepted ignored -> {
+                lastError = null;
+                revision++;
+                LazyBuilderClientNetworking.notifyPlayer("Export Area started.");
+            }
             case MapActionWireProtocol.ExportComplete complete -> {
                 exportBusy = false;
+                lastError = null;
+                revision++;
                 LazyBuilderClientNetworking.notifyPlayer("Export Area ready: " + complete.fileName());
                 completedExportHandler.accept(complete.fileName());
             }
             case MapActionWireProtocol.ErrorResponse error -> {
                 exportBusy = false;
+                lastError = error.message();
+                revision++;
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: " + error.message());
             }
         }
@@ -77,9 +96,23 @@ public final class ClientMapController {
         return currentWorld;
     }
 
+    public boolean exportBusy() {
+        return exportBusy;
+    }
+
+    public String lastError() {
+        return lastError;
+    }
+
+    public long revision() {
+        return revision;
+    }
+
     public void reset() {
         currentWorld = null;
         exportBusy = false;
+        lastError = null;
+        revision++;
     }
 
     private static int floor(double value) {
