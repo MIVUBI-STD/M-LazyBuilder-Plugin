@@ -12,8 +12,12 @@ import java.util.Objects;
 public record TransferPayload(byte[] bytes) implements CustomPayload {
     public static final Id<TransferPayload> ID = new Id<>(Identifier.of("lazybuilder", "transfer"));
     public static final PacketCodec<RegistryByteBuf, TransferPayload> CODEC = PacketCodec.ofStatic(
-            (buf, payload) -> buf.writeByteArray(payload.bytes),
-            buf -> new TransferPayload(buf.readByteArray(TransferWireProtocol.MAX_MESSAGE_BYTES))
+            (buf, payload) -> buf.writeBytes(payload.bytes),
+            buf -> {
+                byte[] bytes = new byte[buf.readableBytes()];
+                buf.readBytes(bytes);
+                return new TransferPayload(bytes);
+            }
     );
 
     public TransferPayload {

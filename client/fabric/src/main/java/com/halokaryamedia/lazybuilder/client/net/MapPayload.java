@@ -12,8 +12,12 @@ import java.util.Objects;
 public record MapPayload(byte[] bytes) implements CustomPayload {
     public static final Id<MapPayload> ID = new Id<>(Identifier.of("lazybuilder", "map"));
     public static final PacketCodec<RegistryByteBuf, MapPayload> CODEC = PacketCodec.ofStatic(
-            (buf, payload) -> buf.writeByteArray(payload.bytes),
-            buf -> new MapPayload(buf.readByteArray(MapActionWireProtocol.MAX_MESSAGE_BYTES))
+            (buf, payload) -> buf.writeBytes(payload.bytes),
+            buf -> {
+                byte[] bytes = new byte[buf.readableBytes()];
+                buf.readBytes(bytes);
+                return new MapPayload(bytes);
+            }
     );
 
     public MapPayload {

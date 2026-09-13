@@ -19,6 +19,11 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        BasicCommands basicCommands = new BasicCommands();
+        getCommand("gmc").setExecutor(basicCommands);
+        getCommand("gms").setExecutor(basicCommands);
+        getCommand("gma").setExecutor(basicCommands);
+        getCommand("gmsp").setExecutor(basicCommands);
         this.featureRegistry = new UtilityFeatureRegistry();
 
         ConfigurationSection worldSafetySection = requireSection("features.world-safety");

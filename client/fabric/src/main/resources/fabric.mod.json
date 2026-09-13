@@ -3,7 +3,7 @@
   "id": "lazybuilder_client",
   "version": "${version}",
   "name": "LazyBuilder Client",
-  "description": "Client-side UI, transfer transport, and Xaero integration for LazyBuilder World Manager.",
+  "description": "Native client UI, map preview, and transfer transport for LazyBuilder World Manager.",
   "authors": ["halokaryamedia-source"],
   "environment": "client",
   "entrypoints": {
@@ -11,16 +11,10 @@
       "com.halokaryamedia.lazybuilder.client.LazyBuilderClient"
     ]
   },
-  "mixins": [
-    "lazybuilder-client.mixins.json"
-  ],
   "depends": {
     "fabricloader": ">=0.16.10",
     "minecraft": "1.21.4",
     "java": ">=21",
     "fabric-api": "*"
-  },
-  "suggests": {
-    "xaeroworldmap": "*"
   }
 }

@@ -58,6 +58,32 @@ A green GitHub workflow still does not prove:
 
 Those remain `LOCAL_CODE` and `LIVE_SERVER` responsibilities.
 
+## Local Windows handoff evidence
+
+The current local runtime evidence was collected on:
+
+```text
+Repository: D:\Work\AI Stuff\LazyBuilder
+Modrinth App: C:\Users\Administrator\AppData\Roaming\ModrinthApp
+Minecraft profile: C:\Users\Administrator\AppData\Roaming\ModrinthApp\profiles\1.21.4 Testing
+Client mod: <profile>\mods\lazybuilder-client-0.1.0-SNAPSHOT.jar
+Paper workspace: D:\Work\Minecraft\Java-Version\Java Build Server\Test\Test
+Paper endpoint: 127.0.0.1:25565
+Managed Java: C:\Users\Administrator\AppData\Local\LazyBuilder\runtimes\java-21\bin\java.exe
+TEMP/TMP: C:\Temp\LazyBuilderGradleTemp
+```
+
+The renamed profile still has a local compatibility junction at `1.21.4 Build (1)` pointing to `1.21.4 Testing`; this is not a portable repository assumption.
+
+Confirmed local/live defects for continuation:
+
+- native Map Preview does not yet match the intended Xaero-like presentation;
+- World-Manager does not automatically adopt the active/default Paper world;
+- current-world resolution and permission feedback are not yet an onboarding-safe flow;
+- Map Preview action controls must be disabled until a managed-world response is available;
+- Utilities-Manager displays the literal `${project.version}` in runtime metadata;
+- desktop process ownership versus direct Paper launch still needs end-to-end runtime proof.
+
 ## Update policy
 
 Do not hard-code a workflow run number or HEAD SHA in architecture documentation as the permanent current state. GitHub commit/workflow state is authoritative and changes as `Local` advances.

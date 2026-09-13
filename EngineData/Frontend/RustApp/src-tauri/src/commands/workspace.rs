@@ -25,9 +25,11 @@ pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
 }
 
 #[tauri::command]
-pub fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
+pub async fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
     let resource_dir = app.path().resource_dir().ok();
-    provisioning::provision_active(resource_dir.as_deref())
+    tauri::async_runtime::spawn_blocking(move || provisioning::provision_active(resource_dir.as_deref()))
+        .await
+        .map_err(|error| format!("Server provisioning task failed: {error}"))?
 }
 
 #[tauri::command]

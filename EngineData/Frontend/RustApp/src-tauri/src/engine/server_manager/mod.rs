@@ -203,10 +203,22 @@ impl ServerManagerState {
         }
 
         let pid = child.id();
+        let state = self.runtime_state.lock().map_err(|_| "server runtime state lock poisoned".to_string())?.clone();
+        if state == "Crashed" && self.detached_process()?.is_some() {
+            let (cpu, memory) = self.process_usage(pid)?;
+            return Ok(ServerSnapshot {
+                state: "Detached".into(),
+                health: "Warning".into(),
+                cpu_load_percent: cpu,
+                used_memory_bytes: memory,
+                max_memory_bytes: runtime_resources.max_memory_mb * 1024 * 1024,
+                pid: Some(pid),
+                log_path: self.current_log_path(),
+            });
+        }
         let (cpu, memory) = self.process_usage(pid)?;
         let max_memory = runtime_resources.max_memory_mb * 1024 * 1024;
         let memory_ratio = if max_memory == 0 { 0.0 } else { memory as f64 / max_memory as f64 };
-        let state = self.runtime_state.lock().map_err(|_| "server runtime state lock poisoned".to_string())?.clone();
 
         let startup_timed_out = if state == "Starting" {
             self.startup_started_at

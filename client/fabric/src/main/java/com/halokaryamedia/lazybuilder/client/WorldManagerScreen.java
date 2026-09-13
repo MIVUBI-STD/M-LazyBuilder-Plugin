@@ -15,14 +15,16 @@ public final class WorldManagerScreen extends Screen {
 
     private final ClientWorldController controller;
     private final ClientTransferController transfers;
+    private final ClientMapController maps;
     private UUID selectedWorld;
     private int page;
     private long observedRevision;
 
-    public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers) {
+    public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
         super(Text.literal("LazyBuilder World Manager"));
         this.controller = controller;
         this.transfers = transfers;
+        this.maps = maps;
         this.observedRevision = controller.revision();
     }
 
@@ -62,6 +64,9 @@ public final class WorldManagerScreen extends Screen {
         }).dimensions(left + 74, controlsY, 68, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Refresh"), button -> controller.refresh())
                 .dimensions(left + 148, controlsY, 68, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Map Preview"), button -> {
+            if (client != null) client.setScreen(new MapPreviewScreen(maps));
+        }).dimensions(left + 222, controlsY, 92, 20).build());
 
         if (maxPage > 0) {
             addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> {

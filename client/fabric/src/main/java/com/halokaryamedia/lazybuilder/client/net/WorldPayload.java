@@ -12,8 +12,12 @@ import java.util.Objects;
 public record WorldPayload(byte[] bytes) implements CustomPayload {
     public static final Id<WorldPayload> ID = new Id<>(Identifier.of("lazybuilder", "world"));
     public static final PacketCodec<RegistryByteBuf, WorldPayload> CODEC = PacketCodec.ofStatic(
-            (buf, payload) -> buf.writeByteArray(payload.bytes),
-            buf -> new WorldPayload(buf.readByteArray(WorldControlWireProtocol.MAX_MESSAGE_BYTES))
+            (buf, payload) -> buf.writeBytes(payload.bytes),
+            buf -> {
+                byte[] bytes = new byte[buf.readableBytes()];
+                buf.readBytes(bytes);
+                return new WorldPayload(bytes);
+            }
     );
 
     public WorldPayload {

@@ -269,11 +269,38 @@ World control channels remain separated by responsibility:
 
 ```text
 lazybuilder:world     general world control/state
-lazybuilder:map       spatial Xaero/map intents
+lazybuilder:map       spatial map intents
 lazybuilder:transfer  file bytes
 ```
 
-The first-party Fabric World Manager surface is source-implemented for list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, and native Java 1.21.4 whole-world Export. Xaero remains contextual for Teleport Here and Export Area.
+The first-party Fabric World Manager surface is source-implemented for list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, native Java 1.21.4 whole-world Export, and the native LazyBuilder Map Preview entry point. Xaero is not a runtime dependency. Map Preview remains incomplete relative to the target Xaero-like experience and requires live validation.
+
+## Local Windows Runtime Evidence
+
+The current LIVE_SERVER validation machine uses these paths:
+
+```text
+Repository: D:\Work\AI Stuff\LazyBuilder
+Modrinth App: C:\Users\Administrator\AppData\Roaming\ModrinthApp
+Minecraft profile: C:\Users\Administrator\AppData\Roaming\ModrinthApp\profiles\1.21.4 Testing
+Installed client mod: <profile>\mods\lazybuilder-client-0.1.0-SNAPSHOT.jar
+Paper workspace: D:\Work\Minecraft\Java-Version\Java Build Server\Test\Test
+Paper endpoint: 127.0.0.1:25565
+Managed Java: C:\Users\Administrator\AppData\Local\LazyBuilder\runtimes\java-21\bin\java.exe
+TEMP/TMP: C:\Temp\LazyBuilderGradleTemp
+```
+
+The renamed Modrinth profile retains a compatibility junction at `1.21.4 Build (1)` pointing to `1.21.4 Testing`. The local player used for live checks is `Berchman` (`7fee50f6-17ad-4ada-95e0-4595e943cc54`), configured as Paper OP level 4.
+
+Current reproducible local/live issues for the next repair pass:
+
+- native Map Preview is not yet visually equivalent to the Xaero-style target;
+- managed-world onboarding/current-world synchronization is incomplete;
+- Map Preview actions must remain disabled until a managed current world is resolved;
+- existing/default Paper worlds are not automatically adopted into the World-Manager registry;
+- Utilities-Manager runtime output still exposes `${project.version}` in plugin metadata;
+- the Modrinth profile rename still depends on a local compatibility junction;
+- desktop-managed Paper lifecycle and direct local Paper lifecycle still need one end-to-end proof path.
 
 ## BUILD_READY Defaults
 

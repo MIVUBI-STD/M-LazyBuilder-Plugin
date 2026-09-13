@@ -10,11 +10,11 @@ import org.lwjgl.glfw.GLFW;
 public final class WorldManagerClientUi {
     private WorldManagerClientUi() {}
 
-    public static void register(ClientWorldController controller, ClientTransferController transfers) {
+    public static void register(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
         KeyBinding open = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.lazybuilder.open_world_manager",
                 InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_L,
+                GLFW.GLFW_KEY_M,
                 "key.category.lazybuilder"
         ));
 
@@ -22,7 +22,7 @@ public final class WorldManagerClientUi {
             while (open.wasPressed()) {
                 if (client.player == null) continue;
                 controller.refresh();
-                client.setScreen(new WorldManagerScreen(controller, transfers));
+                client.setScreen(new WorldManagerScreen(controller, transfers, maps));
             }
         });
     }

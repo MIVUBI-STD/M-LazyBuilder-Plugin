@@ -6,6 +6,22 @@ author: Halo Karya Media
 description: Modular builder/server utility features for the LazyBuilder suite.
 
 commands:
+  gmc:
+    description: Switch to Creative mode.
+    usage: /gmc
+    permission: lazybuilder.utilities.gamemode
+  gms:
+    description: Switch to Survival mode.
+    usage: /gms
+    permission: lazybuilder.utilities.gamemode
+  gma:
+    description: Switch to Adventure mode.
+    usage: /gma
+    permission: lazybuilder.utilities.gamemode
+  gmsp:
+    description: Switch to Spectator mode.
+    usage: /gmsp
+    permission: lazybuilder.utilities.gamemode
   fly:
     description: Toggle LazyBuilder Advanced Fly, optionally with a speed multiplier.
     usage: /fly [speed]
@@ -21,6 +37,9 @@ commands:
     permission: lazybuilder.utilities.nightvision
 
 permissions:
+  lazybuilder.utilities.gamemode:
+    description: Use basic LazyBuilder gamemode shortcuts.
+    default: op
   lazybuilder.utilities.fly:
     description: Use Utilities-Manager Advanced Fly.
     default: op

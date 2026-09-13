@@ -29,9 +29,6 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Optional compile-only surface for the version-pinned Xaero accessor.
-    // Runtime LazyBuilder remains usable without Xaero installed.
-    modCompileOnly "maven.modrinth:NcUtCpym:IBcL3f5W"
 }
 
 sourceSets {
