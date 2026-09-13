@@ -54,7 +54,7 @@ pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), Str
         module.backup_current()?;
     }
 
-    let mut committed = Vec::new();
+    let mut committed: Vec<usize> = Vec::new();
     for index in 0..modules.len() {
         if !modules[index].needs_update {
             continue;
