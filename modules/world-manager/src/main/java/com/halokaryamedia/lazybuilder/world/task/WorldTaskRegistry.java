@@ -120,7 +120,8 @@ public final class WorldTaskRegistry {
     private static void requireTransition(WorldTaskState current, WorldTaskState target) {
         boolean allowed = switch (target) {
             case RUNNING -> current == WorldTaskState.QUEUED;
-            case SUCCEEDED, FAILED -> current == WorldTaskState.RUNNING;
+            case SUCCEEDED -> current == WorldTaskState.RUNNING;
+            case FAILED -> current == WorldTaskState.QUEUED || current == WorldTaskState.RUNNING;
             case QUEUED -> false;
         };
         if (!allowed) {
