@@ -13,35 +13,40 @@ if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", PRODUCT_VERSION):
     raise SystemExit(f"Invalid VERSION value: {PRODUCT_VERSION!r}")
 
 
-def replace_text(path: str, pattern: str, replacement: str, expected_min: int = 1) -> None:
+def replace_text(path: str, pattern: str, replacement: str, expected: int = 1) -> None:
     target = ROOT / path
     text = target.read_text(encoding="utf-8")
-    updated, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
-    if count < expected_min:
-        raise RuntimeError(f"Version pattern was not found in {path}")
+    updated, count = re.subn(pattern, replacement, text, count=expected, flags=re.MULTILINE | re.DOTALL)
+    if count != expected:
+        raise RuntimeError(f"Expected {expected} version match(es) in {path}, found {count}")
     if updated != text:
         target.write_text(updated, encoding="utf-8")
         print(f"updated {path}")
 
 
 # Maven parent/module versions. All LazyBuilder Java artifacts intentionally move together.
-for pom in (
+replace_text(
     "pom.xml",
-    "shared/protocol/pom.xml",
-    "modules/world-manager/pom.xml",
-    "modules/utilities-manager/pom.xml",
-):
+    r"(<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>)",
+    rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
+)
+
+child_poms = {
+    "shared/protocol/pom.xml": "lazybuilder-protocol",
+    "modules/world-manager/pom.xml": "world-manager",
+    "modules/utilities-manager/pom.xml": "utilities-manager",
+}
+for pom, artifact_id in child_poms.items():
     replace_text(
         pom,
-        r"(?s)(<groupId>com\.halokaryamedia</groupId>\s*<artifactId>(?:lazybuilder-parent|lazybuilder-protocol|world-manager|utilities-manager)</artifactId>\s*<version>)[^<]+(</version>)",
-        rf"\g<1>{SNAPSHOT_VERSION}\g<3>",
+        r"(<parent>.*?<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>.*?</parent>)",
+        rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
     )
-    if pom != "pom.xml":
-        replace_text(
-            pom,
-            r"(?s)(<parent>.*?<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>)",
-            rf"\g<1>{SNAPSHOT_VERSION}\g<3>",
-        )
+    replace_text(
+        pom,
+        rf"(</parent>\s*<artifactId>{re.escape(artifact_id)}</artifactId>\s*<version>)[^<]+(</version>)",
+        rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
+    )
 
 # Fabric version.
 replace_text(
