@@ -79,7 +79,6 @@ public final class WorldMapScreen extends Screen {
         }
         maps.refreshCurrentWorld();
 
-        // Compact map chrome. The map remains visually dominant.
         addDrawableChild(ButtonWidget.builder(Text.literal("Worlds"), button -> {
             if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
         }).dimensions(5, 5, 58, 18).build());
@@ -180,6 +179,7 @@ public final class WorldMapScreen extends Screen {
         context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, 0xFF101419);
 
         double blocksPerCell = zoom();
+        int sampleSpan = Math.max(1, (int) Math.ceil(blocksPerCell));
         int halfCellsX = Math.max(1, bounds.width() / CELL / 2);
         int halfCellsZ = Math.max(1, bounds.height() / CELL / 2);
         double originCellX = centerX / blocksPerCell;
@@ -194,7 +194,8 @@ public final class WorldMapScreen extends Screen {
 
                 int blockX = (int) Math.floor((originCellX + cx) * blocksPerCell);
                 int blockZ = (int) Math.floor((originCellZ + cz) * blocksPerCell);
-                ClientMapSurfaceCache.SurfaceSample sample = SURFACE.sample(world, blockX, blockZ);
+                ClientMapSurfaceCache.SurfaceSample sample =
+                        SURFACE.sampleArea(world, blockX, blockZ, sampleSpan);
                 context.fill(screenX, screenY, screenX + CELL, screenY + CELL, sample.color());
             }
         }
@@ -212,7 +213,6 @@ public final class WorldMapScreen extends Screen {
         context.getMatrices().push();
         context.getMatrices().translate(px, pz, 0);
         context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-client.player.getYaw()));
-        // A compact arrow silhouette instead of the previous square marker.
         context.fill(-1, -8, 2, 4, 0xFF111111);
         context.fill(-2, -6, 3, 1, 0xFFFFFFFF);
         context.fill(-4, -4, 5, -1, 0xFFFFFFFF);
@@ -334,6 +334,10 @@ public final class WorldMapScreen extends Screen {
             contextOpen = false;
             return true;
         }
+        if (button == 2) {
+            centerOnPlayer();
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -426,7 +430,7 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256) { // ESC
+        if (keyCode == 256) {
             if (contextOpen) {
                 contextOpen = false;
                 clearAndInit();
