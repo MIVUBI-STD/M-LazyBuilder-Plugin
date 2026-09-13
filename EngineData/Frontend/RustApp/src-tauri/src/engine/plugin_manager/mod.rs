@@ -223,18 +223,69 @@ impl PluginManagerState {
 
         let current = &existing[0];
         let metadata = current.metadata.as_ref().expect("validated scan");
-        fs::remove_file(&current.path).map_err(|error| error.to_string())?;
+        let backup_dir = backup_directory(&workspace);
+        fs::create_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+        let stamp = timestamp_suffix();
+        let jar_base = current
+            .path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("plugin");
+        let jar_backup = backup_dir.join(format!("{jar_base}-removed-{stamp}.jar"));
+        if jar_backup.exists() {
+            return Err("Plugin removal backup destination already exists.".into());
+        }
 
-        if remove_data {
+        // Resolve and validate every optional data path before mutating the JAR.
+        // Data requested for removal is quarantined into plugin-backups so a bad
+        // filesystem operation never destroys the only recoverable copy.
+        let data_move = if remove_data {
             let plugins_root = canonical_path(&plugins_directory(&workspace))?;
-            let data_path = canonical_candidate(&plugins_directory(&workspace).join(&metadata.name))?;
+            let candidate = plugins_directory(&workspace).join(&metadata.name);
+            let data_path = canonical_candidate(&candidate)?;
             if !data_path.starts_with(&plugins_root) {
                 return Err("Refusing to remove plugin data outside the plugins directory.".into());
             }
+            if data_path.exists() && !data_path.is_dir() {
+                return Err("Plugin data path exists but is not a directory.".into());
+            }
             if data_path.is_dir() {
-                fs::remove_dir_all(data_path).map_err(|error| error.to_string())?;
+                let quarantine = backup_dir.join(format!(
+                    "{}-data-removed-{stamp}",
+                    normalize_id(&metadata.name)
+                ));
+                if quarantine.exists() {
+                    return Err("Plugin data quarantine destination already exists.".into());
+                }
+                Some((data_path, quarantine))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        fs::copy(&current.path, &jar_backup).map_err(|error| {
+            format!("Could not create plugin removal backup: {error}")
+        })?;
+
+        if let Some((data_path, quarantine)) = &data_move {
+            if let Err(error) = fs::rename(data_path, quarantine) {
+                let _ = fs::remove_file(&jar_backup);
+                return Err(format!("Could not quarantine plugin data before removal: {error}"));
             }
         }
+
+        if let Err(error) = fs::remove_file(&current.path) {
+            if let Some((data_path, quarantine)) = &data_move {
+                if quarantine.exists() && !data_path.exists() {
+                    let _ = fs::rename(quarantine, data_path);
+                }
+            }
+            let _ = fs::remove_file(&jar_backup);
+            return Err(format!("Could not remove plugin JAR: {error}"));
+        }
+
         Ok(())
     }
 
