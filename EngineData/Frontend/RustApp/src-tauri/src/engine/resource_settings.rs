@@ -44,6 +44,9 @@ pub struct ResourceUpdateRequest {
 pub struct RuntimeResources {
     pub min_memory_mb: u64,
     pub max_memory_mb: u64,
+    /// Temporary internal seam for the existing command builder. Always None:
+    /// CPU scheduling is no longer configurable and remains OS/JVM managed.
+    pub cpu_threads: Option<u32>,
 }
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
@@ -115,6 +118,7 @@ pub fn runtime_resources() -> Result<RuntimeResources, String> {
     Ok(RuntimeResources {
         min_memory_mb,
         max_memory_mb,
+        cpu_threads: None,
     })
 }
 
