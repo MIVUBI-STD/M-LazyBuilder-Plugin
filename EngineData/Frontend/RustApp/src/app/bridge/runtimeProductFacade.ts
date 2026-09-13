@@ -1,6 +1,14 @@
 import { runtimeApi } from './runtimeApi';
 
 export const runtimeProduct = {
+  workspace: {
+    state: runtimeApi.getWorkspaceState,
+    pickParent: runtimeApi.pickWorkspaceParent,
+    create: runtimeApi.createWorkspace,
+    open: runtimeApi.openWorkspace,
+    activate: runtimeApi.activateWorkspace,
+    close: runtimeApi.closeWorkspace
+  },
   server: {
     preflight: runtimeApi.getServerPreflight,
     snapshot: runtimeApi.getServerSnapshot,
