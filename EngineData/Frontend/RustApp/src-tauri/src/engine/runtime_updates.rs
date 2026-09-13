@@ -48,16 +48,31 @@ pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
     status_with_release(&workspace, &release)
 }
 
+/// Internal compatibility maintenance for LazyBuilder-bundled Paper modules.
+/// This is intentionally separate from Paper update discovery: keeping the app's
+/// own core JARs current must not require a network request or a user decision.
+pub fn ensure_core_current(resource_dir: Option<&Path>) -> Result<(), String> {
+    let workspace = workspace_registry::active_workspace()?;
+    sync_core_at(&workspace, resource_dir)
+}
+
+/// Temporary public wrapper retained for the current desktop contract. The UI
+/// surface may remove this action once it no longer exposes bundled-core sync.
 pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
+    sync_core_at(&workspace, resource_dir)?;
     let release = paper_provider::latest_stable()?;
-    let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
+    status_with_release(&workspace, &release)
+}
 
-    let mut manifest = read_manifest(&workspace)?;
+fn sync_core_at(workspace: &Path, resource_dir: Option<&Path>) -> Result<(), String> {
+    let transaction = core_modules::begin_sync(workspace, resource_dir)?;
+
+    let mut manifest = read_manifest(workspace)?;
     manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
     manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
 
-    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
+    if let Err(manifest_error) = write_json_atomic(&manifest_path(workspace), &manifest) {
         return match transaction.rollback() {
             Ok(()) => Err(format!(
                 "Core metadata update failed and core JARs were rolled back: {manifest_error}"
@@ -69,7 +84,7 @@ pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, Str
     }
 
     transaction.finalize();
-    status_with_release(&workspace, &release)
+    Ok(())
 }
 
 fn status_with_release(
