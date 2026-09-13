@@ -1,4 +1,4 @@
-use crate::engine::{paper_performance, process_identity, startup_guard};
+use crate::engine::{java_runtime, paper_performance, process_identity, startup_guard, workspace_registry};
 use crate::engine::server_manager::{ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::State;
 
@@ -14,6 +14,7 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 
 #[tauri::command]
 pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> {
+    ensure_provisioned()?;
     process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
     let _ = paper_performance::apply_before_managed_start()?;
@@ -32,10 +33,25 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 #[tauri::command]
 pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
     state.stop()?;
+    ensure_provisioned()?;
     process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
     let _ = paper_performance::apply_before_managed_start()?;
     state.start()?;
     let _ = process_identity::record_after_start();
+    Ok(())
+}
+
+fn ensure_provisioned() -> Result<(), String> {
+    if !java_runtime::managed_java_path()?.is_file() {
+        return Err("Managed Java 21 is not ready. Use Prepare Server first.".into());
+    }
+    let status = workspace_registry::provisioning_status()?;
+    if !status.workspace_created || !status.paper_ready || !status.core_modules_ready || !status.config_ready {
+        return Err(format!("Server provisioning is incomplete: {}. Use Prepare Server first.", status.next_step));
+    }
+    if !status.eula_accepted {
+        return Err("Minecraft EULA has not been accepted for this server.".into());
+    }
     Ok(())
 }
