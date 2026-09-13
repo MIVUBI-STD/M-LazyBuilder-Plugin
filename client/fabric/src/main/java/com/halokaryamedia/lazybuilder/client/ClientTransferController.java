@@ -27,26 +27,40 @@ import java.util.function.Consumer;
  * local state tracks one explicit transfer operation at a time.
  *
  * <p>Chunks use one seekable channel per active file and the protocol-owned
- * bounded credit window. This avoids reopen/skip I/O and one RTT per individual
- * 24 KiB payload while keeping memory and queue depth bounded.</p>
+ * bounded credit window. Presentation can observe a compact immutable status;
+ * it does not gain ownership of transfer ordering or validation.</p>
  */
 public final class ClientTransferController {
     private static final Consumer<String> NO_UPLOAD_CALLBACK = ignored -> { };
+    private static final Runnable NO_CANCEL_CALLBACK = () -> { };
 
     private Upload upload;
     private Download download;
     private Consumer<String> uploadFinished = NO_UPLOAD_CALLBACK;
+    private Runnable uploadCancelled = NO_CANCEL_CALLBACK;
+    private TransferStatus status = TransferStatus.idle();
+    private long revision;
 
     public void chooseAndUploadImport() {
-        chooseAndUploadImport(NO_UPLOAD_CALLBACK);
+        chooseAndUploadImport(NO_UPLOAD_CALLBACK, NO_CANCEL_CALLBACK);
     }
 
     public void chooseAndUploadImport(Consumer<String> onUploaded) {
+        chooseAndUploadImport(onUploaded, NO_CANCEL_CALLBACK);
+    }
+
+    public void chooseAndUploadImport(Consumer<String> onUploaded, Runnable onCancelled) {
         requireIdle();
         uploadFinished = Objects.requireNonNull(onUploaded, "onUploaded");
+        uploadCancelled = Objects.requireNonNull(onCancelled, "onCancelled");
+        setStatus(new TransferStatus(TransferPhase.CHOOSING_IMPORT, "", 0, 0, "Choose a world file"));
         ClientFileDialogs.chooseImport().thenAccept(optional -> clientExecute(() -> {
             if (optional.isEmpty()) {
                 uploadFinished = NO_UPLOAD_CALLBACK;
+                Runnable callback = uploadCancelled;
+                uploadCancelled = NO_CANCEL_CALLBACK;
+                setStatus(TransferStatus.idle());
+                callback.run();
                 return;
             }
             beginUpload(optional.get());
@@ -55,8 +69,16 @@ public final class ClientTransferController {
 
     public void downloadExport(String fileName) {
         requireIdle();
-        ClientFileDialogs.chooseExportDestination(fileName).thenAccept(optional ->
-                optional.ifPresent(destination -> beginDownload(fileName, destination)));
+        String safeName = Objects.requireNonNull(fileName, "fileName");
+        setStatus(new TransferStatus(TransferPhase.CHOOSING_EXPORT_DESTINATION,
+                safeName, 0, 0, "Choose where to save the export"));
+        ClientFileDialogs.chooseExportDestination(safeName).thenAccept(optional -> clientExecute(() -> {
+            if (optional.isEmpty()) {
+                setStatus(TransferStatus.idle());
+                return;
+            }
+            beginDownload(safeName, optional.get());
+        }));
     }
 
     public void accept(TransferWireProtocol.Response response) {
@@ -70,6 +92,8 @@ public final class ClientTransferController {
                 closeQuietly(state == null ? null : state.channel);
                 Consumer<String> callback = uploadFinished;
                 uploadFinished = NO_UPLOAD_CALLBACK;
+                uploadCancelled = NO_CANCEL_CALLBACK;
+                setStatus(TransferStatus.idle());
                 LazyBuilderClientNetworking.notifyPlayer("Upload complete: " + finished.fileName());
                 callback.accept(finished.fileName());
             }
@@ -79,6 +103,7 @@ public final class ClientTransferController {
             case TransferWireProtocol.ErrorResponse error -> {
                 cleanupLocalUpload();
                 cleanupLocalDownload();
+                setStatus(new TransferStatus(TransferPhase.FAILED, "", 0, 0, error.message()));
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder transfer: " + error.message());
             }
         }
@@ -87,16 +112,29 @@ public final class ClientTransferController {
     public void reset() {
         cleanupLocalUpload();
         cleanupLocalDownload();
+        setStatus(TransferStatus.idle());
+    }
+
+    public TransferStatus status() {
+        return status;
+    }
+
+    public long revision() {
+        return revision;
     }
 
     private void requireIdle() {
-        if (upload != null || download != null) {
+        if (upload != null || download != null
+                || status.phase() == TransferPhase.CHOOSING_IMPORT
+                || status.phase() == TransferPhase.CHOOSING_EXPORT_DESTINATION) {
             throw new IllegalStateException("A file transfer is already active");
         }
     }
 
     private void beginUpload(Path source) {
         Path normalized = source.toAbsolutePath().normalize();
+        setStatus(new TransferStatus(TransferPhase.PREPARING_UPLOAD,
+                normalized.getFileName().toString(), 0, 0, "Preparing world file"));
         CompletableFuture.supplyAsync(() -> {
             try {
                 if (!Files.isRegularFile(normalized)) throw new IOException("Selected import file is missing");
@@ -109,17 +147,25 @@ public final class ClientTransferController {
         }).whenComplete((prepared, failure) -> clientExecute(() -> {
             if (failure != null) {
                 uploadFinished = NO_UPLOAD_CALLBACK;
-                LazyBuilderClientNetworking.notifyPlayer("Could not prepare import file: " + rootMessage(failure));
+                uploadCancelled = NO_CANCEL_CALLBACK;
+                String message = "Could not prepare import file: " + rootMessage(failure);
+                setStatus(new TransferStatus(TransferPhase.FAILED,
+                        normalized.getFileName().toString(), 0, 0, message));
+                LazyBuilderClientNetworking.notifyPlayer(message);
                 return;
             }
             try {
-                requireIdle();
                 upload = new Upload(prepared.path());
+                setStatus(new TransferStatus(TransferPhase.UPLOADING,
+                        prepared.path().getFileName().toString(), 0, prepared.size(), "Uploading world"));
                 send(new TransferWireProtocol.BeginUpload(
                         prepared.path().getFileName().toString(), prepared.size(), prepared.sha256()));
             } catch (Exception exception) {
                 cleanupLocalUpload();
-                LazyBuilderClientNetworking.notifyPlayer("Could not start upload: " + exception.getMessage());
+                String message = "Could not start upload: " + exception.getMessage();
+                setStatus(new TransferStatus(TransferPhase.FAILED,
+                        prepared.path().getFileName().toString(), 0, prepared.size(), message));
+                LazyBuilderClientNetworking.notifyPlayer(message);
             }
         }));
     }
@@ -130,6 +176,8 @@ public final class ClientTransferController {
         try {
             state.descriptor = descriptor;
             state.channel = FileChannel.open(state.source, StandardOpenOption.READ);
+            setStatus(new TransferStatus(TransferPhase.UPLOADING,
+                    state.source.getFileName().toString(), 0, descriptor.totalBytes(), "Uploading world"));
             pumpUploadBatch(state);
         } catch (IOException exception) {
             abortUpload("Could not open import file: " + exception.getMessage());
@@ -141,6 +189,10 @@ public final class ClientTransferController {
         if (state == null || state.descriptor == null
                 || !state.descriptor.sessionId().equals(progress.sessionId())) return;
         state.acknowledged = Math.max(state.acknowledged, progress.nextChunkIndex());
+        long completed = Math.min(state.descriptor.totalBytes(),
+                (long) state.acknowledged * state.descriptor.chunkBytes());
+        setStatus(new TransferStatus(TransferPhase.UPLOADING,
+                state.source.getFileName().toString(), completed, state.descriptor.totalBytes(), "Uploading world"));
         if (state.acknowledged >= progress.totalChunks()) {
             if (!state.finishSent) {
                 state.finishSent = true;
@@ -198,6 +250,7 @@ public final class ClientTransferController {
         Path target = destination.toAbsolutePath().normalize();
         Path partial = target.resolveSibling(target.getFileName() + ".part");
         download = new Download(fileName, target, partial);
+        setStatus(new TransferStatus(TransferPhase.DOWNLOADING, fileName, 0, 0, "Starting download"));
         send(new TransferWireProtocol.BeginDownload(fileName));
     }
 
@@ -212,6 +265,8 @@ public final class ClientTransferController {
                     StandardOpenOption.CREATE_NEW,
                     StandardOpenOption.WRITE);
             state.descriptor = descriptor;
+            setStatus(new TransferStatus(TransferPhase.DOWNLOADING,
+                    state.fileName, 0, descriptor.totalBytes(), "Downloading export"));
             requestDownloadBatch(state);
         } catch (IOException exception) {
             abortDownload("Could not create local export file: " + exception.getMessage());
@@ -244,8 +299,14 @@ public final class ClientTransferController {
         }
 
         state.receivedInBatch++;
+        state.receivedChunks++;
         state.pendingWrites++;
         state.batchSawLast |= chunk.last();
+        long completed = Math.min(state.descriptor.totalBytes(),
+                (long) state.receivedChunks * state.descriptor.chunkBytes());
+        setStatus(new TransferStatus(TransferPhase.DOWNLOADING,
+                state.fileName, completed, state.descriptor.totalBytes(), "Downloading export"));
+
         long offset = (long) chunk.chunkIndex() * state.descriptor.chunkBytes();
         CompletableFuture.runAsync(() -> {
             try {
@@ -269,6 +330,8 @@ public final class ClientTransferController {
         if (state.receivedInBatch != expected || state.pendingWrites != 0) return;
         if (state.batchSawLast || state.nextChunkToRequest >= state.descriptor.totalChunks()) {
             state.awaitingFinishAck = true;
+            setStatus(new TransferStatus(TransferPhase.FINALIZING_DOWNLOAD,
+                    state.fileName, state.descriptor.totalBytes(), state.descriptor.totalBytes(), "Finalizing export"));
             send(new TransferWireProtocol.FinishDownload(state.descriptor.sessionId()));
         } else {
             requestDownloadBatch(state);
@@ -279,6 +342,8 @@ public final class ClientTransferController {
         Download state = download;
         if (state == null || !state.awaitingFinishAck || state.descriptor == null) return;
         state.awaitingFinishAck = false;
+        setStatus(new TransferStatus(TransferPhase.FINALIZING_DOWNLOAD,
+                state.fileName, state.descriptor.totalBytes(), state.descriptor.totalBytes(), "Verifying export"));
         CompletableFuture.runAsync(() -> {
             try {
                 if (state.channel != null) {
@@ -297,11 +362,14 @@ public final class ClientTransferController {
             if (download != state) return;
             if (failure != null) {
                 cleanupLocalDownload();
-                LazyBuilderClientNetworking.notifyPlayer("Could not finalize export: " + rootMessage(failure));
+                String message = "Could not finalize export: " + rootMessage(failure);
+                setStatus(new TransferStatus(TransferPhase.FAILED, state.fileName, 0, 0, message));
+                LazyBuilderClientNetworking.notifyPlayer(message);
                 return;
             }
             String name = state.target.getFileName().toString();
             download = null;
+            setStatus(TransferStatus.idle());
             LazyBuilderClientNetworking.notifyPlayer("Export saved: " + name);
         }));
     }
@@ -310,10 +378,13 @@ public final class ClientTransferController {
         Upload state = upload;
         upload = null;
         uploadFinished = NO_UPLOAD_CALLBACK;
+        uploadCancelled = NO_CANCEL_CALLBACK;
         closeQuietly(state == null ? null : state.channel);
         if (state != null && state.descriptor != null) {
             send(new TransferWireProtocol.AbortUpload(state.descriptor.sessionId()));
         }
+        setStatus(new TransferStatus(TransferPhase.FAILED,
+                state == null ? "" : state.source.getFileName().toString(), 0, 0, message));
         LazyBuilderClientNetworking.notifyPlayer(message);
     }
 
@@ -327,6 +398,8 @@ public final class ClientTransferController {
         if (state != null) {
             try { Files.deleteIfExists(state.partial); } catch (IOException ignored) { }
         }
+        setStatus(new TransferStatus(TransferPhase.FAILED,
+                state == null ? "" : state.fileName, 0, 0, message));
         LazyBuilderClientNetworking.notifyPlayer(message);
     }
 
@@ -334,6 +407,7 @@ public final class ClientTransferController {
         Upload state = upload;
         upload = null;
         uploadFinished = NO_UPLOAD_CALLBACK;
+        uploadCancelled = NO_CANCEL_CALLBACK;
         closeQuietly(state == null ? null : state.channel);
     }
 
@@ -344,6 +418,11 @@ public final class ClientTransferController {
         if (state != null) {
             try { Files.deleteIfExists(state.partial); } catch (IOException ignored) { }
         }
+    }
+
+    private void setStatus(TransferStatus status) {
+        this.status = Objects.requireNonNull(status, "status");
+        revision++;
     }
 
     private static void send(TransferWireProtocol.Request request) {
@@ -410,6 +489,46 @@ public final class ClientTransferController {
         return Objects.toString(current.getMessage(), current.getClass().getSimpleName());
     }
 
+    public enum TransferPhase {
+        IDLE,
+        CHOOSING_IMPORT,
+        PREPARING_UPLOAD,
+        UPLOADING,
+        CHOOSING_EXPORT_DESTINATION,
+        DOWNLOADING,
+        FINALIZING_DOWNLOAD,
+        FAILED
+    }
+
+    public record TransferStatus(
+            TransferPhase phase,
+            String fileName,
+            long completedBytes,
+            long totalBytes,
+            String message
+    ) {
+        public TransferStatus {
+            Objects.requireNonNull(phase, "phase");
+            fileName = Objects.requireNonNullElse(fileName, "");
+            message = Objects.requireNonNullElse(message, "");
+            completedBytes = Math.max(0, completedBytes);
+            totalBytes = Math.max(0, totalBytes);
+        }
+
+        public static TransferStatus idle() {
+            return new TransferStatus(TransferPhase.IDLE, "", 0, 0, "");
+        }
+
+        public boolean active() {
+            return phase != TransferPhase.IDLE && phase != TransferPhase.FAILED;
+        }
+
+        public int percent() {
+            if (totalBytes <= 0) return -1;
+            return (int) Math.min(100, Math.round(completedBytes * 100.0 / totalBytes));
+        }
+    }
+
     private record PreparedUpload(Path path, long size, String sha256) {}
 
     private static final class Upload {
@@ -436,6 +555,7 @@ public final class ClientTransferController {
         private int batchStart;
         private int batchEnd;
         private int receivedInBatch;
+        private int receivedChunks;
         private int pendingWrites;
         private boolean batchSawLast;
         private boolean awaitingFinishAck;
