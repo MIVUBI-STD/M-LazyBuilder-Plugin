@@ -1,12 +1,13 @@
 use crate::commands;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{process_identity, workspace_registry};
+use crate::engine::{backup_maintenance, process_identity, workspace_registry};
 
 pub fn run() {
     let _ = workspace_registry::initialize();
     let _ = process_identity::sanitize_before_start();
     let _ = commands::server_tools::maintain_logs();
+    let _ = backup_maintenance::maintain_plugin_backups();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
