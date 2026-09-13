@@ -17,8 +17,66 @@ pub struct RuntimeUpdateStatus {
 
 pub fn status() -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
-    let manifest = read_manifest(&workspace)?;
     let release = paper_provider::latest_stable()?;
+    status_with_release(&workspace, &release)
+}
+
+pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
+    let workspace = workspace_registry::active_workspace()?;
+    let release = paper_provider::latest_stable()?;
+    let target = workspace.join("server").join("paper.jar");
+    let persistent_backup = workspace.join("server").join("paper.jar.previous");
+    let had_target = target.is_file();
+
+    if had_target {
+        let _ = fs::remove_file(&persistent_backup);
+        fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
+    }
+
+    paper_provider::ensure_release_for_workspace(&workspace, &release)?;
+    if let Err(manifest_error) = update_manifest_field(&workspace, "paperBuild", Value::from(release.build)) {
+        return match rollback_paper(&target, &persistent_backup, had_target) {
+            Ok(()) => Err(format!(
+                "Paper metadata update failed and paper.jar was rolled back: {manifest_error}"
+            )),
+            Err(rollback_error) => Err(format!(
+                "Paper metadata update failed: {manifest_error}; paper.jar rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    status_with_release(&workspace, &release)
+}
+
+pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
+    let workspace = workspace_registry::active_workspace()?;
+    let release = paper_provider::latest_stable()?;
+    let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
+
+    let mut manifest = read_manifest(&workspace)?;
+    manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
+    manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
+
+    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
+        return match transaction.rollback() {
+            Ok(()) => Err(format!(
+                "Core metadata update failed and core JARs were rolled back: {manifest_error}"
+            )),
+            Err(rollback_error) => Err(format!(
+                "Core metadata update failed: {manifest_error}; core JAR rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    transaction.finalize();
+    status_with_release(&workspace, &release)
+}
+
+fn status_with_release(
+    workspace: &Path,
+    release: &paper_provider::PaperRelease,
+) -> Result<RuntimeUpdateStatus, String> {
+    let manifest = read_manifest(workspace)?;
     let current_paper = manifest.get("paperBuild").and_then(Value::as_u64);
     let world_version = manifest
         .get("worldManagerVersion")
@@ -44,55 +102,6 @@ pub fn status() -> Result<RuntimeUpdateStatus, String> {
         bundled_core_version: core_modules::CORE_VERSION.into(),
         core_update_available,
     })
-}
-
-pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
-    let workspace = workspace_registry::active_workspace()?;
-    let target = workspace.join("server").join("paper.jar");
-    let persistent_backup = workspace.join("server").join("paper.jar.previous");
-    let had_target = target.is_file();
-
-    if had_target {
-        let _ = fs::remove_file(&persistent_backup);
-        fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
-    }
-
-    let build = paper_provider::ensure_for_workspace(&workspace)?;
-    if let Err(manifest_error) = update_manifest_field(&workspace, "paperBuild", Value::from(build)) {
-        return match rollback_paper(&target, &persistent_backup, had_target) {
-            Ok(()) => Err(format!(
-                "Paper metadata update failed and paper.jar was rolled back: {manifest_error}"
-            )),
-            Err(rollback_error) => Err(format!(
-                "Paper metadata update failed: {manifest_error}; paper.jar rollback also failed: {rollback_error}"
-            )),
-        };
-    }
-
-    status()
-}
-
-pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
-    let workspace = workspace_registry::active_workspace()?;
-    let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
-
-    let mut manifest = read_manifest(&workspace)?;
-    manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
-    manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
-
-    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
-        return match transaction.rollback() {
-            Ok(()) => Err(format!(
-                "Core metadata update failed and core JARs were rolled back: {manifest_error}"
-            )),
-            Err(rollback_error) => Err(format!(
-                "Core metadata update failed: {manifest_error}; core JAR rollback also failed: {rollback_error}"
-            )),
-        };
-    }
-
-    transaction.finalize();
-    status()
 }
 
 fn rollback_paper(target: &Path, backup: &Path, had_target: bool) -> Result<(), String> {
