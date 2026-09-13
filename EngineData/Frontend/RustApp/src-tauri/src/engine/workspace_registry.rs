@@ -5,7 +5,9 @@ use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const REGISTRY_SCHEMA_VERSION: u32 = 1;
-const WORKSPACE_MANIFEST: &str = ".lazybuilder-workspace.json";
+const WORKSPACE_SCHEMA_VERSION: u32 = 1;
+const MINECRAFT_VERSION: &str = "1.21.4";
+const SERVER_PLATFORM: &str = "paper";
 
 static ACTIVE_WORKSPACE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
 
@@ -38,9 +40,30 @@ impl Default for WorkspaceRegistryFile {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkspaceManifest {
-    schema_version: u32,
-    name: String,
+pub struct WorkspaceManifest {
+    pub schema_version: u32,
+    pub workspace_id: String,
+    pub name: String,
+    pub minecraft_version: String,
+    pub server_platform: String,
+    pub paper_build: Option<u32>,
+    pub world_manager_version: Option<String>,
+    pub utilities_manager_version: Option<String>,
+    pub created_unix_seconds: u64,
+    pub last_opened_unix_seconds: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvisioningStatus {
+    pub workspace_created: bool,
+    pub java_ready: bool,
+    pub paper_ready: bool,
+    pub core_modules_ready: bool,
+    pub config_ready: bool,
+    pub eula_accepted: bool,
+    pub ready: bool,
+    pub next_step: String,
 }
 
 pub fn initialize() -> Result<(), String> {
@@ -95,8 +118,21 @@ pub fn create(parent: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     }
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     provision_layout(&root)?;
-    write_manifest(&root, &safe_name)?;
-    register_and_activate(&root, &safe_name)
+    let canonical = root.canonicalize().map_err(|error| error.to_string())?;
+    let id = workspace_id(&canonical.display().to_string());
+    write_manifest(&canonical, WorkspaceManifest {
+        schema_version: WORKSPACE_SCHEMA_VERSION,
+        workspace_id: id,
+        name: safe_name.clone(),
+        minecraft_version: MINECRAFT_VERSION.into(),
+        server_platform: SERVER_PLATFORM.into(),
+        paper_build: None,
+        world_manager_version: None,
+        utilities_manager_version: None,
+        created_unix_seconds: now_unix_seconds(),
+        last_opened_unix_seconds: now_unix_seconds(),
+    })?;
+    register_and_activate(&canonical, &safe_name)
 }
 
 pub fn open(root: &Path) -> Result<WorkspaceEntry, String> {
@@ -105,22 +141,39 @@ pub fn open(root: &Path) -> Result<WorkspaceEntry, String> {
         return Err("Selected workspace is not a directory".into());
     }
 
-    let manifest = read_manifest(&root)?;
-    let name = if let Some(manifest) = manifest {
-        manifest.name
-    } else if root.join("server").is_dir() || root.join("world-system").is_dir() {
-        root.file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("LazyBuilder Server")
-            .to_string()
-    } else {
-        return Err("This folder is not a LazyBuilder server workspace. Use Create New Server for a new workspace.".into());
+    let name = match read_manifest(&root)? {
+        Some(mut manifest) => {
+            validate_manifest(&manifest)?;
+            manifest.last_opened_unix_seconds = now_unix_seconds();
+            write_manifest(&root, manifest.clone())?;
+            manifest.name
+        }
+        None if looks_like_legacy_lazybuilder_workspace(&root) => {
+            let name = root.file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("LazyBuilder Server")
+                .to_string();
+            let id = workspace_id(&root.display().to_string());
+            write_manifest(&root, WorkspaceManifest {
+                schema_version: WORKSPACE_SCHEMA_VERSION,
+                workspace_id: id,
+                name: name.clone(),
+                minecraft_version: MINECRAFT_VERSION.into(),
+                server_platform: SERVER_PLATFORM.into(),
+                paper_build: None,
+                world_manager_version: None,
+                utilities_manager_version: None,
+                created_unix_seconds: now_unix_seconds(),
+                last_opened_unix_seconds: now_unix_seconds(),
+            })?;
+            name
+        }
+        None => {
+            return Err("This folder is not a LazyBuilder workspace. Plain Paper servers must be adopted through the migration flow instead of opened directly.".into());
+        }
     };
 
     provision_layout(&root)?;
-    if !root.join(WORKSPACE_MANIFEST).is_file() {
-        write_manifest(&root, &name)?;
-    }
     register_and_activate(&root, &name)
 }
 
@@ -136,7 +189,12 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
     let result = entry.clone();
     registry.active_workspace_id = Some(result.id.clone());
     save_registry(&registry)?;
-    set_active_memory(Some(path.canonicalize().map_err(|error| error.to_string())?))?;
+    let canonical = path.canonicalize().map_err(|error| error.to_string())?;
+    if let Some(mut manifest) = read_manifest(&canonical)? {
+        manifest.last_opened_unix_seconds = now_unix_seconds();
+        write_manifest(&canonical, manifest)?;
+    }
+    set_active_memory(Some(canonical))?;
     Ok(result)
 }
 
@@ -145,6 +203,56 @@ pub fn deactivate() -> Result<(), String> {
     registry.active_workspace_id = None;
     save_registry(&registry)?;
     set_active_memory(None)
+}
+
+pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
+    let root = active_workspace()?;
+    let workspace_created = manifest_path(&root).is_file();
+    let config_ready = root.join("tools").join("lazybuilder").join("config").is_dir()
+        && root.join("server").is_dir()
+        && root.join("server").join("plugins").is_dir();
+    let paper_ready = root.join("server").join("paper.jar").is_file();
+    let plugins = root.join("server").join("plugins");
+    let world_manager_ready = contains_plugin_prefix(&plugins, "World-Manager-")?;
+    let utilities_manager_ready = contains_plugin_prefix(&plugins, "Utilities-Manager-")?;
+    let core_modules_ready = world_manager_ready && utilities_manager_ready;
+    let eula_accepted = read_eula(&root)?;
+
+    // Managed Java provisioning is intentionally owned by the next runtime-provider phase.
+    // Until then, system/explicit Java is validated by Server-Manager preflight.
+    let java_ready = true;
+    let ready = workspace_created && java_ready && paper_ready && core_modules_ready && config_ready && eula_accepted;
+    let next_step = if !workspace_created {
+        "Create workspace metadata"
+    } else if !paper_ready {
+        "Provision Paper 1.21.4"
+    } else if !core_modules_ready {
+        "Install LazyBuilder core modules"
+    } else if !config_ready {
+        "Prepare server configuration"
+    } else if !eula_accepted {
+        "Accept the Minecraft EULA"
+    } else {
+        "Ready"
+    };
+
+    Ok(ProvisioningStatus {
+        workspace_created,
+        java_ready,
+        paper_ready,
+        core_modules_ready,
+        config_ready,
+        eula_accepted,
+        ready,
+        next_step: next_step.into(),
+    })
+}
+
+pub fn accept_eula() -> Result<(), String> {
+    let root = active_workspace()?;
+    let eula = root.join("server").join("eula.txt");
+    fs::write(eula, "# Accepted through LazyBuilder after explicit user confirmation\neula=true\n")
+        .map_err(|error| error.to_string())
 }
 
 fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
@@ -218,9 +326,22 @@ fn save_registry(registry: &WorkspaceRegistryFile) -> Result<(), String> {
     let text = serde_json::to_string_pretty(registry).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
     if path.exists() {
-        let _ = fs::remove_file(&path);
+        let backup = path.with_extension("json.previous");
+        let _ = fs::remove_file(&backup);
+        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
+        match fs::rename(&temporary, &path) {
+            Ok(()) => {
+                let _ = fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&backup, &path);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(temporary, path).map_err(|error| error.to_string())
     }
-    fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
 fn provision_layout(root: &Path) -> Result<(), String> {
@@ -244,20 +365,91 @@ fn provision_layout(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn write_manifest(root: &Path, name: &str) -> Result<(), String> {
-    let manifest = WorkspaceManifest { schema_version: 1, name: name.to_string() };
+fn manifest_path(root: &Path) -> PathBuf {
+    root.join("tools").join("lazybuilder").join("config").join("workspace.json")
+}
+
+fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String> {
+    let path = manifest_path(root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
-    fs::write(root.join(WORKSPACE_MANIFEST), text).map_err(|error| error.to_string())
+    fs::write(&temporary, text).map_err(|error| error.to_string())?;
+    if path.exists() {
+        let backup = path.with_extension("json.previous");
+        let _ = fs::remove_file(&backup);
+        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
+        match fs::rename(&temporary, &path) {
+            Ok(()) => {
+                let _ = fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&backup, &path);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(temporary, path).map_err(|error| error.to_string())
+    }
 }
 
 fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
-    let path = root.join(WORKSPACE_MANIFEST);
+    let path = manifest_path(root);
     if !path.is_file() {
         return Ok(None);
     }
     let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let manifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     Ok(Some(manifest))
+}
+
+fn validate_manifest(manifest: &WorkspaceManifest) -> Result<(), String> {
+    if manifest.schema_version != WORKSPACE_SCHEMA_VERSION {
+        return Err("Workspace manifest schema is newer or unsupported".into());
+    }
+    if manifest.minecraft_version != MINECRAFT_VERSION {
+        return Err(format!("This LazyBuilder build currently supports Minecraft {MINECRAFT_VERSION}; workspace targets {}.", manifest.minecraft_version));
+    }
+    if !manifest.server_platform.eq_ignore_ascii_case(SERVER_PLATFORM) {
+        return Err("This LazyBuilder build currently supports Paper workspaces only".into());
+    }
+    Ok(())
+}
+
+fn looks_like_legacy_lazybuilder_workspace(root: &Path) -> bool {
+    root.join("server").is_dir()
+        && root.join("world-system").is_dir()
+        && root.join("tools").join("lazybuilder").is_dir()
+}
+
+fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String> {
+    if !directory.is_dir() {
+        return Ok(false);
+    }
+    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().map_err(|error| error.to_string())?.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(prefix) && name.to_ascii_lowercase().ends_with(".jar") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn read_eula(root: &Path) -> Result<bool, String> {
+    let path = root.join("server").join("eula.txt");
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    Ok(text.lines().any(|line| line.trim().eq_ignore_ascii_case("eula=true")))
 }
 
 fn validate_workspace_name(value: &str) -> Result<String, String> {
