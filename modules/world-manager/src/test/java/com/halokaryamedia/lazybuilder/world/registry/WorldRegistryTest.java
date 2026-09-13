@@ -32,6 +32,24 @@ class WorldRegistryTest {
     }
 
     @Test
+    void destinationReservationBlocksConcurrentPublicationAndReleasesCleanly() {
+        WorldRegistry registry = new WorldRegistry();
+
+        WorldRegistry.FolderReservation reservation = registry.reserveFolder("ImportedBuild");
+        assertThrows(IllegalStateException.class,
+                () -> registry.reserveFolder("importedbuild"));
+
+        reservation.close();
+        try (WorldRegistry.FolderReservation ignored = registry.reserveFolder("IMPORTEDBUILD")) {
+            // A completed publication may register while it still owns the reservation.
+            registry.register(world("ImportedBuild", "Imported Build"));
+        }
+
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.reserveFolder("ImportedBuild"));
+    }
+
+    @Test
     void rejectsUnsafeFolderNames() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WorldRecord(WorldId.create(), "../world", "World", WorldKind.IMPORTED,
