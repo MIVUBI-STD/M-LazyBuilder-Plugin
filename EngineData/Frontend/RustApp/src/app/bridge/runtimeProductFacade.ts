@@ -3,6 +3,8 @@ import { runtimeApi } from './runtimeApi';
 export const runtimeProduct = {
   workspace: {
     state: runtimeApi.getWorkspaceState,
+    provisioningStatus: runtimeApi.getWorkspaceProvisioningStatus,
+    acceptEula: runtimeApi.acceptWorkspaceEula,
     pickParent: runtimeApi.pickWorkspaceParent,
     create: runtimeApi.createWorkspace,
     open: runtimeApi.openWorkspace,
