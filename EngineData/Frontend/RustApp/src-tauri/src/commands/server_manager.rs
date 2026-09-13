@@ -1,3 +1,4 @@
+use crate::commands::server_tools;
 use crate::engine::{java_runtime, paper_performance, process_identity, startup_guard, workspace_registry};
 use crate::engine::server_manager::{ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::State;
@@ -28,12 +29,36 @@ pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> 
 
 #[tauri::command]
 pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
-    state.stop()
+    match state.stop() {
+        Ok(()) => Ok(()),
+        Err(stop_error) => {
+            // A failed write/flush to Paper stdin can leave the owned child alive after
+            // ServerManagerState has already entered Stopping. Only in that proven
+            // state do we fall back to detached recovery; unrelated stop failures must
+            // never trigger process termination.
+            let snapshot = state.snapshot().map_err(|snapshot_error| {
+                format!("{stop_error}; additionally failed to inspect stop recovery state: {snapshot_error}")
+            })?;
+            if snapshot.state != "Stopping" || snapshot.pid.is_none() {
+                return Err(stop_error);
+            }
+
+            match server_tools::server_recover_detached() {
+                Ok(result) if result.stopped => {
+                    // Reap the still-owned Child handle after the external termination.
+                    let _ = state.snapshot();
+                    Ok(())
+                }
+                Ok(result) => Err(format!("{stop_error}; stop recovery did not terminate PID {}: {}", result.pid, result.message)),
+                Err(recovery_error) => Err(format!("{stop_error}; stop recovery also failed: {recovery_error}")),
+            }
+        }
+    }
 }
 
 #[tauri::command]
 pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
-    state.stop()?;
+    server_stop(state.clone())?;
     ensure_provisioned()?;
     process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
