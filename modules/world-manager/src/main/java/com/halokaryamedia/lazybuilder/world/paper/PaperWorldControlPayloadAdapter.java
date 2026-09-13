@@ -179,7 +179,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!beginHeavy(player)) return;
         scheduleHeavy(
                 player,
-                () -> heavyOperations.cloneWorld(
+                () -> heavyOperations.duplicateWorld(
                         new WorldId(request.sourceWorldId()),
                         request.destinationFolder(),
                         request.displayName(),
