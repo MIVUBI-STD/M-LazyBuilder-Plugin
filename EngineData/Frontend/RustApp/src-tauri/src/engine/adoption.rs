@@ -228,3 +228,51 @@ fn rollback(moved: &mut Vec<(PathBuf, PathBuf)>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("lazybuilder-{label}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn analyze_detects_paper_worlds_legacy_plugins_and_preserved_entries() {
+        let root = test_root("adoption-analysis");
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        fs::create_dir_all(root.join("world")).unwrap();
+        fs::write(root.join("paper-1.21.4.jar"), b"paper").unwrap();
+        fs::write(root.join("server.properties"), b"online-mode=true\n").unwrap();
+        fs::write(root.join("world").join("level.dat"), b"level").unwrap();
+        fs::write(root.join("plugins").join("Multiverse-Core-4.3.14.jar"), b"legacy").unwrap();
+        fs::write(root.join("plugins").join("FastAsyncWorldEdit.jar"), b"keep").unwrap();
+        fs::write(root.join("notes.txt"), b"preserve").unwrap();
+
+        let plan = analyze(&root).unwrap();
+        assert_eq!(plan.paper_jar, "paper-1.21.4.jar");
+        assert_eq!(plan.worlds, vec!["world".to_string()]);
+        assert!(plan.server_entries.contains(&"plugins".to_string()));
+        assert!(plan.server_entries.contains(&"server.properties".to_string()));
+        assert_eq!(plan.legacy_plugins_to_disable, vec!["Multiverse-Core-4.3.14.jar".to_string()]);
+        assert!(plan.preserved_entries.contains(&"notes.txt".to_string()));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn analyze_rejects_multiple_paper_candidates() {
+        let root = test_root("adoption-multiple-paper");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("paper-a.jar"), b"a").unwrap();
+        fs::write(root.join("paper-b.jar"), b"b").unwrap();
+        fs::write(root.join("server.properties"), b"online-mode=true\n").unwrap();
+
+        let error = analyze(&root).unwrap_err();
+        assert!(error.contains("Multiple Paper JAR candidates"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+}
