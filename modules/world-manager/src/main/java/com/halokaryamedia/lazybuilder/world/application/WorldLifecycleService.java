@@ -14,32 +14,38 @@ public final class WorldLifecycleService {
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
 
     public WorldLifecycleService(
             WorldRegistry registry,
             WorldRegistryPersistence persistence,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.runtimeService.attachOperations(this.operations);
     }
 
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldLifecycleService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldOperationCoordinator operations
+    ) {
+        this(registry, persistence, runtimeService, operations);
+    }
+
     public synchronized WorldRecord archive(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
-        if (current.lifecycle() == WorldLifecycle.ARCHIVED) {
-            return current;
-        }
+        if (current.lifecycle() == WorldLifecycle.ARCHIVED) return current;
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.ARCHIVE)) {
-            boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
+            boolean wasLoaded = runtimeService.isLoaded(worldId);
             runtimeService.unloadDuringOperation(worldId);
 
             WorldRecord archived = current
@@ -70,9 +76,7 @@ public final class WorldLifecycleService {
 
     public synchronized WorldRecord restore(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
-        if (current.lifecycle() == WorldLifecycle.ACTIVE) {
-            return current;
-        }
+        if (current.lifecycle() == WorldLifecycle.ACTIVE) return current;
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.RESTORE)) {
             WorldRecord restored = current
