@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerResourceProfile, ServerSnapshot } from '../app/bridge/runtimeApi';
+  import type { ServerResourceProfile } from '../app/bridge/runtimeApi';
 
   const emptyProfile: ServerResourceProfile = {
     totalMemoryMb: 0, reservedSystemMemoryMb: 0, safeMaxMemoryMb: 1024, logicalProcessors: 1,
@@ -11,10 +11,6 @@
   };
 
   let profile: ServerResourceProfile = emptyProfile;
-  let snapshot: ServerSnapshot = {
-    state: 'Offline', health: 'Offline', cpuLoadPercent: 0,
-    usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: ''
-  };
   let ramMb = 1024;
   let preset = 'Custom';
   let busy = false;
@@ -22,7 +18,7 @@
   let message = '';
 
   const gb = (mb: number) => mb / 1024;
-  const ramStep = () => profile.safeMaxMemoryMb >= 8192 ? 512 : 256;
+  const ramStep = () => 256;
   const selectedLabel = () => preset === 'Custom' ? 'Custom' : preset;
 
   function syncFromProfile(next: ServerResourceProfile) {
@@ -33,12 +29,7 @@
 
   async function load() {
     try {
-      const [resources, server] = await Promise.all([
-        runtimeProduct.server.resources(),
-        runtimeProduct.server.snapshot()
-      ]);
-      syncFromProfile(resources);
-      snapshot = server;
+      syncFromProfile(await runtimeProduct.server.resources());
       error = '';
     } catch (e) {
       error = friendlyError(e);
@@ -57,7 +48,7 @@
     message = '';
   }
 
-  async function save(restart: boolean) {
+  async function save() {
     if (busy) return;
     busy = true;
     error = '';
@@ -65,13 +56,7 @@
     try {
       const next = await runtimeProduct.server.saveResources({ maxMemoryMb: ramMb, preset });
       syncFromProfile(next);
-      if (restart && snapshot.state === 'Online') {
-        await runtimeProduct.server.restart();
-        snapshot = await runtimeProduct.server.snapshot();
-        message = 'Saved and restarted.';
-      } else {
-        message = snapshot.state === 'Online' ? 'Saved. Restart when you are ready to apply it.' : 'Saved.';
-      }
+      message = 'Saved. Memory changes apply the next time the server starts.';
     } catch (e) {
       error = friendlyError(e);
     } finally {
@@ -90,7 +75,7 @@
   <header class="page-head">
     <div>
       <h2>Settings</h2>
-      <p>Choose a performance profile for this server.</p>
+      <p>Choose how much headroom this server should use on your PC.</p>
     </div>
   </header>
 
@@ -105,29 +90,37 @@
           <div><strong>Performance</strong><small>Recommended</small></div>
           <span class="preset-value">{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</span>
         </div>
-        <p>Best for everyday building and normal server use.</p>
+        <p>Low memory use for everyday building while keeping room for Minecraft and Windows.</p>
       </button>
 
       <button class="preset-card" class:selected={preset === 'Boost'} disabled={busy} onclick={() => selectPreset('Boost')}>
         <div class="preset-head">
           <span class="radio-dot"></span>
-          <div><strong>Boost</strong><small>Heavy workloads</small></div>
+          <div><strong>Boost</strong><small>Heavier tasks</small></div>
           <span class="preset-value">{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</span>
         </div>
-        <p>Extra memory for large builds, imports and world generation.</p>
+        <p>Extra headroom for large imports, world generation and heavier build operations.</p>
       </button>
+    </div>
+
+    <div class="automatic-note">
+      <div class="automatic-icon">A</div>
+      <div>
+        <strong>CPU is managed automatically</strong>
+        <p>LazyBuilder keeps Paper responsive while yielding CPU when your Minecraft client needs it.</p>
+      </div>
     </div>
   </section>
 
   <details class="advanced" open={preset === 'Custom'}>
     <summary>
-      <span><strong>Custom memory</strong><small>Only change this if you know this server needs a different limit.</small></span>
+      <span><strong>Custom memory</strong><small>Only change this if this server needs a different limit.</small></span>
       <span>{preset === 'Custom' ? `${gb(ramMb).toFixed(1)} GB` : 'Advanced'}</span>
     </summary>
     <div class="advanced-body">
       <div class="memory-head">
         <div><span>Maximum memory</span><strong>{gb(ramMb).toFixed(1)} GB</strong></div>
-        <small>Recommended maximum: {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</small>
+        <small>Safe maximum for this PC: {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</small>
       </div>
       <input
         aria-label="Maximum server RAM allocation"
@@ -139,7 +132,7 @@
         oninput={markCustom}
       />
       <div class="range-labels"><span>1 GB</span><span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span></div>
-      <p>LazyBuilder keeps enough memory reserved for Windows automatically.</p>
+      <p>LazyBuilder reserves memory for Windows, Minecraft and background applications automatically.</p>
     </div>
   </details>
 
@@ -149,12 +142,7 @@
 
   <footer class="save-bar">
     <div class="save-copy"><strong>{selectedLabel()}</strong><span>{gb(ramMb).toFixed(1)} GB maximum</span></div>
-    <div class="save-actions">
-      <button class="secondary" disabled={busy} onclick={() => save(false)}>{busy ? 'Saving…' : 'Save'}</button>
-      {#if snapshot.state === 'Online'}
-        <button class="primary" disabled={busy} onclick={() => save(true)}>Save & restart</button>
-      {/if}
-    </div>
+    <button class="primary" disabled={busy} onclick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
   </footer>
 </section>
 
@@ -183,6 +171,11 @@
   .preset-card.selected .radio-dot { border-color:var(--accent); }
   .preset-card.selected .radio-dot::after { content:''; position:absolute; inset:3px; border-radius:50%; background:var(--accent); }
 
+  .automatic-note { display:flex; align-items:flex-start; gap:10px; margin-top:10px; padding:12px 13px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--bg-elevated); }
+  .automatic-icon { width:28px; height:28px; flex:0 0 28px; display:grid; place-items:center; border-radius:8px; background:var(--surface-2); color:var(--accent); font-size:10px; font-weight:800; }
+  .automatic-note strong { font-size:11px; }
+  .automatic-note p { margin:3px 0 0; color:var(--muted); font-size:10px; line-height:1.45; }
+
   .advanced { margin-top:12px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--surface); }
   .advanced summary { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:13px 14px; list-style:none; cursor:pointer; }
   .advanced summary::-webkit-details-marker { display:none; }
@@ -206,18 +199,13 @@
   .save-copy { display:grid; gap:1px; }
   .save-copy strong { font-size:11px; }
   .save-copy span { color:var(--muted); font-size:10px; }
-  .save-actions { display:flex; gap:7px; }
-  .primary,.secondary { min-height:var(--control-height); border-radius:var(--radius-sm); padding:8px 12px; font-weight:650; cursor:pointer; }
-  .primary { border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); }
-  .secondary { border:1px solid var(--border); background:var(--surface-2); color:var(--text); }
+  .primary { min-height:var(--control-height); border:1px solid var(--accent); border-radius:var(--radius-sm); padding:8px 12px; background:var(--accent); color:var(--accent-ink); font-weight:650; cursor:pointer; }
   .primary:hover:not(:disabled) { background:var(--accent-hover); }
-  .secondary:hover:not(:disabled) { background:var(--surface-3); }
   button:disabled { opacity:.5; cursor:default; }
 
   @media (max-width:760px) {
     .preset-grid { grid-template-columns:1fr; }
     .save-bar { align-items:stretch; flex-direction:column; }
-    .save-actions { justify-content:flex-end; }
     .memory-head { align-items:flex-start; flex-direction:column; }
   }
 </style>
