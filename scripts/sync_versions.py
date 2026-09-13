@@ -76,6 +76,11 @@ replace_text(
     r'^const USER_AGENT: &str = "LazyBuilder/[^ ]+ PaperProvider";$',
     f'const USER_AGENT: &str = "LazyBuilder/{PRODUCT_VERSION} PaperProvider";',
 )
+replace_text(
+    "EngineData/Frontend/RustApp/src-tauri/src/engine/java_runtime.rs",
+    r'^const USER_AGENT: &str = "LazyBuilder/[^"]+";$',
+    f'const USER_AGENT: &str = "LazyBuilder/{PRODUCT_VERSION}";',
+)
 
 cargo_path = ROOT / "EngineData/Frontend/RustApp/src-tauri/Cargo.toml"
 cargo_text = cargo_path.read_text(encoding="utf-8")
