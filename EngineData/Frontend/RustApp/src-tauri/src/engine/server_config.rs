@@ -23,10 +23,10 @@ impl Default for ServerConfig {
             server_directory: "server".into(),
             paper_jar: "paper.jar".into(),
             min_memory_mb: 1024,
-            max_memory_mb: 4096,
+            max_memory_mb: 2048,
             graceful_stop_timeout_seconds: 30,
             startup_timeout_seconds: 90,
-            resource_preset: "Custom".into(),
+            resource_preset: "Performance".into(),
         }
     }
 }
