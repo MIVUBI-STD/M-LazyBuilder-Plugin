@@ -8,6 +8,7 @@ import net.minecraft.text.Text;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 /** Whole-world export surface. Snapshot/package stays server-authoritative. */
 public final class ExportWorldScreen extends Screen {
@@ -46,7 +47,7 @@ public final class ExportWorldScreen extends Screen {
         int left = width / 2 - panelWidth / 2;
 
         artifactName = new TextFieldWidget(textRenderer, left + 28, 122, panelWidth - 56, 24, Text.literal("File Name"));
-        artifactName.setText(world.folderName() + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
+        artifactName.setText(fileStem(world.displayName()) + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
         artifactName.setMaxLength(96);
         artifactName.setDrawsBackground(false);
         artifactName.setEditableColor(LbUi.TEXT_PRIMARY);
@@ -156,6 +157,15 @@ public final class ExportWorldScreen extends Screen {
         }
 
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private static String fileStem(String displayName) {
+        String stem = displayName == null ? "world" : displayName.strip().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]+", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-+|-+$", "");
+        if (stem.isBlank()) stem = "world";
+        return stem.length() > 48 ? stem.substring(0, 48) : stem;
     }
 
     @Override
