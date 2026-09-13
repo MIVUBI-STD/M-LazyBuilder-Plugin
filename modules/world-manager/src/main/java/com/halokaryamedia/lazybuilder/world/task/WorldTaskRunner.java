@@ -3,10 +3,10 @@ package com.halokaryamedia.lazybuilder.world.task;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +25,7 @@ public final class WorldTaskRunner implements AutoCloseable {
     public static final Duration DEFAULT_SHUTDOWN_TIMEOUT = Duration.ofSeconds(5);
 
     private final WorldTaskRegistry registry;
-    private final ExecutorService executor;
+    private final ThreadPoolExecutor executor;
     private final Duration shutdownTimeout;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -69,12 +69,16 @@ public final class WorldTaskRunner implements AutoCloseable {
         }
 
         WorldTaskSnapshot queued = registry.create(type, worldId, message);
+        SubmittedTask submitted = new SubmittedTask(queued.taskId(), work);
         try {
-            executor.execute(() -> execute(queued.taskId(), work));
+            executor.execute(submitted);
             return queued;
         } catch (RejectedExecutionException exception) {
-            registry.markRunning(queued.taskId(), "Task runner rejected the queued task.");
-            registry.fail(queued.taskId(), "Task queue is full.", "Task could not be scheduled because World-Manager is busy.");
+            registry.fail(
+                    queued.taskId(),
+                    "Task queue is full.",
+                    "Task could not be scheduled because World-Manager is busy."
+            );
             throw new IllegalStateException("World task runner queue is full", exception);
         }
     }
@@ -104,12 +108,42 @@ public final class WorldTaskRunner implements AutoCloseable {
         executor.shutdown();
         try {
             if (!executor.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                executor.shutdownNow();
+                failDropped(executor.shutdownNow());
                 executor.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException exception) {
-            executor.shutdownNow();
+            failDropped(executor.shutdownNow());
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private void failDropped(List<Runnable> dropped) {
+        for (Runnable runnable : dropped) {
+            if (!(runnable instanceof SubmittedTask task)) continue;
+            registry.find(task.taskId).ifPresent(snapshot -> {
+                if (snapshot.state() == WorldTaskState.QUEUED) {
+                    registry.fail(
+                            task.taskId,
+                            "Task cancelled during World-Manager shutdown.",
+                            "Queued task was not started before shutdown."
+                    );
+                }
+            });
+        }
+    }
+
+    private final class SubmittedTask implements Runnable {
+        private final UUID taskId;
+        private final WorldTaskWork work;
+
+        private SubmittedTask(UUID taskId, WorldTaskWork work) {
+            this.taskId = taskId;
+            this.work = work;
+        }
+
+        @Override
+        public void run() {
+            execute(taskId, work);
         }
     }
 }
