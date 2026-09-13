@@ -44,16 +44,6 @@ pub fn workspace_update_paper(
 }
 
 #[tauri::command]
-pub fn workspace_sync_core(
-    app: AppHandle,
-    state: State<'_, ServerManagerState>,
-) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
-    ensure_runtime_update_allowed(&state)?;
-    let resource_dir = app.path().resource_dir().ok();
-    runtime_updates::sync_core(resource_dir.as_deref())
-}
-
-#[tauri::command]
 pub fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
     workspace_registry::accept_eula()?;
     resolved_provisioning_status()
