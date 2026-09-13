@@ -113,7 +113,6 @@ public final class WorldManagerPlugin extends JavaPlugin {
         this.localControlServer = new PaperLocalControlServer(
                 this,
                 worldManager.worldRegistry(),
-                worldManager.worldRuntimeService(),
                 worldManager.worldCreationService(),
                 worldManager.worldSettingsService(),
                 worldManager.worldLifecycleService(),
