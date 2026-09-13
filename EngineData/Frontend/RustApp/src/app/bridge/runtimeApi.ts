@@ -23,6 +23,13 @@ export type WorkspaceProvisioningStatus = {
   nextStep: string;
 };
 
+export type WorkspaceProvisionResult = {
+  javaPath: string;
+  paperBuild: number;
+  coreVersion: string;
+  status: WorkspaceProvisioningStatus;
+};
+
 export type ServerSnapshot = {
   state: string;
   health: string;
@@ -158,6 +165,7 @@ export type WorldTaskSnapshot = {
 export const runtimeApi = {
   getWorkspaceState: () => invoke<WorkspaceState>('workspace_state'),
   getWorkspaceProvisioningStatus: () => invoke<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
+  provisionWorkspace: () => invoke<WorkspaceProvisionResult>('workspace_provision'),
   acceptWorkspaceEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
   pickWorkspaceParent: () => invoke<string | null>('workspace_pick_parent'),
   createWorkspace: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
