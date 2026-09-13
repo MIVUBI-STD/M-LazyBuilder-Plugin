@@ -1,11 +1,22 @@
 :root {
   --bg: #111315;
-  --surface: #191c1f;
+  --bg-elevated: #15181b;
+  --surface: #1a1d20;
   --surface-2: #22262a;
-  --border: #32383e;
-  --text: #f4f6f8;
-  --muted: #9ea7b0;
-  --accent: #7cb7ff;
-  --danger: #ff7a7a;
-  --radius: 14px;
+  --surface-3: #2a2f34;
+  --border: #30363c;
+  --border-soft: #272c31;
+  --text: #f5f7f8;
+  --text-soft: #d6dadd;
+  --muted: #9aa2aa;
+  --muted-2: #727b84;
+  --accent: #1bd96a;
+  --accent-hover: #27e577;
+  --accent-ink: #08170d;
+  --warning: #f2c94c;
+  --danger: #ff7070;
+  --danger-bg: #31191b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow-popover: 0 18px 44px rgba(0, 0, 0, .35);
 }
