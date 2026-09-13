@@ -1,0 +1,109 @@
+use crate::engine::{core_modules, paper_provider, workspace_registry};
+use serde::Serialize;
+use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeUpdateStatus {
+    pub current_paper_build: Option<u64>,
+    pub latest_paper_build: u64,
+    pub paper_update_available: bool,
+    pub current_core_version: Option<String>,
+    pub bundled_core_version: String,
+    pub core_update_available: bool,
+}
+
+pub fn status() -> Result<RuntimeUpdateStatus, String> {
+    let workspace = workspace_registry::active_workspace()?;
+    let manifest = read_manifest(&workspace)?;
+    let release = paper_provider::latest_stable()?;
+    let current_paper = manifest.get("paperBuild").and_then(Value::as_u64);
+    let current_core = manifest
+        .get("worldManagerVersion")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
+    Ok(RuntimeUpdateStatus {
+        current_paper_build: current_paper,
+        latest_paper_build: release.build,
+        paper_update_available: current_paper.map(|build| build != release.build).unwrap_or(true),
+        core_update_available: current_core.as_deref() != Some(core_modules::CORE_VERSION),
+        current_core_version: current_core,
+        bundled_core_version: core_modules::CORE_VERSION.into(),
+    })
+}
+
+pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
+    let workspace = workspace_registry::active_workspace()?;
+    let target = workspace.join("server").join("paper.jar");
+    if target.is_file() {
+        let persistent_backup = workspace.join("server").join("paper.jar.previous");
+        let _ = fs::remove_file(&persistent_backup);
+        fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
+    }
+
+    let build = paper_provider::ensure_for_workspace(&workspace)?;
+    update_manifest_field(&workspace, "paperBuild", Value::from(build))?;
+    status()
+}
+
+pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
+    let workspace = workspace_registry::active_workspace()?;
+    core_modules::sync(&workspace, resource_dir)?;
+    update_manifest_field(
+        &workspace,
+        "worldManagerVersion",
+        Value::String(core_modules::CORE_VERSION.into()),
+    )?;
+    update_manifest_field(
+        &workspace,
+        "utilitiesManagerVersion",
+        Value::String(core_modules::CORE_VERSION.into()),
+    )?;
+    status()
+}
+
+fn read_manifest(workspace: &Path) -> Result<Value, String> {
+    let path = manifest_path(workspace);
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+fn update_manifest_field(workspace: &Path, key: &str, value: Value) -> Result<(), String> {
+    let path = manifest_path(workspace);
+    let mut manifest = read_manifest(workspace)?;
+    manifest[key] = value;
+    write_json_atomic(&path, &manifest)
+}
+
+fn manifest_path(workspace: &Path) -> PathBuf {
+    workspace.join("tools").join("lazybuilder").join("config").join("workspace.json")
+}
+
+fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
+    let temporary = PathBuf::from(format!("{}.tmp", path.display()));
+    let backup = PathBuf::from(format!("{}.previous", path.display()));
+    fs::write(
+        &temporary,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    if path.exists() {
+        let _ = fs::remove_file(&backup);
+        fs::rename(path, &backup).map_err(|e| e.to_string())?;
+        match fs::rename(&temporary, path) {
+            Ok(()) => {
+                let _ = fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&backup, path);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(temporary, path).map_err(|e| e.to_string())
+    }
+}
