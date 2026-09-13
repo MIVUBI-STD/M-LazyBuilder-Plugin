@@ -82,7 +82,17 @@ pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
     let mut options = if path.is_file() {
         let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
         serde_json::from_str::<WorldControlOptions>(&text).map_err(|error| error.to_string())?
-    } else { WorldControlOptions::default() };
+    } else {
+        let legacy = legacy_control_config_path()?;
+        if legacy.is_file() {
+            let text = fs::read_to_string(&legacy).map_err(|error| error.to_string())?;
+            let migrated = serde_json::from_str::<WorldControlOptions>(&text).map_err(|error| error.to_string())?;
+            save_control_options(&path, &migrated)?;
+            migrated
+        } else {
+            WorldControlOptions::default()
+        }
+    };
     if options.port < 1024 { return Err("World control port must be between 1024 and 65535".into()); }
     if options.token.trim().is_empty() {
         options.token = generate_token();
@@ -246,7 +256,8 @@ fn validate_task_id(task_id: &str) -> Result<&str, String> {
     if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') { return Err("Invalid world task id.".into()); }
     Ok(value)
 }
-fn control_config_path() -> Result<PathBuf, String> { Ok(paths::lazybuilder_tools_dir()?.join("world-control.json")) }
+fn control_config_path() -> Result<PathBuf, String> { Ok(paths::lazybuilder_config_dir()?.join("world-control.json")) }
+fn legacy_control_config_path() -> Result<PathBuf, String> { Ok(paths::lazybuilder_tools_dir()?.join("world-control.json")) }
 fn save_control_options(path: &PathBuf, options: &WorldControlOptions) -> Result<(), String> {
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
     let temporary = path.with_extension("json.tmp");
