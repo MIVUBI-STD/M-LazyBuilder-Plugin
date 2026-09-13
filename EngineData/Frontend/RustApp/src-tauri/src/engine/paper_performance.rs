@@ -21,29 +21,48 @@ pub fn apply_before_managed_start() -> Result<PaperPerformanceApplyResult, Strin
 }
 
 pub fn apply_before_start(server_dir: &Path) -> Result<PaperPerformanceApplyResult, String> {
-    let target = server_dir.join("config").join("paper-world-defaults.yml");
-    if !target.is_file() {
+    let config_dir = server_dir.join("config");
+    let world_target = config_dir.join("paper-world-defaults.yml");
+    let global_target = config_dir.join("paper-global.yml");
+    let mut changed = false;
+    let mut found_config = false;
+
+    if world_target.is_file() {
+        found_config = true;
+        let original = fs::read_to_string(&world_target)
+            .map_err(|error| format!("Failed to read {}: {error}", world_target.display()))?;
+        let updated = patch_build_profile(&original);
+        if updated != original {
+            write_with_backup(&world_target, &updated)?;
+            changed = true;
+        }
+    }
+
+    if global_target.is_file() {
+        found_config = true;
+        let original = fs::read_to_string(&global_target)
+            .map_err(|error| format!("Failed to read {}: {error}", global_target.display()))?;
+        let updated = patch_shared_pc_global_profile(&original);
+        if updated != original {
+            write_with_backup(&global_target, &updated)?;
+            changed = true;
+        }
+    }
+
+    if !found_config {
         return Ok(PaperPerformanceApplyResult {
             changed: false,
-            message: "Paper performance config not generated yet; build optimizations will be applied after Paper has generated its config.".into(),
+            message: "Paper performance config not generated yet; shared-PC optimizations will be applied after Paper has generated its config.".into(),
         });
     }
 
-    let original = fs::read_to_string(&target)
-        .map_err(|error| format!("Failed to read {}: {error}", target.display()))?;
-    let updated = patch_build_profile(&original);
-
-    if updated == original {
-        return Ok(PaperPerformanceApplyResult {
-            changed: false,
-            message: "Paper build performance profile already configured.".into(),
-        });
-    }
-
-    write_with_backup(&target, &updated)?;
     Ok(PaperPerformanceApplyResult {
-        changed: true,
-        message: "Paper build performance profile applied.".into(),
+        changed,
+        message: if changed {
+            "Paper shared-PC build performance profile applied.".into()
+        } else {
+            "Paper shared-PC build performance profile already configured.".into()
+        },
     })
 }
 
@@ -68,6 +87,28 @@ fn patch_build_profile(input: &str) -> String {
     output = patch_yaml_scalar(&output, &["environment", "optimize-explosions"], "true");
     output = patch_yaml_scalar(&output, &["tick-rates", "mob-spawner"], "-1");
     output
+}
+
+fn patch_shared_pc_global_profile(input: &str) -> String {
+    patch_yaml_scalar(
+        input,
+        &["chunk-system", "worker-threads"],
+        &shared_pc_chunk_workers().to_string(),
+    )
+}
+
+fn shared_pc_chunk_workers() -> usize {
+    let logical = std::thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(4);
+    match logical {
+        0..=4 => 1,
+        5..=8 => 1,
+        9..=12 => 2,
+        13..=16 => 2,
+        17..=24 => 3,
+        _ => 4,
+    }
 }
 
 fn patch_yaml_scalar(input: &str, path: &[&str], value: &str) -> String {
@@ -203,7 +244,7 @@ fn backup_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{patch_build_profile, patch_yaml_scalar};
+    use super::{patch_build_profile, patch_shared_pc_global_profile, patch_yaml_scalar};
 
     #[test]
     fn patches_existing_nested_values_without_touching_neighbors() {
@@ -216,6 +257,14 @@ mod tests {
         assert!(output.contains("markers:\n    tick: true"));
         assert!(output.contains("optimize-explosions: true"));
         assert!(output.contains("mob-spawner: -1"));
+    }
+
+    #[test]
+    fn patches_global_chunk_workers_without_touching_io_threads() {
+        let input = "chunk-system:\n  io-threads: -1\n  worker-threads: -1\n";
+        let output = patch_shared_pc_global_profile(input);
+        assert!(output.contains("io-threads: -1"));
+        assert!(!output.contains("worker-threads: -1"));
     }
 
     #[test]
