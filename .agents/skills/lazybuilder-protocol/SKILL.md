@@ -1,45 +1,63 @@
 ---
 name: lazybuilder-protocol
-description: Specialist for client-visible shared Paper/Fabric contracts under shared/protocol: request/result types, wire semantics, compatibility, and bounded transport contracts. Use when the shared protocol itself is the primary change.
+description: Own neutral shared Paper/Fabric contracts under shared/protocol: request/result payloads, identifiers, wire validation/defaults, and compatibility semantics. Do not use for desktop loopback HTTP, Paper implementation logic, or UI presentation.
 ---
 
 # LazyBuilder Shared Protocol
 
-Own shared client/server wire semantics only. Do not absorb Paper implementation logic, desktop HTTP control, or Fabric presentation.
+Own neutral Paper/Fabric wire semantics only. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
 
-## Use This Owner For
-
-- shared request/result payloads and identifiers;
-- Paper/Fabric compatibility contract;
-- map-action, transfer, world-control wire semantics;
-- protocol validation/default/optional behavior;
-- shared source ownership under `shared/protocol`.
-
-Route elsewhere when the primary owner is:
+## Owns
 
 ```text
-Paper world behavior          → lazybuilder-world-management
-Fabric/Xaero presentation     → lazybuilder-client-ui
-desktop loopback HTTP/runtime → lazybuilder-desktop-runtime
-Svelte desktop presentation   → lazybuilder-desktop-ui
+shared request/result payloads
+shared identifiers
+wire validation/default/optional semantics
+map-action contracts
+shared transfer contracts
+Paper/Fabric compatibility semantics
+source ownership under shared/protocol
 ```
+
+## Does Not Own
+
+```text
+Paper implementation behavior      → world-management
+Fabric/Xaero presentation          → client-ui
+desktop loopback HTTP/control      → desktop-runtime
+Svelte/Tauri presentation          → desktop-ui
+```
+
+A `WorldControl*` type located in `shared/protocol` is owned here only for its neutral shared wire semantics. Desktop HTTP request routing/authentication/session behavior remains Desktop Runtime.
 
 ## Canonical Context
 
-1. `docs/04-system/networking.md`
-2. `docs/04-system/world-control-bridge.md` when relevant
+1. `docs/04-system/development-discipline.md`
+2. `docs/04-system/networking.md`
 3. `docs/04-system/skill-routing.md`
-4. exact shared protocol + direct adapters
+4. exact `shared/protocol` source + direct Paper/Fabric adapters
 
-## Rules
+## Procedure
 
-- Shared protocol owns neutral contracts, never Paper implementation classes.
-- Keep requests/results small, typed, bounded, and transport-neutral.
-- Do not duplicate shared types in World Manager or Fabric.
-- Avoid fallback message formats, parallel protocol versions, or command-string tunneling without a real compatibility requirement.
-- Change protocol only when the product contract requires it; implementation-language/build mechanics are not protocol changes.
-- Keep desktop loopback control distinct from the Minecraft client/server data plane.
+```text
+name exact caller-visible contract
+→ prove it is a shared wire concern
+→ reuse existing neutral type/validation
+→ change smallest payload/semantic surface
+→ update direct adapters only as required
+→ targeted compile/contract proof
+→ STOP
+```
 
-## Proof
+## Protocol Invariants
 
-Static/compile proof can establish shared ownership and contract alignment. Actual client/server interoperability requires local/live proof when behavior depends on Minecraft runtime.
+- neutral contracts never depend on Paper implementation classes;
+- shared types are not duplicated in World Manager or Fabric;
+- requests/results stay small, typed, bounded, and transport-neutral;
+- no fallback formats, parallel protocol versions, or command-string tunneling without a supported compatibility requirement;
+- implementation-language/build mechanics are not protocol changes;
+- desktop loopback control and Minecraft client/server data plane remain separate boundaries.
+
+## Proof Boundary
+
+Static/compile proof can establish shared ownership and adapter alignment. Real Paper/Fabric interoperability requires the appropriate local/live client-server proof.
