@@ -49,14 +49,26 @@ pub fn status() -> Result<RuntimeUpdateStatus, String> {
 pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
     let target = workspace.join("server").join("paper.jar");
-    if target.is_file() {
-        let persistent_backup = workspace.join("server").join("paper.jar.previous");
+    let persistent_backup = workspace.join("server").join("paper.jar.previous");
+    let had_target = target.is_file();
+
+    if had_target {
         let _ = fs::remove_file(&persistent_backup);
         fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
     }
 
     let build = paper_provider::ensure_for_workspace(&workspace)?;
-    update_manifest_field(&workspace, "paperBuild", Value::from(build))?;
+    if let Err(manifest_error) = update_manifest_field(&workspace, "paperBuild", Value::from(build)) {
+        return match rollback_paper(&target, &persistent_backup, had_target) {
+            Ok(()) => Err(format!(
+                "Paper metadata update failed and paper.jar was rolled back: {manifest_error}"
+            )),
+            Err(rollback_error) => Err(format!(
+                "Paper metadata update failed: {manifest_error}; paper.jar rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
     status()
 }
 
@@ -81,6 +93,19 @@ pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, Str
 
     transaction.finalize();
     status()
+}
+
+fn rollback_paper(target: &Path, backup: &Path, had_target: bool) -> Result<(), String> {
+    if target.exists() {
+        fs::remove_file(target).map_err(|e| e.to_string())?;
+    }
+    if had_target {
+        if !backup.is_file() {
+            return Err(format!("Paper rollback backup is missing: {}", backup.display()));
+        }
+        fs::copy(backup, target).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn read_manifest(workspace: &Path) -> Result<Value, String> {
