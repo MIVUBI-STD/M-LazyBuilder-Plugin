@@ -63,16 +63,15 @@ pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
 pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
     core_modules::sync(&workspace, resource_dir)?;
-    update_manifest_field(
-        &workspace,
-        "worldManagerVersion",
-        Value::String(core_modules::CORE_VERSION.into()),
-    )?;
-    update_manifest_field(
-        &workspace,
-        "utilitiesManagerVersion",
-        Value::String(core_modules::CORE_VERSION.into()),
-    )?;
+
+    // Core JAR publication is one transaction, so publish the matching manifest
+    // versions as one atomic JSON write as well. Never expose a half-versioned
+    // World/Utilities pair to later status or startup checks.
+    let mut manifest = read_manifest(&workspace)?;
+    manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
+    manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
+    write_json_atomic(&manifest_path(&workspace), &manifest)?;
+
     status()
 }
 
@@ -90,7 +89,11 @@ fn update_manifest_field(workspace: &Path, key: &str, value: Value) -> Result<()
 }
 
 fn manifest_path(workspace: &Path) -> PathBuf {
-    workspace.join("tools").join("lazybuilder").join("config").join("workspace.json")
+    workspace
+        .join("tools")
+        .join("lazybuilder")
+        .join("config")
+        .join("workspace.json")
 }
 
 fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
