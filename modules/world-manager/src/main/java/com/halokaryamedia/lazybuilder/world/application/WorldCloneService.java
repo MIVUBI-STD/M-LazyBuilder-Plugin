@@ -63,7 +63,7 @@ public final class WorldCloneService {
         WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
         WorldOperationCoordinator.Lease lease = null;
         try {
-            lease = operations.acquire(sourceId, WorldOperationType.CLONE);
+            lease = operations.acquire(sourceId, WorldOperationType.DUPLICATE);
             boolean wasLoaded = runtimeService.isLoaded(sourceId);
             runtimeService.unloadDuringOperation(sourceId);
             return new CloneTask(UUID.randomUUID(), source, destination, wasLoaded, lease, destinationReservation);
