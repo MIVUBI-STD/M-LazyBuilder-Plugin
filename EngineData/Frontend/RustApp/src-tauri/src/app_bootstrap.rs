@@ -1,11 +1,10 @@
 use crate::commands;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{backup_maintenance, workspace_registry};
+use crate::engine::workspace_registry;
 
 pub fn run() {
     let _ = workspace_registry::initialize();
-    let _ = backup_maintenance::maintain_plugin_backups();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
@@ -42,7 +41,6 @@ pub fn run() {
             commands::plugin_manager::plugin_set_enabled,
             commands::plugin_manager::plugin_remove,
             commands::plugin_manager::plugin_resolve_duplicates,
-            commands::plugin_manager::plugin_set_category,
             commands::world_manager::world_list,
             commands::world_manager::world_create,
             commands::world_manager::world_load,
