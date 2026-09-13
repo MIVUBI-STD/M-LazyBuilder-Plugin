@@ -15,8 +15,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,6 +58,21 @@ class WorldDeleteServiceTest {
     }
 
     @Test
+    void committedDeleteIsNotReportedAsFailedWhenTemporaryCleanupStillFails() {
+        Fixture fixture = fixture(false);
+        fixture.files.cleanupFailuresRemaining = 2;
+        WorldDeleteService.DeleteTask task = fixture.service.prepare(fixture.world.id(), "Build");
+
+        fixture.service.executeFilePhase(task);
+        assertDoesNotThrow(() -> fixture.service.finish(task));
+
+        assertTrue(task.committed());
+        assertTrue(fixture.registry.all().isEmpty());
+        assertNotNull(task.cleanupFailure());
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void deleteRequiresExactCanonicalFolderConfirmation() {
         Fixture fixture = fixture(false);
         assertThrows(IllegalArgumentException.class,
@@ -88,17 +105,13 @@ class WorldDeleteServiceTest {
             FakeFiles files,
             WorldDeleteService service,
             WorldRecord world
-    ) {
-    }
+    ) { }
 
     private static final class MemoryPersistence implements WorldRegistryPersistence {
         private List<WorldRecord> saved = List.of();
         private boolean failNextSave;
 
-        @Override
-        public List<WorldRecord> load() {
-            return saved;
-        }
+        @Override public List<WorldRecord> load() { return saved; }
 
         @Override
         public void save(List<WorldRecord> worlds) throws IOException {
@@ -113,10 +126,7 @@ class WorldDeleteServiceTest {
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
 
-        private FakeRuntime(boolean loaded) {
-            this.loaded = loaded;
-        }
-
+        private FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
@@ -129,6 +139,7 @@ class WorldDeleteServiceTest {
         private boolean stagedDelete;
         private boolean restored;
         private boolean workspaceDeleted;
+        private int cleanupFailuresRemaining;
 
         @Override
         public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) {
@@ -149,7 +160,11 @@ class WorldDeleteServiceTest {
         @Override public void deleteWorld(WorldRecord world) { }
 
         @Override
-        public void deleteWorkspace(Path workspace) {
+        public void deleteWorkspace(Path workspace) throws IOException {
+            if (cleanupFailuresRemaining > 0) {
+                cleanupFailuresRemaining--;
+                throw new IOException("cleanup failure");
+            }
             workspaceDeleted = true;
         }
     }
