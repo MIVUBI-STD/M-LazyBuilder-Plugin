@@ -99,7 +99,6 @@ public final class WorldManagerPlugin extends JavaPlugin {
                 this,
                 worldManager.worldRegistry(),
                 worldManager.worldCreationService(),
-                worldManager.worldRuntimeService(),
                 worldManager.worldTeleportService(),
                 worldManager.worldLifecycleService(),
                 worldManager.worldSettingsService(),
