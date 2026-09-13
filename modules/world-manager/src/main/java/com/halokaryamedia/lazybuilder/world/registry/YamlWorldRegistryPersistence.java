@@ -25,9 +25,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
 
     @Override
     public List<WorldRecord> load() throws IOException {
-        if (Files.notExists(registryFile)) {
-            return List.of();
-        }
+        if (Files.notExists(registryFile)) return List.of();
 
         YamlConfiguration yaml = new YamlConfiguration();
         try {
@@ -37,17 +35,13 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         }
 
         ConfigurationSection worlds = yaml.getConfigurationSection(WORLDS_PATH);
-        if (worlds == null) {
-            return List.of();
-        }
+        if (worlds == null) return List.of();
 
         List<WorldRecord> loaded = new ArrayList<>();
         WorldRegistry validation = new WorldRegistry();
         for (String idText : worlds.getKeys(false)) {
             ConfigurationSection section = worlds.getConfigurationSection(idText);
-            if (section == null) {
-                throw new IOException("Invalid world registry entry: " + idText);
-            }
+            if (section == null) throw new IOException("Invalid world registry entry: " + idText);
 
             try {
                 WorldRecord record = new WorldRecord(
@@ -56,7 +50,6 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
                         requiredString(section, "display-name"),
                         WorldKind.valueOf(requiredString(section, "kind")),
                         WorldLifecycle.valueOf(requiredString(section, "lifecycle")),
-                        section.getBoolean("auto-load", false),
                         section.getString("default-game-mode", WorldRecord.DEFAULT_GAME_MODE)
                 );
                 validation.register(record);
@@ -72,9 +65,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
     public void save(List<WorldRecord> worlds) throws IOException {
         Objects.requireNonNull(worlds, "worlds");
         Path parent = registryFile.getParent();
-        if (parent == null) {
-            throw new IOException("Registry path has no parent: " + registryFile);
-        }
+        if (parent == null) throw new IOException("Registry path has no parent: " + registryFile);
         Files.createDirectories(parent);
 
         YamlConfiguration yaml = new YamlConfiguration();
@@ -84,7 +75,6 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             yaml.set(base + ".display-name", world.displayName());
             yaml.set(base + ".kind", world.kind().name());
             yaml.set(base + ".lifecycle", world.lifecycle().name());
-            yaml.set(base + ".auto-load", world.autoLoad());
             yaml.set(base + ".default-game-mode", world.defaultGameMode());
         }
 
@@ -99,9 +89,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
 
     private static String requiredString(ConfigurationSection section, String path) throws IOException {
         String value = section.getString(path);
-        if (value == null) {
-            throw new IOException("Missing registry property: " + path);
-        }
+        if (value == null) throw new IOException("Missing registry property: " + path);
         return value;
     }
 
