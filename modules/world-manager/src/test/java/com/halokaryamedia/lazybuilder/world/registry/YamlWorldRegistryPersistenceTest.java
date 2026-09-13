@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,14 +31,35 @@ class YamlWorldRegistryPersistenceTest {
                 "BuildWorld",
                 "Build World",
                 WorldKind.FLAT,
-                WorldLifecycle.ACTIVE,
-                true
+                WorldLifecycle.ACTIVE
         );
 
         persistence.save(List.of(world));
 
         assertTrue(Files.isRegularFile(path));
+        assertFalse(Files.readString(path).contains("auto-load"));
         assertEquals(List.of(world), persistence.load());
+    }
+
+    @Test
+    void legacyAutoLoadKeyIsIgnoredDuringMigration() throws Exception {
+        Path path = tempDir.resolve("registry.yml");
+        WorldId id = WorldId.create();
+        Files.writeString(path, """
+                worlds:
+                  %s:
+                    folder: BuildWorld
+                    display-name: Build World
+                    kind: FLAT
+                    lifecycle: ACTIVE
+                    auto-load: true
+                    default-game-mode: CREATIVE
+                """.formatted(id));
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        WorldRecord loaded = persistence.load().getFirst();
+        assertEquals(id, loaded.id());
+        assertEquals(WorldLifecycle.ACTIVE, loaded.lifecycle());
     }
 
     @Test
