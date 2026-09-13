@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
@@ -31,6 +32,10 @@ fn resolve_source(resource_dir: Option<&Path>, file_name: &str, source_relative:
 }
 
 fn install_one(source: &Path, target: &Path, backup: &Path) -> Result<(), String> {
+    if target.is_file() && files_equal(source, target)? {
+        return Ok(());
+    }
+
     let temp = target.with_extension("jar.tmp");
     fs::copy(source, &temp).map_err(|e| e.to_string())?;
     if target.exists() {
@@ -47,6 +52,33 @@ fn install_one(source: &Path, target: &Path, backup: &Path) -> Result<(), String
             let _ = fs::remove_file(&temp);
             if backup.is_file() && !target.exists() { let _ = fs::copy(backup, target); }
             Err(error.to_string())
+        }
+    }
+}
+
+fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    let left_meta = fs::metadata(left).map_err(|e| e.to_string())?;
+    let right_meta = fs::metadata(right).map_err(|e| e.to_string())?;
+    if left_meta.len() != right_meta.len() {
+        return Ok(false);
+    }
+
+    let mut left_file = fs::File::open(left).map_err(|e| e.to_string())?;
+    let mut right_file = fs::File::open(right).map_err(|e| e.to_string())?;
+    let mut left_buffer = [0u8; 64 * 1024];
+    let mut right_buffer = [0u8; 64 * 1024];
+
+    loop {
+        let left_count = left_file.read(&mut left_buffer).map_err(|e| e.to_string())?;
+        let right_count = right_file.read(&mut right_buffer).map_err(|e| e.to_string())?;
+        if left_count != right_count {
+            return Ok(false);
+        }
+        if left_count == 0 {
+            return Ok(true);
+        }
+        if left_buffer[..left_count] != right_buffer[..right_count] {
+            return Ok(false);
         }
     }
 }
@@ -93,8 +125,18 @@ mod tests {
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
         assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
         let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
-        assert_eq!(fs::read(backups.join(format!("{WORLD_FILE_NAME}.previous"))).unwrap(), b"old-world");
-        assert_eq!(fs::read(backups.join(format!("{UTILITIES_FILE_NAME}.previous"))).unwrap(), b"old-utilities");
+        let world_backup = backups.join(format!("{WORLD_FILE_NAME}.previous"));
+        let utilities_backup = backups.join(format!("{UTILITIES_FILE_NAME}.previous"));
+        assert_eq!(fs::read(&world_backup).unwrap(), b"old-world");
+        assert_eq!(fs::read(&utilities_backup).unwrap(), b"old-utilities");
+
+        // Re-running sync with identical artifacts must be a no-op. In particular,
+        // the previous backup must not be replaced with the already-current JAR.
+        sync(&workspace, Some(&resource_root)).unwrap();
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
+        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
+        assert_eq!(fs::read(world_backup).unwrap(), b"old-world");
+        assert_eq!(fs::read(utilities_backup).unwrap(), b"old-utilities");
 
         let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
