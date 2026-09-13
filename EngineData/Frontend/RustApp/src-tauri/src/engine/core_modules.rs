@@ -7,53 +7,227 @@ const WORLD_FILE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
 const UTILITIES_FILE_NAME: &str = "Utilities-Manager-0.1.0-SNAPSHOT.jar";
 
 pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), String> {
-    let world_source = resolve_source(app_resource_dir, WORLD_FILE_NAME, "modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar")?;
-    let utilities_source = resolve_source(app_resource_dir, UTILITIES_FILE_NAME, "modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar")?;
+    let world_source = resolve_source(
+        app_resource_dir,
+        WORLD_FILE_NAME,
+        "modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar",
+    )?;
+    let utilities_source = resolve_source(
+        app_resource_dir,
+        UTILITIES_FILE_NAME,
+        "modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar",
+    )?;
+
     let plugins = workspace.join("server").join("plugins");
+    let backups = workspace
+        .join("tools")
+        .join("lazybuilder")
+        .join("plugin-backups");
     fs::create_dir_all(&plugins).map_err(|e| e.to_string())?;
-    let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
     fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    install_one(&world_source, &plugins.join(WORLD_FILE_NAME), &backups.join(format!("{WORLD_FILE_NAME}.previous")))?;
-    install_one(&utilities_source, &plugins.join(UTILITIES_FILE_NAME), &backups.join(format!("{UTILITIES_FILE_NAME}.previous")))?;
-    Ok(())
-}
 
-fn resolve_source(resource_dir: Option<&Path>, file_name: &str, source_relative: &str) -> Result<PathBuf, String> {
-    if let Some(resource_dir) = resource_dir {
-        let bundled = resource_dir.join("resources").join("core").join(file_name);
-        if bundled.is_file() { return Ok(bundled); }
-    }
-    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
-    let source_build = source_root.join(source_relative);
-    if source_build.is_file() { return Ok(source_build); }
-    Err(format!(
-        "LazyBuilder core module {file_name} is unavailable. Release builds must bundle core modules; development builds must run Maven package first."
-    ))
-}
+    let mut modules = vec![
+        ModuleInstall::new(
+            world_source,
+            plugins.join(WORLD_FILE_NAME),
+            backups.join(format!("{WORLD_FILE_NAME}.previous")),
+        )?,
+        ModuleInstall::new(
+            utilities_source,
+            plugins.join(UTILITIES_FILE_NAME),
+            backups.join(format!("{UTILITIES_FILE_NAME}.previous")),
+        )?,
+    ];
 
-fn install_one(source: &Path, target: &Path, backup: &Path) -> Result<(), String> {
-    if target.is_file() && files_equal(source, target)? {
+    if modules.iter().all(|module| !module.needs_update) {
         return Ok(());
     }
 
-    let temp = target.with_extension("jar.tmp");
-    fs::copy(source, &temp).map_err(|e| e.to_string())?;
-    if target.exists() {
-        let _ = fs::remove_file(backup);
-        fs::copy(target, backup).map_err(|e| e.to_string())?;
-        if let Err(error) = fs::remove_file(target) {
-            let _ = fs::remove_file(&temp);
-            return Err(error.to_string());
+    // Stage every changed artifact before touching any active plugin JAR. This
+    // guarantees a missing/unreadable second source cannot leave a half update.
+    for module in modules.iter_mut().filter(|module| module.needs_update) {
+        module.stage()?;
+    }
+
+    // Snapshot every active target before the first destructive mutation.
+    for module in modules.iter_mut().filter(|module| module.needs_update) {
+        module.backup_current()?;
+    }
+
+    let mut committed = Vec::new();
+    for index in 0..modules.len() {
+        if !modules[index].needs_update {
+            continue;
+        }
+        if let Err(error) = modules[index].commit() {
+            let mut rollback_errors = Vec::new();
+            for committed_index in committed.into_iter().rev() {
+                if let Err(rollback_error) = modules[committed_index].rollback() {
+                    rollback_errors.push(rollback_error);
+                }
+            }
+            if let Err(rollback_error) = modules[index].rollback() {
+                rollback_errors.push(rollback_error);
+            }
+            cleanup_staged(&modules);
+            if rollback_errors.is_empty() {
+                return Err(format!("Core module update failed and was rolled back: {error}"));
+            }
+            return Err(format!(
+                "Core module update failed: {error}; rollback also reported: {}",
+                rollback_errors.join("; ")
+            ));
+        }
+        committed.push(index);
+    }
+
+    cleanup_staged(&modules);
+    Ok(())
+}
+
+struct ModuleInstall {
+    source: PathBuf,
+    target: PathBuf,
+    backup: PathBuf,
+    staged: PathBuf,
+    needs_update: bool,
+    had_target: bool,
+    committed: bool,
+}
+
+impl ModuleInstall {
+    fn new(source: PathBuf, target: PathBuf, backup: PathBuf) -> Result<Self, String> {
+        let needs_update = if target.is_file() {
+            !files_equal(&source, &target)?
+        } else {
+            target.exists() || !target.is_file()
+        };
+        if target.exists() && !target.is_file() {
+            return Err(format!(
+                "Core module target exists but is not a file: {}",
+                target.display()
+            ));
+        }
+        let staged = target.with_extension("jar.incoming");
+        Ok(Self {
+            source,
+            target,
+            backup,
+            staged,
+            needs_update,
+            had_target: false,
+            committed: false,
+        })
+    }
+
+    fn stage(&mut self) -> Result<(), String> {
+        if self.staged.exists() {
+            fs::remove_file(&self.staged).map_err(|e| e.to_string())?;
+        }
+        fs::copy(&self.source, &self.staged).map_err(|e| {
+            format!(
+                "Could not stage core module {}: {e}",
+                self.source.display()
+            )
+        })?;
+        if !files_equal(&self.source, &self.staged)? {
+            let _ = fs::remove_file(&self.staged);
+            return Err(format!(
+                "Staged core module verification failed: {}",
+                self.source.display()
+            ));
+        }
+        Ok(())
+    }
+
+    fn backup_current(&mut self) -> Result<(), String> {
+        self.had_target = self.target.is_file();
+        if !self.had_target {
+            return Ok(());
+        }
+        if self.backup.exists() {
+            fs::remove_file(&self.backup).map_err(|e| e.to_string())?;
+        }
+        fs::copy(&self.target, &self.backup).map_err(|e| {
+            format!(
+                "Could not back up core module {}: {e}",
+                self.target.display()
+            )
+        })?;
+        Ok(())
+    }
+
+    fn commit(&mut self) -> Result<(), String> {
+        if self.target.exists() {
+            fs::remove_file(&self.target).map_err(|e| {
+                format!(
+                    "Could not replace active core module {}: {e}",
+                    self.target.display()
+                )
+            })?;
+        }
+        match fs::rename(&self.staged, &self.target) {
+            Ok(()) => {
+                self.committed = true;
+                Ok(())
+            }
+            Err(error) => Err(format!(
+                "Could not publish core module {}: {error}",
+                self.target.display()
+            )),
         }
     }
-    match fs::rename(&temp, target) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = fs::remove_file(&temp);
-            if backup.is_file() && !target.exists() { let _ = fs::copy(backup, target); }
-            Err(error.to_string())
+
+    fn rollback(&mut self) -> Result<(), String> {
+        if self.target.exists() {
+            fs::remove_file(&self.target).map_err(|e| e.to_string())?;
+        }
+        if self.had_target {
+            if !self.backup.is_file() {
+                return Err(format!(
+                    "Core module rollback backup is missing: {}",
+                    self.backup.display()
+                ));
+            }
+            fs::copy(&self.backup, &self.target).map_err(|e| {
+                format!(
+                    "Could not restore core module {}: {e}",
+                    self.target.display()
+                )
+            })?;
+        }
+        self.committed = false;
+        Ok(())
+    }
+}
+
+fn cleanup_staged(modules: &[ModuleInstall]) {
+    for module in modules {
+        if module.staged.exists() {
+            let _ = fs::remove_file(&module.staged);
         }
     }
+}
+
+fn resolve_source(
+    resource_dir: Option<&Path>,
+    file_name: &str,
+    source_relative: &str,
+) -> Result<PathBuf, String> {
+    if let Some(resource_dir) = resource_dir {
+        let bundled = resource_dir.join("resources").join("core").join(file_name);
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+    }
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+    let source_build = source_root.join(source_relative);
+    if source_build.is_file() {
+        return Ok(source_build);
+    }
+    Err(format!(
+        "LazyBuilder core module {file_name} is unavailable. Release builds must bundle core modules; development builds must run Maven package first."
+    ))
 }
 
 fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
@@ -89,18 +263,35 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_root(label: &str) -> PathBuf {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        std::env::temp_dir().join(format!("lazybuilder-{label}-{}-{nonce}", std::process::id()))
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "lazybuilder-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    fn resource_tree(root: &Path, world: &[u8], utilities: &[u8]) {
+        let core = root.join("resources").join("core");
+        fs::create_dir_all(&core).unwrap();
+        fs::write(core.join(WORLD_FILE_NAME), world).unwrap();
+        fs::write(core.join(UTILITIES_FILE_NAME), utilities).unwrap();
     }
 
     #[test]
     fn resolves_bundled_core_module_from_tauri_resource_tree() {
         let root = test_root("core-resource");
-        let bundled = root.join("resources").join("core").join(WORLD_FILE_NAME);
+        let bundled = root
+            .join("resources")
+            .join("core")
+            .join(WORLD_FILE_NAME);
         fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         fs::write(&bundled, b"test-jar").unwrap();
 
-        let resolved = resolve_source(Some(&root), WORLD_FILE_NAME, "missing/source.jar").unwrap();
+        let resolved =
+            resolve_source(Some(&root), WORLD_FILE_NAME, "missing/source.jar").unwrap();
         assert_eq!(resolved, bundled);
 
         let _ = fs::remove_dir_all(root);
@@ -110,10 +301,7 @@ mod tests {
     fn sync_replaces_core_modules_and_keeps_previous_backup() {
         let resource_root = test_root("core-sync-resources");
         let workspace = test_root("core-sync-workspace");
-        let core = resource_root.join("resources").join("core");
-        fs::create_dir_all(&core).unwrap();
-        fs::write(core.join(WORLD_FILE_NAME), b"new-world").unwrap();
-        fs::write(core.join(UTILITIES_FILE_NAME), b"new-utilities").unwrap();
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
 
         let plugins = workspace.join("server").join("plugins");
         fs::create_dir_all(&plugins).unwrap();
@@ -122,21 +310,55 @@ mod tests {
 
         sync(&workspace, Some(&resource_root)).unwrap();
 
-        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
-        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
-        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        assert_eq!(
+            fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(),
+            b"new-world"
+        );
+        assert_eq!(
+            fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(),
+            b"new-utilities"
+        );
+        let backups = workspace
+            .join("tools")
+            .join("lazybuilder")
+            .join("plugin-backups");
         let world_backup = backups.join(format!("{WORLD_FILE_NAME}.previous"));
         let utilities_backup = backups.join(format!("{UTILITIES_FILE_NAME}.previous"));
         assert_eq!(fs::read(&world_backup).unwrap(), b"old-world");
         assert_eq!(fs::read(&utilities_backup).unwrap(), b"old-utilities");
 
         // Re-running sync with identical artifacts must be a no-op. In particular,
-        // the previous backup must not be replaced with the already-current JAR.
+        // previous backups must not be replaced with already-current JARs.
         sync(&workspace, Some(&resource_root)).unwrap();
-        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
-        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
+        assert_eq!(
+            fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(),
+            b"new-world"
+        );
+        assert_eq!(
+            fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(),
+            b"new-utilities"
+        );
         assert_eq!(fs::read(world_backup).unwrap(), b"old-world");
         assert_eq!(fs::read(utilities_backup).unwrap(), b"old-utilities");
+
+        let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn sync_preflights_both_targets_before_replacing_either_module() {
+        let resource_root = test_root("core-preflight-resources");
+        let workspace = test_root("core-preflight-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+
+        let plugins = workspace.join("server").join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
+        fs::create_dir_all(plugins.join(UTILITIES_FILE_NAME)).unwrap();
+
+        let error = sync(&workspace, Some(&resource_root)).unwrap_err();
+        assert!(error.contains("not a file"));
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
 
         let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
