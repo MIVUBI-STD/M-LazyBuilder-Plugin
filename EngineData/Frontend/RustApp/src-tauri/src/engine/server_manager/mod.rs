@@ -7,8 +7,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use sysinfo::{Pid, System};
+use std::time::{Duration, Instant};
+use sysinfo::{Pid, Process, System};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -62,11 +62,20 @@ pub struct ServerPreflight {
     pub issues: Vec<String>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachedRecoveryResult {
+    pub pid: u32,
+    pub stopped: bool,
+    pub message: String,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ServerProcessMarker {
     pid: u32,
-    started_unix_seconds: u64,
+    #[serde(default)]
+    process_start_time: u64,
 }
 
 pub struct ServerManagerState {
@@ -416,6 +425,62 @@ impl ServerManagerState {
         Ok(())
     }
 
+    pub fn recover_detached(&self) -> Result<DetachedRecoveryResult, String> {
+        let Some(pid_value) = self.detached_process()? else {
+            return Err("No detached LazyBuilder Paper process marker exists.".into());
+        };
+        let pid = Pid::from_u32(pid_value);
+        let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?;
+        system.refresh_process(pid);
+        let Some(process) = system.process(pid) else {
+            drop(system);
+            remove_process_marker_if_matches(pid_value)?;
+            clear_legacy_process_identity();
+            return Ok(DetachedRecoveryResult {
+                pid: pid_value,
+                stopped: true,
+                message: "The previous Paper process is no longer running. Its stale recovery marker was cleared.".into(),
+            });
+        };
+
+        if !looks_like_managed_paper(process)? {
+            return Err(format!(
+                "PID {pid_value} no longer matches the LazyBuilder-managed Paper command line. Recovery was blocked to avoid terminating an unrelated process."
+            ));
+        }
+
+        self.expected_stop.store(true, Ordering::SeqCst);
+        set_runtime_state(&self.runtime_state, "Stopping")?;
+        if !process.kill() {
+            self.expected_stop.store(false, Ordering::SeqCst);
+            return Err(format!("Windows refused to terminate detached Paper PID {pid_value}."));
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+            system.refresh_process(pid);
+            if system.process(pid).is_none() {
+                drop(system);
+                remove_process_marker_if_matches(pid_value)?;
+                clear_legacy_process_identity();
+                set_runtime_state(&self.runtime_state, "Offline")?;
+                *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = None;
+                return Ok(DetachedRecoveryResult {
+                    pid: pid_value,
+                    stopped: true,
+                    message: format!(
+                        "Detached Paper PID {pid_value} was terminated and the controller is ready to start a new managed instance."
+                    ),
+                });
+            }
+        }
+
+        Err(format!(
+            "Detached Paper PID {pid_value} did not exit after the recovery termination request."
+        ))
+    }
+
     fn process_usage(&self, pid: u32) -> Result<(f32, u64), String> {
         let pid = Pid::from_u32(pid);
         let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?;
@@ -424,16 +489,39 @@ impl ServerManagerState {
     }
 
     fn detached_process(&self) -> Result<Option<u32>, String> {
-        let Some(marker) = read_process_marker()? else { return Ok(None); };
+        let Some(mut marker) = read_process_marker()? else { return Ok(None); };
         let pid = Pid::from_u32(marker.pid);
         let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?;
         system.refresh_process(pid);
-        if system.process(pid).is_some() {
+        let Some(process) = system.process(pid) else {
+            drop(system);
+            let _ = remove_process_marker_if_matches(marker.pid);
+            clear_legacy_process_identity();
+            return Ok(None);
+        };
+
+        if marker.process_start_time != 0 {
+            if process.start_time() != marker.process_start_time {
+                drop(system);
+                let _ = remove_process_marker_if_matches(marker.pid);
+                clear_legacy_process_identity();
+                return Ok(None);
+            }
             return Ok(Some(marker.pid));
         }
+
+        if !looks_like_managed_paper(process)? {
+            drop(system);
+            let _ = remove_process_marker_if_matches(marker.pid);
+            clear_legacy_process_identity();
+            return Ok(None);
+        }
+
+        marker.process_start_time = process.start_time();
         drop(system);
-        let _ = remove_process_marker_if_matches(marker.pid);
-        Ok(None)
+        write_process_marker_value(&marker)?;
+        clear_legacy_process_identity();
+        Ok(Some(marker.pid))
     }
 
     fn current_log_path(&self) -> String {
@@ -614,15 +702,27 @@ fn validate_java_21(java: &Path) -> Result<(), String> {
 }
 
 fn write_process_marker(pid: u32) -> Result<(), String> {
+    let pid_value = Pid::from_u32(pid);
+    let mut system = System::new_all();
+    system.refresh_process(pid_value);
+    let process = system
+        .process(pid_value)
+        .ok_or_else(|| format!("Paper PID {pid} exited before its process marker could be recorded"))?;
+    let marker = ServerProcessMarker {
+        pid,
+        process_start_time: process.start_time(),
+    };
+    write_process_marker_value(&marker)?;
+    clear_legacy_process_identity();
+    Ok(())
+}
+
+fn write_process_marker_value(marker: &ServerProcessMarker) -> Result<(), String> {
     let path = process_marker_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let marker = ServerProcessMarker {
-        pid,
-        started_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0),
-    };
-    let text = serde_json::to_string_pretty(&marker).map_err(|error| error.to_string())?;
+    let text = serde_json::to_string_pretty(marker).map_err(|error| error.to_string())?;
     let temporary = path.with_extension("json.tmp");
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
     replace_file(&temporary, &path)
@@ -631,6 +731,7 @@ fn write_process_marker(pid: u32) -> Result<(), String> {
 fn read_process_marker() -> Result<Option<ServerProcessMarker>, String> {
     let path = process_marker_path()?;
     if !path.is_file() {
+        clear_legacy_process_identity();
         return Ok(None);
     }
     let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
@@ -638,6 +739,7 @@ fn read_process_marker() -> Result<Option<ServerProcessMarker>, String> {
         Ok(marker) => Ok(Some(marker)),
         Err(_) => {
             let _ = fs::remove_file(path);
+            clear_legacy_process_identity();
             Ok(None)
         }
     }
@@ -648,6 +750,27 @@ fn remove_process_marker_if_matches(pid: u32) -> Result<(), String> {
     let Some(marker) = read_process_marker()? else { return Ok(()); };
     if marker.pid == pid {
         fs::remove_file(path).map_err(|error| error.to_string())?;
+        clear_legacy_process_identity();
     }
     Ok(())
+}
+
+fn looks_like_managed_paper(process: &Process) -> Result<bool, String> {
+    let process_name = process.name().to_ascii_lowercase();
+    let command_lower = process.cmd().join(" ").to_ascii_lowercase();
+    let worlds = paths::worlds_dir()?.display().to_string().to_ascii_lowercase();
+    Ok(process_name.contains("java")
+        && command_lower.contains("-jar")
+        && command_lower.contains("--universe")
+        && command_lower.contains("nogui")
+        && command_lower.contains(&worlds))
+}
+
+fn clear_legacy_process_identity() {
+    if let Ok(root) = paths::lazybuilder_cache_dir() {
+        let path = root.join("server-process-identity.json");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("json.previous"));
+        let _ = fs::remove_file(path.with_extension("json.tmp"));
+    }
 }
