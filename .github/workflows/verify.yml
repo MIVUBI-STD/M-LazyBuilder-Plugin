@@ -72,3 +72,11 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Check Rust/Tauri backend
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build packaged Windows launcher
+        run: npm run build:app
+      - name: Upload Windows launcher bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: LazyBuilder-Windows
+          path: EngineData/Frontend/RustApp/src-tauri/target/release/bundle/**
+          if-no-files-found: error
