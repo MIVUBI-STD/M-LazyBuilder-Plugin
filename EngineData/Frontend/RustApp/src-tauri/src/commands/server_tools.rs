@@ -2,14 +2,13 @@ use crate::engine::{paths, process_identity};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use sysinfo::{Pid, System};
 
 const MAX_LOG_TAIL_BYTES: u64 = 256 * 1024;
 const MAX_LOG_LINES: usize = 300;
-const MAX_RETAINED_PAPER_LOGS: usize = 20;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,40 +32,34 @@ pub struct ServerLogTail {
     pub truncated: bool,
 }
 
-pub fn maintain_logs() -> Result<(), String> {
-    let logs_root = paths::lazybuilder_logs_dir()?;
-    fs::create_dir_all(&logs_root).map_err(|error| error.to_string())?;
-    let mut logs = paper_logs(&logs_root)?;
-    logs.sort_by(|left, right| right.0.cmp(&left.0));
-    for (_, path) in logs.into_iter().skip(MAX_RETAINED_PAPER_LOGS) {
-        let _ = fs::remove_file(path);
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
-    let logs_root = paths::lazybuilder_logs_dir()?;
-    fs::create_dir_all(&logs_root).map_err(|error| error.to_string())?;
-    let logs_root = canonical_or_normalized(logs_root);
-
+    let workspace = canonical_or_normalized(paths::workspace_root()?);
     let requested = if path.trim().is_empty() {
-        latest_paper_log(&logs_root)?.unwrap_or_default()
+        workspace.join("server").join("logs").join("latest.log")
     } else {
         PathBuf::from(path.trim())
     };
-    if requested.as_os_str().is_empty() {
-        return Ok(ServerLogTail { path: String::new(), content: String::new(), truncated: false });
-    }
-
     let requested = canonical_or_normalized(requested);
-    let is_log = requested.extension().and_then(|value| value.to_str())
+
+    let is_log = requested
+        .extension()
+        .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("log")) == Some(true);
-    if requested.parent() != Some(logs_root.as_path()) || !is_log {
-        return Err("Refusing to read a log outside the LazyBuilder log directory.".into());
+    let is_logs_child = requested
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("logs")) == Some(true);
+    if !requested.starts_with(&workspace) || !is_log || !is_logs_child {
+        return Err("Refusing to read a log outside a LazyBuilder workspace server log directory.".into());
     }
     if !requested.is_file() {
-        return Ok(ServerLogTail { path: requested.display().to_string(), content: String::new(), truncated: false });
+        return Ok(ServerLogTail {
+            path: requested.display().to_string(),
+            content: String::new(),
+            truncated: false,
+        });
     }
 
     let mut file = File::open(&requested).map_err(|error| error.to_string())?;
@@ -159,26 +152,6 @@ fn clear_process_identity() {
     if let Ok(path) = paths::lazybuilder_cache_dir() {
         let _ = fs::remove_file(path.join("server-process-identity.json"));
     }
-}
-
-fn latest_paper_log(logs_root: &Path) -> Result<Option<PathBuf>, String> {
-    let mut logs = paper_logs(logs_root)?;
-    logs.sort_by(|left, right| right.0.cmp(&left.0));
-    Ok(logs.into_iter().next().map(|(_, path)| path))
-}
-
-fn paper_logs(logs_root: &Path) -> Result<Vec<(SystemTime, PathBuf)>, String> {
-    let mut logs = Vec::new();
-    for entry in fs::read_dir(logs_root).map_err(|error| error.to_string())? {
-        let path = entry.map_err(|error| error.to_string())?.path();
-        let Some(name) = path.file_name().and_then(|value| value.to_str()) else { continue; };
-        if !name.starts_with("paper-") || !name.ends_with(".log") || !path.is_file() {
-            continue;
-        }
-        let modified = path.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
-        logs.push((modified, path));
-    }
-    Ok(logs)
 }
 
 fn canonical_or_normalized(path: PathBuf) -> PathBuf {
