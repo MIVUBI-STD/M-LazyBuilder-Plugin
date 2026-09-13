@@ -29,17 +29,6 @@ public final class WorldCreationService {
         this.buildReadyPolicy = Objects.requireNonNull(buildReadyPolicy, "buildReadyPolicy");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldCreationService(
-            WorldRegistry registry,
-            WorldRegistryPersistence persistence,
-            WorldRuntimeGateway runtime,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            BuildReadyPolicy buildReadyPolicy
-    ) {
-        this(registry, persistence, runtime, buildReadyPolicy);
-    }
-
     public synchronized WorldRecord create(String folderName, String displayName, WorldKind kind) {
         Objects.requireNonNull(kind, "kind");
         if (kind == WorldKind.IMPORTED) {
@@ -47,13 +36,8 @@ public final class WorldCreationService {
         }
 
         WorldRecord record = new WorldRecord(
-                WorldId.create(),
-                folderName,
-                displayName,
-                kind,
-                WorldLifecycle.ACTIVE,
-                true,
-                buildReadyPolicy.defaultGameMode().name()
+                WorldId.create(), folderName, displayName, kind,
+                WorldLifecycle.ACTIVE, buildReadyPolicy.defaultGameMode().name()
         );
 
         try (WorldRegistry.FolderReservation ignored = registry.reserveFolder(record.folderName())) {
