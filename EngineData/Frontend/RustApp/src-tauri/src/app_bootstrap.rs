@@ -39,7 +39,6 @@ pub fn run() {
             commands::server_tools::server_log_tail,
             commands::resource_settings::server_resource_profile,
             commands::resource_settings::server_resource_save,
-            commands::resource_settings::server_resource_preset,
             commands::plugin_manager::plugin_list,
             commands::plugin_manager::plugin_pick_jar,
             commands::plugin_manager::plugin_install,
