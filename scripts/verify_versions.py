@@ -87,6 +87,10 @@ paper_provider = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/paper
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^ (]+)', paper_provider)
 expect("Paper provider user-agent", match.group(1) if match else None, PRODUCT_VERSION)
 
+java_runtime = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/java_runtime.rs").read_text(encoding="utf-8")
+match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^"]+)";', java_runtime)
+expect("Managed Java user-agent", match.group(1) if match else None, PRODUCT_VERSION)
+
 fabric_build = (ROOT / "client/fabric/build.gradle").read_text(encoding="utf-8")
 if "../../modules/world-manager/src/main/java" in fabric_build:
     errors.append("Fabric build still compiles source directly from World-Manager")
