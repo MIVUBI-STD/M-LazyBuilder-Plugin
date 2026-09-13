@@ -3,10 +3,15 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 const JAVA_MAJOR: u32 = 21;
 const USER_AGENT: &str = "LazyBuilder/0.1.0";
 const ASSETS_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases/21/ga?architecture=x64&heap_size=normal&image_type=jre&jvm_impl=hotspot&os=windows&page=0&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor=eclipse";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Debug)]
 struct JavaRelease {
@@ -179,7 +184,9 @@ fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), Strin
 }
 
 fn validate_java_21(java: &Path) -> Result<(), String> {
-    let output = std::process::Command::new(java)
+    let mut command = Command::new(java);
+    hide_windows_console(&mut command);
+    let output = command
         .arg("-version")
         .output()
         .map_err(|e| e.to_string())?;
@@ -192,6 +199,13 @@ fn validate_java_21(java: &Path) -> Result<(), String> {
         return Err(format!("Managed runtime is not Java {JAVA_MAJOR}: {text}"));
     }
     Ok(())
+}
+
+fn hide_windows_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
