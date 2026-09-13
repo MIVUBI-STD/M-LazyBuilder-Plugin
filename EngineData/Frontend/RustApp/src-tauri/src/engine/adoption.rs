@@ -193,7 +193,7 @@ fn detect_replaced_plugins(plugins: &Path) -> Result<Vec<String>, String> {
         let entry = entry.map_err(|error| error.to_string())?;
         if !entry.file_type().map_err(|error| error.to_string())?.is_file() { continue; }
         let Some(name) = entry.file_name().to_str().map(str::to_string) else { continue; };
-        let normalized = name.to_ascii_lowercase().replace(['_', ' '], "-");
+        let normalized = name.to_ascii_lowercase().replace('_', "-").replace(' ', "-");
         let replaced = normalized.ends_with(".jar") && (
             normalized.contains("multiverse-core")
                 || normalized.contains("voidworld")
