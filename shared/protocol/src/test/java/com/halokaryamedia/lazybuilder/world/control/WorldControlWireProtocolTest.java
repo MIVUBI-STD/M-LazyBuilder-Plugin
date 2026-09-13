@@ -15,6 +15,7 @@ class WorldControlWireProtocolTest {
     void requestsRoundTrip() throws Exception {
         UUID id = UUID.randomUUID();
         assertEquals(new WorldControlWireProtocol.ListWorlds(), roundTrip(new WorldControlWireProtocol.ListWorlds()));
+        assertEquals(new WorldControlWireProtocol.GetExportFormats(), roundTrip(new WorldControlWireProtocol.GetExportFormats()));
         assertEquals(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT"),
                 roundTrip(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT")));
         assertEquals(new WorldControlWireProtocol.TeleportWorld(id), roundTrip(new WorldControlWireProtocol.TeleportWorld(id)));
@@ -58,6 +59,9 @@ class WorldControlWireProtocolTest {
 
         var export = new WorldControlWireProtocol.ExportReady(id, "build-export.zip", "JAVA_1_21_4");
         assertEquals(export, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(export)));
+
+        var formats = new WorldControlWireProtocol.ExportFormats(List.of("JAVA_1_21_4", "BEDROCK_1_21_0"));
+        assertEquals(formats, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(formats)));
     }
 
     @Test
