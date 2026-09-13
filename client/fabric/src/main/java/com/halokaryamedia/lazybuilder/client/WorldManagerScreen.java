@@ -103,10 +103,9 @@ public final class WorldManagerScreen extends Screen {
         for (int i = start; i < end; i++) {
             WorldControlWireProtocol.WorldSummary world = worlds.get(i);
             boolean selected = world.worldId().equals(selectedWorld);
-            String state = "LOADED".equals(world.runtimeState()) ? "   • Loaded" : "";
             LbButtonWidget row = LbUi.button(
                     paneLeft + 14, y, paneWidth - 28, 26,
-                    world.displayName() + state,
+                    world.displayName(),
                     selected ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.SECONDARY,
                     () -> {
                         selectedWorld = world.worldId();
@@ -135,31 +134,19 @@ public final class WorldManagerScreen extends Screen {
         int y = 126;
 
         if ("ACTIVE".equals(world.lifecycle())) {
-            LbButtonWidget teleport = LbUi.button(x, y, half, 26, "Teleport",
+            LbButtonWidget teleport = LbUi.button(x, y, contentWidth, 28, "Teleport",
                     LbButtonWidget.Style.PRIMARY, () -> controller.teleport(world.worldId()));
             teleport.active = !busy;
             addDrawableChild(teleport);
 
-            String loadLabel = "LOADED".equals(world.runtimeState()) ? "Unload World" : "Load World";
-            int loadX = narrow ? x : x + half + 10;
-            int loadY = narrow ? y + 34 : y;
-            LbButtonWidget load = LbUi.button(loadX, loadY, half, 26, loadLabel,
-                    LbButtonWidget.Style.SECONDARY,
-                    () -> {
-                        if ("LOADED".equals(world.runtimeState())) controller.unload(world.worldId());
-                        else controller.load(world.worldId());
-                    });
-            load.active = !busy;
-            addDrawableChild(load);
-
-            y += narrow ? 72 : 38;
+            y += 40;
             LbButtonWidget export = LbUi.button(x, y, contentWidth, 26, "Export World",
                     LbButtonWidget.Style.SECONDARY,
                     () -> { if (client != null) client.setScreen(new ExportWorldScreen(this, controller, world)); });
             export.active = !busy;
             addDrawableChild(export);
 
-            y += 46;
+            y += 38;
             addManagementActions(world, busy, x, y, contentWidth, half, narrow);
         } else if ("ARCHIVED".equals(world.lifecycle())) {
             LbButtonWidget restore = LbUi.button(x, y, contentWidth, 26, "Restore World",
@@ -185,19 +172,19 @@ public final class WorldManagerScreen extends Screen {
             int half,
             boolean narrow
     ) {
-        LbButtonWidget settings = LbUi.button(x, y, half, 24, "Settings",
+        LbButtonWidget duplicate = LbUi.button(x, y, half, 24, "Duplicate",
+                LbButtonWidget.Style.GHOST,
+                () -> { if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world)); });
+        duplicate.active = !busy;
+        addDrawableChild(duplicate);
+
+        int settingsX = narrow ? x : x + half + 10;
+        int settingsY = narrow ? y + 32 : y;
+        LbButtonWidget settings = LbUi.button(settingsX, settingsY, half, 24, "World Settings",
                 LbButtonWidget.Style.GHOST,
                 () -> { if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world)); });
         settings.active = !busy;
         addDrawableChild(settings);
-
-        int cloneX = narrow ? x : x + half + 10;
-        int cloneY = narrow ? y + 32 : y;
-        LbButtonWidget clone = LbUi.button(cloneX, cloneY, half, 24, "Clone",
-                LbButtonWidget.Style.GHOST,
-                () -> { if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world)); });
-        clone.active = !busy;
-        addDrawableChild(clone);
 
         int nextY = y + (narrow ? 64 : 34);
         LbButtonWidget archive = LbUi.button(x, nextY, half, 24, "Archive",
@@ -219,7 +206,7 @@ public final class WorldManagerScreen extends Screen {
         client.setScreen(new ConfirmWorldActionScreen(
                 this,
                 Text.literal("Archive World"),
-                Text.literal("Archive " + world.displayName() + "? The world will be unloaded."),
+                Text.literal("Archive " + world.displayName() + "?"),
                 "Archive",
                 () -> controller.archive(world.worldId())
         ));
@@ -276,8 +263,9 @@ public final class WorldManagerScreen extends Screen {
 
         int tx = detailLeft + 22;
         context.drawTextWithShadow(textRenderer, Text.literal(selected.displayName()), tx, 52, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal(statusLabel(selected)), tx, 72,
-                "LOADED".equals(selected.runtimeState()) ? LbUi.SUCCESS : LbUi.TEXT_SECONDARY);
+        if ("ARCHIVED".equals(selected.lifecycle())) {
+            context.drawTextWithShadow(textRenderer, Text.literal("Archived"), tx, 72, LbUi.TEXT_SECONDARY);
+        }
         context.drawTextWithShadow(textRenderer, Text.literal("World Type  " + titleCase(selected.kind())), tx, 92, LbUi.TEXT_MUTED);
         LbUi.divider(context, tx, 108, detailLeft + detailWidth - 22);
         context.drawTextWithShadow(textRenderer, Text.literal("Actions"), tx, 116, LbUi.TEXT_SECONDARY);
@@ -286,11 +274,6 @@ public final class WorldManagerScreen extends Screen {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
                     detailLeft + detailWidth / 2, l.bottom - 18, LbUi.DANGER_BRIGHT);
         }
-    }
-
-    private static String statusLabel(WorldControlWireProtocol.WorldSummary world) {
-        if ("ARCHIVED".equals(world.lifecycle())) return "Archived";
-        return "LOADED".equals(world.runtimeState()) ? "Loaded and ready" : "Not loaded";
     }
 
     private void renderOperationStatus(DrawContext context, Layout l) {
