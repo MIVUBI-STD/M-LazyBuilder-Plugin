@@ -31,7 +31,6 @@ public final class WorldImportService {
     private final ConversionUpdateService updateService;
     private final ConverterAdapter converter;
     private final ConversionJobCoordinator conversionJobs;
-    private boolean importActive;
 
     public WorldImportService(
             WorldRegistry registry,
@@ -55,17 +54,13 @@ public final class WorldImportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    public synchronized ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
-        if (importActive) throw new IllegalStateException("An import is already active");
-        if (registry.findByFolderName(destinationFolder).isPresent()) {
-            throw new IllegalArgumentException("Destination world folder is already managed: " + destinationFolder);
-        }
+    public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
                 WorldLifecycle.ACTIVE, false
         );
-        importActive = true;
-        return new ImportTask(UUID.randomUUID(), artifactName, destination);
+        WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
+        return new ImportTask(UUID.randomUUID(), artifactName, destination, destinationReservation);
     }
 
     public WorldRecord executeFilePhase(ImportTask task) {
@@ -139,11 +134,9 @@ public final class WorldImportService {
         }
     }
 
-    public synchronized void finish(ImportTask task) {
+    public void finish(ImportTask task) {
         Objects.requireNonNull(task, "task");
-        if (task.closed) return;
-        task.closed = true;
-        importActive = false;
+        task.close();
     }
 
     private void ensureConversionRuntime() throws IOException {
@@ -167,14 +160,21 @@ public final class WorldImportService {
         private final UUID operationId;
         private final String artifactName;
         private final WorldRecord destination;
+        private final WorldRegistry.FolderReservation destinationReservation;
         private boolean completed;
         private boolean closed;
         private IOException artifactCleanupFailure;
 
-        private ImportTask(UUID operationId, String artifactName, WorldRecord destination) {
+        private ImportTask(
+                UUID operationId,
+                String artifactName,
+                WorldRecord destination,
+                WorldRegistry.FolderReservation destinationReservation
+        ) {
             this.operationId = Objects.requireNonNull(operationId, "operationId");
             this.artifactName = Objects.requireNonNull(artifactName, "artifactName");
             this.destination = Objects.requireNonNull(destination, "destination");
+            this.destinationReservation = Objects.requireNonNull(destinationReservation, "destinationReservation");
         }
 
         public WorldRecord destination() { return destination; }
@@ -183,6 +183,12 @@ public final class WorldImportService {
 
         private void requireOpen() {
             if (closed) throw new IllegalStateException("Import task is already closed");
+        }
+
+        private void close() {
+            if (closed) return;
+            destinationReservation.close();
+            closed = true;
         }
     }
 }
