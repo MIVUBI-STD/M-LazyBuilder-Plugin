@@ -17,7 +17,8 @@ pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> 
     ensure_provisioned()?;
     process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
-    let _ = paper_performance::apply_before_managed_start()?;
+    let performance = paper_performance::apply_before_managed_start()?;
+    let _performance_summary = (performance.changed, performance.message);
     state.start()?;
     // Paper is already running at this point. Identity metadata is a recovery aid and
     // must never turn a successful spawn into a false startup failure in the UI.
@@ -36,7 +37,8 @@ pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String
     ensure_provisioned()?;
     process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
-    let _ = paper_performance::apply_before_managed_start()?;
+    let performance = paper_performance::apply_before_managed_start()?;
+    let _performance_summary = (performance.changed, performance.message);
     state.start()?;
     let _ = process_identity::record_after_start();
     Ok(())
