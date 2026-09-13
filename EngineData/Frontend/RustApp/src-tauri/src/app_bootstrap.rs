@@ -4,7 +4,11 @@ use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry;
 
 pub fn run() {
+    // Restore the saved server library, but never carry an active workspace across
+    // application sessions. LazyBuilder always opens at the server library and the
+    // user explicitly selects the server they want to manage for this session.
     let _ = workspace_registry::initialize();
+    let _ = workspace_registry::deactivate();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
