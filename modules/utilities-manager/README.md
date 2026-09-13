@@ -11,7 +11,6 @@ com.halokaryamedia.lazybuilder.utilities
   feature/
     movement/
     buildhelpers/
-    spectator/
     worldsafety/
 ```
 
@@ -34,9 +33,6 @@ Build Helpers — implemented
   Double Slab Break
   Glazed Terracotta Rotate
 
-Spectator — planned
-  Builder spectator utilities
-
 World Safety — implemented
   Explosion block-damage protection
   Leaves decay protection
@@ -44,7 +40,9 @@ World Safety — implemented
   Dragon egg interaction/teleport protection
 ```
 
-Banner Creator, Armor Color Creator, and Special Builder Items are intentionally **out of scope** because they are not used in the current builder-server workflow. Do not add a `creationtools` feature family unless a concrete requirement appears later.
+Banner Creator, Armor Color Creator, and Special Builder Items are intentionally **out of scope** because they are not used in the current builder-server workflow.
+
+A separate Spectator feature family is also intentionally **not implemented**. `Movement/Noclip` already owns the LazyBuilder-specific transition into spectator movement, while normal Minecraft/Paper spectator controls own camera targeting. Duplicating those controls in Utilities would create overlapping ownership without adding a required capability.
 
 ### Movement
 
@@ -127,4 +125,5 @@ Feature families are enabled by default for the builder-server baseline, while e
 - disabling one feature must not disable the whole plugin;
 - feature tests live inside Utilities-Manager and do not require World-Manager tests to pass;
 - version bumps are independent from World-Manager;
-- prefer one cohesive feature family over many command-sized micro-features.
+- prefer one cohesive feature family over many command-sized micro-features;
+- do not duplicate vanilla/Paper spectator controls unless a concrete missing capability is demonstrated.
