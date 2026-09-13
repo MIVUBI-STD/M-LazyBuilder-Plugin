@@ -14,11 +14,7 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 
 #[tauri::command]
 pub fn server_start(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
-    ensure_provisioned()?;
-    ensure_bundled_core(&app)?;
-    startup_guard::ensure_memory_headroom()?;
-    let performance = paper_performance::apply_before_managed_start()?;
-    let _performance_summary = (performance.changed, performance.message);
+    prepare_managed_start(&app)?;
     state.start()
 }
 
@@ -30,17 +26,29 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 #[tauri::command]
 pub fn server_restart(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
     stop_with_recovery(&state)?;
-    ensure_provisioned()?;
-    ensure_bundled_core(&app)?;
-    startup_guard::ensure_memory_headroom()?;
-    let performance = paper_performance::apply_before_managed_start()?;
-    let _performance_summary = (performance.changed, performance.message);
+    prepare_managed_start(&app)?;
     state.start()
 }
 
 #[tauri::command]
 pub fn server_recover_detached(state: State<'_, ServerManagerState>) -> Result<DetachedRecoveryResult, String> {
     state.recover_detached()
+}
+
+/// One canonical preparation path for both Start and Restart.
+///
+/// Core-module synchronization intentionally happens before the final provisioning
+/// check. This allows a valid prepared workspace with a missing/stale bundled core
+/// JAR to self-heal at start time instead of being rejected before the sync owner
+/// gets a chance to repair it.
+fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
+    ensure_base_provisioned()?;
+    ensure_bundled_core(app)?;
+    ensure_provisioned()?;
+    startup_guard::ensure_memory_headroom()?;
+    let performance = paper_performance::apply_before_managed_start()?;
+    let _performance_summary = (performance.changed, performance.message);
+    Ok(())
 }
 
 fn ensure_bundled_core(app: &AppHandle) -> Result<(), String> {
@@ -76,6 +84,22 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
             }
         }
     }
+}
+
+/// Validate the pieces that must already exist before start-time self-healing.
+/// Core modules are excluded here because they are owned by ensure_bundled_core().
+fn ensure_base_provisioned() -> Result<(), String> {
+    if !java_runtime::managed_java_path()?.is_file() {
+        return Err("Managed Java 21 is not ready. Use Prepare Server first.".into());
+    }
+    let status = workspace_registry::provisioning_status()?;
+    if !status.workspace_created || !status.paper_ready || !status.config_ready {
+        return Err(format!("Server provisioning is incomplete: {}. Use Prepare Server first.", status.next_step));
+    }
+    if !status.eula_accepted {
+        return Err("Minecraft EULA has not been accepted for this server.".into());
+    }
+    Ok(())
 }
 
 fn ensure_provisioned() -> Result<(), String> {
