@@ -1,5 +1,10 @@
-use crate::engine::server_manager::{ServerManagerState, ServerSnapshot};
+use crate::engine::server_manager::{ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::State;
+
+#[tauri::command]
+pub fn server_preflight(state: State<'_, ServerManagerState>) -> ServerPreflight {
+    state.preflight()
+}
 
 #[tauri::command]
 pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSnapshot, String> {
