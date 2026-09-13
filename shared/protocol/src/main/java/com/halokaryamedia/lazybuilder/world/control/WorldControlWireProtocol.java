@@ -14,22 +14,23 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    public static final int VERSION = 1;
+    /**
+     * V2 removes manual load/unload and auto-load metadata from the product contract.
+     * Runtime load truth belongs to Paper and is handled automatically by server use cases.
+     */
+    public static final int VERSION = 2;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
 
     private static final int LIST = 1;
     private static final int CREATE = 2;
-    private static final int LOAD = 3;
-    private static final int UNLOAD = 4;
     private static final int TELEPORT = 5;
     private static final int ARCHIVE = 6;
     private static final int RESTORE = 7;
-    private static final int CLONE = 8;
+    private static final int DUPLICATE = 8;
     private static final int DELETE = 9;
     private static final int GET_SETTINGS = 10;
-    private static final int SET_AUTO_LOAD = 11;
     private static final int SET_DEFAULT_MODE = 12;
     private static final int SET_DIFFICULTY = 13;
     private static final int SET_PVP = 14;
@@ -47,10 +48,10 @@ public final class WorldControlWireProtocol {
 
     private WorldControlWireProtocol() {}
 
-    public sealed interface Request permits ListWorlds, CreateWorld, LoadWorld, UnloadWorld,
-            TeleportWorld, ArchiveWorld, RestoreWorld, CloneWorld, DeleteWorld,
-            GetSettings, SetAutoLoad, SetDefaultMode, SetDifficulty, SetPvp,
-            ResetBuildReady, SetSpawnHere, ExportWorld, ImportWorld {}
+    public sealed interface Request permits ListWorlds, CreateWorld, TeleportWorld,
+            ArchiveWorld, RestoreWorld, DuplicateWorld, DeleteWorld, GetSettings,
+            SetDefaultMode, SetDifficulty, SetPvp, ResetBuildReady, SetSpawnHere,
+            ExportWorld, ImportWorld {}
 
     public record ListWorlds() implements Request {}
 
@@ -62,13 +63,11 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public record LoadWorld(UUID worldId) implements Request { public LoadWorld { Objects.requireNonNull(worldId); } }
-    public record UnloadWorld(UUID worldId) implements Request { public UnloadWorld { Objects.requireNonNull(worldId); } }
     public record TeleportWorld(UUID worldId) implements Request { public TeleportWorld { Objects.requireNonNull(worldId); } }
     public record ArchiveWorld(UUID worldId) implements Request { public ArchiveWorld { Objects.requireNonNull(worldId); } }
     public record RestoreWorld(UUID worldId) implements Request { public RestoreWorld { Objects.requireNonNull(worldId); } }
     public record GetSettings(UUID worldId) implements Request { public GetSettings { Objects.requireNonNull(worldId); } }
-    public record SetAutoLoad(UUID worldId, boolean enabled) implements Request { public SetAutoLoad { Objects.requireNonNull(worldId); } }
+
     public record SetDefaultMode(UUID worldId, String gameMode) implements Request {
         public SetDefaultMode { Objects.requireNonNull(worldId); gameMode = requireString(gameMode, "gameMode"); }
     }
@@ -79,18 +78,18 @@ public final class WorldControlWireProtocol {
     public record ResetBuildReady(UUID worldId) implements Request { public ResetBuildReady { Objects.requireNonNull(worldId); } }
     public record SetSpawnHere(UUID worldId) implements Request { public SetSpawnHere { Objects.requireNonNull(worldId); } }
 
-    public record CloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) implements Request {
-        public CloneWorld {
+    public record DuplicateWorld(UUID sourceWorldId, String destinationFolder, String displayName) implements Request {
+        public DuplicateWorld {
             Objects.requireNonNull(sourceWorldId, "sourceWorldId");
             destinationFolder = requireString(destinationFolder, "destinationFolder");
             displayName = requireString(displayName, "displayName");
         }
     }
 
-    public record DeleteWorld(UUID worldId, String typedFolderName) implements Request {
+    public record DeleteWorld(UUID worldId, String typedDisplayName) implements Request {
         public DeleteWorld {
             Objects.requireNonNull(worldId, "worldId");
-            typedFolderName = requireString(typedFolderName, "typedFolderName");
+            typedDisplayName = requireString(typedDisplayName, "typedDisplayName");
         }
     }
 
@@ -112,14 +111,13 @@ public final class WorldControlWireProtocol {
 
     public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot, ExportReady, ErrorResponse {}
 
+    /** Durable/presentation world summary. Runtime loaded state is intentionally absent. */
     public record WorldSummary(
             UUID worldId,
             String folderName,
             String displayName,
             String kind,
             String lifecycle,
-            String runtimeState,
-            boolean autoLoad,
             String defaultGameMode
     ) {
         public WorldSummary {
@@ -128,14 +126,12 @@ public final class WorldControlWireProtocol {
             displayName = requireString(displayName, "displayName");
             kind = requireString(kind, "kind");
             lifecycle = requireString(lifecycle, "lifecycle");
-            runtimeState = requireString(runtimeState, "runtimeState");
             defaultGameMode = requireString(defaultGameMode, "defaultGameMode");
         }
     }
 
     public record SettingsSnapshot(
             UUID worldId,
-            boolean autoLoad,
             String defaultGameMode,
             String difficulty,
             boolean pvpEnabled,
@@ -193,26 +189,23 @@ public final class WorldControlWireProtocol {
                     writeString(out, create.displayName());
                     writeString(out, create.kind());
                 }
-                case LoadWorld load -> writeUuid(out, load.worldId());
-                case UnloadWorld unload -> writeUuid(out, unload.worldId());
                 case TeleportWorld teleport -> writeUuid(out, teleport.worldId());
                 case ArchiveWorld archive -> writeUuid(out, archive.worldId());
                 case RestoreWorld restore -> writeUuid(out, restore.worldId());
                 case GetSettings settings -> writeUuid(out, settings.worldId());
-                case SetAutoLoad setting -> { writeUuid(out, setting.worldId()); out.writeBoolean(setting.enabled()); }
                 case SetDefaultMode setting -> { writeUuid(out, setting.worldId()); writeString(out, setting.gameMode()); }
                 case SetDifficulty setting -> { writeUuid(out, setting.worldId()); writeString(out, setting.difficulty()); }
                 case SetPvp setting -> { writeUuid(out, setting.worldId()); out.writeBoolean(setting.enabled()); }
                 case ResetBuildReady setting -> writeUuid(out, setting.worldId());
                 case SetSpawnHere setting -> writeUuid(out, setting.worldId());
-                case CloneWorld clone -> {
-                    writeUuid(out, clone.sourceWorldId());
-                    writeString(out, clone.destinationFolder());
-                    writeString(out, clone.displayName());
+                case DuplicateWorld duplicate -> {
+                    writeUuid(out, duplicate.sourceWorldId());
+                    writeString(out, duplicate.destinationFolder());
+                    writeString(out, duplicate.displayName());
                 }
                 case DeleteWorld delete -> {
                     writeUuid(out, delete.worldId());
-                    writeString(out, delete.typedFolderName());
+                    writeString(out, delete.typedDisplayName());
                 }
                 case ExportWorld export -> {
                     writeUuid(out, export.worldId());
@@ -234,15 +227,12 @@ public final class WorldControlWireProtocol {
             Request request = switch (opcode) {
                 case LIST -> new ListWorlds();
                 case CREATE -> new CreateWorld(readString(in), readString(in), readString(in));
-                case LOAD -> new LoadWorld(readUuid(in));
-                case UNLOAD -> new UnloadWorld(readUuid(in));
                 case TELEPORT -> new TeleportWorld(readUuid(in));
                 case ARCHIVE -> new ArchiveWorld(readUuid(in));
                 case RESTORE -> new RestoreWorld(readUuid(in));
-                case CLONE -> new CloneWorld(readUuid(in), readString(in), readString(in));
+                case DUPLICATE -> new DuplicateWorld(readUuid(in), readString(in), readString(in));
                 case DELETE -> new DeleteWorld(readUuid(in), readString(in));
                 case GET_SETTINGS -> new GetSettings(readUuid(in));
-                case SET_AUTO_LOAD -> new SetAutoLoad(readUuid(in), in.readBoolean());
                 case SET_DEFAULT_MODE -> new SetDefaultMode(readUuid(in), readString(in));
                 case SET_DIFFICULTY -> new SetDifficulty(readUuid(in), readString(in));
                 case SET_PVP -> new SetPvp(readUuid(in), in.readBoolean());
@@ -324,15 +314,12 @@ public final class WorldControlWireProtocol {
         return switch (request) {
             case ListWorlds ignored -> LIST;
             case CreateWorld ignored -> CREATE;
-            case LoadWorld ignored -> LOAD;
-            case UnloadWorld ignored -> UNLOAD;
             case TeleportWorld ignored -> TELEPORT;
             case ArchiveWorld ignored -> ARCHIVE;
             case RestoreWorld ignored -> RESTORE;
-            case CloneWorld ignored -> CLONE;
+            case DuplicateWorld ignored -> DUPLICATE;
             case DeleteWorld ignored -> DELETE;
             case GetSettings ignored -> GET_SETTINGS;
-            case SetAutoLoad ignored -> SET_AUTO_LOAD;
             case SetDefaultMode ignored -> SET_DEFAULT_MODE;
             case SetDifficulty ignored -> SET_DIFFICULTY;
             case SetPvp ignored -> SET_PVP;
@@ -349,20 +336,17 @@ public final class WorldControlWireProtocol {
         writeString(out, world.displayName());
         writeString(out, world.kind());
         writeString(out, world.lifecycle());
-        writeString(out, world.runtimeState());
-        out.writeBoolean(world.autoLoad());
         writeString(out, world.defaultGameMode());
     }
 
     private static WorldSummary readWorld(DataInputStream in) throws IOException {
         return new WorldSummary(
                 readUuid(in), readString(in), readString(in), readString(in),
-                readString(in), readString(in), in.readBoolean(), readString(in));
+                readString(in), readString(in));
     }
 
     private static void writeSettings(DataOutputStream out, SettingsSnapshot settings) throws IOException {
         writeUuid(out, settings.worldId());
-        out.writeBoolean(settings.autoLoad());
         writeString(out, settings.defaultGameMode());
         writeString(out, settings.difficulty());
         out.writeBoolean(settings.pvpEnabled());
@@ -375,7 +359,7 @@ public final class WorldControlWireProtocol {
 
     private static SettingsSnapshot readSettings(DataInputStream in) throws IOException {
         return new SettingsSnapshot(
-                readUuid(in), in.readBoolean(), readString(in), readString(in), in.readBoolean(),
+                readUuid(in), readString(in), readString(in), in.readBoolean(),
                 readString(in), in.readLong(), in.readDouble(), in.readDouble(), in.readDouble());
     }
 
