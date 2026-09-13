@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /** Automatically unloads active managed worlds after they stay empty and idle. */
 public final class WorldIdleUnloadService {
@@ -16,6 +17,7 @@ public final class WorldIdleUnloadService {
     private final WorldRuntimeService runtimeService;
     private final WorldRuntimeGateway runtime;
     private final WorldOperationCoordinator operations;
+    private final Predicate<WorldRecord> hasPlayers;
     private final long idleMillis;
     private final Map<WorldId, Long> emptySince = new HashMap<>();
 
@@ -24,12 +26,14 @@ public final class WorldIdleUnloadService {
             WorldRuntimeService runtimeService,
             WorldRuntimeGateway runtime,
             WorldOperationCoordinator operations,
+            Predicate<WorldRecord> hasPlayers,
             Duration idleTimeout
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.operations = Objects.requireNonNull(operations, "operations");
+        this.hasPlayers = Objects.requireNonNull(hasPlayers, "hasPlayers");
         this.idleMillis = Math.max(30_000L, Objects.requireNonNull(idleTimeout, "idleTimeout").toMillis());
     }
 
@@ -39,7 +43,7 @@ public final class WorldIdleUnloadService {
             WorldId id = world.id();
             if (world.lifecycle() != WorldLifecycle.ACTIVE
                     || !runtime.isLoaded(world)
-                    || runtime.hasPlayers(world)
+                    || hasPlayers.test(world)
                     || operations.activeOperation(id) != null) {
                 emptySince.remove(id);
                 continue;
