@@ -8,6 +8,7 @@ import org.bukkit.entity.Mob;
 import org.bukkit.entity.Villager;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
@@ -30,6 +31,7 @@ public final class BuildPerformanceController implements Listener {
 
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
+    private final boolean allMobAiSuppression;
     private final boolean villagerAiSuppression;
     private final boolean breedingSuppression;
     private final boolean scanLoadedEntitiesOnEnable;
@@ -37,6 +39,8 @@ public final class BuildPerformanceController implements Listener {
     public BuildPerformanceController(JavaPlugin plugin, WorldRegistry registry) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.allMobAiSuppression = plugin.getConfig().getBoolean(
+                "world-manager.build-performance.disable-all-mob-ai", true);
         this.villagerAiSuppression = plugin.getConfig().getBoolean(
                 "world-manager.build-performance.disable-villager-ai", true);
         this.breedingSuppression = plugin.getConfig().getBoolean(
@@ -62,9 +66,7 @@ public final class BuildPerformanceController implements Listener {
     }
 
     public void stop() {
-        EntityBreedEvent.getHandlerList().unregister(this);
-        CreatureSpawnEvent.getHandlerList().unregister(this);
-        ChunkLoadEvent.getHandlerList().unregister(this);
+        HandlerList.unregisterAll(this);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -89,6 +91,8 @@ public final class BuildPerformanceController implements Listener {
 
     private boolean applyEntityPolicy(Entity entity) {
         if (!(entity instanceof Mob mob)) return false;
+
+        // Explicit gameplay opt-out always wins, even when the aggressive build profile is enabled.
         if (mob.getScoreboardTags().contains(GAMEPLAY_AI_TAG)) {
             if (!mob.hasAI()) mob.setAI(true);
             return false;
@@ -96,8 +100,8 @@ public final class BuildPerformanceController implements Listener {
 
         boolean decorative = mob.getScoreboardTags().contains(DECORATIVE_TAG);
         boolean suppressVillager = villagerAiSuppression && mob instanceof Villager;
-        if (!decorative && !suppressVillager) return false;
-        if (!mob.hasAI()) return false;
+        boolean suppress = allMobAiSuppression || suppressVillager || decorative;
+        if (!suppress || !mob.hasAI()) return false;
 
         mob.setAI(false);
         return true;
