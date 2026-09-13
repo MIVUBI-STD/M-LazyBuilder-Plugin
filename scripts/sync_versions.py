@@ -16,7 +16,7 @@ if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", PRODUCT_VERSION):
 def replace_text(path: str, pattern: str, replacement: str, expected: int = 1) -> None:
     target = ROOT / path
     text = target.read_text(encoding="utf-8")
-    updated, count = re.subn(pattern, replacement, text, count=expected, flags=re.MULTILINE | re.DOTALL)
+    updated, count = re.subn(pattern, replacement, text, count=expected, flags=re.MULTILINE)
     if count != expected:
         raise RuntimeError(f"Expected {expected} version match(es) in {path}, found {count}")
     if updated != text:
@@ -27,7 +27,7 @@ def replace_text(path: str, pattern: str, replacement: str, expected: int = 1) -
 # Maven parent/module versions. All LazyBuilder Java artifacts intentionally move together.
 replace_text(
     "pom.xml",
-    r"(<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>)",
+    r"(?s:(<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>))",
     rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
 )
 
@@ -39,19 +39,19 @@ child_poms = {
 for pom, artifact_id in child_poms.items():
     replace_text(
         pom,
-        r"(<parent>.*?<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>.*?</parent>)",
+        r"(?s:(<parent>.*?<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>.*?</parent>))",
         rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
     )
     replace_text(
         pom,
-        rf"(</parent>\s*<artifactId>{re.escape(artifact_id)}</artifactId>\s*<version>)[^<]+(</version>)",
+        rf"(?s:(</parent>\s*<artifactId>{re.escape(artifact_id)}</artifactId>\s*<version>)[^<]+(</version>))",
         rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
     )
 
 # Fabric version.
 replace_text(
     "client/fabric/gradle.properties",
-    r"^mod_version=.*$",
+    r"^mod_version=[^\r\n]*$",
     f"mod_version={SNAPSHOT_VERSION}",
 )
 
