@@ -7,7 +7,7 @@ import net.minecraft.text.Text;
 
 import java.util.Locale;
 
-/** File-first import flow; upload and server publication remain one visible operation. */
+/** File-first import flow; upload and publication remain one visible operation. */
 public final class ImportWorldScreen extends Screen {
     private final Screen parent;
     private final ClientWorldController worlds;
@@ -43,7 +43,7 @@ public final class ImportWorldScreen extends Screen {
         displayName.active = !busy;
         addDrawableChild(displayName);
 
-        String primaryLabel = processingImport ? "Importing on Server…"
+        String primaryLabel = processingImport ? "Finishing Import…"
                 : choosing ? "Uploading World…"
                 : "Choose World File";
         LbButtonWidget choose = LbUi.button(left + 28, 156, panelWidth - 56, 28,
@@ -51,8 +51,8 @@ public final class ImportWorldScreen extends Screen {
         choose.active = !busy;
         addDrawableChild(choose);
 
-        addDrawableChild(LbUi.button(width / 2 - 50, 206, 100, 22,
-                busy ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
+        addDrawableChild(LbUi.button(width / 2 - 58, 206, 116, 22,
+                busy ? "Back to Worlds" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!busy) setInitialFocus(displayName);
     }
 
@@ -157,7 +157,7 @@ public final class ImportWorldScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("Bring an existing world into LazyBuilder"),
                 left + 24, 62, LbUi.TEXT_PRIMARY);
         context.drawTextWithShadow(textRenderer,
-                Text.literal("Pick the archive first. Server folder naming is handled automatically."),
+                Text.literal("Choose the archive. LazyBuilder handles the setup automatically."),
                 left + 24, 80, LbUi.TEXT_SECONDARY);
         context.drawTextWithShadow(textRenderer, Text.literal("World name"), left + 28, 96, LbUi.TEXT_MUTED);
         LbUi.field(context, displayName, validation != null);
