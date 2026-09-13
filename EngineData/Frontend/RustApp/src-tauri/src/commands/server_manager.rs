@@ -1,6 +1,6 @@
-use crate::engine::{java_runtime, paper_performance, startup_guard, workspace_registry};
+use crate::engine::{java_runtime, paper_performance, runtime_updates, startup_guard, workspace_registry};
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 pub fn server_preflight(state: State<'_, ServerManagerState>) -> ServerPreflight {
@@ -13,8 +13,9 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 }
 
 #[tauri::command]
-pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> {
+pub fn server_start(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
     ensure_provisioned()?;
+    ensure_bundled_core(&app)?;
     startup_guard::ensure_memory_headroom()?;
     let performance = paper_performance::apply_before_managed_start()?;
     let _performance_summary = (performance.changed, performance.message);
@@ -27,9 +28,10 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
+pub fn server_restart(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
     stop_with_recovery(&state)?;
     ensure_provisioned()?;
+    ensure_bundled_core(&app)?;
     startup_guard::ensure_memory_headroom()?;
     let performance = paper_performance::apply_before_managed_start()?;
     let _performance_summary = (performance.changed, performance.message);
@@ -39,6 +41,11 @@ pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String
 #[tauri::command]
 pub fn server_recover_detached(state: State<'_, ServerManagerState>) -> Result<DetachedRecoveryResult, String> {
     state.recover_detached()
+}
+
+fn ensure_bundled_core(app: &AppHandle) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir().ok();
+    runtime_updates::ensure_core_current(resource_dir.as_deref())
 }
 
 fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
