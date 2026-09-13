@@ -4,7 +4,6 @@ import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
-import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
@@ -34,7 +33,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
     private final WorldCreationService creation;
-    private final WorldRuntimeService runtime;
     private final WorldTeleportService teleport;
     private final WorldLifecycleService lifecycle;
     private final WorldSettingsService settingsService;
@@ -47,7 +45,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             JavaPlugin plugin,
             WorldRegistry registry,
             WorldCreationService creation,
-            WorldRuntimeService runtime,
             WorldTeleportService teleport,
             WorldLifecycleService lifecycle,
             WorldSettingsService settingsService,
@@ -56,7 +53,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.creation = Objects.requireNonNull(creation, "creation");
-        this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.teleport = Objects.requireNonNull(teleport, "teleport");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.settingsService = Objects.requireNonNull(settingsService, "settingsService");
@@ -92,7 +88,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
-        if (request instanceof WorldControlWireProtocol.CloneWorld duplicate) {
+        if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) {
             handleDuplicate(player, duplicate);
             return;
         }
@@ -129,14 +125,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         WorldKind.valueOf(create.kind().strip().toUpperCase(Locale.ROOT)));
                 yield new WorldControlWireProtocol.WorldChanged("CREATE", summary(world));
             }
-            case WorldControlWireProtocol.LoadWorld load -> {
-                requireManage(player);
-                yield new WorldControlWireProtocol.WorldChanged("LOAD", summary(runtime.load(new WorldId(load.worldId()))));
-            }
-            case WorldControlWireProtocol.UnloadWorld unload -> {
-                requireManage(player);
-                yield new WorldControlWireProtocol.WorldChanged("UNLOAD", summary(runtime.unload(new WorldId(unload.worldId()))));
-            }
             case WorldControlWireProtocol.TeleportWorld teleportRequest -> {
                 requireTeleport(player);
                 yield new WorldControlWireProtocol.TeleportOk(summary(
@@ -153,11 +141,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             case WorldControlWireProtocol.GetSettings settings -> {
                 requireManage(player);
                 yield settingsSummary(settingsService.snapshot(new WorldId(settings.worldId())));
-            }
-            case WorldControlWireProtocol.SetAutoLoad setting -> {
-                requireManage(player);
-                settingsService.setAutoLoad(new WorldId(setting.worldId()), setting.enabled());
-                yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
             }
             case WorldControlWireProtocol.SetDefaultMode setting -> {
                 requireManage(player);
@@ -185,14 +168,14 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 settingsService.setSpawnToPlayer(player.getUniqueId(), new WorldId(setting.worldId()));
                 yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
             }
-            case WorldControlWireProtocol.CloneWorld ignored -> throw new IllegalStateException("Duplicate must use async path");
+            case WorldControlWireProtocol.DuplicateWorld ignored -> throw new IllegalStateException("Duplicate must use async path");
             case WorldControlWireProtocol.DeleteWorld ignored -> throw new IllegalStateException("Delete must use async path");
             case WorldControlWireProtocol.ExportWorld ignored -> throw new IllegalStateException("Export must use async path");
             case WorldControlWireProtocol.ImportWorld ignored -> throw new IllegalStateException("Import must use async path");
         };
     }
 
-    private void handleDuplicate(Player player, WorldControlWireProtocol.CloneWorld request) {
+    private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
         if (!beginHeavy(player)) return;
         scheduleHeavy(
                 player,
@@ -212,7 +195,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 player,
                 () -> heavyOperations.deleteWorld(
                         new WorldId(request.worldId()),
-                        request.typedFolderName(),
+                        request.typedDisplayName(),
                         WorldHeavyOperationOrchestrator.Progress.NONE
                 ),
                 result -> encode(new WorldControlWireProtocol.WorldChanged("DELETE", summaryDeleted(result)))
@@ -313,21 +296,20 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private WorldControlWireProtocol.WorldSummary summary(WorldRecord world) {
         return new WorldControlWireProtocol.WorldSummary(
                 world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
-                world.lifecycle().name(), runtime.isLoaded(world.id()) ? "LOADED" : "UNLOADED",
-                world.autoLoad(), world.defaultGameMode());
+                world.lifecycle().name(), world.defaultGameMode());
     }
 
     private static WorldControlWireProtocol.WorldSummary summaryDeleted(WorldRecord world) {
         return new WorldControlWireProtocol.WorldSummary(
                 world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
-                world.lifecycle().name(), "UNLOADED", world.autoLoad(), world.defaultGameMode());
+                world.lifecycle().name(), world.defaultGameMode());
     }
 
     private static WorldControlWireProtocol.SettingsSnapshot settingsSummary(WorldSettingsSnapshot snapshot) {
         var runtime = snapshot.runtime();
         var spawn = runtime.spawn();
         return new WorldControlWireProtocol.SettingsSnapshot(
-                snapshot.world().id().value(), snapshot.world().autoLoad(), snapshot.defaultGameMode().name(),
+                snapshot.world().id().value(), snapshot.defaultGameMode().name(),
                 runtime.difficulty().name(), runtime.pvpEnabled(), runtime.weather().name(), runtime.timeOfDayTicks(),
                 spawn.x(), spawn.y(), spawn.z());
     }
@@ -342,13 +324,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!player.hasPermission(permission)) throw new IllegalStateException("Missing permission: " + permission);
     }
 
-    private static void requireManage(Player player) {
-        requirePermission(player, MANAGE_PERMISSION);
-    }
-
-    private static void requireTeleport(Player player) {
-        requirePermission(player, TELEPORT_PERMISSION);
-    }
+    private static void requireManage(Player player) { requirePermission(player, MANAGE_PERMISSION); }
+    private static void requireTeleport(Player player) { requirePermission(player, TELEPORT_PERMISSION); }
 
     private static byte[] encode(WorldControlWireProtocol.Response response) {
         try {
@@ -367,17 +344,11 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     @FunctionalInterface
-    private interface HeavyWork<T> {
-        T run() throws Exception;
-    }
+    private interface HeavyWork<T> { T run() throws Exception; }
 
     @FunctionalInterface
-    private interface HeavyResponse<T> {
-        byte[] encode(T result);
-    }
+    private interface HeavyResponse<T> { byte[] encode(T result); }
 
     @FunctionalInterface
-    private interface ResponseSupplier {
-        byte[] get();
-    }
+    private interface ResponseSupplier { byte[] get(); }
 }
