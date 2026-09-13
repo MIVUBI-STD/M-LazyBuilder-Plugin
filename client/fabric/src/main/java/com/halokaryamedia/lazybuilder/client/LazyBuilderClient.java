@@ -11,7 +11,7 @@ public final class LazyBuilderClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         new LazyBuilderClientNetworking(WORLDS, MAPS, TRANSFERS).register();
-        WorldManagerClientUi.register(WORLDS, TRANSFERS, MAPS);
+        LazyBuilderClientUi.register(WORLDS, TRANSFERS, MAPS);
     }
 
     public static ClientWorldController worlds() { return WORLDS; }
