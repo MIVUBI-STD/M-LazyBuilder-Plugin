@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -26,12 +25,8 @@ public final class ExportWorldScreen extends Screen {
     private long observedWorldRevision;
     private long observedTransferRevision;
 
-    public ExportWorldScreen(
-            Screen parent,
-            ClientWorldController controller,
-            ClientTransferController transfers,
-            WorldControlWireProtocol.WorldSummary world
-    ) {
+    public ExportWorldScreen(Screen parent, ClientWorldController controller, ClientTransferController transfers,
+                             WorldControlWireProtocol.WorldSummary world) {
         super(Text.literal("Export World"));
         this.parent = parent;
         this.controller = controller;
@@ -41,34 +36,32 @@ public final class ExportWorldScreen extends Screen {
         this.observedTransferRevision = transfers.revision();
     }
 
-    public ExportWorldScreen(
-            Screen parent,
-            ClientWorldController controller,
-            WorldControlWireProtocol.WorldSummary world
-    ) {
+    public ExportWorldScreen(Screen parent, ClientWorldController controller, WorldControlWireProtocol.WorldSummary world) {
         this(parent, controller, LazyBuilderClient.transfers(), world);
     }
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int fieldWidth = Math.min(340, width - 60);
-        int left = center - fieldWidth / 2;
+        int panelWidth = Math.min(460, width - 48);
+        int left = width / 2 - panelWidth / 2;
 
-        artifactName = new TextFieldWidget(textRenderer, left, 102, fieldWidth, 22, Text.literal("File Name"));
+        artifactName = new TextFieldWidget(textRenderer, left + 28, 112, panelWidth - 56, 24, Text.literal("File Name"));
         artifactName.setText(world.folderName() + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
         artifactName.setMaxLength(96);
+        artifactName.setDrawsBackground(false);
+        artifactName.setEditableColor(LbUi.TEXT_PRIMARY);
+        artifactName.setUneditableColor(LbUi.TEXT_DISABLED);
         artifactName.active = !submitted;
         addDrawableChild(artifactName);
 
-        String label = submitted ? "Export in progress…" : "Export World";
-        ButtonWidget export = ButtonWidget.builder(Text.literal(label), button -> submit())
-                .dimensions(center - 125, 144, 250, 24).build();
+        LbButtonWidget export = LbUi.button(left + 28, 158, panelWidth - 56, 28,
+                submitted ? "Export in Progress…" : "Export World",
+                LbButtonWidget.Style.PRIMARY, this::submit);
         export.active = !submitted;
         addDrawableChild(export);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(submitted ? "Back" : "Cancel"), button -> close())
-                .dimensions(center - 50, 182, 100, 20).build());
+        addDrawableChild(LbUi.button(width / 2 - 50, 210, 100, 22,
+                submitted ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!submitted) setInitialFocus(artifactName);
     }
 
@@ -133,21 +126,18 @@ public final class ExportWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        int panelWidth = Math.min(430, width - 40);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(460, width - 48);
         int left = width / 2 - panelWidth / 2;
-        context.fill(left, 14, left + panelWidth, 270, 0xB915191F);
-        super.render(context, mouseX, mouseY, delta);
+        LbUi.elevatedPanel(context, left, 26, panelWidth, 254);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 22, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal(world.displayName()), width / 2, 48, 0xD8DEE9);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Java 1.21.4 world archive"), width / 2, 64, 0xAEB7C4);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Snapshot → Save As → download. Keep this screen open to follow the operation."),
-                width / 2, 80, 0x8F9AA8);
-        context.drawTextWithShadow(textRenderer, Text.literal("File Name"), artifactName.getX(), 90, 0xAEB7C4);
+        context.drawTextWithShadow(textRenderer, Text.literal("EXPORT WORLD"), left + 24, 44, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 24, 62, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Java 1.21.4 world archive"), left + 24, 80, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("Safe snapshot → Save As → verified download"), left + 24, 96, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("File name"), left + 28, 102, LbUi.TEXT_MUTED);
+        LbUi.field(context, artifactName, validation != null);
 
         if (submitted) {
             String status = controller.activityMessage();
@@ -158,20 +148,14 @@ public final class ExportWorldScreen extends Screen {
                 percent = transfer.percent();
             }
             if (status == null) status = "Waiting for Save As…";
-            if (percent >= 0) status += "  " + percent + "%";
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, 218, 0xD8DEE9);
-            if (percent >= 0) {
-                int barWidth = Math.min(300, width - 80);
-                int barLeft = width / 2 - barWidth / 2;
-                int filled = (int) Math.round(barWidth * (percent / 100.0));
-                context.fill(barLeft, 234, barLeft + barWidth, 240, 0xFF303740);
-                context.fill(barLeft, 234, barLeft + filled, 240, 0xFFD8DEE9);
-            }
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, 242, LbUi.TEXT_SECONDARY);
+            if (percent >= 0) LbUi.progress(context, left + 44, 256, panelWidth - 88, percent);
+        }
+        if (validation != null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 262, LbUi.DANGER_BRIGHT);
         }
 
-        if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 252, 0xFF7777);
-        }
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
