@@ -12,12 +12,35 @@ pub struct PaperPerformanceApplyResult {
     pub message: String,
 }
 
+pub fn apply_before_managed_start() -> Result<PaperPerformanceApplyResult, String> {
+    let workspace = paths::workspace_root()?;
+    let config_path = paths::lazybuilder_config_dir()?.join("server-manager.json");
+    let server_directory = if config_path.is_file() {
+        let text = fs::read_to_string(&config_path).map_err(|error| error.to_string())?;
+        let value: Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        value
+            .get("serverDirectory")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("server")
+            .to_string()
+    } else {
+        "server".into()
+    };
+    let relative = paths::safe_relative_path(&server_directory, "serverDirectory")?;
+    let server_dir = workspace.join(relative);
+    if !server_dir.starts_with(&workspace) {
+        return Err("Paper performance configuration escaped the LazyBuilder workspace".into());
+    }
+    apply_before_start(&server_dir)
+}
+
 pub fn apply_before_start(server_dir: &Path) -> Result<PaperPerformanceApplyResult, String> {
     let target = server_dir.join("config").join("paper-world-defaults.yml");
     if !target.is_file() {
         return Ok(PaperPerformanceApplyResult {
             changed: false,
-            message: "Paper performance config not generated yet; save smoothing will be applied on a later start.".into(),
+            message: "Paper performance config not generated yet; save smoothing will be applied after Paper has generated its config.".into(),
         });
     }
 
@@ -25,7 +48,7 @@ pub fn apply_before_start(server_dir: &Path) -> Result<PaperPerformanceApplyResu
     let original = fs::read_to_string(&target).map_err(|error| {
         format!("Failed to read {}: {error}", target.display())
     })?;
-    let updated = patch_max_auto_save_chunks_per_tick(&original, desired)?;
+    let updated = patch_max_auto_save_chunks_per_tick(&original, desired);
     if updated == original {
         return Ok(PaperPerformanceApplyResult {
             changed: false,
@@ -57,7 +80,7 @@ fn configured_max_auto_save_chunks_per_tick() -> Result<u32, String> {
     ))
 }
 
-fn patch_max_auto_save_chunks_per_tick(input: &str, desired: u32) -> Result<String, String> {
+fn patch_max_auto_save_chunks_per_tick(input: &str, desired: u32) -> String {
     let mut lines: Vec<String> = input.lines().map(str::to_string).collect();
     let trailing_newline = input.ends_with('\n');
     let chunks_index = lines
@@ -89,7 +112,7 @@ fn patch_max_auto_save_chunks_per_tick(input: &str, desired: u32) -> Result<Stri
                     .map(|(_, suffix)| format!(" #{}", suffix))
                     .unwrap_or_default();
                 *line = format!("{indent}max-auto-save-chunks-per-tick: {desired}{comment}");
-                return Ok(join_lines(lines, trailing_newline));
+                return join_lines(lines, trailing_newline);
             }
         }
 
@@ -97,7 +120,7 @@ fn patch_max_auto_save_chunks_per_tick(input: &str, desired: u32) -> Result<Stri
             chunks_index + 1,
             format!("  max-auto-save-chunks-per-tick: {desired}"),
         );
-        return Ok(join_lines(lines, trailing_newline));
+        return join_lines(lines, trailing_newline);
     }
 
     if !lines.is_empty() && !lines.last().is_some_and(|line| line.trim().is_empty()) {
@@ -105,7 +128,7 @@ fn patch_max_auto_save_chunks_per_tick(input: &str, desired: u32) -> Result<Stri
     }
     lines.push("chunks:".into());
     lines.push(format!("  max-auto-save-chunks-per-tick: {desired}"));
-    Ok(join_lines(lines, true))
+    join_lines(lines, true)
 }
 
 fn join_lines(lines: Vec<String>, trailing_newline: bool) -> String {
@@ -144,7 +167,7 @@ mod tests {
     #[test]
     fn updates_existing_chunks_value_without_touching_other_settings() {
         let input = "_version: 31\nchunks:\n  auto-save-interval: default\n  max-auto-save-chunks-per-tick: 24\ncollisions:\n  max-entity-collisions: 8\n";
-        let output = patch_max_auto_save_chunks_per_tick(input, 12).unwrap();
+        let output = patch_max_auto_save_chunks_per_tick(input, 12);
         assert!(output.contains("  max-auto-save-chunks-per-tick: 12\n"));
         assert!(output.contains("collisions:\n  max-entity-collisions: 8\n"));
     }
@@ -152,14 +175,14 @@ mod tests {
     #[test]
     fn inserts_missing_value_only_inside_chunks_section() {
         let input = "_version: 31\nchunks:\n  auto-save-interval: default\ncollisions:\n  max-entity-collisions: 8\n";
-        let output = patch_max_auto_save_chunks_per_tick(input, 12).unwrap();
+        let output = patch_max_auto_save_chunks_per_tick(input, 12);
         assert!(output.contains("chunks:\n  max-auto-save-chunks-per-tick: 12\n  auto-save-interval: default\n"));
     }
 
     #[test]
     fn appends_chunks_section_when_missing() {
         let input = "_version: 31\ncollisions:\n  max-entity-collisions: 8\n";
-        let output = patch_max_auto_save_chunks_per_tick(input, 12).unwrap();
+        let output = patch_max_auto_save_chunks_per_tick(input, 12);
         assert!(output.ends_with("chunks:\n  max-auto-save-chunks-per-tick: 12\n"));
     }
 }
