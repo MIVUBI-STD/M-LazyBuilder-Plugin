@@ -25,6 +25,7 @@ public final class ClientWorldController {
 
     public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
     public void create(String folderName, String displayName, String kind) {
+        beginActivity("Creating world…");
         send(new WorldControlWireProtocol.CreateWorld(folderName, displayName, kind));
     }
     public void cloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
