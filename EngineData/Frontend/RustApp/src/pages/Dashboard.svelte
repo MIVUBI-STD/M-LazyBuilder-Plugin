@@ -48,19 +48,11 @@
     return 'Runtime';
   }
 
-  const launcherState = () => ['Starting', 'Online', 'Stopping'].includes(snapshot.state)
-    ? 'Active'
-    : snapshot.state === 'Detached' ? 'Recovery Required'
-    : preflight.ready ? 'Ready' : 'Needs Attention';
-
   const cpuUsage = () => metrics.available ? metrics.cpuPercent : snapshot.cpuLoadPercent;
   const ramUsage = () => metrics.available ? metrics.processMemoryBytes : snapshot.usedMemoryBytes;
 
   async function refreshLog() {
-    if (!showLog) {
-      logTail = { path: snapshot.logPath, content: '', truncated: false };
-      return;
-    }
+    if (!showLog) return;
     logTail = await runtimeProduct.server.logTail(snapshot.logPath || '');
   }
 
@@ -125,23 +117,23 @@
   });
 
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
-  const mb = (bytes: number) => bytes / 1024 / 1024;
 </script>
 
 <h1>Dashboard</h1>
-<p class="subtle">Server launcher, runtime health, recovery, and lightweight resource monitoring</p>
+<p class="subtle">Essential server health and controls.</p>
 
 <div class="cards">
   <div class="card"><div class="label">Server</div><div class="value">{snapshot.state}</div></div>
   <div class="card"><div class="label">Health</div><div class="value">{snapshot.health}</div></div>
   <div class="card"><div class="label">CPU</div><div class="value">{cpuUsage().toFixed(1)}%</div></div>
   <div class="card"><div class="label">RAM</div><div class="value">{gb(ramUsage()).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
-  <div class="card"><div class="label">Disk I/O</div><div class="value">R {mb(metrics.diskReadBytes).toFixed(1)} · W {mb(metrics.diskWriteBytes).toFixed(1)} MB</div></div>
-  <div class="card"><div class="label">Launcher</div><div class="value">{launcherState()}</div></div>
-  <div class="card"><div class="label">PID</div><div class="value">{metrics.pid ?? snapshot.pid ?? '—'}</div></div>
 </div>
 
-<p class="subtle" style="margin-top: 8px">Disk I/O shows activity since the previous process sample; monitoring reuses the existing 2-second dashboard refresh loop.</p>
+<div class="actions" style="margin-top: 16px">
+  <button disabled={busy || !preflight.ready || !['Offline', 'Crashed'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
+  <button disabled={busy || !['Starting', 'Online'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
+  <button disabled={busy || snapshot.state !== 'Online'} onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
+</div>
 
 {#if error}
   <div class="card" style="margin-top: 16px">
@@ -159,7 +151,7 @@
 
 {#if preflight.issues.length > 0 && ['Offline', 'Crashed', 'Detached'].includes(snapshot.state)}
   <div class="card" style="margin-top: 16px">
-    <div class="label">Preflight Issues</div>
+    <div class="label">Needs Attention</div>
     <ul>
       {#each preflight.issues as issue}
         <li><strong>{category(issue)}:</strong> {issue}</li>
@@ -170,33 +162,23 @@
 
 {#if snapshot.state === 'Detached'}
   <div class="card" style="margin-top: 16px">
-    <div class="label">Recovery Mode</div>
-    <p>
-      Paper is still running as PID {snapshot.pid ?? 'unknown'}, but this launcher no longer owns its console handle.
-      Starting another server is blocked to protect the world files.
-    </p>
-    <p class="subtle">Recovery verifies the saved process fingerprint before any termination request.</p>
-    <button disabled={busy} onclick={recoverDetached}>Force Stop Detached Paper</button>
+    <div class="label">Recovery Required</div>
+    <p>Paper is still running, but this launcher no longer owns its console handle. A second server instance is blocked.</p>
+    <button disabled={busy} onclick={recoverDetached}>Recover Server</button>
   </div>
 {/if}
 
-<div class="actions">
-  <button disabled={busy || !preflight.ready || !['Offline', 'Crashed'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
-  <button disabled={busy || !['Starting', 'Online'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
-  <button disabled={busy || snapshot.state !== 'Online'} onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
-  <button disabled={busy} onclick={toggleLog}>{showLog ? 'Hide Log' : 'View Log'}</button>
-</div>
-
-<div class="card" style="margin-top: 16px">
-  <div class="label">Controller Diagnostics</div>
-  <p><strong>Workspace:</strong> {preflight.workspace || 'Unavailable'}</p>
-  <p><strong>Server:</strong> {preflight.serverDirectory || 'Unavailable'}</p>
-  <p><strong>Paper:</strong> {preflight.paperJar || 'Unavailable'}</p>
-  <p><strong>Worlds:</strong> {preflight.worldsDirectory || 'Unavailable'}</p>
-  <p><strong>Java:</strong> {preflight.javaVersion || 'Unavailable'}</p>
-  <p class="subtle">{preflight.javaPath}</p>
-  <p><strong>Logs:</strong> {snapshot.logPath || preflight.logDirectory || 'Unavailable'}</p>
-</div>
+<details class="card" style="margin-top: 16px">
+  <summary><strong>Diagnostics</strong> <span class="subtle">Advanced troubleshooting only</span></summary>
+  <div style="margin-top: 12px">
+    <p><strong>PID:</strong> {metrics.pid ?? snapshot.pid ?? '—'}</p>
+    <p><strong>Disk Read:</strong> {(metrics.diskReadBytes / 1024 / 1024).toFixed(1)} MB</p>
+    <p><strong>Disk Write:</strong> {(metrics.diskWriteBytes / 1024 / 1024).toFixed(1)} MB</p>
+    <p><strong>Java:</strong> {preflight.javaVersion || 'Unavailable'}</p>
+    <p><strong>Workspace:</strong> {preflight.workspace || 'Unavailable'}</p>
+    <button disabled={busy} onclick={toggleLog}>{showLog ? 'Hide Log' : 'View Log'}</button>
+  </div>
+</details>
 
 {#if showLog}
   <div class="card" style="margin-top: 16px">
