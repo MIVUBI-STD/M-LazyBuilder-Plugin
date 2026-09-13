@@ -22,6 +22,15 @@ export type ServerPreflight = {
   issues: string[];
 };
 
+export type ServerProcessMetrics = {
+  available: boolean;
+  pid?: number | null;
+  cpuPercent: number;
+  processMemoryBytes: number;
+  diskReadBytes: number;
+  diskWriteBytes: number;
+};
+
 export type DetachedRecoveryResult = {
   pid: number;
   stopped: boolean;
@@ -155,6 +164,7 @@ export type WorldTaskSnapshot = {
 export const runtimeApi = {
   getServerPreflight: () => invoke<ServerPreflight>('server_preflight'),
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
+  getServerProcessMetrics: () => invoke<ServerProcessMetrics>('server_process_metrics'),
   startServer: () => invoke<void>('server_start'),
   stopServer: () => invoke<void>('server_stop'),
   restartServer: () => invoke<void>('server_restart'),
