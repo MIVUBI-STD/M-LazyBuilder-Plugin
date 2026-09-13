@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
+import org.bukkit.Server;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -12,9 +13,11 @@ import java.util.Objects;
 
 /** Operator-only command surface for build-server performance tools. */
 public final class BuildPerformanceCommand implements CommandExecutor, TabCompleter {
+    private final Server server;
     private final ChunkPregenerationController pregeneration;
 
-    public BuildPerformanceCommand(ChunkPregenerationController pregeneration) {
+    public BuildPerformanceCommand(Server server, ChunkPregenerationController pregeneration) {
+        this.server = Objects.requireNonNull(server, "server");
         this.pregeneration = Objects.requireNonNull(pregeneration, "pregeneration");
     }
 
@@ -25,8 +28,10 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
             return true;
         }
         if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
-            sender.sendMessage("LazyBuilder build performance: Chunky " + (pregeneration.available() ? "available" : "not installed"));
-            sender.sendMessage("AI policy tags: lazybuilder_gameplay_ai (opt out), lazybuilder_decorative (force no-AI).");
+            sender.sendMessage("LazyBuilder build performance tools");
+            sender.sendMessage("- Chunky: " + (pregeneration.available() ? "available" : "optional/not installed"));
+            sender.sendMessage("- spark: bundled by Paper 1.21+");
+            sender.sendMessage("- AI policy tags: lazybuilder_gameplay_ai (opt out), lazybuilder_decorative (force no-AI)");
             return true;
         }
 
@@ -34,16 +39,12 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         try {
             switch (action) {
                 case "pregen" -> handlePregen(sender, args);
-                case "pause" -> pregeneration.pause(requireWorld(args));
-                case "continue", "resume" -> pregeneration.resume(requireWorld(args));
-                case "cancel" -> pregeneration.cancel(requireWorld(args));
-                default -> {
-                    sender.sendMessage("Usage: /" + label + " status|pregen|pause|continue|cancel");
-                    return true;
-                }
-            }
-            if (!"pregen".equals(action)) {
-                sender.sendMessage("LazyBuilder performance command sent to Chunky.");
+                case "pause" -> handleChunkyAction(sender, () -> pregeneration.pause(requireWorld(args)), "Pregeneration paused.");
+                case "continue", "resume" -> handleChunkyAction(sender, () -> pregeneration.resume(requireWorld(args)), "Pregeneration resumed.");
+                case "cancel" -> handleChunkyAction(sender, () -> pregeneration.cancel(requireWorld(args)), "Pregeneration cancelled. Existing generated chunks are retained.");
+                case "profile" -> handleProfile(sender, args, false);
+                case "profilelag" -> handleProfile(sender, args, true);
+                default -> sender.sendMessage("Usage: /" + label + " status|pregen|pause|continue|cancel|profile|profilelag");
             }
         } catch (RuntimeException exception) {
             sender.sendMessage("LazyBuilder performance: " + exception.getMessage());
@@ -57,12 +58,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
             return;
         }
         String world = args[1];
-        int radius;
-        try {
-            radius = Integer.parseInt(args[2]);
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("radiusBlocks must be a valid integer", exception);
-        }
+        int radius = parseInt(args[2], "radiusBlocks");
         String shape = args.length >= 4 ? args[3] : "square";
         int centerX = args.length >= 5 ? parseInt(args[4], "centerX") : 0;
         int centerZ = args.length >= 6 ? parseInt(args[5], "centerZ") : 0;
@@ -70,11 +66,44 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         sender.sendMessage("Chunky pregeneration started for " + world + " with " + shape + " radius " + radius + " blocks.");
     }
 
+    private void handleProfile(CommandSender sender, String[] args, boolean lagOnly) {
+        int timeoutSeconds = lagOnly
+                ? (args.length >= 3 ? boundedPositive(args[2], "timeoutSeconds", 30, 1800) : 300)
+                : (args.length >= 2 ? boundedPositive(args[1], "timeoutSeconds", 30, 1800) : 300);
+
+        String command;
+        if (lagOnly) {
+            int thresholdMs = args.length >= 2 ? boundedPositive(args[1], "thresholdMs", 50, 5000) : 100;
+            command = "spark profiler start --only-ticks-over " + thresholdMs + " --timeout " + timeoutSeconds;
+            sender.sendMessage("spark lag profiler started for ticks over " + thresholdMs + " ms, timeout " + timeoutSeconds + " s.");
+        } else {
+            command = "spark profiler start --timeout " + timeoutSeconds;
+            sender.sendMessage("spark profiler started for " + timeoutSeconds + " seconds.");
+        }
+
+        if (!server.dispatchCommand(server.getConsoleSender(), command)) {
+            throw new IllegalStateException("Paper/spark rejected profiling command");
+        }
+    }
+
+    private static void handleChunkyAction(CommandSender sender, Runnable action, String successMessage) {
+        action.run();
+        sender.sendMessage(successMessage);
+    }
+
     private static String requireWorld(String[] args) {
         if (args.length < 2 || args[1].isBlank()) {
             throw new IllegalArgumentException("A managed world name is required");
         }
         return args[1];
+    }
+
+    private static int boundedPositive(String value, String name, int min, int max) {
+        int parsed = parseInt(value, name);
+        if (parsed < min || parsed > max) {
+            throw new IllegalArgumentException(name + " must be between " + min + " and " + max);
+        }
+        return parsed;
     }
 
     private static int parseInt(String value, String name) {
@@ -88,7 +117,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("status", "pregen", "pause", "continue", "cancel"), args[0]);
+            return filter(List.of("status", "pregen", "pause", "continue", "cancel", "profile", "profilelag"), args[0]);
         }
         if (args.length == 4 && "pregen".equalsIgnoreCase(args[0])) {
             return filter(List.of("square", "circle"), args[3]);
