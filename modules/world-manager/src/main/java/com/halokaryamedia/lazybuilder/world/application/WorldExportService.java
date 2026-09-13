@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
@@ -57,6 +59,24 @@ public final class WorldExportService {
         this.updateService = Objects.requireNonNull(updateService, "updateService");
         this.converter = Objects.requireNonNull(converter, "converter");
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
+    }
+
+    /**
+     * Read-only verified target catalog for presentation. This never triggers network/update work.
+     * Native Java 1.21.4 is always available; converter targets appear only from a verified current runtime.
+     */
+    public List<String> supportedFormats() {
+        LinkedHashSet<String> formats = new LinkedHashSet<>();
+        formats.add(NATIVE_SERVER_FORMAT);
+        try {
+            conversionStore.current().ifPresent(runtime -> runtime.manifest().supportedFormats().stream()
+                    .map(value -> value == null ? "" : value.strip().toUpperCase(Locale.ROOT))
+                    .filter(value -> !value.isBlank())
+                    .forEach(formats::add));
+        } catch (IOException ignored) {
+            // Capability discovery is advisory; native export remains available.
+        }
+        return List.copyOf(formats);
     }
 
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
