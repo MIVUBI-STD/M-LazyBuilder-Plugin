@@ -17,11 +17,6 @@ public interface WorldRuntimeGateway {
 
     boolean isLoaded(WorldRecord world);
 
-    /** Runtime occupancy is derived from the server, never persisted as world lifecycle state. */
-    default boolean hasPlayers(WorldRecord world) {
-        return false;
-    }
-
     void loadWorld(WorldRecord world);
 
     void unloadWorld(WorldRecord world);
