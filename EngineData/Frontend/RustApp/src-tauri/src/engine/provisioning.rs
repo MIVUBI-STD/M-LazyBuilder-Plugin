@@ -18,7 +18,7 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
 
     let java = java_runtime::ensure_managed_java()?;
     ensure_server_manager_config(&workspace, &java)?;
-    let paper_build = paper_provider::ensure_for_workspace(&workspace)?;
+    let paper_build = resolve_or_provision_paper(&workspace)?;
     core_modules::sync(&workspace, resource_dir)?;
     ensure_server_properties(&workspace)?;
     update_workspace_manifest(&workspace, paper_build, core_modules::CORE_VERSION)?;
@@ -29,6 +29,19 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
         core_version: core_modules::CORE_VERSION.into(),
         status: workspace_registry::provisioning_status()?,
     })
+}
+
+fn resolve_or_provision_paper(workspace: &Path) -> Result<u64, String> {
+    let paper = workspace.join("server").join("paper.jar");
+    let manifest = workspace.join("tools").join("lazybuilder").join("config").join("workspace.json");
+    if paper.is_file() && manifest.is_file() {
+        let text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
+        let value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        if let Some(build) = value.get("paperBuild").and_then(Value::as_u64) {
+            return Ok(build);
+        }
+    }
+    paper_provider::ensure_for_workspace(workspace)
 }
 
 fn ensure_server_properties(workspace: &Path) -> Result<(), String> {
