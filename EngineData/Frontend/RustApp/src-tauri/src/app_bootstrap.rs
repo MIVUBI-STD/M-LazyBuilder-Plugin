@@ -1,14 +1,22 @@
 use crate::commands;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
+use crate::engine::workspace_registry;
 
 pub fn run() {
+    let _ = workspace_registry::initialize();
     let _ = commands::server_tools::maintain_logs();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::workspace::workspace_state,
+            commands::workspace::workspace_pick_parent,
+            commands::workspace::workspace_create,
+            commands::workspace::workspace_open_picker,
+            commands::workspace::workspace_activate,
+            commands::workspace::workspace_close,
             commands::server_manager::server_preflight,
             commands::server_manager::server_snapshot,
             commands::server_manager::server_start,
