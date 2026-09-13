@@ -106,10 +106,10 @@
       error = 'LazyBuilder could not identify the broken JAR safely.';
       return;
     }
-    if (!window.confirm(`Remove broken plugin file ${jar}? A rollback copy will be kept.`)) return;
+    if (!window.confirm(`Remove broken plugin file ${jar}?`)) return;
     await run(async () => {
       await runtimeProduct.plugins.removeProblem(plugin.id, jar);
-      message = 'Broken plugin JAR removed. A rollback copy was kept.';
+      message = 'Broken plugin JAR removed safely.';
     });
   }
 
