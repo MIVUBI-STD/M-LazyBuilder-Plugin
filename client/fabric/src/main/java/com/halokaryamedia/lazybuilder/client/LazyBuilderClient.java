@@ -4,8 +4,8 @@ import net.fabricmc.api.ClientModInitializer;
 
 /** Fabric client entrypoint. Keeps initialization event-driven and side-local. */
 public final class LazyBuilderClient implements ClientModInitializer {
-    private static final ClientWorldController WORLDS = new ClientWorldController();
     private static final ClientTransferController TRANSFERS = new ClientTransferController();
+    private static final ClientWorldController WORLDS = new ClientWorldController(TRANSFERS::downloadExport);
     private static final ClientMapController MAPS = new ClientMapController(TRANSFERS::downloadExport);
 
     @Override
