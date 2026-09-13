@@ -84,7 +84,6 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
     fs::create_dir_all(&worlds_root).map_err(|error| error.to_string())?;
     fs::create_dir_all(&disabled_plugins).map_err(|error| error.to_string())?;
 
-    // Preflight every destination before moving anything, so adoption never overwrites.
     for world in &plan.worlds {
         ensure_destination_free(&worlds_root.join(world))?;
     }
@@ -105,9 +104,6 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
             let destination = if entry == &plan.paper_jar { server.join("paper.jar") } else { server.join(entry) };
             move_recorded(&root.join(entry), &destination, &mut moved)?;
         }
-
-        // The plugins directory is now canonical under server/plugins. Disable only
-        // legacy features that LazyBuilder explicitly replaces; all external build tools stay active.
         for plugin in &plan.legacy_plugins_to_disable {
             move_recorded(
                 &server.join("plugins").join(plugin),
@@ -123,17 +119,13 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
         return Err(format!("Server adoption failed and moved entries were rolled back: {error}"));
     }
 
-    let entry = match workspace_registry::open(&root) {
-        Ok(entry) => entry,
+    match workspace_registry::open_with_display_name(&root, requested_name) {
+        Ok(entry) => Ok(entry),
         Err(error) => {
             rollback(&mut moved);
-            return Err(format!("Server files were restored because LazyBuilder registration failed: {error}"));
+            Err(format!("Server files were restored because LazyBuilder registration failed: {error}"))
         }
-    };
-
-    // A custom display name can be added later without renaming the filesystem root.
-    let _ = requested_name;
-    Ok(entry)
+    }
 }
 
 fn detect_paper_jar(root: &Path) -> Result<String, String> {
