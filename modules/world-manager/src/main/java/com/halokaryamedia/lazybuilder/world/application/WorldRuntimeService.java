@@ -12,15 +12,26 @@ public final class WorldRuntimeService {
     private final WorldRegistry registry;
     private final WorldRuntimeStateRegistry states;
     private final WorldRuntimeGateway runtime;
+    private final WorldOperationCoordinator operations;
 
     public WorldRuntimeService(
             WorldRegistry registry,
             WorldRuntimeStateRegistry states,
             WorldRuntimeGateway runtime
     ) {
+        this(registry, states, runtime, null);
+    }
+
+    public WorldRuntimeService(
+            WorldRegistry registry,
+            WorldRuntimeStateRegistry states,
+            WorldRuntimeGateway runtime,
+            WorldOperationCoordinator operations
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.states = Objects.requireNonNull(states, "states");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.operations = operations;
     }
 
     public WorldRuntimeState state(WorldId id) {
@@ -28,6 +39,29 @@ public final class WorldRuntimeService {
     }
 
     public WorldRecord load(WorldId id) {
+        ensureNoExternalOperation(id);
+        return loadInternal(id);
+    }
+
+    public WorldRecord unload(WorldId id) {
+        ensureNoExternalOperation(id);
+        return unloadInternal(id);
+    }
+
+    /**
+     * Internal lifecycle path for a service that already owns this world's operation lease.
+     * Package-private on purpose so transports/UI cannot bypass operation coordination.
+     */
+    WorldRecord loadDuringOperation(WorldId id) {
+        return loadInternal(id);
+    }
+
+    /** Internal counterpart to {@link #loadDuringOperation(WorldId)}. */
+    WorldRecord unloadDuringOperation(WorldId id) {
+        return unloadInternal(id);
+    }
+
+    private WorldRecord loadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
         if (world.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Archived worlds must be restored before loading");
@@ -52,7 +86,7 @@ public final class WorldRuntimeService {
         }
     }
 
-    public WorldRecord unload(WorldId id) {
+    private WorldRecord unloadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
         WorldRuntimeState current = states.get(id);
         if (current == WorldRuntimeState.UNLOADED) {
@@ -70,6 +104,17 @@ public final class WorldRuntimeService {
         } catch (RuntimeException exception) {
             states.transition(id, WorldRuntimeState.UNLOADING, WorldRuntimeState.LOADED);
             throw exception;
+        }
+    }
+
+    private void ensureNoExternalOperation(WorldId id) {
+        Objects.requireNonNull(id, "id");
+        if (operations == null) {
+            return;
+        }
+        WorldOperationType active = operations.activeOperation(id);
+        if (active != null) {
+            throw new IllegalStateException("World is busy with " + active + ": " + id);
         }
     }
 
