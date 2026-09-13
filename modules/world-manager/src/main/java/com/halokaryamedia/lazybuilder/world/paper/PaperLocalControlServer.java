@@ -42,6 +42,7 @@ public final class PaperLocalControlServer {
     public static final int DEFAULT_PORT = 17842;
 
     private static final Gson GSON = new Gson();
+    private static final int MAX_JSON_BODY_BYTES = 256 * 1024;
     private static final String IMPORT_FILE_HEADER = "X-LazyBuilder-File-Name";
     private static final String IMPORT_SHA_HEADER = "X-LazyBuilder-Sha256";
 
@@ -507,8 +508,15 @@ public final class PaperLocalControlServer {
     }
 
     private static <T> T readJson(HttpExchange exchange, Class<T> type) throws IOException {
-        try (var reader = new java.io.InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8)) {
-            T payload = GSON.fromJson(reader, type);
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_JSON_BODY_BYTES + 1);
+        if (body.length > MAX_JSON_BODY_BYTES) {
+            throw new IllegalArgumentException("Request body exceeds the local control JSON limit.");
+        }
+        if (body.length == 0) {
+            throw new IllegalArgumentException("Request body is required.");
+        }
+        try {
+            T payload = GSON.fromJson(new String(body, StandardCharsets.UTF_8), type);
             if (payload == null) throw new IllegalArgumentException("Request body is required.");
             return payload;
         } catch (JsonParseException exception) {
