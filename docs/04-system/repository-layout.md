@@ -110,7 +110,7 @@ Paper-side authority for all world lifecycle operations:
 
 The desktop Rust runtime may call the authenticated loopback control bridge, but must not duplicate world business logic or become a second filesystem owner.
 
-World-Manager receives the canonical workspace root from Server-Manager and validates that Paper is actually using `<workspace>/world-system/worlds`. It then owns registry/import/export/backup/work paths under the canonical layout. A manual plugin-only launch that does not supply the workspace environment remains on the historical plugin-data layout for compatibility rather than silently moving existing data.
+World-Manager receives the canonical workspace root from Server-Manager and validates that Paper is actually using `<workspace>/world-system/worlds`. It then owns registry/import/export/backup/work paths under the canonical layout. Archive/Restore currently changes managed lifecycle metadata and load state; it does not maintain a second physical archive world store. A manual plugin-only launch that does not supply the workspace environment remains on the historical plugin-data layout for compatibility rather than silently moving existing data.
 
 ### Utilities-Manager
 
@@ -177,7 +177,6 @@ Work Server - 1.21.4/
 │   ├── imports/         # validated inbound world archives
 │   ├── exports/         # export artifacts ready for transfer
 │   ├── backups/         # World-Manager backups
-│   ├── archives/        # reserved archive storage boundary
 │   ├── work/            # request-scoped temporary work
 │   │   └── transfer/    # transient transfer session files
 │   └── registry.yml     # durable managed-world registry
@@ -199,6 +198,7 @@ Work Server - 1.21.4/
 
 - Paper world folders live only in `world-system/worlds/` for the canonical desktop-launched runtime.
 - World-Manager registry/import/export/backup/work data lives only under `world-system/`.
+- Archive is lifecycle metadata, so no unused physical `archives/` folder is created.
 - converter binaries/download cache live under `tools/lazybuilder/cache/converter/` because they are executable support assets, not world data.
 - Server-Manager, World-control, and Plugin-Manager category configuration live under `tools/lazybuilder/config/`.
 - enabled Paper plugin JARs live under `server/plugins/`; disabled JARs and Plugin-Manager backups live under `tools/lazybuilder/`.
@@ -219,6 +219,7 @@ Work Server - 1.21.4/
 7. Source/CI proof remains separate from installed Windows and live Paper validation.
 8. Runtime path migration must be explicit and fail-safe; never silently relocate existing world folders.
 9. Compatibility paths must not become permanent parallel storage authorities.
+10. Do not create runtime directories that have no active semantic owner.
 
 ## Current development order
 
@@ -228,6 +229,6 @@ Work Server - 1.21.4/
 3. Utilities-Manager source architecture — locked
 4. canonical runtime storage wiring — implemented at source level
 5. Plugin-Manager runtime storage consolidation — implemented at source level
-6. final repository audit
+6. final repository consistency/packaging audit
 7. package LazyBuilder.exe and perform LOCAL_CODE / LIVE_SERVER validation
 ```
