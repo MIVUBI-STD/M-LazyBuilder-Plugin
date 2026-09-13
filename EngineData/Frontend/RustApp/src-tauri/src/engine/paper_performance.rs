@@ -17,6 +17,7 @@ struct BuildPerformanceSettings {
     max_auto_save_chunks_per_tick: u32,
     disable_armor_stand_tick: bool,
     disable_armor_stand_collision_lookups: bool,
+    disable_pathfinding_on_block_update: bool,
     optimize_explosions: bool,
     disable_mob_spawner_tick: bool,
 }
@@ -97,6 +98,11 @@ fn load_settings() -> Result<BuildPerformanceSettings, String> {
             "paperDisableArmorStandCollisionLookups",
             true,
         ),
+        disable_pathfinding_on_block_update: bool_setting(
+            &value,
+            "paperDisablePathfindingOnBlockUpdate",
+            true,
+        ),
         optimize_explosions: bool_setting(&value, "paperOptimizeExplosions", true),
         disable_mob_spawner_tick: bool_setting(&value, "paperDisableMobSpawnerTick", true),
     })
@@ -122,6 +128,11 @@ fn patch_build_profile(input: &str, settings: BuildPerformanceSettings) -> Strin
         &output,
         &["entities", "armor-stands", "do-collision-entity-lookups"],
         if settings.disable_armor_stand_collision_lookups { "false" } else { "true" },
+    );
+    output = patch_yaml_scalar(
+        &output,
+        &["entities", "behavior", "update-pathfinding-on-block-update"],
+        if settings.disable_pathfinding_on_block_update { "false" } else { "true" },
     );
     output = patch_yaml_scalar(
         &output,
@@ -242,6 +253,7 @@ mod tests {
             max_auto_save_chunks_per_tick: 12,
             disable_armor_stand_tick: true,
             disable_armor_stand_collision_lookups: true,
+            disable_pathfinding_on_block_update: true,
             optimize_explosions: true,
             disable_mob_spawner_tick: true,
         }
@@ -249,11 +261,12 @@ mod tests {
 
     #[test]
     fn patches_existing_nested_values_without_touching_neighbors() {
-        let input = "chunks:\n  max-auto-save-chunks-per-tick: 24\nentities:\n  armor-stands:\n    do-collision-entity-lookups: true\n    tick: true\n  markers:\n    tick: true\nenvironment:\n  optimize-explosions: false\ntick-rates:\n  mob-spawner: 1\n";
+        let input = "chunks:\n  max-auto-save-chunks-per-tick: 24\nentities:\n  armor-stands:\n    do-collision-entity-lookups: true\n    tick: true\n  behavior:\n    update-pathfinding-on-block-update: true\n  markers:\n    tick: true\nenvironment:\n  optimize-explosions: false\ntick-rates:\n  mob-spawner: 1\n";
         let output = patch_build_profile(input, defaults());
         assert!(output.contains("max-auto-save-chunks-per-tick: 12"));
         assert!(output.contains("do-collision-entity-lookups: false"));
         assert!(output.contains("    tick: false"));
+        assert!(output.contains("update-pathfinding-on-block-update: false"));
         assert!(output.contains("markers:\n    tick: true"));
         assert!(output.contains("optimize-explosions: true"));
         assert!(output.contains("mob-spawner: -1"));
