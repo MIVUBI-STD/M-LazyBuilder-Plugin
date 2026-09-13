@@ -1,9 +1,6 @@
-use crate::engine::paths;
+use crate::engine::server_config::{self, ServerConfig};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use std::fs;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use sysinfo::System;
 
 const MB: u64 = 1024 * 1024;
@@ -13,7 +10,6 @@ const BOOST_CAP_MB: u64 = 12288;
 const CPU_MODE_ADAPTIVE: &str = "Adaptive";
 const CPU_MODE_MANUAL: &str = "Manual";
 
-static CONFIG_CACHE: OnceLock<Mutex<Option<Map<String, Value>>>> = OnceLock::new();
 static HARDWARE_CACHE: OnceLock<Hardware> = OnceLock::new();
 
 #[derive(Clone, Serialize)]
@@ -62,17 +58,15 @@ pub struct RuntimeResources {
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
     let hardware = hardware();
-    let config = read_config()?;
-    let configured_max = config_u64(&config, "maxMemoryMb").unwrap_or(4096);
+    let config = server_config::load()?;
+    let configured_max = config.max_memory_mb;
     let current_max = configured_max.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
-    let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(1024);
-    let current_min = configured_min
+    let current_min = config
+        .min_memory_mb
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(current_max));
-    let current_preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
-    let current_cpu_mode = configured_cpu_mode(&config, &current_preset);
-    let configured_cpu = config_u64(&config, "cpuThreads")
-        .map(|value| value as u32)
-        .unwrap_or(hardware.logical_processors);
+    let current_preset = normalize_preset(&config.resource_preset);
+    let current_cpu_mode = configured_cpu_mode(&config);
+    let configured_cpu = config.cpu_threads.unwrap_or(hardware.logical_processors);
     let current_cpu = configured_cpu.clamp(1, hardware.logical_processors);
 
     let performance = preset_for(hardware, PresetKind::Performance);
@@ -112,13 +106,13 @@ pub fn save(request: ResourceUpdateRequest) -> Result<ServerResourceProfile, Str
         normalize_cpu_mode(&request.cpu_mode)
     };
 
-    let mut config = read_config()?;
-    config.insert("maxMemoryMb".into(), Value::from(max_memory_mb));
-    config.insert("minMemoryMb".into(), Value::from(min_memory_mb));
-    config.insert("cpuMode".into(), Value::from(cpu_mode));
-    config.insert("cpuThreads".into(), Value::from(cpu_threads));
-    config.insert("resourcePreset".into(), Value::from(preset));
-    write_config(&config)?;
+    let mut config = server_config::load()?;
+    config.max_memory_mb = max_memory_mb;
+    config.min_memory_mb = min_memory_mb;
+    config.cpu_mode = cpu_mode;
+    config.cpu_threads = Some(cpu_threads);
+    config.resource_preset = preset;
+    server_config::save(&config)?;
     profile()
 }
 
@@ -137,26 +131,18 @@ pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
     })
 }
 
-pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb: u64) -> Result<RuntimeResources, String> {
+pub fn runtime_resources(_configured_min_memory_mb: u64, _configured_max_memory_mb: u64) -> Result<RuntimeResources, String> {
     let hardware = hardware();
-    let config = read_config()?;
-    // Prefer the cached canonical config so Settings changes take effect immediately.
-    let max_memory_mb = config_u64(&config, "maxMemoryMb")
-        .unwrap_or(configured_max_memory_mb)
+    let config = server_config::load()?;
+    let max_memory_mb = config
+        .max_memory_mb
         .clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
-    let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(configured_min_memory_mb);
-    // Keep startup heap intentionally small. Paper grows toward Xmx only as workload needs it.
-    let min_memory_mb = configured_min
+    let min_memory_mb = config
+        .min_memory_mb
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(max_memory_mb));
-    let preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
-    let cpu_mode = configured_cpu_mode(&config, &preset);
+    let cpu_mode = configured_cpu_mode(&config);
     let cpu_threads = if cpu_mode == CPU_MODE_MANUAL {
-        Some(
-            config_u64(&config, "cpuThreads")
-                .map(|value| value as u32)
-                .unwrap_or(hardware.logical_processors)
-                .clamp(1, hardware.logical_processors),
-        )
+        Some(config.cpu_threads.unwrap_or(hardware.logical_processors).clamp(1, hardware.logical_processors))
     } else {
         None
     };
@@ -180,7 +166,6 @@ fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
         max_memory_mb: target_memory,
         min_memory_mb: recommended_min_memory(target_memory),
         cpu_mode: CPU_MODE_ADAPTIVE.into(),
-        // Informational/manual fallback only. Adaptive presets do not pass ActiveProcessorCount.
         cpu_threads: hardware.logical_processors,
     }
 }
@@ -255,104 +240,13 @@ fn normalize_cpu_mode(value: &str) -> String {
     }
 }
 
-fn configured_cpu_mode(config: &Map<String, Value>, preset: &str) -> String {
-    if let Some(mode) = config_string(config, "cpuMode") {
-        return normalize_cpu_mode(&mode);
-    }
-    // Migration rule: historic Performance/Boost configs used a fixed cpuThreads value.
-    // New presets are adaptive, while historic Custom configs remain manual.
-    match preset {
-        "Performance" | "Boost" => CPU_MODE_ADAPTIVE.into(),
-        _ if config.contains_key("cpuThreads") => CPU_MODE_MANUAL.into(),
-        _ => CPU_MODE_ADAPTIVE.into(),
-    }
-}
-
-fn config_path() -> Result<PathBuf, String> {
-    Ok(paths::lazybuilder_config_dir()?.join("server-manager.json"))
-}
-
-fn config_cache() -> &'static Mutex<Option<Map<String, Value>>> {
-    CONFIG_CACHE.get_or_init(|| Mutex::new(None))
-}
-
-fn read_config() -> Result<Map<String, Value>, String> {
-    let mut cache = config_cache()
-        .lock()
-        .map_err(|_| "resource config cache lock poisoned".to_string())?;
-    if let Some(config) = cache.as_ref() {
-        return Ok(config.clone());
-    }
-
-    let path = config_path()?;
-    let config = if !path.is_file() {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        Map::new()
+fn configured_cpu_mode(config: &ServerConfig) -> String {
+    let preset = normalize_preset(&config.resource_preset);
+    if preset == "Performance" || preset == "Boost" {
+        CPU_MODE_ADAPTIVE.into()
     } else {
-        let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        match serde_json::from_str::<Value>(&text).map_err(|error| error.to_string())? {
-            Value::Object(map) => map,
-            _ => return Err("server-manager.json must contain a JSON object".into()),
-        }
-    };
-
-    *cache = Some(config.clone());
-    Ok(config)
-}
-
-fn write_config(config: &Map<String, Value>) -> Result<(), String> {
-    let path = config_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        normalize_cpu_mode(&config.cpu_mode)
     }
-    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.resources.tmp");
-    fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    if path.exists() {
-        let backup = path.with_extension("json.resources.previous");
-        let backup_incoming = path.with_extension("json.resources.previous.incoming");
-        if backup_incoming.exists() {
-            fs::remove_file(&backup_incoming).map_err(|error| error.to_string())?;
-        }
-        fs::copy(&path, &backup_incoming).map_err(|error| error.to_string())?;
-        if backup.exists() {
-            fs::remove_file(&backup).map_err(|error| error.to_string())?;
-        }
-        fs::rename(&backup_incoming, &backup).map_err(|error| error.to_string())?;
-
-        let swap = path.with_extension("json.resources.swap");
-        if swap.exists() {
-            fs::remove_file(&swap).map_err(|error| error.to_string())?;
-        }
-        fs::rename(&path, &swap).map_err(|error| error.to_string())?;
-        match fs::rename(&temporary, &path) {
-            Ok(()) => {
-                let _ = fs::remove_file(swap);
-            }
-            Err(error) => {
-                let _ = fs::rename(&swap, &path);
-                let _ = fs::remove_file(&temporary);
-                return Err(error.to_string());
-            }
-        }
-    } else {
-        fs::rename(temporary, path).map_err(|error| error.to_string())?;
-    }
-
-    *config_cache()
-        .lock()
-        .map_err(|_| "resource config cache lock poisoned".to_string())? = Some(config.clone());
-    Ok(())
-}
-
-fn config_u64(config: &Map<String, Value>, key: &str) -> Option<u64> {
-    config.get(key).and_then(Value::as_u64)
-}
-
-fn config_string(config: &Map<String, Value>, key: &str) -> Option<String> {
-    config.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
 fn hardware() -> &'static Hardware {
