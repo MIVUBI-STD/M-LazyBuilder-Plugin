@@ -140,11 +140,11 @@ public final class WorldManagerScreen extends Screen {
             addDrawableChild(teleport);
 
             y += 40;
-            LbButtonWidget export = LbUi.button(x, y, contentWidth, 26, "Export World",
+            LbButtonWidget transfer = LbUi.button(x, y, contentWidth, 26, "Import / Export",
                     LbButtonWidget.Style.SECONDARY,
                     () -> { if (client != null) client.setScreen(new ExportWorldScreen(this, controller, world)); });
-            export.active = !busy;
-            addDrawableChild(export);
+            transfer.active = !busy;
+            addDrawableChild(transfer);
 
             y += 38;
             addManagementActions(world, busy, x, y, contentWidth, half, narrow);
@@ -174,7 +174,7 @@ public final class WorldManagerScreen extends Screen {
     ) {
         LbButtonWidget duplicate = LbUi.button(x, y, half, 24, "Duplicate",
                 LbButtonWidget.Style.GHOST,
-                () -> { if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world)); });
+                () -> { if (client != null) client.setScreen(new DuplicateWorldScreen(this, controller, world)); });
         duplicate.active = !busy;
         addDrawableChild(duplicate);
 
