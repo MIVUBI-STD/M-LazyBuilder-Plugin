@@ -9,7 +9,7 @@ softdepend: [Chunky]
 commands:
   lazyperf:
     description: LazyBuilder build-server performance tools.
-    usage: /lazyperf status|pregen|pause|continue|cancel
+    usage: /lazyperf status|pregen|pause|continue|cancel|profile|profilelag
     permission: lazybuilder.performance.manage
 
 permissions:
