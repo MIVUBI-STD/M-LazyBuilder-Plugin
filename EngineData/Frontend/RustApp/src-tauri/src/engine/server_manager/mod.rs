@@ -295,11 +295,15 @@ impl ServerManagerState {
         set_runtime_state(&self.runtime_state, "Starting")?;
         *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = Some(Instant::now());
 
-        let mut child = Command::new(java)
+        let mut command = Command::new(java);
+        command
             .current_dir(&server_dir)
             .arg(format!("-Xms{}M", resources.min_memory_mb))
-            .arg(format!("-Xmx{}M", resources.max_memory_mb))
-            .arg(format!("-XX:ActiveProcessorCount={}", resources.cpu_threads))
+            .arg(format!("-Xmx{}M", resources.max_memory_mb));
+        if let Some(cpu_threads) = resources.cpu_threads {
+            command.arg(format!("-XX:ActiveProcessorCount={cpu_threads}"));
+        }
+        let mut child = command
             .args(["-jar", &options.paper_jar])
             .arg("--universe")
             .arg(&worlds_dir)
