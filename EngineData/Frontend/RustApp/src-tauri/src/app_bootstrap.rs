@@ -3,6 +3,8 @@ use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
 
 pub fn run() {
+    let _ = commands::server_tools::maintain_logs();
+
     tauri::Builder::default()
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
