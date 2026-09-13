@@ -15,8 +15,8 @@ import java.util.function.Predicate;
 public final class WorldIdleUnloadService {
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeGateway runtime;
     private final WorldOperationCoordinator operations;
+    private final Predicate<WorldRecord> isLoaded;
     private final Predicate<WorldRecord> hasPlayers;
     private final long idleMillis;
     private final Map<WorldId, Long> emptySince = new HashMap<>();
@@ -24,15 +24,15 @@ public final class WorldIdleUnloadService {
     public WorldIdleUnloadService(
             WorldRegistry registry,
             WorldRuntimeService runtimeService,
-            WorldRuntimeGateway runtime,
             WorldOperationCoordinator operations,
+            Predicate<WorldRecord> isLoaded,
             Predicate<WorldRecord> hasPlayers,
             Duration idleTimeout
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.operations = Objects.requireNonNull(operations, "operations");
+        this.isLoaded = Objects.requireNonNull(isLoaded, "isLoaded");
         this.hasPlayers = Objects.requireNonNull(hasPlayers, "hasPlayers");
         this.idleMillis = Math.max(30_000L, Objects.requireNonNull(idleTimeout, "idleTimeout").toMillis());
     }
@@ -42,7 +42,7 @@ public final class WorldIdleUnloadService {
         for (WorldRecord world : registry.all()) {
             WorldId id = world.id();
             if (world.lifecycle() != WorldLifecycle.ACTIVE
-                    || !runtime.isLoaded(world)
+                    || !isLoaded.test(world)
                     || hasPlayers.test(world)
                     || operations.activeOperation(id) != null) {
                 emptySince.remove(id);
@@ -60,9 +60,5 @@ public final class WorldIdleUnloadService {
                 emptySince.put(id, nowMillis);
             }
         }
-    }
-
-    public void markUsed(WorldId id) {
-        emptySince.remove(Objects.requireNonNull(id, "id"));
     }
 }
