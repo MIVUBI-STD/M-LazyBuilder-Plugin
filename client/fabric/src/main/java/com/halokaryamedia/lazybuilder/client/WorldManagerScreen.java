@@ -19,6 +19,7 @@ public final class WorldManagerScreen extends Screen {
     private UUID selectedWorld;
     private int page;
     private long observedRevision;
+    private boolean requestedInitialRefresh;
 
     public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
         super(Text.literal("Worlds"));
@@ -30,7 +31,10 @@ public final class WorldManagerScreen extends Screen {
 
     @Override
     protected void init() {
-        controller.refresh();
+        if (!requestedInitialRefresh) {
+            requestedInitialRefresh = true;
+            controller.refresh();
+        }
         observedRevision = controller.revision();
         List<WorldControlWireProtocol.WorldSummary> worlds = controller.worlds();
         int maxPage = worlds.isEmpty() ? 0 : (worlds.size() - 1) / PAGE_SIZE;
