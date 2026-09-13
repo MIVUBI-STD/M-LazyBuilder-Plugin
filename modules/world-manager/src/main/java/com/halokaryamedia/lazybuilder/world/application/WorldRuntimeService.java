@@ -12,7 +12,7 @@ public final class WorldRuntimeService {
     private final WorldRegistry registry;
     private final WorldRuntimeStateRegistry states;
     private final WorldRuntimeGateway runtime;
-    private final WorldOperationCoordinator operations;
+    private WorldOperationCoordinator operations;
 
     public WorldRuntimeService(
             WorldRegistry registry,
@@ -34,6 +34,17 @@ public final class WorldRuntimeService {
         this.operations = operations;
     }
 
+    synchronized void attachOperations(WorldOperationCoordinator coordinator) {
+        Objects.requireNonNull(coordinator, "coordinator");
+        if (operations == null) {
+            operations = coordinator;
+            return;
+        }
+        if (operations != coordinator) {
+            throw new IllegalStateException("WorldRuntimeService already uses a different operation coordinator");
+        }
+    }
+
     public WorldRuntimeState state(WorldId id) {
         return states.get(id);
     }
@@ -48,10 +59,7 @@ public final class WorldRuntimeService {
         return unloadInternal(id);
     }
 
-    /**
-     * Internal lifecycle path for a service that already owns this world's operation lease.
-     * Package-private on purpose so transports/UI cannot bypass operation coordination.
-     */
+    /** Internal lifecycle path for a service that already owns this world's operation lease. */
     WorldRecord loadDuringOperation(WorldId id) {
         return loadInternal(id);
     }
@@ -68,9 +76,7 @@ public final class WorldRuntimeService {
         }
 
         WorldRuntimeState current = states.get(id);
-        if (current == WorldRuntimeState.LOADED) {
-            return world;
-        }
+        if (current == WorldRuntimeState.LOADED) return world;
         if (current != WorldRuntimeState.UNLOADED) {
             throw new IllegalStateException("World is busy: " + current);
         }
@@ -89,9 +95,7 @@ public final class WorldRuntimeService {
     private WorldRecord unloadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
         WorldRuntimeState current = states.get(id);
-        if (current == WorldRuntimeState.UNLOADED) {
-            return world;
-        }
+        if (current == WorldRuntimeState.UNLOADED) return world;
         if (current != WorldRuntimeState.LOADED) {
             throw new IllegalStateException("World is busy: " + current);
         }
@@ -109,10 +113,12 @@ public final class WorldRuntimeService {
 
     private void ensureNoExternalOperation(WorldId id) {
         Objects.requireNonNull(id, "id");
-        if (operations == null) {
-            return;
+        WorldOperationCoordinator coordinator;
+        synchronized (this) {
+            coordinator = operations;
         }
-        WorldOperationType active = operations.activeOperation(id);
+        if (coordinator == null) return;
+        WorldOperationType active = coordinator.activeOperation(id);
         if (active != null) {
             throw new IllegalStateException("World is busy with " + active + ": " + id);
         }
