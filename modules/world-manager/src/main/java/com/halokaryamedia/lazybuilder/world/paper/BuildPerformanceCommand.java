@@ -28,10 +28,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
             return true;
         }
         if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
-            sender.sendMessage("LazyBuilder build performance tools");
-            sender.sendMessage("- Chunky: " + (pregeneration.available() ? "available" : "optional/not installed"));
-            sender.sendMessage("- spark: bundled by Paper 1.21+");
-            sender.sendMessage("- AI policy tags: lazybuilder_gameplay_ai (opt out), lazybuilder_decorative (force no-AI)");
+            sendStatus(sender);
             return true;
         }
 
@@ -50,6 +47,20 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
             sender.sendMessage("LazyBuilder performance: " + exception.getMessage());
         }
         return true;
+    }
+
+    private void sendStatus(CommandSender sender) {
+        double[] tps = server.getTPS();
+        double tps1m = tps.length > 0 ? Math.min(20.0, tps[0]) : 0.0;
+        double tps5m = tps.length > 1 ? Math.min(20.0, tps[1]) : tps1m;
+        double mspt = server.getAverageTickTime();
+
+        sender.sendMessage("LazyBuilder build performance tools");
+        sender.sendMessage(String.format(Locale.ROOT, "- TPS: %.2f (1m) / %.2f (5m)", tps1m, tps5m));
+        sender.sendMessage(String.format(Locale.ROOT, "- MSPT: %.2f ms", mspt));
+        sender.sendMessage("- Chunky: " + (pregeneration.available() ? "available" : "optional/not installed"));
+        sender.sendMessage("- spark: bundled by Paper 1.21+");
+        sender.sendMessage("- AI policy tags: lazybuilder_gameplay_ai (opt out), lazybuilder_decorative (force no-AI)");
     }
 
     private void handlePregen(CommandSender sender, String[] args) {
