@@ -1,7 +1,8 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::workspace_registry::{self, ProvisioningStatus, WorkspaceEntry};
+use crate::engine::{java_runtime, provisioning, workspace_registry};
+use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,13 +21,19 @@ pub fn workspace_state() -> Result<WorkspaceState, String> {
 
 #[tauri::command]
 pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
-    workspace_registry::provisioning_status()
+    resolved_provisioning_status()
+}
+
+#[tauri::command]
+pub fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    provisioning::provision_active(resource_dir.as_deref())
 }
 
 #[tauri::command]
 pub fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
     workspace_registry::accept_eula()?;
-    workspace_registry::provisioning_status()
+    resolved_provisioning_status()
 }
 
 #[tauri::command]
@@ -71,6 +78,21 @@ pub fn workspace_activate(
 pub fn workspace_close(state: State<'_, ServerManagerState>) -> Result<(), String> {
     ensure_switch_allowed(&state)?;
     workspace_registry::deactivate()
+}
+
+fn resolved_provisioning_status() -> Result<ProvisioningStatus, String> {
+    let mut status = workspace_registry::provisioning_status()?;
+    status.java_ready = java_runtime::managed_java_path()?.is_file();
+    status.ready = status.workspace_created
+        && status.java_ready
+        && status.paper_ready
+        && status.core_modules_ready
+        && status.config_ready
+        && status.eula_accepted;
+    if !status.java_ready {
+        status.next_step = "Provision managed Java 21".into();
+    }
+    Ok(status)
 }
 
 fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
