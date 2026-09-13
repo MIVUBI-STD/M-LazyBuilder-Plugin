@@ -142,7 +142,8 @@ public final class WorldManagerScreen extends Screen {
             y += 40;
             LbButtonWidget transfer = LbUi.button(x, y, contentWidth, 26, "Import / Export",
                     LbButtonWidget.Style.SECONDARY,
-                    () -> { if (client != null) client.setScreen(new ExportWorldScreen(this, controller, world)); });
+                    () -> { if (client != null) client.setScreen(new WorldTransferScreen(
+                            this, controller, transfers, world, WorldTransferScreen.Tab.EXPORT)); });
             transfer.active = !busy;
             addDrawableChild(transfer);
 
