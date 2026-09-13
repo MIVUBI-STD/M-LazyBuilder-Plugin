@@ -234,6 +234,26 @@ public final class WorldManager {
                 }
             }
         }
+
+        // Reconcile Paper-loaded managed worlds with the registry once at startup.
+        // A managed world marked autoLoad=false should not keep chunk/entity ticking merely
+        // because Paper happened to load it before this plugin. The runtime gateway keeps the
+        // configured/default fallback world loaded, so this cannot remove the server's safety world.
+        for (WorldRecord world : worldRegistry.all()) {
+            if (world.lifecycle() == WorldLifecycle.ACTIVE && !world.autoLoad()
+                    && runtimeStates.get(world.id()) == WorldRuntimeState.LOADED) {
+                try {
+                    worldRuntimeService.unload(world.id());
+                    plugin.getLogger().fine("Unloaded idle managed world " + world.folderName()
+                            + " because autoLoad is disabled.");
+                } catch (RuntimeException exception) {
+                    plugin.getLogger().fine("Kept managed world " + world.folderName()
+                            + " loaded because Paper requires it as an active/fallback world: "
+                            + exception.getMessage());
+                }
+            }
+        }
+
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
                 + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
                 + " storage layout.");
