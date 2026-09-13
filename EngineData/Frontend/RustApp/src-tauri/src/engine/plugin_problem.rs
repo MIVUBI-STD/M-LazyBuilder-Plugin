@@ -2,7 +2,7 @@ use crate::engine::paths;
 use serde_yaml::Value;
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use zip::ZipArchive;
 
 pub fn remove_invalid(problem_id: &str, jar_file_name: &str) -> Result<(), String> {
@@ -83,8 +83,10 @@ fn plugin_metadata_is_valid(path: &Path) -> Result<bool, String> {
         Err(_) => return Ok(false),
     };
     let Some(mapping) = parsed.as_mapping() else { return Ok(false); };
-    let name = mapping.get(Value::String("name".into())).and_then(Value::as_str).unwrap_or("").trim();
-    let version = mapping.get(Value::String("version".into()));
+    let name_key = Value::String("name".into());
+    let version_key = Value::String("version".into());
+    let name = mapping.get(&name_key).and_then(Value::as_str).unwrap_or("").trim();
+    let version = mapping.get(&version_key);
     Ok(!name.is_empty() && version.is_some())
 }
 
