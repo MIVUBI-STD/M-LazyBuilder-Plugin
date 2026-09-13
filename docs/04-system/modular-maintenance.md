@@ -7,7 +7,7 @@ LazyBuilder is maintained as independently evolving components.
 - `modules/world-manager` owns world lifecycle, import/export, archive/restore, settings, conversion, transfer, and map/world control.
 - `modules/utilities-manager` owns builder convenience features only.
 - `client/fabric` owns in-game Fabric presentation and transport clients.
-- the future desktop app owns Server-Manager and Plugin-Manager responsibilities only.
+- `EngineData/Frontend/RustApp` is the canonical desktop app and owns Server-Manager and Plugin-Manager desktop responsibilities plus presentation/control of World-Manager through its explicit bridge.
 
 ## Change rules
 
@@ -19,8 +19,9 @@ LazyBuilder is maintained as independently evolving components.
 6. Feature packages inside Utilities-Manager have independent lifecycle registration and configuration keys.
 7. Background workers are forbidden unless the owning feature has a demonstrated continuous-work requirement.
 8. Paper APIs are preferred over NMS and custom runtime layers.
-9. CI must compile and test every server module plus the Fabric client before a structural migration is accepted.
-10. Legacy duplicate source trees must be removed once the canonical module passes CI.
+9. CI must compile/test Paper modules, compile the Fabric client, and check the Tauri/Svelte/Rust desktop before a structural migration is accepted.
+10. Legacy duplicate source trees must be removed once the canonical owner passes CI; compatibility storage fallbacks may remain only where they protect existing user data.
+11. Runtime folders are created only when an active owner uses them. Do not create placeholder storage for lifecycle states that are metadata-only.
 
 ## Release model
 
