@@ -73,7 +73,7 @@ public final class WorldMapScreen extends Screen {
         maps.refreshCurrentWorld();
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Worlds"), button -> {
-            if (client != null) client.setScreen(new WorldManagerScreen(worlds, transfers, maps));
+            if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
         }).dimensions(10, height - 24, 70, 18).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("−"), button -> stepZoom(1, width - 110, 20))
