@@ -1,5 +1,4 @@
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
-use crate::engine::plugin_problem;
 use crate::engine::server_manager::ServerManagerState;
 use tauri::State;
 
@@ -60,12 +59,13 @@ pub fn plugin_remove(
 
 #[tauri::command]
 pub fn plugin_remove_problem(
+    plugins: State<'_, PluginManagerState>,
     server: State<'_, ServerManagerState>,
     plugin_id: String,
     jar_file_name: String,
 ) -> Result<(), String> {
     ensure_plugin_mutation_allowed(&server)?;
-    plugin_problem::remove_invalid(&plugin_id, &jar_file_name)
+    plugins.remove_problem(&plugin_id, &jar_file_name)
 }
 
 #[tauri::command]
