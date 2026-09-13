@@ -61,21 +61,25 @@ Proof required
 STOP condition
 ```
 
-Use `.agents/skills/lazybuilder-development-brief/SKILL.md` only when architecture, cross-owner ambiguity, or unresolved success criteria prevents a reliable Standard contract. Clear optimization/audit work does not become Complex merely because several files are involved.
+**Complex / ambiguous** uses the same discipline, not a separate Skill:
+
+```text
+state competing semantic owners / unknowns
+→ gather only separating evidence
+→ resolve the smallest contract boundary
+→ choose one primary specialist
+→ continue implementation
+```
+
+Clear optimization/audit work does not become Complex merely because several files are involved.
 
 ## Specialist Routing
 
 Select the specialist by the **semantic decision**, not by implementation language or edited file. Load exactly one primary specialist. Add another only after ownership actually changes.
 
 ```text
-architecture/cross-owner ambiguity
-→ lazybuilder-development-brief
-
 workspace / provisioning / Java / Paper / core / server process / recovery / resources
 → lazybuilder-desktop-runtime
-
-Tauri/Svelte desktop presentation and frontend bridge
-→ lazybuilder-desktop-ui
 
 third-party Paper plugin lifecycle
 → lazybuilder-plugin-management
@@ -83,8 +87,9 @@ third-party Paper plugin lifecycle
 World Manager / Paper world behavior / import-export-conversion
 → lazybuilder-world-management
 
-Fabric client UI / Xaero
-→ lazybuilder-client-ui
+presentation/input on desktop or Fabric/Xaero
+→ lazybuilder-ui
+→ choose Desktop or Fabric branch only
 
 shared Paper/Fabric request-result/wire contract
 → lazybuilder-protocol
@@ -106,7 +111,7 @@ No change required?
 → reuse current owner/path?
 → native/platform/existing dependency?
 → smallest complete addition
-→ new abstraction/system only with proven repeated responsibility
+→ new abstraction/system/Skill only with proven repeated responsibility
 ```
 
 Never trade away trust-boundary validation, security, bounded resource limits, data-loss prevention, recoverability, required error handling, accessibility basics, or explicit user requirements merely to reduce code.
