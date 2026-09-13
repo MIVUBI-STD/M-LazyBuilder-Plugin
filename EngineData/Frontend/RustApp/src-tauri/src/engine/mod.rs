@@ -8,6 +8,7 @@ pub mod plugin_manager;
 pub mod process_identity;
 pub mod provisioning;
 pub mod resource_settings;
+pub mod runtime_updates;
 pub mod server_manager;
 pub mod startup_guard;
 pub mod workspace_registry;
