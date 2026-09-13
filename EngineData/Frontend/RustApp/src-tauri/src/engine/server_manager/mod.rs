@@ -1,4 +1,4 @@
-use crate::engine::{paths, resource_settings, world_manager};
+use crate::engine::{paths, resource_settings, server_config, world_manager};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -10,31 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, Process, System};
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct ServerManagerOptions {
-    pub java_path: String,
-    pub server_directory: String,
-    pub paper_jar: String,
-    pub min_memory_mb: u64,
-    pub max_memory_mb: u64,
-    pub graceful_stop_timeout_seconds: u64,
-    pub startup_timeout_seconds: u64,
-}
-
-impl Default for ServerManagerOptions {
-    fn default() -> Self {
-        Self {
-            java_path: String::new(),
-            server_directory: "server".into(),
-            paper_jar: "paper.jar".into(),
-            min_memory_mb: 1024,
-            max_memory_mb: 4096,
-            graceful_stop_timeout_seconds: 30,
-            startup_timeout_seconds: 90,
-        }
-    }
-}
+type ServerManagerOptions = server_config::ServerConfig;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -288,7 +264,6 @@ impl ServerManagerState {
         paths::ensure_runtime_layout()?;
         let worlds_dir = paths::worlds_dir()?;
         let options = load_options()?;
-        validate_options(&options)?;
         let resources = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)?;
         let (server_dir, paper) = resolve_server_paths(&workspace, &options)?;
         if !server_dir.is_dir() {
@@ -567,85 +542,12 @@ fn resolve_server_paths(workspace: &Path, options: &ServerManagerOptions) -> Res
     Ok((server_dir, paper))
 }
 
-fn options_path() -> Result<PathBuf, String> {
-    Ok(paths::lazybuilder_config_dir()?.join("server-manager.json"))
-}
-
-fn legacy_options_path() -> Result<PathBuf, String> {
-    Ok(paths::lazybuilder_tools_dir()?.join("server-manager.json"))
-}
-
 fn process_marker_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_cache_dir()?.join("server-process.json"))
 }
 
 fn load_options() -> Result<ServerManagerOptions, String> {
-    let path = options_path()?;
-    if !path.is_file() {
-        let legacy = legacy_options_path()?;
-        if legacy.is_file() {
-            let text = fs::read_to_string(&legacy).map_err(|error| error.to_string())?;
-            let options: ServerManagerOptions = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-            validate_options(&options)?;
-            save_options(&path, &options)?;
-            return Ok(options);
-        }
-        let defaults = ServerManagerOptions::default();
-        save_options(&path, &defaults)?;
-        return Ok(defaults);
-    }
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let options: ServerManagerOptions = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    validate_options(&options)?;
-    Ok(options)
-}
-
-fn save_options(path: &Path, options: &ServerManagerOptions) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let text = serde_json::to_string_pretty(options).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    replace_file(&temporary, path)
-}
-
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
-    if destination.exists() {
-        let backup = destination.with_extension("json.previous");
-        let _ = fs::remove_file(&backup);
-        fs::rename(destination, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = fs::rename(&backup, destination);
-                Err(error.to_string())
-            }
-        }
-    } else {
-        fs::rename(source, destination).map_err(|error| error.to_string())
-    }
-}
-
-fn validate_options(options: &ServerManagerOptions) -> Result<(), String> {
-    if options.min_memory_mb < 256 {
-        return Err("minMemoryMb must be at least 256 MB".into());
-    }
-    if options.max_memory_mb < options.min_memory_mb {
-        return Err("maxMemoryMb must be >= minMemoryMb".into());
-    }
-    if options.graceful_stop_timeout_seconds < 5 {
-        return Err("gracefulStopTimeoutSeconds must be at least 5".into());
-    }
-    if options.startup_timeout_seconds < 10 {
-        return Err("startupTimeoutSeconds must be at least 10".into());
-    }
-    paths::safe_relative_path(&options.server_directory, "serverDirectory")?;
-    paths::safe_file_name(&options.paper_jar, "paperJar")?;
-    Ok(())
+    server_config::load()
 }
 
 fn resolve_java(configured: &str) -> Result<PathBuf, String> {
@@ -753,6 +655,26 @@ fn remove_process_marker_if_matches(pid: u32) -> Result<(), String> {
         clear_legacy_process_identity();
     }
     Ok(())
+}
+
+fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        let backup = destination.with_extension("json.previous");
+        let _ = fs::remove_file(&backup);
+        fs::rename(destination, &backup).map_err(|error| error.to_string())?;
+        match fs::rename(source, destination) {
+            Ok(()) => {
+                let _ = fs::remove_file(backup);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&backup, destination);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(source, destination).map_err(|error| error.to_string())
+    }
 }
 
 fn looks_like_managed_paper(process: &Process) -> Result<bool, String> {
