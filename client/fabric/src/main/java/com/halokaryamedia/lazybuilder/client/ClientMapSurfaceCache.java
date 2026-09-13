@@ -80,9 +80,12 @@ public final class ClientMapSurfaceCache {
     }
 
     /**
-     * Produces a map LOD pixel from the canonical base-column cache.
-     * A five-point footprint is intentionally bounded; all missing points are
-     * queued and later sampled through the normal per-frame budget.
+     * Produces a stable map LOD pixel from the canonical base-column cache.
+     *
+     * <p>The renderer waits for a majority of the five-point footprint before
+     * switching to the aggregate colour. Until then it keeps the centre sample
+     * (when available). This prevents far-zoom cells from visibly changing
+     * colour several times while their surrounding samples arrive.</p>
      */
     public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
         if (span <= 2) return sample(world, blockX, blockZ);
@@ -93,7 +96,11 @@ public final class ClientMapSurfaceCache {
         SurfaceSample ne = sample(world, blockX + offset, blockZ - offset);
         SurfaceSample sw = sample(world, blockX - offset, blockZ + offset);
         SurfaceSample se = sample(world, blockX + offset, blockZ + offset);
-        return blend(center, nw, ne, sw, se);
+
+        SurfaceSample[] footprint = {center, nw, ne, sw, se};
+        int explored = exploredCount(footprint);
+        if (explored < 3) return center.explored() ? center : SurfaceSample.UNEXPLORED;
+        return blend(footprint);
     }
 
     /** Samples a bounded amount of queued terrain on the client thread. */
@@ -137,6 +144,14 @@ public final class ClientMapSurfaceCache {
         pending.add(key);
     }
 
+    private static int exploredCount(SurfaceSample... values) {
+        int count = 0;
+        for (SurfaceSample value : values) {
+            if (value != null && value.explored()) count++;
+        }
+        return count;
+    }
+
     private static SurfaceSample blend(SurfaceSample... values) {
         long red = 0;
         long green = 0;
@@ -172,11 +187,21 @@ public final class ClientMapSurfaceCache {
                 ? UNEXPLORED_COLOR
                 : mapColor.getRenderColor(MapColor.Brightness.NORMAL);
 
-        int west = world.getTopY(Heightmap.Type.WORLD_SURFACE, x - 1, z);
-        int north = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z - 1);
-        int slope = Integer.compare((topY - west) + (topY - north), 0);
-        if (slope > 0) color = shade(color, 1.10);
-        else if (slope < 0) color = shade(color, 0.84);
+        // Do not query relief neighbours across unloaded chunk boundaries. Map
+        // presentation must never cause terrain loads merely for shading.
+        int westX = x - 1;
+        int northZ = z - 1;
+        boolean westLoaded = world.getChunkManager().isChunkLoaded(westX >> 4, z >> 4);
+        boolean northLoaded = world.getChunkManager().isChunkLoaded(x >> 4, northZ >> 4);
+        if (westLoaded && northLoaded) {
+            int west = world.getTopY(Heightmap.Type.WORLD_SURFACE, westX, z);
+            int north = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, northZ);
+            int relief = (topY - west) + (topY - north);
+            if (relief >= 2) color = shade(color, 1.12);
+            else if (relief <= -2) color = shade(color, 0.82);
+            else if (relief > 0) color = shade(color, 1.05);
+            else if (relief < 0) color = shade(color, 0.92);
+        }
 
         return new SurfaceSample(color, topY, true);
     }
