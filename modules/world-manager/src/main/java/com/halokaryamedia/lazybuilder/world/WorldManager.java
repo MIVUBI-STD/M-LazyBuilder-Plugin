@@ -36,6 +36,8 @@ import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldLocationGateway;
 import com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway;
+import com.halokaryamedia.lazybuilder.world.registry.WorldId;
+import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
@@ -44,12 +46,17 @@ import com.halokaryamedia.lazybuilder.world.registry.YamlWorldRegistryPersistenc
 import com.halokaryamedia.lazybuilder.world.transfer.TransferPolicy;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
+import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.logging.Level;
 
@@ -218,8 +225,9 @@ public final class WorldManager {
                         runtimeGateway.isLoaded(world) ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED
                 );
             }
+            discoverExistingWorlds();
         } catch (IOException | RuntimeException exception) {
-            throw new IllegalStateException("Failed to load LazyBuilder world registry", exception);
+            throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
         }
 
         for (WorldRecord world : worldRegistry.all()) {
@@ -257,6 +265,78 @@ public final class WorldManager {
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
                 + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
                 + " storage layout.");
+    }
+
+    private void discoverExistingWorlds() throws IOException {
+        Path worldsRoot = storageLayout.worldsRoot().toAbsolutePath().normalize();
+        if (!Files.isDirectory(worldsRoot)) {
+            return;
+        }
+
+        List<Path> candidates;
+        try (var paths = Files.list(worldsRoot)) {
+            candidates = paths
+                    .filter(Files::isDirectory)
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
+                    .toList();
+        }
+
+        int discovered = 0;
+        String defaultGameMode = plugin.getServer().getDefaultGameMode().name();
+        for (Path candidate : candidates) {
+            String folderName = candidate.getFileName().toString();
+            if (worldRegistry.findByFolderName(folderName).isPresent()) {
+                continue;
+            }
+            if (!Files.isRegularFile(candidate.resolve("level.dat"))) {
+                continue;
+            }
+
+            World loaded = plugin.getServer().getWorld(folderName);
+            if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) {
+                continue;
+            }
+            if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) {
+                continue;
+            }
+
+            boolean isLoaded = loaded != null;
+            WorldRecord discoveredWorld = new WorldRecord(
+                    WorldId.create(),
+                    folderName,
+                    folderName,
+                    WorldKind.IMPORTED,
+                    WorldLifecycle.ACTIVE,
+                    isLoaded,
+                    defaultGameMode
+            );
+            worldRegistry.register(discoveredWorld);
+            runtimeStates.initialize(
+                    discoveredWorld.id(),
+                    isLoaded ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED
+            );
+            discovered++;
+        }
+
+        if (discovered > 0) {
+            registryPersistence.save(worldRegistry.all());
+            plugin.getLogger().info("Adopted " + discovered
+                    + " existing Paper world" + (discovered == 1 ? "" : "s")
+                    + " into the LazyBuilder registry.");
+        }
+    }
+
+    private static boolean looksLikeDimensionFolder(Path worldsRoot, String folderName) {
+        String normalized = folderName.toLowerCase(Locale.ROOT);
+        String baseName;
+        if (normalized.endsWith("_nether")) {
+            baseName = folderName.substring(0, folderName.length() - "_nether".length());
+        } else if (normalized.endsWith("_the_end")) {
+            baseName = folderName.substring(0, folderName.length() - "_the_end".length());
+        } else {
+            return false;
+        }
+        return !baseName.isBlank() && Files.isRegularFile(worldsRoot.resolve(baseName).resolve("level.dat"));
     }
 
     public void stop() {
