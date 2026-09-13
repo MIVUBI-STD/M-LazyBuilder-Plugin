@@ -1,3 +1,4 @@
+use crate::engine::paper_performance;
 use crate::engine::server_manager::{ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::State;
 
@@ -13,6 +14,7 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 
 #[tauri::command]
 pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> {
+    let _ = paper_performance::apply_before_managed_start()?;
     state.start()
 }
 
@@ -23,5 +25,7 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
-    state.restart()
+    state.stop()?;
+    let _ = paper_performance::apply_before_managed_start()?;
+    state.start()
 }
