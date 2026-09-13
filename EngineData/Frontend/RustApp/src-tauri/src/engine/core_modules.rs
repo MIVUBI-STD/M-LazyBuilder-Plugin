@@ -6,6 +6,7 @@ pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
 const WORLD_FILE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
 const UTILITIES_FILE_NAME: &str = "Utilities-Manager-0.1.0-SNAPSHOT.jar";
 
+#[derive(Debug)]
 pub struct CoreSyncTransaction {
     modules: Vec<ModuleInstall>,
     committed: Vec<usize>,
@@ -123,6 +124,7 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
     })
 }
 
+#[derive(Debug)]
 struct ModuleInstall {
     source: PathBuf,
     target: PathBuf,
