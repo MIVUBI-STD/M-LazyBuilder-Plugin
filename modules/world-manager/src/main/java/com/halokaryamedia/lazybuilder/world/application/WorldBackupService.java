@@ -17,7 +17,6 @@ import java.util.UUID;
 public final class WorldBackupService {
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
     private final WorldFileRepository files;
     private final WorldBackupStore backups;
@@ -25,17 +24,27 @@ public final class WorldBackupService {
     public WorldBackupService(
             WorldRegistry registry,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations,
             WorldFileRepository files,
             WorldBackupStore backups
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.files = Objects.requireNonNull(files, "files");
         this.backups = Objects.requireNonNull(backups, "backups");
+    }
+
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldBackupService(
+            WorldRegistry registry,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files,
+            WorldBackupStore backups
+    ) {
+        this(registry, runtimeService, operations, files, backups);
     }
 
     public BackupTask prepare(WorldId worldId) {
@@ -47,7 +56,7 @@ public final class WorldBackupService {
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.BACKUP);
-        boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
+        boolean wasLoaded = runtimeService.isLoaded(worldId);
         try {
             runtimeService.unloadDuringOperation(worldId);
             UUID operationId = UUID.randomUUID();
@@ -78,14 +87,11 @@ public final class WorldBackupService {
                 try {
                     files.deleteWorkspace(staged);
                 } catch (IOException cleanupFailure) {
-                    if (primaryFailure != null) {
-                        primaryFailure.addSuppressed(cleanupFailure);
-                    } else if (!task.committed) {
+                    if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
+                    else if (!task.committed) {
                         throw new IllegalStateException(
                                 "Failed to clean backup workspace for " + task.world.folderName(), cleanupFailure);
-                    } else {
-                        task.cleanupFailure = cleanupFailure;
-                    }
+                    } else task.cleanupFailure = cleanupFailure;
                 }
             }
         }
@@ -119,13 +125,8 @@ public final class WorldBackupService {
         private boolean closed;
         private IOException cleanupFailure;
 
-        private BackupTask(
-                UUID operationId,
-                String backupId,
-                WorldRecord world,
-                boolean wasLoaded,
-                WorldOperationCoordinator.Lease lease
-        ) {
+        private BackupTask(UUID operationId, String backupId, WorldRecord world, boolean wasLoaded,
+                           WorldOperationCoordinator.Lease lease) {
             this.operationId = operationId;
             this.backupId = backupId;
             this.world = world;
