@@ -1,7 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
-import com.halokaryamedia.lazybuilder.world.application.WorldCloneService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
+import com.halokaryamedia.lazybuilder.world.application.WorldDuplicateService;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -11,34 +11,30 @@ import java.util.Objects;
 
 /**
  * Shared phased orchestration for heavy World-Manager operations used by both
- * desktop HTTP and Fabric plugin-message transports.
- *
- * <p>Domain/file logic remains in the canonical application services. This class
- * only centralizes Paper main-thread boundaries, phased finish handling, and
- * failure combination so transports do not implement the same workflow twice.</p>
+ * desktop local control and Fabric plugin-message transports.
  */
 public final class WorldHeavyOperationOrchestrator {
     private final PaperMainThreadDispatcher mainThread;
-    private final WorldCloneService cloneService;
+    private final WorldDuplicateService duplicateService;
     private final WorldDeleteService deleteService;
     private final WorldExportService exportService;
     private final WorldImportService importService;
 
     public WorldHeavyOperationOrchestrator(
             PaperMainThreadDispatcher mainThread,
-            WorldCloneService cloneService,
+            WorldDuplicateService duplicateService,
             WorldDeleteService deleteService,
             WorldExportService exportService,
             WorldImportService importService
     ) {
         this.mainThread = Objects.requireNonNull(mainThread, "mainThread");
-        this.cloneService = Objects.requireNonNull(cloneService, "cloneService");
+        this.duplicateService = Objects.requireNonNull(duplicateService, "duplicateService");
         this.deleteService = Objects.requireNonNull(deleteService, "deleteService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
         this.importService = Objects.requireNonNull(importService, "importService");
     }
 
-    public WorldRecord cloneWorld(
+    public WorldRecord duplicateWorld(
             WorldId sourceId,
             String destinationFolder,
             String displayName,
@@ -46,39 +42,39 @@ public final class WorldHeavyOperationOrchestrator {
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Preparing source world on Paper.");
-        WorldCloneService.CloneTask task = mainThread.call(
-                () -> cloneService.prepare(sourceId, destinationFolder, displayName));
+        WorldDuplicateService.DuplicateTask task = mainThread.call(
+                () -> duplicateService.prepare(sourceId, destinationFolder, displayName));
         Exception failure = null;
-        WorldRecord cloned = null;
+        WorldRecord duplicated = null;
         try {
             reporter.update(30, "Copying world files.");
-            cloned = cloneService.executeFilePhase(task);
-            reporter.update(85, "Clone published; restoring source runtime state.");
+            duplicated = duplicateService.executeFilePhase(task);
+            reporter.update(85, "Duplicate published; restoring source runtime state.");
         } catch (Exception exception) {
             failure = exception;
         }
         try {
             mainThread.call(() -> {
-                cloneService.finish(task);
+                duplicateService.finish(task);
                 return null;
             });
         } catch (Exception finishFailure) {
             failure = combine(failure, finishFailure);
         }
         if (failure != null) throw failure;
-        reporter.update(95, "Clone finalized.");
-        return Objects.requireNonNull(cloned, "cloned");
+        reporter.update(95, "Duplicate finalized.");
+        return Objects.requireNonNull(duplicated, "duplicated");
     }
 
     public WorldRecord deleteWorld(
             WorldId worldId,
-            String typedFolderName,
+            String typedDisplayName,
             Progress progress
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Verifying delete confirmation and fallback protection.");
         WorldDeleteService.DeleteTask task = mainThread.call(
-                () -> deleteService.prepare(worldId, typedFolderName));
+                () -> deleteService.prepare(worldId, typedDisplayName));
         WorldRecord deleted = task.world();
         Exception failure = null;
         try {
