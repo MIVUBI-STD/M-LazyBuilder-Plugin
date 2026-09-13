@@ -10,7 +10,7 @@ import net.minecraft.text.Text;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/** Minimal whole-world export surface. Native Java fast path is the V1 default. */
+/** Whole-world export surface. Server snapshot/package stays authoritative. */
 public final class ExportWorldScreen extends Screen {
     private static final String NATIVE_FORMAT = "JAVA_1_21_4";
     private static final DateTimeFormatter EXPORT_SUFFIX = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -35,25 +35,25 @@ public final class ExportWorldScreen extends Screen {
     @Override
     protected void init() {
         int center = width / 2;
-        int fieldWidth = Math.min(280, width - 60);
+        int fieldWidth = Math.min(320, width - 60);
         int left = center - fieldWidth / 2;
 
-        artifactName = new TextFieldWidget(textRenderer, left, 92, fieldWidth, 20, Text.literal("Artifact Name"));
+        artifactName = new TextFieldWidget(textRenderer, left, 102, fieldWidth, 22, Text.literal("File Name"));
         artifactName.setText(world.folderName() + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
         artifactName.setMaxLength(96);
         addDrawableChild(artifactName);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Export Java 1.21.4"), button -> submit())
-                .dimensions(center - 112, 132, 224, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Export World"), button -> submit())
+                .dimensions(center - 120, 144, 240, 24).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> close())
-                .dimensions(center - 50, 162, 100, 20).build());
+                .dimensions(center - 50, 182, 100, 20).build());
         setInitialFocus(artifactName);
     }
 
     private void submit() {
         String artifact = artifactName.getText().strip();
         if (artifact.isEmpty()) {
-            validation = "Artifact name is required.";
+            validation = "File name is required.";
             return;
         }
         try {
@@ -68,14 +68,17 @@ public final class ExportWorldScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderBackground(context, mouseX, mouseY, delta);
         super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 18, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 22, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("World: " + world.displayName()), width / 2, 44, 0xAAAAAA);
+                Text.literal(world.displayName()), width / 2, 48, 0xD8DEE9);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Native Java export bypasses conversion; Save dialog opens when ready."), width / 2, 62, 0x888888);
-        context.drawTextWithShadow(textRenderer, Text.literal("Artifact Name"), artifactName.getX(), 80, 0xAAAAAA);
+                Text.literal("Java 1.21.4 world archive"), width / 2, 64, 0xAEB7C4);
+        context.drawCenteredTextWithShadow(textRenderer,
+                Text.literal("LazyBuilder will prepare a safe snapshot, then open Save As when it is ready."),
+                width / 2, 80, 0x8F9AA8);
+        context.drawTextWithShadow(textRenderer, Text.literal("File Name"), artifactName.getX(), 90, 0xAEB7C4);
         if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 198, 0xFF7777);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 222, 0xFF7777);
         }
     }
 
