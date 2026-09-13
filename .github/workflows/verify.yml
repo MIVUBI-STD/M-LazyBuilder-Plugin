@@ -35,6 +35,15 @@ jobs:
           cache: maven
       - name: Compile and test Paper modules
         run: mvn --batch-mode --no-transfer-progress verify
+      - name: Upload tested core modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: LazyBuilder-Core-${{ github.sha }}
+          path: |
+            modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar
+            modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 7
 
   fabric:
     runs-on: ubuntu-latest
@@ -51,31 +60,23 @@ jobs:
         run: gradle -p client/fabric --no-daemon build
 
   tauri-desktop:
+    needs: paper
     runs-on: windows-latest
     defaults:
       run:
         working-directory: EngineData/Frontend/RustApp
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: EngineData/Frontend/RustApp/package-lock.json
-      - name: Build matching LazyBuilder core modules
-        working-directory: ${{ github.workspace }}
-        run: mvn --batch-mode --no-transfer-progress -DskipTests package
-      - name: Stage core modules for Tauri bundle
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path src-tauri/resources/core | Out-Null
-          Copy-Item "../../../modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar" "src-tauri/resources/core/World-Manager-0.1.0-SNAPSHOT.jar" -Force
-          Copy-Item "../../../modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar" "src-tauri/resources/core/Utilities-Manager-0.1.0-SNAPSHOT.jar" -Force
+      - name: Download tested core modules
+        uses: actions/download-artifact@v4
+        with:
+          name: LazyBuilder-Core-${{ github.sha }}
+          path: EngineData/Frontend/RustApp/src-tauri/resources/core
       - name: Install frontend dependencies
         run: npm ci
       - name: Typecheck Svelte frontend
@@ -103,8 +104,9 @@ jobs:
       - name: Upload Windows application and installer
         uses: actions/upload-artifact@v4
         with:
-          name: LazyBuilder-Windows
+          name: LazyBuilder-Windows-${{ github.sha }}
           path: |
             EngineData/Frontend/RustApp/src-tauri/target/release/lazybuilder.exe
             EngineData/Frontend/RustApp/src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
+          retention-days: 7
