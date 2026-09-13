@@ -9,7 +9,7 @@ import net.minecraft.text.Text;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/** Whole-world export surface. Server snapshot/package stays authoritative. */
+/** Whole-world export surface. Snapshot/package stays server-authoritative. */
 public final class ExportWorldScreen extends Screen {
     private static final String NATIVE_FORMAT = "JAVA_1_21_4";
     private static final DateTimeFormatter EXPORT_SUFFIX = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -45,7 +45,7 @@ public final class ExportWorldScreen extends Screen {
         int panelWidth = Math.min(460, width - 48);
         int left = width / 2 - panelWidth / 2;
 
-        artifactName = new TextFieldWidget(textRenderer, left + 28, 112, panelWidth - 56, 24, Text.literal("File Name"));
+        artifactName = new TextFieldWidget(textRenderer, left + 28, 122, panelWidth - 56, 24, Text.literal("File Name"));
         artifactName.setText(world.folderName() + "-" + EXPORT_SUFFIX.format(LocalDateTime.now()));
         artifactName.setMaxLength(96);
         artifactName.setDrawsBackground(false);
@@ -54,14 +54,14 @@ public final class ExportWorldScreen extends Screen {
         artifactName.active = !submitted;
         addDrawableChild(artifactName);
 
-        LbButtonWidget export = LbUi.button(left + 28, 158, panelWidth - 56, 28,
+        LbButtonWidget export = LbUi.button(left + 28, 166, panelWidth - 56, 28,
                 submitted ? "Export in Progress…" : "Export World",
                 LbButtonWidget.Style.PRIMARY, this::submit);
         export.active = !submitted;
         addDrawableChild(export);
 
-        addDrawableChild(LbUi.button(width / 2 - 50, 210, 100, 22,
-                submitted ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
+        addDrawableChild(LbUi.button(width / 2 - 58, 210, 116, 22,
+                submitted ? "Back to Worlds" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!submitted) setInitialFocus(artifactName);
     }
 
@@ -133,10 +133,10 @@ public final class ExportWorldScreen extends Screen {
 
         context.drawTextWithShadow(textRenderer, Text.literal("EXPORT WORLD"), left + 24, 44, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 24, 62, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Java 1.21.4 world archive"), left + 24, 80, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Java 1.21.4 world backup"), left + 24, 80, LbUi.TEXT_SECONDARY);
         context.drawTextWithShadow(textRenderer,
-                Text.literal("Safe snapshot → Save As → verified download"), left + 24, 96, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal("File name"), left + 28, 102, LbUi.TEXT_MUTED);
+                Text.literal("LazyBuilder prepares the file, then opens Save As."), left + 24, 96, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("File name"), left + 28, 110, LbUi.TEXT_MUTED);
         LbUi.field(context, artifactName, validation != null);
 
         if (submitted) {
@@ -147,7 +147,7 @@ public final class ExportWorldScreen extends Screen {
                 status = transfer.message();
                 percent = transfer.percent();
             }
-            if (status == null) status = "Waiting for Save As…";
+            if (status == null) status = "Choose where to save the file…";
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, 242, LbUi.TEXT_SECONDARY);
             if (percent >= 0) LbUi.progress(context, left + 44, 256, panelWidth - 88, percent);
         }
