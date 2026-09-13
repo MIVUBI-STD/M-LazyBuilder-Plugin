@@ -41,6 +41,8 @@ unexplored terrain     visually distinct and non-authoritative
 map camera             preserved while visiting LazyBuilder Worlds UI
 area selection         visible overlay + explicit confirmation
 far zoom               aggregate multiple terrain samples; never one isolated block per large cell
+close zoom             increase screen-pixel density so roads/buildings do not become coarse square cells
+coordinate transform   use the same continuous camera scale for pan, hover, selection and player marker
 ```
 
 LazyBuilder-specific context options currently replace Xaero-only waypoint/player-radar actions:
@@ -105,7 +107,27 @@ Copy Coordinates   copy selected X/Z to clipboard
 Worlds             open secondary World Manager without losing map camera
 ```
 
-The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard.
+The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard. The cursor uses a subtle map crosshair rather than a large generic UI cursor while the map is active.
+
+### Map rendering density
+
+`WorldMapScreen` now decouples map camera scale from raw render-cell size. Close zoom renders with smaller screen cells, medium zoom uses an intermediate cell size, and wide zoom increases the cell footprint while retaining the same continuous world-coordinate transform.
+
+This matters because fixed 4-pixel cells made the map visibly blocky even when the underlying terrain sample was correct. Adaptive density keeps close-range roads/buildings readable without making far-zoom rendering unbounded.
+
+All coordinate-sensitive operations use the same `blocksPerPixel` transform:
+
+```text
+camera pan
+hover coordinates
+cursor-anchored zoom
+selection overlay
+player marker
+world-to-screen conversion
+screen-to-world conversion
+```
+
+No action is allowed to maintain a second coordinate transform.
 
 ### Map memory and LOD
 
@@ -225,6 +247,7 @@ Contract:
 
 - one fullscreen map owner and one map entry path;
 - bounded map sampling per frame;
+- adaptive screen-pixel density instead of forcing maximum close-zoom sampling everywhere;
 - one canonical base-column cache reused by close and far zoom levels;
 - persistent map memory only for observed client terrain;
 - no background world-list/settings polling;
@@ -236,4 +259,4 @@ Contract:
 
 ## Proof Boundary
 
-The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, close-range and far-zoom terrain readability, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
+The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, close-range and far-zoom terrain readability, continuous coordinate transforms while zooming/panning, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
