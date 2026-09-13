@@ -40,7 +40,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
 
         ChunkPregenerationController pregeneration = new ChunkPregenerationController(
                 getServer(), worldManager.worldRegistry());
-        BuildPerformanceCommand performanceCommand = new BuildPerformanceCommand(pregeneration);
+        BuildPerformanceCommand performanceCommand = new BuildPerformanceCommand(getServer(), pregeneration);
         PluginCommand lazyperf = getCommand("lazyperf");
         if (lazyperf == null) {
             throw new IllegalStateException("lazyperf command is missing from plugin.yml");
