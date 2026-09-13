@@ -13,21 +13,21 @@ Own third-party Paper plugin lifecycle semantics. Follow `docs/04-system/develop
 plugin discovery/metadata/dependency validation
 install/update
 enable/disable
-safe JAR removal
+safe JAR removal while preserving plugin data
 duplicate detection/resolution
-minimum rollback state required by plugin mutation
+one previous-valid rollback snapshot per plugin mutation
 ```
 
 ## Does Not Own
 
 ```text
-bundled World/Utilities core sync → desktop-runtime
-Svelte-only plugin presentation   → desktop-ui
-Paper world behavior              → world-management
-shared client/server protocol     → protocol
+bundled World/Utilities core sync → lazybuilder-desktop-runtime
+plugin presentation/UI            → lazybuilder-ui
+Paper world behavior              → lazybuilder-world-management
+shared client/server protocol     → lazybuilder-protocol
 ```
 
-If lifecycle semantics change and the UI message/control follows, Plugin Management decides the result first; Desktop UI only presents it.
+If lifecycle semantics change and the UI message/control follows, Plugin Management decides the result first; `lazybuilder-ui` only presents it.
 
 ## Canonical Context
 
@@ -53,10 +53,10 @@ identify requested lifecycle result
 - filesystem + plugin metadata remain primary truth; no plugin database without a proven need;
 - no hot reload; restart-required semantics stay explicit;
 - duplicate resolution cannot partially delete candidates without recoverability;
-- do not create historical backup systems without a real restore UX;
-- do not expose plugin-data deletion unless an explicit supported product flow requires it;
-- presentation-only categories must not become runtime authority;
-- one plugin mutation should have one transaction/rollback owner.
+- persistent rollback state is one previous-valid JAR snapshot, not historical backup retention;
+- plugin-data deletion/quarantine is outside current product flow; remove preserves plugin data;
+- categories are derived presentation metadata, never a persisted runtime authority;
+- one plugin mutation has one transaction/rollback owner.
 
 ## Proof Boundary
 
