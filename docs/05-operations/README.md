@@ -5,20 +5,60 @@ This directory owns current continuation/proof only. Durable product and archite
 ## Current State
 
 - `Local` is the active development/source authority; `main` remains stable/release.
-- `REMOTE_GITHUB` is complete.
-- World-Manager source architecture is structurally locked.
-- Utilities-Manager source architecture and current scope are structurally locked.
-- Canonical runtime storage wiring is source-implemented across Server-Manager, World-Manager, and Plugin-Manager.
-- Desktop dependency lockfiles are committed and CI enforces locked dependency resolution.
-- Source/CI proof remains distinct from actual Windows/Paper/Fabric runtime proof.
-
-Canonical completion record:
+- Remote architecture/source simplification is closed unless local/live evidence reveals a real defect.
+- World-Manager and Utilities-Manager source architecture remain structurally locked.
+- LazyBuilder execution routing uses five specialist Skills only:
 
 ```text
-docs/05-operations/remote-github-complete.md
+lazybuilder-desktop-runtime
+lazybuilder-plugin-management
+lazybuilder-world-management
+lazybuilder-ui
+lazybuilder-protocol
 ```
 
-Final verified source gate:
+- Minimum-flow development discipline is canonical in `docs/04-system/development-discipline.md`.
+- Specialist ownership/routing is canonical in `docs/04-system/skill-routing.md`.
+- Source/CI proof remains distinct from actual Windows/Paper/Fabric runtime proof.
+
+## Current Source Checkpoint
+
+The source checkpoint immediately before this operations update is:
+
+```text
+branch: Local
+head:   ffc57a3bd8cf67782fc95995a1de74b1b61d56c2
+```
+
+Important simplifications already present at that checkpoint:
+
+```text
+7 specialist Skills -> 5
+single Paper process owner / recovery path
+single process marker with PID + process start time
+process_identity sidecar/module removed
+single typed server_config owner for server-manager.json
+bundled World/Utilities core sync made internal before start/restart
+manual public Core Sync action removed
+Paper runtime update remains the user-facing update decision
+Plugin Manager category override registry removed
+Plugin Manager remove-data/quarantine path removed
+plugin data always preserved on JAR removal
+historical plugin backup retention removed
+backup_maintenance module removed
+Plugin Manager rollback reduced to one previous-valid JAR snapshot
+manual CPU allocation removed from product/config
+CPU scheduling remains JVM/OS managed
+resource UI reduced to Performance / Boost / Custom RAM
+frontend runtime bridge consolidated into one grouped typed runtimeApi
+World Manager re-audited with no material simplification required
+```
+
+Do not reopen these decisions merely to reduce file/class count. Reopen only when local/live evidence shows a concrete defect or unsupported requirement.
+
+## Last Known Remote Proof
+
+The earlier complete remote source/CI gate was:
 
 ```text
 head: fcae5870192252bcecc63c5f0c458bed446a64a8
@@ -30,7 +70,13 @@ Tauri desktop        SUCCESS
 Overall              SUCCESS
 ```
 
-Documentation commits after that gate only record the handoff and do not expand runtime scope.
+That gate predates the later simplification work listed above. Therefore it is historical proof, not proof that current `ffc57a3...` compiles locally. The current source must now be validated under `LOCAL_CODE`.
+
+Canonical older completion record:
+
+```text
+docs/05-operations/remote-github-complete.md
+```
 
 ## Canonical Runtime Layout
 
@@ -54,156 +100,192 @@ Work Server - 1.21.4/
     └── plugin-backups/
 ```
 
-Archive/Restore is lifecycle metadata plus load-state handling; it does not own a second physical archive directory. Legacy World-Manager and Plugin-Manager locations are compatibility inputs only and must not become parallel active authorities.
+Archive/Restore is lifecycle metadata plus load-state handling; it does not own a second physical archive directory. Legacy inputs may be read only where compatibility is still intentionally supported; they must not become parallel active authorities.
 
-## Reproducible Desktop Dependencies
+## Desktop Runtime Ownership After Simplification
 
-Committed lockfiles:
+```text
+Desktop Runtime
+├── server_config
+│   └── one server-manager.json reader/writer authority
+├── ServerManagerState
+│   ├── Child ownership
+│   ├── one process marker
+│   ├── PID + real process start-time validation
+│   ├── start / stop / restart
+│   └── detached recovery
+├── Java provider
+├── Paper provider
+├── bundled Core provider
+└── resource settings
+```
+
+Runtime rules:
+
+- bundled core compatibility is internal maintenance;
+- Paper update remains explicit/user-facing;
+- CPU is JVM/OS managed; no manual `ActiveProcessorCount` product path;
+- RAM remains bounded by hardware-aware Performance / Boost / Custom settings;
+- no network lookup may turn a committed local mutation into a false failure.
+
+## Plugin Manager Ownership After Simplification
+
+Third-party Paper plugin lifecycle remains:
+
+```text
+list / metadata / dependency validation
+install
+update
+enable / disable
+safe JAR removal
+resolve duplicates
+minimum rollback
+```
+
+Current invariants:
+
+- filesystem + plugin metadata are primary truth;
+- category is derived presentation metadata, not a persisted authority;
+- removal preserves plugin data;
+- no user-facing remove-data/quarantine branch;
+- no timestamped backup history or retention subsystem;
+- update/removal keeps only one previous-valid rollback JAR per plugin where needed;
+- duplicate resolution keeps temporary rollback state only for the active transaction;
+- no hot reload; restart-required behavior remains explicit.
+
+## World Manager Audit Result
+
+World Manager was re-audited after the minimum-flow discipline was introduced. No material refactor is currently justified.
+
+Keep the following because they have distinct runtime responsibilities:
+
+```text
+bounded WorldTaskRunner
+single conversion-job lease/coordinator
+registry/persistence owners
+Paper runtime adapter
+filesystem/import/export owners
+transfer session owner
+conversion adapter/runtime
+```
+
+The task runner is bounded and prevents heavy file/conversion work from leaking onto Paper's main thread. The conversion coordinator is an in-memory single-job lease, not an idle daemon. Do not collapse these owners without runtime evidence.
+
+## Local Environment Checkpoint
+
+Local repository:
+
+```text
+D:\Work\AI Stuff\LazyBuilder
+branch: Local
+```
+
+Confirmed during setup:
+
+```text
+Java   Temurin 21.0.12.1 LTS   installed / verified
+Maven  3.9.16                  installed / verified in configured session
+Node   24.14.1                 verified
+npm    11.16.0                 verified
+Cargo  1.96                    verified in configured session
+rustc  1.96                    verified in configured session
+```
+
+Environment caveat:
+
+- a newly opened Administrator PowerShell did not automatically inherit the user PATH entries for Maven, Cargo/Rust, and Gradle;
+- this is currently an environment/PATH issue, not evidence that those installations are missing;
+- refresh Machine/User PATH or use the configured tool paths before build validation.
+
+Pending toolchain check:
+
+```text
+Gradle 8.12 -> installation/path verification still pending
+```
+
+No full local build has been completed after the current source simplification.
+No LIVE_SERVER validation has started.
+
+## STOP Point / Exact Resume Point
+
+Work intentionally stopped during `LOCAL_CODE` environment preparation.
+
+Resume here, in this exact order:
+
+```text
+1. open PowerShell at D:\Work\AI Stuff\LazyBuilder
+2. refresh user/machine PATH for the session if needed
+3. verify Gradle 8.12 specifically
+4. verify Java 21 / Maven / Node / npm / Cargo / rustc / Gradle in the same shell
+5. run current local builds without editing source first
+6. record the first reproducible build failure, if any
+7. fix only the smallest owning boundary
+8. repeat the failing targeted build
+9. after LOCAL_CODE is green, launch LazyBuilder desktop
+10. then begin LIVE_SERVER validation
+```
+
+Do **not** start another architecture cleanup before step 5. The first objective is now proof, not more source reduction.
+
+## LOCAL_CODE Build Order
+
+Recommended order:
+
+```text
+1. Maven Paper/shared modules
+2. Fabric client with pinned Gradle 8.12
+3. frontend dependency install from committed lockfile
+4. frontend/Svelte build
+5. Rust/Tauri locked check/build
+6. inspect produced artifacts
+```
+
+Use repository-pinned/reproducible dependency state where available:
 
 ```text
 EngineData/Frontend/RustApp/package-lock.json
 EngineData/Frontend/RustApp/src-tauri/Cargo.lock
-```
 
-Final CI behavior:
-
-```text
 npm ci
 cargo check --locked
-Cargo cache key -> Cargo.lock
-workflow permissions -> contents: read
 ```
 
-The temporary CI mechanism that generated/committed lockfiles has been removed. Dependency locking is now repository state, not CI mutation.
+Do not introduce a new build framework merely to prove the current source.
 
-## World-Manager
-
-Canonical source boundaries:
+## LIVE_SERVER Sequence After Local Build Passes
 
 ```text
-WorldManagerPlugin
-↓
-WorldManager services
-↓
-shared heavy-operation orchestration / Paper dispatcher
-↓
-transport adapters
-  ├── desktop local-control bridge
-  ├── Fabric world-control bridge
-  ├── transfer bridge
-  └── map/Xaero bridge
-```
-
-Implemented source flows include Create, list, Teleport, Load/Unload, Settings, Archive/Restore, Clone, Backup, Delete, Import, whole-world Export, and Export Area. Heavy desktop tasks use the bounded task runner; common heavy world operations share one orchestration path. Desktop and Fabric are transports, not duplicate world authorities.
-
-The first-party Fabric World Manager UI/control path is source-implemented for list/refresh, Create Flat/Void, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, and native Java 1.21.4 whole-world Export. Xaero remains contextual for Teleport Here and Export Area.
-
-## Utilities-Manager
-
-Current feature scope is intentionally limited to three cohesive families:
-
-```text
-World Safety
-├── explosion block protection
-├── leaves decay protection
-├── farmland trample protection
-└── dragon egg teleport protection
-
-Movement
-├── Advanced Fly
-├── Noclip
-└── Night Vision
-
-Build Helpers
-├── Iron Door Toggle
-├── Double Slab Break
-└── Glazed Terracotta Rotate
-```
-
-Creation Tools and a separate Spectator family are intentionally out of scope because they are not required by the current builder workflow or would duplicate existing ownership.
-
-Utilities uses one `UtilityFeatureRegistry`; each family is independently configurable and lifecycle cleanup is fail-isolated. No background worker, polling loop, NMS layer, or World-Manager implementation dependency was introduced.
-
-The glazed-terracotta helper uses explicit cardinal rotation compatible with the Paper 1.21.4 compile surface:
-
-```text
-NORTH → EAST → SOUTH → WEST → NORTH
-```
-
-This mapping is covered by a focused unit test.
-
-## Final Remote Audit Status
-
-Completed remote findings addressed before local/live testing:
-
-```text
-legacy World-Manager bootstrap ownership       removed
-unbounded World task queue                     bounded
-heavy-operation orchestration duplication      consolidated
-Paper main-thread dispatch duplication         consolidated
-Fabric shutdown handling                       hardened
-transfer session/file I/O path                 bounded/hardened
-Utilities speculative/unused feature scope     removed
-stale Spectator duplicate family               removed
-Glazed Terracotta unsupported API usage        fixed + tested
-World runtime path authority split             consolidated
-Plugin-Manager transitional storage paths      consolidated
-unused physical archives directory             removed
-stale architecture/product docs                aligned
-frontend dependency lock                       committed
-Rust dependency lock                           committed
-CI dependency resolution                       locked/reproducible
-```
-
-## Current phase: LOCAL_CODE
-
-Remote structural/source work is closed unless local/live evidence reveals a real defect.
-
-Start local validation from current `Local`:
-
-```text
-git checkout Local
-git pull
-```
-
-The branch must contain at least the verified source head:
-
-```text
-fcae5870192252bcecc63c5f0c458bed446a64a8
-```
-
-and the subsequent REMOTE_GITHUB completion documentation.
-
-Recommended local/live sequence:
-
-```text
-LOCAL_CODE
-1. verify Java 21 / Node / Rust prerequisites
-2. build current Maven Paper modules
-3. build Fabric client
-4. npm ci + locked Tauri/Rust build
-5. inspect produced artifacts
-6. prepare canonical Work Server - 1.21.4 workspace
-
-LIVE_SERVER
-7. start Paper 1.21.4 through LazyBuilder desktop
+1. launch LazyBuilder desktop
+2. create/open/adopt workspace
+3. Prepare Server
+4. accept EULA explicitly
+5. start Paper 1.21.4
+6. verify start / stop / restart
+7. verify detached/crash recovery
 8. verify canonical runtime directories
 9. verify World-Manager enable + control bridges
 10. verify Fabric World Manager lifecycle UI
 11. verify Import/Export + native dialogs + transfer integrity
 12. verify Xaero Teleport Here / Export Area
 13. verify Utilities families and state restoration
-14. verify Plugin-Manager canonical/legacy storage behavior
-15. verify restart/shutdown persistence and cleanup
+14. verify Plugin Manager install/update/enable-disable/remove/duplicates
+15. verify app/server restart persistence and cleanup
 ```
 
 High-value runtime checks:
 
-- desktop app starts cleanly and finds Java 21;
-- start/stop/restart/crash states behave correctly;
+- desktop finds/uses managed Java 21 correctly;
+- bundled core auto-sync occurs as internal start/restart maintenance;
+- no manual Core Sync product action reappears;
+- Paper update remains explicit and recoverable;
+- one `server-process.json` marker is the process identity authority;
+- stale/reused PID cannot cause unrelated-process termination;
+- `server-manager.json` has one active reader/writer authority;
+- JVM launch does not force manual CPU processor count;
 - `world-system/worlds` is the actual Paper universe;
 - no duplicate runtime storage authorities appear;
-- plugin enable/disable leaves no stale listeners/session state;
+- plugin removal preserves plugin data;
+- plugin rollback does not accumulate unbounded timestamp history;
 - create/load/unload/teleport/clone/archive/restore/delete correctness;
 - fallback/default world delete protection;
 - Import/Export on real archives and filesystem permissions;
@@ -214,10 +296,9 @@ High-value runtime checks:
 - Fly/Noclip/Night Vision state restoration;
 - Build Helpers behavior in Creative builder workflows;
 - World Safety protections without unintended ownership;
-- Plugin-Manager migration of old disabled/category paths without overwriting canonical state;
 - restart/shutdown persistence and cleanup.
 
-## Defect handling
+## Defect Handling
 
 Only reproducible local/live failures reopen source work. Record:
 
@@ -230,8 +311,30 @@ owning component
 smallest failing boundary
 ```
 
+Then route through the smallest relevant specialist:
+
+```text
+desktop/runtime/process/config     -> lazybuilder-desktop-runtime
+third-party plugin lifecycle       -> lazybuilder-plugin-management
+world/Paper behavior/files         -> lazybuilder-world-management
+Desktop or Fabric presentation     -> lazybuilder-ui
+shared Paper/Fabric wire contract  -> lazybuilder-protocol
+```
+
 Fix defects directly in `Local`. Do not create side branches unless explicitly requested. Do not reopen a locked architecture when a bounded owner-level fix is sufficient.
 
 ## Proof Ceiling
 
-`REMOTE_GITHUB` is complete. `LOCAL_CODE` and `LIVE_SERVER` are not proven until the current artifacts are actually exercised in those environments.
+```text
+REMOTE_GITHUB -> source/static/CI claims
+LOCAL_CODE    -> local compile/test/build/artifact claims
+LIVE_SERVER   -> actual Paper/Fabric/desktop/gameplay/runtime claims
+```
+
+Current state at this checkpoint:
+
+```text
+REMOTE_GITHUB  historical proof exists
+LOCAL_CODE     environment setup in progress; current source not yet fully built locally
+LIVE_SERVER    not started
+```
