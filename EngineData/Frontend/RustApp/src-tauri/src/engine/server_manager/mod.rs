@@ -320,7 +320,28 @@ impl ServerManagerState {
                 format!("failed to start Paper: {error}")
             })?;
 
-        write_process_marker(child.id())?;
+        if let Err(marker_error) = write_process_marker(child.id()) {
+            let pid = child.id();
+            match child.kill() {
+                Ok(()) => {
+                    let _ = child.wait();
+                    let _ = set_runtime_state(&self.runtime_state, "Crashed");
+                    if let Ok(mut startup) = self.startup_started_at.lock() {
+                        *startup = None;
+                    }
+                    return Err(format!(
+                        "Paper PID {pid} was terminated because LazyBuilder could not persist its process marker: {marker_error}"
+                    ));
+                }
+                Err(kill_error) => {
+                    *guard = Some(child);
+                    let _ = set_runtime_state(&self.runtime_state, "Crashed");
+                    return Err(format!(
+                        "LazyBuilder could not persist the process marker for Paper PID {pid}: {marker_error}; termination also failed: {kill_error}. The process remains owned by this controller and must be stopped before retrying."
+                    ));
+                }
+            }
+        }
 
         // stdout is consumed only to detect Paper readiness and avoid a filled pipe.
         // Paper already persists its own canonical logs under server/logs; duplicating
@@ -386,11 +407,6 @@ impl ServerManagerState {
         set_runtime_state(&self.runtime_state, "Offline")?;
         *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = None;
         Ok(())
-    }
-
-    pub fn restart(&self) -> Result<(), String> {
-        self.stop()?;
-        self.start()
     }
 
     fn process_usage(&self, pid: u32) -> Result<(f32, u64), String> {
