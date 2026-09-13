@@ -13,8 +13,6 @@ pub struct ServerConfig {
     pub max_memory_mb: u64,
     pub graceful_stop_timeout_seconds: u64,
     pub startup_timeout_seconds: u64,
-    pub cpu_mode: String,
-    pub cpu_threads: Option<u32>,
     pub resource_preset: String,
 }
 
@@ -28,8 +26,6 @@ impl Default for ServerConfig {
             max_memory_mb: 4096,
             graceful_stop_timeout_seconds: 30,
             startup_timeout_seconds: 90,
-            cpu_mode: "Adaptive".into(),
-            cpu_threads: None,
             resource_preset: "Custom".into(),
         }
     }
