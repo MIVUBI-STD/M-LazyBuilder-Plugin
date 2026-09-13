@@ -16,11 +16,11 @@ public final class WorldMapScreen extends Screen {
     private static final int MAP_MARGIN = 8;
     private static final int CELL = 4;
     private static final int[] ZOOM_STEPS = {1, 2, 4, 8, 16, 32};
+    private static final ClientMapSurfaceCache SURFACE = new ClientMapSurfaceCache();
 
     private final ClientWorldController worlds;
     private final ClientTransferController transfers;
     private final ClientMapController maps;
-    private final ClientMapSurfaceCache surface = new ClientMapSurfaceCache();
 
     private double centerX;
     private double centerZ;
@@ -125,6 +125,9 @@ public final class WorldMapScreen extends Screen {
         ClientWorld world = client == null ? null : client.world;
         if (world == null) return;
 
+        String managedWorld = maps.currentWorld() == null ? "unmanaged" : maps.currentWorld().worldId().toString();
+        SURFACE.useScope(managedWorld + "|" + world.getRegistryKey().getValue());
+
         Bounds bounds = mapBounds();
         context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, 0xFF151A20);
 
@@ -143,7 +146,7 @@ public final class WorldMapScreen extends Screen {
 
                 int blockX = (originCellX + cx) * blocksPerCell;
                 int blockZ = (originCellZ + cz) * blocksPerCell;
-                ClientMapSurfaceCache.SurfaceSample sample = surface.sample(world, blockX, blockZ);
+                ClientMapSurfaceCache.SurfaceSample sample = SURFACE.sample(world, blockX, blockZ);
                 context.fill(screenX, screenY, screenX + CELL, screenY + CELL, sample.color());
             }
         }
@@ -224,9 +227,7 @@ public final class WorldMapScreen extends Screen {
         if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
 
         if (button == 1) {
-            if (areaMode && areaX1 != null && areaX2 == null) {
-                return true;
-            }
+            if (areaMode && areaX1 != null && areaX2 == null) return true;
             int[] world = screenToWorld(mouseX, mouseY);
             if (world == null) return true;
             contextBlockX = world[0];
@@ -320,7 +321,6 @@ public final class WorldMapScreen extends Screen {
         if (client != null && client.player != null) {
             centerX = client.player.getX();
             centerZ = client.player.getZ();
-            surface.clear();
         }
     }
 
