@@ -198,8 +198,7 @@ export const runtimeApi = {
     recoverDetached: () => invoke<DetachedRecoveryResult>('server_recover_detached'),
     logTail: (path: string) => invoke<ServerLogTail>('server_log_tail', { path }),
     resources: () => invoke<ServerResourceProfile>('server_resource_profile'),
-    saveResources: (request: ResourceUpdateRequest) => invoke<ServerResourceProfile>('server_resource_save', { request }),
-    applyResourcePreset: (name: string) => invoke<ServerResourceProfile>('server_resource_preset', { name })
+    saveResources: (request: ResourceUpdateRequest) => invoke<ServerResourceProfile>('server_resource_save', { request })
   },
   plugins: {
     list: () => invoke<PluginSummary[]>('plugin_list'),
