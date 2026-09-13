@@ -22,14 +22,13 @@ world filesystem safety/publication
 ## Does Not Own
 
 ```text
-desktop server/process/provisioning → desktop-runtime
-desktop Svelte presentation         → desktop-ui
-Fabric/Xaero presentation           → client-ui
-neutral shared wire contract        → protocol
-third-party plugin lifecycle        → plugin-management
+desktop server/process/provisioning → lazybuilder-desktop-runtime
+Desktop or Fabric/Xaero presentation→ lazybuilder-ui
+neutral shared wire contract        → lazybuilder-protocol
+third-party plugin lifecycle        → lazybuilder-plugin-management
 ```
 
-If a new world feature needs a shared payload, Protocol defines the payload first; World Management consumes it without duplicating the contract.
+If a new world feature needs a shared payload, `lazybuilder-protocol` defines the payload first; World Management consumes it without duplicating the contract.
 
 ## Canonical Context
 
@@ -61,6 +60,7 @@ name exact world behavior
 - unsafe Bukkit/Paper mutation never runs asynchronously;
 - heavy file/conversion work stays off Paper main thread after required quiesce/snapshot boundaries;
 - registry/runtime/file/task ownership remains singular;
+- bounded task execution and conversion leases are retained when they prevent main-thread work or concurrent conversion conflicts;
 - no generic manager hierarchy or parallel world-operation framework without proven repeated responsibility;
 - no NMS unless stable APIs demonstrably cannot satisfy a confirmed requirement.
 
