@@ -19,9 +19,13 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
     let java = java_runtime::ensure_managed_java()?;
     ensure_server_manager_config(&workspace, &java)?;
     let paper_build = resolve_or_provision_paper(&workspace)?;
-    core_modules::sync(&workspace, resource_dir)?;
+
+    // Core JAR publication remains provisional until workspace metadata is updated.
+    // Dropping this transaction on any later error restores the previous JAR pair.
+    let core_transaction = core_modules::begin_sync(&workspace, resource_dir)?;
     ensure_server_properties(&workspace)?;
     update_workspace_manifest(&workspace, paper_build, core_modules::CORE_VERSION)?;
+    core_transaction.finalize();
 
     Ok(ProvisionResult {
         java_path: java.display().to_string(),
