@@ -3,6 +3,20 @@ world-manager:
   # Set this to a loaded world name to choose an explicit fallback destination.
   fallback-world: ''
 
+  build-performance:
+    # Dedicated build worlds do not need normal Minecraft mob brains running continuously.
+    # Set to false for servers that regularly test gameplay AI inside managed worlds.
+    disable-all-mob-ai: true
+    # Kept separately so villager AI can remain suppressed even if general mob AI is re-enabled.
+    disable-villager-ai: true
+    # Build worlds normally do not need passive background breeding work.
+    disable-breeding: true
+    # One bounded pass on plugin enable; no recurring entity scanner is used.
+    scan-loaded-entities-on-enable: true
+    # Runtime escape hatches are scoreboard tags:
+    #   lazybuilder_gameplay_ai -> keep/restore AI for that mob
+    #   lazybuilder_decorative  -> force No-AI even when general suppression is disabled
+
   import:
     max-files: 200000
     max-uncompressed-mb: 65536
