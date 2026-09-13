@@ -39,7 +39,7 @@ public final class WorldLifecycleService {
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.ARCHIVE)) {
             boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
-            runtimeService.unload(worldId);
+            runtimeService.unloadDuringOperation(worldId);
 
             WorldRecord archived = current
                     .withLifecycle(WorldLifecycle.ARCHIVED)
@@ -57,7 +57,7 @@ public final class WorldLifecycleService {
                 }
                 if (wasLoaded) {
                     try {
-                        runtimeService.load(worldId);
+                        runtimeService.loadDuringOperation(worldId);
                     } catch (RuntimeException reloadFailure) {
                         exception.addSuppressed(reloadFailure);
                     }
