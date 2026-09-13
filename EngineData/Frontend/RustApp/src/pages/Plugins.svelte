@@ -15,8 +15,9 @@
     return key.includes('world-manager') || key.includes('world manager') || key.includes('utilities-manager') || key.includes('utilities manager');
   };
 
+  const isInvalid = (plugin: PluginSummary) => plugin.id.startsWith('invalid-');
   const canMutate = () => serverState === 'Offline' || serverState === 'Crashed';
-  const hasDuplicates = (plugin: PluginSummary) => Boolean(plugin.candidateFiles?.length);
+  const hasDuplicates = (plugin: PluginSummary) => !isInvalid(plugin) && Boolean(plugin.candidateFiles && plugin.candidateFiles.length > 1);
 
   async function refresh() {
     try {
@@ -29,7 +30,7 @@
       error = '';
       duplicateSelection = Object.fromEntries(
         plugins
-          .filter((plugin) => plugin.candidateFiles?.length)
+          .filter((plugin) => !isInvalid(plugin) && plugin.candidateFiles?.length)
           .map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
       );
     } catch (e) {
@@ -92,6 +93,19 @@
     await run(async () => {
       await runtimeProduct.plugins.remove(plugin.id);
       message = 'Plugin removed. Its data folder was preserved.';
+    });
+  }
+
+  async function removeProblemPlugin(plugin: PluginSummary) {
+    const jar = plugin.candidateFiles?.[0];
+    if (!jar) {
+      error = 'The broken JAR could not be identified safely.';
+      return;
+    }
+    if (!window.confirm(`Remove broken plugin file ${jar}? A rollback copy will be kept.`)) return;
+    await run(async () => {
+      await runtimeProduct.plugins.removeProblem(plugin.id, jar);
+      message = 'Broken plugin JAR removed. A rollback copy was preserved.';
     });
   }
 
@@ -161,24 +175,26 @@
               <span>{plugin.version} · {plugin.category}</span>
               {#if plugin.problemDetail}<small class="problem">{plugin.problemDetail}</small>{/if}
 
-              {#if plugin.candidateFiles?.length}
+              {#if hasDuplicates(plugin)}
                 <div class="duplicate-box">
                   <span>Multiple JARs detected</span>
                   <div>
                     <select
                       disabled={busy || !canMutate()}
-                      value={duplicateSelection[plugin.id] ?? plugin.candidateFiles[0]}
+                      value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]}
                       onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}
                     >
-                      {#each plugin.candidateFiles as candidate}<option value={candidate}>{candidate}</option>{/each}
+                      {#each plugin.candidateFiles ?? [] as candidate}<option value={candidate}>{candidate}</option>{/each}
                     </select>
                     <button disabled={busy || !canMutate()} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
                   </div>
                 </div>
+              {:else if isInvalid(plugin) && plugin.candidateFiles?.[0]}
+                <div class="problem-file">Broken JAR: {plugin.candidateFiles[0]}</div>
               {/if}
             </div>
 
-            {#if !plugin.id.startsWith('invalid-')}
+            {#if !isInvalid(plugin)}
               <div class="row-actions">
                 <span class="state-pill" class:disabled={plugin.state !== 'Enabled'} class:problem={plugin.state === 'Problem'}>{plugin.state}</span>
                 {#if plugin.state !== 'Problem'}
@@ -188,7 +204,10 @@
                 <button class="danger" disabled={busy || !canMutate() || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove</button>
               </div>
             {:else}
-              <span class="state-pill problem">Problem</span>
+              <div class="row-actions">
+                <span class="state-pill problem">Broken JAR</span>
+                <button class="danger" disabled={busy || !canMutate() || !plugin.candidateFiles?.[0]} onclick={() => removeProblemPlugin(plugin)}>Remove broken JAR</button>
+              </div>
             {/if}
           </div>
         {/each}
@@ -233,6 +252,7 @@
   .plugin-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .plugin-main > span { color: var(--muted); font-size: 11px; }
   .problem { margin-top: 4px; color: #ff9ba3; font-size: 11px; }
+  .problem-file { margin-top: 6px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
   .state-pill { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; background: #173321; color: #9fdaae; font-size: 10px; font-weight: 700; }
   .state-pill.disabled { background: #292d31; color: #9ba1a7; }
   .state-pill.problem { background: #3a2024; color: #ffafb5; }
