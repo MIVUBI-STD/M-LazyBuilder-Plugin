@@ -29,6 +29,7 @@ public final class WorldLifecycleService {
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
         this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
+        this.runtimeService.attachOperations(this.operations);
     }
 
     public synchronized WorldRecord archive(WorldId worldId) {
