@@ -1,4 +1,4 @@
-use crate::engine::{paths, world_manager};
+use crate::engine::{paths, resource_settings, world_manager};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -151,6 +151,12 @@ impl ServerManagerState {
                 }
                 Err(error) => issues.push(error),
             }
+
+            if let Ok(profile) = resource_settings::profile() {
+                if !profile.warning.is_empty() {
+                    issues.push(profile.warning);
+                }
+            }
         }
 
         match paths::worlds_dir() {
@@ -185,6 +191,7 @@ impl ServerManagerState {
 
     pub fn snapshot(&self) -> Result<ServerSnapshot, String> {
         let options = load_options()?;
+        let runtime_resources = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)?;
         let mut child_guard = self.child.lock().map_err(|_| "server state lock poisoned".to_string())?;
         let Some(child) = child_guard.as_mut() else {
             if let Some(pid) = self.detached_process()? {
@@ -194,7 +201,7 @@ impl ServerManagerState {
                     health: "Warning".into(),
                     cpu_load_percent: cpu,
                     used_memory_bytes: memory,
-                    max_memory_bytes: options.max_memory_mb * 1024 * 1024,
+                    max_memory_bytes: runtime_resources.max_memory_mb * 1024 * 1024,
                     pid: Some(pid),
                     log_path: self.current_log_path(),
                 });
@@ -215,7 +222,7 @@ impl ServerManagerState {
 
         let pid = child.id();
         let (cpu, memory) = self.process_usage(pid)?;
-        let max_memory = options.max_memory_mb * 1024 * 1024;
+        let max_memory = runtime_resources.max_memory_mb * 1024 * 1024;
         let memory_ratio = if max_memory == 0 { 0.0 } else { memory as f64 / max_memory as f64 };
         let state = self.runtime_state.lock().map_err(|_| "server runtime state lock poisoned".to_string())?.clone();
 
@@ -272,6 +279,7 @@ impl ServerManagerState {
         let worlds_dir = paths::worlds_dir()?;
         let options = load_options()?;
         validate_options(&options)?;
+        let resources = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)?;
         let (server_dir, paper) = resolve_server_paths(&workspace, &options)?;
         if !server_dir.is_dir() {
             return Err(format!("Server directory was not found: {}", server_dir.display()));
@@ -293,8 +301,9 @@ impl ServerManagerState {
 
         let mut child = Command::new(java)
             .current_dir(&server_dir)
-            .arg(format!("-Xms{}M", options.min_memory_mb))
-            .arg(format!("-Xmx{}M", options.max_memory_mb))
+            .arg(format!("-Xms{}M", resources.min_memory_mb))
+            .arg(format!("-Xmx{}M", resources.max_memory_mb))
+            .arg(format!("-XX:ActiveProcessorCount={}", resources.cpu_threads))
             .args(["-jar", &options.paper_jar])
             .arg("--universe")
             .arg(&worlds_dir)
@@ -313,6 +322,13 @@ impl ServerManagerState {
 
         write_process_marker(child.id())?;
         append_log_line(&shared_log, &format!("[LazyBuilder] Paper started as PID {}", child.id()));
+        append_log_line(
+            &shared_log,
+            &format!(
+                "[LazyBuilder] Resources: Xms={} MB, Xmx={} MB, ActiveProcessorCount={}",
+                resources.min_memory_mb, resources.max_memory_mb, resources.cpu_threads
+            ),
+        );
 
         if let Some(stdout) = child.stdout.take() {
             let runtime_state = Arc::clone(&self.runtime_state);
@@ -431,7 +447,6 @@ impl ServerManagerState {
 
 impl Drop for ServerManagerState {
     fn drop(&mut self) {
-        // Normal desktop shutdown should not intentionally orphan the Paper process.
         let _ = self.stop();
     }
 }
@@ -442,13 +457,16 @@ fn set_runtime_state(state: &Arc<Mutex<String>>, value: &str) -> Result<(), Stri
 }
 
 fn offline_like_snapshot(options: &ServerManagerOptions, state: String, log_path: String) -> ServerSnapshot {
+    let max_memory_mb = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)
+        .map(|value| value.max_memory_mb)
+        .unwrap_or(options.max_memory_mb);
     let health = if state == "Crashed" { "Critical" } else { "Offline" };
     ServerSnapshot {
         state,
         health: health.into(),
         cpu_load_percent: 0.0,
         used_memory_bytes: 0,
-        max_memory_bytes: options.max_memory_mb * 1024 * 1024,
+        max_memory_bytes: max_memory_mb * 1024 * 1024,
         pid: None,
         log_path,
     }
