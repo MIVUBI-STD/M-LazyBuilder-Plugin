@@ -1,6 +1,5 @@
-use crate::commands::server_tools;
-use crate::engine::{java_runtime, paper_performance, process_identity, startup_guard, workspace_registry};
-use crate::engine::server_manager::{ServerManagerState, ServerPreflight, ServerSnapshot};
+use crate::engine::{java_runtime, paper_performance, startup_guard, workspace_registry};
+use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::State;
 
 #[tauri::command]
@@ -16,15 +15,10 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 #[tauri::command]
 pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> {
     ensure_provisioned()?;
-    process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
     let performance = paper_performance::apply_before_managed_start()?;
     let _performance_summary = (performance.changed, performance.message);
-    state.start()?;
-    // Paper is already running at this point. Identity metadata is a recovery aid and
-    // must never turn a successful spawn into a false startup failure in the UI.
-    let _ = process_identity::record_after_start();
-    Ok(())
+    state.start()
 }
 
 #[tauri::command]
@@ -36,13 +30,15 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
     stop_with_recovery(&state)?;
     ensure_provisioned()?;
-    process_identity::sanitize_before_start()?;
     startup_guard::ensure_memory_headroom()?;
     let performance = paper_performance::apply_before_managed_start()?;
     let _performance_summary = (performance.changed, performance.message);
-    state.start()?;
-    let _ = process_identity::record_after_start();
-    Ok(())
+    state.start()
+}
+
+#[tauri::command]
+pub fn server_recover_detached(state: State<'_, ServerManagerState>) -> Result<DetachedRecoveryResult, String> {
+    state.recover_detached()
 }
 
 fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
@@ -51,8 +47,7 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
         Err(stop_error) => {
             // A failed write/flush to Paper stdin can leave the owned child alive after
             // ServerManagerState has already entered Stopping. Only in that proven
-            // state do we fall back to detached recovery; unrelated stop failures must
-            // never trigger process termination.
+            // state do we fall back to the same ServerManager recovery owner.
             let snapshot = state.snapshot().map_err(|snapshot_error| {
                 format!("{stop_error}; additionally failed to inspect stop recovery state: {snapshot_error}")
             })?;
@@ -60,7 +55,7 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
                 return Err(stop_error);
             }
 
-            match server_tools::server_recover_detached() {
+            match state.recover_detached() {
                 Ok(result) if result.stopped => {
                     // Reap the still-owned Child handle after the external termination.
                     let _ = state.snapshot();
