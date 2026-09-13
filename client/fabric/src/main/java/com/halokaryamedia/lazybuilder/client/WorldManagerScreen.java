@@ -183,9 +183,38 @@ public final class WorldManagerScreen extends Screen {
                     Text.literal("Select a world"), layout.detailLeft + layout.detailWidth / 2, 80, 0xAEB7C4);
         }
 
+        renderOperationStatus(context, layout);
+
         if (controller.lastError() != null) {
             context.drawCenteredTextWithShadow(textRenderer,
                     Text.literal(controller.lastError()), width / 2, height - 46, 0xFF7777);
+        }
+    }
+
+    private void renderOperationStatus(DrawContext context, Layout layout) {
+        String worldActivity = controller.activityMessage();
+        ClientTransferController.TransferStatus transfer = transfers.status();
+        String label = null;
+        int percent = -1;
+
+        if (transfer.active()) {
+            label = transfer.message();
+            percent = transfer.percent();
+        } else if (worldActivity != null) {
+            label = worldActivity;
+        }
+
+        if (label == null) return;
+        if (percent >= 0) label += "  " + percent + "%";
+        int y = layout.bottom - 28;
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
+                layout.detailLeft + layout.detailWidth / 2, y, 0xD8DEE9);
+        if (percent >= 0) {
+            int barWidth = Math.min(260, layout.detailWidth - 36);
+            int left = layout.detailLeft + (layout.detailWidth - barWidth) / 2;
+            int filled = (int) Math.round(barWidth * (percent / 100.0));
+            context.fill(left, y + 13, left + barWidth, y + 18, 0xFF303740);
+            context.fill(left, y + 13, left + filled, y + 18, 0xFFD8DEE9);
         }
     }
 
