@@ -46,11 +46,11 @@
     : preflight.ready ? 'Ready' : 'Needs Attention';
 
   async function refreshLog() {
-    if (!showLog || !snapshot.logPath) {
+    if (!showLog) {
       logTail = { path: snapshot.logPath, content: '', truncated: false };
       return;
     }
-    logTail = await runtimeProduct.server.logTail(snapshot.logPath);
+    logTail = await runtimeProduct.server.logTail(snapshot.logPath || '');
   }
 
   async function refresh() {
@@ -168,7 +168,7 @@
   <button disabled={busy || !preflight.ready || !['Offline', 'Crashed'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
   <button disabled={busy || !['Starting', 'Online'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
   <button disabled={busy || snapshot.state !== 'Online'} onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
-  <button disabled={busy || !snapshot.logPath} onclick={toggleLog}>{showLog ? 'Hide Log' : 'View Log'}</button>
+  <button disabled={busy} onclick={toggleLog}>{showLog ? 'Hide Log' : 'View Log'}</button>
 </div>
 
 <div class="card" style="margin-top: 16px">
@@ -185,7 +185,7 @@
 {#if showLog}
   <div class="card" style="margin-top: 16px">
     <div class="label">Paper Log {logTail.truncated ? '(tail)' : ''}</div>
-    <p class="subtle">{logTail.path || 'No active session log.'}</p>
+    <p class="subtle">{logTail.path || 'No Paper session log found.'}</p>
     <pre style="max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word">{logTail.content || 'No log output yet.'}</pre>
   </div>
 {/if}
