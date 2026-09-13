@@ -17,7 +17,12 @@ pub struct PaperRelease {
 
 pub fn ensure_for_workspace(workspace: &Path) -> Result<u64, String> {
     let release = latest_stable()?;
-    let cache = cache_path(&release)?;
+    ensure_release_for_workspace(workspace, &release)?;
+    Ok(release.build)
+}
+
+pub fn ensure_release_for_workspace(workspace: &Path, release: &PaperRelease) -> Result<(), String> {
+    let cache = cache_path(release)?;
     if !cache.is_file() || sha256_file(&cache)? != release.sha256 {
         download_verified(&release.url, &release.sha256, &cache)?;
     }
@@ -26,13 +31,12 @@ pub fn ensure_for_workspace(workspace: &Path) -> Result<u64, String> {
     fs::create_dir_all(&server_dir).map_err(|e| e.to_string())?;
     let target = server_dir.join("paper.jar");
     if target.is_file() && sha256_file(&target)? == release.sha256 {
-        return Ok(release.build);
+        return Ok(());
     }
 
     let temporary = target.with_extension("jar.tmp");
     fs::copy(&cache, &temporary).map_err(|e| e.to_string())?;
-    replace_file(&temporary, &target)?;
-    Ok(release.build)
+    replace_file(&temporary, &target)
 }
 
 pub fn latest_stable() -> Result<PaperRelease, String> {
