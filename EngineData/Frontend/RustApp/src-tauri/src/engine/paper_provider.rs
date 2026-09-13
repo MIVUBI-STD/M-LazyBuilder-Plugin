@@ -35,7 +35,7 @@ pub fn ensure_for_workspace(workspace: &Path) -> Result<u64, String> {
     Ok(release.build)
 }
 
-fn latest_stable() -> Result<PaperRelease, String> {
+pub fn latest_stable() -> Result<PaperRelease, String> {
     let response = ureq::get(BUILDS_URL)
         .set("User-Agent", USER_AGENT)
         .call()
