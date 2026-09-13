@@ -4,11 +4,16 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, Process, System};
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 type ServerManagerOptions = server_config::ServerConfig;
 
@@ -296,6 +301,7 @@ impl ServerManagerState {
         *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = Some(Instant::now());
 
         let mut command = Command::new(java);
+        hide_windows_console(&mut command);
         command
             .current_dir(&server_dir)
             .arg(format!("-Xms{}M", resources.min_memory_mb))
@@ -588,7 +594,9 @@ fn resolve_java(configured: &str) -> Result<PathBuf, String> {
 }
 
 fn java_major_and_text(java: &Path) -> Result<(u32, String), String> {
-    let output = Command::new(java).arg("--version").output().map_err(|error| error.to_string())?;
+    let mut command = Command::new(java);
+    hide_windows_console(&mut command);
+    let output = command.arg("--version").output().map_err(|error| error.to_string())?;
     let text = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     let normalized = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("Unknown Java").trim().to_string();
     let major = text
@@ -610,6 +618,13 @@ fn validate_java_21(java: &Path) -> Result<(), String> {
         return Err(format!("LazyBuilder Paper 1.21.4 requires Java 21. Detected Java {major}."));
     }
     Ok(())
+}
+
+fn hide_windows_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn write_process_marker(pid: u32) -> Result<(), String> {
