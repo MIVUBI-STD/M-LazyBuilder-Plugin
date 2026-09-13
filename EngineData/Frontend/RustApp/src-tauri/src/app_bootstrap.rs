@@ -41,6 +41,7 @@ pub fn run() {
             commands::plugin_manager::plugin_update,
             commands::plugin_manager::plugin_set_enabled,
             commands::plugin_manager::plugin_remove,
+            commands::plugin_manager::plugin_remove_problem,
             commands::plugin_manager::plugin_resolve_duplicates,
             commands::world_manager::world_list,
             commands::world_manager::world_create,
