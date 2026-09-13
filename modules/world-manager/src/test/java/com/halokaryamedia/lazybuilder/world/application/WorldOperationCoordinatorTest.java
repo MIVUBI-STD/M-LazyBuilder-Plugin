@@ -30,7 +30,7 @@ class WorldOperationCoordinatorTest {
         WorldId first = WorldId.create();
         WorldId second = WorldId.create();
 
-        try (WorldOperationCoordinator.Lease ignoredFirst = coordinator.acquire(first, WorldOperationType.CLONE);
+        try (WorldOperationCoordinator.Lease ignoredFirst = coordinator.acquire(first, WorldOperationType.DUPLICATE);
              WorldOperationCoordinator.Lease ignoredSecond = coordinator.acquire(second, WorldOperationType.EXPORT)) {
             assertTrue(coordinator.isBusy(first));
             assertTrue(coordinator.isBusy(second));
