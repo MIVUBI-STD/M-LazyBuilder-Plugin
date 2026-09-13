@@ -3,7 +3,6 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { PluginInstallResult, PluginSummary } from '../app/bridge/runtimeApi';
 
-  const categories = ['World Management', 'Build Tools', 'Server Utilities', 'Performance', 'Dependencies', 'Other'];
   let plugins: PluginSummary[] = [];
   let error = '';
   let message = '';
@@ -71,15 +70,8 @@
   async function removePlugin(plugin: PluginSummary) {
     if (!window.confirm(`Remove ${plugin.displayName}? Plugin data will be preserved.`)) return;
     await run(async () => {
-      await runtimeProduct.plugins.remove(plugin.id, false);
+      await runtimeProduct.plugins.remove(plugin.id);
       message = 'Plugin JAR removed. Plugin data was preserved.';
-    });
-  }
-
-  async function changeCategory(plugin: PluginSummary, category: string) {
-    await run(async () => {
-      await runtimeProduct.plugins.setCategory(plugin.id, category);
-      message = `Category updated to ${category}.`;
     });
   }
 
@@ -110,15 +102,7 @@
         <div class="subtle">{plugin.version} · {plugin.state}</div>
         {#if plugin.problemDetail}<div style="color: var(--danger); margin-top:8px">{plugin.problemDetail}</div>{/if}
       </div>
-      <select
-        disabled={busy}
-        value={plugin.category}
-        onchange={(event) => changeCategory(plugin, (event.currentTarget as HTMLSelectElement).value)}
-      >
-        {#each categories as category}
-          <option value={category}>{category}</option>
-        {/each}
-      </select>
+      <span class="subtle">{plugin.category}</span>
     </div>
 
     {#if plugin.candidateFiles?.length}
