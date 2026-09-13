@@ -34,6 +34,33 @@ export type ServerLogTail = {
   truncated: boolean;
 };
 
+export type ResourcePreset = {
+  name: string;
+  maxMemoryMb: number;
+  minMemoryMb: number;
+  cpuThreads: number;
+};
+
+export type ServerResourceProfile = {
+  totalMemoryMb: number;
+  reservedSystemMemoryMb: number;
+  safeMaxMemoryMb: number;
+  logicalProcessors: number;
+  currentMaxMemoryMb: number;
+  currentMinMemoryMb: number;
+  currentCpuThreads: number;
+  currentPreset: string;
+  performance: ResourcePreset;
+  boost: ResourcePreset;
+  warning: string;
+};
+
+export type ResourceUpdateRequest = {
+  maxMemoryMb: number;
+  cpuThreads: number;
+  preset: string;
+};
+
 export type PluginSummary = {
   id: string;
   displayName: string;
@@ -133,6 +160,11 @@ export const runtimeApi = {
   restartServer: () => invoke<void>('server_restart'),
   recoverDetachedServer: () => invoke<DetachedRecoveryResult>('server_recover_detached'),
   readServerLogTail: (path: string) => invoke<ServerLogTail>('server_log_tail', { path }),
+  getServerResourceProfile: () => invoke<ServerResourceProfile>('server_resource_profile'),
+  saveServerResources: (request: ResourceUpdateRequest) =>
+    invoke<ServerResourceProfile>('server_resource_save', { request }),
+  applyServerResourcePreset: (name: string) =>
+    invoke<ServerResourceProfile>('server_resource_preset', { name }),
 
   listPlugins: () => invoke<PluginSummary[]>('plugin_list'),
   pickPluginJar: () => invoke<string | null>('plugin_pick_jar'),
