@@ -59,13 +59,13 @@
   }
 
   function stateDescription(state: string) {
-    if (state === 'Online') return 'Your Paper server is online and ready to use.';
-    if (state === 'Starting') return 'Paper is starting. This usually takes a few seconds.';
-    if (state === 'Stopping') return 'Waiting for Paper to shut down safely.';
-    if (state === 'Restarting') return 'The server is restarting.';
-    if (state === 'Detached') return 'Paper is still running, but this launcher session no longer owns its console.';
+    if (state === 'Online') return 'Ready for builders to join.';
+    if (state === 'Starting') return 'Starting Paper. This usually takes a few seconds.';
+    if (state === 'Stopping') return 'Stopping safely. Wait until the server is offline.';
+    if (state === 'Restarting') return 'Restarting the server.';
+    if (state === 'Detached') return 'The server is running outside this launcher session.';
     if (state === 'Crashed') return 'The previous server process stopped unexpectedly.';
-    return 'Start the server when you are ready to build.';
+    return 'Start the server when your team is ready to build.';
   }
 
   async function refreshRuntime() {
@@ -106,7 +106,7 @@
       try {
         await Promise.all([refreshRuntime(), refreshPreflight()]);
       } catch {
-        // Keep the original action error. It is the most useful message to the user.
+        // Keep the original action error.
       }
       error = operationError;
     } finally {
@@ -116,7 +116,7 @@
 
   async function stopDetachedProcess() {
     if (busy || snapshot.state !== 'Detached') return;
-    if (!window.confirm('Stop the externally running Paper process? This will terminate that server process so LazyBuilder can manage the server again.')) return;
+    if (!window.confirm('Stop the externally running Paper server so LazyBuilder can manage it again?')) return;
     busy = true;
     error = '';
     notice = '';
@@ -140,16 +140,11 @@
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
 </script>
 
-<section class="overview">
-  <header class="page-header">
+<section class="overview" aria-label={`${serverName} overview`}>
+  <div class="section-heading">
     <div>
-      <p class="eyebrow">Overview</p>
-      <h1>{serverName}</h1>
-      <div class="status-line">
-        <span class="status-dot {stateTone(snapshot.state)}"></span>
-        <span>{stateLabel(snapshot.state)}</span>
-        {#if preflight.javaVersion}<span class="separator">•</span><span class="muted">Java {preflight.javaVersion}</span>{/if}
-      </div>
+      <h2>Server status</h2>
+      <p>Everything a builder normally needs is kept here.</p>
     </div>
 
     <div class="header-actions">
@@ -164,48 +159,38 @@
         <button class="secondary-action" disabled>Starting…</button>
       {:else if snapshot.state === 'Stopping'}
         <button class="secondary-action" disabled>Stopping…</button>
+      {:else if snapshot.state === 'Restarting'}
+        <button class="secondary-action" disabled>Restarting…</button>
       {:else if snapshot.state === 'Detached'}
         <button class="stop-button" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
       {/if}
     </div>
-  </header>
+  </div>
 
-  <section class="hero-card {stateTone(snapshot.state)}">
-    <div class="hero-copy">
-      <div class="hero-status">
-        <span class="large-dot {stateTone(snapshot.state)}"></span>
+  <section class="status-card {stateTone(snapshot.state)}">
+    <div class="status-summary">
+      <span class="status-dot {stateTone(snapshot.state)}"></span>
+      <div>
         <strong>{stateLabel(snapshot.state)}</strong>
+        <p>{stateDescription(snapshot.state)}</p>
       </div>
-      <p>{stateDescription(snapshot.state)}</p>
     </div>
 
-    {#if snapshot.state === 'Online'}
-      <div class="live-metrics">
-        <div>
-          <span>CPU</span>
-          <strong>{snapshot.cpuLoadPercent.toFixed(1)}%</strong>
-        </div>
-        <div>
-          <span>Memory</span>
-          <strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong>
-        </div>
-        {#if snapshot.pid}
-          <div>
-            <span>Process</span>
-            <strong>PID {snapshot.pid}</strong>
-          </div>
-        {/if}
-      </div>
-    {:else if snapshot.maxMemoryBytes > 0}
-      <div class="offline-meta">
-        <span>Memory limit</span>
-        <strong>{gb(snapshot.maxMemoryBytes).toFixed(0)} GB</strong>
-      </div>
-    {/if}
+    <div class="runtime-facts">
+      {#if snapshot.state === 'Online'}
+        <div><span>CPU</span><strong>{snapshot.cpuLoadPercent.toFixed(1)}%</strong></div>
+        <div><span>Memory</span><strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div>
+      {:else if snapshot.maxMemoryBytes > 0}
+        <div><span>Memory limit</span><strong>{gb(snapshot.maxMemoryBytes).toFixed(0)} GB</strong></div>
+      {/if}
+      {#if preflight.javaVersion}
+        <div><span>Java</span><strong>{preflight.javaVersion}</strong></div>
+      {/if}
+    </div>
   </section>
 
   {#if error}
-    <section class="message-card danger-card">
+    <section class="message-card danger-card" role="alert">
       <div>
         <strong>{category(error)} problem</strong>
         <p>{error}</p>
@@ -223,8 +208,8 @@
     <section class="attention-card">
       <div class="attention-heading">
         <div>
-          <strong>Needs attention</strong>
-          <p>Resolve these items before starting the server.</p>
+          <strong>Needs attention before starting</strong>
+          <p>Only items that prevent normal server use are shown here.</p>
         </div>
         <span>{preflight.issues.length}</span>
       </div>
@@ -240,8 +225,8 @@
     <section class="attention-card">
       <div class="attention-heading">
         <div>
-          <strong>Server is running outside this launcher session</strong>
-          <p>LazyBuilder cannot recover the old console connection. Stopping the verified Paper process is required before this launcher can start and own a new managed instance.</p>
+          <strong>LazyBuilder cannot control the current console</strong>
+          <p>Stop the verified external Paper process first. After that, start the server here and LazyBuilder will own it normally.</p>
         </div>
       </div>
       <button class="stop-button" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
@@ -250,64 +235,60 @@
 </section>
 
 <style>
-  .overview { width: min(980px, 100%); }
-  .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-  .eyebrow { margin: 0 0 4px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 750; }
-  h1 { margin: 0; font-size: 30px; line-height: 1.1; letter-spacing: -.035em; }
-  .status-line { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--text-soft); font-size: 12px; }
-  .muted { color: var(--muted); }
-  .separator { color: var(--muted-2); }
-  .status-dot, .large-dot { border-radius: 50%; background: #697078; }
-  .status-dot { width: 7px; height: 7px; }
-  .large-dot { width: 10px; height: 10px; }
-  .status-dot.running, .large-dot.running { background: var(--accent); box-shadow: 0 0 0 4px rgba(27, 217, 106, .10); }
-  .status-dot.transition, .large-dot.transition { background: #67a9ff; }
-  .status-dot.warning, .large-dot.warning { background: var(--warning); }
-  .status-dot.danger, .large-dot.danger { background: var(--danger); }
+  .overview { width: min(920px, 100%); }
+  .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 14px; }
+  .section-heading h2 { margin: 0; color: var(--text); font-size: 18px; }
+  .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 
   .header-actions { display: flex; align-items: center; gap: 8px; }
-  .start-button, .secondary-action, .stop-button { border-radius: 8px; padding: 9px 14px; font-weight: 700; cursor: pointer; }
+  .start-button, .secondary-action, .stop-button { min-height: 40px; border-radius: var(--radius-sm); padding: 8px 14px; font-weight: 700; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 120ms ease; }
   .start-button { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
   .start-button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .start-button:active:not(:disabled), .secondary-action:active:not(:disabled), .stop-button:active:not(:disabled) { transform: scale(.98); }
   .secondary-action { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
   .secondary-action:hover:not(:disabled) { background: var(--surface-3); }
   .stop-button { border: 1px solid #61343a; background: #2b1b1e; color: #ffb7bd; }
   .stop-button:hover:not(:disabled) { background: #382025; }
 
-  .hero-card { display: flex; justify-content: space-between; align-items: center; gap: 28px; min-height: 142px; padding: 22px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
-  .hero-card.running { border-color: #28533a; background: linear-gradient(110deg, #17241b 0%, var(--surface) 48%); }
-  .hero-card.warning { border-color: #5f5125; background: linear-gradient(110deg, #252116 0%, var(--surface) 48%); }
-  .hero-card.danger { border-color: #62343a; background: linear-gradient(110deg, #29191c 0%, var(--surface) 48%); }
-  .hero-copy { min-width: 0; }
-  .hero-status { display: flex; align-items: center; gap: 10px; }
-  .hero-status strong { font-size: 19px; letter-spacing: -.02em; }
-  .hero-copy p { max-width: 500px; margin: 8px 0 0; color: var(--muted); }
+  .status-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; min-height: 108px; padding: 18px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
+  .status-card.running { border-color: #28533a; background: linear-gradient(105deg, #16221a 0%, var(--surface) 48%); }
+  .status-card.warning { border-color: #5f5125; background: linear-gradient(105deg, #252116 0%, var(--surface) 48%); }
+  .status-card.danger { border-color: #62343a; background: linear-gradient(105deg, #29191c 0%, var(--surface) 48%); }
+  .status-summary { min-width: 0; display: flex; align-items: flex-start; gap: 11px; }
+  .status-summary strong { font-size: 17px; }
+  .status-summary p { max-width: 480px; margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+  .status-dot { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 7px; border-radius: 50%; background: #697078; }
+  .status-dot.running { background: var(--accent); box-shadow: 0 0 0 4px rgba(27,217,106,.10); }
+  .status-dot.transition { background: var(--info); }
+  .status-dot.warning { background: var(--warning); }
+  .status-dot.danger { background: var(--danger); }
 
-  .live-metrics { display: flex; align-items: stretch; flex-wrap: wrap; border: 1px solid var(--border-soft); border-radius: 10px; background: rgba(10, 12, 14, .35); }
-  .live-metrics > div { min-width: 116px; display: grid; gap: 4px; padding: 12px 15px; border-left: 1px solid var(--border-soft); }
-  .live-metrics > div:first-child { border-left: 0; }
-  .live-metrics span, .offline-meta span { color: var(--muted-2); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-  .live-metrics strong { font-size: 14px; white-space: nowrap; }
-  .offline-meta { display: grid; gap: 4px; min-width: 120px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: rgba(10, 12, 14, .30); }
-  .offline-meta strong { font-size: 18px; }
+  .runtime-facts { display: flex; align-items: stretch; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: rgba(10,12,14,.32); }
+  .runtime-facts > div { min-width: 100px; display: grid; gap: 3px; padding: 10px 13px; border-left: 1px solid var(--border-soft); }
+  .runtime-facts > div:first-child { border-left: 0; }
+  .runtime-facts span { color: var(--muted-2); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .runtime-facts strong { font-size: 13px; white-space: nowrap; }
 
-  .message-card, .attention-card { margin-top: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .message-card, .attention-card { margin-top: 12px; padding: 15px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
   .message-card strong, .attention-card strong { font-size: 13px; }
   .message-card p, .attention-card p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
   .danger-card { border-color: #62343a; background: #241719; }
   .danger-card p { color: #e9b6ba; }
   .attention-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
   .attention-heading > span { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
-  .issue-list { display: grid; margin-top: 13px; border-top: 1px solid var(--border-soft); }
-  .issue-row { display: grid; grid-template-columns: 110px 1fr; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--border-soft); font-size: 11px; }
+  .issue-list { display: grid; margin-top: 12px; border-top: 1px solid var(--border-soft); }
+  .issue-row { display: grid; grid-template-columns: 100px 1fr; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); font-size: 11px; }
   .issue-row:last-child { border-bottom: 0; padding-bottom: 0; }
   .issue-row strong { color: var(--text-soft); font-size: 11px; }
   .issue-row span { color: var(--muted); overflow-wrap: anywhere; }
   .attention-card > button { margin-top: 14px; }
 
   @media (max-width: 820px) {
-    .page-header, .hero-card { align-items: flex-start; flex-direction: column; }
-    .live-metrics { width: 100%; }
-    .issue-row { grid-template-columns: 1fr; gap: 3px; }
+    .section-heading, .status-card { align-items: flex-start; grid-template-columns: 1fr; }
+    .section-heading { flex-direction: column; }
+    .runtime-facts { width: 100%; flex-wrap: wrap; }
+    .runtime-facts > div { flex: 1; border-left: 0; border-top: 1px solid var(--border-soft); }
+    .runtime-facts > div:first-child { border-top: 0; }
+    .issue-row { grid-template-columns: 1fr; }
   }
 </style>
