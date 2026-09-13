@@ -46,10 +46,7 @@ public final class LazyBuilderClientNetworking {
         ClientPlayNetworking.registerGlobalReceiver(WorldPayload.ID, (payload, context) ->
                 context.client().execute(() -> handleWorld(payload.bytes())));
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
-            mapController.refreshCurrentWorld();
-            worldController.refresh();
-        }));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(this::refreshManagedContext));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             worldController.reset();
             mapController.reset();
@@ -75,6 +72,10 @@ public final class LazyBuilderClientNetworking {
             worldController.accept(response);
             if (response instanceof WorldControlWireProtocol.ExportReady export) {
                 transferController.downloadExport(export.artifactName());
+            } else if (response instanceof WorldControlWireProtocol.TeleportOk) {
+                // Teleport can move the player to another managed world. Refresh both
+                // list/runtime state and map identity from the server authority immediately.
+                refreshManagedContext();
             }
         } catch (IOException | RuntimeException exception) {
             notifyPlayer("LazyBuilder world response rejected: " + exception.getMessage());
@@ -95,6 +96,11 @@ public final class LazyBuilderClientNetworking {
         } catch (IOException | RuntimeException exception) {
             notifyPlayer("LazyBuilder transfer response rejected: " + exception.getMessage());
         }
+    }
+
+    private void refreshManagedContext() {
+        mapController.refreshCurrentWorld();
+        worldController.refresh();
     }
 
     public static void notifyPlayer(String message) {
