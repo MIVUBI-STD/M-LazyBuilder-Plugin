@@ -55,8 +55,8 @@ public final class CreateWorldScreen extends Screen {
         create.active = !submitting;
         addDrawableChild(create);
 
-        addDrawableChild(LbUi.button(width / 2 - 50, 238, 100, 22,
-                submitting ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
+        addDrawableChild(LbUi.button(width / 2 - 58, 238, 116, 22,
+                submitting ? "Back to Worlds" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
 
         if (!submitting) setInitialFocus(displayName);
     }
@@ -134,7 +134,7 @@ public final class CreateWorldScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("CREATE WORLD"), left + 24, 46, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal("Start a clean build workspace"), left + 24, 64, LbUi.TEXT_PRIMARY);
         context.drawTextWithShadow(textRenderer,
-                Text.literal("Only choose what matters. Internal folder naming is automatic."),
+                Text.literal("Choose a name and starting world type. LazyBuilder handles the rest."),
                 left + 24, 82, LbUi.TEXT_SECONDARY);
         context.drawTextWithShadow(textRenderer, Text.literal("World name"), left + 28, 96, LbUi.TEXT_MUTED);
         LbUi.field(context, displayName, validation != null);
