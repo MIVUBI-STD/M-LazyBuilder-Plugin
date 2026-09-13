@@ -6,7 +6,9 @@ export const runtimeProduct = {
     snapshot: runtimeApi.getServerSnapshot,
     start: runtimeApi.startServer,
     stop: runtimeApi.stopServer,
-    restart: runtimeApi.restartServer
+    restart: runtimeApi.restartServer,
+    recoverDetached: runtimeApi.recoverDetachedServer,
+    logTail: runtimeApi.readServerLogTail
   },
   plugins: {
     list: runtimeApi.listPlugins,
