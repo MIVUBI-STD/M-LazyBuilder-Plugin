@@ -24,6 +24,7 @@ pub struct WorkspaceEntry {
 #[serde(rename_all = "camelCase")]
 struct WorkspaceRegistryFile {
     schema_version: u32,
+    #[serde(default)]
     active_workspace_id: Option<String>,
     servers: Vec<WorkspaceEntry>,
 }
@@ -67,16 +68,10 @@ pub struct ProvisioningStatus {
 }
 
 pub fn initialize() -> Result<(), String> {
-    let registry = load_registry()?;
-    if let Some(active_id) = registry.active_workspace_id.as_deref() {
-        if let Some(entry) = registry.servers.iter().find(|entry| entry.id == active_id) {
-            let path = PathBuf::from(&entry.path);
-            if path.is_dir() {
-                set_active_memory(Some(path.canonicalize().map_err(|error| error.to_string())?))?;
-            }
-        }
-    }
-    Ok(())
+    // Validate that the persisted server library can be read, but never restore an
+    // active workspace across application sessions. Selection is session-only.
+    let _ = load_registry()?;
+    set_active_memory(None)
 }
 
 pub fn active_workspace() -> Result<PathBuf, String> {
@@ -197,7 +192,6 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
     }
     entry.last_opened_unix_seconds = now_unix_seconds();
     let result = entry.clone();
-    registry.active_workspace_id = Some(result.id.clone());
     save_registry(&registry)?;
     let canonical = path.canonicalize().map_err(|error| error.to_string())?;
     if let Some(mut manifest) = read_manifest(&canonical)? {
@@ -209,9 +203,6 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
 }
 
 pub fn deactivate() -> Result<(), String> {
-    let mut registry = load_registry()?;
-    registry.active_workspace_id = None;
-    save_registry(&registry)?;
     set_active_memory(None)
 }
 
@@ -281,7 +272,6 @@ fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, Stri
             last_opened_unix_seconds: now,
         });
     }
-    registry.active_workspace_id = Some(id.clone());
     save_registry(&registry)?;
     set_active_memory(Some(canonical))?;
     Ok(registry.servers.into_iter().find(|entry| entry.id == id).expect("registered workspace missing"))
@@ -321,6 +311,7 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     if registry.schema_version != REGISTRY_SCHEMA_VERSION {
         return Err("Workspace registry schema is newer or unsupported".into());
     }
+    registry.active_workspace_id = None;
     registry.servers.retain(|entry| !entry.path.trim().is_empty());
     Ok(registry)
 }
