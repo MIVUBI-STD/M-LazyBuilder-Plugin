@@ -2,26 +2,24 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
-const WORLD_SOURCE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
-const UTILITIES_SOURCE_NAME: &str = "Utilities-Manager-0.1.0-SNAPSHOT.jar";
-const WORLD_TARGET_NAME: &str = "LazyBuilder-WorldManager.jar";
-const UTILITIES_TARGET_NAME: &str = "LazyBuilder-UtilitiesManager.jar";
+const WORLD_FILE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
+const UTILITIES_FILE_NAME: &str = "Utilities-Manager-0.1.0-SNAPSHOT.jar";
 
 pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), String> {
-    let world_source = resolve_source(app_resource_dir, WORLD_SOURCE_NAME, "modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar")?;
-    let utilities_source = resolve_source(app_resource_dir, UTILITIES_SOURCE_NAME, "modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar")?;
+    let world_source = resolve_source(app_resource_dir, WORLD_FILE_NAME, "modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar")?;
+    let utilities_source = resolve_source(app_resource_dir, UTILITIES_FILE_NAME, "modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar")?;
     let plugins = workspace.join("server").join("plugins");
     fs::create_dir_all(&plugins).map_err(|e| e.to_string())?;
     let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
     fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    install_one(&world_source, &plugins.join(WORLD_TARGET_NAME), &backups.join(format!("{WORLD_TARGET_NAME}.previous")))?;
-    install_one(&utilities_source, &plugins.join(UTILITIES_TARGET_NAME), &backups.join(format!("{UTILITIES_TARGET_NAME}.previous")))?;
+    install_one(&world_source, &plugins.join(WORLD_FILE_NAME), &backups.join(format!("{WORLD_FILE_NAME}.previous")))?;
+    install_one(&utilities_source, &plugins.join(UTILITIES_FILE_NAME), &backups.join(format!("{UTILITIES_FILE_NAME}.previous")))?;
     Ok(())
 }
 
 pub fn ready(workspace: &Path) -> bool {
     let plugins = workspace.join("server").join("plugins");
-    plugins.join(WORLD_TARGET_NAME).is_file() && plugins.join(UTILITIES_TARGET_NAME).is_file()
+    plugins.join(WORLD_FILE_NAME).is_file() && plugins.join(UTILITIES_FILE_NAME).is_file()
 }
 
 fn resolve_source(resource_dir: Option<&Path>, file_name: &str, source_relative: &str) -> Result<PathBuf, String> {
