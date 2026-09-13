@@ -59,22 +59,6 @@ public final class WorldExportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldExportService(
-            WorldRegistry registry,
-            WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldOperationCoordinator operations,
-            WorldFileRepository files,
-            WorldExportArtifactStore artifacts,
-            ConversionRuntimeStore conversionStore,
-            ConversionUpdateService updateService,
-            ConverterAdapter converter,
-            ConversionJobCoordinator conversionJobs
-    ) {
-        this(registry, runtimeService, operations, files, artifacts, conversionStore, updateService, converter, conversionJobs);
-    }
-
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
         return prepare(worldId, targetFormat, artifactName, null);
     }
