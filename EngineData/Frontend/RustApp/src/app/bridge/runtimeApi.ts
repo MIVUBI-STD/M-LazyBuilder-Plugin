@@ -1,5 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export type WorkspaceEntry = {
+  id: string;
+  name: string;
+  path: string;
+  lastOpenedUnixSeconds: number;
+};
+
+export type WorkspaceState = {
+  active?: WorkspaceEntry | null;
+  recent: WorkspaceEntry[];
+};
+
 export type ServerSnapshot = {
   state: string;
   health: string;
@@ -91,34 +103,11 @@ export type ManagedWorldSummary = {
   defaultGameMode: string;
 };
 
-export type CreateWorldRequest = {
-  folderName: string;
-  displayName: string;
-  kind: 'FLAT' | 'VOID';
-};
-
-export type CloneWorldRequest = {
-  worldId: string;
-  destinationFolder: string;
-  displayName: string;
-};
-
-export type ExportWorldRequest = {
-  worldId: string;
-  targetFormat: string;
-  artifactName: string;
-};
-
-export type ImportWorldRequest = {
-  artifactName: string;
-  destinationFolder: string;
-  displayName: string;
-};
-
-export type DeleteWorldRequest = {
-  worldId: string;
-  typedFolderName: string;
-};
+export type CreateWorldRequest = { folderName: string; displayName: string; kind: 'FLAT' | 'VOID' };
+export type CloneWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
+export type ExportWorldRequest = { worldId: string; targetFormat: string; artifactName: string };
+export type ImportWorldRequest = { artifactName: string; destinationFolder: string; displayName: string };
+export type DeleteWorldRequest = { worldId: string; typedFolderName: string };
 
 export type WorldSettingsSnapshot = {
   id: string;
@@ -156,6 +145,14 @@ export type WorldTaskSnapshot = {
 };
 
 export const runtimeApi = {
+  getWorkspaceState: () => invoke<WorkspaceState>('workspace_state'),
+  pickWorkspaceParent: () => invoke<string | null>('workspace_pick_parent'),
+  createWorkspace: (parentPath: string, name: string) =>
+    invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
+  openWorkspace: () => invoke<WorkspaceEntry | null>('workspace_open_picker'),
+  activateWorkspace: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
+  closeWorkspace: () => invoke<void>('workspace_close'),
+
   getServerPreflight: () => invoke<ServerPreflight>('server_preflight'),
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
   startServer: () => invoke<void>('server_start'),
@@ -164,34 +161,24 @@ export const runtimeApi = {
   recoverDetachedServer: () => invoke<DetachedRecoveryResult>('server_recover_detached'),
   readServerLogTail: (path: string) => invoke<ServerLogTail>('server_log_tail', { path }),
   getServerResourceProfile: () => invoke<ServerResourceProfile>('server_resource_profile'),
-  saveServerResources: (request: ResourceUpdateRequest) =>
-    invoke<ServerResourceProfile>('server_resource_save', { request }),
-  applyServerResourcePreset: (name: string) =>
-    invoke<ServerResourceProfile>('server_resource_preset', { name }),
+  saveServerResources: (request: ResourceUpdateRequest) => invoke<ServerResourceProfile>('server_resource_save', { request }),
+  applyServerResourcePreset: (name: string) => invoke<ServerResourceProfile>('server_resource_preset', { name }),
 
   listPlugins: () => invoke<PluginSummary[]>('plugin_list'),
   pickPluginJar: () => invoke<string | null>('plugin_pick_jar'),
   installPlugin: (jarPath: string) => invoke<PluginInstallResult>('plugin_install', { jarPath }),
-  updatePlugin: (pluginId: string, jarPath: string) =>
-    invoke<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
-  setPluginEnabled: (pluginId: string, enabled: boolean) =>
-    invoke<void>('plugin_set_enabled', { pluginId, enabled }),
-  removePlugin: (pluginId: string, removeData = false) =>
-    invoke<void>('plugin_remove', { pluginId, removeData }),
-  resolvePluginDuplicates: (pluginId: string, keepJarFileName: string) =>
-    invoke<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName }),
-  setPluginCategory: (pluginId: string, category: string) =>
-    invoke<void>('plugin_set_category', { pluginId, category }),
+  updatePlugin: (pluginId: string, jarPath: string) => invoke<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
+  setPluginEnabled: (pluginId: string, enabled: boolean) => invoke<void>('plugin_set_enabled', { pluginId, enabled }),
+  removePlugin: (pluginId: string, removeData = false) => invoke<void>('plugin_remove', { pluginId, removeData }),
+  resolvePluginDuplicates: (pluginId: string, keepJarFileName: string) => invoke<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName }),
+  setPluginCategory: (pluginId: string, category: string) => invoke<void>('plugin_set_category', { pluginId, category }),
 
   listWorlds: () => invoke<ManagedWorldSummary[]>('world_list'),
-  createWorld: (request: CreateWorldRequest) =>
-    invoke<ManagedWorldSummary>('world_create', { request }),
+  createWorld: (request: CreateWorldRequest) => invoke<ManagedWorldSummary>('world_create', { request }),
   loadWorld: (worldId: string) => invoke<ManagedWorldSummary>('world_load', { worldId }),
   unloadWorld: (worldId: string) => invoke<ManagedWorldSummary>('world_unload', { worldId }),
-  getWorldSettings: (worldId: string) =>
-    invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
-  updateWorldSettings: (worldId: string, request: UpdateWorldSettingsRequest) =>
-    invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
+  getWorldSettings: (worldId: string) => invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
+  updateWorldSettings: (worldId: string, request: UpdateWorldSettingsRequest) => invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
   listWorldTasks: () => invoke<WorldTaskSnapshot[]>('world_task_list'),
   getWorldTask: (taskId: string) => invoke<WorldTaskSnapshot>('world_task', { taskId }),
   archiveWorld: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
