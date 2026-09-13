@@ -13,6 +13,7 @@ import java.util.UUID;
 public final class WorldManagerScreen extends Screen {
     private static final int PAGE_SIZE = 6;
 
+    private final Screen parent;
     private final ClientWorldController controller;
     private final ClientTransferController transfers;
     private final ClientMapController maps;
@@ -21,12 +22,17 @@ public final class WorldManagerScreen extends Screen {
     private long observedRevision;
     private boolean requestedInitialRefresh;
 
-    public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
+    public WorldManagerScreen(Screen parent, ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
         super(Text.literal("Worlds"));
+        this.parent = parent;
         this.controller = controller;
         this.transfers = transfers;
         this.maps = maps;
         this.observedRevision = controller.revision();
+    }
+
+    public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
+        this(null, controller, transfers, maps);
     }
 
     @Override
@@ -82,9 +88,8 @@ public final class WorldManagerScreen extends Screen {
         WorldControlWireProtocol.WorldSummary selected = selected();
         if (selected != null) addWorldActions(layout, selected);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Back to Map"), button -> {
-            if (client != null) client.setScreen(new WorldMapScreen(controller, transfers, maps));
-        }).dimensions(layout.right - 104, height - 26, 94, 18).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Back to Map"), button -> returnToMap())
+                .dimensions(layout.right - 104, height - 26, 94, 18).build());
     }
 
     private void addWorldActions(Layout layout, WorldControlWireProtocol.WorldSummary world) {
@@ -229,9 +234,15 @@ public final class WorldManagerScreen extends Screen {
         return new Layout(left, right, listWidth, detailLeft, detailWidth, bottom);
     }
 
+    private void returnToMap() {
+        if (client == null) return;
+        if (parent != null) client.setScreen(parent);
+        else client.setScreen(new WorldMapScreen(controller, transfers, maps));
+    }
+
     @Override
     public void close() {
-        if (client != null) client.setScreen(new WorldMapScreen(controller, transfers, maps));
+        returnToMap();
     }
 
     private WorldControlWireProtocol.WorldSummary selected() {
