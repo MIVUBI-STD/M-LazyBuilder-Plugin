@@ -3,6 +3,10 @@ plugins {
     id 'maven-publish'
 }
 
+if (gradle.gradleVersion != '8.12') {
+    throw new GradleException("LazyBuilder Fabric requires Gradle 8.12; found ${gradle.gradleVersion}")
+}
+
 version = project.mod_version
 group = project.maven_group
 
