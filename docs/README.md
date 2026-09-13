@@ -48,17 +48,14 @@ change world creation/settings/lifecycle/import/export
 → 02-world-management/README.md
 → lazybuilder-world-management when its procedure materially helps
 
-change Fabric UI/keybind/Xaero interaction
-→ 03-client-ui/README.md
-→ lazybuilder-client-ui
+change presentation/input
+→ lazybuilder-ui
+→ Desktop branch for Tauri/Svelte
+→ Fabric branch for client/Xaero
 
 change workspace/server/provisioning/process/runtime/resources
 → 04-system/skill-routing.md
 → lazybuilder-desktop-runtime
-
-change Tauri/Svelte desktop presentation
-→ 04-system/skill-routing.md
-→ lazybuilder-desktop-ui
 
 change third-party Paper plugin lifecycle
 → 04-system/skill-routing.md
@@ -70,8 +67,9 @@ change shared Paper/Fabric wire contract
 
 change architecture/module ownership
 → 04-system/README.md
+→ 04-system/development-discipline.md
 → 04-system/skill-routing.md
-→ lazybuilder-development-brief only if owner remains materially ambiguous
+→ resolve one primary specialist; no meta development Skill
 
 continue prior work / interpret current proof
 → 05-operations/README.md
@@ -84,9 +82,10 @@ continue prior work / interpret current proof
 3. Read the selected domain README.
 4. Load only the canonical owner needed for the current decision.
 5. Load exactly one primary specialist when its procedure materially helps.
-6. Add another specialist only after semantic ownership actually changes.
-7. `05-operations/` is current-state context, not durable design authority.
-8. Git history owns superseded architecture and rationale.
+6. For `lazybuilder-ui`, select only Desktop or Fabric branch context unless the task truly spans both surfaces.
+7. Add another specialist only after semantic ownership actually changes.
+8. `05-operations/` is current-state context, not durable design authority.
+9. Git history owns superseded architecture and rationale.
 
 ## Authority Roles
 
@@ -102,13 +101,11 @@ One concern must have one canonical semantic owner. Link instead of duplicating 
 ## Specialist Set
 
 ```text
-lazybuilder-development-brief
 lazybuilder-desktop-runtime
-lazybuilder-desktop-ui
 lazybuilder-plugin-management
 lazybuilder-world-management
-lazybuilder-client-ui
+lazybuilder-ui
 lazybuilder-protocol
 ```
 
-The canonical jobdesk map is [`04-system/skill-routing.md`](04-system/skill-routing.md). Do not add a Skill for an implementation language/tool alone.
+The canonical jobdesk map is [`04-system/skill-routing.md`](04-system/skill-routing.md). Do not add a Skill for an implementation language/tool alone, or for one-off planning/ambiguity.
