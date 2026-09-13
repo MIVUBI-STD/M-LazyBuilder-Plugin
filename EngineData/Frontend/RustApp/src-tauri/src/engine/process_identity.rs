@@ -1,7 +1,7 @@
 use crate::engine::paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
 
 #[derive(Deserialize)]
@@ -69,21 +69,38 @@ pub fn record_after_start() -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
+
+    match write_identity_atomic(&path, &identity) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            // Startup already succeeded, so an identity refresh failure must not leave
+            // a previous process identity that could later be mistaken for the new PID.
+            // Missing identity is safer: detached recovery will still require the
+            // managed Paper command-line check before terminating anything.
+            let _ = fs::remove_file(&path);
+            let _ = fs::remove_file(path.with_extension("json.previous"));
+            let _ = fs::remove_file(path.with_extension("json.tmp"));
+            Err(error)
+        }
+    }
+}
+
+fn write_identity_atomic(path: &Path, identity: &ProcessIdentity) -> Result<(), String> {
     let temporary = path.with_extension("json.tmp");
     let previous = path.with_extension("json.previous");
-    let text = serde_json::to_string_pretty(&identity).map_err(|error| error.to_string())?;
+    let text = serde_json::to_string_pretty(identity).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
 
     if path.exists() {
         let _ = fs::remove_file(&previous);
-        fs::rename(&path, &previous).map_err(|error| error.to_string())?;
-        match fs::rename(&temporary, &path) {
+        fs::rename(path, &previous).map_err(|error| error.to_string())?;
+        match fs::rename(&temporary, path) {
             Ok(()) => {
                 let _ = fs::remove_file(previous);
                 Ok(())
             }
             Err(error) => {
-                let _ = fs::rename(&previous, &path);
+                let _ = fs::rename(&previous, path);
                 Err(error.to_string())
             }
         }
