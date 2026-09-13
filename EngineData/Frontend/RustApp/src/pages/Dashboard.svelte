@@ -118,16 +118,10 @@
 
 <section class="overview" aria-label={`${serverName} overview`}>
   <header class="page-head">
-    <div>
-      <h2>Overview</h2>
-      <p>Your server at a glance.</p>
-    </div>
-
+    <div><h2>Overview</h2><p>Your server at a glance.</p></div>
     <div class="primary-actions">
       {#if ['Offline', 'Crashed'].includes(snapshot.state)}
-        <button class="primary" disabled={busy || !preflight.ready} onclick={() => action(runtimeProduct.server.start)}>
-          {busy ? 'Starting…' : '▶ Start server'}
-        </button>
+        <button class="primary" disabled={busy || !preflight.ready} onclick={() => action(runtimeProduct.server.start)}>{busy ? 'Starting…' : 'Start server'}</button>
       {:else if snapshot.state === 'Online'}
         <button class="stop" disabled={busy} onclick={() => action(runtimeProduct.server.stop)}>Stop server</button>
         <details class="more-menu">
@@ -143,114 +137,35 @@
   </header>
 
   <section class="status-card {stateTone(snapshot.state)}">
-    <div class="status-copy">
-      <span class="status-dot {stateTone(snapshot.state)}"></span>
-      <div>
-        <strong>{stateLabel(snapshot.state)}</strong>
-        <p>{stateDescription(snapshot.state)}</p>
-      </div>
-    </div>
-
+    <div class="status-copy"><span class="status-dot {stateTone(snapshot.state)}"></span><div><strong>{stateLabel(snapshot.state)}</strong><p>{stateDescription(snapshot.state)}</p></div></div>
     {#if snapshot.state === 'Online'}
-      <div class="live-facts">
-        <div><span>Memory</span><strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div>
-        <div><span>CPU</span><strong>{snapshot.cpuLoadPercent.toFixed(0)}%</strong></div>
-      </div>
+      <div class="live-facts"><div><span>Memory</span><strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div><div><span>CPU</span><strong>{snapshot.cpuLoadPercent.toFixed(0)}%</strong></div></div>
     {:else if snapshot.maxMemoryBytes > 0}
-      <div class="live-facts"><div><span>Memory</span><strong>{gb(snapshot.maxMemoryBytes).toFixed(0)} GB</strong></div></div>
+      <div class="live-facts"><div><span>Memory limit</span><strong>{gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div></div>
     {/if}
   </section>
 
-  {#if error}
-    <section class="notice danger" role="alert"><strong>{category(error)} problem</strong><p>{error}</p></section>
-  {/if}
-  {#if notice}
-    <section class="notice success" aria-live="polite"><strong>Server updated</strong><p>{notice}</p></section>
-  {/if}
+  {#if error}<section class="notice danger" role="alert"><strong>{category(error)} problem</strong><p>{error}</p></section>{/if}
+  {#if notice}<section class="notice success" aria-live="polite"><strong>Server control</strong><p>{notice}</p></section>{/if}
 
   {#if preflight.issues.length > 0 && ['Offline', 'Crashed', 'Detached'].includes(snapshot.state)}
     <details class="attention" open={!preflight.ready}>
-      <summary>
-        <span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span>
-        <span>Details</span>
-      </summary>
-      <div class="issue-list">
-        {#each preflight.issues as issue}
-          <div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>
-        {/each}
-      </div>
+      <summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary>
+      <div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div>
     </details>
   {/if}
 
-  {#if snapshot.state === 'Detached'}
-    <section class="notice warning">
-      <strong>Server is running externally</strong>
-      <p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p>
-    </section>
-  {/if}
+  {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
 </section>
 
 <style>
-  .overview { width:min(880px,100%); }
-  .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:16px; }
-  .page-head h2 { margin:0; font-size:18px; }
-  .page-head p { margin:4px 0 0; color:var(--muted); font-size:12px; }
-  .primary-actions { display:flex; align-items:center; gap:7px; }
-  .primary,.secondary,.stop { min-height:var(--control-height); border-radius:var(--radius-sm); padding:8px 13px; font-weight:700; cursor:pointer; }
-  .primary { border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink); }
-  .primary:hover:not(:disabled) { background:var(--accent-hover); }
-  .secondary { border:1px solid var(--border); background:var(--surface-2); color:var(--text); }
-  .stop { border:1px solid #61343a; background:#2b1b1e; color:#ffb7bd; }
-  .stop:hover:not(:disabled) { background:#382025; }
-
-  .more-menu { position:relative; }
-  .more-menu summary { width:38px; height:38px; display:grid; place-items:center; list-style:none; border-radius:var(--radius-sm); color:var(--muted); cursor:pointer; }
-  .more-menu summary::-webkit-details-marker { display:none; }
-  .more-menu summary:hover,.more-menu[open] summary { background:var(--surface-2); color:var(--text); }
-  .menu-popover { position:absolute; z-index:10; right:0; top:42px; width:170px; padding:6px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-2); box-shadow:var(--shadow-popover); }
-  .menu-popover button { width:100%; padding:8px 9px; border-radius:7px; background:transparent; color:var(--text-soft); text-align:left; cursor:pointer; font-size:11px; }
-  .menu-popover button:hover:not(:disabled) { background:var(--surface-3); color:var(--text); }
-
-  .status-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:22px; min-height:104px; padding:17px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-card); }
-  .status-card.running { border-color:var(--accent-border); background:linear-gradient(105deg,#16221a 0%,var(--surface) 48%); }
-  .status-card.warning { border-color:#5f5125; }
-  .status-card.danger { border-color:#62343a; }
-  .status-copy { display:flex; align-items:flex-start; gap:11px; min-width:0; }
-  .status-copy strong { font-size:17px; }
-  .status-copy p { margin:3px 0 0; color:var(--muted); font-size:12px; }
-  .status-dot { width:9px; height:9px; flex:0 0 9px; margin-top:7px; border-radius:50%; background:#697078; }
-  .status-dot.running { background:var(--accent); box-shadow:0 0 0 4px var(--accent-soft); }
-  .status-dot.transition { background:var(--info); }
-  .status-dot.warning { background:var(--warning); }
-  .status-dot.danger { background:var(--danger); }
-  .live-facts { display:flex; overflow:hidden; border:1px solid var(--border-soft); border-radius:var(--radius-sm); background:var(--bg-elevated); }
-  .live-facts div { min-width:96px; display:grid; gap:2px; padding:10px 12px; border-left:1px solid var(--border-soft); }
-  .live-facts div:first-child { border-left:0; }
-  .live-facts span { color:var(--muted-2); font-size:9px; text-transform:uppercase; letter-spacing:.05em; }
-  .live-facts strong { font-size:12px; white-space:nowrap; }
-
-  .notice,.attention { margin-top:12px; border:1px solid var(--border-soft); border-radius:var(--radius); background:var(--surface); }
-  .notice { padding:12px 13px; }
-  .notice strong { font-size:12px; }
-  .notice p { margin:3px 0 0; color:var(--muted); font-size:11px; line-height:1.45; }
-  .notice.success { border-color:var(--accent-border); background:var(--accent-soft); }
-  .notice.danger { border-color:#62343a; background:var(--danger-bg); }
-  .notice.warning { border-color:#5f5125; background:var(--warning-bg); }
-
-  .attention summary { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:12px 13px; list-style:none; cursor:pointer; }
-  .attention summary::-webkit-details-marker { display:none; }
-  .attention summary>span:first-child { display:grid; gap:2px; }
-  .attention summary strong { font-size:12px; }
-  .attention summary small,.attention summary>span:last-child { color:var(--muted); font-size:10px; }
-  .issue-list { padding:0 13px 10px; border-top:1px solid var(--border-soft); }
-  .issue-row { display:grid; grid-template-columns:90px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--border-soft); font-size:10px; }
-  .issue-row:last-child { border-bottom:0; }
-  .issue-row strong { color:var(--text-soft); }
-  .issue-row span { color:var(--muted); overflow-wrap:anywhere; }
-
-  @media (max-width:760px) {
-    .page-head,.status-card { align-items:flex-start; grid-template-columns:1fr; flex-direction:column; }
-    .live-facts { width:100%; }
-    .issue-row { grid-template-columns:1fr; }
-  }
+  .overview{width:min(920px,100%)}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.primary-actions{display:flex;align-items:center;gap:7px}
+  .primary,.secondary,.stop{min-height:var(--control-height);border-radius:8px;padding:8px 13px;font-weight:700;cursor:pointer}.primary{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.primary:hover:not(:disabled){background:var(--accent-hover)}.secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.stop{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.stop:hover:not(:disabled){background:var(--surface-3);border-color:var(--border-strong)}
+  .more-menu{position:relative}.more-menu summary{width:38px;height:38px;display:grid;place-items:center;list-style:none;border-radius:8px;color:var(--muted);cursor:pointer}.more-menu summary::-webkit-details-marker{display:none}.more-menu summary:hover,.more-menu[open] summary{background:var(--surface-2);color:var(--text)}.menu-popover{position:absolute;z-index:10;right:0;top:42px;width:170px;padding:6px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);box-shadow:var(--shadow-popover)}.menu-popover button{width:100%;padding:8px 9px;border-radius:7px;background:transparent;color:var(--text-soft);text-align:left;cursor:pointer;font-size:10px}.menu-popover button:hover:not(:disabled){background:var(--surface-3);color:var(--text)}
+  .status-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:22px;min-height:100px;padding:16px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.status-card.running{border-color:var(--accent-border)}.status-card.warning{border-color:#5f5125}.status-card.danger{border-color:#62343a}.status-copy{display:flex;align-items:flex-start;gap:11px;min-width:0}.status-copy strong{font-size:16px}.status-copy p{margin:3px 0 0;color:var(--muted);font-size:11px}.status-dot{width:8px;height:8px;flex:0 0 8px;margin-top:7px;border-radius:50%;background:#697078}.status-dot.running{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}.status-dot.transition{background:var(--info)}.status-dot.warning{background:var(--warning)}.status-dot.danger{background:var(--danger)}
+  .live-facts{display:flex;overflow:hidden;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.live-facts div{min-width:96px;display:grid;gap:2px;padding:9px 11px;border-left:1px solid var(--border-soft)}.live-facts div:first-child{border-left:0}.live-facts span{color:var(--muted-2);font-size:8px;text-transform:uppercase;letter-spacing:.05em}.live-facts strong{font-size:11px;white-space:nowrap}
+  .notice,.attention{margin-top:12px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.notice{padding:11px 12px}.notice strong{font-size:11px}.notice p{margin:3px 0 0;color:var(--muted);font-size:10px;line-height:1.45}.notice.success{border-color:var(--accent-border);background:var(--accent-soft)}.notice.danger{border-color:#62343a;background:var(--danger-bg)}.notice.warning{border-color:#5f5125;background:var(--warning-bg)}
+  .attention summary{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:11px 12px;list-style:none;cursor:pointer}.attention summary::-webkit-details-marker{display:none}.attention summary>span:first-child{display:grid;gap:2px}.attention summary strong{font-size:11px}.attention summary small,.attention summary>span:last-child{color:var(--muted);font-size:9px}.issue-list{padding:0 12px 9px;border-top:1px solid var(--border-soft)}.issue-row{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:10px}.issue-row:last-child{border-bottom:0}.issue-row strong{color:var(--text-soft)}.issue-row span{color:var(--muted);overflow-wrap:anywhere}
+  @media(max-width:760px){.page-head,.status-card{align-items:flex-start;grid-template-columns:1fr;flex-direction:column}.live-facts{width:100%}.issue-row{grid-template-columns:1fr}}
 </style>
