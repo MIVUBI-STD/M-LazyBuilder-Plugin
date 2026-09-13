@@ -16,7 +16,7 @@ LazyBuilder
 
 External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external and are not rebuilt unless a separate explicit requirement appears.
 
-## Repository authority
+## Repository Authority
 
 ```text
 Local = active development / source authority
@@ -25,21 +25,46 @@ main  = stable / release authority
 
 Do not create side development branches unless the user explicitly requests isolation.
 
-## Engineering model
+## Engineering Model
 
 - one semantic owner per responsibility;
 - one primary execution path per behavior;
-- no duplicate managers, registries, schedulers, config systems, or filesystem authorities;
+- no duplicate managers, registries, schedulers, config systems, process markers, or filesystem authorities;
 - modules remain independently maintainable;
+- internal maintenance stays internal unless the user has a real product decision;
+- prefer deletion/consolidation before introducing a new abstraction;
 - source/CI proof is distinct from local/live runtime proof;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
-- no idle/background subsystem without a concrete need.
+- no idle/background subsystem without a concrete need;
+- use the cheapest proof capable of falsifying the changed claim.
 
-## REMOTE_GITHUB completion
+Canonical development discipline:
 
-The remote source/CI phase is complete.
+```text
+docs/04-system/development-discipline.md
+```
 
-Final source/CI gate:
+Canonical specialist routing:
+
+```text
+docs/04-system/skill-routing.md
+```
+
+Current specialist set is intentionally limited to five:
+
+```text
+lazybuilder-desktop-runtime
+lazybuilder-plugin-management
+lazybuilder-world-management
+lazybuilder-ui
+lazybuilder-protocol
+```
+
+Do not add another Skill unless a repeated responsibility has a materially different execution procedure that cannot be routed cleanly to these owners.
+
+## Remote Proof History
+
+An earlier complete remote source/CI gate exists:
 
 ```text
 head: fcae5870192252bcecc63c5f0c458bed446a64a8
@@ -51,25 +76,15 @@ Tauri desktop        SUCCESS
 Overall              SUCCESS
 ```
 
-Desktop dependency resolution is now reproducible:
+Later source simplification continued on `Local`; therefore that older gate is historical evidence, not proof of the current post-simplification head.
+
+The current continuation/proof owner is:
 
 ```text
-EngineData/Frontend/RustApp/package-lock.json
-EngineData/Frontend/RustApp/src-tauri/Cargo.lock
-
-npm ci
-cargo check --locked
+docs/05-operations/README.md
 ```
 
-The complete handoff record is canonical in:
-
-```text
-docs/05-operations/remote-github-complete.md
-```
-
-Any commits after the final source gate that only update handoff documentation do not expand runtime architecture or product scope.
-
-## Server workspace target
+## Server Workspace Target
 
 ```text
 Work Server - 1.21.4/
@@ -93,47 +108,79 @@ Work Server - 1.21.4/
 └── README-Server.txt
 ```
 
-Canonical desktop-launched runtime ownership is source-wired:
+Canonical desktop-launched runtime ownership:
 
 - actual Paper world folders → `world-system/worlds/`;
 - World-Manager registry/import/export/backup/work data → `world-system/`;
 - converter support assets → `tools/lazybuilder/cache/converter/`;
-- Server-Manager, world-control, and Plugin-Manager configuration → `tools/lazybuilder/config/`;
-- disabled plugin JARs → `tools/lazybuilder/disabled-plugins/`;
-- plugin backups → `tools/lazybuilder/plugin-backups/`;
+- Server-Manager and local-control configuration → `tools/lazybuilder/config/`;
+- disabled third-party plugin JARs → `tools/lazybuilder/disabled-plugins/`;
+- minimum plugin rollback snapshots → `tools/lazybuilder/plugin-backups/`;
 - Paper/runtime/plugin files → `server/`.
 
-Archive is currently a World-Manager lifecycle state, not a second physical world store, so no unused `world-system/archives/` directory is created. Manual/non-LazyBuilder launches retain compatibility-safe legacy paths rather than silently moving existing data.
+Archive is a World-Manager lifecycle state, not a second physical world store, so no unused `world-system/archives/` directory is created.
 
-## Component ownership
+## Component Ownership
 
 ### Server-Manager
 
 Desktop-native authority for:
 
+- workspace lifecycle/runtime bootstrap;
 - start/stop/restart Paper;
+- one Paper process owner and one detached-recovery path;
+- one persisted process marker using PID + actual process start time;
 - health and CPU/RAM summary;
-- Java/runtime discovery;
-- basic server settings;
-- crash/process handling;
-- canonical runtime directory bootstrap;
+- managed Java/runtime discovery;
+- one typed `server-manager.json` config authority;
+- Paper provisioning/manual Paper update;
+- internal bundled World/Utilities core compatibility sync;
+- resource/runtime settings;
 - launching Paper against `world-system/worlds` and passing the workspace root to Paper.
 
 It is not a Paper plugin.
 
+Runtime policy after simplification:
+
+```text
+Paper update          -> explicit user decision
+bundled core sync     -> internal automatic maintenance before start/restart
+CPU scheduling        -> JVM/OS managed
+resource tuning       -> Performance / Boost / Custom RAM
+process identity      -> one server-process.json marker
+server configuration  -> one server_config owner
+```
+
+There is no separate `process_identity` sidecar/module and no manual CPU-allocation product flow.
+
 ### Plugin-Manager
 
-Desktop-native authority for:
+Desktop-native authority for third-party Paper plugin lifecycle:
 
-- plugin inventory/category;
+- plugin discovery/inventory;
+- derived category presentation;
 - install/update;
-- duplicate prevention;
+- duplicate detection/resolution;
 - dependency/compatibility checks;
 - restart-safe enable/disable;
-- safe removal with plugin data preserved by default;
-- compatibility-safe migration of legacy disabled-plugin/category-registry locations.
+- safe JAR removal with plugin data always preserved;
+- minimum rollback state required for plugin mutation.
 
 It is not a Paper plugin.
+
+Plugin Manager invariants after simplification:
+
+```text
+filesystem + plugin metadata = primary truth
+category                     = derived, not persisted authority
+remove-data/quarantine       = not a supported product path
+plugin data on remove        = preserved
+historical backup retention  = removed
+persistent rollback          = one previous-valid JAR snapshot when needed
+hot reload                    = unsupported; restart remains explicit
+```
+
+Do not recreate `plugin-registry.json` category ownership or timestamped backup history without a proven product requirement.
 
 ### World-Manager
 
@@ -149,11 +196,15 @@ Paper-side authority for world lifecycle and files. It owns:
 - archive/restore;
 - safe delete;
 - import/export/conversion;
-- settings and managed metadata.
+- settings and managed metadata;
+- bounded long-running world tasks;
+- transfer/import/export filesystem safety.
 
 Desktop and Fabric only present/control these services through explicit transport contracts. They do not duplicate World-Manager business logic or filesystem ownership.
 
-World-Manager source architecture is structurally locked at `REMOTE_GITHUB` proof level. Canonical rules live in `docs/04-system/world-manager-architecture-lock.md`.
+World-Manager was re-audited under the minimum-flow discipline. No architecture reduction is currently justified. Keep its bounded task runner, conversion lease, registry, Paper adapter, file/transfer owners, and conversion adapter because they each have distinct runtime responsibilities.
+
+World-Manager source architecture remains structurally locked unless local/live evidence demonstrates a real boundary defect.
 
 ### Utilities-Manager
 
@@ -179,9 +230,9 @@ Build Helpers
 
 Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family are intentionally excluded. Movement/Noclip already owns LazyBuilder-specific spectator movement transition; normal Minecraft/Paper spectator controls own camera targeting.
 
-Utilities-Manager source architecture is structurally locked at `REMOTE_GITHUB` proof level. Canonical rules live in `docs/04-system/utilities-manager-architecture-lock.md`.
+Utilities-Manager source architecture remains structurally locked unless local/live evidence proves a defect.
 
-## Client / Desktop boundaries
+## Client / Desktop Boundaries
 
 Desktop canonical source:
 
@@ -195,6 +246,18 @@ Stack:
 - Svelte 5
 - TypeScript
 - Rust native backend
+
+Desktop frontend uses one grouped typed runtime bridge:
+
+```text
+runtimeApi
+├── workspace
+├── server
+├── plugins
+└── worlds
+```
+
+A compatibility alias may remain temporarily for old imports, but there is no second mapping/business layer.
 
 Fabric client canonical source:
 
@@ -212,7 +275,7 @@ lazybuilder:transfer  file bytes
 
 The first-party Fabric World Manager surface is source-implemented for list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, and native Java 1.21.4 whole-world Export. Xaero remains contextual for Teleport Here and Export Area.
 
-## BUILD_READY defaults
+## BUILD_READY Defaults
 
 New builder worlds target:
 
@@ -231,7 +294,7 @@ New builder worlds target:
 
 Flat uses a simple vanilla-compatible flat preset. Void is empty terrain with a small safe spawn platform.
 
-## Plugin modernization direction
+## Plugin Modernization Direction
 
 ```text
 KEEP / EXTERNAL BUILD TOOLS
@@ -258,17 +321,11 @@ REMOVE FROM NEW BASELINE
 
 Performance authority is Paper 1.21.4 native configuration rather than generic optimizer plugins.
 
-## Proof state
-
-`REMOTE_GITHUB` is complete and green at the locked-dependency source head.
+## Proof State
 
 Remote proof covers source/static/CI evidence only. It does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
 
-## Current phase
-
-Do not add more speculative remote refactors.
-
-The next phase is explicitly:
+The current phase is intentionally:
 
 ```text
 LOCAL_CODE
@@ -276,20 +333,23 @@ LOCAL_CODE
 LIVE_SERVER
 ```
 
-Start from the current `Local` branch containing the verified source head and completion documentation. First prove local build/artifacts, then run the integrated server workflow.
+Do not add more speculative remote refactors before current source is built locally.
 
 Priority validation:
 
 ```text
-1. Desktop start/stop/restart + Java/runtime paths
-2. canonical runtime filesystem creation
-3. World-Manager enable/control bridges
-4. Fabric World Manager lifecycle UI
-5. Import/Export + transfer + native dialogs
-6. Xaero Teleport Here / Export Area
-7. Utilities World Safety / Movement / Build Helpers
-8. Plugin-Manager canonical/legacy behavior
-9. restart/shutdown persistence and cleanup
+1. current local build/toolchain
+2. Desktop start/stop/restart + managed Java/runtime paths
+3. canonical runtime filesystem creation
+4. process marker + detached recovery safety
+5. internal bundled core sync / manual Paper update separation
+6. Plugin Manager install/update/enable-disable/remove/duplicates
+7. World-Manager enable/control bridges
+8. Fabric World Manager lifecycle UI
+9. Import/Export + transfer + native dialogs
+10. Xaero Teleport Here / Export Area
+11. Utilities World Safety / Movement / Build Helpers
+12. restart/shutdown persistence and cleanup
 ```
 
 Only reproducible `LOCAL_CODE` / `LIVE_SERVER` defects should reopen source work. Fix them directly on `Local` at the smallest wrong owner. Do not reopen locked architecture unless runtime evidence demonstrates a real architecture-level requirement.
