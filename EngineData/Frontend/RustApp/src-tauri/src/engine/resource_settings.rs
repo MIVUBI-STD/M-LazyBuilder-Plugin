@@ -130,9 +130,17 @@ pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb
 }
 
 fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
-    let (target_memory, cpu_ratio, name) = match kind {
-        PresetKind::Performance => (performance_memory_target(hardware), 0.72_f64, "Performance"),
-        PresetKind::Boost => (boost_memory_target(hardware), 0.88_f64, "Boost"),
+    let (target_memory, target_cpu, name) = match kind {
+        PresetKind::Performance => (
+            performance_memory_target(hardware),
+            performance_cpu_target(hardware.logical_processors),
+            "Performance",
+        ),
+        PresetKind::Boost => (
+            boost_memory_target(hardware),
+            hardware.logical_processors,
+            "Boost",
+        ),
     };
 
     let target_memory = round_memory_step(
@@ -140,17 +148,20 @@ fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
             .max(MIN_SERVER_MEMORY_MB)
             .min(hardware.safe_max_memory_mb),
     );
-    let mut target_cpu = ((hardware.logical_processors as f64) * cpu_ratio).round() as u32;
-    if hardware.logical_processors >= 4 {
-        target_cpu = target_cpu.max(4);
-    }
-    target_cpu = target_cpu.clamp(1, hardware.logical_processors);
 
     ResourcePreset {
         name: name.into(),
         max_memory_mb: target_memory,
         min_memory_mb: recommended_min_memory(target_memory),
-        cpu_threads: target_cpu,
+        cpu_threads: target_cpu.clamp(1, hardware.logical_processors),
+    }
+}
+
+fn performance_cpu_target(logical_processors: u32) -> u32 {
+    if logical_processors <= 6 {
+        logical_processors
+    } else {
+        logical_processors.saturating_sub(2).max(4)
     }
 }
 
@@ -190,7 +201,7 @@ fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -
         return "Configured RAM leaves too little memory for Windows and background applications.".into();
     }
     if cpu_threads > hardware.logical_processors {
-        return "Configured CPU allocation exceeds the available logical processors.".into();
+        return "Configured Java CPU concurrency exceeds the available logical processors.".into();
     }
     String::new()
 }
