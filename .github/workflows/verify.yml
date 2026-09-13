@@ -7,7 +7,7 @@ on:
     branches: [Local, main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
@@ -74,11 +74,17 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Check Rust/Tauri backend
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
-      - name: Upload generated dependency locks
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-lockfiles
-          path: |
-            EngineData/Frontend/RustApp/package-lock.json
-            EngineData/Frontend/RustApp/src-tauri/Cargo.lock
-          if-no-files-found: error
+      - name: Persist generated dependency locks
+        if: github.event_name == 'push' && github.ref == 'refs/heads/Local'
+        working-directory: .
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EngineData/Frontend/RustApp/package-lock.json EngineData/Frontend/RustApp/src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Dependency lockfiles already match the manifests."
+            exit 0
+          fi
+          git commit -m "build: lock desktop dependencies"
+          git push origin HEAD:Local
