@@ -32,6 +32,12 @@
   const gb = (mb: number) => mb / 1024;
   const ramStep = () => profile.safeMaxMemoryMb >= 8192 ? 512 : 256;
   const selectedLabel = () => preset === 'Custom' ? 'Custom / Advanced' : preset;
+  const startupRamFor = (maxMb: number) => {
+    if (maxMb <= 4096) return 1024;
+    if (maxMb <= 8192) return 2048;
+    if (maxMb <= 12288) return 3072;
+    return Math.min(4096, maxMb);
+  };
 
   function syncFromProfile(next: ServerResourceProfile) {
     profile = next;
@@ -99,7 +105,7 @@
 </script>
 
 <h1>Settings</h1>
-<p class="subtle">Choose a resource preset for normal use. Manual RAM and CPU sliders are available under Advanced.</p>
+<p class="subtle">Choose a preset for efficient Paper performance. The server starts with a small heap and can grow only when the workload needs more memory.</p>
 
 <section class="resource-overview">
   <div>
@@ -111,7 +117,7 @@
     <span>•</span>
     <span>{profile.logicalProcessors} logical CPU</span>
     <span>•</span>
-    <span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB safe server limit</span>
+    <span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB absolute safe ceiling</span>
   </div>
 </section>
 
@@ -119,7 +125,7 @@
   <div class="section-heading">
     <div>
       <div class="label">Recommended Presets</div>
-      <p class="subtle">Calculated automatically from this PC. Both presets keep protected memory available for Windows.</p>
+      <p class="subtle">Preset memory uses an efficiency cap instead of scaling endlessly with PC RAM. Windows headroom remains protected.</p>
     </div>
   </div>
 
@@ -135,9 +141,10 @@
         <strong>Performance</strong>
         {#if preset === 'Performance'}<span class="selected-badge">Selected</span>{/if}
       </div>
-      <p>Recommended for normal server operation with strong performance while leaving comfortable headroom for Windows and other apps.</p>
+      <p>Default mode. Strong everyday Paper performance with a small startup heap and enough room to grow under real load.</p>
       <div class="preset-stats">
-        <span><b>{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</b> RAM</span>
+        <span><b>{gb(profile.performance.minMemoryMb).toFixed(1)} GB</b> startup</span>
+        <span><b>{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
         <span><b>{profile.performance.cpuThreads}</b> CPU threads</span>
       </div>
     </button>
@@ -153,9 +160,10 @@
         <strong>Boost</strong>
         {#if preset === 'Boost'}<span class="selected-badge">Selected</span>{/if}
       </div>
-      <p>Uses more of this PC for heavier worlds, imports, builds, and development sessions while still respecting the safe RAM ceiling.</p>
+      <p>Temporary extra headroom for heavy imports, world generation, large builds, plugins, or more players without using all available RAM.</p>
       <div class="preset-stats">
-        <span><b>{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</b> RAM</span>
+        <span><b>{gb(profile.boost.minMemoryMb).toFixed(1)} GB</b> startup</span>
+        <span><b>{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
         <span><b>{profile.boost.cpuThreads}</b> CPU threads</span>
       </div>
     </button>
@@ -166,26 +174,26 @@
   <summary>
     <span>
       <strong>Advanced Resource Control</strong>
-      <small>Manual RAM and CPU allocation</small>
+      <small>Manual maximum RAM and JVM CPU allocation</small>
     </span>
     <span class="advanced-state">{preset === 'Custom' ? 'Custom active' : 'Optional'}</span>
   </summary>
 
   <div class="advanced-content">
     <div class="advanced-note">
-      Changing either slider switches the resource mode to <strong>Custom</strong>. RAM cannot be moved above the safe limit calculated for this PC.
+      Changing either slider switches the resource mode to <strong>Custom</strong>. The selected RAM value is the maximum heap, not memory consumed immediately at startup.
     </div>
 
     <div class="slider-block">
       <div class="slider-heading">
         <div>
-          <div class="label">Server RAM</div>
+          <div class="label">Maximum Server RAM</div>
           <div class="slider-value">{gb(ramMb).toFixed(1)} GB</div>
         </div>
-        <span class="limit-note">Max safe {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span>
+        <span class="limit-note">Startup {gb(startupRamFor(ramMb)).toFixed(1)} GB · Safe max {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span>
       </div>
       <input
-        aria-label="Server RAM allocation"
+        aria-label="Maximum server RAM allocation"
         type="range"
         min="1024"
         max={Math.max(1024, profile.safeMaxMemoryMb)}
@@ -193,7 +201,7 @@
         bind:value={ramMb}
         oninput={markCustom}
       />
-      <p class="subtle">Controls JVM maximum heap. Startup RAM is calculated automatically from this value.</p>
+      <p class="subtle">Paper starts with a smaller heap and can grow toward this maximum when actual workload requires it.</p>
     </div>
 
     <div class="slider-block">
@@ -213,7 +221,7 @@
         bind:value={cpuThreads}
         oninput={markCustom}
       />
-      <p class="subtle">Controls the logical processor count exposed to Java without aggressive CPU percentage throttling.</p>
+      <p class="subtle">Controls the logical processor count exposed to Java without percentage-based CPU throttling.</p>
     </div>
   </div>
 </details>
@@ -224,10 +232,10 @@
     <div class="safety-grid">
       <span>System RAM <b>{gb(profile.totalMemoryMb).toFixed(1)} GB</b></span>
       <span>Windows reserve <b>{gb(profile.reservedSystemMemoryMb).toFixed(1)} GB</b></span>
-      <span>Safe server ceiling <b>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</b></span>
+      <span>Absolute safe ceiling <b>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</b></span>
     </div>
   </div>
-  <p class="subtle">The launcher enforces the safe ceiling again when Paper starts, including configurations edited manually outside the UI.</p>
+  <p class="subtle">Presets normally stay well below the absolute ceiling. The ceiling exists as a final safety boundary for Custom settings and manually edited configuration.</p>
 </section>
 
 {#if profile.warning}
@@ -243,7 +251,7 @@
 <div class="apply-bar">
   <div>
     <strong>{selectedLabel()}</strong>
-    <span>{gb(ramMb).toFixed(1)} GB RAM · {cpuThreads} CPU threads</span>
+    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup → {gb(ramMb).toFixed(1)} GB max · {cpuThreads} CPU threads</span>
   </div>
   <div class="actions">
     <button disabled={busy} onclick={() => save(false)}>Apply Resources</button>
@@ -259,9 +267,7 @@
   .advanced-panel,
   .safety-card,
   .warning-card,
-  .apply-bar {
-    margin-top: 16px;
-  }
+  .apply-bar { margin-top: 16px; }
 
   .resource-overview,
   .preset-section,
@@ -277,132 +283,44 @@
   .resource-overview,
   .preset-section,
   .safety-card,
-  .warning-card {
-    padding: 16px;
-  }
+  .warning-card { padding: 16px; }
 
-  .mode-value {
-    margin-top: 5px;
-    font-size: 1.35rem;
-    font-weight: 700;
-  }
-
-  .hardware-line {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
-    font-size: .9rem;
-    opacity: .75;
-  }
-
-  .preset-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 14px;
-  }
+  .mode-value { margin-top: 5px; font-size: 1.35rem; font-weight: 700; }
+  .hardware-line { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: .9rem; opacity: .75; }
+  .preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 
   .preset-card {
-    width: 100%;
-    min-height: 154px;
-    padding: 16px;
-    text-align: left;
-    border-radius: 12px;
+    width: 100%; min-height: 164px; padding: 16px; text-align: left; border-radius: 12px;
     border: 1px solid var(--border, rgba(255,255,255,.12));
-    background: var(--panel-strong, rgba(255,255,255,.035));
-    cursor: pointer;
+    background: var(--panel-strong, rgba(255,255,255,.035)); cursor: pointer;
   }
-
-  .preset-card.selected {
-    outline: 2px solid currentColor;
-    outline-offset: -2px;
-  }
-
-  .preset-topline {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    font-size: 1.05rem;
-  }
-
-  .selected-badge,
-  .advanced-state {
-    font-size: .75rem;
-    font-weight: 600;
-    opacity: .75;
-  }
-
-  .preset-card p {
-    min-height: 48px;
-    margin: 10px 0 14px;
-    opacity: .72;
-    line-height: 1.45;
-  }
-
-  .preset-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    font-size: .9rem;
-  }
+  .preset-card.selected { outline: 2px solid currentColor; outline-offset: -2px; }
+  .preset-topline { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 1.05rem; }
+  .selected-badge, .advanced-state { font-size: .75rem; font-weight: 600; opacity: .75; }
+  .preset-card p { min-height: 48px; margin: 10px 0 14px; opacity: .72; line-height: 1.45; }
+  .preset-stats { display: flex; flex-wrap: wrap; gap: 12px 16px; font-size: .88rem; }
 
   .advanced-panel > summary {
-    list-style: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 16px;
-    cursor: pointer;
+    list-style: none; display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 16px; cursor: pointer;
   }
-
   .advanced-panel > summary::-webkit-details-marker { display: none; }
   .advanced-panel summary small { display: block; margin-top: 4px; opacity: .62; }
-
-  .advanced-content {
-    padding: 0 16px 16px;
-    border-top: 1px solid var(--border, rgba(255,255,255,.08));
-  }
-
-  .advanced-note {
-    margin: 14px 0;
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: rgba(255,255,255,.04);
-    font-size: .88rem;
-    line-height: 1.45;
-  }
-
+  .advanced-content { padding: 0 16px 16px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
+  .advanced-note { margin: 14px 0; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: .88rem; line-height: 1.45; }
   .slider-block + .slider-block { margin-top: 20px; }
   .slider-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
   .slider-value { margin-top: 4px; font-size: 1.12rem; font-weight: 700; }
-  .limit-note { font-size: .78rem; opacity: .6; }
+  .limit-note { font-size: .78rem; opacity: .6; text-align: right; }
   input[type='range'] { width: 100%; margin: 12px 0 4px; }
-
-  .safety-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 20px;
-    margin: 9px 0;
-    font-size: .9rem;
-  }
-
+  .safety-grid { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 9px 0; font-size: .9rem; }
   .warning-card { border-color: var(--danger, currentColor); }
   .warning-card p { margin-bottom: 0; }
 
   .apply-bar {
-    position: sticky;
-    bottom: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 18px;
-    padding: 12px 14px;
-    backdrop-filter: blur(14px);
+    position: sticky; bottom: 12px; display: flex; justify-content: space-between;
+    align-items: center; gap: 18px; padding: 12px 14px; backdrop-filter: blur(14px);
   }
-
   .apply-bar > div:first-child { display: flex; flex-direction: column; gap: 3px; }
   .apply-bar span { font-size: .82rem; opacity: .68; }
 
