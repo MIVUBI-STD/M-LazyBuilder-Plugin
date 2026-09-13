@@ -9,6 +9,7 @@ use sysinfo::{Pid, System};
 
 const MAX_LOG_TAIL_BYTES: u64 = 256 * 1024;
 const MAX_LOG_LINES: usize = 300;
+const MAX_RETAINED_PAPER_LOGS: usize = 20;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,17 @@ pub struct ServerLogTail {
     pub path: String,
     pub content: String,
     pub truncated: bool,
+}
+
+pub fn maintain_logs() -> Result<(), String> {
+    let logs_root = paths::lazybuilder_logs_dir()?;
+    fs::create_dir_all(&logs_root).map_err(|error| error.to_string())?;
+    let mut logs = paper_logs(&logs_root)?;
+    logs.sort_by(|left, right| right.0.cmp(&left.0));
+    for (_, path) in logs.into_iter().skip(MAX_RETAINED_PAPER_LOGS) {
+        let _ = fs::remove_file(path);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -138,7 +150,13 @@ pub fn server_recover_detached() -> Result<DetachedRecoveryResult, String> {
 }
 
 fn latest_paper_log(logs_root: &Path) -> Result<Option<PathBuf>, String> {
-    let mut latest: Option<(SystemTime, PathBuf)> = None;
+    let mut logs = paper_logs(logs_root)?;
+    logs.sort_by(|left, right| right.0.cmp(&left.0));
+    Ok(logs.into_iter().next().map(|(_, path)| path))
+}
+
+fn paper_logs(logs_root: &Path) -> Result<Vec<(SystemTime, PathBuf)>, String> {
+    let mut logs = Vec::new();
     for entry in fs::read_dir(logs_root).map_err(|error| error.to_string())? {
         let path = entry.map_err(|error| error.to_string())?.path();
         let Some(name) = path.file_name().and_then(|value| value.to_str()) else { continue; };
@@ -146,11 +164,9 @@ fn latest_paper_log(logs_root: &Path) -> Result<Option<PathBuf>, String> {
             continue;
         }
         let modified = path.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
-        if latest.as_ref().map(|(time, _)| modified > *time).unwrap_or(true) {
-            latest = Some((modified, path));
-        }
+        logs.push((modified, path));
     }
-    Ok(latest.map(|(_, path)| path))
+    Ok(logs)
 }
 
 fn canonical_or_normalized(path: PathBuf) -> PathBuf {
