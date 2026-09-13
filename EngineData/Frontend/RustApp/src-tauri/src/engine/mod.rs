@@ -1,3 +1,4 @@
+pub mod paper_performance;
 pub mod paths;
 pub mod plugin_manager;
 pub mod resource_settings;
