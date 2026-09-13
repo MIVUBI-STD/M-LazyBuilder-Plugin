@@ -1,4 +1,5 @@
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
+use crate::engine::server_manager::ServerManagerState;
 use tauri::State;
 
 #[tauri::command]
@@ -16,43 +17,85 @@ pub fn plugin_pick_jar() -> Option<String> {
 
 #[tauri::command]
 pub fn plugin_install(
-    state: State<'_, PluginManagerState>,
+    plugins: State<'_, PluginManagerState>,
+    server: State<'_, ServerManagerState>,
     jar_path: String,
 ) -> Result<PluginInstallResult, String> {
-    state.install(&jar_path)
+    ensure_plugin_mutation_allowed(&server)?;
+    plugins.install(&jar_path)
 }
 
 #[tauri::command]
 pub fn plugin_update(
-    state: State<'_, PluginManagerState>,
+    plugins: State<'_, PluginManagerState>,
+    server: State<'_, ServerManagerState>,
     plugin_id: String,
     jar_path: String,
 ) -> Result<PluginInstallResult, String> {
-    state.update(&plugin_id, &jar_path)
+    ensure_plugin_mutation_allowed(&server)?;
+    ensure_third_party_plugin(&plugin_id)?;
+    plugins.update(&plugin_id, &jar_path)
 }
 
 #[tauri::command]
 pub fn plugin_set_enabled(
-    state: State<'_, PluginManagerState>,
+    plugins: State<'_, PluginManagerState>,
+    server: State<'_, ServerManagerState>,
     plugin_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    state.set_enabled(&plugin_id, enabled)
+    ensure_plugin_mutation_allowed(&server)?;
+    ensure_third_party_plugin(&plugin_id)?;
+    plugins.set_enabled(&plugin_id, enabled)
 }
 
 #[tauri::command]
 pub fn plugin_remove(
-    state: State<'_, PluginManagerState>,
+    plugins: State<'_, PluginManagerState>,
+    server: State<'_, ServerManagerState>,
     plugin_id: String,
 ) -> Result<(), String> {
-    state.remove(&plugin_id)
+    ensure_plugin_mutation_allowed(&server)?;
+    ensure_third_party_plugin(&plugin_id)?;
+    plugins.remove(&plugin_id)
 }
 
 #[tauri::command]
 pub fn plugin_resolve_duplicates(
-    state: State<'_, PluginManagerState>,
+    plugins: State<'_, PluginManagerState>,
+    server: State<'_, ServerManagerState>,
     plugin_id: String,
     keep_jar_file_name: String,
 ) -> Result<PluginInstallResult, String> {
-    state.resolve_duplicates(&plugin_id, &keep_jar_file_name)
+    ensure_plugin_mutation_allowed(&server)?;
+    ensure_third_party_plugin(&plugin_id)?;
+    plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name)
+}
+
+fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), String> {
+    let snapshot = server.snapshot()?;
+    match snapshot.state.as_str() {
+        "Offline" | "Crashed" => Ok(()),
+        "Detached" => Err(
+            "A LazyBuilder-managed Paper process is still running externally. Stop or recover it before changing plugin JARs."
+                .into(),
+        ),
+        other => Err(format!(
+            "Stop the server before changing plugins. Current server state: {other}."
+        )),
+    }
+}
+
+fn ensure_third_party_plugin(plugin_id: &str) -> Result<(), String> {
+    let canonical = plugin_id
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "-");
+    if matches!(canonical.as_str(), "world-manager" | "utilities-manager") {
+        return Err(
+            "LazyBuilder core modules are maintained automatically and cannot be changed through Plugin Manager."
+                .into(),
+        );
+    }
+    Ok(())
 }
