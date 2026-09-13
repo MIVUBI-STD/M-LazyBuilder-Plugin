@@ -5,22 +5,30 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.RotationAxis;
 
 import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * Map-first LazyBuilder surface. Interaction intentionally follows the mature
- * fullscreen-map model: direct pan, cursor-anchored smooth zoom, persistent
- * explored terrain, contextual right-click actions and explicit area selection.
+ * Fullscreen LazyBuilder world map.
+ *
+ * <p>The interaction contract intentionally follows the established Xaero
+ * fullscreen-map model: the map itself is primary, click-drag pans, wheel zoom
+ * is cursor anchored and animated, CTRL enables precise zoom, right-click opens
+ * a contextual action menu, explored terrain persists, and selection is a map
+ * overlay rather than a separate form.</p>
  */
 public final class WorldMapScreen extends Screen {
-    private static final int TOP_BAR = 32;
-    private static final int BOTTOM_BAR = 30;
-    private static final int MAP_MARGIN = 8;
+    private static final int TOP_BAR = 28;
+    private static final int BOTTOM_BAR = 24;
+    private static final int MAP_MARGIN = 0;
     private static final int CELL = 4;
     private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
-    private static final int[] ZOOM_STEPS = {1, 2, 4, 8, 16, 32, 64};
+    private static final double MIN_ZOOM = 0.5;
+    private static final double MAX_ZOOM = 64.0;
+    private static final double PRECISE_ZOOM_FACTOR = 1.18;
+    private static final double[] ZOOM_STEPS = {0.5, 1, 2, 4, 8, 16, 32, 64};
     private static final ClientMapSurfaceCache SURFACE = new ClientMapSurfaceCache();
 
     private final ClientWorldController worlds;
@@ -29,9 +37,8 @@ public final class WorldMapScreen extends Screen {
 
     private double centerX;
     private double centerZ;
-    private int zoomIndex = 1;
-    private double animatedZoom = ZOOM_STEPS[zoomIndex];
-    private double targetZoom = ZOOM_STEPS[zoomIndex];
+    private double animatedZoom = 2.0;
+    private double targetZoom = 2.0;
     private boolean centeredOnce;
     private boolean dragging;
 
@@ -58,7 +65,7 @@ public final class WorldMapScreen extends Screen {
             ClientTransferController transfers,
             ClientMapController maps
     ) {
-        super(Text.literal("LazyBuilder World Map"));
+        super(Text.literal("World Map"));
         this.worlds = worlds;
         this.transfers = transfers;
         this.maps = maps;
@@ -72,26 +79,27 @@ public final class WorldMapScreen extends Screen {
         }
         maps.refreshCurrentWorld();
 
+        // Compact map chrome. The map remains visually dominant.
         addDrawableChild(ButtonWidget.builder(Text.literal("Worlds"), button -> {
             if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
-        }).dimensions(10, height - 24, 70, 18).build());
+        }).dimensions(5, 5, 58, 18).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("−"), button -> stepZoom(1, width - 110, 20))
-                .dimensions(width - 110, 7, 20, 18).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("+"), button -> stepZoom(-1, width - 86, 20))
-                .dimensions(width - 86, 7, 20, 18).build());
-
-        addDrawableChild(ButtonWidget.builder(Text.literal("Recenter"), button -> centerOnPlayer())
-                .dimensions(width - 160, height - 24, 72, 18).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Close"), button -> close())
-                .dimensions(width - 82, height - 24, 72, 18).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("−"), button -> discreteZoom(1, width - 51, 14))
+                .dimensions(width - 51, 5, 20, 18).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("+"), button -> discreteZoom(-1, width - 27, 14))
+                .dimensions(width - 27, 5, 20, 18).build());
 
         if (contextOpen) addContextButtons();
     }
 
     private void addContextButtons() {
-        int panelX = Math.max(8, Math.min(width - 150, contextScreenX));
-        int panelY = Math.max(TOP_BAR + 4, Math.min(height - BOTTOM_BAR - 78, contextScreenY));
+        int menuWidth = 154;
+        int itemHeight = 19;
+        int itemCount = selectionReady() ? 2 : 5;
+        int panelX = Math.max(4, Math.min(width - menuWidth - 4, contextScreenX));
+        int panelY = Math.max(TOP_BAR + 3,
+                Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 24), contextScreenY));
+        int y = panelY + 22;
 
         if (selectionReady()) {
             addDrawableChild(ButtonWidget.builder(Text.literal("Export Selection"), button -> {
@@ -99,12 +107,12 @@ public final class WorldMapScreen extends Screen {
                         "JAVA_1_21_4", "area-" + System.currentTimeMillis());
                 clearAreaSelection();
                 clearAndInit();
-            }).dimensions(panelX, panelY, 138, 18).build());
-
+            }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+            y += itemHeight;
             addDrawableChild(ButtonWidget.builder(Text.literal("Cancel Selection"), button -> {
                 clearAreaSelection();
                 clearAndInit();
-            }).dimensions(panelX, panelY + 20, 138, 18).build());
+            }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
             return;
         }
 
@@ -112,7 +120,8 @@ public final class WorldMapScreen extends Screen {
             maps.teleportCurrent(contextBlockX, contextBlockZ);
             contextOpen = false;
             clearAndInit();
-        }).dimensions(panelX, panelY, 138, 18).build());
+        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        y += itemHeight;
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Export Area"), button -> {
             areaMode = true;
@@ -122,12 +131,28 @@ public final class WorldMapScreen extends Screen {
             areaZ2 = null;
             contextOpen = false;
             clearAndInit();
-        }).dimensions(panelX, panelY + 20, 138, 18).build());
+        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        y += itemHeight;
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("Center Map Here"), button -> {
+            centerX = contextBlockX;
+            centerZ = contextBlockZ;
+            contextOpen = false;
+            clearAndInit();
+        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        y += itemHeight;
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("Copy Coordinates"), button -> {
+            if (client != null) client.keyboard.setClipboard(contextBlockX + ", " + contextBlockZ);
+            contextOpen = false;
+            clearAndInit();
+        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        y += itemHeight;
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> {
             contextOpen = false;
             clearAndInit();
-        }).dimensions(panelX, panelY + 40, 138, 18).build());
+        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
     }
 
     @Override
@@ -135,8 +160,9 @@ public final class WorldMapScreen extends Screen {
         updateZoomAnimation();
         context.fill(0, 0, width, height, 0xFF0C0F13);
         renderMap(context);
-        renderTopBar(context, mouseX, mouseY);
+        renderHud(context, mouseX, mouseY);
         renderSelection(context);
+        renderContextMenuBackground(context);
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -151,7 +177,7 @@ public final class WorldMapScreen extends Screen {
         SURFACE.processPending(world, SAMPLE_BUDGET_PER_FRAME);
 
         Bounds bounds = mapBounds();
-        context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, 0xFF151A20);
+        context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, 0xFF101419);
 
         double blocksPerCell = zoom();
         int halfCellsX = Math.max(1, bounds.width() / CELL / 2);
@@ -183,50 +209,64 @@ public final class WorldMapScreen extends Screen {
         int pz = bounds.centerY() + (int) Math.round((client.player.getZ() - centerZ) * scale);
         if (!bounds.contains(px, pz)) return;
 
-        double angle = Math.toRadians(client.player.getYaw());
-        int dx = (int) Math.round(-Math.sin(angle) * 6.0);
-        int dz = (int) Math.round(Math.cos(angle) * 6.0);
-        context.fill(px - 3, pz - 3, px + 4, pz + 4, 0xCC000000);
-        context.fill(px - 2, pz - 2, px + 3, pz + 3, 0xFFFFFFFF);
-        context.fill(px + Math.min(0, dx), pz + Math.min(0, dz),
-                px + Math.max(1, dx + 1), pz + Math.max(1, dz + 1), 0xFFFF4A4A);
+        context.getMatrices().push();
+        context.getMatrices().translate(px, pz, 0);
+        context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-client.player.getYaw()));
+        // A compact arrow silhouette instead of the previous square marker.
+        context.fill(-1, -8, 2, 4, 0xFF111111);
+        context.fill(-2, -6, 3, 1, 0xFFFFFFFF);
+        context.fill(-4, -4, 5, -1, 0xFFFFFFFF);
+        context.fill(-1, -7, 2, 1, 0xFFFF5555);
+        context.getMatrices().pop();
     }
 
-    private void renderTopBar(DrawContext context, int mouseX, int mouseY) {
-        context.fill(0, 0, width, TOP_BAR, 0xE6171B21);
-        context.fill(0, height - BOTTOM_BAR, width, height, 0xE6171B21);
+    private void renderHud(DrawContext context, int mouseX, int mouseY) {
+        context.fill(0, 0, width, TOP_BAR, 0xB914171B);
+        context.fill(0, height - BOTTOM_BAR, width, height, 0xB914171B);
 
-        String worldName = maps.currentWorld() == null ? "Current World" : maps.currentWorld().displayName();
+        String worldName = maps.currentWorld() == null ? "World Map" : maps.currentWorld().displayName();
         String dimension = client == null || client.world == null
                 ? ""
                 : client.world.getRegistryKey().getValue().getPath();
         context.drawTextWithShadow(textRenderer,
                 Text.literal(dimension.isBlank() ? worldName : worldName + "  •  " + dimension),
-                10, 11, 0xFFFFFF);
+                69, 10, 0xFFFFFF);
 
         int[] hovered = screenToWorld(mouseX, mouseY);
-        String zoomText = String.format(Locale.ROOT, "%.1f", zoom());
+        String zoomText = zoomLabel();
         String coords = hovered == null
-                ? "Zoom 1:" + zoomText
-                : "X " + hovered[0] + "  Z " + hovered[1] + "   Zoom 1:" + zoomText;
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, 11, 0xD8DEE9);
+                ? zoomText
+                : "X: " + hovered[0] + "  Z: " + hovered[1] + "   " + zoomText;
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, height - 16, 0xE7E7E7);
 
         if (selectionReady()) {
             context.drawTextWithShadow(textRenderer,
-                    Text.literal("Export Area selected — confirm from the action menu"),
-                    90, height - 19, 0xFFD166);
+                    Text.literal("Selection ready — choose Export Selection"),
+                    8, height - 16, 0xFFD166);
         } else if (areaMode) {
-            String status = areaX1 == null
-                    ? "Export Area: click first corner"
-                    : "Export Area: click second corner";
-            context.drawTextWithShadow(textRenderer, Text.literal(status), 90, height - 19, 0xFFD166);
-        } else {
-            String loading = SURFACE.pendingCount() > 0
-                    ? "  •  Mapping " + SURFACE.pendingCount() + " columns"
-                    : "";
+            String status = areaX1 == null ? "Select first corner" : "Select second corner";
+            context.drawTextWithShadow(textRenderer, Text.literal(status), 8, height - 16, 0xFFD166);
+        } else if (SURFACE.pendingCount() > 0) {
             context.drawTextWithShadow(textRenderer,
-                    Text.literal("Drag to pan  •  Wheel to zoom  •  Right-click for actions" + loading),
-                    90, height - 19, 0xAEB7C4);
+                    Text.literal("Mapping… " + SURFACE.pendingCount()), 8, height - 16, 0xAEB7C4);
+        }
+    }
+
+    private void renderContextMenuBackground(DrawContext context) {
+        if (!contextOpen) return;
+        int menuWidth = 154;
+        int itemCount = selectionReady() ? 2 : 5;
+        int panelX = Math.max(4, Math.min(width - menuWidth - 4, contextScreenX));
+        int panelY = Math.max(TOP_BAR + 3,
+                Math.min(height - BOTTOM_BAR - (itemCount * 19 + 24), contextScreenY));
+        int panelBottom = panelY + 24 + itemCount * 19;
+        context.fill(panelX, panelY, panelX + menuWidth, panelBottom, 0xEE15181D);
+        context.fill(panelX, panelY, panelX + menuWidth, panelY + 20, 0xF0252930);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Choose an Option"),
+                panelX + menuWidth / 2, panelY + 6, 0xFFFFFF);
+        if (!selectionReady()) {
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(contextBlockX + ", " + contextBlockZ), panelX + 5, panelBottom - 11, 0x8E98A5);
         }
     }
 
@@ -323,13 +363,27 @@ public final class WorldMapScreen extends Screen {
         if (!mapBounds().contains(mouseX, mouseY) || verticalAmount == 0) {
             return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
         }
-        stepZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
+        if (hasControlDown()) preciseZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
+        else discreteZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
         return true;
     }
 
-    private void stepZoom(int direction, double screenX, double screenY) {
-        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, zoomIndex + direction));
-        if (next == zoomIndex) return;
+    private void discreteZoom(int direction, double screenX, double screenY) {
+        double reference = targetZoom;
+        int current = nearestZoomIndex(reference);
+        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, current + direction));
+        setZoomTarget(ZOOM_STEPS[next], screenX, screenY);
+    }
+
+    private void preciseZoom(int direction, double screenX, double screenY) {
+        double next = direction > 0
+                ? targetZoom * PRECISE_ZOOM_FACTOR
+                : targetZoom / PRECISE_ZOOM_FACTOR;
+        setZoomTarget(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)), screenX, screenY);
+    }
+
+    private void setZoomTarget(double next, double screenX, double screenY) {
+        if (Math.abs(next - targetZoom) < 0.0001) return;
         int[] anchor = screenToWorld(screenX, screenY);
         if (anchor != null) {
             zoomAnchorWorldX = anchor[0];
@@ -338,24 +392,53 @@ public final class WorldMapScreen extends Screen {
             zoomAnchorScreenY = screenY;
             zoomAnchored = true;
         }
-        zoomIndex = next;
-        targetZoom = ZOOM_STEPS[zoomIndex];
+        targetZoom = next;
+    }
+
+    private int nearestZoomIndex(double value) {
+        int best = 0;
+        double distance = Double.MAX_VALUE;
+        for (int i = 0; i < ZOOM_STEPS.length; i++) {
+            double candidate = Math.abs(ZOOM_STEPS[i] - value);
+            if (candidate < distance) {
+                distance = candidate;
+                best = i;
+            }
+        }
+        return best;
     }
 
     private void updateZoomAnimation() {
         double difference = targetZoom - animatedZoom;
-        if (Math.abs(difference) < 0.01) {
+        if (Math.abs(difference) < 0.005) {
             animatedZoom = targetZoom;
             zoomAnchored = false;
             return;
         }
-        animatedZoom += difference * 0.24;
+        animatedZoom += difference * 0.22;
         if (zoomAnchored) {
             Bounds bounds = mapBounds();
             double blocksPerPixel = animatedZoom / CELL;
             centerX = zoomAnchorWorldX - (zoomAnchorScreenX - bounds.centerX()) * blocksPerPixel;
             centerZ = zoomAnchorWorldZ - (zoomAnchorScreenY - bounds.centerY()) * blocksPerPixel;
         }
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256) { // ESC
+            if (contextOpen) {
+                contextOpen = false;
+                clearAndInit();
+                return true;
+            }
+            if (areaMode) {
+                clearAreaSelection();
+                clearAndInit();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private void clearAreaSelection() {
@@ -398,6 +481,11 @@ public final class WorldMapScreen extends Screen {
 
     private double zoom() {
         return animatedZoom;
+    }
+
+    private String zoomLabel() {
+        if (zoom() >= 1.0) return String.format(Locale.ROOT, "Zoom 1:%.1f", zoom());
+        return String.format(Locale.ROOT, "Zoom %.2f:1", 1.0 / zoom());
     }
 
     private Bounds mapBounds() {
