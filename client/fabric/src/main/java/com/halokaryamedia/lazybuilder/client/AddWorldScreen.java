@@ -32,7 +32,8 @@ public final class AddWorldScreen extends Screen {
                     () -> { if (client != null) client.setScreen(new CreateWorldScreen(parent, worlds)); }));
             addDrawableChild(LbUi.button(left + 16, secondY + 66, cardWidth - 32, 26,
                     "Import Existing World", LbButtonWidget.Style.SECONDARY,
-                    () -> { if (client != null) client.setScreen(new ImportWorldScreen(parent, worlds, transfers)); }));
+                    () -> { if (client != null) client.setScreen(new WorldTransferScreen(
+                            parent, worlds, transfers, null, WorldTransferScreen.Tab.IMPORT)); }));
             addDrawableChild(LbUi.button(width / 2 - 48, secondY + 112, 96, 22,
                     "Back", LbButtonWidget.Style.GHOST, this::close));
             return;
@@ -45,7 +46,8 @@ public final class AddWorldScreen extends Screen {
                 () -> { if (client != null) client.setScreen(new CreateWorldScreen(parent, worlds)); }));
         addDrawableChild(LbUi.button(left + cardWidth + 14, cardY + 72, cardWidth - 28, 28,
                 "Import Existing World", LbButtonWidget.Style.SECONDARY,
-                () -> { if (client != null) client.setScreen(new ImportWorldScreen(parent, worlds, transfers)); }));
+                () -> { if (client != null) client.setScreen(new WorldTransferScreen(
+                        parent, worlds, transfers, null, WorldTransferScreen.Tab.IMPORT)); }));
         addDrawableChild(LbUi.button(width / 2 - 48, cardY + 126, 96, 22,
                 "Back", LbButtonWidget.Style.GHOST, this::close));
     }
