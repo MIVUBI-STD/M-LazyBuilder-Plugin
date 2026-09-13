@@ -134,6 +134,8 @@ impl ServerManagerState {
         }
 
         let workspace = paths::workspace_root()?;
+        paths::ensure_runtime_layout()?;
+        let worlds_dir = paths::worlds_dir()?;
         let options = load_options()?;
         validate_options(&options)?;
         let server_dir = workspace.join(&options.server_directory);
@@ -154,7 +156,11 @@ impl ServerManagerState {
             .current_dir(&server_dir)
             .arg(format!("-Xms{}M", options.min_memory_mb))
             .arg(format!("-Xmx{}M", options.max_memory_mb))
-            .args(["-jar", &options.paper_jar, "nogui"])
+            .args(["-jar", &options.paper_jar])
+            .arg("--universe")
+            .arg(&worlds_dir)
+            .arg("nogui")
+            .env(paths::WORKSPACE_ENV, &workspace)
             .env(world_manager::TOKEN_ENV, &control.token)
             .env(world_manager::PORT_ENV, control.port.to_string())
             .stdin(Stdio::piped())
@@ -252,12 +258,24 @@ fn offline_like_snapshot(options: &ServerManagerOptions, state: String) -> Serve
 }
 
 fn options_path() -> Result<PathBuf, String> {
+    Ok(paths::lazybuilder_config_dir()?.join("server-manager.json"))
+}
+
+fn legacy_options_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_tools_dir()?.join("server-manager.json"))
 }
 
 fn load_options() -> Result<ServerManagerOptions, String> {
     let path = options_path()?;
     if !path.is_file() {
+        let legacy = legacy_options_path()?;
+        if legacy.is_file() {
+            let text = fs::read_to_string(&legacy).map_err(|error| error.to_string())?;
+            let options: ServerManagerOptions = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+            validate_options(&options)?;
+            save_options(&path, &options)?;
+            return Ok(options);
+        }
         let defaults = ServerManagerOptions::default();
         save_options(&path, &defaults)?;
         return Ok(defaults);
