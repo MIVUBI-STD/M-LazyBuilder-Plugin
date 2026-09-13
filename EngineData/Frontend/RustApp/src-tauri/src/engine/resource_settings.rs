@@ -7,6 +7,8 @@ use sysinfo::System;
 
 const MB: u64 = 1024 * 1024;
 const MIN_SERVER_MEMORY_MB: u64 = 1024;
+const PERFORMANCE_CAP_MB: u64 = 8192;
+const BOOST_CAP_MB: u64 = 12288;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,8 +53,12 @@ pub struct RuntimeResources {
 pub fn profile() -> Result<ServerResourceProfile, String> {
     let hardware = Hardware::detect();
     let config = read_config()?;
-    let current_max = config_u64(&config, "maxMemoryMb").unwrap_or(4096);
-    let current_min = config_u64(&config, "minMemoryMb").unwrap_or(1024);
+    let current_max = config_u64(&config, "maxMemoryMb")
+        .unwrap_or(4096)
+        .clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(1024);
+    let current_min = configured_min
+        .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(current_max));
     let current_cpu = config_u64(&config, "cpuThreads")
         .map(|value| value as u32)
         .unwrap_or(hardware.logical_processors)
@@ -112,9 +118,10 @@ pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb
     let hardware = Hardware::detect();
     let config = read_config()?;
     let max_memory_mb = configured_max_memory_mb.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    // Keep startup heap intentionally small. Old/manual configs with an oversized Xms are
+    // normalized here so Paper can grow toward Xmx only when the workload requires it.
     let min_memory_mb = configured_min_memory_mb
-        .max(MIN_SERVER_MEMORY_MB)
-        .min(max_memory_mb);
+        .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(max_memory_mb));
     let cpu_threads = config_u64(&config, "cpuThreads")
         .map(|value| value as u32)
         .unwrap_or(hardware.logical_processors)
@@ -123,23 +130,53 @@ pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb
 }
 
 fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
-    let (memory_ratio, cpu_ratio, name) = match kind {
-        PresetKind::Performance => (0.50_f64, 0.75_f64, "Performance"),
-        PresetKind::Boost => (0.65_f64, 0.90_f64, "Boost"),
+    let (target_memory, cpu_ratio, name) = match kind {
+        PresetKind::Performance => (performance_memory_target(hardware), 0.72_f64, "Performance"),
+        PresetKind::Boost => (boost_memory_target(hardware), 0.88_f64, "Boost"),
     };
-    let target_memory = ((hardware.total_memory_mb as f64) * memory_ratio).round() as u64;
-    let target_memory = target_memory
-        .max(MIN_SERVER_MEMORY_MB)
-        .min(hardware.safe_max_memory_mb);
-    let target_cpu = ((hardware.logical_processors as f64) * cpu_ratio).round() as u32;
-    let target_cpu = target_cpu.clamp(1, hardware.logical_processors);
+
+    let target_memory = round_memory_step(
+        target_memory
+            .max(MIN_SERVER_MEMORY_MB)
+            .min(hardware.safe_max_memory_mb),
+    );
+    let mut target_cpu = ((hardware.logical_processors as f64) * cpu_ratio).round() as u32;
+    if hardware.logical_processors >= 4 {
+        target_cpu = target_cpu.max(4);
+    }
+    target_cpu = target_cpu.clamp(1, hardware.logical_processors);
 
     ResourcePreset {
         name: name.into(),
-        max_memory_mb: round_memory_step(target_memory),
+        max_memory_mb: target_memory,
         min_memory_mb: recommended_min_memory(target_memory),
         cpu_threads: target_cpu,
     }
+}
+
+fn performance_memory_target(hardware: &Hardware) -> u64 {
+    let total = hardware.total_memory_mb;
+    let target = if total <= 8192 {
+        // Small PCs need more room for Windows and the Minecraft client.
+        3072
+    } else if total <= 16384 {
+        6144
+    } else {
+        PERFORMANCE_CAP_MB
+    };
+    target.min(hardware.safe_max_memory_mb)
+}
+
+fn boost_memory_target(hardware: &Hardware) -> u64 {
+    let total = hardware.total_memory_mb;
+    let target = if total <= 8192 {
+        hardware.safe_max_memory_mb.min(4096)
+    } else if total <= 16384 {
+        8192
+    } else {
+        BOOST_CAP_MB
+    };
+    target.min(hardware.safe_max_memory_mb)
 }
 
 fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -> String {
@@ -159,7 +196,13 @@ fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -
 }
 
 fn recommended_min_memory(max_memory_mb: u64) -> u64 {
-    (max_memory_mb / 2).clamp(1024, 4096).min(max_memory_mb)
+    match max_memory_mb {
+        0..=4096 => 1024,
+        4097..=8192 => 2048,
+        8193..=12288 => 3072,
+        _ => 4096,
+    }
+    .min(max_memory_mb)
 }
 
 fn round_memory_step(value: u64) -> u64 {
