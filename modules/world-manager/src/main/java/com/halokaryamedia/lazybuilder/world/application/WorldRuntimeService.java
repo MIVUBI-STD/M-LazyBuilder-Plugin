@@ -7,29 +7,22 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 
 import java.util.Objects;
 
-/** Canonical load/unload use case for managed worlds. */
+/** Canonical runtime load boundary. Loaded/unloaded is derived from Paper, not stored as world state. */
 public final class WorldRuntimeService {
     private final WorldRegistry registry;
-    private final WorldRuntimeStateRegistry states;
     private final WorldRuntimeGateway runtime;
     private WorldOperationCoordinator operations;
 
-    public WorldRuntimeService(
-            WorldRegistry registry,
-            WorldRuntimeStateRegistry states,
-            WorldRuntimeGateway runtime
-    ) {
-        this(registry, states, runtime, null);
+    public WorldRuntimeService(WorldRegistry registry, WorldRuntimeGateway runtime) {
+        this(registry, runtime, null);
     }
 
     public WorldRuntimeService(
             WorldRegistry registry,
-            WorldRuntimeStateRegistry states,
             WorldRuntimeGateway runtime,
             WorldOperationCoordinator operations
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
-        this.states = Objects.requireNonNull(states, "states");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.operations = operations;
     }
@@ -45,8 +38,12 @@ public final class WorldRuntimeService {
         }
     }
 
-    public WorldRuntimeState state(WorldId id) {
-        return states.get(id);
+    public boolean isLoaded(WorldId id) {
+        return runtime.isLoaded(requireWorld(id));
+    }
+
+    public boolean hasPlayers(WorldId id) {
+        return runtime.hasPlayers(requireWorld(id));
     }
 
     public WorldRecord load(WorldId id) {
@@ -72,43 +69,16 @@ public final class WorldRuntimeService {
     private WorldRecord loadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
         if (world.lifecycle() != WorldLifecycle.ACTIVE) {
-            throw new IllegalStateException("Archived worlds must be restored before loading");
+            throw new IllegalStateException("Archived worlds must be restored before use");
         }
-
-        WorldRuntimeState current = states.get(id);
-        if (current == WorldRuntimeState.LOADED) return world;
-        if (current != WorldRuntimeState.UNLOADED) {
-            throw new IllegalStateException("World is busy: " + current);
-        }
-
-        states.transition(id, WorldRuntimeState.UNLOADED, WorldRuntimeState.LOADING);
-        try {
-            runtime.loadWorld(world);
-            states.transition(id, WorldRuntimeState.LOADING, WorldRuntimeState.LOADED);
-            return world;
-        } catch (RuntimeException exception) {
-            states.transition(id, WorldRuntimeState.LOADING, WorldRuntimeState.UNLOADED);
-            throw exception;
-        }
+        if (!runtime.isLoaded(world)) runtime.loadWorld(world);
+        return world;
     }
 
     private WorldRecord unloadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
-        WorldRuntimeState current = states.get(id);
-        if (current == WorldRuntimeState.UNLOADED) return world;
-        if (current != WorldRuntimeState.LOADED) {
-            throw new IllegalStateException("World is busy: " + current);
-        }
-
-        states.transition(id, WorldRuntimeState.LOADED, WorldRuntimeState.UNLOADING);
-        try {
-            runtime.unloadWorld(world);
-            states.transition(id, WorldRuntimeState.UNLOADING, WorldRuntimeState.UNLOADED);
-            return world;
-        } catch (RuntimeException exception) {
-            states.transition(id, WorldRuntimeState.UNLOADING, WorldRuntimeState.LOADED);
-            throw exception;
-        }
+        if (runtime.isLoaded(world)) runtime.unloadWorld(world);
+        return world;
     }
 
     private void ensureNoExternalOperation(WorldId id) {
