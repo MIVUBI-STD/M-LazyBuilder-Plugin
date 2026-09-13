@@ -112,6 +112,9 @@ impl PluginManagerState {
         let plugins_dir = plugins_directory(&workspace);
         fs::create_dir_all(&plugins_dir).map_err(|error| error.to_string())?;
         let destination = plugins_dir.join(safe_jar_name(&incoming.name, &incoming.version));
+        if destination.exists() {
+            return Ok(failed_result(incoming.id, "Target plugin filename already exists."));
+        }
         copy_atomic(&source, &destination)?;
         Ok(success_result(incoming.id, "Plugin installed. Restart required."))
     }
@@ -157,15 +160,36 @@ impl PluginManagerState {
             current.path.file_stem().and_then(|value| value.to_str()).unwrap_or("plugin"),
             timestamp_suffix()
         );
-        fs::copy(&current.path, backup_dir.join(backup_name)).map_err(|error| error.to_string())?;
+        let backup = backup_dir.join(backup_name);
+        fs::copy(&current.path, &backup).map_err(|error| error.to_string())?;
 
         let target_dir = if current.enabled { plugins_directory(&workspace) } else { disabled_directory(&workspace) };
         fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
         let destination = target_dir.join(safe_jar_name(&incoming.name, &incoming.version));
-        copy_atomic(&source, &destination)?;
+        let current_canonical = canonical_path(&current.path)?;
+        let same_destination = canonical_candidate(&destination)? == current_canonical;
 
-        if canonical_path(&current.path)? != canonical_path(&destination)? && current.path.exists() {
-            fs::remove_file(&current.path).map_err(|error| error.to_string())?;
+        if !same_destination && destination.exists() {
+            return Ok(failed_result(canonical_id, "Target plugin filename already exists."));
+        }
+
+        let staged = destination.with_extension("jar.incoming");
+        stage_copy(&source, &staged)?;
+
+        if same_destination {
+            if let Err(error) = replace_file(&staged, &destination) {
+                let _ = restore_from_backup(&backup, &current.path);
+                return Err(format!("Plugin update could not replace the active JAR: {error}"));
+            }
+        } else {
+            if let Err(error) = fs::rename(&staged, &destination) {
+                let _ = fs::remove_file(&staged);
+                return Err(format!("Plugin update could not publish the new JAR: {error}"));
+            }
+            if let Err(error) = fs::remove_file(&current.path) {
+                let _ = fs::remove_file(&destination);
+                return Err(format!("Plugin update could not retire the previous JAR: {error}"));
+            }
         }
 
         Ok(success_result(
@@ -236,9 +260,6 @@ impl PluginManagerState {
             return Err("Plugin removal backup destination already exists.".into());
         }
 
-        // Resolve and validate every optional data path before mutating the JAR.
-        // Data requested for removal is quarantined into plugin-backups so a bad
-        // filesystem operation never destroys the only recoverable copy.
         let data_move = if remove_data {
             let plugins_root = canonical_path(&plugins_directory(&workspace))?;
             let candidate = plugins_directory(&workspace).join(&metadata.name);
@@ -316,14 +337,43 @@ impl PluginManagerState {
         let backup_dir = backup_directory(&workspace);
         fs::create_dir_all(&backup_dir).map_err(|error| error.to_string())?;
         let stamp = timestamp_suffix();
+        let mut removals = Vec::new();
+
         for (index, item) in existing.iter().enumerate() {
             if index == keep_index {
                 continue;
             }
             let base = item.path.file_stem().and_then(|value| value.to_str()).unwrap_or("plugin");
             let backup = backup_dir.join(format!("{base}-duplicate-{stamp}-{index}.jar"));
-            fs::copy(&item.path, backup).map_err(|error| error.to_string())?;
-            fs::remove_file(&item.path).map_err(|error| error.to_string())?;
+            if backup.exists() {
+                return Err("Duplicate resolution backup destination already exists.".into());
+            }
+            fs::copy(&item.path, &backup).map_err(|error| error.to_string())?;
+            if !files_equal(&item.path, &backup)? {
+                let _ = fs::remove_file(&backup);
+                return Err("Duplicate resolution backup verification failed.".into());
+            }
+            removals.push((item.path.clone(), backup));
+        }
+
+        let mut removed = Vec::new();
+        for (source, backup) in &removals {
+            if let Err(error) = fs::remove_file(source) {
+                let mut rollback_errors = Vec::new();
+                for (restored_source, restored_backup) in removed.into_iter().rev() {
+                    if let Err(restore_error) = restore_from_backup(&restored_backup, &restored_source) {
+                        rollback_errors.push(restore_error);
+                    }
+                }
+                if rollback_errors.is_empty() {
+                    return Err(format!("Duplicate resolution failed and previous files were restored: {error}"));
+                }
+                return Err(format!(
+                    "Duplicate resolution failed: {error}; rollback also reported: {}",
+                    rollback_errors.join("; ")
+                ));
+            }
+            removed.push((source.clone(), backup.clone()));
         }
 
         Ok(success_result(
@@ -681,31 +731,89 @@ fn safe_jar_name(name: &str, version: &str) -> String {
     format!("{}-{}.jar", safe(name), safe(version))
 }
 
-fn copy_atomic(source: &Path, destination: &Path) -> Result<(), String> {
+fn stage_copy(source: &Path, staged: &Path) -> Result<(), String> {
     if !source.is_file() {
         return Err(format!("Source file was not found: {}", source.display()));
     }
-    if let Some(parent) = destination.parent() {
+    if let Some(parent) = staged.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let temporary = destination.with_extension("jar.incoming");
-    if temporary.exists() {
-        fs::remove_file(&temporary).map_err(|error| error.to_string())?;
+    if staged.exists() {
+        fs::remove_file(staged).map_err(|error| error.to_string())?;
     }
 
     let mut input = File::open(source).map_err(|error| error.to_string())?;
-    let mut output = File::create(&temporary).map_err(|error| error.to_string())?;
+    let mut output = File::create(staged).map_err(|error| error.to_string())?;
     std::io::copy(&mut input, &mut output).map_err(|error| error.to_string())?;
     output.flush().map_err(|error| error.to_string())?;
     drop(output);
+    if !files_equal(source, staged)? {
+        let _ = fs::remove_file(staged);
+        return Err("Staged plugin JAR verification failed.".into());
+    }
+    Ok(())
+}
+
+fn copy_atomic(source: &Path, destination: &Path) -> Result<(), String> {
+    let temporary = destination.with_extension("jar.incoming");
+    stage_copy(source, &temporary)?;
     replace_file(&temporary, destination)
 }
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     if destination.exists() {
+        let previous = destination.with_extension("swap.previous");
+        let _ = fs::remove_file(&previous);
+        fs::rename(destination, &previous).map_err(|error| error.to_string())?;
+        match fs::rename(source, destination) {
+            Ok(()) => {
+                let _ = fs::remove_file(previous);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&previous, destination);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(source, destination).map_err(|error| error.to_string())
+    }
+}
+
+fn restore_from_backup(backup: &Path, destination: &Path) -> Result<(), String> {
+    if !backup.is_file() {
+        return Err(format!("Plugin rollback backup is missing: {}", backup.display()));
+    }
+    if destination.exists() {
         fs::remove_file(destination).map_err(|error| error.to_string())?;
     }
-    fs::rename(source, destination).map_err(|error| error.to_string())
+    fs::copy(backup, destination).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    let left_meta = fs::metadata(left).map_err(|error| error.to_string())?;
+    let right_meta = fs::metadata(right).map_err(|error| error.to_string())?;
+    if left_meta.len() != right_meta.len() {
+        return Ok(false);
+    }
+    let mut left_file = File::open(left).map_err(|error| error.to_string())?;
+    let mut right_file = File::open(right).map_err(|error| error.to_string())?;
+    let mut left_buffer = [0u8; 64 * 1024];
+    let mut right_buffer = [0u8; 64 * 1024];
+    loop {
+        let left_count = left_file.read(&mut left_buffer).map_err(|error| error.to_string())?;
+        let right_count = right_file.read(&mut right_buffer).map_err(|error| error.to_string())?;
+        if left_count != right_count {
+            return Ok(false);
+        }
+        if left_count == 0 {
+            return Ok(true);
+        }
+        if left_buffer[..left_count] != right_buffer[..right_count] {
+            return Ok(false);
+        }
+    }
 }
 
 fn canonical_path(path: &Path) -> Result<PathBuf, String> {
