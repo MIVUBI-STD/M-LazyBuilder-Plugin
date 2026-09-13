@@ -9,6 +9,8 @@ const MB: u64 = 1024 * 1024;
 const MIN_SERVER_MEMORY_MB: u64 = 1024;
 const PERFORMANCE_CAP_MB: u64 = 8192;
 const BOOST_CAP_MB: u64 = 12288;
+const CPU_MODE_ADAPTIVE: &str = "Adaptive";
+const CPU_MODE_MANUAL: &str = "Manual";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +18,7 @@ pub struct ResourcePreset {
     pub name: String,
     pub max_memory_mb: u64,
     pub min_memory_mb: u64,
+    pub cpu_mode: String,
     pub cpu_threads: u32,
 }
 
@@ -28,6 +31,7 @@ pub struct ServerResourceProfile {
     pub logical_processors: u32,
     pub current_max_memory_mb: u64,
     pub current_min_memory_mb: u64,
+    pub current_cpu_mode: String,
     pub current_cpu_threads: u32,
     pub current_preset: String,
     pub performance: ResourcePreset,
@@ -40,6 +44,7 @@ pub struct ServerResourceProfile {
 pub struct ResourceUpdateRequest {
     pub max_memory_mb: u64,
     pub cpu_threads: u32,
+    pub cpu_mode: String,
     pub preset: String,
 }
 
@@ -47,7 +52,8 @@ pub struct ResourceUpdateRequest {
 pub struct RuntimeResources {
     pub min_memory_mb: u64,
     pub max_memory_mb: u64,
-    pub cpu_threads: u32,
+    /// None means Java sees the host processors normally and the OS scheduler remains authoritative.
+    pub cpu_threads: Option<u32>,
 }
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
@@ -59,15 +65,21 @@ pub fn profile() -> Result<ServerResourceProfile, String> {
     let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(1024);
     let current_min = configured_min
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(current_max));
+    let current_preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
+    let current_cpu_mode = configured_cpu_mode(&config, &current_preset);
     let current_cpu = config_u64(&config, "cpuThreads")
         .map(|value| value as u32)
         .unwrap_or(hardware.logical_processors)
         .clamp(1, hardware.logical_processors);
-    let current_preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
 
     let performance = preset_for(&hardware, PresetKind::Performance);
     let boost = preset_for(&hardware, PresetKind::Boost);
-    let warning = resource_warning(&hardware, current_max, current_cpu);
+    let warning = resource_warning(
+        &hardware,
+        current_max,
+        &current_cpu_mode,
+        current_cpu,
+    );
 
     Ok(ServerResourceProfile {
         total_memory_mb: hardware.total_memory_mb,
@@ -76,6 +88,7 @@ pub fn profile() -> Result<ServerResourceProfile, String> {
         logical_processors: hardware.logical_processors,
         current_max_memory_mb: current_max,
         current_min_memory_mb: current_min,
+        current_cpu_mode,
         current_cpu_threads: current_cpu,
         current_preset,
         performance,
@@ -90,10 +103,16 @@ pub fn save(request: ResourceUpdateRequest) -> Result<ServerResourceProfile, Str
     let cpu_threads = request.cpu_threads.clamp(1, hardware.logical_processors);
     let min_memory_mb = recommended_min_memory(max_memory_mb);
     let preset = normalize_preset(&request.preset);
+    let cpu_mode = if preset == "Performance" || preset == "Boost" {
+        CPU_MODE_ADAPTIVE.to_string()
+    } else {
+        normalize_cpu_mode(&request.cpu_mode)
+    };
 
     let mut config = read_config()?;
     config.insert("maxMemoryMb".into(), Value::from(max_memory_mb));
     config.insert("minMemoryMb".into(), Value::from(min_memory_mb));
+    config.insert("cpuMode".into(), Value::from(cpu_mode));
     config.insert("cpuThreads".into(), Value::from(cpu_threads));
     config.insert("resourcePreset".into(), Value::from(preset));
     write_config(&config)?;
@@ -110,6 +129,7 @@ pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
     save(ResourceUpdateRequest {
         max_memory_mb: preset.max_memory_mb,
         cpu_threads: preset.cpu_threads,
+        cpu_mode: preset.cpu_mode,
         preset: preset.name,
     })
 }
@@ -118,29 +138,28 @@ pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb
     let hardware = Hardware::detect();
     let config = read_config()?;
     let max_memory_mb = configured_max_memory_mb.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
-    // Keep startup heap intentionally small. Old/manual configs with an oversized Xms are
-    // normalized here so Paper can grow toward Xmx only when the workload requires it.
+    // Keep startup heap intentionally small. Paper grows toward Xmx only as workload needs it.
     let min_memory_mb = configured_min_memory_mb
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(max_memory_mb));
-    let cpu_threads = config_u64(&config, "cpuThreads")
-        .map(|value| value as u32)
-        .unwrap_or(hardware.logical_processors)
-        .clamp(1, hardware.logical_processors);
+    let preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
+    let cpu_mode = configured_cpu_mode(&config, &preset);
+    let cpu_threads = if cpu_mode == CPU_MODE_MANUAL {
+        Some(
+            config_u64(&config, "cpuThreads")
+                .map(|value| value as u32)
+                .unwrap_or(hardware.logical_processors)
+                .clamp(1, hardware.logical_processors),
+        )
+    } else {
+        None
+    };
     Ok(RuntimeResources { min_memory_mb, max_memory_mb, cpu_threads })
 }
 
 fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
-    let (target_memory, target_cpu, name) = match kind {
-        PresetKind::Performance => (
-            performance_memory_target(hardware),
-            performance_cpu_target(hardware.logical_processors),
-            "Performance",
-        ),
-        PresetKind::Boost => (
-            boost_memory_target(hardware),
-            hardware.logical_processors,
-            "Boost",
-        ),
+    let (target_memory, name) = match kind {
+        PresetKind::Performance => (performance_memory_target(hardware), "Performance"),
+        PresetKind::Boost => (boost_memory_target(hardware), "Boost"),
     };
 
     let target_memory = round_memory_step(
@@ -153,22 +172,15 @@ fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
         name: name.into(),
         max_memory_mb: target_memory,
         min_memory_mb: recommended_min_memory(target_memory),
-        cpu_threads: target_cpu.clamp(1, hardware.logical_processors),
-    }
-}
-
-fn performance_cpu_target(logical_processors: u32) -> u32 {
-    if logical_processors <= 6 {
-        logical_processors
-    } else {
-        logical_processors.saturating_sub(2).max(4)
+        cpu_mode: CPU_MODE_ADAPTIVE.into(),
+        // Informational/manual fallback only. Adaptive presets do not pass ActiveProcessorCount.
+        cpu_threads: hardware.logical_processors,
     }
 }
 
 fn performance_memory_target(hardware: &Hardware) -> u64 {
     let total = hardware.total_memory_mb;
     let target = if total <= 8192 {
-        // Small PCs need more room for Windows and the Minecraft client.
         3072
     } else if total <= 16384 {
         6144
@@ -190,7 +202,7 @@ fn boost_memory_target(hardware: &Hardware) -> u64 {
     target.min(hardware.safe_max_memory_mb)
 }
 
-fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -> String {
+fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_mode: &str, cpu_threads: u32) -> String {
     if max_memory_mb > hardware.safe_max_memory_mb {
         return format!(
             "Configured RAM exceeds the safe limit for this PC. LazyBuilder will clamp runtime RAM to {} MB so Windows keeps {} MB reserved.",
@@ -200,7 +212,7 @@ fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -
     if max_memory_mb + hardware.reserved_system_memory_mb > hardware.total_memory_mb {
         return "Configured RAM leaves too little memory for Windows and background applications.".into();
     }
-    if cpu_threads > hardware.logical_processors {
+    if cpu_mode == CPU_MODE_MANUAL && cpu_threads > hardware.logical_processors {
         return "Configured Java CPU concurrency exceeds the available logical processors.".into();
     }
     String::new()
@@ -226,6 +238,26 @@ fn normalize_preset(value: &str) -> String {
         "performance" => "Performance".into(),
         "boost" => "Boost".into(),
         _ => "Custom".into(),
+    }
+}
+
+fn normalize_cpu_mode(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "manual" => CPU_MODE_MANUAL.into(),
+        _ => CPU_MODE_ADAPTIVE.into(),
+    }
+}
+
+fn configured_cpu_mode(config: &Map<String, Value>, preset: &str) -> String {
+    if let Some(mode) = config_string(config, "cpuMode") {
+        return normalize_cpu_mode(&mode);
+    }
+    // Migration rule: historic Performance/Boost configs used a fixed cpuThreads value.
+    // New presets are adaptive, while historic Custom configs remain manual.
+    match preset {
+        "Performance" | "Boost" => CPU_MODE_ADAPTIVE.into(),
+        _ if config.contains_key("cpuThreads") => CPU_MODE_MANUAL.into(),
+        _ => CPU_MODE_ADAPTIVE.into(),
     }
 }
 
