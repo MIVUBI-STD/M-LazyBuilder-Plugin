@@ -183,7 +183,6 @@ export const runtimeApi = {
     acceptEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
     pickParent: () => invoke<string | null>('workspace_pick_parent'),
     create: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
-    open: () => invoke<WorkspaceEntry | null>('workspace_open_picker'),
     pickAdoption: () => invoke<AdoptionPlan | null>('workspace_adoption_pick'),
     adopt: (rootPath: string, name?: string | null) => invoke<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
     activate: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
