@@ -9,6 +9,8 @@ export const runtimeProduct = {
     pickParent: runtimeApi.pickWorkspaceParent,
     create: runtimeApi.createWorkspace,
     open: runtimeApi.openWorkspace,
+    pickAdoption: runtimeApi.pickAdoptionServer,
+    adopt: runtimeApi.adoptWorkspace,
     activate: runtimeApi.activateWorkspace,
     close: runtimeApi.closeWorkspace
   },
