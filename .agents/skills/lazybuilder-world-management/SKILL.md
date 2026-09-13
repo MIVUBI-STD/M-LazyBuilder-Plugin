@@ -1,69 +1,74 @@
 ---
 name: lazybuilder-world-management
-description: Specialist for World Manager implementation and audits: world lifecycle, creation/settings, archive/restore/backup/clone/delete, import/export/conversion, Paper runtime boundaries, and world filesystem safety. Use when World Manager behavior is the primary change.
+description: Own World Manager semantics and Paper world behavior: lifecycle, creation/settings, archive/restore/backup/clone/delete, import/export/conversion, registry/persistence, Paper runtime boundaries, and world filesystem safety. Do not use for desktop process/runtime or presentation-only work.
 ---
 
 # LazyBuilder World Management
 
-Own World Manager semantics and Paper world behavior. Desktop/runtime orchestration and client presentation remain separate owners.
+Own World Manager domain semantics and Paper world behavior. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
 
-## Use This Owner For
-
-- create/load/unload/settings and BUILD_READY policy;
-- archive/restore/backup/clone/delete;
-- import/export/conversion and world-file safety;
-- World Manager tasks, registry, persistence, operation leases;
-- Paper/Bukkit world runtime adapters.
-
-Route elsewhere when the primary owner is:
+## Owns
 
 ```text
-desktop server/process/provisioning → lazybuilder-desktop-runtime
-desktop Svelte presentation         → lazybuilder-desktop-ui
-Fabric/Xaero client presentation    → lazybuilder-client-ui
-shared wire contract                → lazybuilder-protocol
-third-party plugin lifecycle        → lazybuilder-plugin-management
+create/load/unload/settings and BUILD_READY policy
+archive/restore/backup/clone/delete
+import/export/conversion
+world registry/persistence/runtime state
+world operation leases/tasks
+Paper/Bukkit world adapters
+world filesystem safety/publication
 ```
+
+## Does Not Own
+
+```text
+desktop server/process/provisioning → desktop-runtime
+desktop Svelte presentation         → desktop-ui
+Fabric/Xaero presentation           → client-ui
+neutral shared wire contract        → protocol
+third-party plugin lifecycle        → plugin-management
+```
+
+If a new world feature needs a shared payload, Protocol defines the payload first; World Management consumes it without duplicating the contract.
 
 ## Canonical Context
 
-1. `docs/02-world-management/README.md`
-2. `docs/04-system/skill-routing.md`
-3. exact current World Manager source/test owner
-4. `docs/04-system/README.md` only when module/boundary decisions are affected
-5. `docs/05-operations/` only when current continuation/proof is material
+1. `docs/04-system/development-discipline.md`
+2. `docs/02-world-management/README.md`
+3. `docs/04-system/skill-routing.md`
+4. exact World Manager source/test owner
+5. system/ops docs only when boundary or continuation is material
 
-Do not preload unrelated desktop/plugin/client context.
+Do not preload desktop/plugin/client internals.
 
-## Implementation Order
+## Procedure
 
 ```text
-contract
-→ smallest domain/application owner
-→ Paper adapter only when runtime translation is needed
-→ persistence/filesystem owner only when required
-→ adapter surface
+name exact world behavior
+→ locate smallest application/domain owner
+→ validate lifecycle/state boundary
+→ touch Paper adapter only for runtime translation
+→ touch persistence/filesystem only when behavior requires it
 → targeted proof
+→ STOP
 ```
 
-## Rules
+## World Invariants
 
-- Native Paper/Bukkit APIs are preferred; no Multiverse runtime dependency.
-- Commands, desktop requests, and client requests must reach the same application owners.
-- Validate lifecycle/state before destructive filesystem operations.
-- Never perform unsafe Bukkit/Paper mutation asynchronously.
-- Heavy file/conversion work stays off the Paper main thread after required quiesce/snapshot boundaries.
-- No NMS unless stable APIs demonstrably cannot satisfy a confirmed requirement.
-- Keep registry, runtime state, file publication, and task ownership singular.
-- Do not invent generic manager hierarchies or parallel world-operation frameworks.
+- native Paper/Bukkit APIs preferred; no Multiverse runtime dependency;
+- commands, desktop requests, and client requests reach the same application owners;
+- destructive/file operations validate lifecycle/state first and remain recoverable;
+- unsafe Bukkit/Paper mutation never runs asynchronously;
+- heavy file/conversion work stays off Paper main thread after required quiesce/snapshot boundaries;
+- registry/runtime/file/task ownership remains singular;
+- no generic manager hierarchy or parallel world-operation framework without proven repeated responsibility;
+- no NMS unless stable APIs demonstrably cannot satisfy a confirmed requirement.
 
-## Proof
+## Proof Boundary
 
 ```text
-pure policy/logic        → unit tests
+pure policy/logic        → focused unit test
 filesystem/conversion    → local fixture/integration proof
 Paper-facing boundaries  → compile/static proof where feasible
 actual lifecycle/runtime → LIVE_SERVER
 ```
-
-Stop once the requested world behavior and its relevant proof are complete.
