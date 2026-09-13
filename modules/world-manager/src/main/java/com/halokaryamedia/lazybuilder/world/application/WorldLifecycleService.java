@@ -73,7 +73,7 @@ public final class WorldLifecycleService {
             return current;
         }
 
-        try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.ARCHIVE)) {
+        try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.RESTORE)) {
             WorldRecord restored = current
                     .withLifecycle(WorldLifecycle.ACTIVE)
                     .withAutoLoad(false);
