@@ -1,4 +1,3 @@
-use crate::engine::backup_maintenance;
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
 use tauri::State;
 
@@ -16,7 +15,10 @@ pub fn plugin_pick_jar() -> Option<String> {
 }
 
 #[tauri::command]
-pub fn plugin_install(state: State<'_, PluginManagerState>, jar_path: String) -> Result<PluginInstallResult, String> {
+pub fn plugin_install(
+    state: State<'_, PluginManagerState>,
+    jar_path: String,
+) -> Result<PluginInstallResult, String> {
     state.install(&jar_path)
 }
 
@@ -26,11 +28,7 @@ pub fn plugin_update(
     plugin_id: String,
     jar_path: String,
 ) -> Result<PluginInstallResult, String> {
-    let result = state.update(&plugin_id, &jar_path)?;
-    if result.success {
-        let _ = backup_maintenance::maintain_plugin_backups();
-    }
-    Ok(result)
+    state.update(&plugin_id, &jar_path)
 }
 
 #[tauri::command]
@@ -46,11 +44,8 @@ pub fn plugin_set_enabled(
 pub fn plugin_remove(
     state: State<'_, PluginManagerState>,
     plugin_id: String,
-    remove_data: bool,
 ) -> Result<(), String> {
-    state.remove(&plugin_id, remove_data)?;
-    let _ = backup_maintenance::maintain_plugin_backups();
-    Ok(())
+    state.remove(&plugin_id)
 }
 
 #[tauri::command]
@@ -59,18 +54,5 @@ pub fn plugin_resolve_duplicates(
     plugin_id: String,
     keep_jar_file_name: String,
 ) -> Result<PluginInstallResult, String> {
-    let result = state.resolve_duplicates(&plugin_id, &keep_jar_file_name)?;
-    if result.success {
-        let _ = backup_maintenance::maintain_plugin_backups();
-    }
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn plugin_set_category(
-    state: State<'_, PluginManagerState>,
-    plugin_id: String,
-    category: String,
-) -> Result<(), String> {
-    state.set_category(&plugin_id, &category)
+    state.resolve_duplicates(&plugin_id, &keep_jar_file_name)
 }
