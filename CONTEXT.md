@@ -116,7 +116,7 @@ World-Manager owns:
 
 The desktop app may present these actions but must not duplicate World-Manager business logic or become a second filesystem authority.
 
-World-Manager is now structurally locked at source/CI proof level. Canonical architecture is recorded in `docs/04-system/world-manager-architecture-lock.md`. Live Paper/Desktop/Fabric proof remains a separate later stage.
+World-Manager is structurally locked at source/CI proof level. Canonical architecture is recorded in `docs/04-system/world-manager-architecture-lock.md`. Live Paper/Desktop/Fabric proof remains a separate later stage.
 
 ### Utilities-Manager
 
@@ -128,10 +128,9 @@ Paper-side builder convenience module. Current target scope:
 - iron-door toggle;
 - double-slab helper;
 - glazed-terracotta rotation helper;
-- spectator helpers;
 - builder-safe protections for explosions, leaves decay, farmland trample, and dragon-egg teleport behavior.
 
-Banner Creator, Armor Color Creator, and Special Builder Items are intentionally excluded because they are not used in the current workflow. Do not add a creation-tools family unless a concrete requirement appears later.
+Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family are intentionally excluded from the current product scope. Movement/Noclip already owns the LazyBuilder-specific spectator movement transition, while normal Minecraft/Paper spectator controls own camera targeting. Do not add overlapping spectator controls unless a concrete missing capability appears later.
 
 Do not place world management, performance optimization, economy, home/warp/chat suites, or WorldEdit aliases in Utilities-Manager.
 
@@ -229,11 +228,7 @@ Keep each manager independently maintainable. Do not relocate or rewrite stable 
 
 ## Current phase
 
-World-Manager source architecture and its Desktop/Fabric control paths are structurally stable and CI-green. Heavy operations use the shared orchestration boundary, Paper cross-thread calls use one dispatcher, task execution is bounded, and the legacy bootstrap compatibility layer has been removed.
-
-The active remote-GitHub phase is **Utilities-Manager** while preserving World-Manager as a stable dependency boundary.
-
-Current implemented Utilities families:
+World-Manager source architecture and its Desktop/Fabric control paths are structurally stable. Utilities-Manager now has the intended remote-source feature set:
 
 ```text
 World Safety
@@ -241,12 +236,8 @@ Movement
 Build Helpers
 ```
 
-Remaining planned family:
+Creation Tools and custom Spectator helpers are intentionally out of scope because they do not add required capability to the current builder workflow.
 
-```text
-Spectator
-```
+A compile issue in the initial glazed-terracotta rotation implementation was corrected by using explicit cardinal `BlockFace` rotation compatible with the current Paper API. The latest source must be considered source/CI-stable only after the current `Local` verification run completes successfully.
 
-Creation Tools are not part of the current product scope.
-
-After the remaining bounded Utilities work is stable, perform LOCAL_CODE / LIVE_SERVER validation. World-Manager changes require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
+After the current CI gate is green, the next stage is LOCAL_CODE / LIVE_SERVER validation of the three Utilities families plus the already locked World-Manager flows. World-Manager changes require a concrete requirement that cannot be satisfied inside its locked ownership boundaries. Source/CI proof remains distinct from live runtime validation.
