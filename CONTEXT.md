@@ -35,6 +35,40 @@ Do not create side development branches unless the user explicitly requests isol
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
 - no idle/background subsystem without a concrete need.
 
+## REMOTE_GITHUB completion
+
+The remote source/CI phase is complete.
+
+Final source/CI gate:
+
+```text
+head: fcae5870192252bcecc63c5f0c458bed446a64a8
+run:  Verify #509
+
+Paper modules/tests  SUCCESS
+Fabric client build  SUCCESS
+Tauri desktop        SUCCESS
+Overall              SUCCESS
+```
+
+Desktop dependency resolution is now reproducible:
+
+```text
+EngineData/Frontend/RustApp/package-lock.json
+EngineData/Frontend/RustApp/src-tauri/Cargo.lock
+
+npm ci
+cargo check --locked
+```
+
+The complete handoff record is canonical in:
+
+```text
+docs/05-operations/remote-github-complete.md
+```
+
+Any commits after the final source gate that only update handoff documentation do not expand runtime architecture or product scope.
+
 ## Server workspace target
 
 ```text
@@ -59,7 +93,7 @@ Work Server - 1.21.4/
 └── README-Server.txt
 ```
 
-Canonical desktop-launched runtime ownership is now source-wired:
+Canonical desktop-launched runtime ownership is source-wired:
 
 - actual Paper world folders → `world-system/worlds/`;
 - World-Manager registry/import/export/backup/work data → `world-system/`;
@@ -224,23 +258,17 @@ REMOVE FROM NEW BASELINE
 
 Performance authority is Paper 1.21.4 native configuration rather than generic optimizer plugins.
 
-## Current proof state
+## Proof state
 
-The latest completed gate before the final runtime-layout cleanup is green for:
+`REMOTE_GITHUB` is complete and green at the locked-dependency source head.
 
-```text
-Paper modules/tests
-Fabric client build
-Tauri/Svelte/Rust desktop checks
-```
-
-Subsequent source/doc cleanup must pass its own latest-head gate before being called green. `REMOTE_GITHUB` proof does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
+Remote proof covers source/static/CI evidence only. It does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
 
 ## Current phase
 
-Remote structural work is complete enough to stop adding speculative scope. Remaining work before live testing is limited to final consistency/packaging checks, not new product features.
+Do not add more speculative remote refactors.
 
-Then move to:
+The next phase is explicitly:
 
 ```text
 LOCAL_CODE
@@ -248,18 +276,20 @@ LOCAL_CODE
 LIVE_SERVER
 ```
 
-Validate the current artifacts as one integrated builder-server workflow, record only reproducible runtime defects, and fix those defects directly in `Local`.
+Start from the current `Local` branch containing the verified source head and completion documentation. First prove local build/artifacts, then run the integrated server workflow.
 
 Priority validation:
 
 ```text
 1. Desktop start/stop/restart + Java/runtime paths
-2. World-Manager enable/control bridges
-3. Fabric World Manager lifecycle UI
-4. Import/Export + transfer + native dialogs
-5. Xaero Teleport Here / Export Area
-6. Utilities World Safety / Movement / Build Helpers
-7. restart/shutdown persistence and cleanup
+2. canonical runtime filesystem creation
+3. World-Manager enable/control bridges
+4. Fabric World Manager lifecycle UI
+5. Import/Export + transfer + native dialogs
+6. Xaero Teleport Here / Export Area
+7. Utilities World Safety / Movement / Build Helpers
+8. Plugin-Manager canonical/legacy behavior
+9. restart/shutdown persistence and cleanup
 ```
 
-Do not expand World-Manager or Utilities-Manager scope unless live validation reveals a concrete missing capability or defect.
+Only reproducible `LOCAL_CODE` / `LIVE_SERVER` defects should reopen source work. Fix them directly on `Local` at the smallest wrong owner. Do not reopen locked architecture unless runtime evidence demonstrates a real architecture-level requirement.
