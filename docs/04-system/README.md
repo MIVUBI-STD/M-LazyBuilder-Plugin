@@ -2,19 +2,20 @@
 
 Canonical owner for LazyBuilder module boundaries, source ownership, and maintainability rules.
 
+For execution specialist/jobdesk selection, use [`skill-routing.md`](skill-routing.md). This document defines durable architecture; Skills define procedure.
+
 ## Target Runtime
 
 ```text
-LazyBuilder Fabric Client
-        │
-        │ bounded first-party protocol
+LazyBuilder Desktop (Tauri/Svelte)
+        │ local-only authenticated control
         ▼
 LazyBuilder Paper Modules
   ├── World-Manager
   └── Utilities-Manager
-        │
-        ▼
-Paper API 1.21.4
+        ▲
+        │ bounded first-party Minecraft protocol
+LazyBuilder Fabric Client
 ```
 
 Client/server application traffic reuses the existing Minecraft play connection. LazyBuilder does not require a separate relay, VPN service, HTTP gateway, WebSocket server, or second public listening port. The authenticated desktop loopback control bridge remains local-only and is not the client/server data plane. The canonical networking contract is [`networking.md`](networking.md).
@@ -24,38 +25,51 @@ Xaero World Map is an external client integration for map preview/location inter
 ## Ownership Rules
 
 ```text
-Client UI          → presentation/input only
-Protocol           → typed bounded requests/results
-World application  → lifecycle/use-case policy
-World registry     → LazyBuilder-owned world metadata
-Paper adapter      → Bukkit/Paper calls and runtime translation
-File transfer      → import/export/clone filesystem safety
-Conversion adapter → external converter process/runtime details only
+Desktop UI         → presentation/input only
+Desktop Runtime    → workspace, process, provisioning, resource/runtime orchestration
+Plugin Manager     → third-party Paper plugin lifecycle only
+Fabric Client UI   → in-game presentation/input only
+Shared Protocol    → typed bounded Paper/Fabric requests/results
+World Application → lifecycle/use-case policy
+World Registry    → LazyBuilder-owned world metadata
+Paper Adapter     → Bukkit/Paper calls and runtime translation
+File Transfer     → import/export/clone filesystem safety
+Conversion Adapter→ external converter process/runtime details only
 ```
 
-Commands and UI adapters delegate to the same application owners. Do not create separate command logic and UI logic for the same operation.
+Commands, UI, and transport adapters delegate to the same semantic owners. Do not create separate command logic and UI logic for the same operation.
 
 The external converter is an implementation detail inside World Manager. Import, export, multi-version conversion, runtime updates, and file management remain one product domain and must not grow into parallel product surfaces.
 
 ## Source Shape
 
-Keep implementation shallow until real complexity requires more structure. Prefer responsibility-based packages rather than generic manager hierarchies.
+Keep implementation shallow until real complexity requires more structure. Prefer responsibility-based modules rather than generic manager hierarchies.
 
-Current World-Manager shape:
+Current major ownership shape:
 
 ```text
-world/
+Desktop
+├── workspace/runtime/process/providers
+├── plugin-manager
+└── world-manager client bridge
+
+Paper World Manager
 ├── application/     world use cases and policy
 ├── registry/        persistent LazyBuilder world identity/metadata
 ├── paper/           Paper/Bukkit runtime boundary
 ├── files/           safe world-file operations
 ├── conversion/      isolated conversion adapter/runtime lifecycle
-├── map/             shared bounded map-action wire contract
 ├── task/            bounded desktop task contract/runner
-└── transfer/        shared bounded file-transfer wire/session contract
+└── transfer/        bounded file-transfer session contract
+
+Shared
+└── protocol/        neutral Paper/Fabric request/result contracts
+
+Fabric Client
+└── presentation + isolated Xaero integration
 ```
 
-A package exists only when its responsibility exists in source. Do not create empty layers for symmetry.
+A package/module exists only when its responsibility exists in source. Do not create empty layers for symmetry.
 
 Avoid manager proliferation such as `WorldController`, `WorldCoordinator`, `WorldRuntimeManager`, and `WorldLifecycleManager` unless distinct responsibilities are demonstrated.
 
@@ -66,9 +80,10 @@ Every durable feature should have one canonical semantic owner and one primary r
 ```text
 requirement / policy → canonical docs
 business behavior    → application/domain source
+runtime orchestration→ exact runtime owner
 Paper behavior       → Paper adapter
 external integration → one dedicated adapter
-proof                 → nearest targeted test / CI / runtime check
+proof                 → nearest targeted test / runtime check
 history               → Git history
 ```
 
@@ -76,17 +91,19 @@ Rules:
 
 - prefer deletion or consolidation over compatibility layers when no supported consumer requires them;
 - compatibility storage fallbacks are allowed only to protect existing user data and must not become parallel active authorities;
-- do not duplicate state between UI, registry, Paper, and converter runtime;
+- do not duplicate state between UI, registry, runtime, Paper, and converter;
+- one config concern has one config owner;
+- one managed process has one process/recovery owner;
 - keep public contracts small and typed;
 - keep external implementation details out of domain/application code;
 - do not introduce a shared abstraction until at least one real responsibility requires it;
-- configuration must have one owner and documented defaults;
 - background work is opt-in and operation-bound: no idle polling, idle converter worker, unnecessary filesystem watchers, or repeated scans;
 - expensive file/conversion work must be bounded and isolated from Paper's main thread;
-- world mutation and filesystem publication must be transactional enough that failure leaves the previously valid state recoverable;
+- world mutation and filesystem publication must be recoverable enough that failure does not silently destroy the previous valid state;
+- internal maintenance is automatic unless it represents a real user decision;
 - runtime directories must have an active semantic owner; do not create placeholder folders for metadata-only states;
 - source comments explain non-obvious constraints, not obvious syntax;
-- names describe product concepts (`World Manager`, `Import World`, `Export Area`) rather than leaking third-party engine terminology.
+- names describe product concepts rather than leaking third-party implementation terminology.
 
 ## Documentation Contract
 
@@ -95,8 +112,8 @@ Documentation records current durable behavior, ownership, and constraints. It i
 ```text
 docs/01-product/          product scope and flow
 docs/02-world-management/ world behavior and feature contracts
-docs/03-client-ui/        client/Xaero presentation contracts
-docs/04-system/           architecture, ownership, networking, maintainability
+docs/03-client-ui/        Fabric/Xaero presentation contracts
+docs/04-system/           architecture, ownership, networking, specialist routing
 docs/05-operations/       current continuation/proof only
 ```
 
@@ -108,9 +125,9 @@ A normal implementation change should be reviewable as one coherent outcome:
 
 ```text
 requirement
-→ first wrong owner
+→ exact specialist / first wrong owner
 → minimum complete source change
-→ targeted test/proof
+→ targeted proof
 → canonical-doc update only when durable behavior changed
 → STOP
 ```
@@ -122,11 +139,13 @@ Do not mix unrelated cleanup, speculative architecture, or future features into 
 Use domain-local context only:
 
 ```text
-world behavior    → docs/02-world-management + world source
-client UI/Xaero   → docs/03-client-ui + client source
-network ownership → docs/04-system/networking.md + exact protocol/adapter source
-architecture      → this document + exact affected source owners
-current proof     → docs/05-operations only when continuation matters
+jobdesk/routing     → skill-routing.md
+world behavior      → docs/02-world-management + world source
+Fabric UI/Xaero     → docs/03-client-ui + client source
+network ownership   → networking.md + exact protocol/adapter source
+desktop runtime     → skill-routing.md + exact desktop runtime source
+architecture        → this document + exact affected owner
+current proof       → docs/05-operations only when continuation matters
 ```
 
 Do not load all docs or all Skills as ceremony.
