@@ -98,7 +98,7 @@ public final class BuildHelpersFeature implements UtilityFeature, Listener {
         event.setUseInteractedBlock(Event.Result.DENY);
     }
 
-    private static BlockFace clockwise(BlockFace face) {
+    static BlockFace clockwise(BlockFace face) {
         return switch (face) {
             case NORTH -> BlockFace.EAST;
             case EAST -> BlockFace.SOUTH;
