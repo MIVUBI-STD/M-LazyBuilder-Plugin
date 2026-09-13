@@ -75,12 +75,15 @@ struct ScannedPlugin {
 impl PluginManagerState {
     pub fn list_plugins(&self) -> Result<Vec<PluginSummary>, String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
-        list_plugins_inner()
+        let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
+        list_plugins_inner(&workspace)
     }
 
     pub fn install(&self, jar_path: &str) -> Result<PluginInstallResult, String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
         let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let source = PathBuf::from(jar_path);
         let incoming = match read_metadata(&source).and_then(|metadata| {
             validate_target_compatibility(&metadata)?;
@@ -116,6 +119,7 @@ impl PluginManagerState {
     pub fn update(&self, plugin_id: &str, jar_path: &str) -> Result<PluginInstallResult, String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
         let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let canonical_id = normalize_id(plugin_id);
         let source = PathBuf::from(jar_path);
         let incoming = match read_metadata(&source).and_then(|metadata| {
@@ -173,6 +177,7 @@ impl PluginManagerState {
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) -> Result<(), String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
         let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let canonical_id = normalize_id(plugin_id);
         let existing = find_all_by_id(&workspace, &canonical_id)?;
         if existing.is_empty() {
@@ -206,6 +211,7 @@ impl PluginManagerState {
     pub fn remove(&self, plugin_id: &str, remove_data: bool) -> Result<(), String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
         let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let canonical_id = normalize_id(plugin_id);
         let existing = find_all_by_id(&workspace, &canonical_id)?;
         if existing.is_empty() {
@@ -235,6 +241,7 @@ impl PluginManagerState {
     pub fn resolve_duplicates(&self, plugin_id: &str, keep_jar_file_name: &str) -> Result<PluginInstallResult, String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
         let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let canonical_id = normalize_id(plugin_id);
         let requested = Path::new(keep_jar_file_name)
             .file_name()
@@ -276,12 +283,14 @@ impl PluginManagerState {
 
     pub fn set_category(&self, plugin_id: &str, category: &str) -> Result<(), String> {
         let _guard = self.mutation_gate.lock().map_err(|_| "plugin manager lock poisoned".to_string())?;
+        let workspace = paths::workspace_root()?;
+        ensure_plugin_manager_layout(&workspace)?;
         let canonical_id = normalize_id(plugin_id);
         let canonical_category = ALLOWED_CATEGORIES
             .iter()
             .find(|value| value.eq_ignore_ascii_case(category))
             .ok_or_else(|| "Unknown plugin category.".to_string())?;
-        let path = category_registry_path()?;
+        let path = category_registry_path(&workspace);
         let mut overrides = load_category_overrides(&path);
         overrides.insert(canonical_id, (*canonical_category).to_string());
         if let Some(parent) = path.parent() {
@@ -294,10 +303,10 @@ impl PluginManagerState {
     }
 }
 
-fn list_plugins_inner() -> Result<Vec<PluginSummary>, String> {
-    let workspace = paths::workspace_root()?;
-    let mut scanned = scan_dir(&plugins_directory(&workspace), true)?;
-    scanned.extend(scan_dir(&disabled_directory(&workspace), false)?);
+fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
+    let mut scanned = scan_dir(&plugins_directory(workspace), true)?;
+    scanned.extend(scan_dir(&disabled_directory(workspace), false)?);
+    scanned.extend(scan_dir(&legacy_disabled_directory(workspace), false)?);
 
     let valid_ids: HashSet<String> = scanned
         .iter()
@@ -308,7 +317,7 @@ fn list_plugins_inner() -> Result<Vec<PluginSummary>, String> {
         .filter(|item| item.enabled)
         .filter_map(|item| item.metadata.as_ref().map(|meta| meta.id.clone()))
         .collect();
-    let overrides = load_category_overrides(&category_registry_path()?);
+    let overrides = load_category_overrides(&category_registry_path(workspace));
 
     let mut groups: BTreeMap<String, Vec<&ScannedPlugin>> = BTreeMap::new();
     for item in scanned.iter().filter(|item| item.metadata.is_some()) {
@@ -479,6 +488,7 @@ fn validate_target_compatibility(metadata: &PluginMetadata) -> Result<(), String
 fn find_all_by_id(workspace: &Path, canonical_id: &str) -> Result<Vec<ScannedPlugin>, String> {
     let mut scanned = scan_dir(&plugins_directory(workspace), true)?;
     scanned.extend(scan_dir(&disabled_directory(workspace), false)?);
+    scanned.extend(scan_dir(&legacy_disabled_directory(workspace), false)?);
     Ok(scanned
         .into_iter()
         .filter(|item| item.metadata.as_ref().map(|metadata| metadata.id.eq_ignore_ascii_case(canonical_id)).unwrap_or(false))
@@ -504,11 +514,51 @@ fn dependency_problem(workspace: &Path, metadata: &PluginMetadata, self_id: Opti
     Ok(None)
 }
 
+fn ensure_plugin_manager_layout(workspace: &Path) -> Result<(), String> {
+    let disabled = disabled_directory(workspace);
+    let backups = backup_directory(workspace);
+    let registry = category_registry_path(workspace);
+    fs::create_dir_all(&disabled).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&backups).map_err(|error| error.to_string())?;
+    if let Some(parent) = registry.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let legacy_registry = legacy_category_registry_path(workspace);
+    if !registry.exists() && legacy_registry.is_file() {
+        fs::copy(&legacy_registry, &registry).map_err(|error| error.to_string())?;
+    }
+
+    let legacy_disabled = legacy_disabled_directory(workspace);
+    if legacy_disabled.is_dir() {
+        for entry in fs::read_dir(&legacy_disabled).map_err(|error| error.to_string())? {
+            let source = entry.map_err(|error| error.to_string())?.path();
+            if source.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("jar")) != Some(true) {
+                continue;
+            }
+            let Some(file_name) = source.file_name() else { continue; };
+            let destination = disabled.join(file_name);
+            if destination.exists() {
+                continue;
+            }
+            if fs::rename(&source, &destination).is_err() {
+                fs::copy(&source, &destination).map_err(|error| error.to_string())?;
+                fs::remove_file(&source).map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn plugins_directory(workspace: &Path) -> PathBuf {
     workspace.join("server").join("plugins")
 }
 
 fn disabled_directory(workspace: &Path) -> PathBuf {
+    workspace.join("tools").join("lazybuilder").join("disabled-plugins")
+}
+
+fn legacy_disabled_directory(workspace: &Path) -> PathBuf {
     workspace.join("server").join("plugins-disabled")
 }
 
@@ -516,8 +566,12 @@ fn backup_directory(workspace: &Path) -> PathBuf {
     workspace.join("tools").join("lazybuilder").join("plugin-backups")
 }
 
-fn category_registry_path() -> Result<PathBuf, String> {
-    Ok(paths::lazybuilder_tools_dir()?.join("plugin-registry.json"))
+fn category_registry_path(workspace: &Path) -> PathBuf {
+    workspace.join("tools").join("lazybuilder").join("config").join("plugin-registry.json")
+}
+
+fn legacy_category_registry_path(workspace: &Path) -> PathBuf {
+    workspace.join("tools").join("lazybuilder").join("plugin-registry.json")
 }
 
 fn load_category_overrides(path: &Path) -> HashMap<String, String> {
