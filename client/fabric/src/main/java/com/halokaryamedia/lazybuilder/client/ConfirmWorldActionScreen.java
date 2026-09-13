@@ -2,10 +2,9 @@ package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
-/** Lightweight confirmation surface for destructive/lifecycle world actions. */
+/** Consistent LazyBuilder modal for lifecycle/destructive world actions. */
 public final class ConfirmWorldActionScreen extends Screen {
     private final Screen parent;
     private final Text message;
@@ -22,22 +21,31 @@ public final class ConfirmWorldActionScreen extends Screen {
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int y = height / 2 + 28;
-        addDrawableChild(ButtonWidget.builder(Text.literal(confirmLabel), button -> {
-            action.run();
-            close();
-        }).dimensions(center - 104, y, 100, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> close())
-                .dimensions(center + 4, y, 100, 20).build());
+        int panelWidth = Math.min(420, width - 48);
+        int left = width / 2 - panelWidth / 2;
+        int half = (panelWidth - 66) / 2;
+        int y = height / 2 + 34;
+        boolean dangerous = confirmLabel.toLowerCase(java.util.Locale.ROOT).contains("delete")
+                || confirmLabel.toLowerCase(java.util.Locale.ROOT).contains("reset");
+
+        addDrawableChild(LbUi.button(left + 24, y, half, 26, confirmLabel,
+                dangerous ? LbButtonWidget.Style.DANGER : LbButtonWidget.Style.PRIMARY,
+                () -> { action.run(); close(); }));
+        addDrawableChild(LbUi.button(left + 34 + half, y, half, 26, "Cancel",
+                LbButtonWidget.Style.GHOST, this::close));
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(420, width - 48);
+        int panelHeight = 150;
+        int left = width / 2 - panelWidth / 2;
+        int top = height / 2 - panelHeight / 2;
+        LbUi.elevatedPanel(context, left, top, panelWidth, panelHeight);
+        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, top + 26, LbUi.TEXT_PRIMARY);
+        context.drawCenteredTextWithShadow(textRenderer, message, width / 2, top + 56, LbUi.TEXT_SECONDARY);
         super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, height / 2 - 36, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer, message, width / 2, height / 2 - 8, 0xCCCCCC);
     }
 
     @Override
