@@ -4,7 +4,7 @@ Canonical owner for LazyBuilder client-side interaction and map presentation. Ne
 
 ## UI Direction
 
-LazyBuilder uses a dedicated Minecraft 1.21.4 Fabric client for the in-game experience. The primary entry is now map-first:
+LazyBuilder uses a dedicated Minecraft 1.21.4 Fabric client for the in-game experience. The primary entry is map-first:
 
 ```text
 M
@@ -17,7 +17,40 @@ M
        → World Manager
 ```
 
-Xaero World Map is the interaction-quality reference for fullscreen-map behaviour. LazyBuilder does not copy Xaero assets/source and does not require Xaero at runtime.
+Xaero World Map 1.21.4 is the mandatory interaction-quality reference for the fullscreen map. The acceptance target is behavioural/interaction parity for the map experience: the same mental model, control expectations, camera feel, contextual-menu flow, explored-map persistence and unobtrusive fullscreen presentation. LazyBuilder does not copy Xaero source code, textures, icons or branding and does not require Xaero at runtime.
+
+## Xaero-Parity Lock
+
+For functionality shared by LazyBuilder and Xaero, deviation is not accepted without a platform limitation or a LazyBuilder-specific server-safety requirement.
+
+Required parity behaviour:
+
+```text
+M                     open fullscreen world map directly
+left mouse drag       pan continuously
+mouse wheel           cursor-anchored animated zoom
+CTRL + wheel          precise/fine zoom
++ / -                 alternative zoom controls
+right click           "Choose an Option" contextual menu at cursor
+ESC                    close context first, then selection, then map
+player marker          directional arrow, not a generic square
+hover                  live X/Z map coordinates
+exploration            discovered terrain remains mapped after reopen/restart
+unexplored terrain     visually distinct and non-authoritative
+map camera             preserved while visiting LazyBuilder Worlds UI
+area selection         visible overlay + explicit confirmation
+```
+
+LazyBuilder-specific context options currently replace Xaero-only waypoint/player-radar actions:
+
+```text
+Teleport Here
+Export Area
+Center Map Here
+Copy Coordinates
+```
+
+This is intentional product substitution, not a different interaction model. Unsupported Xaero ecosystems (waypoints, minimap radar, claims, cave-map layers) must not be represented by dead buttons.
 
 ## Responsibility Boundary
 
@@ -54,19 +87,22 @@ The old `MapPreviewScreen` / `MapPreviewClientUi` path was removed so there is o
 
 ## World Map Behaviour
 
-The fullscreen map follows the familiar world-map interaction model:
+The fullscreen map follows the familiar Xaero control model:
 
 ```text
 left-drag          pan camera
 mouse wheel        cursor-anchored smooth zoom
-Recenter           return camera to player
-right-click        contextual actions
+CTRL + wheel       precise zoom increments
++ / -              alternative stepped zoom
+right-click        cursor-local contextual menu
 Teleport Here      server resolves safe Y and teleports
 Export Area        select corner 1 + corner 2 + confirm
+Center Map Here    move map camera to selected location
+Copy Coordinates   copy selected X/Z to clipboard
 Worlds             open secondary World Manager without losing map camera
 ```
 
-The player marker is directional. Hovered map coordinates are shown in the header. Dimension and managed-world identity are visible without covering the map.
+The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard.
 
 ### Map memory
 
@@ -78,12 +114,12 @@ Rules:
 - only sample terrain already available to the client;
 - queue missing visible samples and process them with a per-frame budget;
 - retain bounded in-memory map data;
-- persist sampled map memory under the LazyBuilder client data folder;
+- persist compressed sampled map memory under the LazyBuilder client data folder;
 - separate every managed world and dimension;
 - use Minecraft map colours plus lightweight relief shading;
 - persisted map data is never server authority.
 
-This prevents the previous synchronous full-visible-map sampling behaviour and allows explored terrain to remain visible after closing/reopening the map.
+This prevents the previous synchronous full-visible-map sampling behaviour and allows explored terrain to remain visible after closing/reopening the map or restarting the client.
 
 ## World Manager
 
@@ -192,4 +228,4 @@ Contract:
 
 ## Proof Boundary
 
-The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
+The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
