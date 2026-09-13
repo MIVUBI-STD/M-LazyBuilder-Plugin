@@ -80,6 +80,14 @@
     return 'Server setup complete';
   }
 
+  async function loadRuntimeUpdates() {
+    try {
+      runtimeUpdates = await runtimeProduct.workspace.runtimeUpdateStatus();
+    } catch {
+      runtimeUpdates = null;
+    }
+  }
+
   async function refreshWorkspaceState() {
     loadingWorkspace = true;
     workspaceError = '';
@@ -90,6 +98,7 @@
       if (workspaceState.active) {
         adoptionPlan = null;
         launcherMode = 'home';
+        if (provisioning?.ready) void loadRuntimeUpdates();
       }
     } catch (error) {
       workspaceError = friendlyError(error);
@@ -123,19 +132,6 @@
       workspaceError = friendlyError(error);
     } finally {
       creating = false;
-    }
-  }
-
-  async function openServer() {
-    workspaceError = '';
-    try {
-      const opened = await runtimeProduct.workspace.open();
-      if (opened) {
-        page = 'Overview';
-        await refreshWorkspaceState();
-      }
-    } catch (error) {
-      workspaceError = friendlyError(error);
     }
   }
 
@@ -195,6 +191,7 @@
       const result = await runtimeProduct.workspace.provision();
       provisioning = result.status;
       runtimeUpdates = null;
+      if (provisioning.ready) void loadRuntimeUpdates();
     } catch (error) {
       workspaceError = friendlyError(error);
       try { provisioning = await runtimeProduct.workspace.provisioningStatus(); } catch { /* keep primary error */ }
@@ -208,6 +205,7 @@
     workspaceError = '';
     try {
       provisioning = await runtimeProduct.workspace.acceptEula();
+      if (provisioning.ready) void loadRuntimeUpdates();
     } catch (error) {
       workspaceError = friendlyError(error);
     } finally {
@@ -297,7 +295,7 @@
           <div><h1>Servers</h1><p>Choose a server and get back to building.</p></div>
           <div class="top-actions">
             <button class="secondary-button" onclick={analyzeAdoption}>Add existing</button>
-            <button class="primary-button" onclick={() => (launcherMode = 'create')}>+ Create server</button>
+            <button class="primary-button" onclick={() => (launcherMode = 'create')}>Create server</button>
           </div>
         </header>
 
@@ -374,24 +372,24 @@
   </div>
 
   {#if launcherMode === 'create'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && (launcherMode = 'home')}>
+    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (launcherMode = 'home')}>
       <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-server-title">
-        <div class="dialog-heading"><div><h2 id="create-server-title">Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" aria-label="Close" onclick={() => (launcherMode = 'home')}>×</button></div>
-        <label>Server name<input bind:value={createName} placeholder="Build Server" autofocus /></label>
-        <label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" onclick={chooseCreateLocation}>Browse</button></div></label>
-        <div class="dialog-actions"><button class="ghost-button" onclick={() => (launcherMode = 'home')}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div>
+        <div class="dialog-heading"><div><h2 id="create-server-title">Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" aria-label="Close" disabled={creating} onclick={() => (launcherMode = 'home')}>×</button></div>
+        <label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} autofocus /></label>
+        <label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label>
+        <div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (launcherMode = 'home')}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div>
       </section>
     </div>
   {/if}
 
   {#if adoptionPlan}
-    <div class="modal-backdrop">
+    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !adopting && (adoptionPlan = null)}>
       <section class="dialog adoption-dialog" role="dialog" aria-modal="true" aria-labelledby="adopt-server-title">
-        <div class="dialog-heading"><div><h2 id="adopt-server-title">Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" aria-label="Close" onclick={() => (adoptionPlan = null)}>×</button></div>
+        <div class="dialog-heading"><div><h2 id="adopt-server-title">Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" aria-label="Close" disabled={adopting} onclick={() => (adoptionPlan = null)}>×</button></div>
         <div class="detected-grid"><div><strong>{adoptionPlan.worlds.length}</strong><span>Worlds</span></div><div><strong>{adoptionPlan.serverEntries.length}</strong><span>Server files</span></div><div><strong>{adoptionPlan.legacyPluginsToDisable.length}</strong><span>Legacy plugins</span></div></div>
         {#if adoptionPlan.warnings.length > 0}<div class="warning-box"><strong>Needs your attention</strong>{#each adoptionPlan.warnings as warning}<p>{warning}</p>{/each}</div>{:else}<div class="success-note">This server looks compatible and is ready to add.</div>{/if}
         <details><summary>Technical migration details</summary><div class="details-list"><p><strong>Location:</strong> {adoptionPlan.root}</p><p><strong>Paper:</strong> {adoptionPlan.paperJar}</p>{#if adoptionPlan.worlds.length}<p><strong>Worlds:</strong> {adoptionPlan.worlds.join(', ')}</p>{/if}{#if adoptionPlan.preservedEntries.length}<p><strong>Preserved:</strong> {adoptionPlan.preservedEntries.join(', ')}</p>{/if}</div></details>
-        <div class="dialog-actions"><button class="ghost-button" onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div>
+        <div class="dialog-actions"><button class="ghost-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div>
       </section>
     </div>
   {/if}
