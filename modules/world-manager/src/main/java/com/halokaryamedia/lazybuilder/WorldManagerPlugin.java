@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
+import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceController;
 import com.halokaryamedia.lazybuilder.world.paper.LocalControlImportUploadService;
 import com.halokaryamedia.lazybuilder.world.paper.PaperLocalControlServer;
 import com.halokaryamedia.lazybuilder.world.paper.PaperMainThreadDispatcher;
@@ -17,6 +18,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
     private WorldManager worldManager;
     private WorldTaskRegistry worldTaskRegistry;
     private WorldTaskRunner worldTaskRunner;
+    private BuildPerformanceController buildPerformanceController;
     private PaperTransferPayloadAdapter transferPayloadAdapter;
     private PaperMapActionPayloadAdapter mapActionPayloadAdapter;
     private PaperWorldControlPayloadAdapter worldControlPayloadAdapter;
@@ -29,6 +31,9 @@ public final class WorldManagerPlugin extends JavaPlugin {
         this.worldTaskRegistry = new WorldTaskRegistry();
         this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
         this.worldManager.start();
+
+        this.buildPerformanceController = new BuildPerformanceController(this, worldManager.worldRegistry());
+        this.buildPerformanceController.start();
 
         PaperMainThreadDispatcher mainThread = new PaperMainThreadDispatcher(this);
         WorldHeavyOperationOrchestrator heavyOperations = new WorldHeavyOperationOrchestrator(
@@ -90,6 +95,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
         if (worldControlPayloadAdapter != null) worldControlPayloadAdapter.stop();
         if (mapActionPayloadAdapter != null) mapActionPayloadAdapter.stop();
         if (transferPayloadAdapter != null) transferPayloadAdapter.stop();
+        if (buildPerformanceController != null) buildPerformanceController.stop();
         if (worldManager != null) worldManager.stop();
         getLogger().info("World-Manager disabled.");
     }
