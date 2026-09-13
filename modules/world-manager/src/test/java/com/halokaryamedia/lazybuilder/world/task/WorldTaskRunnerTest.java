@@ -78,6 +78,33 @@ class WorldTaskRunnerTest {
         }
     }
 
+    @Test
+    void forcedShutdownMarksNeverStartedQueuedTasksFailed() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch holdFirst = new CountDownLatch(1);
+        WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 2, Duration.ofMillis(25));
+        try {
+            runner.submit(WorldTaskType.BACKUP, WorldId.create(), "running", progress -> {
+                firstStarted.countDown();
+                holdFirst.await();
+                return "running";
+            });
+            assertTrue(firstStarted.await(2, TimeUnit.SECONDS));
+
+            WorldTaskSnapshot queued = runner.submit(
+                    WorldTaskType.EXPORT, WorldId.create(), "queued", progress -> "should-not-run");
+            runner.close();
+
+            WorldTaskSnapshot finalSnapshot = registry.find(queued.taskId()).orElseThrow();
+            assertEquals(WorldTaskState.FAILED, finalSnapshot.state());
+            assertTrue(finalSnapshot.error().contains("shutdown"));
+        } finally {
+            holdFirst.countDown();
+            runner.close();
+        }
+    }
+
     private static WorldTaskSnapshot waitForTerminal(WorldTaskRegistry registry, WorldTaskSnapshot queued) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         WorldTaskSnapshot current = queued;
