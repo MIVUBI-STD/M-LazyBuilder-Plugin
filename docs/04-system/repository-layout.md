@@ -79,6 +79,18 @@ Desktop Rust responsibility:
 
 It is part of `LazyBuilder.exe`; it is not a Paper plugin.
 
+Canonical Plugin-Manager runtime ownership is:
+
+```text
+server/plugins/                         enabled Paper plugin JARs
+tools/lazybuilder/disabled-plugins/     disabled plugin JARs
+tools/lazybuilder/plugin-backups/       update/duplicate-resolution backups
+tools/lazybuilder/config/plugin-registry.json
+                                        category overrides
+```
+
+Legacy `server/plugins-disabled/` and `tools/lazybuilder/plugin-registry.json` are compatibility inputs only. Plugin-Manager moves non-conflicting legacy disabled JARs into the canonical directory and copies a legacy category registry only when the canonical registry does not already exist. Canonical state is never overwritten by compatibility migration; conflicts remain visible to duplicate detection rather than being silently discarded.
+
 ### World-Manager
 
 Paper-side authority for all world lifecycle operations:
@@ -173,10 +185,13 @@ Work Server - 1.21.4/
 │   └── lazybuilder/
 │       ├── config/
 │       │   ├── server-manager.json
-│       │   └── world-control.json
+│       │   ├── world-control.json
+│       │   └── plugin-registry.json
 │       ├── cache/
 │       │   └── converter/
-│       └── logs/
+│       ├── logs/
+│       ├── disabled-plugins/
+│       └── plugin-backups/
 └── README-Server.txt
 ```
 
@@ -185,11 +200,13 @@ Work Server - 1.21.4/
 - Paper world folders live only in `world-system/worlds/` for the canonical desktop-launched runtime.
 - World-Manager registry/import/export/backup/work data lives only under `world-system/`.
 - converter binaries/download cache live under `tools/lazybuilder/cache/converter/` because they are executable support assets, not world data.
-- Server-Manager and World-control desktop configuration live under `tools/lazybuilder/config/`.
+- Server-Manager, World-control, and Plugin-Manager category configuration live under `tools/lazybuilder/config/`.
+- enabled Paper plugin JARs live under `server/plugins/`; disabled JARs and Plugin-Manager backups live under `tools/lazybuilder/`.
 - Paper runtime/plugin files remain under `server/`.
 - the desktop launcher creates the canonical directories before starting Paper and supplies the same workspace root to the plugin.
 - if the launcher supplies a workspace root but Paper reports a different world container, World-Manager fails closed instead of creating two world-storage authorities.
-- manual/non-LazyBuilder Paper launches retain the legacy plugin-data layout unless they are explicitly launched with the canonical `world-system/worlds` container; no automatic destructive migration of existing server worlds is performed.
+- manual/non-LazyBuilder Paper launches retain the legacy World-Manager plugin-data layout unless they are explicitly launched with the canonical `world-system/worlds` container; no automatic destructive migration of existing server worlds is performed.
+- Plugin-Manager legacy config/disabled-JAR locations are migrated conservatively and remain compatibility inputs only.
 
 ## Architecture rules
 
@@ -201,6 +218,7 @@ Work Server - 1.21.4/
 6. Keep Paper 1.21.4 / Java 21 as the Minecraft baseline.
 7. Source/CI proof remains separate from installed Windows and live Paper validation.
 8. Runtime path migration must be explicit and fail-safe; never silently relocate existing world folders.
+9. Compatibility paths must not become permanent parallel storage authorities.
 
 ## Current development order
 
@@ -209,6 +227,7 @@ Work Server - 1.21.4/
 2. World-Manager source architecture — locked
 3. Utilities-Manager source architecture — locked
 4. canonical runtime storage wiring — implemented at source level
-5. audit remaining desktop Plugin-Manager transitional paths
-6. package LazyBuilder.exe and perform LOCAL_CODE / LIVE_SERVER validation
+5. Plugin-Manager runtime storage consolidation — implemented at source level
+6. final repository audit
+7. package LazyBuilder.exe and perform LOCAL_CODE / LIVE_SERVER validation
 ```
