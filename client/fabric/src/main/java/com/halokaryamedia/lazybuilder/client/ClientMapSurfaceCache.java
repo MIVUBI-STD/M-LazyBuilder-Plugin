@@ -60,7 +60,8 @@ public final class ClientMapSurfaceCache {
 
         flushAsync();
         this.scope = normalized;
-        this.scopeFile = normalized.isBlank() || storageRoot == null
+        boolean identifiedManagedWorld = !normalized.startsWith("unmanaged|");
+        this.scopeFile = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
                 ? null
                 : storageRoot.resolve(safeName(normalized) + ".surface.gz");
         samples.clear();
