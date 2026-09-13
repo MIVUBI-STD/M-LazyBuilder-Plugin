@@ -1,66 +1,66 @@
 ---
 name: lazybuilder-development-brief
-description: Use only for genuinely complex or ambiguous LazyBuilder development where architecture, cross-owner ambiguity, or unresolved success criteria prevents a reliable Standard contract. Do not use for clear bounded maintenance, audits, or normal specialist work.
+description: Temporary owner for genuinely complex/ambiguous LazyBuilder work when architecture, cross-owner ambiguity, or unresolved success criteria prevents selecting one primary specialist. Exit as soon as ownership is resolved. Do not use for audits, bounded maintenance, or clear specialist work.
 ---
 
 # LazyBuilder Development Brief
 
-Use only when root `AGENTS.md` cannot form a reliable Standard contract. This Skill resolves ambiguity; it does not become a permanent super-owner.
+Use only to resolve ambiguity, then hand off. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
 
-## Entry Boundary
+## Enter Only When
 
-Enter for:
+- two or more semantic owners plausibly claim the same decision;
+- architecture/ownership itself is the requested change;
+- success/acceptance criteria are materially unresolved;
+- a material unknown can change the owner or implementation boundary.
 
-- architecture/redesign with unresolved ownership;
-- material cross-owner ambiguity;
-- unclear success/acceptance criteria;
-- a material unknown that can change the owner or implementation boundary.
-
-Do **not** load for bounded maintenance, ordinary audits, clear efficiency cleanup, or work already owned by one specialist.
+Do **not** enter merely because work spans many files, languages, or modules.
 
 ## Canonical Context
 
 1. root `AGENTS.md`
-2. `docs/04-system/skill-routing.md`
-3. only the domain docs/source needed to resolve the ambiguity
-4. `docs/05-operations/` only when unfinished prior state is material
+2. `docs/04-system/development-discipline.md`
+3. `docs/04-system/skill-routing.md`
+4. only evidence needed to resolve owner/acceptance
+5. ops/continuity context only when unfinished prior state can change the decision
 
-## Development Contract
+## Output Contract
 
-Make these decision-ready:
+Resolve only:
 
 ```text
 Goal
-Success Metric
-Forbidden Proxy / Non-Goal
-First Evidence Required
-Failure Classification / first wrong owner
-In Scope / Out of Scope
-Execution Partition
-Proof Required
-STOP Condition
+Success metric
+First wrong owner / primary semantic owner
+Material unknowns that still block execution
+In scope / out of scope
+Execution partition / handoff order
+Proof required
+STOP condition
 ```
 
-`UNKNOWN` is valid when paired with the evidence needed to resolve it.
+`UNKNOWN` is valid only with the exact evidence needed to resolve it.
 
 ## Procedure
 
-1. Recover only material context; separate fact, proposal, history, and unknown.
-2. Identify the first wrong owner or prove ownership is genuinely ambiguous.
-3. Choose the smallest specialist set; normally exactly one specialist after ambiguity is resolved.
-4. Prefer deletion/consolidation over parallel systems.
-5. Partition GitHub-verifiable work from local/live residue.
-6. Hand control back to the exact specialist and STOP.
+```text
+separate fact / proposal / history / unknown
+→ apply minimum-flow discipline
+→ identify the first wrong owner
+→ choose exactly one primary specialist for the next decision
+→ name sequential handoffs only if truly cross-owner
+→ exit Development Brief
+```
 
 ## Owner Selection
 
 ```text
-desktop workspace/server/runtime → lazybuilder-desktop-runtime
-desktop Svelte/Tauri UX         → lazybuilder-desktop-ui
-third-party plugin lifecycle     → lazybuilder-plugin-management
-world/Paper lifecycle            → lazybuilder-world-management
-Fabric/Xaero client UI           → lazybuilder-client-ui
-shared Paper/Fabric wire         → lazybuilder-protocol
+desktop workspace/server/runtime → desktop-runtime
+desktop Svelte/Tauri UX         → desktop-ui
+third-party plugin lifecycle     → plugin-management
+world/Paper lifecycle            → world-management
+Fabric/Xaero client UI           → client-ui
+shared Paper/Fabric wire         → protocol
 ```
 
-Do not create a new specialist merely because a task is large or implemented in another language.
+Development Brief is never a permanent super-owner, implementation layer, or review ceremony. Once ownership is clear, hand control back and STOP.
