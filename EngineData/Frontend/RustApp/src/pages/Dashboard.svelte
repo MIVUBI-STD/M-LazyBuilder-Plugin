@@ -60,6 +60,9 @@
   });
 
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
+  const launcherState = () => ['Starting', 'Online', 'Stopping'].includes(snapshot.state)
+    ? 'Active'
+    : preflight.ready ? 'Ready' : 'Needs Attention';
 </script>
 
 <h1>Dashboard</h1>
@@ -70,7 +73,7 @@
   <div class="card"><div class="label">Health</div><div class="value">{snapshot.health}</div></div>
   <div class="card"><div class="label">CPU Load</div><div class="value">{snapshot.cpuLoadPercent.toFixed(1)}%</div></div>
   <div class="card"><div class="label">RAM Usage</div><div class="value">{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
-  <div class="card"><div class="label">Launcher</div><div class="value">{preflight.ready ? 'Ready' : 'Needs Attention'}</div></div>
+  <div class="card"><div class="label">Launcher</div><div class="value">{launcherState()}</div></div>
   <div class="card"><div class="label">PID</div><div class="value">{snapshot.pid ?? '—'}</div></div>
 </div>
 
