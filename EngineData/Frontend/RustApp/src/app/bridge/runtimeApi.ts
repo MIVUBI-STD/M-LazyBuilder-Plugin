@@ -6,6 +6,20 @@ export type ServerSnapshot = {
   cpuLoadPercent: number;
   usedMemoryBytes: number;
   maxMemoryBytes: number;
+  pid?: number | null;
+  logPath: string;
+};
+
+export type ServerPreflight = {
+  ready: boolean;
+  workspace: string;
+  serverDirectory: string;
+  paperJar: string;
+  worldsDirectory: string;
+  javaPath: string;
+  javaVersion: string;
+  logDirectory: string;
+  issues: string[];
 };
 
 export type PluginSummary = {
@@ -100,6 +114,7 @@ export type WorldTaskSnapshot = {
 };
 
 export const runtimeApi = {
+  getServerPreflight: () => invoke<ServerPreflight>('server_preflight'),
   getServerSnapshot: () => invoke<ServerSnapshot>('server_snapshot'),
   startServer: () => invoke<void>('server_start'),
   stopServer: () => invoke<void>('server_stop'),
