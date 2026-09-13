@@ -7,6 +7,7 @@ pub fn run() {
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::server_manager::server_preflight,
             commands::server_manager::server_snapshot,
             commands::server_manager::server_start,
             commands::server_manager::server_stop,
