@@ -10,8 +10,6 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -71,9 +69,7 @@ public final class WorldCloneService {
         WorldOperationCoordinator.Lease lease = operations.acquire(sourceId, WorldOperationType.CLONE);
         boolean wasLoaded = runtimeStates.get(sourceId) == WorldRuntimeState.LOADED;
         try {
-            // V1 prioritizes a consistent filesystem snapshot: quiesce the source
-            // before the worker copies it, then restore its previous load state in finish().
-            runtimeService.unload(sourceId);
+            runtimeService.unloadDuringOperation(sourceId);
             return new CloneTask(UUID.randomUUID(), source, destination, wasLoaded, lease);
         } catch (RuntimeException exception) {
             lease.close();
@@ -137,7 +133,7 @@ public final class WorldCloneService {
         RuntimeException failure = null;
         if (task.wasLoaded) {
             try {
-                runtimeService.load(task.source.id());
+                runtimeService.loadDuringOperation(task.source.id());
             } catch (RuntimeException exception) {
                 failure = exception;
             }
@@ -171,17 +167,9 @@ public final class WorldCloneService {
             this.lease = lease;
         }
 
-        public WorldRecord source() {
-            return source;
-        }
-
-        public WorldRecord destination() {
-            return destination;
-        }
-
-        public boolean committed() {
-            return committed;
-        }
+        public WorldRecord source() { return source; }
+        public WorldRecord destination() { return destination; }
+        public boolean committed() { return committed; }
 
         private void requireOpen() {
             if (closed) {
