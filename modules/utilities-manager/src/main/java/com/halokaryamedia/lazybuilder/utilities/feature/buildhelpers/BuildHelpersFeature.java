@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utilities.feature.buildhelpers;
 import com.halokaryamedia.lazybuilder.utilities.feature.UtilityFeature;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.Openable;
@@ -92,9 +93,19 @@ public final class BuildHelpersFeature implements UtilityFeature, Listener {
         if (block == null || !isGlazedTerracotta(block.getType())) return;
         if (!(block.getBlockData() instanceof Directional directional)) return;
 
-        directional.setFacing(directional.getFacing().getClockWise());
+        directional.setFacing(clockwise(directional.getFacing()));
         block.setBlockData(directional, true);
         event.setUseInteractedBlock(Event.Result.DENY);
+    }
+
+    private static BlockFace clockwise(BlockFace face) {
+        return switch (face) {
+            case NORTH -> BlockFace.EAST;
+            case EAST -> BlockFace.SOUTH;
+            case SOUTH -> BlockFace.WEST;
+            case WEST -> BlockFace.NORTH;
+            default -> face;
+        };
     }
 
     private static boolean isGlazedTerracotta(Material material) {
