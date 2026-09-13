@@ -227,15 +227,49 @@ fn join_lines(lines: Vec<String>, trailing_newline: bool) -> String {
 fn write_with_backup(path: &Path, content: &str) -> Result<(), String> {
     let backup = backup_path(path);
     let temporary = path.with_extension("yml.lazybuilder.tmp");
+    let previous_active = path.with_extension("yml.lazybuilder.swap");
+    let staged_backup = path.with_extension("yml.lazybuilder.backup.tmp");
+
     fs::write(&temporary, content).map_err(|error| error.to_string())?;
-    let _ = fs::remove_file(&backup);
-    fs::copy(path, &backup)
-        .map_err(|error| format!("Failed to back up {}: {error}", path.display()))?;
+    let _ = fs::remove_file(&staged_backup);
+    fs::copy(path, &staged_backup)
+        .map_err(|error| format!("Failed to stage backup for {}: {error}", path.display()))?;
+
+    replace_snapshot(&staged_backup, &backup)
+        .map_err(|error| format!("Failed to publish backup for {}: {error}", path.display()))?;
+
+    let _ = fs::remove_file(&previous_active);
+    fs::rename(path, &previous_active)
+        .map_err(|error| format!("Failed to stage active Paper config for replacement: {error}"))?;
     match fs::rename(&temporary, path) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            let _ = fs::remove_file(previous_active);
+            Ok(())
+        }
         Err(error) => {
+            let _ = fs::rename(&previous_active, path);
             let _ = fs::remove_file(&temporary);
             Err(format!("Failed to update {}: {error}", path.display()))
+        }
+    }
+}
+
+fn replace_snapshot(source: &Path, destination: &Path) -> Result<(), String> {
+    if !destination.exists() {
+        return fs::rename(source, destination).map_err(|error| error.to_string());
+    }
+
+    let previous = PathBuf::from(format!("{}.swap", destination.display()));
+    let _ = fs::remove_file(&previous);
+    fs::rename(destination, &previous).map_err(|error| error.to_string())?;
+    match fs::rename(source, destination) {
+        Ok(()) => {
+            let _ = fs::remove_file(previous);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::rename(&previous, destination);
+            Err(error.to_string())
         }
     }
 }
