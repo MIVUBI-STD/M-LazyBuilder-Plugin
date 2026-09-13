@@ -3,6 +3,12 @@ world-manager:
   # Set this to a loaded world name to choose an explicit fallback destination.
   fallback-world: ''
 
+  idle-unload:
+    # Managed worlds are loaded automatically when a builder teleports to them.
+    # Empty worlds are unloaded automatically after this idle window.
+    enabled: true
+    minutes: 10
+
   build-performance:
     # Dedicated build worlds do not need normal Minecraft mob brains running continuously.
     # Set to false for servers that regularly test gameplay AI inside managed worlds.
