@@ -15,14 +15,15 @@ public final class ImportWorldScreen extends Screen {
     private final ClientTransferController transfers;
     private TextFieldWidget displayName;
     private String validation;
-    private String status;
     private boolean choosing;
+    private long observedTransferRevision;
 
     public ImportWorldScreen(Screen parent, ClientWorldController worlds, ClientTransferController transfers) {
         super(Text.literal("Import World"));
         this.parent = parent;
         this.worlds = worlds;
         this.transfers = transfers;
+        this.observedTransferRevision = transfers.revision();
     }
 
     @Override
@@ -34,23 +35,23 @@ public final class ImportWorldScreen extends Screen {
         displayName = new TextFieldWidget(textRenderer, left, 96, fieldWidth, 22, Text.literal("World Name"));
         displayName.setPlaceholder(Text.literal("Optional — uses the file name by default"));
         displayName.setMaxLength(96);
+        displayName.active = !choosing;
         addDrawableChild(displayName);
 
-        ButtonWidget choose = ButtonWidget.builder(Text.literal("Choose World File"), button -> choose())
+        ButtonWidget choose = ButtonWidget.builder(Text.literal(choosing ? "Import in progress…" : "Choose World File"), button -> choose())
                 .dimensions(center - 120, 140, 240, 24).build();
         choose.active = !choosing;
         addDrawableChild(choose);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> close())
+        addDrawableChild(ButtonWidget.builder(Text.literal(choosing ? "Back" : "Cancel"), button -> close())
                 .dimensions(center - 50, 178, 100, 20).build());
-        setInitialFocus(displayName);
+        if (!choosing) setInitialFocus(displayName);
     }
 
     private void choose() {
         if (choosing) return;
         String requestedDisplay = displayName == null ? "" : displayName.getText().strip();
         validation = null;
-        status = "Choose a .zip or .mcworld file in the system dialog.";
         choosing = true;
         clearAndInit();
 
@@ -61,12 +62,25 @@ public final class ImportWorldScreen extends Screen {
                 String finalDisplay = requestedDisplay.isBlank() ? baseName : requestedDisplay;
                 worlds.importWorld(artifactName, folder, finalDisplay);
                 if (client != null) client.setScreen(parent);
+            }, () -> {
+                choosing = false;
+                if (client != null && client.currentScreen == this) clearAndInit();
             });
-            status = "Preparing and uploading the selected world…";
         } catch (RuntimeException exception) {
             choosing = false;
-            status = null;
             validation = exception.getMessage();
+            clearAndInit();
+        }
+    }
+
+    @Override
+    public void tick() {
+        if (observedTransferRevision == transfers.revision()) return;
+        observedTransferRevision = transfers.revision();
+        ClientTransferController.TransferStatus transfer = transfers.status();
+        if (choosing && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
+            choosing = false;
+            validation = transfer.message();
             clearAndInit();
         }
     }
@@ -96,16 +110,28 @@ public final class ImportWorldScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 22, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Select the world first. LazyBuilder handles the server destination automatically."),
+                Text.literal("Choose the world file. LazyBuilder handles the server destination automatically."),
                 width / 2, 48, 0xB8C0CC);
         context.drawTextWithShadow(textRenderer, Text.literal("World Name"), displayName.getX(), 82, 0xAEB7C4);
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.literal("Supported: .zip and .mcworld"), width / 2, 168, 0x8F9AA8);
-        if (status != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, 214, 0xD8DEE9);
+
+        ClientTransferController.TransferStatus transfer = transfers.status();
+        if (choosing && transfer.phase() != ClientTransferController.TransferPhase.IDLE) {
+            String label = transfer.message();
+            int percent = transfer.percent();
+            if (percent >= 0) label += "  " + percent + "%";
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), width / 2, 214, 0xD8DEE9);
+            if (percent >= 0) {
+                int barWidth = Math.min(300, width - 80);
+                int left = width / 2 - barWidth / 2;
+                int filled = (int) Math.round(barWidth * (percent / 100.0));
+                context.fill(left, 230, left + barWidth, 236, 0xFF303740);
+                context.fill(left, 230, left + filled, 236, 0xFFD8DEE9);
+            }
         }
         if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 234, 0xFF7777);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 252, 0xFF7777);
         }
     }
 
