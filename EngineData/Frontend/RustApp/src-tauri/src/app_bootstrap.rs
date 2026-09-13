@@ -1,11 +1,10 @@
 use crate::commands;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{backup_maintenance, process_identity, workspace_registry};
+use crate::engine::{backup_maintenance, workspace_registry};
 
 pub fn run() {
     let _ = workspace_registry::initialize();
-    let _ = process_identity::sanitize_before_start();
     let _ = backup_maintenance::maintain_plugin_backups();
 
     tauri::Builder::default()
@@ -31,8 +30,8 @@ pub fn run() {
             commands::server_manager::server_start,
             commands::server_manager::server_stop,
             commands::server_manager::server_restart,
+            commands::server_manager::server_recover_detached,
             commands::server_tools::server_log_tail,
-            commands::server_tools::server_recover_detached,
             commands::resource_settings::server_resource_profile,
             commands::resource_settings::server_resource_save,
             commands::resource_settings::server_resource_preset,
