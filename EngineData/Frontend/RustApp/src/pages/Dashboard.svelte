@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerPreflight, ServerSnapshot } from '../app/bridge/runtimeApi';
+  import type { ServerLogTail, ServerPreflight, ServerSnapshot } from '../app/bridge/runtimeApi';
 
   let snapshot: ServerSnapshot = {
     state: 'Offline',
@@ -23,8 +23,35 @@
     logDirectory: '',
     issues: []
   };
+  let logTail: ServerLogTail = { path: '', content: '', truncated: false };
+  let showLog = false;
   let error = '';
+  let notice = '';
   let busy = false;
+
+  function category(message: string) {
+    const value = message.toLowerCase();
+    if (value.includes('java')) return 'Java';
+    if (value.includes('paper') || value.includes('jar')) return 'Paper';
+    if (value.includes('workspace') || value.includes('directory') || value.includes('path')) return 'Workspace';
+    if (value.includes('pid') || value.includes('process') || value.includes('detached')) return 'Process';
+    if (value.includes('port') || value.includes('address') || value.includes('bind')) return 'Port';
+    if (value.includes('permission') || value.includes('denied') || value.includes('filesystem')) return 'Filesystem';
+    return 'Runtime';
+  }
+
+  const launcherState = () => ['Starting', 'Online', 'Stopping'].includes(snapshot.state)
+    ? 'Active'
+    : snapshot.state === 'Detached' ? 'Recovery Required'
+    : preflight.ready ? 'Ready' : 'Needs Attention';
+
+  async function refreshLog() {
+    if (!showLog || !snapshot.logPath) {
+      logTail = { path: snapshot.logPath, content: '', truncated: false };
+      return;
+    }
+    logTail = await runtimeProduct.server.logTail(snapshot.logPath);
+  }
 
   async function refresh() {
     try {
@@ -32,6 +59,7 @@
         runtimeProduct.server.snapshot(),
         runtimeProduct.server.preflight()
       ]);
+      await refreshLog();
       error = '';
     } catch (e) {
       error = String(e);
@@ -41,6 +69,7 @@
   async function action(run: () => Promise<void>) {
     if (busy) return;
     busy = true;
+    notice = '';
     try {
       await run();
       await refresh();
@@ -53,6 +82,30 @@
     }
   }
 
+  async function recoverDetached() {
+    if (busy || snapshot.state !== 'Detached') return;
+    busy = true;
+    error = '';
+    notice = '';
+    try {
+      const result = await runtimeProduct.server.recoverDetached();
+      notice = result.message;
+      await refresh();
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function toggleLog() {
+    showLog = !showLog;
+    if (showLog) {
+      try { await refreshLog(); }
+      catch (e) { error = String(e); }
+    }
+  }
+
   onMount(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 2000);
@@ -60,13 +113,10 @@
   });
 
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
-  const launcherState = () => ['Starting', 'Online', 'Stopping'].includes(snapshot.state)
-    ? 'Active'
-    : preflight.ready ? 'Ready' : 'Needs Attention';
 </script>
 
 <h1>Dashboard</h1>
-<p class="subtle">Server launcher, runtime health, and local readiness</p>
+<p class="subtle">Server launcher, runtime health, recovery, and local readiness</p>
 
 <div class="cards">
   <div class="card"><div class="label">Server</div><div class="value">{snapshot.state}</div></div>
@@ -77,16 +127,40 @@
   <div class="card"><div class="label">PID</div><div class="value">{snapshot.pid ?? '—'}</div></div>
 </div>
 
-{#if error}<p style="color: var(--danger)">{error}</p>{/if}
+{#if error}
+  <div class="card" style="margin-top: 16px">
+    <div class="label">{category(error)} Error</div>
+    <p style="color: var(--danger)">{error}</p>
+  </div>
+{/if}
+
+{#if notice}
+  <div class="card" style="margin-top: 16px">
+    <div class="label">Controller</div>
+    <p>{notice}</p>
+  </div>
+{/if}
 
 {#if preflight.issues.length > 0 && ['Offline', 'Crashed', 'Detached'].includes(snapshot.state)}
-  <div class="card">
+  <div class="card" style="margin-top: 16px">
     <div class="label">Preflight Issues</div>
     <ul>
       {#each preflight.issues as issue}
-        <li>{issue}</li>
+        <li><strong>{category(issue)}:</strong> {issue}</li>
       {/each}
     </ul>
+  </div>
+{/if}
+
+{#if snapshot.state === 'Detached'}
+  <div class="card" style="margin-top: 16px">
+    <div class="label">Recovery Mode</div>
+    <p>
+      Paper is still running as PID {snapshot.pid ?? 'unknown'}, but this launcher no longer owns its console handle.
+      Starting another server is blocked to protect the world files.
+    </p>
+    <p class="subtle">Recovery verifies the saved process fingerprint before any termination request.</p>
+    <button disabled={busy} onclick={recoverDetached}>Force Stop Detached Paper</button>
   </div>
 {/if}
 
@@ -94,6 +168,7 @@
   <button disabled={busy || !preflight.ready || !['Offline', 'Crashed'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.start)}>Start Server</button>
   <button disabled={busy || !['Starting', 'Online'].includes(snapshot.state)} onclick={() => action(runtimeProduct.server.stop)}>Stop</button>
   <button disabled={busy || snapshot.state !== 'Online'} onclick={() => action(runtimeProduct.server.restart)}>Restart</button>
+  <button disabled={busy || !snapshot.logPath} onclick={toggleLog}>{showLog ? 'Hide Log' : 'View Log'}</button>
 </div>
 
 <div class="card" style="margin-top: 16px">
@@ -106,3 +181,11 @@
   <p class="subtle">{preflight.javaPath}</p>
   <p><strong>Logs:</strong> {snapshot.logPath || preflight.logDirectory || 'Unavailable'}</p>
 </div>
+
+{#if showLog}
+  <div class="card" style="margin-top: 16px">
+    <div class="label">Paper Log {logTail.truncated ? '(tail)' : ''}</div>
+    <p class="subtle">{logTail.path || 'No active session log.'}</p>
+    <pre style="max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word">{logTail.content || 'No log output yet.'}</pre>
+  </div>
+{/if}
