@@ -44,6 +44,9 @@ pub struct ResourceUpdateRequest {
 pub struct RuntimeResources {
     pub min_memory_mb: u64,
     pub max_memory_mb: u64,
+    // Compatibility-only seam for the existing command builder. Always None:
+    // LazyBuilder no longer applies a hard JVM processor-count limit.
+    pub cpu_threads: Option<u32>,
 }
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
@@ -115,6 +118,7 @@ pub fn runtime_resources() -> Result<RuntimeResources, String> {
     Ok(RuntimeResources {
         min_memory_mb,
         max_memory_mb,
+        cpu_threads: None,
     })
 }
 
