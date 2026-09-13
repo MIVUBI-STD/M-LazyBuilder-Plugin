@@ -1,5 +1,6 @@
 pub mod adoption;
 pub mod core_modules;
+pub mod cpu_governor;
 pub mod java_runtime;
 pub mod paper_performance;
 pub mod paper_provider;
