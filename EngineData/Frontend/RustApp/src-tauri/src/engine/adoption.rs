@@ -77,6 +77,10 @@ pub fn analyze(root: &Path) -> Result<AdoptionPlan, String> {
 pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEntry, String> {
     let plan = analyze(root)?;
     let root = PathBuf::from(&plan.root);
+    let created_layout = workspace_paths(&root)
+        .into_iter()
+        .filter(|path| !path.exists())
+        .collect::<Vec<_>>();
     let server = root.join("server");
     let worlds_root = root.join("world-system").join("worlds");
     let disabled_plugins = root.join("tools").join("lazybuilder").join("disabled-plugins");
@@ -116,6 +120,7 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
 
     if let Err(error) = migration {
         rollback(&mut moved);
+        cleanup_failed_adoption(&root, &created_layout);
         return Err(format!("Server adoption failed and moved entries were rolled back: {error}"));
     }
 
@@ -123,8 +128,39 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
         Ok(entry) => Ok(entry),
         Err(error) => {
             rollback(&mut moved);
+            cleanup_failed_adoption(&root, &created_layout);
             Err(format!("Server files were restored because LazyBuilder registration failed: {error}"))
         }
+    }
+}
+
+fn workspace_paths(root: &Path) -> Vec<PathBuf> {
+    vec![
+        root.join("server"),
+        root.join("server").join("plugins"),
+        root.join("world-system"),
+        root.join("world-system").join("worlds"),
+        root.join("world-system").join("imports"),
+        root.join("world-system").join("exports"),
+        root.join("world-system").join("backups"),
+        root.join("world-system").join("work"),
+        root.join("tools"),
+        root.join("tools").join("lazybuilder"),
+        root.join("tools").join("lazybuilder").join("config"),
+        root.join("tools").join("lazybuilder").join("cache"),
+        root.join("tools").join("lazybuilder").join("logs"),
+        root.join("tools").join("lazybuilder").join("disabled-plugins"),
+        root.join("tools").join("lazybuilder").join("plugin-backups"),
+    ]
+}
+
+fn cleanup_failed_adoption(root: &Path, created_layout: &[PathBuf]) {
+    let manifest = root.join("tools").join("lazybuilder").join("config").join("workspace.json");
+    let _ = fs::remove_file(manifest);
+    let mut directories = created_layout.to_vec();
+    directories.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
+    for directory in directories {
+        let _ = fs::remove_dir(directory);
     }
 }
 
