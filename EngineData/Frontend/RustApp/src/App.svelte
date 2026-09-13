@@ -5,17 +5,19 @@
   import Plugins from './pages/Plugins.svelte';
   import Settings from './pages/Settings.svelte';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
-  import type { WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
+  import type { AdoptionPlan, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Dashboard' | 'Worlds' | 'Plugins' | 'Settings';
   let page: Page = 'Dashboard';
   let workspaceState: WorkspaceState = { active: null, recent: [] };
   let provisioning: WorkspaceProvisioningStatus | null = null;
+  let adoptionPlan: AdoptionPlan | null = null;
   let loadingWorkspace = true;
   let workspaceError = '';
   let createName = '';
   let createParent = '';
   let creating = false;
+  let adopting = false;
   let provisioningServer = false;
   let acceptingEula = false;
 
@@ -27,6 +29,7 @@
     try {
       workspaceState = await runtimeProduct.workspace.state();
       provisioning = workspaceState.active ? await runtimeProduct.workspace.provisioningStatus() : null;
+      if (workspaceState.active) adoptionPlan = null;
     } catch (error) {
       workspaceError = String(error);
       provisioning = null;
@@ -68,6 +71,31 @@
       if (opened) await refreshWorkspaceState();
     } catch (error) {
       workspaceError = String(error);
+    }
+  }
+
+  async function analyzeAdoption() {
+    workspaceError = '';
+    try {
+      adoptionPlan = await runtimeProduct.workspace.pickAdoption();
+    } catch (error) {
+      workspaceError = String(error);
+      adoptionPlan = null;
+    }
+  }
+
+  async function adoptServer() {
+    if (!adoptionPlan) return;
+    adopting = true;
+    workspaceError = '';
+    try {
+      await runtimeProduct.workspace.adopt(adoptionPlan.root, adoptionPlan.name);
+      adoptionPlan = null;
+      await refreshWorkspaceState();
+    } catch (error) {
+      workspaceError = String(error);
+    } finally {
+      adopting = false;
     }
   }
 
@@ -129,7 +157,7 @@
       <div class="launcher-heading">
         <p class="eyebrow">LazyBuilder</p>
         <h1>Minecraft Server Workspace</h1>
-        <p>Create a new managed server or open an existing LazyBuilder workspace.</p>
+        <p>Create a new managed server, open a LazyBuilder workspace, or safely adopt an existing Paper server.</p>
       </div>
 
       {#if workspaceError}
@@ -155,9 +183,69 @@
         </button>
       </div>
 
-      <div class="open-row">
+      <div class="open-actions">
         <button class="secondary wide" onclick={openServer}>Open Existing LazyBuilder Server</button>
+        <button class="secondary wide" onclick={analyzeAdoption}>Adopt Existing Paper Server</button>
       </div>
+
+      {#if adoptionPlan}
+        <section class="adoption-panel">
+          <div class="adoption-heading">
+            <div>
+              <small>Adoption Review</small>
+              <h2>{adoptionPlan.name}</h2>
+              <p>{adoptionPlan.root}</p>
+            </div>
+            <button class="text-button" onclick={() => (adoptionPlan = null)}>Cancel</button>
+          </div>
+
+          <div class="adoption-grid">
+            <div>
+              <small>Paper JAR</small>
+              <strong>{adoptionPlan.paperJar}</strong>
+            </div>
+            <div>
+              <small>Detected worlds</small>
+              <strong>{adoptionPlan.worlds.length}</strong>
+            </div>
+            <div>
+              <small>Runtime entries to move</small>
+              <strong>{adoptionPlan.serverEntries.length}</strong>
+            </div>
+            <div>
+              <small>Root items preserved</small>
+              <strong>{adoptionPlan.preservedEntries.length}</strong>
+            </div>
+          </div>
+
+          {#if adoptionPlan.worlds.length > 0}
+            <div class="migration-list">
+              <small>Worlds → world-system/worlds/</small>
+              <p>{adoptionPlan.worlds.join(', ')}</p>
+            </div>
+          {/if}
+          <div class="migration-list">
+            <small>Paper runtime → server/</small>
+            <p>{adoptionPlan.serverEntries.join(', ')}</p>
+          </div>
+          {#if adoptionPlan.preservedEntries.length > 0}
+            <div class="migration-list preserved">
+              <small>Untouched in original root</small>
+              <p>{adoptionPlan.preservedEntries.join(', ')}</p>
+            </div>
+          {/if}
+
+          <div class="warning-list">
+            {#each adoptionPlan.warnings as warning}
+              <p>• {warning}</p>
+            {/each}
+          </div>
+
+          <button class="primary" disabled={adopting} onclick={adoptServer}>
+            {adopting ? 'Adopting Server…' : 'Adopt Server'}
+          </button>
+        </section>
+      {/if}
 
       {#if workspaceState.recent.length > 0}
         <div class="recent-panel">
@@ -214,7 +302,7 @@
 
           {#if !provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady}
             <div class="prepare-row">
-              <p>LazyBuilder will prepare a managed Java 21 runtime, the latest stable Paper 1.21.4 build, and matching LazyBuilder core modules.</p>
+              <p>LazyBuilder will prepare a managed Java 21 runtime, a stable Paper 1.21.4 build when one is not already pinned, and matching LazyBuilder core modules.</p>
               <button class="primary" disabled={provisioningServer} onclick={prepareServer}>
                 {provisioningServer ? 'Preparing Server…' : 'Prepare Server'}
               </button>
@@ -244,24 +332,14 @@
 {/if}
 
 <style>
-  .launcher {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 40px;
-    background: var(--app-bg, #101214);
-    color: var(--text, #f3f4f6);
-  }
+  .launcher { min-height: 100vh; display: grid; place-items: center; padding: 40px; background: var(--app-bg, #101214); color: var(--text, #f3f4f6); }
   .launcher.loading { font-size: 14px; opacity: 0.75; }
   .launcher-card { width: min(760px, 100%); display: grid; gap: 22px; }
   .launcher-heading h1 { margin: 4px 0 8px; font-size: 34px; }
   .launcher-heading p { margin: 0; color: #aeb4bd; }
   .eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 12px; }
-  .create-panel, .recent-panel, .provision-card {
-    display: grid; gap: 14px; padding: 22px; border: 1px solid #2d3238;
-    border-radius: 14px; background: #171a1e;
-  }
-  .create-panel h2, .recent-panel h2 { margin: 0; font-size: 18px; }
+  .create-panel, .recent-panel, .provision-card, .adoption-panel { display: grid; gap: 14px; padding: 22px; border: 1px solid #2d3238; border-radius: 14px; background: #171a1e; }
+  .create-panel h2, .recent-panel h2, .adoption-panel h2 { margin: 0; font-size: 18px; }
   label { display: grid; gap: 7px; font-size: 13px; color: #c6cbd2; }
   input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 8px; border: 1px solid #343a42; background: #101214; color: #f3f4f6; }
   .location-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
@@ -272,7 +350,7 @@
   .primary { border: 1px solid #f3f4f6; background: #f3f4f6; color: #111315; }
   .secondary { border: 1px solid #3a4048; background: #20242a; color: #f3f4f6; }
   .wide { width: 100%; }
-  .open-row { display: flex; }
+  .open-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .error-box { padding: 12px 14px; border-radius: 9px; background: #31191b; border: 1px solid #70343a; color: #ffd9dc; font-size: 13px; }
   .workspace-error { margin-bottom: 14px; }
   .recent-server { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; text-align: left; padding: 12px 0; border: 0; border-top: 1px solid #2b3036; background: transparent; color: inherit; }
@@ -284,10 +362,21 @@
   .switch-button { margin-top: 7px; padding: 7px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,.13); background: transparent; color: inherit; font-size: 12px; }
   .provision-card { margin-bottom: 18px; }
   .provision-card > div:first-child { display: grid; gap: 3px; }
-  .provision-card small { color: #8f97a2; }
+  .provision-card small, .adoption-panel small { color: #8f97a2; }
   .provision-steps { display: flex; gap: 8px; flex-wrap: wrap; }
   .provision-steps span { padding: 6px 9px; border-radius: 999px; background: #252a30; color: #8f97a2; font-size: 12px; }
   .provision-steps span.done { color: #f3f4f6; background: #343a42; }
   .prepare-row, .eula-row { display: grid; gap: 10px; border-top: 1px solid #2d3238; padding-top: 14px; }
   .prepare-row p, .eula-row p { margin: 0; color: #aeb4bd; font-size: 13px; line-height: 1.5; }
+  .adoption-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+  .adoption-heading > div { display: grid; gap: 4px; min-width: 0; }
+  .adoption-heading p { margin: 0; color: #8f97a2; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .text-button { border: 0; background: transparent; color: #aeb4bd; padding: 4px; }
+  .adoption-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .adoption-grid > div { display: grid; gap: 4px; padding: 10px; background: #101214; border-radius: 8px; }
+  .migration-list { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #2d3238; }
+  .migration-list p { margin: 0; color: #c6cbd2; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+  .migration-list.preserved p { color: #9fa7b0; }
+  .warning-list { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #2a2417; border: 1px solid #554924; }
+  .warning-list p { margin: 0; color: #eadcae; font-size: 12px; line-height: 1.45; }
 </style>
