@@ -8,7 +8,10 @@ export const runtimeProduct = {
     stop: runtimeApi.stopServer,
     restart: runtimeApi.restartServer,
     recoverDetached: runtimeApi.recoverDetachedServer,
-    logTail: runtimeApi.readServerLogTail
+    logTail: runtimeApi.readServerLogTail,
+    resources: runtimeApi.getServerResourceProfile,
+    saveResources: runtimeApi.saveServerResources,
+    applyResourcePreset: runtimeApi.applyServerResourcePreset
   },
   plugins: {
     list: runtimeApi.listPlugins,
