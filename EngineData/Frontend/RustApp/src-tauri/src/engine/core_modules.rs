@@ -17,11 +17,6 @@ pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), Str
     Ok(())
 }
 
-pub fn ready(workspace: &Path) -> bool {
-    let plugins = workspace.join("server").join("plugins");
-    plugins.join(WORLD_FILE_NAME).is_file() && plugins.join(UTILITIES_FILE_NAME).is_file()
-}
-
 fn resolve_source(resource_dir: Option<&Path>, file_name: &str, source_relative: &str) -> Result<PathBuf, String> {
     if let Some(resource_dir) = resource_dir {
         let bundled = resource_dir.join("resources").join("core").join(file_name);
