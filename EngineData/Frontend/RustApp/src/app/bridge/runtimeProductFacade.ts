@@ -4,7 +4,6 @@ export const runtimeProduct = {
   server: {
     preflight: runtimeApi.getServerPreflight,
     snapshot: runtimeApi.getServerSnapshot,
-    metrics: runtimeApi.getServerProcessMetrics,
     start: runtimeApi.startServer,
     stop: runtimeApi.stopServer,
     restart: runtimeApi.restartServer,
