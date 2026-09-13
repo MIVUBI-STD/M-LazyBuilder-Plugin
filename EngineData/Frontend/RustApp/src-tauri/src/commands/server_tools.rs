@@ -1,4 +1,4 @@
-use crate::engine::paths;
+use crate::engine::{paths, process_identity};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
@@ -91,6 +91,10 @@ pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
 
 #[tauri::command]
 pub fn server_recover_detached() -> Result<DetachedRecoveryResult, String> {
+    // Clear stale PID markers first using the persisted PID + process start-time
+    // identity. Recovery must never terminate a process based only on a reused PID.
+    process_identity::sanitize_before_start()?;
+
     let marker_path = paths::lazybuilder_cache_dir()?.join("server-process.json");
     if !marker_path.is_file() {
         return Err("No detached LazyBuilder Paper process marker exists.".into());
@@ -104,6 +108,7 @@ pub fn server_recover_detached() -> Result<DetachedRecoveryResult, String> {
     system.refresh_process(pid);
     let Some(process) = system.process(pid) else {
         fs::remove_file(&marker_path).map_err(|error| error.to_string())?;
+        clear_process_identity();
         return Ok(DetachedRecoveryResult {
             pid: marker.pid,
             stopped: true,
@@ -138,6 +143,7 @@ pub fn server_recover_detached() -> Result<DetachedRecoveryResult, String> {
         system.refresh_process(pid);
         if system.process(pid).is_none() {
             fs::remove_file(&marker_path).map_err(|error| error.to_string())?;
+            clear_process_identity();
             return Ok(DetachedRecoveryResult {
                 pid: marker.pid,
                 stopped: true,
@@ -147,6 +153,12 @@ pub fn server_recover_detached() -> Result<DetachedRecoveryResult, String> {
     }
 
     Err(format!("Detached Paper PID {} did not exit after the recovery termination request.", marker.pid))
+}
+
+fn clear_process_identity() {
+    if let Ok(path) = paths::lazybuilder_cache_dir() {
+        let _ = fs::remove_file(path.join("server-process-identity.json"));
+    }
 }
 
 fn latest_paper_log(logs_root: &Path) -> Result<Option<PathBuf>, String> {
