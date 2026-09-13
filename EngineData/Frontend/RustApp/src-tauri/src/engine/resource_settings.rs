@@ -41,6 +41,13 @@ pub struct ResourceUpdateRequest {
     pub preset: String,
 }
 
+#[derive(Clone, Copy)]
+pub struct RuntimeResources {
+    pub min_memory_mb: u64,
+    pub max_memory_mb: u64,
+    pub cpu_threads: u32,
+}
+
 pub fn profile() -> Result<ServerResourceProfile, String> {
     let hardware = Hardware::detect();
     let config = read_config()?;
@@ -101,13 +108,18 @@ pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
     })
 }
 
-pub fn active_processor_count() -> Result<u32, String> {
+pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb: u64) -> Result<RuntimeResources, String> {
     let hardware = Hardware::detect();
     let config = read_config()?;
-    Ok(config_u64(&config, "cpuThreads")
+    let max_memory_mb = configured_max_memory_mb.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    let min_memory_mb = configured_min_memory_mb
+        .max(MIN_SERVER_MEMORY_MB)
+        .min(max_memory_mb);
+    let cpu_threads = config_u64(&config, "cpuThreads")
         .map(|value| value as u32)
         .unwrap_or(hardware.logical_processors)
-        .clamp(1, hardware.logical_processors))
+        .clamp(1, hardware.logical_processors);
+    Ok(RuntimeResources { min_memory_mb, max_memory_mb, cpu_threads })
 }
 
 fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
@@ -133,7 +145,7 @@ fn preset_for(hardware: &Hardware, kind: PresetKind) -> ResourcePreset {
 fn resource_warning(hardware: &Hardware, max_memory_mb: u64, cpu_threads: u32) -> String {
     if max_memory_mb > hardware.safe_max_memory_mb {
         return format!(
-            "Configured RAM exceeds the safe limit for this PC. LazyBuilder will clamp new settings to {} MB so Windows keeps {} MB reserved.",
+            "Configured RAM exceeds the safe limit for this PC. LazyBuilder will clamp runtime RAM to {} MB so Windows keeps {} MB reserved.",
             hardware.safe_max_memory_mb, hardware.reserved_system_memory_mb
         );
     }
@@ -152,7 +164,7 @@ fn recommended_min_memory(max_memory_mb: u64) -> u64 {
 
 fn round_memory_step(value: u64) -> u64 {
     let step = if value >= 8192 { 512 } else { 256 };
-    (value / step) * step
+    ((value / step) * step).max(MIN_SERVER_MEMORY_MB)
 }
 
 fn normalize_preset(value: &str) -> String {
@@ -247,7 +259,9 @@ impl Hardware {
         } else {
             8192
         };
-        let reserved_system_memory_mb = reserved_by_ratio.max(minimum_reserve).min(total_memory_mb.saturating_sub(MIN_SERVER_MEMORY_MB));
+        let reserved_system_memory_mb = reserved_by_ratio
+            .max(minimum_reserve)
+            .min(total_memory_mb.saturating_sub(MIN_SERVER_MEMORY_MB));
         let safe_max_memory_mb = total_memory_mb
             .saturating_sub(reserved_system_memory_mb)
             .max(MIN_SERVER_MEMORY_MB);
