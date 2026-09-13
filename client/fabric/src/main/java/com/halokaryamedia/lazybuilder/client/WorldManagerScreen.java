@@ -9,9 +9,9 @@ import net.minecraft.text.Text;
 import java.util.List;
 import java.util.UUID;
 
-/** First-party World Manager browser over one canonical world-control protocol. */
+/** Secondary world-management surface reached from the map. */
 public final class WorldManagerScreen extends Screen {
-    private static final int PAGE_SIZE = 3;
+    private static final int PAGE_SIZE = 6;
 
     private final ClientWorldController controller;
     private final ClientTransferController transfers;
@@ -21,7 +21,7 @@ public final class WorldManagerScreen extends Screen {
     private long observedRevision;
 
     public WorldManagerScreen(ClientWorldController controller, ClientTransferController transfers, ClientMapController maps) {
-        super(Text.literal("LazyBuilder World Manager"));
+        super(Text.literal("Worlds"));
         this.controller = controller;
         this.transfers = transfers;
         this.maps = maps;
@@ -30,100 +30,103 @@ public final class WorldManagerScreen extends Screen {
 
     @Override
     protected void init() {
+        controller.refresh();
         observedRevision = controller.revision();
         List<WorldControlWireProtocol.WorldSummary> worlds = controller.worlds();
         int maxPage = worlds.isEmpty() ? 0 : (worlds.size() - 1) / PAGE_SIZE;
         page = Math.max(0, Math.min(page, maxPage));
 
-        boolean selectedStillExists = selectedWorld == null || worlds.stream()
-                .anyMatch(world -> world.worldId().equals(selectedWorld));
-        if (!selectedStillExists) selectedWorld = null;
+        if (selectedWorld != null && worlds.stream().noneMatch(world -> world.worldId().equals(selectedWorld))) {
+            selectedWorld = null;
+        }
+        if (selectedWorld == null && !worlds.isEmpty()) selectedWorld = worlds.get(0).worldId();
 
-        int listWidth = Math.min(420, Math.max(280, width - 50));
-        int left = (width - listWidth) / 2;
-        int y = 42;
+        Layout layout = layout();
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("+ Add World"), button -> {
+            if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers));
+        }).dimensions(layout.left, 34, 110, 20).build());
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("Refresh"), button -> controller.refresh())
+                .dimensions(layout.left + 116, 34, 72, 20).build());
+
         int start = page * PAGE_SIZE;
         int end = Math.min(start + PAGE_SIZE, worlds.size());
+        int y = 66;
         for (int i = start; i < end; i++) {
             WorldControlWireProtocol.WorldSummary world = worlds.get(i);
-            String prefix = world.worldId().equals(selectedWorld) ? "> " : "";
-            String label = prefix + world.displayName() + "  [" + world.lifecycle() + " / " + world.runtimeState() + "]";
+            String marker = world.worldId().equals(selectedWorld) ? "● " : "  ";
+            String label = marker + world.displayName();
             addDrawableChild(ButtonWidget.builder(Text.literal(label), button -> {
                 selectedWorld = world.worldId();
                 clearAndInit();
-            }).dimensions(left, y, listWidth, 20).build());
-            y += 24;
+            }).dimensions(layout.left, y, layout.listWidth, 24).build());
+            y += 28;
         }
 
-        int controlsY = 42 + PAGE_SIZE * 24 + 8;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Create"), button -> {
-            if (client != null) client.setScreen(new CreateWorldScreen(this, controller));
-        }).dimensions(left, controlsY, 68, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Import"), button -> {
-            if (client != null) client.setScreen(new ImportWorldScreen(this, controller, transfers));
-        }).dimensions(left + 74, controlsY, 68, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Refresh"), button -> controller.refresh())
-                .dimensions(left + 148, controlsY, 68, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Map Preview"), button -> {
-            if (client != null) client.setScreen(new MapPreviewScreen(maps));
-        }).dimensions(left + 222, controlsY, 92, 20).build());
-
         if (maxPage > 0) {
-            addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> {
+            addDrawableChild(ButtonWidget.builder(Text.literal("‹"), button -> {
                 page = Math.max(0, page - 1);
                 clearAndInit();
-            }).dimensions(left + 222, controlsY, 24, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
+            }).dimensions(layout.left, layout.bottom - 54, 30, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("›"), button -> {
                 page = Math.min(maxPage, page + 1);
                 clearAndInit();
-            }).dimensions(left + 250, controlsY, 24, 20).build());
+            }).dimensions(layout.left + 36, layout.bottom - 54, 30, 20).build());
         }
 
         WorldControlWireProtocol.WorldSummary selected = selected();
-        if (selected != null) {
-            int actionY = controlsY + 28;
-            int actionWidth = 86;
-            int gap = 6;
-            int total = actionWidth * 3 + gap * 2;
-            int actionX = (width - total) / 2;
-            if ("ACTIVE".equals(selected.lifecycle())) {
-                addDrawableChild(ButtonWidget.builder(Text.literal("Teleport"), button -> controller.teleport(selected.worldId()))
-                        .dimensions(actionX, actionY, actionWidth, 20).build());
-                String loadLabel = "LOADED".equals(selected.runtimeState()) ? "Unload" : "Load";
-                addDrawableChild(ButtonWidget.builder(Text.literal(loadLabel), button -> {
-                    if ("LOADED".equals(selected.runtimeState())) controller.unload(selected.worldId());
-                    else controller.load(selected.worldId());
-                }).dimensions(actionX + actionWidth + gap, actionY, actionWidth, 20).build());
-                addDrawableChild(ButtonWidget.builder(Text.literal("Archive"), button -> confirmArchive(selected))
-                        .dimensions(actionX + (actionWidth + gap) * 2, actionY, actionWidth, 20).build());
+        if (selected != null) addWorldActions(layout, selected);
 
-                int secondY = actionY + 24;
-                addDrawableChild(ButtonWidget.builder(Text.literal("Clone"), button -> {
-                    if (client != null) client.setScreen(new CloneWorldScreen(this, controller, selected));
-                }).dimensions(actionX, secondY, actionWidth, 20).build());
-                addDrawableChild(ButtonWidget.builder(Text.literal("Settings"), button -> {
-                    controller.requestSettings(selected.worldId());
-                    if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, selected));
-                }).dimensions(actionX + actionWidth + gap, secondY, actionWidth, 20).build());
-                addDrawableChild(ButtonWidget.builder(Text.literal("Export"), button -> {
-                    if (client != null) client.setScreen(new ExportWorldScreen(this, controller, selected));
-                }).dimensions(actionX + (actionWidth + gap) * 2, secondY, actionWidth, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Back to Map"), button -> {
+            if (client != null) client.setScreen(new WorldMapScreen(controller, transfers, maps));
+        }).dimensions(layout.right - 104, height - 26, 94, 18).build());
+    }
 
-                int thirdY = secondY + 24;
-                addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
-                    if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
-                }).dimensions(actionX + actionWidth + gap, thirdY, actionWidth, 20).build());
-            } else if ("ARCHIVED".equals(selected.lifecycle())) {
-                addDrawableChild(ButtonWidget.builder(Text.literal("Restore"), button -> controller.restore(selected.worldId()))
-                        .dimensions(actionX, actionY, actionWidth, 20).build());
-                addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
-                    if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, selected));
-                }).dimensions(actionX + (actionWidth + gap) * 2, actionY, actionWidth, 20).build());
-            }
+    private void addWorldActions(Layout layout, WorldControlWireProtocol.WorldSummary world) {
+        int x = layout.detailLeft + 18;
+        int contentWidth = Math.max(180, layout.detailWidth - 36);
+        int half = (contentWidth - 6) / 2;
+        int y = 112;
+
+        if ("ACTIVE".equals(world.lifecycle())) {
+            addDrawableChild(ButtonWidget.builder(Text.literal("Teleport"), button -> controller.teleport(world.worldId()))
+                    .dimensions(x, y, half, 22).build());
+
+            String loadLabel = "LOADED".equals(world.runtimeState()) ? "Unload" : "Load";
+            addDrawableChild(ButtonWidget.builder(Text.literal(loadLabel), button -> {
+                if ("LOADED".equals(world.runtimeState())) controller.unload(world.worldId());
+                else controller.load(world.worldId());
+            }).dimensions(x + half + 6, y, half, 22).build());
+
+            y += 30;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Export World"), button -> {
+                if (client != null) client.setScreen(new ExportWorldScreen(this, controller, world));
+            }).dimensions(x, y, contentWidth, 22).build());
+
+            y += 36;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Settings"), button -> {
+                controller.requestSettings(world.worldId());
+                if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world));
+            }).dimensions(x, y, half, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Clone"), button -> {
+                if (client != null) client.setScreen(new CloneWorldScreen(this, controller, world));
+            }).dimensions(x + half + 6, y, half, 20).build());
+
+            y += 28;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Archive"), button -> confirmArchive(world))
+                    .dimensions(x, y, half, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), button -> {
+                if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world));
+            }).dimensions(x + half + 6, y, half, 20).build());
+        } else if ("ARCHIVED".equals(world.lifecycle())) {
+            addDrawableChild(ButtonWidget.builder(Text.literal("Restore"), button -> controller.restore(world.worldId()))
+                    .dimensions(x, y, contentWidth, 22).build());
+            y += 30;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Delete Permanently"), button -> {
+                if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world));
+            }).dimensions(x, y, contentWidth, 20).build());
         }
-
-        addDrawableChild(ButtonWidget.builder(Text.literal("Close"), button -> close())
-                .dimensions(left + listWidth - 72, height - 28, 72, 20).build());
     }
 
     private void confirmArchive(WorldControlWireProtocol.WorldSummary world) {
@@ -148,22 +151,54 @@ public final class WorldManagerScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderBackground(context, mouseX, mouseY, delta);
+        Layout layout = layout();
+        context.fill(layout.left - 8, 26, layout.detailLeft - 8, layout.bottom, 0xA914181E);
+        context.fill(layout.detailLeft, 26, layout.right, layout.bottom, 0xB91A1F26);
+
         super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 16, 0xFFFFFF);
+        context.drawTextWithShadow(textRenderer, title, layout.left, 12, 0xFFFFFF);
 
         if (controller.worlds().isEmpty()) {
             context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal("No managed worlds returned by the server."), width / 2, 70, 0xAAAAAA);
+                    Text.literal("No managed worlds yet."), layout.left + layout.listWidth / 2, 92, 0xAEB7C4);
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal("Use + Add World to create or import one."),
+                    layout.left + layout.listWidth / 2, 108, 0x8F9AA8);
         }
+
+        WorldControlWireProtocol.WorldSummary selected = selected();
+        if (selected != null) {
+            int tx = layout.detailLeft + 18;
+            context.drawTextWithShadow(textRenderer, Text.literal(selected.displayName()), tx, 48, 0xFFFFFF);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(selected.lifecycle() + "  •  " + selected.runtimeState()), tx, 66, 0xAEB7C4);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("Folder: " + selected.folderName()), tx, 82, 0x7F8996);
+        } else if (!controller.worlds().isEmpty()) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal("Select a world"), layout.detailLeft + layout.detailWidth / 2, 80, 0xAEB7C4);
+        }
+
         if (controller.lastError() != null) {
             context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal(controller.lastError()), width / 2, height - 52, 0xFF7777);
+                    Text.literal(controller.lastError()), width / 2, height - 46, 0xFF7777);
         }
+    }
+
+    private Layout layout() {
+        int totalWidth = Math.min(720, Math.max(500, width - 70));
+        int left = (width - totalWidth) / 2;
+        int right = left + totalWidth;
+        int listWidth = Math.min(250, Math.max(190, totalWidth / 3));
+        int detailLeft = left + listWidth + 16;
+        int detailWidth = right - detailLeft;
+        int bottom = height - 36;
+        return new Layout(left, right, listWidth, detailLeft, detailWidth, bottom);
     }
 
     @Override
     public void close() {
-        if (client != null) client.setScreen(null);
+        if (client != null) client.setScreen(new WorldMapScreen(controller, transfers, maps));
     }
 
     private WorldControlWireProtocol.WorldSummary selected() {
@@ -173,4 +208,6 @@ public final class WorldManagerScreen extends Screen {
                 .findFirst()
                 .orElse(null);
     }
+
+    private record Layout(int left, int right, int listWidth, int detailLeft, int detailWidth, int bottom) {}
 }
