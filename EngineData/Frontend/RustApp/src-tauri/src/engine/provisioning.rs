@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 #[serde(rename_all = "camelCase")]
 pub struct ProvisionResult {
     pub java_path: String,
-    pub paper_build: u64,
+    pub paper_build: Option<u64>,
     pub core_version: String,
     pub status: workspace_registry::ProvisioningStatus,
 }
@@ -31,17 +31,23 @@ pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, 
     })
 }
 
-fn resolve_or_provision_paper(workspace: &Path) -> Result<u64, String> {
+fn resolve_or_provision_paper(workspace: &Path) -> Result<Option<u64>, String> {
     let paper = workspace.join("server").join("paper.jar");
     let manifest = workspace.join("tools").join("lazybuilder").join("config").join("workspace.json");
-    if paper.is_file() && manifest.is_file() {
-        let text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
-        let value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        if let Some(build) = value.get("paperBuild").and_then(Value::as_u64) {
-            return Ok(build);
+
+    // Existing Paper is preserved exactly as-is. This is especially important for
+    // adopted servers where the build number may be unknown. Updating Paper is an
+    // explicit runtime-update action, never a side effect of Prepare Server.
+    if paper.is_file() {
+        if manifest.is_file() {
+            let text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
+            let value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            return Ok(value.get("paperBuild").and_then(Value::as_u64));
         }
+        return Ok(None);
     }
-    paper_provider::ensure_for_workspace(workspace)
+
+    paper_provider::ensure_for_workspace(workspace).map(Some)
 }
 
 fn ensure_server_properties(workspace: &Path) -> Result<(), String> {
@@ -76,11 +82,13 @@ fn ensure_server_manager_config(workspace: &Path, java: &Path) -> Result<(), Str
     write_json_atomic(&path, &value)
 }
 
-fn update_workspace_manifest(workspace: &Path, paper_build: u64, core_version: &str) -> Result<(), String> {
+fn update_workspace_manifest(workspace: &Path, paper_build: Option<u64>, core_version: &str) -> Result<(), String> {
     let path = workspace.join("tools").join("lazybuilder").join("config").join("workspace.json");
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    value["paperBuild"] = Value::from(paper_build);
+    if let Some(build) = paper_build {
+        value["paperBuild"] = Value::from(build);
+    }
     value["worldManagerVersion"] = Value::String(core_version.into());
     value["utilitiesManagerVersion"] = Value::String(core_version.into());
     write_json_atomic(&path, &value)
@@ -100,5 +108,36 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
         }
     } else {
         fs::rename(temporary, path).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("lazybuilder-{label}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn existing_paper_with_unknown_build_is_preserved_without_network_update() {
+        let workspace = test_root("preserve-adopted-paper");
+        let server = workspace.join("server");
+        let config = workspace.join("tools").join("lazybuilder").join("config");
+        fs::create_dir_all(&server).unwrap();
+        fs::create_dir_all(&config).unwrap();
+        fs::write(server.join("paper.jar"), b"adopted-paper").unwrap();
+        fs::write(
+            config.join("workspace.json"),
+            r#"{"paperBuild":null,"worldManagerVersion":null,"utilitiesManagerVersion":null}"#,
+        ).unwrap();
+
+        let build = resolve_or_provision_paper(&workspace).unwrap();
+        assert_eq!(build, None);
+        assert_eq!(fs::read(server.join("paper.jar")).unwrap(), b"adopted-paper");
+
+        let _ = fs::remove_dir_all(workspace);
     }
 }
