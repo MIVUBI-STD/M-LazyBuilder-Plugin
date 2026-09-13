@@ -6,7 +6,50 @@ pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
 const WORLD_FILE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
 const UTILITIES_FILE_NAME: &str = "Utilities-Manager-0.1.0-SNAPSHOT.jar";
 
-pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), String> {
+pub struct CoreSyncTransaction {
+    modules: Vec<ModuleInstall>,
+    committed: Vec<usize>,
+    finalized: bool,
+}
+
+impl CoreSyncTransaction {
+    pub fn finalize(mut self) {
+        self.finalized = true;
+        cleanup_staged(&self.modules);
+    }
+
+    pub fn rollback(mut self) -> Result<(), String> {
+        let result = self.rollback_inner();
+        self.finalized = true;
+        cleanup_staged(&self.modules);
+        result
+    }
+
+    fn rollback_inner(&mut self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for index in self.committed.drain(..).rev() {
+            if let Err(error) = self.modules[index].rollback() {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
+impl Drop for CoreSyncTransaction {
+    fn drop(&mut self) {
+        if !self.finalized {
+            let _ = self.rollback_inner();
+            cleanup_staged(&self.modules);
+        }
+    }
+}
+
+pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<CoreSyncTransaction, String> {
     let world_source = resolve_source(
         app_resource_dir,
         WORLD_FILE_NAME,
@@ -39,17 +82,9 @@ pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), Str
         )?,
     ];
 
-    if modules.iter().all(|module| !module.needs_update) {
-        return Ok(());
-    }
-
-    // Stage every changed artifact before touching any active plugin JAR. This
-    // guarantees a missing/unreadable second source cannot leave a half update.
     for module in modules.iter_mut().filter(|module| module.needs_update) {
         module.stage()?;
     }
-
-    // Snapshot every active target before the first destructive mutation.
     for module in modules.iter_mut().filter(|module| module.needs_update) {
         module.backup_current()?;
     }
@@ -81,7 +116,16 @@ pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), Str
         committed.push(index);
     }
 
-    cleanup_staged(&modules);
+    Ok(CoreSyncTransaction {
+        modules,
+        committed,
+        finalized: false,
+    })
+}
+
+pub fn sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<(), String> {
+    let transaction = begin_sync(workspace, app_resource_dir)?;
+    transaction.finalize();
     Ok(())
 }
 
@@ -92,7 +136,6 @@ struct ModuleInstall {
     staged: PathBuf,
     needs_update: bool,
     had_target: bool,
-    committed: bool,
 }
 
 impl ModuleInstall {
@@ -116,7 +159,6 @@ impl ModuleInstall {
             staged,
             needs_update,
             had_target: false,
-            committed: false,
         })
     }
 
@@ -125,10 +167,7 @@ impl ModuleInstall {
             fs::remove_file(&self.staged).map_err(|e| e.to_string())?;
         }
         fs::copy(&self.source, &self.staged).map_err(|e| {
-            format!(
-                "Could not stage core module {}: {e}",
-                self.source.display()
-            )
+            format!("Could not stage core module {}: {e}", self.source.display())
         })?;
         if !files_equal(&self.source, &self.staged)? {
             let _ = fs::remove_file(&self.staged);
@@ -149,10 +188,7 @@ impl ModuleInstall {
             fs::remove_file(&self.backup).map_err(|e| e.to_string())?;
         }
         fs::copy(&self.target, &self.backup).map_err(|e| {
-            format!(
-                "Could not back up core module {}: {e}",
-                self.target.display()
-            )
+            format!("Could not back up core module {}: {e}", self.target.display())
         })?;
         Ok(())
     }
@@ -160,22 +196,12 @@ impl ModuleInstall {
     fn commit(&mut self) -> Result<(), String> {
         if self.target.exists() {
             fs::remove_file(&self.target).map_err(|e| {
-                format!(
-                    "Could not replace active core module {}: {e}",
-                    self.target.display()
-                )
+                format!("Could not replace active core module {}: {e}", self.target.display())
             })?;
         }
-        match fs::rename(&self.staged, &self.target) {
-            Ok(()) => {
-                self.committed = true;
-                Ok(())
-            }
-            Err(error) => Err(format!(
-                "Could not publish core module {}: {error}",
-                self.target.display()
-            )),
-        }
+        fs::rename(&self.staged, &self.target).map_err(|error| {
+            format!("Could not publish core module {}: {error}", self.target.display())
+        })
     }
 
     fn rollback(&mut self) -> Result<(), String> {
@@ -190,13 +216,9 @@ impl ModuleInstall {
                 ));
             }
             fs::copy(&self.backup, &self.target).map_err(|e| {
-                format!(
-                    "Could not restore core module {}: {e}",
-                    self.target.display()
-                )
+                format!("Could not restore core module {}: {e}", self.target.display())
             })?;
         }
-        self.committed = false;
         Ok(())
     }
 }
@@ -263,14 +285,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_root(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "lazybuilder-{label}-{}-{nonce}",
-            std::process::id()
-        ))
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("lazybuilder-{label}-{}-{nonce}", std::process::id()))
     }
 
     fn resource_tree(root: &Path, world: &[u8], utilities: &[u8]) {
@@ -283,17 +299,11 @@ mod tests {
     #[test]
     fn resolves_bundled_core_module_from_tauri_resource_tree() {
         let root = test_root("core-resource");
-        let bundled = root
-            .join("resources")
-            .join("core")
-            .join(WORLD_FILE_NAME);
+        let bundled = root.join("resources").join("core").join(WORLD_FILE_NAME);
         fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         fs::write(&bundled, b"test-jar").unwrap();
-
-        let resolved =
-            resolve_source(Some(&root), WORLD_FILE_NAME, "missing/source.jar").unwrap();
+        let resolved = resolve_source(Some(&root), WORLD_FILE_NAME, "missing/source.jar").unwrap();
         assert_eq!(resolved, bundled);
-
         let _ = fs::remove_dir_all(root);
     }
 
@@ -302,45 +312,36 @@ mod tests {
         let resource_root = test_root("core-sync-resources");
         let workspace = test_root("core-sync-workspace");
         resource_tree(&resource_root, b"new-world", b"new-utilities");
-
         let plugins = workspace.join("server").join("plugins");
         fs::create_dir_all(&plugins).unwrap();
         fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
         fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
-
         sync(&workspace, Some(&resource_root)).unwrap();
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
+        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
+        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        assert_eq!(fs::read(backups.join(format!("{WORLD_FILE_NAME}.previous"))).unwrap(), b"old-world");
+        assert_eq!(fs::read(backups.join(format!("{UTILITIES_FILE_NAME}.previous"))).unwrap(), b"old-utilities");
+        let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
 
-        assert_eq!(
-            fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(),
-            b"new-world"
-        );
-        assert_eq!(
-            fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(),
-            b"new-utilities"
-        );
-        let backups = workspace
-            .join("tools")
-            .join("lazybuilder")
-            .join("plugin-backups");
-        let world_backup = backups.join(format!("{WORLD_FILE_NAME}.previous"));
-        let utilities_backup = backups.join(format!("{UTILITIES_FILE_NAME}.previous"));
-        assert_eq!(fs::read(&world_backup).unwrap(), b"old-world");
-        assert_eq!(fs::read(&utilities_backup).unwrap(), b"old-utilities");
-
-        // Re-running sync with identical artifacts must be a no-op. In particular,
-        // previous backups must not be replaced with already-current JARs.
-        sync(&workspace, Some(&resource_root)).unwrap();
-        assert_eq!(
-            fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(),
-            b"new-world"
-        );
-        assert_eq!(
-            fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(),
-            b"new-utilities"
-        );
-        assert_eq!(fs::read(world_backup).unwrap(), b"old-world");
-        assert_eq!(fs::read(utilities_backup).unwrap(), b"old-utilities");
-
+    #[test]
+    fn unfinalized_transaction_restores_both_modules() {
+        let resource_root = test_root("core-rollback-resources");
+        let workspace = test_root("core-rollback-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+        let plugins = workspace.join("server").join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
+        {
+            let _transaction = begin_sync(&workspace, Some(&resource_root)).unwrap();
+            assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
+            assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
+        }
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
+        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"old-utilities");
         let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
     }
@@ -350,16 +351,13 @@ mod tests {
         let resource_root = test_root("core-preflight-resources");
         let workspace = test_root("core-preflight-workspace");
         resource_tree(&resource_root, b"new-world", b"new-utilities");
-
         let plugins = workspace.join("server").join("plugins");
         fs::create_dir_all(&plugins).unwrap();
         fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
         fs::create_dir_all(plugins.join(UTILITIES_FILE_NAME)).unwrap();
-
         let error = sync(&workspace, Some(&resource_root)).unwrap_err();
         assert!(error.contains("not a file"));
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
-
         let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
     }
