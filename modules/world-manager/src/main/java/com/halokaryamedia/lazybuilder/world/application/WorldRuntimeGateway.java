@@ -4,18 +4,15 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 
 import java.util.UUID;
 
-/**
- * Runtime boundary used by World Manager application services.
- *
- * <p>Paper/Bukkit details stay behind the implementation of this interface so
- * lifecycle policy and registry behavior remain independently testable.</p>
- */
+/** Runtime boundary used by World Manager application services. */
 public interface WorldRuntimeGateway {
     void createNewWorld(WorldRecord world, BuildReadyPolicy policy);
 
     void rollbackCreatedWorld(WorldRecord world);
 
     boolean isLoaded(WorldRecord world);
+
+    boolean hasPlayers(WorldRecord world);
 
     void loadWorld(WorldRecord world);
 
@@ -60,6 +57,6 @@ public interface WorldRuntimeGateway {
     }
 
     default void applyBuildReady(WorldRecord world, BuildReadyPolicy policy) {
-        throw new UnsupportedOperationException("Build Ready reset is not supported by this runtime");
+        throw new UnsupportedOperationException("Builder Defaults reset is not supported by this runtime");
     }
 }
