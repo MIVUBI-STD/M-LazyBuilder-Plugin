@@ -85,8 +85,6 @@ export type ResourcePreset = {
   name: string;
   maxMemoryMb: number;
   minMemoryMb: number;
-  cpuMode: 'Adaptive' | 'Manual';
-  cpuThreads: number;
 };
 
 export type ServerResourceProfile = {
@@ -96,8 +94,6 @@ export type ServerResourceProfile = {
   logicalProcessors: number;
   currentMaxMemoryMb: number;
   currentMinMemoryMb: number;
-  currentCpuMode: 'Adaptive' | 'Manual';
-  currentCpuThreads: number;
   currentPreset: string;
   performance: ResourcePreset;
   boost: ResourcePreset;
@@ -106,8 +102,6 @@ export type ServerResourceProfile = {
 
 export type ResourceUpdateRequest = {
   maxMemoryMb: number;
-  cpuMode: 'Adaptive' | 'Manual';
-  cpuThreads: number;
   preset: string;
 };
 
