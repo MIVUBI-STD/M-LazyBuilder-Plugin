@@ -70,10 +70,26 @@ pub fn record_after_start() -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let temporary = path.with_extension("json.tmp");
+    let previous = path.with_extension("json.previous");
     let text = serde_json::to_string_pretty(&identity).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    let _ = fs::remove_file(&path);
-    fs::rename(temporary, path).map_err(|error| error.to_string())
+
+    if path.exists() {
+        let _ = fs::remove_file(&previous);
+        fs::rename(&path, &previous).map_err(|error| error.to_string())?;
+        match fs::rename(&temporary, &path) {
+            Ok(()) => {
+                let _ = fs::remove_file(previous);
+                Ok(())
+            }
+            Err(error) => {
+                let _ = fs::rename(&previous, &path);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(temporary, path).map_err(|error| error.to_string())
+    }
 }
 
 fn read_marker(path: &PathBuf) -> Result<ProcessMarker, String> {
