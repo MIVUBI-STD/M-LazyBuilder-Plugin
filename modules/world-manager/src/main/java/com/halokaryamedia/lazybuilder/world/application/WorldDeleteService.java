@@ -49,29 +49,16 @@ public final class WorldDeleteService {
         this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldDeleteService(
-            WorldRegistry registry,
-            WorldRegistryPersistence persistence,
-            WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldOperationCoordinator operations,
-            WorldFileRepository files,
-            Predicate<WorldRecord> protectedWorld
-    ) {
-        this(registry, persistence, runtimeService, operations, files, protectedWorld);
-    }
-
-    public DeleteTask prepare(WorldId worldId, String typedConfirmation) {
+    public DeleteTask prepare(WorldId worldId, String typedDisplayName) {
         Objects.requireNonNull(worldId, "worldId");
-        Objects.requireNonNull(typedConfirmation, "typedConfirmation");
+        Objects.requireNonNull(typedDisplayName, "typedDisplayName");
         WorldRecord world = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
-        if (!world.folderName().equals(typedConfirmation) && !world.displayName().equals(typedConfirmation)) {
-            throw new IllegalArgumentException("Delete confirmation must exactly match the world display name or folder name");
+        if (!world.displayName().equals(typedDisplayName)) {
+            throw new IllegalArgumentException("Delete confirmation must exactly match the world name");
         }
         if (protectedWorld.test(world)) {
-            throw new IllegalStateException("The active fallback/default world cannot be deleted: " + world.folderName());
+            throw new IllegalStateException("The active fallback/default world cannot be deleted: " + world.displayName());
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
