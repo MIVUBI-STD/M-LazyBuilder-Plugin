@@ -58,7 +58,10 @@ Desktop Rust responsibility:
 - health summary;
 - CPU/RAM status;
 - basic server settings;
-- process/crash handling.
+- process/crash handling;
+- create the canonical runtime folders before Paper starts;
+- launch Paper with `world-system/worlds` as its universe/world container;
+- pass the workspace root to Paper through `LAZYBUILDER_WORKSPACE_ROOT`.
 
 It is part of `LazyBuilder.exe`; it is not a Paper plugin.
 
@@ -95,9 +98,17 @@ Paper-side authority for all world lifecycle operations:
 
 The desktop Rust runtime may call the authenticated loopback control bridge, but must not duplicate world business logic or become a second filesystem owner.
 
+World-Manager receives the canonical workspace root from Server-Manager and validates that Paper is actually using `<workspace>/world-system/worlds`. It then owns registry/import/export/backup/work paths under the canonical layout. A manual plugin-only launch that does not supply the workspace environment remains on the historical plugin-data layout for compatibility rather than silently moving existing data.
+
 ### Utilities-Manager
 
-Paper-side builder convenience module. Initial target scope includes movement/build helpers, creation tools, spectator helpers, and builder-safe protections. It must not absorb economy, homes, chat, performance optimization, world lifecycle, or WorldEdit wrappers.
+Paper-side builder convenience module. Current locked scope is:
+
+- Movement: Advanced Fly, Noclip, Night Vision;
+- Build Helpers: Iron Door Toggle, Double Slab Break, Glazed Terracotta Rotate;
+- World Safety: explosions, leaves decay, farmland trample, dragon-egg teleport protection.
+
+Creation Tools and duplicate custom Spectator controls are intentionally out of scope. Utilities-Manager must not absorb economy, homes, chat, performance optimization, world lifecycle, or WorldEdit wrappers.
 
 ## Canonical repository layout
 
@@ -144,23 +155,41 @@ Work Server - 1.21.4/
 ├── LazyBuilder.exe
 ├── server/
 │   ├── paper.jar
-│   └── plugins/
-│       ├── World-Manager.jar
-│       ├── Utilities-Manager.jar
-│       └── external build-tool plugins...
+│   ├── plugins/
+│   │   ├── World-Manager.jar
+│   │   ├── Utilities-Manager.jar
+│   │   └── external build-tool plugins...
+│   └── normal Paper-generated configuration/runtime files
 ├── world-system/
-│   ├── worlds/
-│   ├── imports/
-│   ├── exports/
-│   ├── backups/
-│   ├── archives/
-│   └── work/
+│   ├── worlds/          # Paper universe / actual world folders
+│   ├── imports/         # validated inbound world archives
+│   ├── exports/         # export artifacts ready for transfer
+│   ├── backups/         # World-Manager backups
+│   ├── archives/        # reserved archive storage boundary
+│   ├── work/            # request-scoped temporary work
+│   │   └── transfer/    # transient transfer session files
+│   └── registry.yml     # durable managed-world registry
 ├── tools/
 │   └── lazybuilder/
+│       ├── config/
+│       │   ├── server-manager.json
+│       │   └── world-control.json
+│       ├── cache/
+│       │   └── converter/
+│       └── logs/
 └── README-Server.txt
 ```
 
-All world-related persistent/work files belong under `world-system/`. Paper runtime files and plugins stay under `server/`.
+### Runtime ownership rules
+
+- Paper world folders live only in `world-system/worlds/` for the canonical desktop-launched runtime.
+- World-Manager registry/import/export/backup/work data lives only under `world-system/`.
+- converter binaries/download cache live under `tools/lazybuilder/cache/converter/` because they are executable support assets, not world data.
+- Server-Manager and World-control desktop configuration live under `tools/lazybuilder/config/`.
+- Paper runtime/plugin files remain under `server/`.
+- the desktop launcher creates the canonical directories before starting Paper and supplies the same workspace root to the plugin.
+- if the launcher supplies a workspace root but Paper reports a different world container, World-Manager fails closed instead of creating two world-storage authorities.
+- manual/non-LazyBuilder Paper launches retain the legacy plugin-data layout unless they are explicitly launched with the canonical `world-system/worlds` container; no automatic destructive migration of existing server worlds is performed.
 
 ## Architecture rules
 
@@ -171,13 +200,15 @@ All world-related persistent/work files belong under `world-system/`. Paper runt
 5. Keep external build tools external.
 6. Keep Paper 1.21.4 / Java 21 as the Minecraft baseline.
 7. Source/CI proof remains separate from installed Windows and live Paper validation.
+8. Runtime path migration must be explicit and fail-safe; never silently relocate existing world folders.
 
 ## Current development order
 
 ```text
-1. Tauri/Svelte/Rust desktop parity — complete
-2. remove legacy WPF/.NET desktop — complete
-3. continue World control stage 2
-4. implement Utilities-Manager features in isolated packages
-5. package LazyBuilder.exe and perform installed/live validation
+1. Desktop architecture parity / WPF removal — complete
+2. World-Manager source architecture — locked
+3. Utilities-Manager source architecture — locked
+4. canonical runtime storage wiring — implemented at source level
+5. audit remaining desktop Plugin-Manager transitional paths
+6. package LazyBuilder.exe and perform LOCAL_CODE / LIVE_SERVER validation
 ```
