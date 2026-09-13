@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
+import com.halokaryamedia.lazybuilder.world.application.WorldIdleUnloadService;
 import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceCommand;
 import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceController;
 import com.halokaryamedia.lazybuilder.world.paper.ChunkPregenerationController;
@@ -15,6 +16,9 @@ import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+
+import java.time.Duration;
 
 /** Canonical Paper entry point and lifecycle owner for the World-Manager module. */
 public final class WorldManagerPlugin extends JavaPlugin {
@@ -26,6 +30,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
     private PaperMapActionPayloadAdapter mapActionPayloadAdapter;
     private PaperWorldControlPayloadAdapter worldControlPayloadAdapter;
     private PaperLocalControlServer localControlServer;
+    private BukkitTask idleUnloadTask;
 
     @Override
     public void onEnable() {
@@ -37,6 +42,31 @@ public final class WorldManagerPlugin extends JavaPlugin {
 
         this.buildPerformanceController = new BuildPerformanceController(this, worldManager.worldRegistry());
         this.buildPerformanceController.start();
+
+        long idleMinutes = Math.max(1L, getConfig().getLong("world-manager.idle-unload.minutes", 10L));
+        boolean idleUnloadEnabled = getConfig().getBoolean("world-manager.idle-unload.enabled", true);
+        if (idleUnloadEnabled) {
+            WorldIdleUnloadService idleUnload = new WorldIdleUnloadService(
+                    worldManager.worldRegistry(),
+                    worldManager.worldRuntimeService(),
+                    new com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway(
+                            getServer(),
+                            () -> getConfig().getString("world-manager.fallback-world", "")
+                    ),
+                    worldManager.worldOperationCoordinator(),
+                    world -> {
+                        var loaded = getServer().getWorld(world.folderName());
+                        return loaded != null && !loaded.getPlayers().isEmpty();
+                    },
+                    Duration.ofMinutes(idleMinutes)
+            );
+            this.idleUnloadTask = getServer().getScheduler().runTaskTimer(
+                    this,
+                    () -> idleUnload.tick(System.currentTimeMillis()),
+                    20L * 30L,
+                    20L * 30L
+            );
+        }
 
         ChunkPregenerationController pregeneration = new ChunkPregenerationController(
                 getServer(), worldManager.worldRegistry());
@@ -104,6 +134,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (idleUnloadTask != null) idleUnloadTask.cancel();
         if (localControlServer != null) localControlServer.stop();
         if (worldTaskRunner != null) worldTaskRunner.close();
         if (worldControlPayloadAdapter != null) worldControlPayloadAdapter.stop();
