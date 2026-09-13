@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub const WORKSPACE_ENV: &str = "LAZYBUILDER_WORKSPACE_ROOT";
 
@@ -7,7 +7,7 @@ pub fn workspace_root() -> Result<PathBuf, String> {
     if let Ok(configured) = std::env::var(WORKSPACE_ENV) {
         let path = PathBuf::from(configured);
         if path.is_dir() {
-            return Ok(path);
+            return canonical_directory(&path, WORKSPACE_ENV);
         }
         return Err("LAZYBUILDER_WORKSPACE_ROOT does not point to a directory".into());
     }
@@ -15,17 +15,22 @@ pub fn workspace_root() -> Result<PathBuf, String> {
     if let Ok(executable) = std::env::current_exe() {
         if let Some(parent) = executable.parent() {
             if let Some(root) = find_workspace(parent) {
-                return Ok(root);
+                return canonical_directory(&root, "detected workspace");
             }
         }
     }
 
     let current = std::env::current_dir().map_err(|error| error.to_string())?;
     if let Some(root) = find_workspace(&current) {
-        return Ok(root);
+        return canonical_directory(&root, "detected workspace");
     }
 
-    Ok(current)
+    canonical_directory(&current, "current directory")
+}
+
+fn canonical_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
+    path.canonicalize()
+        .map_err(|error| format!("Could not resolve {label}: {error}"))
 }
 
 fn find_workspace(start: &Path) -> Option<PathBuf> {
@@ -37,6 +42,33 @@ fn find_workspace(start: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+pub fn safe_relative_path(value: &str, label: &str) -> Result<PathBuf, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Err(format!("{label} must be relative to the LazyBuilder workspace"));
+    }
+    if path.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+        return Err(format!("{label} may not escape the LazyBuilder workspace"));
+    }
+    Ok(path.to_path_buf())
+}
+
+pub fn safe_file_name(value: &str, label: &str) -> Result<String, String> {
+    let relative = safe_relative_path(value, label)?;
+    if relative.components().count() != 1 {
+        return Err(format!("{label} must be one file name"));
+    }
+    relative
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| format!("{label} is not a valid file name"))
 }
 
 pub fn lazybuilder_tools_dir() -> Result<PathBuf, String> {
