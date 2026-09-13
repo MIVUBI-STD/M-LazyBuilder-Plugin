@@ -6,8 +6,8 @@ LazyBuilder is a suite. Each manager owns one responsibility and must be maintai
 
 | Module | Runtime | Owns | Must not own |
 | --- | --- | --- | --- |
-| Server-Manager | Desktop app | Paper process lifecycle, server health, basic server settings | world lifecycle, plugin runtime behavior |
-| Plugin-Manager | Desktop app | plugin inventory, category, install/update/disable/remove, compatibility/dependency checks | plugin feature logic, Paper runtime internals |
+| Server-Manager | Desktop app | Paper process lifecycle, server health, Java/runtime paths, canonical runtime bootstrap | world lifecycle, plugin runtime behavior |
+| Plugin-Manager | Desktop app | plugin inventory, category, install/update/disable/remove, compatibility/dependency checks, canonical plugin-storage paths | plugin feature logic, Paper runtime internals |
 | World-Manager | Paper plugin | world lifecycle, BUILD_READY, import/export/conversion, archive/backup, world settings | desktop process lifecycle, generic builder utilities |
 | Utilities-Manager | Paper plugin | small builder/server convenience features | world lifecycle, performance tuning, plugin installation |
 
@@ -25,6 +25,7 @@ External build tools such as Axiom, FAWE, FastAsyncVoxelSniper, ezEdits, and Met
 8. **Feature growth stays inside the owner.** Adding a World-Manager feature must not require editing Utilities-Manager or Plugin-Manager unless a contract genuinely changes.
 9. **Backward-compatible protocol evolution.** Any protocol shared between desktop/Fabric/Paper uses an explicit protocol version and rejects incompatible peers clearly.
 10. **No idle subsystem by default.** New modules/features do not add pollers, watchers, workers, or background processes unless the feature requires them while active.
+11. **One runtime path owner.** `server/`, `world-system/`, and `tools/lazybuilder/` each have explicit owners; compatibility fallbacks may read/migrate old paths but must not create a second active authority.
 
 ## Versioning model
 
@@ -45,7 +46,8 @@ A feature update to one plugin does not require artificially bumping every other
 ```text
 Desktop UI
   ├─ Server-Manager
-  └─ Plugin-Manager
+  ├─ Plugin-Manager
+  └─ World-Manager presentation/control
           │
           │ explicit local/control contracts only
           ▼
@@ -59,25 +61,17 @@ Fabric client
 
 World-Manager and Utilities-Manager do not depend on each other by default.
 
-## Source layout target
+## Current source layout
 
 ```text
-apps/
-  lazybuilder-desktop/
-
-modules/
-  world-manager/
-  utilities-manager/
-
-client/
-  fabric/
-
-shared/
-  protocol/
-  models/
+EngineData/Frontend/RustApp/   canonical Tauri/Svelte/Rust desktop
+modules/world-manager/         Paper World-Manager
+modules/utilities-manager/     Paper Utilities-Manager
+client/fabric/                 Fabric client integration
+docs/                          canonical product/system/operations docs
 ```
 
-`shared/` is intentionally small. It may contain immutable DTOs, protocol codecs, IDs, and version contracts. It must not become a generic common-utilities module.
+Do not introduce a generic `shared/` source tree unless a stable contract is genuinely consumed by multiple runtimes and cannot remain in its existing canonical owner.
 
 ## Maintenance rule
 
