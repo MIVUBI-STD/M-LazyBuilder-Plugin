@@ -7,6 +7,7 @@
   let error = '';
   let message = '';
   let busy = false;
+  let serverState = 'Offline';
   let duplicateSelection: Record<string, string> = {};
 
   const isCore = (plugin: PluginSummary) => {
@@ -14,9 +15,17 @@
     return key.includes('world-manager') || key.includes('world manager') || key.includes('utilities-manager') || key.includes('utilities manager');
   };
 
+  const canMutate = () => serverState === 'Offline' || serverState === 'Crashed';
+  const hasDuplicates = (plugin: PluginSummary) => Boolean(plugin.candidateFiles?.length);
+
   async function refresh() {
     try {
-      plugins = await runtimeProduct.plugins.list();
+      const [nextPlugins, snapshot] = await Promise.all([
+        runtimeProduct.plugins.list(),
+        runtimeProduct.server.snapshot()
+      ]);
+      plugins = nextPlugins;
+      serverState = snapshot.state;
       error = '';
       duplicateSelection = Object.fromEntries(
         plugins
@@ -31,6 +40,12 @@
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
+    if (!canMutate()) {
+      error = serverState === 'Detached'
+        ? 'Paper is still running externally. Stop or recover it before changing plugin JARs.'
+        : `Stop the server before changing plugins. Current state: ${serverState}.`;
+      return;
+    }
     busy = true;
     error = '';
     message = '';
@@ -96,9 +111,16 @@
       <h1>Plugins</h1>
       <p>Install and manage Paper plugins for this server.</p>
     </div>
-    <button class="primary" disabled={busy} onclick={addPlugin}>+ Add plugin</button>
+    <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>+ Add plugin</button>
   </header>
 
+  {#if !canMutate()}
+    <div class="notice warning">
+      {serverState === 'Detached'
+        ? 'Paper is running externally. Recover or stop it before changing plugin files.'
+        : `Plugin changes are locked while the server is ${serverState.toLowerCase()}. Stop the server first.`}
+    </div>
+  {/if}
   {#if message}<div class="notice success">{message}</div>{/if}
   {#if error}<div class="notice error">{error}</div>{/if}
 
@@ -144,13 +166,13 @@
                   <span>Multiple JARs detected</span>
                   <div>
                     <select
-                      disabled={busy}
+                      disabled={busy || !canMutate()}
                       value={duplicateSelection[plugin.id] ?? plugin.candidateFiles[0]}
                       onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}
                     >
                       {#each plugin.candidateFiles as candidate}<option value={candidate}>{candidate}</option>{/each}
                     </select>
-                    <button disabled={busy} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
+                    <button disabled={busy || !canMutate()} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
                   </div>
                 </div>
               {/if}
@@ -159,9 +181,11 @@
             {#if !plugin.id.startsWith('invalid-')}
               <div class="row-actions">
                 <span class="state-pill" class:disabled={plugin.state !== 'Enabled'} class:problem={plugin.state === 'Problem'}>{plugin.state}</span>
-                <button disabled={busy || plugin.state === 'Problem'} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable' : 'Enable'}</button>
-                <button disabled={busy || plugin.state === 'Problem'} onclick={() => updatePlugin(plugin)}>Update</button>
-                <button class="danger" disabled={busy || plugin.state === 'Problem'} onclick={() => removePlugin(plugin)}>Remove</button>
+                {#if plugin.state !== 'Problem'}
+                  <button disabled={busy || !canMutate()} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable' : 'Enable'}</button>
+                  <button disabled={busy || !canMutate()} onclick={() => updatePlugin(plugin)}>Update</button>
+                {/if}
+                <button class="danger" disabled={busy || !canMutate() || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove</button>
               </div>
             {:else}
               <span class="state-pill problem">Problem</span>
@@ -174,7 +198,7 @@
         <div class="empty-icon">+</div>
         <strong>No server plugins installed</strong>
         <p>Add a Paper plugin JAR to get started.</p>
-        <button class="primary" disabled={busy} onclick={addPlugin}>Add plugin</button>
+        <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>Add plugin</button>
       </div>
     {/if}
   </section>
@@ -191,6 +215,7 @@
 
   .notice { margin-bottom: 12px; padding: 10px 12px; border-radius: 9px; font-size: 12px; }
   .notice.success { border: 1px solid #28583a; background: #14241a; color: #b9e5c7; }
+  .notice.warning { border: 1px solid #655626; background: #262116; color: #e3cf8d; }
   .notice.error { border: 1px solid #70343a; background: var(--danger-bg); color: #ffd9dc; }
   .section-block { margin-top: 22px; }
   .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 9px; }
@@ -226,6 +251,8 @@
   .empty-icon { width: 42px; height: 42px; display: grid; place-items: center; margin-bottom: 10px; border-radius: 11px; background: var(--surface-2); color: var(--muted); font-size: 20px; }
   .empty-state strong { font-size: 14px; }
   .empty-state p { margin: 5px 0 14px; color: var(--muted); font-size: 11px; }
+
+  button:disabled, select:disabled { opacity: .5; cursor: not-allowed; }
 
   @media (max-width: 820px) {
     .plugin-row.expanded { align-items: flex-start; flex-wrap: wrap; }
