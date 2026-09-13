@@ -1,46 +1,63 @@
 ---
 name: lazybuilder-plugin-management
-description: Specialist for LazyBuilder-managed third-party Paper plugin lifecycle: discovery, install, update, enable/disable, duplicate handling, safe removal, dependencies, and rollback. Use when plugin lifecycle is the primary change.
+description: Own LazyBuilder-managed third-party Paper plugin lifecycle: scan/metadata/dependencies, install/update, enable/disable, duplicate handling, safe JAR removal, and minimum rollback state. Do not use for bundled LazyBuilder core modules, desktop runtime, or presentation-only plugin UI.
 ---
 
 # LazyBuilder Plugin Management
 
-Own third-party Paper plugin lifecycle in the desktop product. Do not absorb LazyBuilder core module synchronization or World Manager behavior.
+Own third-party Paper plugin lifecycle semantics. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
 
-## Use This Owner For
-
-- plugin scan/metadata/dependency validation;
-- install/update/enable/disable/remove;
-- duplicate JAR detection/resolution;
-- rollback/backup behavior required by plugin mutations;
-- plugin-manager UI contract only when lifecycle semantics change.
-
-Route elsewhere when the primary owner is:
+## Owns
 
 ```text
-bundled World/Utilities core sync → lazybuilder-desktop-runtime
-Paper world behavior              → lazybuilder-world-management
-Svelte-only presentation          → lazybuilder-desktop-ui
-shared protocol                   → lazybuilder-protocol
+plugin discovery/metadata/dependency validation
+install/update
+enable/disable
+safe JAR removal
+duplicate detection/resolution
+minimum rollback state required by plugin mutation
 ```
+
+## Does Not Own
+
+```text
+bundled World/Utilities core sync → desktop-runtime
+Svelte-only plugin presentation   → desktop-ui
+Paper world behavior              → world-management
+shared client/server protocol     → protocol
+```
+
+If lifecycle semantics change and the UI message/control follows, Plugin Management decides the result first; Desktop UI only presents it.
 
 ## Canonical Context
 
-1. `docs/04-system/skill-routing.md`
-2. exact plugin-manager source
-3. `docs/04-system/README.md` only when ownership/boundaries change
-4. operations docs only when continuation is material
+1. `docs/04-system/development-discipline.md`
+2. `docs/04-system/skill-routing.md`
+3. exact plugin-manager source
+4. system docs only when ownership changes
 
-## Rules
+## Procedure
 
-- Keep plugin state derivable from filesystem + plugin metadata where practical.
-- Do not create a plugin database when filesystem/metadata already owns truth.
-- Prefer one previous-valid rollback snapshot over historical backup systems unless a real restore UX exists.
-- Do not expose destructive plugin-data deletion without an explicit supported product flow.
-- Presentation-only categories must not become runtime authority.
-- No hot reload; restart-required semantics stay explicit.
-- Duplicate resolution must never partially delete candidates without recoverability.
+```text
+identify requested lifecycle result
+→ derive current truth from filesystem + plugin metadata
+→ find first unsafe/duplicated mutation path
+→ reuse one mutation gate/path
+→ keep only minimum rollback state
+→ targeted mutation proof
+→ STOP
+```
 
-## Completion
+## Plugin Invariants
 
-Confirm the mutation path is singular, recoverable, and no internal maintenance feature was promoted into product scope without need.
+- filesystem + plugin metadata remain primary truth; no plugin database without a proven need;
+- no hot reload; restart-required semantics stay explicit;
+- duplicate resolution cannot partially delete candidates without recoverability;
+- do not create historical backup systems without a real restore UX;
+- do not expose plugin-data deletion unless an explicit supported product flow requires it;
+- presentation-only categories must not become runtime authority;
+- one plugin mutation should have one transaction/rollback owner.
+
+## Proof Boundary
+
+Static/source tests can prove metadata, dependency, and transaction logic. Real Paper plugin enable/load behavior requires appropriate local/live runtime proof.
