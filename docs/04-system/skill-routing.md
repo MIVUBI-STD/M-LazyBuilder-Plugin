@@ -1,6 +1,6 @@
 # Skill Routing / Jobdesk Map
 
-Canonical map for LazyBuilder execution ownership. This document defines **which specialist owns which class of change**. It does not duplicate domain behavior already owned elsewhere.
+Canonical map for LazyBuilder execution ownership. This document defines **which specialist owns which class of decision**. Durable behavior remains owned by domain docs/source; shared development economy is owned by [`development-discipline.md`](development-discipline.md).
 
 ## Authority Roles
 
@@ -13,11 +13,44 @@ Ops docs       = current continuation/proof only
 Git history    = retired decisions/history
 ```
 
-One concern gets one canonical semantic owner. Skills link to that owner instead of copying its rules.
+One concern gets one canonical semantic owner. A Skill must not duplicate another Skill's jobdesk merely because the same files or language are involved.
+
+## Primary-Owner Rule
+
+Select the owner by **the behavior being decided**, not by the file being edited.
+
+```text
+runtime/process/config decision     → desktop-runtime
+Svelte/Tauri presentation decision  → desktop-ui
+third-party plugin lifecycle rule   → plugin-management
+world/Paper domain behavior         → world-management
+Fabric/Xaero presentation decision  → client-ui
+neutral Paper/Fabric wire contract  → protocol
+owner/success criteria still unclear→ development-brief
+```
+
+Examples:
+
+```text
+Plugins.svelte only changes layout
+→ desktop-ui
+
+plugin dependency semantics change and UI message follows
+→ plugin-management first
+→ desktop-ui only if presentation also changes
+
+world action requires a new shared payload
+→ protocol owns payload
+→ world-management consumes it
+
+Desktop HTTP control changes
+→ desktop-runtime
+NOT protocol
+```
 
 ## Specialist Set
 
-Keep this set intentionally small. Add a new Skill only when a responsibility has a materially different execution procedure and cannot be routed cleanly to an existing owner.
+Keep this set intentionally small. Add a new Skill only when repeated work proves a materially different reusable execution procedure.
 
 ```text
 lazybuilder-development-brief
@@ -29,11 +62,13 @@ lazybuilder-client-ui
 lazybuilder-protocol
 ```
 
+All specialist work follows `development-discipline.md`.
+
 ### `lazybuilder-development-brief`
 
 **Jobdesk:** resolve genuine architecture/cross-owner ambiguity, success criteria, and execution partition.
 
-Use only until the exact specialist can be selected. It is not a super-owner and should not stay loaded after ambiguity is resolved.
+It is a temporary routing owner only. Once the primary specialist is known, unload/stop using Development Brief and continue under that specialist.
 
 ### `lazybuilder-desktop-runtime`
 
@@ -49,15 +84,15 @@ Paper provisioning/update
 bundled core synchronization
 resource/runtime configuration
 startup safety
-local desktop control bootstrap
+local desktop HTTP/control bootstrap
 runtime persistence/rollback
 ```
 
-Does not own Svelte presentation, Paper world rules, Fabric client UI, or third-party plugin semantics.
+Does not own Svelte presentation, Paper world rules, Fabric UI, shared Minecraft wire contracts, or third-party plugin semantics.
 
 ### `lazybuilder-desktop-ui`
 
-**Jobdesk:** Tauri/Svelte presentation and user interaction.
+**Jobdesk:** Tauri/Svelte presentation and interaction.
 
 Owns:
 
@@ -69,7 +104,7 @@ frontend request/result typing
 single frontend Tauri bridge
 ```
 
-Backend/domain policy remains with its specialist.
+It never becomes authority for runtime, world, plugin, or security policy.
 
 ### `lazybuilder-plugin-management`
 
@@ -86,7 +121,7 @@ duplicate resolution
 minimum rollback state
 ```
 
-Does not own bundled LazyBuilder core modules.
+Does not own bundled LazyBuilder core modules or generic desktop runtime configuration.
 
 ### `lazybuilder-world-management`
 
@@ -119,7 +154,7 @@ Xaero map/location integration
 client-side interaction flow
 ```
 
-It never becomes world-state authority.
+It never becomes world-state or protocol-contract authority.
 
 ### `lazybuilder-protocol`
 
@@ -131,62 +166,41 @@ Owns:
 request/result payloads
 identifiers
 wire validation/defaults
-map-action protocol
-world-control protocol
-transfer protocol
-Paper/Fabric compatibility contract
+map-action contracts
+shared transfer contracts
+Paper/Fabric compatibility contracts
 ```
 
-It does not own Paper implementation logic or UI presentation.
+It does **not** own desktop loopback HTTP control, Paper implementation behavior, or UI presentation. If a `WorldControl*` type lives in `shared/protocol`, Protocol owns only its neutral wire semantics; the desktop HTTP bridge remains Desktop Runtime.
 
-## Fast Routing
+## Cross-Owner Handoff
+
+Cross-domain work is sequential, not simultaneous ownership.
 
 ```text
-architecture owner unclear
-→ lazybuilder-development-brief
-→ choose exactly one specialist when resolved
-
-workspace/create/open/adopt/provision/start/stop/restart
-→ lazybuilder-desktop-runtime
-
-Svelte desktop page/control/bridge UX
-→ lazybuilder-desktop-ui
-
-Paper plugin install/update/remove/dependency/duplicate
-→ lazybuilder-plugin-management
-
-world lifecycle/settings/file operation/conversion
-→ lazybuilder-world-management
-
-Fabric keybind/screen/Xaero/client UX
-→ lazybuilder-client-ui
-
-shared Paper/Fabric payload/wire behavior
-→ lazybuilder-protocol
+Owner A changes/decides its contract
+→ produce the smallest handoff artifact/result
+→ Owner B consumes it
 ```
 
-## Cross-Owner Handoff Rules
+Do not keep multiple specialists active for the same decision. A caller/UI adapter follows the semantic owner rather than re-implementing its rule.
 
-A task may cross boundaries, but ownership changes explicitly.
-
-Examples:
+Typical handoffs:
 
 ```text
-new world action needs protocol + Paper behavior + Fabric button
-→ protocol owns payload
-→ world-management owns server behavior
-→ client-ui owns button/presentation
+new world action + shared payload + Fabric button
+→ protocol: payload
+→ world-management: Paper/application behavior
+→ client-ui: button/presentation
 
 new desktop setting changes server runtime
-→ desktop-runtime owns semantics/config
-→ desktop-ui owns presentation only
+→ desktop-runtime: semantics/config
+→ desktop-ui: presentation
 
 plugin dependency rule changes UI warning
-→ plugin-management owns rule/result
-→ desktop-ui displays returned state
+→ plugin-management: rule/result
+→ desktop-ui: display only
 ```
-
-Do not keep multiple specialists active when one owner can finish the current decision.
 
 ## No-Skill Owners
 
@@ -204,31 +218,19 @@ security-only repository policy
 → SECURITY.md / exact boundary
 ```
 
-Create a specialist only if repeated work proves a distinct reusable execution procedure exists.
-
-## Minimum-Flow Rules
-
-- one config concern → one config owner;
-- one process → one process owner/recovery path;
-- one user action → one primary command/runtime path;
-- one wire contract → one shared neutral source;
-- UI adapters do not own business rules;
-- internal maintenance is automatic unless it represents a real user decision;
-- do not create compatibility layers for unsupported consumers;
-- do not create routing Skills for implementation languages alone;
-- stop loading sibling docs/Skills once the current owner is known.
+Do not create Skills for implementation languages alone (Rust, Java, TypeScript, Maven, Gradle).
 
 ## Completion Check
 
 Before finishing a change, answer:
 
 ```text
-Who owns the changed behavior?
+Who is the primary semantic owner?
 Did another owner duplicate that state/rule?
-Did the change add a new user decision unnecessarily?
-Did it add a new manager/cache/registry/router/config path?
-Can one layer be removed without losing accepted behavior?
+Was a second specialist loaded before ownership actually changed?
+Did the change add a user decision, manager, cache, registry, router, config path, worker, or compatibility layer unnecessarily?
+Can an existing path or deletion satisfy the same accepted result?
 What is the cheapest proof that can falsify the result?
 ```
 
-If ownership is still unclear, return to `lazybuilder-development-brief`. Otherwise finish under the exact specialist and STOP.
+If ownership is unclear, use `lazybuilder-development-brief`. Otherwise finish under the exact specialist and STOP.
