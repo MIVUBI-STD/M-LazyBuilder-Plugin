@@ -12,8 +12,11 @@ import java.util.function.Consumer;
 
 /** Client presentation state for the general World Manager surface. */
 public final class ClientWorldController {
+    private static final String NATIVE_EXPORT_FORMAT = "JAVA_1_21_4";
+
     private final Consumer<String> completedExportHandler;
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
+    private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
     private String lastError;
     private String activityMessage;
@@ -24,6 +27,7 @@ public final class ClientWorldController {
     }
 
     public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
+    public void requestExportFormats() { send(new WorldControlWireProtocol.GetExportFormats()); }
 
     public void create(String folderName, String displayName, String kind) {
         beginActivity("Creating world…");
@@ -98,6 +102,11 @@ public final class ClientWorldController {
                 LazyBuilderClientNetworking.notifyPlayer("Export ready: " + export.artifactName());
                 completedExportHandler.accept(export.artifactName());
             }
+            case WorldControlWireProtocol.ExportFormats formats -> {
+                exportFormats = formats.formats();
+                lastError = null;
+                revision++;
+            }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 lastError = error.message();
                 activityMessage = null;
@@ -109,6 +118,7 @@ public final class ClientWorldController {
 
     public void reset() {
         worlds = List.of();
+        exportFormats = List.of(NATIVE_EXPORT_FORMAT);
         settings.clear();
         lastError = null;
         activityMessage = null;
@@ -116,6 +126,7 @@ public final class ClientWorldController {
     }
 
     public List<WorldControlWireProtocol.WorldSummary> worlds() { return worlds; }
+    public List<String> exportFormats() { return exportFormats; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public String lastError() { return lastError; }
     public String activityMessage() { return activityMessage; }
