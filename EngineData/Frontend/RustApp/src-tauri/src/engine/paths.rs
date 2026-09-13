@@ -64,16 +64,19 @@ pub fn worlds_dir() -> Result<PathBuf, String> {
 }
 
 pub fn ensure_runtime_layout() -> Result<(), String> {
+    // Archive is lifecycle metadata today, not a second physical world store. Keep the
+    // runtime root limited to directories with an active owner so maintenance stays clear.
     let directories = [
         worlds_dir()?,
         world_system_dir()?.join("imports"),
         world_system_dir()?.join("exports"),
         world_system_dir()?.join("backups"),
-        world_system_dir()?.join("archives"),
         world_system_dir()?.join("work"),
         lazybuilder_config_dir()?,
         lazybuilder_cache_dir()?,
         lazybuilder_logs_dir()?,
+        lazybuilder_tools_dir()?.join("disabled-plugins"),
+        lazybuilder_tools_dir()?.join("plugin-backups"),
     ];
 
     for directory in directories {
