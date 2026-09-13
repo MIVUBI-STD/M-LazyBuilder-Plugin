@@ -60,7 +60,7 @@
 
   function stateDescription(state: string) {
     if (state === 'Online') return 'Ready for builders to join.';
-    if (state === 'Starting') return 'Starting Paper. This usually takes a few seconds.';
+    if (state === 'Starting') return 'Starting the server. This usually takes a few seconds.';
     if (state === 'Stopping') return 'Stopping safely. Wait until the server is offline.';
     if (state === 'Restarting') return 'Restarting the server.';
     if (state === 'Detached') return 'The server is running outside this launcher session.';
@@ -144,7 +144,7 @@
   <div class="section-heading">
     <div>
       <h2>Server status</h2>
-      <p>Everything a builder normally needs is kept here.</p>
+      <p>Start, stop and check the server at a glance.</p>
     </div>
 
     <div class="header-actions">
@@ -199,7 +199,7 @@
   {/if}
 
   {#if notice}
-    <section class="message-card">
+    <section class="message-card success-card" aria-live="polite">
       <div><strong>Server control</strong><p>{notice}</p></div>
     </section>
   {/if}
@@ -209,7 +209,7 @@
       <div class="attention-heading">
         <div>
           <strong>Needs attention before starting</strong>
-          <p>Only items that prevent normal server use are shown here.</p>
+          <p>Only items that block normal server use are shown here.</p>
         </div>
         <span>{preflight.issues.length}</span>
       </div>
@@ -226,7 +226,7 @@
       <div class="attention-heading">
         <div>
           <strong>LazyBuilder cannot control the current console</strong>
-          <p>Stop the verified external Paper process first. After that, start the server here and LazyBuilder will own it normally.</p>
+          <p>Stop the verified external server first. After that, start it here and LazyBuilder will manage it normally.</p>
         </div>
       </div>
       <button class="stop-button" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
@@ -241,38 +241,40 @@
   .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 
   .header-actions { display: flex; align-items: center; gap: 8px; }
-  .start-button, .secondary-action, .stop-button { min-height: 40px; border-radius: var(--radius-sm); padding: 8px 14px; font-weight: 700; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 120ms ease; }
+  .start-button, .secondary-action, .stop-button { min-height: var(--control-height); border-radius: var(--radius-sm); padding: 8px 14px; font-weight: 700; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 120ms ease; }
   .start-button { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
   .start-button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
   .start-button:active:not(:disabled), .secondary-action:active:not(:disabled), .stop-button:active:not(:disabled) { transform: scale(.98); }
   .secondary-action { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
-  .secondary-action:hover:not(:disabled) { background: var(--surface-3); }
+  .secondary-action:hover:not(:disabled) { background: var(--surface-3); border-color: var(--border-strong); }
   .stop-button { border: 1px solid #61343a; background: #2b1b1e; color: #ffb7bd; }
   .stop-button:hover:not(:disabled) { background: #382025; }
 
   .status-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; min-height: 108px; padding: 18px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
-  .status-card.running { border-color: #28533a; background: linear-gradient(105deg, #16221a 0%, var(--surface) 48%); }
+  .status-card.running { border-color: var(--accent-border); background: linear-gradient(105deg, #16221a 0%, var(--surface) 48%); }
   .status-card.warning { border-color: #5f5125; background: linear-gradient(105deg, #252116 0%, var(--surface) 48%); }
   .status-card.danger { border-color: #62343a; background: linear-gradient(105deg, #29191c 0%, var(--surface) 48%); }
   .status-summary { min-width: 0; display: flex; align-items: flex-start; gap: 11px; }
   .status-summary strong { font-size: 17px; }
   .status-summary p { max-width: 480px; margin: 4px 0 0; color: var(--muted); font-size: 12px; }
   .status-dot { width: 9px; height: 9px; flex: 0 0 9px; margin-top: 7px; border-radius: 50%; background: #697078; }
-  .status-dot.running { background: var(--accent); box-shadow: 0 0 0 4px rgba(27,217,106,.10); }
+  .status-dot.running { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
   .status-dot.transition { background: var(--info); }
   .status-dot.warning { background: var(--warning); }
   .status-dot.danger { background: var(--danger); }
 
-  .runtime-facts { display: flex; align-items: stretch; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: rgba(10,12,14,.32); }
+  .runtime-facts { display: flex; align-items: stretch; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg-elevated); overflow: hidden; }
   .runtime-facts > div { min-width: 100px; display: grid; gap: 3px; padding: 10px 13px; border-left: 1px solid var(--border-soft); }
   .runtime-facts > div:first-child { border-left: 0; }
   .runtime-facts span { color: var(--muted-2); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
   .runtime-facts strong { font-size: 13px; white-space: nowrap; }
 
-  .message-card, .attention-card { margin-top: 12px; padding: 15px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
+  .message-card, .attention-card { margin-top: 12px; padding: 13px 14px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card); }
   .message-card strong, .attention-card strong { font-size: 13px; }
   .message-card p, .attention-card p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-  .danger-card { border-color: #62343a; background: #241719; }
+  .success-card { border-color: var(--accent-border); background: var(--accent-soft); }
+  .success-card p { color: #b9e5c7; }
+  .danger-card { border-color: #62343a; background: var(--danger-bg); }
   .danger-card p { color: #e9b6ba; }
   .attention-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
   .attention-heading > span { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
