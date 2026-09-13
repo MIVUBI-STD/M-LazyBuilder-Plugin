@@ -23,7 +23,6 @@
   let acceptingEula = false;
   let checkingUpdates = false;
   let updatingPaper = false;
-  let syncingCore = false;
 
   const pages: Page[] = ['Dashboard', 'Worlds', 'Plugins', 'Settings'];
 
@@ -173,18 +172,6 @@
       workspaceError = String(error);
     } finally {
       updatingPaper = false;
-    }
-  }
-
-  async function syncCore() {
-    syncingCore = true;
-    workspaceError = '';
-    try {
-      runtimeUpdates = await runtimeProduct.workspace.syncCore();
-    } catch (error) {
-      workspaceError = String(error);
-    } finally {
-      syncingCore = false;
     }
   }
 
@@ -339,8 +326,8 @@
       {:else if provisioning?.ready}
         <section class="runtime-update-card">
           <div class="runtime-update-heading">
-            <div><small>Runtime Updates</small><strong>Updates are manual and server-scoped</strong></div>
-            <button class="secondary compact" disabled={checkingUpdates} onclick={checkRuntimeUpdates}>{checkingUpdates ? 'Checking…' : 'Check Updates'}</button>
+            <div><small>Paper Runtime</small><strong>Paper updates are manual and server-scoped</strong></div>
+            <button class="secondary compact" disabled={checkingUpdates} onclick={checkRuntimeUpdates}>{checkingUpdates ? 'Checking…' : 'Check Paper Update'}</button>
           </div>
           {#if runtimeUpdates}
             <div class="runtime-update-grid">
@@ -352,17 +339,9 @@
                   <button class="secondary compact" disabled={updatingPaper} onclick={updatePaper}>{updatingPaper ? 'Updating…' : 'Update Paper'}</button>
                 {/if}
               </div>
-              <div>
-                <small>LazyBuilder Core</small>
-                <strong>{runtimeUpdates.currentCoreVersion ?? 'Unknown'} → {runtimeUpdates.bundledCoreVersion}</strong>
-                <span>{runtimeUpdates.coreUpdateAvailable ? 'Bundled core differs' : 'Matches this app version'}</span>
-                {#if runtimeUpdates.coreUpdateAvailable}
-                  <button class="secondary compact" disabled={syncingCore} onclick={syncCore}>{syncingCore ? 'Syncing…' : 'Sync Core Modules'}</button>
-                {/if}
-              </div>
             </div>
           {:else}
-            <p class="hint">No network check is performed automatically. Check only when you want to review server runtime updates.</p>
+            <p class="hint">No network check is performed automatically. Check only when you want to review the Paper runtime.</p>
           {/if}
         </section>
       {/if}
@@ -414,7 +393,8 @@
   .adoption-heading > div, .runtime-update-heading > div { display: grid; gap: 4px; min-width: 0; }
   .adoption-heading p { margin: 0; color: #8f97a2; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .text-button { border: 0; background: transparent; color: #aeb4bd; padding: 4px; }
-  .adoption-grid, .runtime-update-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .adoption-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .runtime-update-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
   .adoption-grid > div, .runtime-update-grid > div { display: grid; gap: 6px; padding: 10px; background: #101214; border-radius: 8px; }
   .runtime-update-grid span { color: #8f97a2; font-size: 12px; }
   .runtime-update-grid button { margin-top: 4px; justify-self: start; }
