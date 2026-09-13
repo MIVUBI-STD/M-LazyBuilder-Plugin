@@ -259,6 +259,10 @@ impl ServerManagerState {
         let mut guard = self.child.lock().map_err(|_| "server state lock poisoned".to_string())?;
         if let Some(child) = guard.as_mut() {
             if child.try_wait().map_err(|error| error.to_string())?.is_none() {
+                let state = self.runtime_state.lock().map_err(|_| "server runtime state lock poisoned".to_string())?.clone();
+                if state == "Crashed" {
+                    return Err("A Paper process is still running in recovery state. Stop it before starting again.".into());
+                }
                 return Ok(());
             }
             let pid = child.id();
@@ -334,6 +338,12 @@ impl ServerManagerState {
                     ));
                 }
                 Err(kill_error) => {
+                    if let Some(stdout) = child.stdout.take() {
+                        thread::spawn(move || {
+                            let reader = BufReader::new(stdout);
+                            for _ in reader.lines().map_while(Result::ok) {}
+                        });
+                    }
                     *guard = Some(child);
                     let _ = set_runtime_state(&self.runtime_state, "Crashed");
                     return Err(format!(
@@ -343,9 +353,6 @@ impl ServerManagerState {
             }
         }
 
-        // stdout is consumed only to detect Paper readiness and avoid a filled pipe.
-        // Paper already persists its own canonical logs under server/logs; duplicating
-        // every console line in the controller would add continuous disk I/O.
         if let Some(stdout) = child.stdout.take() {
             let runtime_state = Arc::clone(&self.runtime_state);
             let expected_stop = Arc::clone(&self.expected_stop);
