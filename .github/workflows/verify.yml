@@ -35,13 +35,16 @@ jobs:
           cache: maven
       - name: Compile and test Paper modules
         run: mvn --batch-mode --no-transfer-progress verify
+      - name: Stage tested core modules
+        run: |
+          mkdir -p .artifacts/core
+          cp modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
+          cp modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
       - name: Upload tested core modules
         uses: actions/upload-artifact@v4
         with:
           name: LazyBuilder-Core-${{ github.sha }}
-          path: |
-            modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar
-            modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
+          path: .artifacts/core/*.jar
           if-no-files-found: error
           retention-days: 7
 
