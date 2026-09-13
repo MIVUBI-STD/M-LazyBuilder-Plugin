@@ -140,7 +140,7 @@ public final class WorldManagerScreen extends Screen {
             teleport.active = !busy;
             addDrawableChild(teleport);
 
-            String loadLabel = "LOADED".equals(world.runtimeState()) ? "Unload" : "Load";
+            String loadLabel = "LOADED".equals(world.runtimeState()) ? "Unload World" : "Load World";
             int loadX = narrow ? x : x + half + 10;
             int loadY = narrow ? y + 34 : y;
             LbButtonWidget load = LbUi.button(loadX, loadY, half, 26, loadLabel,
@@ -160,7 +160,7 @@ public final class WorldManagerScreen extends Screen {
             addDrawableChild(export);
 
             y += 46;
-            addManagementActions(l, world, busy, x, y, contentWidth, half, narrow);
+            addManagementActions(world, busy, x, y, contentWidth, half, narrow);
         } else if ("ARCHIVED".equals(world.lifecycle())) {
             LbButtonWidget restore = LbUi.button(x, y, contentWidth, 26, "Restore World",
                     LbButtonWidget.Style.PRIMARY, () -> controller.restore(world.worldId()));
@@ -177,7 +177,6 @@ public final class WorldManagerScreen extends Screen {
     }
 
     private void addManagementActions(
-            Layout l,
             WorldControlWireProtocol.WorldSummary world,
             boolean busy,
             int x,
@@ -188,10 +187,7 @@ public final class WorldManagerScreen extends Screen {
     ) {
         LbButtonWidget settings = LbUi.button(x, y, half, 24, "Settings",
                 LbButtonWidget.Style.GHOST,
-                () -> {
-                    controller.requestSettings(world.worldId());
-                    if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world));
-                });
+                () -> { if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world)); });
         settings.active = !busy;
         addDrawableChild(settings);
 
@@ -280,20 +276,21 @@ public final class WorldManagerScreen extends Screen {
 
         int tx = detailLeft + 22;
         context.drawTextWithShadow(textRenderer, Text.literal(selected.displayName()), tx, 52, LbUi.TEXT_PRIMARY);
-        String status = titleCase(selected.lifecycle()) + "  •  " + titleCase(selected.runtimeState());
-        context.drawTextWithShadow(textRenderer, Text.literal(status), tx, 72,
+        context.drawTextWithShadow(textRenderer, Text.literal(statusLabel(selected)), tx, 72,
                 "LOADED".equals(selected.runtimeState()) ? LbUi.SUCCESS : LbUi.TEXT_SECONDARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Type  " + titleCase(selected.kind())), tx, 92, LbUi.TEXT_MUTED);
-        if (detailWidth >= 260) {
-            context.drawTextWithShadow(textRenderer, Text.literal("Folder  " + selected.folderName()), tx, 106, LbUi.TEXT_MUTED);
-        }
-        LbUi.divider(context, tx, 114, detailLeft + detailWidth - 22);
-        context.drawTextWithShadow(textRenderer, Text.literal("Actions"), tx, 120, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("World Type  " + titleCase(selected.kind())), tx, 92, LbUi.TEXT_MUTED);
+        LbUi.divider(context, tx, 108, detailLeft + detailWidth - 22);
+        context.drawTextWithShadow(textRenderer, Text.literal("Actions"), tx, 116, LbUi.TEXT_SECONDARY);
 
         if (controller.lastError() != null) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
                     detailLeft + detailWidth / 2, l.bottom - 18, LbUi.DANGER_BRIGHT);
         }
+    }
+
+    private static String statusLabel(WorldControlWireProtocol.WorldSummary world) {
+        if ("ARCHIVED".equals(world.lifecycle())) return "Archived";
+        return "LOADED".equals(world.runtimeState()) ? "Loaded and ready" : "Not loaded";
     }
 
     private void renderOperationStatus(DrawContext context, Layout l) {
