@@ -35,9 +35,9 @@ public final class ClientWorldController {
         send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
     }
 
-    public void deleteWorld(UUID worldId, String typedFolderName) {
+    public void deleteWorld(UUID worldId, String typedWorldName) {
         beginActivity("Deleting world…");
-        send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
+        send(new WorldControlWireProtocol.DeleteWorld(worldId, typedWorldName));
     }
 
     public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
@@ -55,7 +55,6 @@ public final class ClientWorldController {
     public void archive(UUID worldId) { send(new WorldControlWireProtocol.ArchiveWorld(worldId)); }
     public void restore(UUID worldId) { send(new WorldControlWireProtocol.RestoreWorld(worldId)); }
     public void requestSettings(UUID worldId) { send(new WorldControlWireProtocol.GetSettings(worldId)); }
-    public void setAutoLoad(UUID worldId, boolean enabled) { send(new WorldControlWireProtocol.SetAutoLoad(worldId, enabled)); }
     public void setDefaultMode(UUID worldId, String mode) { send(new WorldControlWireProtocol.SetDefaultMode(worldId, mode)); }
     public void setDifficulty(UUID worldId, String difficulty) { send(new WorldControlWireProtocol.SetDifficulty(worldId, difficulty)); }
     public void setPvp(UUID worldId, boolean enabled) { send(new WorldControlWireProtocol.SetPvp(worldId, enabled)); }
@@ -133,7 +132,7 @@ public final class ClientWorldController {
             if (!world.worldId().equals(snapshot.worldId())) continue;
             replace(new WorldControlWireProtocol.WorldSummary(
                     world.worldId(), world.folderName(), world.displayName(), world.kind(), world.lifecycle(),
-                    world.runtimeState(), snapshot.autoLoad(), snapshot.defaultGameMode()));
+                    world.runtimeState(), world.autoLoad(), snapshot.defaultGameMode()));
             return;
         }
     }
