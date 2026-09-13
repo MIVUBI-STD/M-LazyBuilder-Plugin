@@ -10,11 +10,9 @@
     logicalProcessors: 1,
     currentMaxMemoryMb: 1024,
     currentMinMemoryMb: 1024,
-    currentCpuMode: 'Adaptive',
-    currentCpuThreads: 1,
     currentPreset: 'Custom',
-    performance: { name: 'Performance', maxMemoryMb: 1024, minMemoryMb: 1024, cpuMode: 'Adaptive', cpuThreads: 1 },
-    boost: { name: 'Boost', maxMemoryMb: 1024, minMemoryMb: 1024, cpuMode: 'Adaptive', cpuThreads: 1 },
+    performance: { name: 'Performance', maxMemoryMb: 1024, minMemoryMb: 1024 },
+    boost: { name: 'Boost', maxMemoryMb: 1024, minMemoryMb: 1024 },
     warning: ''
   };
 
@@ -24,8 +22,6 @@
     usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: ''
   };
   let ramMb = 1024;
-  let cpuMode: 'Adaptive' | 'Manual' = 'Adaptive';
-  let cpuThreads = 1;
   let preset = 'Custom';
   let busy = false;
   let error = '';
@@ -34,7 +30,6 @@
   const gb = (mb: number) => mb / 1024;
   const ramStep = () => profile.safeMaxMemoryMb >= 8192 ? 512 : 256;
   const selectedLabel = () => preset === 'Custom' ? 'Custom / Advanced' : preset;
-  const cpuSummary = () => cpuMode === 'Adaptive' ? 'Adaptive CPU' : `${cpuThreads} CPU threads`;
   const startupRamFor = (maxMb: number) => {
     if (maxMb <= 4096) return 1024;
     if (maxMb <= 8192) return 2048;
@@ -45,8 +40,6 @@
   function syncFromProfile(next: ServerResourceProfile) {
     profile = next;
     ramMb = Math.min(next.currentMaxMemoryMb, next.safeMaxMemoryMb);
-    cpuMode = next.currentCpuMode;
-    cpuThreads = Math.min(next.currentCpuThreads, next.logicalProcessors);
     preset = next.currentPreset;
   }
 
@@ -67,20 +60,13 @@
   function selectPreset(name: 'Performance' | 'Boost') {
     const selected = name === 'Performance' ? profile.performance : profile.boost;
     ramMb = selected.maxMemoryMb;
-    cpuMode = 'Adaptive';
-    cpuThreads = profile.logicalProcessors;
     preset = name;
-    message = `${name} selected. CPU will remain OS managed and adaptive.`;
+    message = `${name} selected. CPU remains OS managed.`;
   }
 
   function markCustom() {
     preset = 'Custom';
-    message = 'Advanced values changed. Apply resources to save the custom profile.';
-  }
-
-  function setCpuMode(mode: 'Adaptive' | 'Manual') {
-    cpuMode = mode;
-    markCustom();
+    message = 'RAM ceiling changed. Apply resources to save the custom profile.';
   }
 
   async function save(restart: boolean) {
@@ -91,8 +77,6 @@
     try {
       const next = await runtimeProduct.server.saveResources({
         maxMemoryMb: ramMb,
-        cpuMode,
-        cpuThreads,
         preset
       });
       syncFromProfile(next);
@@ -116,7 +100,7 @@
 </script>
 
 <h1>Settings</h1>
-<p class="subtle">Memory grows only when needed. CPU is adaptive by default so Java and Windows can use the processor naturally without a fixed thread allocation.</p>
+<p class="subtle">Memory grows only when needed. CPU scheduling stays OS managed so Java and Windows can use the processor naturally.</p>
 
 <section class="resource-overview">
   <div>
@@ -136,7 +120,7 @@
   <div class="section-heading">
     <div>
       <div class="label">Recommended Presets</div>
-      <p class="subtle">Preset memory uses an efficiency cap. CPU remains adaptive and OS managed in both presets.</p>
+      <p class="subtle">Choose a RAM profile. CPU remains adaptive and OS managed.</p>
     </div>
   </div>
 
@@ -152,11 +136,11 @@
         <strong>Performance</strong>
         {#if preset === 'Performance'}<span class="selected-badge">Selected</span>{/if}
       </div>
-      <p>Default mode. Strong everyday Paper performance with a small startup heap and natural CPU scheduling.</p>
+      <p>Default mode. Strong everyday Paper performance with a small startup heap.</p>
       <div class="preset-stats">
         <span><b>{gb(profile.performance.minMemoryMb).toFixed(1)} GB</b> startup</span>
         <span><b>{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
-        <span><b>Adaptive</b> CPU</span>
+        <span><b>OS managed</b> CPU</span>
       </div>
     </button>
 
@@ -171,11 +155,11 @@
         <strong>Boost</strong>
         {#if preset === 'Boost'}<span class="selected-badge">Selected</span>{/if}
       </div>
-      <p>Extra RAM headroom for heavy imports, generation and large builds. CPU remains adaptive instead of being forced to a fixed allocation.</p>
+      <p>Extra RAM headroom for heavy imports, generation and large builds.</p>
       <div class="preset-stats">
         <span><b>{gb(profile.boost.minMemoryMb).toFixed(1)} GB</b> startup</span>
         <span><b>{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
-        <span><b>Adaptive</b> CPU</span>
+        <span><b>OS managed</b> CPU</span>
       </div>
     </button>
   </div>
@@ -184,17 +168,13 @@
 <details class="advanced-panel">
   <summary>
     <span>
-      <strong>Advanced Resource Control</strong>
-      <small>Manual RAM ceiling and optional fixed Java CPU concurrency</small>
+      <strong>Advanced RAM Control</strong>
+      <small>Set a custom maximum server RAM ceiling</small>
     </span>
     <span class="advanced-state">{preset === 'Custom' ? 'Custom active' : 'Optional'}</span>
   </summary>
 
   <div class="advanced-content">
-    <div class="advanced-note">
-      Adaptive CPU is recommended. It does not pass <code>ActiveProcessorCount</code>, so the JVM sees the machine normally and Windows remains responsible for scheduling CPU time across applications.
-    </div>
-
     <div class="slider-block">
       <div class="slider-heading">
         <div>
@@ -214,36 +194,6 @@
       />
       <p class="subtle">Paper starts with a smaller heap and can grow toward this maximum only when workload requires it.</p>
     </div>
-
-    <div class="slider-block">
-      <div class="slider-heading">
-        <div>
-          <div class="label">Java CPU Concurrency</div>
-          <div class="slider-value">{cpuMode === 'Adaptive' ? 'Adaptive / OS Managed' : `${cpuThreads} / ${profile.logicalProcessors} threads`}</div>
-        </div>
-        <span class="limit-note">Adaptive recommended</span>
-      </div>
-
-      <div class="cpu-mode-row">
-        <button class:active={cpuMode === 'Adaptive'} disabled={busy} onclick={() => setCpuMode('Adaptive')}>Adaptive</button>
-        <button class:active={cpuMode === 'Manual'} disabled={busy} onclick={() => setCpuMode('Manual')}>Manual</button>
-      </div>
-
-      {#if cpuMode === 'Manual'}
-        <input
-          aria-label="Manual Java CPU concurrency"
-          type="range"
-          min="1"
-          max={Math.max(1, profile.logicalProcessors)}
-          step="1"
-          bind:value={cpuThreads}
-          oninput={markCustom}
-        />
-        <p class="subtle">Manual mode exposes a fixed processor count to Java through <code>-XX:ActiveProcessorCount</code>. Use only for a specific compatibility or testing need.</p>
-      {:else}
-        <p class="subtle">No CPU quota or affinity is applied. Paper uses CPU according to workload while Windows schedules resources for the Minecraft client and other applications.</p>
-      {/if}
-    </div>
   </div>
 </details>
 
@@ -254,10 +204,10 @@
       <span>System RAM <b>{gb(profile.totalMemoryMb).toFixed(1)} GB</b></span>
       <span>Windows reserve <b>{gb(profile.reservedSystemMemoryMb).toFixed(1)} GB</b></span>
       <span>Absolute safe ceiling <b>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</b></span>
-      <span>CPU <b>{cpuMode === 'Adaptive' ? 'OS managed' : 'Manual'}</b></span>
+      <span>CPU <b>OS managed</b></span>
     </div>
   </div>
-  <p class="subtle">RAM keeps an explicit safety boundary. Adaptive CPU intentionally avoids a fixed allocation so the operating system can balance the server with the rest of the computer.</p>
+  <p class="subtle">RAM keeps an explicit safety boundary while the operating system remains responsible for CPU scheduling.</p>
 </section>
 
 {#if profile.warning}
@@ -273,7 +223,7 @@
 <div class="apply-bar">
   <div>
     <strong>{selectedLabel()}</strong>
-    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup → {gb(ramMb).toFixed(1)} GB max · {cpuSummary()}</span>
+    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup → {gb(ramMb).toFixed(1)} GB max · OS managed CPU</span>
   </div>
   <div class="actions">
     <button disabled={busy} onclick={() => save(false)}>Apply Resources</button>
@@ -329,14 +279,10 @@
   .advanced-panel > summary::-webkit-details-marker { display: none; }
   .advanced-panel summary small { display: block; margin-top: 4px; opacity: .62; }
   .advanced-content { padding: 0 16px 16px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
-  .advanced-note { margin: 14px 0; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: .88rem; line-height: 1.45; }
-  .slider-block + .slider-block { margin-top: 20px; }
-  .slider-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+  .slider-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-top: 14px; }
   .slider-value { margin-top: 4px; font-size: 1.12rem; font-weight: 700; }
   .limit-note { font-size: .78rem; opacity: .6; text-align: right; }
   input[type='range'] { width: 100%; margin: 12px 0 4px; }
-  .cpu-mode-row { display: flex; gap: 8px; margin: 12px 0 8px; }
-  .cpu-mode-row button.active { outline: 2px solid currentColor; outline-offset: -2px; }
   .safety-grid { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 9px 0; font-size: .9rem; }
   .warning-card { border-color: var(--danger, currentColor); }
   .warning-card p { margin-bottom: 0; }
