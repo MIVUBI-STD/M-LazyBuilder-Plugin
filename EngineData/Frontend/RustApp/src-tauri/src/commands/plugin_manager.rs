@@ -1,3 +1,4 @@
+use crate::engine::backup_maintenance;
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
 use tauri::State;
 
@@ -25,7 +26,11 @@ pub fn plugin_update(
     plugin_id: String,
     jar_path: String,
 ) -> Result<PluginInstallResult, String> {
-    state.update(&plugin_id, &jar_path)
+    let result = state.update(&plugin_id, &jar_path)?;
+    if result.success {
+        let _ = backup_maintenance::maintain_plugin_backups();
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -43,7 +48,9 @@ pub fn plugin_remove(
     plugin_id: String,
     remove_data: bool,
 ) -> Result<(), String> {
-    state.remove(&plugin_id, remove_data)
+    state.remove(&plugin_id, remove_data)?;
+    let _ = backup_maintenance::maintain_plugin_backups();
+    Ok(())
 }
 
 #[tauri::command]
@@ -52,7 +59,11 @@ pub fn plugin_resolve_duplicates(
     plugin_id: String,
     keep_jar_file_name: String,
 ) -> Result<PluginInstallResult, String> {
-    state.resolve_duplicates(&plugin_id, &keep_jar_file_name)
+    let result = state.resolve_duplicates(&plugin_id, &keep_jar_file_name)?;
+    if result.success {
+        let _ = backup_maintenance::maintain_plugin_backups();
+    }
+    Ok(result)
 }
 
 #[tauri::command]
