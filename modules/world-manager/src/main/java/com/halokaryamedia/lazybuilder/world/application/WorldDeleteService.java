@@ -19,7 +19,6 @@ public final class WorldDeleteService {
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
     private final WorldFileRepository files;
     private final Predicate<WorldRecord> protectedWorld;
@@ -28,18 +27,16 @@ public final class WorldDeleteService {
             WorldRegistry registry,
             WorldRegistryPersistence persistence,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations,
             WorldFileRepository files
     ) {
-        this(registry, persistence, runtimeService, runtimeStates, operations, files, ignored -> false);
+        this(registry, persistence, runtimeService, operations, files, ignored -> false);
     }
 
     public WorldDeleteService(
             WorldRegistry registry,
             WorldRegistryPersistence persistence,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations,
             WorldFileRepository files,
             Predicate<WorldRecord> protectedWorld
@@ -47,10 +44,22 @@ public final class WorldDeleteService {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.files = Objects.requireNonNull(files, "files");
         this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
+    }
+
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldDeleteService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files,
+            Predicate<WorldRecord> protectedWorld
+    ) {
+        this(registry, persistence, runtimeService, operations, files, protectedWorld);
     }
 
     public DeleteTask prepare(WorldId worldId, String typedConfirmation) {
@@ -66,7 +75,7 @@ public final class WorldDeleteService {
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
-        boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
+        boolean wasLoaded = runtimeService.isLoaded(worldId);
         try {
             runtimeService.unloadDuringOperation(worldId);
             return new DeleteTask(UUID.randomUUID(), world, wasLoaded, lease);
@@ -88,7 +97,6 @@ public final class WorldDeleteService {
             persistence.save(List.copyOf(remaining));
 
             registry.remove(task.world.id());
-            runtimeStates.remove(task.world.id());
             task.committed = true;
 
             try {
@@ -99,32 +107,21 @@ public final class WorldDeleteService {
             }
         } catch (IOException | RuntimeException exception) {
             if (staged != null && !task.committed) {
-                try {
-                    files.publishStagedWorld(staged, task.world.folderName());
-                } catch (IOException restoreFailure) {
-                    exception.addSuppressed(restoreFailure);
-                }
+                try { files.publishStagedWorld(staged, task.world.folderName()); }
+                catch (IOException restoreFailure) { exception.addSuppressed(restoreFailure); }
             }
             throw new IllegalStateException("Failed to delete world: " + task.world.folderName(), exception);
         }
     }
 
-    /**
-     * Finalization never reports an already committed delete as failed merely because
-     * temporary workspace cleanup was delayed. It retries cleanup once and keeps the
-     * warning on the task for diagnostics/maintenance.
-     */
     public void finish(DeleteTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
 
         RuntimeException failure = null;
         if (!task.committed && task.wasLoaded) {
-            try {
-                runtimeService.loadDuringOperation(task.world.id());
-            } catch (RuntimeException exception) {
-                failure = exception;
-            }
+            try { runtimeService.loadDuringOperation(task.world.id()); }
+            catch (RuntimeException exception) { failure = exception; }
         }
 
         if (task.committed && task.cleanupWorkspace != null) {
@@ -152,12 +149,7 @@ public final class WorldDeleteService {
         private Path cleanupWorkspace;
         private IOException cleanupFailure;
 
-        private DeleteTask(
-                UUID operationId,
-                WorldRecord world,
-                boolean wasLoaded,
-                WorldOperationCoordinator.Lease lease
-        ) {
+        private DeleteTask(UUID operationId, WorldRecord world, boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
             this.operationId = operationId;
             this.world = world;
             this.wasLoaded = wasLoaded;
