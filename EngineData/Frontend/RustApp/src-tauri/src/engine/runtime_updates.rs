@@ -62,16 +62,24 @@ pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
 
 pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
-    core_modules::sync(&workspace, resource_dir)?;
+    let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
 
-    // Core JAR publication is one transaction, so publish the matching manifest
-    // versions as one atomic JSON write as well. Never expose a half-versioned
-    // World/Utilities pair to later status or startup checks.
     let mut manifest = read_manifest(&workspace)?;
     manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
     manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
-    write_json_atomic(&manifest_path(&workspace), &manifest)?;
 
+    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
+        return match transaction.rollback() {
+            Ok(()) => Err(format!(
+                "Core metadata update failed and core JARs were rolled back: {manifest_error}"
+            )),
+            Err(rollback_error) => Err(format!(
+                "Core metadata update failed: {manifest_error}; core JAR rollback also failed: {rollback_error}"
+            )),
+        };
+    }
+
+    transaction.finalize();
     status()
 }
 
