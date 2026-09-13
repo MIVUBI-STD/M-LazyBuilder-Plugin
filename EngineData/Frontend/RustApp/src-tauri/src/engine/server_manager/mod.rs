@@ -300,9 +300,6 @@ impl ServerManagerState {
             .current_dir(&server_dir)
             .arg(format!("-Xms{}M", resources.min_memory_mb))
             .arg(format!("-Xmx{}M", resources.max_memory_mb));
-        if let Some(cpu_threads) = resources.cpu_threads {
-            command.arg(format!("-XX:ActiveProcessorCount={cpu_threads}"));
-        }
         let mut child = command
             .args(["-jar", &options.paper_jar])
             .arg("--universe")
