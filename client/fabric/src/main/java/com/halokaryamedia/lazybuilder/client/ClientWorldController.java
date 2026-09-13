@@ -32,7 +32,7 @@ public final class ClientWorldController {
 
     public void duplicateWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
         beginActivity("Duplicating world…");
-        send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
+        send(new WorldControlWireProtocol.DuplicateWorld(sourceWorldId, destinationFolder, displayName));
     }
 
     public void deleteWorld(UUID worldId, String typedWorldName) {
@@ -132,7 +132,7 @@ public final class ClientWorldController {
             if (!world.worldId().equals(snapshot.worldId())) continue;
             replace(new WorldControlWireProtocol.WorldSummary(
                     world.worldId(), world.folderName(), world.displayName(), world.kind(), world.lifecycle(),
-                    world.runtimeState(), world.autoLoad(), snapshot.defaultGameMode()));
+                    snapshot.defaultGameMode()));
             return;
         }
     }
