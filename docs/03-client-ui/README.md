@@ -17,7 +17,7 @@ M
        → World Manager
 ```
 
-Xaero World Map 1.21.4 is the mandatory interaction-quality reference for the fullscreen map. The acceptance target is behavioural/interaction parity for the map experience: the same mental model, control expectations, camera feel, contextual-menu flow, explored-map persistence and unobtrusive fullscreen presentation. LazyBuilder does not copy Xaero source code, textures, icons or branding and does not require Xaero at runtime.
+Xaero World Map 1.21.4 is the mandatory interaction-quality reference for the fullscreen map. The acceptance target is behavioural/interaction parity for the map experience: the same mental model, control expectations, camera feel, contextual-menu flow, explored-map persistence, multi-scale terrain readability and unobtrusive fullscreen presentation. LazyBuilder does not copy Xaero source code, textures, icons or branding and does not require Xaero at runtime.
 
 ## Xaero-Parity Lock
 
@@ -31,6 +31,7 @@ left mouse drag       pan continuously
 mouse wheel           cursor-anchored animated zoom
 CTRL + wheel          precise/fine zoom
 + / -                 alternative zoom controls
+middle mouse          recenter on player
 right click           "Choose an Option" contextual menu at cursor
 ESC                    close context first, then selection, then map
 player marker          directional arrow, not a generic square
@@ -39,6 +40,7 @@ exploration            discovered terrain remains mapped after reopen/restart
 unexplored terrain     visually distinct and non-authoritative
 map camera             preserved while visiting LazyBuilder Worlds UI
 area selection         visible overlay + explicit confirmation
+far zoom               aggregate multiple terrain samples; never one isolated block per large cell
 ```
 
 LazyBuilder-specific context options currently replace Xaero-only waypoint/player-radar actions:
@@ -94,6 +96,7 @@ left-drag          pan camera
 mouse wheel        cursor-anchored smooth zoom
 CTRL + wheel       precise zoom increments
 + / -              alternative stepped zoom
+middle-click       recenter on player
 right-click        cursor-local contextual menu
 Teleport Here      server resolves safe Y and teleports
 Export Area        select corner 1 + corner 2 + confirm
@@ -104,7 +107,7 @@ Worlds             open secondary World Manager without losing map camera
 
 The player marker is directional. Hovered map coordinates and zoom are shown unobtrusively. Dimension and managed-world identity remain visible without turning the screen into a dashboard.
 
-### Map memory
+### Map memory and LOD
 
 `ClientMapSurfaceCache` stores presentation-only terrain samples per managed-world + dimension scope.
 
@@ -117,7 +120,11 @@ Rules:
 - persist compressed sampled map memory under the LazyBuilder client data folder;
 - separate every managed world and dimension;
 - use Minecraft map colours plus lightweight relief shading;
+- at wider zoom levels blend a bounded multi-point footprint from the same canonical base-column cache;
+- do not create a second LOD persistence system;
 - persisted map data is never server authority.
+
+The multi-sample LOD path is specifically required so roads, coastlines, terrain boundaries and large structures do not collapse into the colour of one arbitrary block at wide zoom. Missing LOD points enter the same bounded sampling queue, keeping frame work predictable.
 
 This prevents the previous synchronous full-visible-map sampling behaviour and allows explored terrain to remain visible after closing/reopening the map or restarting the client.
 
@@ -218,6 +225,7 @@ Contract:
 
 - one fullscreen map owner and one map entry path;
 - bounded map sampling per frame;
+- one canonical base-column cache reused by close and far zoom levels;
 - persistent map memory only for observed client terrain;
 - no background world-list/settings polling;
 - no client-side shadow world registry;
@@ -228,4 +236,4 @@ Contract:
 
 ## Proof Boundary
 
-The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
+The current development pass intentionally defers CI/runtime validation until implementation is complete. Final validation must cover Fabric compilation, actual map rendering/input, close-range and far-zoom terrain readability, cursor-anchored normal and precise zoom, context-menu ordering, player-arrow orientation, persistent map memory, native Windows dialogs, real upload/download, server permissions, teleport resolution, area export, whole-world export, and World Manager navigation on a live 1.21.4 client/server pair.
