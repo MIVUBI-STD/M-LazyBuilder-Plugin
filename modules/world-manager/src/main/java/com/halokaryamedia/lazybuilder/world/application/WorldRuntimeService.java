@@ -17,15 +17,6 @@ public final class WorldRuntimeService {
         this(registry, runtime, null);
     }
 
-    /** Migration bridge only: the legacy runtime registry is deliberately ignored as an authority. */
-    public WorldRuntimeService(
-            WorldRegistry registry,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldRuntimeGateway runtime
-    ) {
-        this(registry, runtime, null);
-    }
-
     public WorldRuntimeService(
             WorldRegistry registry,
             WorldRuntimeGateway runtime,
