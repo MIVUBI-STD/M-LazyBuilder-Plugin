@@ -14,14 +14,11 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    /**
-     * V2 removes manual load/unload and auto-load metadata from the product contract.
-     * Runtime load truth belongs to Paper and is handled automatically by server use cases.
-     */
     public static final int VERSION = 2;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
+    private static final int MAX_FORMATS = 256;
 
     private static final int LIST = 1;
     private static final int CREATE = 2;
@@ -38,12 +35,14 @@ public final class WorldControlWireProtocol {
     private static final int SET_SPAWN_HERE = 16;
     private static final int EXPORT_WORLD = 17;
     private static final int IMPORT_WORLD = 18;
+    private static final int GET_EXPORT_FORMATS = 19;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
     private static final int TELEPORT_OK = 103;
     private static final int SETTINGS = 104;
     private static final int EXPORT_READY = 105;
+    private static final int EXPORT_FORMATS = 106;
     private static final int ERROR = 127;
 
     private WorldControlWireProtocol() {}
@@ -51,9 +50,10 @@ public final class WorldControlWireProtocol {
     public sealed interface Request permits ListWorlds, CreateWorld, TeleportWorld,
             ArchiveWorld, RestoreWorld, DuplicateWorld, DeleteWorld, GetSettings,
             SetDefaultMode, SetDifficulty, SetPvp, ResetBuildReady, SetSpawnHere,
-            ExportWorld, ImportWorld {}
+            ExportWorld, ImportWorld, GetExportFormats {}
 
     public record ListWorlds() implements Request {}
+    public record GetExportFormats() implements Request {}
 
     public record CreateWorld(String folderName, String displayName, String kind) implements Request {
         public CreateWorld {
@@ -109,9 +109,9 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot, ExportReady, ErrorResponse {}
+    public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot,
+            ExportReady, ExportFormats, ErrorResponse {}
 
-    /** Durable/presentation world summary. Runtime loaded state is intentionally absent. */
     public record WorldSummary(
             UUID worldId,
             String folderName,
@@ -157,6 +157,16 @@ public final class WorldControlWireProtocol {
         }
     }
 
+    public record ExportFormats(List<String> formats) implements Response {
+        public ExportFormats {
+            formats = List.copyOf(Objects.requireNonNull(formats, "formats"));
+            if (formats.isEmpty() || formats.size() > MAX_FORMATS) {
+                throw new IllegalArgumentException("Export format count is invalid");
+            }
+            for (String format : formats) requireString(format, "format");
+        }
+    }
+
     public record WorldList(List<WorldSummary> worlds) implements Response {
         public WorldList {
             worlds = List.copyOf(Objects.requireNonNull(worlds, "worlds"));
@@ -184,6 +194,7 @@ public final class WorldControlWireProtocol {
         return write(requestOpcode(request), out -> {
             switch (request) {
                 case ListWorlds ignored -> { }
+                case GetExportFormats ignored -> { }
                 case CreateWorld create -> {
                     writeString(out, create.folderName());
                     writeString(out, create.displayName());
@@ -240,6 +251,7 @@ public final class WorldControlWireProtocol {
                 case SET_SPAWN_HERE -> new SetSpawnHere(readUuid(in));
                 case EXPORT_WORLD -> new ExportWorld(readUuid(in), readString(in), readString(in));
                 case IMPORT_WORLD -> new ImportWorld(readString(in), readString(in), readString(in));
+                case GET_EXPORT_FORMATS -> new GetExportFormats();
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -255,6 +267,7 @@ public final class WorldControlWireProtocol {
             case TeleportOk ignored -> TELEPORT_OK;
             case SettingsSnapshot ignored -> SETTINGS;
             case ExportReady ignored -> EXPORT_READY;
+            case ExportFormats ignored -> EXPORT_FORMATS;
             case ErrorResponse ignored -> ERROR;
         };
         return write(opcode, out -> {
@@ -273,6 +286,10 @@ public final class WorldControlWireProtocol {
                     writeUuid(out, export.worldId());
                     writeString(out, export.artifactName());
                     writeString(out, export.targetFormat());
+                }
+                case ExportFormats formats -> {
+                    out.writeInt(formats.formats().size());
+                    for (String format : formats.formats()) writeString(out, format);
                 }
                 case ErrorResponse error -> writeString(out, error.message());
             }
@@ -294,6 +311,13 @@ public final class WorldControlWireProtocol {
                 case TELEPORT_OK -> new TeleportOk(readWorld(in));
                 case SETTINGS -> readSettings(in);
                 case EXPORT_READY -> new ExportReady(readUuid(in), readString(in), readString(in));
+                case EXPORT_FORMATS -> {
+                    int count = in.readInt();
+                    if (count <= 0 || count > MAX_FORMATS) throw new IOException("Export format count is invalid");
+                    List<String> formats = new ArrayList<>(count);
+                    for (int i = 0; i < count; i++) formats.add(readString(in));
+                    yield new ExportFormats(formats);
+                }
                 case ERROR -> new ErrorResponse(readString(in));
                 default -> throw new IOException("Unknown world-control response opcode: " + opcode);
             };
@@ -327,6 +351,7 @@ public final class WorldControlWireProtocol {
             case SetSpawnHere ignored -> SET_SPAWN_HERE;
             case ExportWorld ignored -> EXPORT_WORLD;
             case ImportWorld ignored -> IMPORT_WORLD;
+            case GetExportFormats ignored -> GET_EXPORT_FORMATS;
         };
     }
 
