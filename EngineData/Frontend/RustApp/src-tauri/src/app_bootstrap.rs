@@ -15,7 +15,6 @@ pub fn run() {
             commands::workspace::workspace_provision,
             commands::workspace::workspace_runtime_update_status,
             commands::workspace::workspace_update_paper,
-            commands::workspace::workspace_sync_core,
             commands::workspace::workspace_accept_eula,
             commands::workspace::workspace_pick_parent,
             commands::workspace::workspace_create,
