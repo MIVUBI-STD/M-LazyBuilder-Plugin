@@ -13,12 +13,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Phased backup use case.
- *
- * <p>prepare/finish own Paper lifecycle work. executeFilePhase performs snapshot copy and
- * compression on a worker thread. Backup storage remains owned by World-Manager.</p>
- */
+/** Phased backup use case with request-bound filesystem work. */
 public final class WorldBackupService {
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
@@ -43,7 +38,6 @@ public final class WorldBackupService {
         this.backups = Objects.requireNonNull(backups, "backups");
     }
 
-    /** Main-thread phase: validate, acquire lease, and quiesce the source world. */
     public BackupTask prepare(WorldId worldId) {
         Objects.requireNonNull(worldId, "worldId");
         WorldRecord world = registry.find(worldId)
@@ -65,32 +59,38 @@ public final class WorldBackupService {
         }
     }
 
-    /** Worker-thread phase: snapshot-copy, compress, then clean temporary workspace. */
     public BackupResult executeFilePhase(BackupTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         Path staged = null;
+        IllegalStateException primaryFailure = null;
         try {
             staged = files.stageCopy(task.world, task.operationId, WorldCopyProfile.SNAPSHOT);
             Path artifact = backups.createBackup(staged, task.backupId);
             task.committed = true;
             return new BackupResult(task.backupId, artifact.getFileName().toString());
         } catch (IOException | RuntimeException exception) {
-            throw new IllegalStateException("Failed to back up world " + task.world.folderName(), exception);
+            primaryFailure = new IllegalStateException(
+                    "Failed to back up world " + task.world.folderName(), exception);
+            throw primaryFailure;
         } finally {
             if (staged != null) {
                 try {
                     files.deleteWorkspace(staged);
                 } catch (IOException cleanupFailure) {
-                    if (!task.committed) {
-                        throw new IllegalStateException("Failed to clean backup workspace for " + task.world.folderName(), cleanupFailure);
+                    if (primaryFailure != null) {
+                        primaryFailure.addSuppressed(cleanupFailure);
+                    } else if (!task.committed) {
+                        throw new IllegalStateException(
+                                "Failed to clean backup workspace for " + task.world.folderName(), cleanupFailure);
+                    } else {
+                        task.cleanupFailure = cleanupFailure;
                     }
                 }
             }
         }
     }
 
-    /** Main-thread phase: restore the source load state and release its operation lease. */
     public void finish(BackupTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
@@ -117,6 +117,7 @@ public final class WorldBackupService {
         private final WorldOperationCoordinator.Lease lease;
         private boolean committed;
         private boolean closed;
+        private IOException cleanupFailure;
 
         private BackupTask(
                 UUID operationId,
@@ -135,6 +136,7 @@ public final class WorldBackupService {
         public WorldRecord world() { return world; }
         public String backupId() { return backupId; }
         public boolean committed() { return committed; }
+        public IOException cleanupFailure() { return cleanupFailure; }
 
         private void requireOpen() {
             if (closed) throw new IllegalStateException("Backup task is already closed");
