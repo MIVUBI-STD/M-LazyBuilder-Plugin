@@ -24,7 +24,7 @@ pub fn ready(workspace: &Path) -> bool {
 
 fn resolve_source(resource_dir: Option<&Path>, file_name: &str, source_relative: &str) -> Result<PathBuf, String> {
     if let Some(resource_dir) = resource_dir {
-        let bundled = resource_dir.join("core").join(file_name);
+        let bundled = resource_dir.join("resources").join("core").join(file_name);
         if bundled.is_file() { return Ok(bundled); }
     }
     let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
