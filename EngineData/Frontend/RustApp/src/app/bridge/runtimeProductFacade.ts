@@ -4,6 +4,7 @@ export const runtimeProduct = {
   workspace: {
     state: runtimeApi.getWorkspaceState,
     provisioningStatus: runtimeApi.getWorkspaceProvisioningStatus,
+    provision: runtimeApi.provisionWorkspace,
     acceptEula: runtimeApi.acceptWorkspaceEula,
     pickParent: runtimeApi.pickWorkspaceParent,
     create: runtimeApi.createWorkspace,
