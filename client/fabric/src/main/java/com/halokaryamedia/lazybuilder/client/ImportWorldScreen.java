@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -31,27 +30,29 @@ public final class ImportWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int fieldWidth = Math.min(340, width - 60);
-        int left = center - fieldWidth / 2;
+        int panelWidth = Math.min(460, width - 48);
+        int left = width / 2 - panelWidth / 2;
         boolean busy = choosing || processingImport;
 
-        displayName = new TextFieldWidget(textRenderer, left, 96, fieldWidth, 22, Text.literal("World Name"));
-        displayName.setPlaceholder(Text.literal("Optional — uses the file name by default"));
+        displayName = new TextFieldWidget(textRenderer, left + 28, 108, panelWidth - 56, 24, Text.literal("World Name"));
+        displayName.setPlaceholder(Text.literal("Optional — uses file name"));
         displayName.setMaxLength(96);
+        displayName.setDrawsBackground(false);
+        displayName.setEditableColor(LbUi.TEXT_PRIMARY);
+        displayName.setUneditableColor(LbUi.TEXT_DISABLED);
         displayName.active = !busy;
         addDrawableChild(displayName);
 
-        String primaryLabel = processingImport ? "Importing on server…"
-                : choosing ? "Uploading world…"
+        String primaryLabel = processingImport ? "Importing on Server…"
+                : choosing ? "Uploading World…"
                 : "Choose World File";
-        ButtonWidget choose = ButtonWidget.builder(Text.literal(primaryLabel), button -> choose())
-                .dimensions(center - 125, 140, 250, 24).build();
+        LbButtonWidget choose = LbUi.button(left + 28, 156, panelWidth - 56, 28,
+                primaryLabel, LbButtonWidget.Style.PRIMARY, this::choose);
         choose.active = !busy;
         addDrawableChild(choose);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(busy ? "Back" : "Cancel"), button -> close())
-                .dimensions(center - 50, 178, 100, 20).build());
+        addDrawableChild(LbUi.button(width / 2 - 50, 206, 100, 22,
+                busy ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!busy) setInitialFocus(displayName);
     }
 
@@ -132,8 +133,7 @@ public final class ImportWorldScreen extends Screen {
     }
 
     private boolean folderExists(String candidate) {
-        return worlds.worlds().stream()
-                .anyMatch(world -> world.folderName().equalsIgnoreCase(candidate));
+        return worlds.worlds().stream().anyMatch(world -> world.folderName().equalsIgnoreCase(candidate));
     }
 
     private static String folderName(String baseName) {
@@ -148,19 +148,21 @@ public final class ImportWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        int panelWidth = Math.min(430, width - 40);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(460, width - 48);
         int left = width / 2 - panelWidth / 2;
-        context.fill(left, 14, left + panelWidth, 270, 0xB915191F);
-        super.render(context, mouseX, mouseY, delta);
+        LbUi.elevatedPanel(context, left, 26, panelWidth, 248);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 24, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Choose a world archive. LazyBuilder handles its server folder automatically."),
-                width / 2, 48, 0xB8C0CC);
-        context.drawTextWithShadow(textRenderer, Text.literal("World Name"), displayName.getX(), 82, 0xAEB7C4);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Supported files: .zip and .mcworld"), width / 2, 168, 0x8F9AA8);
+        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT WORLD"), left + 24, 44, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("Bring an existing world into LazyBuilder"),
+                left + 24, 62, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("Pick the archive first. Server folder naming is handled automatically."),
+                left + 24, 80, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("World name"), left + 28, 96, LbUi.TEXT_MUTED);
+        LbUi.field(context, displayName, validation != null);
+        context.drawTextWithShadow(textRenderer, Text.literal("Supported  .zip  •  .mcworld"),
+                left + 28, 138, LbUi.TEXT_MUTED);
 
         String statusLabel = null;
         int percent = -1;
@@ -175,19 +177,14 @@ public final class ImportWorldScreen extends Screen {
         }
 
         if (statusLabel != null) {
-            if (percent >= 0) statusLabel += "  " + percent + "%";
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(statusLabel), width / 2, 214, 0xD8DEE9);
-            if (percent >= 0) {
-                int barWidth = Math.min(300, width - 80);
-                int barLeft = width / 2 - barWidth / 2;
-                int filled = (int) Math.round(barWidth * (percent / 100.0));
-                context.fill(barLeft, 230, barLeft + barWidth, 236, 0xFF303740);
-                context.fill(barLeft, 230, barLeft + filled, 236, 0xFFD8DEE9);
-            }
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(statusLabel), width / 2, 238, LbUi.TEXT_SECONDARY);
+            if (percent >= 0) LbUi.progress(context, left + 44, 252, panelWidth - 88, percent);
         }
         if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 252, 0xFF7777);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), width / 2, 256, LbUi.DANGER_BRIGHT);
         }
+
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
