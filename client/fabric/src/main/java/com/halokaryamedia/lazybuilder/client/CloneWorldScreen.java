@@ -45,8 +45,8 @@ public final class CloneWorldScreen extends Screen {
         clone.active = !submitting;
         addDrawableChild(clone);
 
-        addDrawableChild(LbUi.button(width / 2 - 50, 208, 100, 22,
-                submitting ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
+        addDrawableChild(LbUi.button(width / 2 - 58, 208, 116, 22,
+                submitting ? "Back to Worlds" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!submitting) setInitialFocus(displayName);
     }
 
@@ -129,7 +129,7 @@ public final class CloneWorldScreen extends Screen {
                     width / 2, 248, LbUi.DANGER_BRIGHT);
         } else {
             context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal("LazyBuilder generates a unique internal folder automatically."),
+                    Text.literal("The copy is created as a separate managed world."),
                     width / 2, 248, LbUi.TEXT_MUTED);
         }
 
