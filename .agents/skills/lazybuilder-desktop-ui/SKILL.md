@@ -1,59 +1,63 @@
 ---
 name: lazybuilder-desktop-ui
-description: Specialist for the LazyBuilder Tauri/Svelte desktop presentation layer: workspace launcher, dashboard, settings, plugins, worlds UI, typed frontend bridge, and interaction flow. Use when desktop UX/presentation is the primary change.
+description: Own LazyBuilder Tauri/Svelte desktop presentation: launcher, dashboard/settings/plugins/worlds screens, frontend request/result typing, one Tauri bridge, and interaction states. Do not use for runtime/domain/plugin/world semantics.
 ---
 
 # LazyBuilder Desktop UI
 
-Own desktop presentation and interaction flow. The UI presents state and requests actions; runtime/domain rules stay with their backend owner.
+Own presentation and interaction only. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
 
-## Use This Owner For
-
-- Svelte pages/components and desktop navigation;
-- workspace launcher/adoption/provisioning presentation;
-- dashboard, settings, plugins, worlds UI;
-- frontend TypeScript request/result types and the single Tauri bridge surface;
-- loading/error/empty/progress interaction behavior.
-
-Route elsewhere when the primary owner is:
+## Owns
 
 ```text
-workspace/server/runtime semantics → lazybuilder-desktop-runtime
-world behavior                     → lazybuilder-world-management
-plugin lifecycle/business rules    → lazybuilder-plugin-management
-shared wire contract               → lazybuilder-protocol
-Fabric/Xaero client UI             → lazybuilder-client-ui
+Svelte pages/components/navigation
+workspace launcher/adoption/provisioning presentation
+dashboard/settings/plugins/worlds presentation
+loading/error/empty/progress states
+frontend request/result typing
+one frontend Tauri bridge surface
 ```
+
+## Does Not Own
+
+```text
+workspace/server/runtime semantics → desktop-runtime
+plugin lifecycle/business rules    → plugin-management
+world/Paper behavior               → world-management
+shared Paper/Fabric contract       → protocol
+Fabric/Xaero UI                    → client-ui
+```
+
+A UI file does not make this Skill the semantic owner. If a backend rule changes and UI merely displays it, the backend specialist goes first.
 
 ## Canonical Context
 
-1. `docs/01-product/README.md` for product flow when needed
+1. `docs/04-system/development-discipline.md`
 2. `docs/04-system/skill-routing.md`
-3. exact desktop frontend source
-4. backend contract source only when the UI contract depends on it
+3. exact frontend source
+4. product/domain contract only when the presentation depends on it
 
-## Rules
-
-- Keep exactly one frontend runtime bridge; do not stack facade-on-facade passthrough layers.
-- UI validation may improve feedback but must not become the security/domain authority.
-- Prefer a small recommended path over exposing internal maintenance operations as user choices.
-- Avoid duplicate state that can be derived from backend snapshots.
-- Do not expose configuration knobs without a confirmed product use-case.
-- Keep Fabric/Xaero UI ownership outside the desktop UI skill.
-
-## Efficiency Check
-
-For each screen/control ask:
+## Procedure
 
 ```text
-Does this change a real user decision?
-Does this state need to persist?
-Can this value be derived?
-Is this internal runtime maintenance accidentally exposed as UX?
+identify real user decision
+→ derive state from backend where possible
+→ reuse existing bridge/control
+→ remove redundant facade/state/control if no value
+→ implement smallest presentation change
+→ local UI proof when interaction matters
+→ STOP
 ```
 
-If the answer shows no durable user value, prefer deletion or automatic internal behavior.
+## UI Invariants
 
-## Proof
+- exactly one frontend runtime bridge;
+- UI validation improves feedback but is never the trust/security authority;
+- internal maintenance is not exposed as a user choice without real product value;
+- do not persist values that backend/source can derive;
+- do not add knobs for unsupported or niche behavior without an explicit requirement;
+- desktop UI and Fabric client UI remain separate presentation owners.
 
-Static source can prove routing/types. Actual desktop interaction and platform behavior require local desktop proof.
+## Proof Boundary
+
+Static source proves routing/types. Actual desktop interaction, dialogs, platform file pickers, restart UX, and rendered behavior require local desktop proof.
