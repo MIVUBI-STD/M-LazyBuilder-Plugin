@@ -46,18 +46,13 @@ public final class WorldSettingsScreen extends Screen {
         int y = 112;
 
         addDrawableChild(LbUi.button(contentLeft, y, half, 26,
-                "Load on Server Start   " + onOff(settings.autoLoad()), LbButtonWidget.Style.SECONDARY,
-                () -> controller.setAutoLoad(world.worldId(), !settings.autoLoad())));
-        addDrawableChild(LbUi.button(contentLeft + half + 10, y, half, 26,
                 "PVP   " + onOff(settings.pvpEnabled()), LbButtonWidget.Style.SECONDARY,
                 () -> controller.setPvp(world.worldId(), !settings.pvpEnabled())));
-
-        y += 40;
-        addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 26,
-                "Default Game Mode   " + titleCase(settings.defaultGameMode()), LbButtonWidget.Style.GHOST,
+        addDrawableChild(LbUi.button(contentLeft + half + 10, y, half, 26,
+                "Default Game Mode   " + titleCase(settings.defaultGameMode()), LbButtonWidget.Style.SECONDARY,
                 () -> controller.setDefaultMode(world.worldId(), next(GAME_MODES, settings.defaultGameMode()))));
 
-        y += 34;
+        y += 40;
         addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 26,
                 "Difficulty   " + titleCase(settings.difficulty()), LbButtonWidget.Style.GHOST,
                 () -> controller.setDifficulty(world.worldId(), next(DIFFICULTIES, settings.difficulty()))));
@@ -105,7 +100,7 @@ public final class WorldSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("WORLD SETTINGS"), left + 24, 46, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 24, 64, LbUi.TEXT_PRIMARY);
         context.drawTextWithShadow(textRenderer,
-                Text.literal("Common builder settings. Changes are saved by the server."),
+                Text.literal("Common builder settings. World loading is handled automatically."),
                 left + 24, 82, LbUi.TEXT_SECONDARY);
 
         WorldControlWireProtocol.SettingsSnapshot settings = controller.settings(world.worldId());
@@ -121,7 +116,7 @@ public final class WorldSettingsScreen extends Screen {
         }
 
         context.drawTextWithShadow(textRenderer, Text.literal("GENERAL"), left + 28, 100, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal("BUILD TOOLS"), left + 28, 224, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("BUILD TOOLS"), left + 28, 196, LbUi.TEXT_MUTED);
 
         String runtime = "Weather  " + titleCase(settings.weather()) + "    •    Time  " + settings.timeOfDayTicks();
         String spawn = "World Spawn  " + round(settings.spawnX()) + ", " + round(settings.spawnY()) + ", " + round(settings.spawnZ());
