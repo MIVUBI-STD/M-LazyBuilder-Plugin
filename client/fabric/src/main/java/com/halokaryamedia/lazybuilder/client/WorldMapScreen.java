@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.RotationAxis;
@@ -19,8 +18,8 @@ import java.util.Locale;
  * explored terrain, directional player indication and map-native area selection.</p>
  */
 public final class WorldMapScreen extends Screen {
-    private static final int TOP_BAR = 28;
-    private static final int BOTTOM_BAR = 24;
+    private static final int TOP_BAR = 30;
+    private static final int BOTTOM_BAR = 26;
     private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
@@ -76,86 +75,95 @@ public final class WorldMapScreen extends Screen {
         }
         maps.refreshCurrentWorld();
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Worlds"), button -> {
-            if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
-        }).dimensions(5, 5, 58, 18).build());
+        addDrawableChild(LbUi.button(6, 6, 64, 18,
+                "Worlds", LbButtonWidget.Style.SECONDARY,
+                () -> { if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps)); }));
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("−"), button -> discreteZoom(1, width - 51, 14))
-                .dimensions(width - 51, 5, 20, 18).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("+"), button -> discreteZoom(-1, width - 27, 14))
-                .dimensions(width - 27, 5, 20, 18).build());
+        addDrawableChild(LbUi.button(width - 52, 6, 20, 18,
+                "−", LbButtonWidget.Style.GHOST,
+                () -> discreteZoom(1, width - 42, 15)));
+        addDrawableChild(LbUi.button(width - 28, 6, 20, 18,
+                "+", LbButtonWidget.Style.GHOST,
+                () -> discreteZoom(-1, width - 18, 15)));
 
         if (contextOpen) addContextButtons();
     }
 
     private void addContextButtons() {
-        int menuWidth = 154;
-        int itemHeight = 19;
+        int menuWidth = 164;
+        int itemHeight = 21;
         int itemCount = selectionReady() ? 2 : 5;
-        int panelX = Math.max(4, Math.min(width - menuWidth - 4, contextScreenX));
-        int panelY = Math.max(TOP_BAR + 3,
-                Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 24), contextScreenY));
-        int y = panelY + 22;
+        int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
+        int panelY = Math.max(TOP_BAR + 4,
+                Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 30), contextScreenY));
+        int y = panelY + 25;
 
         if (selectionReady()) {
-            addDrawableChild(ButtonWidget.builder(Text.literal("Export Selection"), button -> {
-                maps.exportAreaCurrent(areaX1, areaZ1, areaX2, areaZ2,
-                        "JAVA_1_21_4", "area-" + System.currentTimeMillis());
-                clearAreaSelection();
-                clearAndInit();
-            }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+            addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                    "Export Selection", LbButtonWidget.Style.PRIMARY, () -> {
+                        maps.exportAreaCurrent(areaX1, areaZ1, areaX2, areaZ2,
+                                "JAVA_1_21_4", "area-" + System.currentTimeMillis());
+                        clearAreaSelection();
+                        clearAndInit();
+                    }));
             y += itemHeight;
-            addDrawableChild(ButtonWidget.builder(Text.literal("Cancel Selection"), button -> {
-                clearAreaSelection();
-                clearAndInit();
-            }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+            addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                    "Cancel Selection", LbButtonWidget.Style.GHOST, () -> {
+                        clearAreaSelection();
+                        clearAndInit();
+                    }));
             return;
         }
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Teleport Here"), button -> {
-            maps.teleportCurrent(contextBlockX, contextBlockZ);
-            contextOpen = false;
-            clearAndInit();
-        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Teleport Here", LbButtonWidget.Style.PRIMARY, () -> {
+                    maps.teleportCurrent(contextBlockX, contextBlockZ);
+                    contextOpen = false;
+                    clearAndInit();
+                }));
         y += itemHeight;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Export Area"), button -> {
-            areaMode = true;
-            areaX1 = null;
-            areaZ1 = null;
-            areaX2 = null;
-            areaZ2 = null;
-            contextOpen = false;
-            clearAndInit();
-        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Export Area", LbButtonWidget.Style.SECONDARY, () -> {
+                    areaMode = true;
+                    areaX1 = null;
+                    areaZ1 = null;
+                    areaX2 = null;
+                    areaZ2 = null;
+                    contextOpen = false;
+                    clearAndInit();
+                }));
         y += itemHeight;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Center Map Here"), button -> {
-            centerX = contextBlockX;
-            centerZ = contextBlockZ;
-            contextOpen = false;
-            zoomAnchored = false;
-            clearAndInit();
-        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Center Map Here", LbButtonWidget.Style.GHOST, () -> {
+                    centerX = contextBlockX;
+                    centerZ = contextBlockZ;
+                    contextOpen = false;
+                    zoomAnchored = false;
+                    clearAndInit();
+                }));
         y += itemHeight;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Copy Coordinates"), button -> {
-            if (client != null) client.keyboard.setClipboard(contextBlockX + ", " + contextBlockZ);
-            contextOpen = false;
-            clearAndInit();
-        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Copy Coordinates", LbButtonWidget.Style.GHOST, () -> {
+                    if (client != null) client.keyboard.setClipboard(contextBlockX + ", " + contextBlockZ);
+                    contextOpen = false;
+                    clearAndInit();
+                }));
         y += itemHeight;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), button -> {
-            contextOpen = false;
-            clearAndInit();
-        }).dimensions(panelX + 3, y, menuWidth - 6, 18).build());
+        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Cancel", LbButtonWidget.Style.GHOST, () -> {
+                    contextOpen = false;
+                    clearAndInit();
+                }));
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateZoomAnimation();
-        context.fill(0, 0, width, height, 0xFF0C0F13);
+        context.fill(0, 0, width, height, LbUi.BACKGROUND);
         renderMap(context);
         renderSelection(context);
         renderCursor(context, mouseX, mouseY);
@@ -203,11 +211,6 @@ public final class WorldMapScreen extends Screen {
         renderPlayerMarker(context, bounds);
     }
 
-    /**
-     * Close zoom uses smaller screen pixels so roads/buildings do not appear as
-     * obvious 4px cells. Far zoom increases the pixel footprint to keep sampling
-     * bounded while multi-sample LOD preserves larger terrain features.
-     */
     private int mapPixelSize() {
         double z = zoom();
         if (z <= 2.0) return 2;
@@ -229,69 +232,86 @@ public final class WorldMapScreen extends Screen {
         context.getMatrices().push();
         context.getMatrices().translate(px, pz, 0);
         context.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-client.player.getYaw()));
-        context.fill(-2, -9, 3, 5, 0xDD000000);
-        context.fill(-3, -7, 4, 1, 0xFFFFFFFF);
-        context.fill(-5, -4, 6, -1, 0xFFFFFFFF);
-        context.fill(-1, -8, 2, 2, 0xFFFF5555);
+        context.fill(-3, -10, 4, 6, 0xCC000000);
+        context.fill(-3, -8, 4, 1, LbUi.TEXT_PRIMARY);
+        context.fill(-5, -5, 6, -1, LbUi.TEXT_PRIMARY);
+        context.fill(-1, -9, 2, 2, LbUi.ACCENT_BRIGHT);
         context.getMatrices().pop();
     }
 
     private void renderCursor(DrawContext context, int mouseX, int mouseY) {
         if (contextOpen || !mapBounds().contains(mouseX, mouseY)) return;
-        int alpha = areaMode ? 0x99 : 0x55;
-        int color = (alpha << 24) | 0xFFFFFF;
+        int color = areaMode ? 0xBB8AA8FF : 0x667F8A98;
         context.fill(mouseX - 5, mouseY, mouseX + 6, mouseY + 1, color);
         context.fill(mouseX, mouseY - 5, mouseX + 1, mouseY + 6, color);
     }
 
     private void renderHud(DrawContext context, int mouseX, int mouseY) {
-        context.fill(0, 0, width, TOP_BAR, 0xB914171B);
-        context.fill(0, height - BOTTOM_BAR, width, height, 0xB914171B);
+        context.fill(0, 0, width, TOP_BAR, 0xE314181E);
+        context.fill(0, TOP_BAR - 1, width, TOP_BAR, LbUi.BORDER);
+        context.fill(0, height - BOTTOM_BAR, width, height, 0xE314181E);
+        context.fill(0, height - BOTTOM_BAR, width, height - BOTTOM_BAR + 1, LbUi.BORDER);
 
         String worldName = maps.currentWorld() == null ? "World Map" : maps.currentWorld().displayName();
         String dimension = client == null || client.world == null
                 ? ""
-                : client.world.getRegistryKey().getValue().getPath();
-        context.drawTextWithShadow(textRenderer,
-                Text.literal(dimension.isBlank() ? worldName : worldName + "  •  " + dimension),
-                69, 10, 0xFFFFFF);
+                : friendlyDimension(client.world.getRegistryKey().getValue().getPath());
+        String title = dimension.isBlank() ? worldName : worldName + "  •  " + dimension;
+        context.drawTextWithShadow(textRenderer, Text.literal(title), 78, 11, LbUi.TEXT_PRIMARY);
 
         int[] hovered = screenToWorld(mouseX, mouseY);
         String zoomText = zoomLabel();
         String coords = hovered == null
                 ? zoomText
-                : "X: " + hovered[0] + "  Z: " + hovered[1] + "   " + zoomText;
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, height - 16, 0xE7E7E7);
+                : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomText;
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, height - 17, LbUi.TEXT_SECONDARY);
 
+        String leftStatus;
+        int leftColor;
         if (selectionReady()) {
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("Selection ready — choose Export Selection"),
-                    8, height - 16, 0xFFD166);
+            leftStatus = "Selection ready — choose Export Selection";
+            leftColor = LbUi.ACCENT_BRIGHT;
         } else if (areaMode) {
-            String status = areaX1 == null ? "Select first corner" : "Select second corner";
-            context.drawTextWithShadow(textRenderer, Text.literal(status), 8, height - 16, 0xFFD166);
+            leftStatus = areaX1 == null ? "Export Area — select first corner" : "Export Area — select second corner";
+            leftColor = LbUi.ACCENT_BRIGHT;
         } else if (SURFACE.pendingCount() > 0) {
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("Mapping… " + SURFACE.pendingCount()), 8, height - 16, 0xAEB7C4);
+            leftStatus = "Mapping " + SURFACE.pendingCount() + " columns…";
+            leftColor = LbUi.TEXT_MUTED;
+        } else {
+            leftStatus = "Drag pan  •  Scroll zoom  •  Right-click actions  •  Middle-click recenter";
+            leftColor = LbUi.TEXT_MUTED;
         }
+        context.drawTextWithShadow(textRenderer, Text.literal(leftStatus), 8, height - 17, leftColor);
+    }
+
+    private static String friendlyDimension(String raw) {
+        return switch (raw) {
+            case "overworld" -> "Overworld";
+            case "the_nether" -> "Nether";
+            case "the_end" -> "The End";
+            default -> raw.replace('_', ' ');
+        };
     }
 
     private void renderContextMenuBackground(DrawContext context) {
         if (!contextOpen) return;
-        int menuWidth = 154;
+        int menuWidth = 164;
         int itemCount = selectionReady() ? 2 : 5;
-        int panelX = Math.max(4, Math.min(width - menuWidth - 4, contextScreenX));
-        int panelY = Math.max(TOP_BAR + 3,
-                Math.min(height - BOTTOM_BAR - (itemCount * 19 + 24), contextScreenY));
-        int panelBottom = panelY + 24 + itemCount * 19;
-        context.fill(panelX - 1, panelY - 1, panelX + menuWidth + 1, panelBottom + 1, 0xFF050607);
-        context.fill(panelX, panelY, panelX + menuWidth, panelBottom, 0xEE15181D);
-        context.fill(panelX, panelY, panelX + menuWidth, panelY + 20, 0xF0252930);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Choose an Option"),
-                panelX + menuWidth / 2, panelY + 6, 0xFFFFFF);
+        int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
+        int panelY = Math.max(TOP_BAR + 4,
+                Math.min(height - BOTTOM_BAR - (itemCount * 21 + 30), contextScreenY));
+        int panelBottom = panelY + 30 + itemCount * 21;
+
+        context.fill(panelX - 2, panelY - 2, panelX + menuWidth + 2, panelBottom + 2, 0x77000000);
+        LbUi.elevatedPanel(context, panelX, panelY, menuWidth, panelBottom - panelY);
+        context.fill(panelX + 1, panelY + 1, panelX + menuWidth - 1, panelY + 23, LbUi.SURFACE_3);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(selectionReady() ? "Export Area" : "Map Actions"),
+                panelX + 7, panelY + 8, LbUi.TEXT_PRIMARY);
         if (!selectionReady()) {
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(contextBlockX + ", " + contextBlockZ), panelX + 5, panelBottom - 11, 0x8E98A5);
+            String coordinate = "X " + contextBlockX + "   Z " + contextBlockZ;
+            context.drawTextWithShadow(textRenderer, Text.literal(coordinate),
+                    panelX + 7, panelBottom - 13, LbUi.TEXT_MUTED);
         }
     }
 
@@ -312,11 +332,11 @@ public final class WorldMapScreen extends Screen {
         int bottom = Math.min(bounds.bottom, Math.max(sy1, sy2));
         if (right <= left || bottom <= top) return;
 
-        context.fill(left, top, right, bottom, 0x33FFD166);
-        context.fill(left, top, right, top + 2, 0xFFFFD166);
-        context.fill(left, bottom - 2, right, bottom, 0xFFFFD166);
-        context.fill(left, top, left + 2, bottom, 0xFFFFD166);
-        context.fill(right - 2, top, right, bottom, 0xFFFFD166);
+        context.fill(left, top, right, bottom, 0x286C91FF);
+        context.fill(left, top, right, top + 2, LbUi.ACCENT_BRIGHT);
+        context.fill(left, bottom - 2, right, bottom, LbUi.ACCENT_BRIGHT);
+        context.fill(left, top, left + 2, bottom, LbUi.ACCENT_BRIGHT);
+        context.fill(right - 2, top, right, bottom, LbUi.ACCENT_BRIGHT);
     }
 
     @Override
