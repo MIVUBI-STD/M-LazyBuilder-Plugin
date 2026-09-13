@@ -20,18 +20,29 @@ pub fn status() -> Result<RuntimeUpdateStatus, String> {
     let manifest = read_manifest(&workspace)?;
     let release = paper_provider::latest_stable()?;
     let current_paper = manifest.get("paperBuild").and_then(Value::as_u64);
-    let current_core = manifest
+    let world_version = manifest
         .get("worldManagerVersion")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let utilities_version = manifest
+        .get("utilitiesManagerVersion")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let core_update_available = world_version.as_deref() != Some(core_modules::CORE_VERSION)
+        || utilities_version.as_deref() != Some(core_modules::CORE_VERSION);
+    let current_core_version = if world_version == utilities_version {
+        world_version
+    } else {
+        None
+    };
 
     Ok(RuntimeUpdateStatus {
         current_paper_build: current_paper,
         latest_paper_build: release.build,
         paper_update_available: current_paper.map(|build| build != release.build).unwrap_or(true),
-        core_update_available: current_core.as_deref() != Some(core_modules::CORE_VERSION),
-        current_core_version: current_core,
+        current_core_version,
         bundled_core_version: core_modules::CORE_VERSION.into(),
+        core_update_available,
     })
 }
 
