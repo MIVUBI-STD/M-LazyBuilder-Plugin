@@ -86,6 +86,8 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Check Rust/Tauri backend
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Test Rust/Tauri backend
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build LazyBuilder and NSIS installer
         run: npm run build:app
       - name: Upload Windows application and installer
