@@ -1,7 +1,7 @@
 use crate::engine::paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -171,7 +171,11 @@ fn latest_recording_path() -> Result<Option<String>, String> {
             continue;
         }
         let modified = entry.metadata().and_then(|meta| meta.modified()).unwrap_or(UNIX_EPOCH);
-        if newest.as_ref().is_none_or(|(time, _)| modified > *time) {
+        let should_replace = match newest.as_ref() {
+            Some((time, _)) => modified > *time,
+            None => true,
+        };
+        if should_replace {
             newest = Some((modified, path));
         }
     }
@@ -185,9 +189,4 @@ fn combined_output(stdout: &[u8], stderr: &[u8]) -> String {
         text.push_str(&String::from_utf8_lossy(stderr));
     }
     text
-}
-
-#[allow(dead_code)]
-fn _is_inside(base: &Path, path: &Path) -> bool {
-    path.starts_with(base)
 }
