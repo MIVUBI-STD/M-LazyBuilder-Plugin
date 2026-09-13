@@ -10,9 +10,6 @@ pub struct RuntimeUpdateStatus {
     pub current_paper_build: Option<u64>,
     pub latest_paper_build: u64,
     pub paper_update_available: bool,
-    pub current_core_version: Option<String>,
-    pub bundled_core_version: String,
-    pub core_update_available: bool,
 }
 
 pub fn status() -> Result<RuntimeUpdateStatus, String> {
@@ -48,31 +45,17 @@ pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
     status_with_release(&workspace, &release)
 }
 
-/// Internal compatibility maintenance for LazyBuilder-bundled Paper modules.
-/// This is intentionally separate from Paper update discovery: keeping the app's
-/// own core JARs current must not require a network request or a user decision.
+/// Keeps LazyBuilder-bundled Paper modules aligned with the running desktop app.
+/// This is internal maintenance: it does not require a network request or user action.
 pub fn ensure_core_current(resource_dir: Option<&Path>) -> Result<(), String> {
     let workspace = workspace_registry::active_workspace()?;
-    sync_core_at(&workspace, resource_dir)
-}
+    let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
 
-/// Temporary public wrapper retained for the current desktop contract. The UI
-/// surface may remove this action once it no longer exposes bundled-core sync.
-pub fn sync_core(resource_dir: Option<&Path>) -> Result<RuntimeUpdateStatus, String> {
-    let workspace = workspace_registry::active_workspace()?;
-    sync_core_at(&workspace, resource_dir)?;
-    let release = paper_provider::latest_stable()?;
-    status_with_release(&workspace, &release)
-}
-
-fn sync_core_at(workspace: &Path, resource_dir: Option<&Path>) -> Result<(), String> {
-    let transaction = core_modules::begin_sync(workspace, resource_dir)?;
-
-    let mut manifest = read_manifest(workspace)?;
+    let mut manifest = read_manifest(&workspace)?;
     manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
     manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
 
-    if let Err(manifest_error) = write_json_atomic(&manifest_path(workspace), &manifest) {
+    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
         return match transaction.rollback() {
             Ok(()) => Err(format!(
                 "Core metadata update failed and core JARs were rolled back: {manifest_error}"
@@ -93,29 +76,10 @@ fn status_with_release(
 ) -> Result<RuntimeUpdateStatus, String> {
     let manifest = read_manifest(workspace)?;
     let current_paper = manifest.get("paperBuild").and_then(Value::as_u64);
-    let world_version = manifest
-        .get("worldManagerVersion")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let utilities_version = manifest
-        .get("utilitiesManagerVersion")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let core_update_available = world_version.as_deref() != Some(core_modules::CORE_VERSION)
-        || utilities_version.as_deref() != Some(core_modules::CORE_VERSION);
-    let current_core_version = if world_version == utilities_version {
-        world_version
-    } else {
-        None
-    };
-
     Ok(RuntimeUpdateStatus {
         current_paper_build: current_paper,
         latest_paper_build: release.build,
         paper_update_available: current_paper.map(|build| build != release.build).unwrap_or(true),
-        current_core_version,
-        bundled_core_version: core_modules::CORE_VERSION.into(),
-        core_update_available,
     })
 }
 
