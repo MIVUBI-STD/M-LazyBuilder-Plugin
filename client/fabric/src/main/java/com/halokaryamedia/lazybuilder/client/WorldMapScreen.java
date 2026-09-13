@@ -7,9 +7,8 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 
 /**
- * Map-first LazyBuilder surface. The map is the primary interaction; world
- * management is reachable from here instead of forcing the user through a
- * button dashboard before seeing terrain.
+ * Map-first LazyBuilder surface. Terrain is the primary interaction; world
+ * management is reachable from this screen instead of sitting in front of it.
  */
 public final class WorldMapScreen extends Screen {
     private static final int TOP_BAR = 32;
@@ -27,10 +26,7 @@ public final class WorldMapScreen extends Screen {
     private double centerZ;
     private int zoomIndex = 1;
     private boolean centeredOnce;
-
     private boolean dragging;
-    private double dragStartX;
-    private double dragStartY;
 
     private boolean areaMode;
     private Integer areaX1;
@@ -78,6 +74,21 @@ public final class WorldMapScreen extends Screen {
     private void addContextButtons() {
         int panelX = Math.max(8, Math.min(width - 150, contextScreenX));
         int panelY = Math.max(TOP_BAR + 4, Math.min(height - BOTTOM_BAR - 78, contextScreenY));
+
+        if (selectionReady()) {
+            addDrawableChild(ButtonWidget.builder(Text.literal("Export Selection"), button -> {
+                maps.exportAreaCurrent(areaX1, areaZ1, areaX2, areaZ2,
+                        "JAVA_1_21_4", "area-" + System.currentTimeMillis());
+                clearAreaSelection();
+                clearAndInit();
+            }).dimensions(panelX, panelY, 138, 18).build());
+
+            addDrawableChild(ButtonWidget.builder(Text.literal("Cancel Selection"), button -> {
+                clearAreaSelection();
+                clearAndInit();
+            }).dimensions(panelX, panelY + 20, 138, 18).build());
+            return;
+        }
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Teleport Here"), button -> {
             maps.teleportCurrent(contextBlockX, contextBlockZ);
@@ -147,15 +158,13 @@ public final class WorldMapScreen extends Screen {
         int pz = bounds.centerY() + (int) Math.round((client.player.getZ() - centerZ) * scale);
         if (!bounds.contains(px, pz)) return;
 
-        float yaw = client.player.getYaw();
-        int dx;
-        int dz;
-        double angle = Math.toRadians(yaw);
-        dx = (int) Math.round(-Math.sin(angle) * 5.0);
-        dz = (int) Math.round(Math.cos(angle) * 5.0);
+        double angle = Math.toRadians(client.player.getYaw());
+        int dx = (int) Math.round(-Math.sin(angle) * 5.0);
+        int dz = (int) Math.round(Math.cos(angle) * 5.0);
 
         context.fill(px - 2, pz - 2, px + 3, pz + 3, 0xFFFFFFFF);
-        context.fill(px + Math.min(0, dx), pz + Math.min(0, dz), px + Math.max(1, dx + 1), pz + Math.max(1, dz + 1), 0xFFFF4A4A);
+        context.fill(px + Math.min(0, dx), pz + Math.min(0, dz),
+                px + Math.max(1, dx + 1), pz + Math.max(1, dz + 1), 0xFFFF4A4A);
     }
 
     private void renderTopBar(DrawContext context, int mouseX, int mouseY) {
@@ -171,10 +180,14 @@ public final class WorldMapScreen extends Screen {
                 : "X " + hovered[0] + "  Z " + hovered[1] + "   Zoom 1:" + zoom();
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, 11, 0xD8DEE9);
 
-        if (areaMode) {
+        if (selectionReady()) {
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("Export Area selected — confirm from the action menu"),
+                    90, height - 19, 0xFFD166);
+        } else if (areaMode) {
             String status = areaX1 == null
                     ? "Export Area: click first corner"
-                    : areaX2 == null ? "Export Area: click second corner" : "Export Area ready";
+                    : "Export Area: click second corner";
             context.drawTextWithShadow(textRenderer, Text.literal(status), 90, height - 19, 0xFFD166);
         } else {
             context.drawTextWithShadow(textRenderer,
@@ -184,11 +197,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderSelection(DrawContext context) {
-        if (!areaMode || areaX1 == null) return;
+        if (!areaMode || areaX1 == null || areaZ1 == null) return;
         Bounds bounds = mapBounds();
         int x2 = areaX2 == null ? areaX1 : areaX2;
         int z2 = areaZ2 == null ? areaZ1 : areaZ2;
-        if (z2 == null) z2 = areaZ1;
 
         int sx1 = worldToScreenX(areaX1, bounds);
         int sy1 = worldToScreenZ(areaZ1, bounds);
@@ -212,6 +224,9 @@ public final class WorldMapScreen extends Screen {
         if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
 
         if (button == 1) {
+            if (areaMode && areaX1 != null && areaX2 == null) {
+                return true;
+            }
             int[] world = screenToWorld(mouseX, mouseY);
             if (world == null) return true;
             contextBlockX = world[0];
@@ -233,15 +248,16 @@ public final class WorldMapScreen extends Screen {
                 } else if (areaX2 == null) {
                     areaX2 = world[0];
                     areaZ2 = world[1];
-                    maps.exportAreaCurrent(areaX1, areaZ1, areaX2, areaZ2,
-                            "JAVA_1_21_4", "area-" + System.currentTimeMillis());
-                    areaMode = false;
+                    contextBlockX = world[0];
+                    contextBlockZ = world[1];
+                    contextScreenX = (int) mouseX;
+                    contextScreenY = (int) mouseY;
+                    contextOpen = true;
+                    clearAndInit();
                 }
                 return true;
             }
             dragging = true;
-            dragStartX = mouseX;
-            dragStartY = mouseY;
             contextOpen = false;
             return true;
         }
@@ -285,6 +301,19 @@ public final class WorldMapScreen extends Screen {
             centerZ = before[1] - (mouseY - bounds.centerY()) * blocksPerPixel;
         }
         return true;
+    }
+
+    private void clearAreaSelection() {
+        areaMode = false;
+        areaX1 = null;
+        areaZ1 = null;
+        areaX2 = null;
+        areaZ2 = null;
+        contextOpen = false;
+    }
+
+    private boolean selectionReady() {
+        return areaMode && areaX1 != null && areaZ1 != null && areaX2 != null && areaZ2 != null;
     }
 
     private void centerOnPlayer() {
