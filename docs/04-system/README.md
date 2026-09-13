@@ -5,17 +5,19 @@ Canonical owner for LazyBuilder module boundaries, source ownership, and maintai
 ## Target Runtime
 
 ```text
-LazyBuilder Client Mod
+LazyBuilder Fabric Client
         │
         │ bounded first-party protocol
         ▼
-LazyBuilder Server Plugin
+LazyBuilder Paper Modules
+  ├── World-Manager
+  └── Utilities-Manager
         │
         ▼
 Paper API 1.21.4
 ```
 
-Client/server application traffic reuses the existing Minecraft play connection. LazyBuilder does not require a separate relay, VPN service, HTTP gateway, WebSocket server, or second listening port. The canonical networking contract is [`networking.md`](networking.md).
+Client/server application traffic reuses the existing Minecraft play connection. LazyBuilder does not require a separate relay, VPN service, HTTP gateway, WebSocket server, or second public listening port. The authenticated desktop loopback control bridge remains local-only and is not the client/server data plane. The canonical networking contract is [`networking.md`](networking.md).
 
 Xaero World Map is an external client integration for map preview/location interaction, not a world-state or network authority.
 
@@ -39,7 +41,7 @@ The external converter is an implementation detail inside World Manager. Import,
 
 Keep implementation shallow until real complexity requires more structure. Prefer responsibility-based packages rather than generic manager hierarchies.
 
-Expected direction:
+Current World-Manager shape:
 
 ```text
 world/
@@ -49,6 +51,7 @@ world/
 ├── files/           safe world-file operations
 ├── conversion/      isolated conversion adapter/runtime lifecycle
 ├── map/             shared bounded map-action wire contract
+├── task/            bounded desktop task contract/runner
 └── transfer/        shared bounded file-transfer wire/session contract
 ```
 
@@ -72,6 +75,7 @@ history               → Git history
 Rules:
 
 - prefer deletion or consolidation over compatibility layers when no supported consumer requires them;
+- compatibility storage fallbacks are allowed only to protect existing user data and must not become parallel active authorities;
 - do not duplicate state between UI, registry, Paper, and converter runtime;
 - keep public contracts small and typed;
 - keep external implementation details out of domain/application code;
@@ -80,6 +84,7 @@ Rules:
 - background work is opt-in and operation-bound: no idle polling, idle converter worker, unnecessary filesystem watchers, or repeated scans;
 - expensive file/conversion work must be bounded and isolated from Paper's main thread;
 - world mutation and filesystem publication must be transactional enough that failure leaves the previously valid state recoverable;
+- runtime directories must have an active semantic owner; do not create placeholder folders for metadata-only states;
 - source comments explain non-obvious constraints, not obvious syntax;
 - names describe product concepts (`World Manager`, `Import World`, `Export Area`) rather than leaking third-party engine terminology.
 
