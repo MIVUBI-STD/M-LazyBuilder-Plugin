@@ -12,8 +12,6 @@ public interface WorldRuntimeGateway {
 
     boolean isLoaded(WorldRecord world);
 
-    boolean hasPlayers(WorldRecord world);
-
     void loadWorld(WorldRecord world);
 
     void unloadWorld(WorldRecord world);
