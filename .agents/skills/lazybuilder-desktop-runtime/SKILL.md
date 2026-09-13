@@ -1,63 +1,74 @@
 ---
 name: lazybuilder-desktop-runtime
-description: Specialist for LazyBuilder desktop runtime ownership: workspace lifecycle, server process ownership, provisioning, Java/Paper/core runtime, resource configuration, recovery, and local desktop-to-Paper control. Use when that runtime boundary is the primary change.
+description: Own LazyBuilder desktop runtime semantics: workspace lifecycle, server process ownership/recovery, provisioning, managed Java/Paper/core, runtime configuration, startup safety, and desktop loopback control. Do not use for Svelte presentation, Paper world rules, shared Paper/Fabric protocol, or third-party plugin lifecycle.
 ---
 
 # LazyBuilder Desktop Runtime
 
-Own the desktop runtime boundary. Product policy remains in canonical docs; this Skill owns execution procedure only.
+Own desktop runtime semantics and orchestration. Follow `docs/04-system/development-discipline.md` for minimum-flow decisions and `docs/04-system/skill-routing.md` for handoffs.
 
-## Use This Owner For
-
-- workspace create/open/adopt/activate/close runtime behavior;
-- Paper process start/stop/restart/detached recovery;
-- managed Java, Paper provisioning/update, bundled core synchronization;
-- server resource configuration and startup safety;
-- process markers, runtime recovery, local loopback control bootstrap;
-- desktop runtime persistence and rollback semantics.
-
-Route elsewhere when the primary owner is:
+## Owns
 
 ```text
-Svelte presentation / desktop UX      → lazybuilder-desktop-ui
-Paper world lifecycle / import/export → lazybuilder-world-management
-third-party Paper plugin lifecycle    → lazybuilder-plugin-management
-shared Paper/Fabric wire contract     → lazybuilder-protocol
-Fabric/Xaero client UI                 → lazybuilder-client-ui
+workspace create/open/adopt/activate/close runtime behavior
+Paper process start/stop/restart/detached recovery
+one process marker / one recovery path
+managed Java provisioning
+Paper provisioning and manual Paper updates
+bundled core compatibility/synchronization
+server runtime/resource configuration
+startup safety
+local desktop HTTP/control bootstrap
+runtime persistence and rollback semantics
 ```
+
+## Does Not Own
+
+```text
+Svelte/Tauri presentation           → desktop-ui
+Paper world lifecycle/import/export → world-management
+third-party Paper plugin lifecycle  → plugin-management
+shared Paper/Fabric wire contracts  → protocol
+Fabric/Xaero client UX              → client-ui
+```
+
+Desktop loopback HTTP is **this Skill's boundary**, even when it talks to World Manager. `shared/protocol` is not the owner of desktop HTTP transport.
 
 ## Canonical Context
 
-1. `docs/04-system/skill-routing.md`
-2. `docs/04-system/README.md`
+1. `docs/04-system/development-discipline.md`
+2. `docs/04-system/skill-routing.md`
 3. exact affected runtime source
-4. `docs/05-operations/` only when current continuation/proof is material
+4. `docs/04-system/README.md` only when ownership changes
+5. `docs/05-operations/` only when unfinished/current proof state is material
 
-Do not preload World Manager application internals unless the desktop/runtime contract crosses that boundary.
+Do not preload World Manager internals unless the runtime contract itself crosses that boundary.
 
-## Decision Procedure
+## Procedure
 
-1. Name the exact runtime responsibility and its current owner.
-2. Find duplicated state/config/process ownership before adding code.
-3. Prefer one process owner, one config owner, one provisioning path, and one recovery path.
-4. Separate provider responsibilities (`java`, `paper`, bundled core) from orchestration.
-5. Make the smallest complete change that preserves recoverability.
-6. Prove source/static behavior first; reserve live Paper claims for `LIVE_SERVER`.
+```text
+name exact runtime responsibility
+→ find current owner/state authority
+→ identify duplicate process/config/update/recovery ownership
+→ reuse or consolidate existing path
+→ smallest recoverable mutation
+→ cheapest matching proof
+→ STOP
+```
 
-## Efficiency Rules
+Provider details (`java_runtime`, `paper_provider`, bundled core source) stay separate from orchestration only when they have distinct provider responsibilities.
 
-- Do not add a second registry, process marker, config parser/cache, updater, or recovery manager for the same concern.
-- Internal bundled core compatibility is not a user decision; keep internal synchronization internal.
-- Network checks must not turn a committed local mutation into a false failure.
-- Persisted runtime mutations require a recoverable previous-valid state when practical.
-- Prefer deletion/consolidation over compatibility layers that no supported consumer needs.
-- Avoid background polling/workers when an explicit operation boundary is sufficient.
+## Runtime Invariants
 
-## Completion
+- one Paper process lifecycle owner;
+- one active process identity/marker authority;
+- one server-config reader/writer authority;
+- one provisioning path;
+- one recovery path;
+- network lookup after a committed mutation must not manufacture a false failure;
+- destructive/runtime replacement keeps a previous-valid state when needed for recoverability;
+- bundled core maintenance stays internal unless the user truly has a product decision.
 
-Return to the active development route and confirm:
+## Proof Boundary
 
-- one canonical runtime owner remains for each changed responsibility;
-- failure leaves the previous valid runtime state recoverable or explicitly classified;
-- unrelated World Manager/client/plugin behavior was not absorbed;
-- any local/live proof gap is named rather than inferred.
+Source/static evidence can prove ownership and failure-path structure. Real Paper start/stop/recovery, Java launch, filesystem permission behavior, and restart persistence require appropriate local/live proof.
