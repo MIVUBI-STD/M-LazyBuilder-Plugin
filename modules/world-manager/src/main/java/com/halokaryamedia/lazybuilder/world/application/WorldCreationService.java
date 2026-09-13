@@ -42,9 +42,6 @@ public final class WorldCreationService {
         if (kind == WorldKind.IMPORTED) {
             throw new IllegalArgumentException("Create World only supports FLAT or VOID worlds");
         }
-        if (registry.findByFolderName(folderName).isPresent()) {
-            throw new IllegalArgumentException("World folder is already managed: " + folderName);
-        }
 
         WorldRecord record = new WorldRecord(
                 WorldId.create(),
@@ -56,29 +53,31 @@ public final class WorldCreationService {
                 buildReadyPolicy.defaultGameMode().name()
         );
 
-        runtime.createNewWorld(record, buildReadyPolicy);
-        boolean registered = false;
-        boolean stateInitialized = false;
-        try {
-            registry.register(record);
-            registered = true;
-            runtimeStates.initialize(record.id(), WorldRuntimeState.LOADED);
-            stateInitialized = true;
-            persistence.save(registry.all());
-            return record;
-        } catch (IOException | RuntimeException exception) {
-            if (stateInitialized) {
-                runtimeStates.remove(record.id());
-            }
-            if (registered) {
-                registry.remove(record.id());
-            }
+        try (WorldRegistry.FolderReservation ignored = registry.reserveFolder(record.folderName())) {
+            runtime.createNewWorld(record, buildReadyPolicy);
+            boolean registered = false;
+            boolean stateInitialized = false;
             try {
-                runtime.rollbackCreatedWorld(record);
-            } catch (RuntimeException rollbackFailure) {
-                exception.addSuppressed(rollbackFailure);
+                registry.register(record);
+                registered = true;
+                runtimeStates.initialize(record.id(), WorldRuntimeState.LOADED);
+                stateInitialized = true;
+                persistence.save(registry.all());
+                return record;
+            } catch (IOException | RuntimeException exception) {
+                if (stateInitialized) {
+                    runtimeStates.remove(record.id());
+                }
+                if (registered) {
+                    registry.remove(record.id());
+                }
+                try {
+                    runtime.rollbackCreatedWorld(record);
+                } catch (RuntimeException rollbackFailure) {
+                    exception.addSuppressed(rollbackFailure);
+                }
+                throw new IllegalStateException("Failed to publish newly created world: " + folderName, exception);
             }
-            throw new IllegalStateException("Failed to publish newly created world: " + folderName, exception);
         }
     }
 }
