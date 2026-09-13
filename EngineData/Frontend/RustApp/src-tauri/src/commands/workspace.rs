@@ -1,5 +1,5 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{java_runtime, provisioning, workspace_registry};
+use crate::engine::{adoption, java_runtime, provisioning, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
@@ -63,6 +63,29 @@ pub fn workspace_open_picker(state: State<'_, ServerManagerState>) -> Result<Opt
         return Ok(None);
     };
     workspace_registry::open(&path).map(Some)
+}
+
+#[tauri::command]
+pub fn workspace_adoption_pick(
+    state: State<'_, ServerManagerState>,
+) -> Result<Option<adoption::AdoptionPlan>, String> {
+    ensure_switch_allowed(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Choose existing Paper server to adopt")
+        .pick_folder() else {
+        return Ok(None);
+    };
+    adoption::analyze(&path).map(Some)
+}
+
+#[tauri::command]
+pub fn workspace_adopt(
+    state: State<'_, ServerManagerState>,
+    root_path: String,
+    name: Option<String>,
+) -> Result<WorkspaceEntry, String> {
+    ensure_switch_allowed(&state)?;
+    adoption::execute(&PathBuf::from(root_path), name.as_deref())
 }
 
 #[tauri::command]
