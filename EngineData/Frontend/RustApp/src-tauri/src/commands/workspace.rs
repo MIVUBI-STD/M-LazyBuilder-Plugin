@@ -70,17 +70,6 @@ pub fn workspace_create(
 }
 
 #[tauri::command]
-pub fn workspace_open_picker(state: State<'_, ServerManagerState>) -> Result<Option<WorkspaceEntry>, String> {
-    ensure_switch_allowed(&state)?;
-    let Some(path) = rfd::FileDialog::new()
-        .set_title("Open LazyBuilder server workspace")
-        .pick_folder() else {
-        return Ok(None);
-    };
-    workspace_registry::open(&path).map(Some)
-}
-
-#[tauri::command]
 pub fn workspace_adoption_pick(
     state: State<'_, ServerManagerState>,
 ) -> Result<Option<adoption::AdoptionPlan>, String> {
