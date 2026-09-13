@@ -208,6 +208,7 @@ export const runtimeApi = {
     update: (pluginId: string, jarPath: string) => invoke<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
     setEnabled: (pluginId: string, enabled: boolean) => invoke<void>('plugin_set_enabled', { pluginId, enabled }),
     remove: (pluginId: string) => invoke<void>('plugin_remove', { pluginId }),
+    removeProblem: (pluginId: string, jarFileName: string) => invoke<void>('plugin_remove_problem', { pluginId, jarFileName }),
     resolveDuplicates: (pluginId: string, keepJarFileName: string) => invoke<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName })
   },
   worlds: {
