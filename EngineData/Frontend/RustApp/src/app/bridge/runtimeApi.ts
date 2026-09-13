@@ -12,6 +12,16 @@ export type WorkspaceState = {
   recent: WorkspaceEntry[];
 };
 
+export type AdoptionPlan = {
+  root: string;
+  name: string;
+  paperJar: string;
+  worlds: string[];
+  serverEntries: string[];
+  preservedEntries: string[];
+  warnings: string[];
+};
+
 export type WorkspaceProvisioningStatus = {
   workspaceCreated: boolean;
   javaReady: boolean;
@@ -170,6 +180,9 @@ export const runtimeApi = {
   pickWorkspaceParent: () => invoke<string | null>('workspace_pick_parent'),
   createWorkspace: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
   openWorkspace: () => invoke<WorkspaceEntry | null>('workspace_open_picker'),
+  pickAdoptionServer: () => invoke<AdoptionPlan | null>('workspace_adoption_pick'),
+  adoptWorkspace: (rootPath: string, name?: string | null) =>
+    invoke<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
   activateWorkspace: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
   closeWorkspace: () => invoke<void>('workspace_close'),
 
