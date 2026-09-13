@@ -1,7 +1,7 @@
 use crate::engine::{paths, resource_settings, world_manager};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -126,6 +126,7 @@ impl ServerManagerState {
                 Ok((server_dir, paper)) => {
                     server_display = server_dir.display().to_string();
                     paper_display = paper.display().to_string();
+                    logs_display = server_dir.join("logs").display().to_string();
                     if !server_dir.is_dir() {
                         issues.push(format!("Server directory was not found: {}", server_dir.display()));
                     }
@@ -161,10 +162,6 @@ impl ServerManagerState {
 
         match paths::worlds_dir() {
             Ok(value) => worlds_display = value.display().to_string(),
-            Err(error) => issues.push(error),
-        }
-        match paths::lazybuilder_logs_dir() {
-            Ok(value) => logs_display = value.display().to_string(),
             Err(error) => issues.push(error),
         }
 
@@ -291,9 +288,8 @@ impl ServerManagerState {
         let java = resolve_java(&options.java_path)?;
         validate_java_21(&java)?;
         let control = world_manager::load_or_create_control_options()?;
-        let (log_path, log_file) = create_session_log()?;
-        *self.active_log_path.lock().map_err(|_| "log path lock poisoned".to_string())? = log_path.display().to_string();
-        let shared_log = Arc::new(Mutex::new(log_file));
+        let paper_log = server_dir.join("logs").join("latest.log");
+        *self.active_log_path.lock().map_err(|_| "log path lock poisoned".to_string())? = paper_log.display().to_string();
 
         self.expected_stop.store(false, Ordering::SeqCst);
         set_runtime_state(&self.runtime_state, "Starting")?;
@@ -313,7 +309,7 @@ impl ServerManagerState {
             .env(world_manager::PORT_ENV, control.port.to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .map_err(|error| {
                 let _ = set_runtime_state(&self.runtime_state, "Crashed");
@@ -321,49 +317,22 @@ impl ServerManagerState {
             })?;
 
         write_process_marker(child.id())?;
-        append_log_line(&shared_log, &format!("[LazyBuilder] Paper started as PID {}", child.id()));
-        append_log_line(
-            &shared_log,
-            &format!(
-                "[LazyBuilder] Resources: Xms={} MB, Xmx={} MB, ActiveProcessorCount={}",
-                resources.min_memory_mb, resources.max_memory_mb, resources.cpu_threads
-            ),
-        );
 
+        // stdout is consumed only to detect Paper readiness and avoid a filled pipe.
+        // Paper already persists its own canonical logs under server/logs; duplicating
+        // every console line in the controller would add continuous disk I/O.
         if let Some(stdout) = child.stdout.take() {
             let runtime_state = Arc::clone(&self.runtime_state);
             let expected_stop = Arc::clone(&self.expected_stop);
-            let log = Arc::clone(&shared_log);
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
-                    append_log_line(&log, &line);
                     if line.contains("Done (") {
                         let _ = set_runtime_state(&runtime_state, "Online");
                     }
                 }
                 if !expected_stop.load(Ordering::SeqCst) {
                     let _ = set_runtime_state(&runtime_state, "Crashed");
-                }
-            });
-        }
-
-        if let Some(stderr) = child.stderr.take() {
-            let log = Arc::clone(&shared_log);
-            thread::spawn(move || {
-                let mut reader = BufReader::new(stderr);
-                let mut buffer = [0u8; 4096];
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(0) | Err(_) => break,
-                        Ok(read) => {
-                            if let Ok(mut file) = log.lock() {
-                                let _ = file.write_all(b"[stderr] ");
-                                let _ = file.write_all(&buffer[..read]);
-                                let _ = file.flush();
-                            }
-                        }
-                    }
                 }
             });
         }
@@ -615,22 +584,6 @@ fn validate_java_21(java: &Path) -> Result<(), String> {
         return Err(format!("LazyBuilder Paper 1.21.4 requires Java 21. Detected Java {major}."));
     }
     Ok(())
-}
-
-fn create_session_log() -> Result<(PathBuf, File), String> {
-    let logs = paths::lazybuilder_logs_dir()?;
-    fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or(0);
-    let path = logs.join(format!("paper-{timestamp}.log"));
-    let file = OpenOptions::new().create_new(true).append(true).open(&path).map_err(|error| error.to_string())?;
-    Ok((path, file))
-}
-
-fn append_log_line(log: &Arc<Mutex<File>>, line: &str) {
-    if let Ok(mut file) = log.lock() {
-        let _ = writeln!(file, "{line}");
-        let _ = file.flush();
-    }
 }
 
 fn write_process_marker(pid: u32) -> Result<(), String> {
