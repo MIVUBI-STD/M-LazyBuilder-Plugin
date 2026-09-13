@@ -5,6 +5,7 @@ public enum WorldOperationType {
     CLONE,
     BACKUP,
     ARCHIVE,
+    RESTORE,
     DELETE,
     IMPORT,
     EXPORT,
