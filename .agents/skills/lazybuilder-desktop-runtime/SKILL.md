@@ -1,6 +1,6 @@
 ---
 name: lazybuilder-desktop-runtime
-description: Own LazyBuilder desktop runtime semantics: workspace lifecycle, server process ownership/recovery, provisioning, managed Java/Paper/core, runtime configuration, startup safety, and desktop loopback control. Do not use for Svelte presentation, Paper world rules, shared Paper/Fabric protocol, or third-party plugin lifecycle.
+description: Own LazyBuilder desktop runtime semantics: workspace lifecycle, server process ownership/recovery, provisioning, managed Java/Paper/core, runtime configuration, startup safety, and desktop loopback control. Do not use for presentation, Paper world rules, shared Paper/Fabric protocol, or third-party plugin lifecycle.
 ---
 
 # LazyBuilder Desktop Runtime
@@ -25,11 +25,10 @@ runtime persistence and rollback semantics
 ## Does Not Own
 
 ```text
-Svelte/Tauri presentation           → desktop-ui
-Paper world lifecycle/import/export → world-management
-third-party Paper plugin lifecycle  → plugin-management
-shared Paper/Fabric wire contracts  → protocol
-Fabric/Xaero client UX              → client-ui
+Desktop or Fabric/Xaero presentation → lazybuilder-ui
+Paper world lifecycle/import/export  → lazybuilder-world-management
+third-party Paper plugin lifecycle   → lazybuilder-plugin-management
+shared Paper/Fabric wire contracts   → lazybuilder-protocol
 ```
 
 Desktop loopback HTTP is **this Skill's boundary**, even when it talks to World Manager. `shared/protocol` is not the owner of desktop HTTP transport.
@@ -65,9 +64,10 @@ Provider details (`java_runtime`, `paper_provider`, bundled core source) stay se
 - one server-config reader/writer authority;
 - one provisioning path;
 - one recovery path;
+- CPU scheduling remains JVM/OS managed; resource settings own RAM profile/ceiling only;
 - network lookup after a committed mutation must not manufacture a false failure;
 - destructive/runtime replacement keeps a previous-valid state when needed for recoverability;
-- bundled core maintenance stays internal unless the user truly has a product decision.
+- bundled core maintenance stays internal; only Paper update remains a user runtime-update decision.
 
 ## Proof Boundary
 
