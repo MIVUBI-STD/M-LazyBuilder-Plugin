@@ -83,7 +83,7 @@ public final class WorldExportService {
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
         boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
         try {
-            runtimeService.unload(worldId);
+            runtimeService.unloadDuringOperation(worldId);
             return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, area, wasLoaded, lease);
         } catch (RuntimeException exception) {
             lease.close();
@@ -105,10 +105,6 @@ public final class WorldExportService {
         }
     }
 
-    /**
-     * Main-thread boundary after snapshot capture. The source world can be restored
-     * immediately; conversion and packaging only consume the owned snapshot.
-     */
     public void resumeSourceAfterSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -117,11 +113,10 @@ public final class WorldExportService {
             task.sourceRestored = true;
             return;
         }
-        runtimeService.load(task.source.id());
+        runtimeService.loadDuringOperation(task.source.id());
         task.sourceRestored = true;
     }
 
-    /** Worker phase 2: convert/package only from the captured snapshot. */
     public ExportResult processSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -175,11 +170,6 @@ public final class WorldExportService {
         }
     }
 
-    /**
-     * Compatibility helper for callers that have not yet split the snapshot and
-     * conversion phases. New Paper adapters should use captureSnapshot(),
-     * resumeSourceAfterSnapshot(), then processSnapshot().
-     */
     public ExportResult executeFilePhase(ExportTask task) {
         captureSnapshot(task);
         return processSnapshot(task);
@@ -191,7 +181,7 @@ public final class WorldExportService {
         RuntimeException failure = null;
         if (task.wasLoaded && !task.sourceRestored) {
             try {
-                runtimeService.load(task.source.id());
+                runtimeService.loadDuringOperation(task.source.id());
                 task.sourceRestored = true;
             } catch (RuntimeException exception) {
                 failure = exception;
