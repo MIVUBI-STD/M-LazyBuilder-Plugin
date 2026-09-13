@@ -2,11 +2,33 @@
 
 Canonical owner for the user-facing World Manager navigation and operation flow.
 
-## Goal
+## Product goal
 
-World Manager is a daily builder workspace, not a server administration panel. Builders should only see decisions they actually need to make. Internal folder naming, artifact routing, transfer sessions, registry ownership, and filesystem details remain implementation concerns.
+World Manager is a daily builder workspace, not a server administration panel. Builders should only see decisions they actually need to make. Runtime loading, filesystem identity, operation leases, transfer sessions, converter implementation, and storage routing remain backend concerns.
 
-The client stays presentation/input only; it does not create a second lifecycle, settings, transfer, registry, or filesystem authority.
+The client stays presentation/input only. It must not create a second world lifecycle, settings owner, transfer owner, registry, or filesystem authority.
+
+## Canonical user model
+
+Persistent world lifecycle has only two product states:
+
+```text
+ACTIVE
+ARCHIVED
+```
+
+`Loaded`, `Unloaded`, `Loading`, and `Unloading` are not builder-facing world states. Runtime loading is automatic:
+
+```text
+Teleport
+→ load world if required
+→ teleport player
+
+world empty + no conflicting operation + idle timeout
+→ unload automatically
+```
+
+There is no normal client action named Load World or Unload World.
 
 ## Daily navigation
 
@@ -14,177 +36,233 @@ The client stays presentation/input only; it does not create a second lifecycle,
 M
 → World Map
 → Worlds
-   ├── choose a world
-   │   ├── Teleport
-   │   ├── Load World / Unload World
-   │   ├── Export World
-   │   ├── Settings
-   │   ├── Clone
-   │   ├── Archive
-   │   └── Delete
+   ├── Search
+   ├── Pinned
+   ├── Recent
+   ├── All Worlds
+   ├── Archived
    └── + Add World
-       ├── Create New World
-       └── Import Existing World
+       ├── Create World
+       └── Import World
 ```
 
-The map is the primary entry surface. World Manager is secondary and returns to the same map instance so camera/zoom state is preserved.
+The map is the primary entry surface. Returning from World Manager preserves the same map instance/camera state where possible.
 
-## Builder-facing information hierarchy
+## World list
 
-The world list shows only what helps a builder choose a world:
+The world list is a quick-navigation surface. A normal active row contains only what helps a builder choose where to work:
 
 ```text
-Display Name
-Loaded indicator when relevant
+★ Display Name                         [Teleport] [Manage]
 ```
 
-The selected-world detail shows:
+Do not show technical runtime labels such as Loaded or Unloaded on normal rows.
+
+Contextual labels may appear only when useful:
 
 ```text
-Display Name
-Loaded / Not loaded / Archived
-World Type
-Actions
+You are here
+2 builders here
+Archived
+operation progress / error
 ```
 
-Internal folder names are intentionally not part of the normal daily detail view. They appear only where required for safety, such as permanent-delete confirmation.
+When the selected world is the player's current world, the redundant Teleport action may be omitted.
 
-## Responsive navigation
+### Pinned
 
-Wide GUI layouts use a two-pane workspace:
+Pinned is a user navigation preference, not a world lifecycle or keep-loaded flag. Pinning must never prevent automatic idle unload.
 
-```text
-World list | Selected world + actions
-```
+### Recent
 
-Narrow GUI layouts use a single-pane flow:
+Recent means worlds the player successfully entered, not worlds merely clicked or managed. Recent history is bounded and user-scoped.
 
-```text
-World list
-→ choose world
-→ world detail
-→ Back to Worlds
-```
+### Search
 
-`ESC`/Back from a compact detail returns to the world list before leaving World Manager. UI must not require a desktop-sized logical resolution or a specific Minecraft GUI Scale.
+Normal mode is sectioned (Pinned / Recent / All Worlds). Search mode is one deduplicated result list rather than repeating the same world across multiple sections.
 
-## Primary actions
+### Archived
 
-Daily actions are visually stronger than management actions:
+Archived worlds are removed from the daily active list but remain discoverable in an Archived section/screen. Restore returns the world to ACTIVE. Archived worlds are never auto-loaded for normal use.
+
+## Manage World
+
+`Manage` opens the secondary world-management surface. Action hierarchy is:
 
 ```text
 Primary
-- Teleport
-- Load World / Unload World
-- Export World
+Teleport
 
-Management
-- Settings
-- Clone
-- Archive
-- Delete
+Common
+Import / Export
+Duplicate
+World Settings
+
+Lifecycle
+Archive
+
+Danger
+Delete
 ```
 
-Delete remains visually dangerous and intentionally requires more friction than everyday actions.
+The UI should render common management actions as clean rows/cards rather than many equal-weight buttons.
+
+## Import / Export workspace
+
+Import and Export share one final workspace, not a hierarchy of intermediate menus:
+
+```text
+IMPORT / EXPORT
+[ Export ] [ Import ]
+```
+
+`Export` and `Import` are tabs. Entering from Manage World defaults to Export. Entering from Add World defaults to Import. `Export Area` from the map enters the same Export tab with the current selection supplied as transient context.
+
+### Daily defaults
+
+Import/Export uses one user-scoped, server-scoped set of daily defaults. These are universal defaults for the builder's normal workflow, not per-world presets.
+
+Normal Export should therefore be fast:
+
+```text
+EXPORT
+Tana Samawa
+
+Default settings
+Java Edition • 1.21.4
+Entire World • All Dimensions
+
+[ Export World ]
+Advanced options ▾
+```
+
+Advanced settings edit the same configuration. A user may either use changes once or explicitly save them as the new default for future worlds.
+
+Do not persist transient values such as a selected map rectangle or a literal file name as daily defaults.
+
+### Advanced Export
+
+Advanced Export is inline/expandable on the same screen. It may include only capabilities actually supported by the verified backend/conversion runtime, for example:
+
+```text
+Edition
+Version
+Dimensions
+Compatibility options supported by the active runtime
+File name override
+```
+
+Never invent controls for converter features that do not exist. Edition/version catalogs come from authoritative backend capabilities; the client must not hardcode unsupported targets.
+
+`Selected Area` is transient and appears only when a current map selection exists. Otherwise area is Entire World.
+
+Java output uses `.zip`; Bedrock output uses `.mcworld`. File extension is decided by the system, not the user.
+
+### Import
+
+Import is file-first:
+
+```text
+IMPORT
+[ Choose World File ]
+```
+
+After file selection:
+
+```text
+Detected edition/version
+World name
+Canonical server target
+[ Import World ]
+Advanced options ▾
+```
+
+Source edition/version is detected automatically. The server remains authoritative for validation. Import always creates a new managed world and never silently overwrites an existing one. Naming collisions are resolved before heavy processing, with an editable safe suggestion.
+
+### Conversion presentation
+
+`Chunker`, converter worker names, runtime manifests, pruning, format ids, artifact terminology, and job-slot terminology are internal implementation details and must never be exposed as product navigation.
+
+User-facing copy should say things such as:
+
+```text
+Java Edition 1.21.4
+Bedrock Edition
+Will be converted to Java Edition 1.21.4
+Conversion required
+```
+
+Cross-edition warnings are concise and contextual.
+
+### Default validation
+
+Saved daily defaults are validated against the current supported-format/capability catalog whenever the workspace opens. Unsupported saved values automatically fall back to the nearest recommended supported value with a small notice rather than producing a late failure.
+
+## Export Area
+
+Spatial selection belongs to the map:
+
+```text
+Map selection
+→ Export Area
+→ Import / Export workspace (Export tab)
+→ Selected Area supplied as transient context
+```
+
+This reuses the canonical Export service and UI. There is no second export implementation.
 
 ## Create World
 
 ```text
-Create New World
+Create World
 → World Name
 → World Type: Flat | Void
-→ Create World
-→ visible creation state
+→ Create
 → authoritative result
-→ return to World Manager
+→ return to Worlds
 ```
 
-The builder does not enter a server folder. A unique internal folder is derived automatically.
+Internal folder identity is derived automatically. Advanced world settings remain in World Settings after creation.
 
-Advanced settings are intentionally not duplicated into Create. They remain in World Settings after creation.
+## Duplicate
 
-## Import World
-
-```text
-Import Existing World
-→ optional World Name
-→ native file picker (.zip / .mcworld)
-→ prepare/hash
-→ bounded upload with progress
-→ validate/import
-→ publish managed world
-→ return to World Manager
-```
-
-The builder does not choose a destination directory. File selection, upload, validation, conversion when applicable, and publication are one continuous Import operation.
-
-There is no separate Upload Manager.
-
-## Export World
+User-facing naming is **Duplicate** everywhere.
 
 ```text
-Export World
-→ File Name
-→ prepare safe world backup
-→ native Save As
-→ bounded download with progress
-→ finalize/checksum
-→ return to World Manager
-```
-
-The client currently exposes the native Java 1.21.4 world-backup target. Additional formats should only appear when a verified supported-format catalog exists.
-
-`Export Area` remains a map action because spatial selection belongs to the map, while still reusing canonical export and transfer owners.
-
-## Clone
-
-```text
-Clone
-→ Clone Name
-→ Clone World
-→ visible clone state
+Duplicate
+→ New Name
+→ Duplicate World
 → authoritative result
 ```
 
-The destination folder is derived automatically and is not exposed as a normal builder decision.
+The duplicate receives a fresh world identity and ACTIVE lifecycle. It does not inherit user pin/recent navigation preferences or runtime loaded state.
 
-## Settings
+## World Settings
 
-The settings screen owns its initial settings request; World Manager only navigates to it. This avoids duplicate request paths.
+World Settings owns its initial settings request. World Manager only navigates to it.
 
-Builder-facing labels include:
+Builder-facing settings may include:
 
 ```text
-Load on Server Start
-PVP
 Default Game Mode
 Difficulty
+PVP
+World Rules
 Set Current Position as World Spawn
 Reset Builder Defaults
 ```
 
-The implementation may still use internal protocol names such as `autoLoad` or `BUILD_READY`, but those internal names should not leak into normal UI wording.
+Manual load/unload and `Load on Server Start` are not part of the normal builder workflow. Runtime loading is automatic.
 
-## Archive and delete
+## Archive and Delete
 
-Archive is reversible and requires explicit confirmation.
+Archive is reversible. Archiving an occupied world should be blocked rather than silently moving active builders.
 
-Permanent delete is intentionally stricter:
-
-```text
-Delete
-→ warning
-→ type exact internal folder name
-→ Delete Permanently
-→ visible deletion state
-→ authoritative result
-```
-
-Exact-name confirmation is one of the few places where internal folder identity is intentionally surfaced because it is a destructive safety guard.
+Delete is permanent and intentionally requires stronger confirmation. Confirmation should use the builder-visible display name while the backend deletes by immutable WorldId. Internal folder identity should not be exposed merely for confirmation.
 
 ## Operation feedback
 
-Use one consistent state model:
+Use one presentation model:
 
 ```text
 idle
@@ -195,55 +273,80 @@ error
 
 Rules:
 
-- do not infer success locally;
-- do not fake progress percentages when there is no authoritative percentage;
-- byte transfer progress may show a real percentage;
-- world operations without measurable progress show a clear activity label;
-- errors remain visible in the screen where the operation was initiated or in World Manager if the user navigated back;
-- leaving an operation screen does not imply cancellation unless an explicit Cancel operation exists.
+- never infer success locally;
+- do not fake progress percentages;
+- byte transfer progress may show authoritative percentages;
+- non-measurable world operations use clear activity labels;
+- leaving a screen does not imply cancellation;
+- cancellation is shown only when the backend supports safe cancellation;
+- otherwise use clear continue-in-background semantics;
+- disconnect/reconnect must not leave permanent stuck busy state.
+
+User-facing progress uses meaningful stages such as:
+
+```text
+Export: Preparing world → Converting → Creating file → Saving
+Import: Reading file → Checking world → Converting → Adding world
+```
+
+Do not show internal worker/phase names.
+
+## Failure and empty states
+
+Required UX states include:
+
+```text
+Loading worlds…
+No worlds yet
+No search results
+Server unavailable
+Permission denied
+Not enough server storage
+Not enough client save storage
+Operation in progress
+```
+
+Each state should provide the clearest available next action.
+
+## Responsive and large-list behavior
+
+Prefer a scrollable searchable list over page-number navigation for large world collections. Layout must remain usable across Minecraft GUI Scale settings and narrow logical resolutions.
 
 ## Custom UI system
 
-World Manager and its child screens use the first-party LazyBuilder UI system rather than vanilla Minecraft button chrome:
-
-```text
-LbUi
-LbButtonWidget
-```
+World Manager uses the first-party LazyBuilder UI primitives (`LbUi`, `LbButtonWidget`) rather than vanilla gray button chrome.
 
 Visual hierarchy:
 
 ```text
 Primary    everyday main action
 Secondary  normal supporting action
-Ghost      low-emphasis/navigation action
+Ghost      navigation / low emphasis
 Danger     destructive action
 ```
-
-The UI system stays intentionally small. It does not introduce a second application framework or replace Minecraft screen/input lifecycle ownership.
 
 ## Channel / protocol shape
 
 ```text
-lazybuilder:world     world list/create/manage/settings intents
+lazybuilder:world     world list/create/manage/settings/transfer intents
 lazybuilder:map       spatial map intents only
 lazybuilder:transfer  file bytes only
 ```
 
-The client does not own duplicate lifecycle, settings, operation locking, conversion, transfer ordering, or filesystem business logic.
+The protocol should model product concepts, not leak stale runtime-state machinery. A world summary should not require a persisted-looking `runtimeState` merely to render the list.
 
 ## Efficiency rules
 
-- world list refreshes on screen entry, explicit refresh, or relevant mutation;
 - no world-list polling;
 - no settings polling;
-- one settings request owner;
-- no client-side shadow registry;
-- no client directory scanning for server worlds;
-- internal folder naming is derived only when an operation needs it;
-- expensive file/conversion work remains request-bound;
-- responsive layout is calculated from current logical screen size rather than duplicated desktop/mobile screens.
+- no converter idle daemon;
+- no duplicate client registry;
+- no client scanning of server world directories;
+- conversion/file work remains request-bound;
+- runtime world loading/unloading remains server-owned and automatic;
+- one implementation path for whole-world and area export;
+- one Import UI and one Export UI regardless of entry point.
 
 ## Proof boundary
 
-Source review proves ownership, navigation structure, terminology, and state wiring. Final proof still requires local Fabric compilation and live 1.21.4 client/server validation across multiple GUI Scale settings, native dialogs, real import/export transfer, permissions, world lifecycle actions, and perceived builder usability.
+Source review can prove ownership, terminology, navigation, and contracts. Final proof still requires local Fabric compilation and live Java 1.21.4 client/server validation across GUI scales, real native dialogs, large transfers, reconnects, conversion paths, permissions, archive/delete safeguards, automatic idle unloading, and builder usability.
