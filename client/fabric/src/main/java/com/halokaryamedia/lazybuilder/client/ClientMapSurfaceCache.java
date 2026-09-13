@@ -1,7 +1,7 @@
 package com.halokaryamedia.lazybuilder.client;
 
-import net.minecraft.block.MapColor;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.MapColor;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
@@ -15,44 +15,50 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 /**
- * Persistent, bounded client-side world-map memory for already-seen terrain.
+ * Persistent client-side world-map memory split into bounded regional files.
  *
- * <p>This is presentation state only. It never loads chunks and never becomes
- * authoritative for server world state. New columns are queued while the map
- * renders and sampled with a per-frame budget. Samples survive screen closes
- * and reconnects per managed-world + dimension scope.</p>
+ * <p>The cache is presentation-only: it never force-loads chunks and never
+ * becomes authoritative for server world state. Visible columns are sampled
+ * only when their chunks are already present on the client. Persistent data is
+ * partitioned into sparse 128x128-block regions so large explored worlds do not
+ * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
- * <p>Far zoom levels derive a small multi-sample LOD pixel from the same base
- * column cache instead of taking one isolated block for a very large map cell.
- * That keeps roads, shorelines and large structures readable while preserving
- * one canonical terrain-memory owner.</p>
+ * <p>Only a bounded set of regions remains resident. Region files load off the
+ * render thread and dirty regions are written through one ordered async write
+ * lane, preventing an older snapshot from racing a newer snapshot for the same
+ * file.</p>
  */
 public final class ClientMapSurfaceCache {
-    private static final int FORMAT_VERSION = 1;
-    private static final int MAX_COLUMNS = 262_144;
+    private static final int FORMAT_VERSION = 2;
+    private static final int LEGACY_FORMAT_VERSION = 1;
+    private static final int REGION_SIZE = 128;
+    private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
+    private static final int MAX_LOADED_REGIONS = 96;
     private static final int MAX_PENDING = 262_144;
+    private static final int MAX_COMPLETED_LOADS_PER_TICK = 16;
+
     public static final int UNEXPLORED_COLOR = 0xFF101419;
 
-    private final Map<Long, SurfaceSample> samples = new LinkedHashMap<>(8192, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, SurfaceSample> eldest) {
-            return size() > MAX_COLUMNS;
-        }
-    };
+    /** Access-order LRU; all mutation happens on the Minecraft client thread. */
+    private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LinkedHashSet<Long> pending = new LinkedHashSet<>();
+    private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
 
     private String scope = "";
-    private Path scopeFile;
-    private boolean dirty;
+    private Path scopeDirectory;
+    private long scopeGeneration;
+    private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
 
     public void useScope(String scope, Path storageRoot) {
         String normalized = Objects.requireNonNullElse(scope, "");
@@ -60,33 +66,37 @@ public final class ClientMapSurfaceCache {
 
         flushAsync();
         this.scope = normalized;
+        this.scopeGeneration++;
+
         boolean identifiedManagedWorld = !normalized.startsWith("unmanaged|");
-        this.scopeFile = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
+        this.scopeDirectory = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
                 ? null
-                : storageRoot.resolve(safeName(normalized) + ".surface.gz");
-        samples.clear();
+                : storageRoot.resolve(safeName(normalized));
+
+        regions.clear();
         pending.clear();
-        dirty = false;
-        load();
+        completedLoads.clear();
+
+        // Preserve map memory produced by the previous whole-scope format. The
+        // migration runs once and publishes regional files through the same
+        // ordered writer used for normal persistence.
+        if (scopeDirectory != null) migrateLegacySnapshot(storageRoot, normalized, scopeGeneration);
     }
 
-    /** Returns a remembered sample immediately and queues missing loaded terrain. */
+    /** Returns remembered terrain immediately and queues missing loaded terrain. */
     public SurfaceSample sample(ClientWorld world, int blockX, int blockZ) {
-        long key = pack(blockX, blockZ);
-        SurfaceSample cached = samples.get(key);
+        RegionData region = regionFor(blockX, blockZ, true);
+        SurfaceSample cached = region.samples.get(localIndex(blockX, blockZ));
         if (cached != null) return cached;
 
-        queueIfLoaded(world, blockX, blockZ, key);
+        queueIfLoaded(world, blockX, blockZ, pack(blockX, blockZ));
         return SurfaceSample.UNEXPLORED;
     }
 
     /**
-     * Produces a stable map LOD pixel from the canonical base-column cache.
-     *
-     * <p>The renderer waits for a majority of the five-point footprint before
-     * switching to the aggregate colour. Until then it keeps the centre sample
-     * (when available). This prevents far-zoom cells from visibly changing
-     * colour several times while their surrounding samples arrive.</p>
+     * Produces a stable far-zoom pixel from the same canonical base-column data.
+     * The aggregate is used only after most of its footprint is known so newly
+     * discovered terrain does not flicker through several intermediate colours.
      */
     public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
         if (span <= 2) return sample(world, blockX, blockZ);
@@ -104,11 +114,16 @@ public final class ClientMapSurfaceCache {
         return blend(footprint);
     }
 
-    /** Samples a bounded amount of queued terrain on the client thread. */
+    /** Samples bounded live terrain and also merges bounded async region loads. */
     public int processPending(ClientWorld world, int budget) {
-        if (budget <= 0 || pending.isEmpty()) return 0;
+        drainCompletedLoads();
+        if (budget <= 0 || pending.isEmpty()) {
+            pruneRegions();
+            return 0;
+        }
+
         int processed = 0;
-        var iterator = pending.iterator();
+        Iterator<Long> iterator = pending.iterator();
         while (iterator.hasNext() && processed < budget) {
             long key = iterator.next();
             iterator.remove();
@@ -116,10 +131,12 @@ public final class ClientMapSurfaceCache {
             int z = unpackZ(key);
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
 
-            samples.put(key, readSurface(world, x, z));
-            dirty = true;
+            RegionData region = regionFor(x, z, true);
+            region.samples.put(localIndex(x, z), readSurface(world, x, z));
+            region.dirty = true;
             processed++;
         }
+        pruneRegions();
         return processed;
     }
 
@@ -127,22 +144,189 @@ public final class ClientMapSurfaceCache {
         return pending.size();
     }
 
+    /** Number of currently resident sparse base-column samples, not total disk history. */
     public int size() {
-        return samples.size();
+        int total = 0;
+        for (RegionData region : regions.values()) total += region.samples.size();
+        return total;
     }
 
+    /** Queues snapshots of all dirty resident regions without blocking rendering. */
     public void flushAsync() {
-        if (!dirty || scopeFile == null || samples.isEmpty()) return;
-        Path destination = scopeFile;
-        Map<Long, SurfaceSample> snapshot = new HashMap<>(samples);
-        dirty = false;
-        CompletableFuture.runAsync(() -> writeSnapshot(destination, snapshot));
+        if (scopeDirectory == null) return;
+        for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
+            RegionData region = entry.getValue();
+            if (!region.dirty || region.samples.isEmpty()) continue;
+            region.dirty = false;
+            enqueueRegionWrite(scopeDirectory, entry.getKey(), new HashMap<>(region.samples));
+        }
+    }
+
+    private RegionData regionFor(int blockX, int blockZ, boolean scheduleLoad) {
+        int regionX = Math.floorDiv(blockX, REGION_SIZE);
+        int regionZ = Math.floorDiv(blockZ, REGION_SIZE);
+        long regionKey = pack(regionX, regionZ);
+        RegionData existing = regions.get(regionKey);
+        if (existing != null) return existing;
+
+        RegionData created = new RegionData();
+        regions.put(regionKey, created);
+        if (scheduleLoad && scopeDirectory != null) scheduleRegionLoad(regionKey, created, scopeGeneration);
+        return created;
+    }
+
+    private void scheduleRegionLoad(long regionKey, RegionData region, long generation) {
+        if (region.loadScheduled) return;
+        region.loadScheduled = true;
+        Path file = regionFile(scopeDirectory, regionKey);
+        CompletableFuture.supplyAsync(() -> readRegion(file))
+                .thenAccept(samples -> completedLoads.add(new LoadedRegion(generation, regionKey, samples)));
+    }
+
+    private void drainCompletedLoads() {
+        int drained = 0;
+        while (drained < MAX_COMPLETED_LOADS_PER_TICK) {
+            LoadedRegion loaded = completedLoads.poll();
+            if (loaded == null) break;
+            drained++;
+            if (loaded.generation != scopeGeneration) continue;
+
+            RegionData region = regions.get(loaded.regionKey);
+            if (region == null) {
+                region = new RegionData();
+                region.loadScheduled = true;
+                regions.put(loaded.regionKey, region);
+            }
+            // Live samples always win over stale disk data that completed later.
+            for (Map.Entry<Integer, SurfaceSample> entry : loaded.samples.entrySet()) {
+                region.samples.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+            region.loaded = true;
+        }
+    }
+
+    private void pruneRegions() {
+        if (regions.size() <= MAX_LOADED_REGIONS) return;
+        Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
+        while (regions.size() > MAX_LOADED_REGIONS && iterator.hasNext()) {
+            Map.Entry<Long, RegionData> eldest = iterator.next();
+            RegionData region = eldest.getValue();
+            if (region.dirty && scopeDirectory != null && !region.samples.isEmpty()) {
+                region.dirty = false;
+                enqueueRegionWrite(scopeDirectory, eldest.getKey(), new HashMap<>(region.samples));
+            }
+            iterator.remove();
+        }
     }
 
     private void queueIfLoaded(ClientWorld world, int blockX, int blockZ, long key) {
         if (pending.size() >= MAX_PENDING) return;
         if (!world.getChunkManager().isChunkLoaded(blockX >> 4, blockZ >> 4)) return;
         pending.add(key);
+    }
+
+    private void enqueueRegionWrite(Path directory, long regionKey, Map<Integer, SurfaceSample> snapshot) {
+        Path destination = regionFile(directory, regionKey);
+        writeTail = writeTail.handle((ignored, failure) -> null)
+                .thenRunAsync(() -> writeRegion(destination, snapshot));
+    }
+
+    private void migrateLegacySnapshot(Path storageRoot, String normalizedScope, long generation) {
+        Path legacy = storageRoot.resolve(safeName(normalizedScope) + ".surface.gz");
+        if (!Files.isRegularFile(legacy)) return;
+        Path migratedMarker = scopeDirectory.resolve(".legacy-v1-migrated");
+        if (Files.exists(migratedMarker)) return;
+
+        CompletableFuture.runAsync(() -> {
+            Map<Long, Map<Integer, SurfaceSample>> partitioned = readLegacySnapshot(legacy);
+            if (partitioned.isEmpty() || generation != scopeGeneration) return;
+            for (Map.Entry<Long, Map<Integer, SurfaceSample>> entry : partitioned.entrySet()) {
+                enqueueRegionWrite(scopeDirectory, entry.getKey(), entry.getValue());
+            }
+            writeTail = writeTail.handle((ignored, failure) -> null).thenRunAsync(() -> {
+                try {
+                    Files.createDirectories(scopeDirectory);
+                    Files.writeString(migratedMarker, "v1\n");
+                } catch (IOException ignored) { }
+            });
+        });
+    }
+
+    private static Map<Long, Map<Integer, SurfaceSample>> readLegacySnapshot(Path source) {
+        Map<Long, Map<Integer, SurfaceSample>> result = new HashMap<>();
+        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
+                new GZIPInputStream(Files.newInputStream(source))))) {
+            if (in.readInt() != LEGACY_FORMAT_VERSION) return result;
+            int count = Math.max(0, Math.min(262_144, in.readInt()));
+            for (int i = 0; i < count; i++) {
+                long packed = in.readLong();
+                int x = unpackX(packed);
+                int z = unpackZ(packed);
+                SurfaceSample sample = new SurfaceSample(in.readInt(), in.readInt(), true);
+                long regionKey = pack(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(z, REGION_SIZE));
+                result.computeIfAbsent(regionKey, ignored -> new HashMap<>())
+                        .put(localIndex(x, z), sample);
+            }
+        } catch (IOException ignored) {
+            result.clear();
+        }
+        return result;
+    }
+
+    private static Map<Integer, SurfaceSample> readRegion(Path source) {
+        Map<Integer, SurfaceSample> result = new HashMap<>();
+        if (source == null || !Files.isRegularFile(source)) return result;
+        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
+                new GZIPInputStream(Files.newInputStream(source))))) {
+            if (in.readInt() != FORMAT_VERSION) return result;
+            int count = Math.max(0, Math.min(REGION_CAPACITY, in.readInt()));
+            for (int i = 0; i < count; i++) {
+                int localIndex = in.readUnsignedShort();
+                int color = in.readInt();
+                int height = in.readInt();
+                result.put(localIndex, new SurfaceSample(color, height, true));
+            }
+        } catch (IOException ignored) {
+            result.clear();
+        }
+        return result;
+    }
+
+    private static void writeRegion(Path destination, Map<Integer, SurfaceSample> snapshot) {
+        Path parent = destination.getParent();
+        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
+        try {
+            if (parent != null) Files.createDirectories(parent);
+            try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(
+                    new GZIPOutputStream(Files.newOutputStream(temporary))))) {
+                out.writeInt(FORMAT_VERSION);
+                out.writeInt(snapshot.size());
+                for (Map.Entry<Integer, SurfaceSample> entry : snapshot.entrySet()) {
+                    out.writeShort(entry.getKey());
+                    out.writeInt(entry.getValue().color());
+                    out.writeInt(entry.getValue().height());
+                }
+            }
+            try {
+                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicFailure) {
+                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ignored) {
+            try { Files.deleteIfExists(temporary); } catch (IOException ignoredAgain) { }
+        }
+    }
+
+    private static Path regionFile(Path directory, long regionKey) {
+        int regionX = unpackX(regionKey);
+        int regionZ = unpackZ(regionKey);
+        return directory.resolve("r." + regionX + "." + regionZ + ".surface.gz");
+    }
+
+    private static int localIndex(int x, int z) {
+        int localX = Math.floorMod(x, REGION_SIZE);
+        int localZ = Math.floorMod(z, REGION_SIZE);
+        return localZ * REGION_SIZE + localX;
     }
 
     private static int exploredCount(SurfaceSample... values) {
@@ -188,8 +372,6 @@ public final class ClientMapSurfaceCache {
                 ? UNEXPLORED_COLOR
                 : mapColor.getRenderColor(MapColor.Brightness.NORMAL);
 
-        // Do not query relief neighbours across unloaded chunk boundaries. Map
-        // presentation must never cause terrain loads merely for shading.
         int westX = x - 1;
         int northZ = z - 1;
         boolean westLoaded = world.getChunkManager().isChunkLoaded(westX >> 4, z >> 4);
@@ -215,48 +397,6 @@ public final class ClientMapSurfaceCache {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    private void load() {
-        if (scopeFile == null || !Files.isRegularFile(scopeFile)) return;
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                new GZIPInputStream(Files.newInputStream(scopeFile))))) {
-            if (in.readInt() != FORMAT_VERSION) return;
-            int count = Math.min(MAX_COLUMNS, Math.max(0, in.readInt()));
-            for (int i = 0; i < count; i++) {
-                long key = in.readLong();
-                int color = in.readInt();
-                int height = in.readInt();
-                samples.put(key, new SurfaceSample(color, height, true));
-            }
-        } catch (IOException ignored) {
-            samples.clear();
-        }
-    }
-
-    private static void writeSnapshot(Path destination, Map<Long, SurfaceSample> snapshot) {
-        Path parent = destination.getParent();
-        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
-        try {
-            if (parent != null) Files.createDirectories(parent);
-            try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(
-                    new GZIPOutputStream(Files.newOutputStream(temporary))))) {
-                out.writeInt(FORMAT_VERSION);
-                out.writeInt(snapshot.size());
-                for (Map.Entry<Long, SurfaceSample> entry : snapshot.entrySet()) {
-                    out.writeLong(entry.getKey());
-                    out.writeInt(entry.getValue().color());
-                    out.writeInt(entry.getValue().height());
-                }
-            }
-            try {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailure) {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (IOException ignored) {
-            try { Files.deleteIfExists(temporary); } catch (IOException ignoredAgain) { }
-        }
-    }
-
     private static String safeName(String value) {
         String safe = value.replaceAll("[^A-Za-z0-9._-]+", "_");
         return safe.length() > 160 ? safe.substring(0, 160) : safe;
@@ -273,6 +413,15 @@ public final class ClientMapSurfaceCache {
     private static int unpackZ(long packed) {
         return (int) packed;
     }
+
+    private static final class RegionData {
+        private final Map<Integer, SurfaceSample> samples = new HashMap<>();
+        private boolean loadScheduled;
+        private boolean loaded;
+        private boolean dirty;
+    }
+
+    private record LoadedRegion(long generation, long regionKey, Map<Integer, SurfaceSample> samples) { }
 
     public record SurfaceSample(int color, int height, boolean explored) {
         private static final SurfaceSample UNEXPLORED =
