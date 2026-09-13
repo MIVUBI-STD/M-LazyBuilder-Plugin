@@ -1,4 +1,5 @@
 use crate::commands;
+use crate::engine::cpu_governor;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry;
@@ -7,6 +8,10 @@ pub fn run() {
     // Load the saved server library only. Active workspace selection is intentionally
     // session-only so every new launcher session starts at the Server Library.
     let _ = workspace_registry::initialize();
+
+    // Keep Paper responsive without stealing CPU from a local Minecraft client.
+    // The governor is internal: builders do not need to manage CPU allocation manually.
+    cpu_governor::start();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
