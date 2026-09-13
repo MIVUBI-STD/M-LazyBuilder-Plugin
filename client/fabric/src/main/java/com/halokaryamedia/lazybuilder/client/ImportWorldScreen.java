@@ -8,7 +8,7 @@ import net.minecraft.text.Text;
 
 import java.util.Locale;
 
-/** File-first import flow; internal destination naming is derived automatically. */
+/** File-first import flow; upload and server publication remain one visible operation. */
 public final class ImportWorldScreen extends Screen {
     private final Screen parent;
     private final ClientWorldController worlds;
@@ -16,7 +16,9 @@ public final class ImportWorldScreen extends Screen {
     private TextFieldWidget displayName;
     private String validation;
     private boolean choosing;
+    private boolean processingImport;
     private long observedTransferRevision;
+    private long observedWorldRevision;
 
     public ImportWorldScreen(Screen parent, ClientWorldController worlds, ClientTransferController transfers) {
         super(Text.literal("Import World"));
@@ -24,32 +26,37 @@ public final class ImportWorldScreen extends Screen {
         this.worlds = worlds;
         this.transfers = transfers;
         this.observedTransferRevision = transfers.revision();
+        this.observedWorldRevision = worlds.revision();
     }
 
     @Override
     protected void init() {
         int center = width / 2;
-        int fieldWidth = Math.min(320, width - 60);
+        int fieldWidth = Math.min(340, width - 60);
         int left = center - fieldWidth / 2;
+        boolean busy = choosing || processingImport;
 
         displayName = new TextFieldWidget(textRenderer, left, 96, fieldWidth, 22, Text.literal("World Name"));
         displayName.setPlaceholder(Text.literal("Optional — uses the file name by default"));
         displayName.setMaxLength(96);
-        displayName.active = !choosing;
+        displayName.active = !busy;
         addDrawableChild(displayName);
 
-        ButtonWidget choose = ButtonWidget.builder(Text.literal(choosing ? "Import in progress…" : "Choose World File"), button -> choose())
-                .dimensions(center - 120, 140, 240, 24).build();
-        choose.active = !choosing;
+        String primaryLabel = processingImport ? "Importing on server…"
+                : choosing ? "Uploading world…"
+                : "Choose World File";
+        ButtonWidget choose = ButtonWidget.builder(Text.literal(primaryLabel), button -> choose())
+                .dimensions(center - 125, 140, 250, 24).build();
+        choose.active = !busy;
         addDrawableChild(choose);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(choosing ? "Back" : "Cancel"), button -> close())
+        addDrawableChild(ButtonWidget.builder(Text.literal(busy ? "Back" : "Cancel"), button -> close())
                 .dimensions(center - 50, 178, 100, 20).build());
-        if (!choosing) setInitialFocus(displayName);
+        if (!busy) setInitialFocus(displayName);
     }
 
     private void choose() {
-        if (choosing) return;
+        if (choosing || processingImport) return;
         String requestedDisplay = displayName == null ? "" : displayName.getText().strip();
         validation = null;
         choosing = true;
@@ -60,8 +67,11 @@ public final class ImportWorldScreen extends Screen {
                 String baseName = baseName(artifactName);
                 String folder = availableFolderName(baseName);
                 String finalDisplay = requestedDisplay.isBlank() ? baseName : requestedDisplay;
+                choosing = false;
+                processingImport = true;
                 worlds.importWorld(artifactName, folder, finalDisplay);
-                if (client != null) client.setScreen(parent);
+                observedWorldRevision = worlds.revision();
+                if (client != null && client.currentScreen == this) clearAndInit();
             }, () -> {
                 choosing = false;
                 if (client != null && client.currentScreen == this) clearAndInit();
@@ -75,13 +85,28 @@ public final class ImportWorldScreen extends Screen {
 
     @Override
     public void tick() {
-        if (observedTransferRevision == transfers.revision()) return;
-        observedTransferRevision = transfers.revision();
-        ClientTransferController.TransferStatus transfer = transfers.status();
-        if (choosing && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
-            choosing = false;
-            validation = transfer.message();
+        if (observedTransferRevision != transfers.revision()) {
+            observedTransferRevision = transfers.revision();
+            ClientTransferController.TransferStatus transfer = transfers.status();
+            if (choosing && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
+                choosing = false;
+                validation = transfer.message();
+                clearAndInit();
+                return;
+            }
+        }
+
+        if (!processingImport || observedWorldRevision == worlds.revision()) return;
+        observedWorldRevision = worlds.revision();
+        if (worlds.lastError() != null) {
+            processingImport = false;
+            validation = worlds.lastError();
             clearAndInit();
+            return;
+        }
+        if (worlds.activityMessage() == null) {
+            processingImport = false;
+            if (client != null && client.currentScreen == this) client.setScreen(parent);
         }
     }
 
@@ -124,27 +149,40 @@ public final class ImportWorldScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderBackground(context, mouseX, mouseY, delta);
+        int panelWidth = Math.min(430, width - 40);
+        int left = width / 2 - panelWidth / 2;
+        context.fill(left, 14, left + panelWidth, 270, 0xB915191F);
         super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 22, 0xFFFFFF);
+
+        context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 24, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Choose the world file. LazyBuilder handles the server destination automatically."),
+                Text.literal("Choose a world archive. LazyBuilder handles its server folder automatically."),
                 width / 2, 48, 0xB8C0CC);
         context.drawTextWithShadow(textRenderer, Text.literal("World Name"), displayName.getX(), 82, 0xAEB7C4);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Supported: .zip and .mcworld"), width / 2, 168, 0x8F9AA8);
+                Text.literal("Supported files: .zip and .mcworld"), width / 2, 168, 0x8F9AA8);
 
-        ClientTransferController.TransferStatus transfer = transfers.status();
-        if (choosing && transfer.phase() != ClientTransferController.TransferPhase.IDLE) {
-            String label = transfer.message();
-            int percent = transfer.percent();
-            if (percent >= 0) label += "  " + percent + "%";
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(label), width / 2, 214, 0xD8DEE9);
+        String statusLabel = null;
+        int percent = -1;
+        if (processingImport) {
+            statusLabel = worlds.activityMessage() == null ? "Finishing import…" : worlds.activityMessage();
+        } else if (choosing) {
+            ClientTransferController.TransferStatus transfer = transfers.status();
+            if (transfer.phase() != ClientTransferController.TransferPhase.IDLE) {
+                statusLabel = transfer.message();
+                percent = transfer.percent();
+            }
+        }
+
+        if (statusLabel != null) {
+            if (percent >= 0) statusLabel += "  " + percent + "%";
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(statusLabel), width / 2, 214, 0xD8DEE9);
             if (percent >= 0) {
                 int barWidth = Math.min(300, width - 80);
-                int left = width / 2 - barWidth / 2;
+                int barLeft = width / 2 - barWidth / 2;
                 int filled = (int) Math.round(barWidth * (percent / 100.0));
-                context.fill(left, 230, left + barWidth, 236, 0xFF303740);
-                context.fill(left, 230, left + filled, 236, 0xFFD8DEE9);
+                context.fill(barLeft, 230, barLeft + barWidth, 236, 0xFF303740);
+                context.fill(barLeft, 230, barLeft + filled, 236, 0xFFD8DEE9);
             }
         }
         if (validation != null) {
