@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-/** Operator-only command surface for build-server performance tools. */
+/** Operator-only command surface for low-overhead build-server performance tools. */
 public final class BuildPerformanceCommand implements CommandExecutor, TabCompleter {
     private final Server server;
     private final ChunkPregenerationController pregeneration;
@@ -39,9 +39,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
                 case "pause" -> handleChunkyAction(sender, () -> pregeneration.pause(requireWorld(args)), "Pregeneration paused.");
                 case "continue", "resume" -> handleChunkyAction(sender, () -> pregeneration.resume(requireWorld(args)), "Pregeneration resumed.");
                 case "cancel" -> handleChunkyAction(sender, () -> pregeneration.cancel(requireWorld(args)), "Pregeneration cancelled. Existing generated chunks are retained.");
-                case "profile" -> handleProfile(sender, args, false);
-                case "profilelag" -> handleProfile(sender, args, true);
-                default -> sender.sendMessage("Usage: /" + label + " status|pregen|pause|continue|cancel|profile|profilelag");
+                default -> sender.sendMessage("Usage: /" + label + " status|pregen|pause|continue|cancel");
             }
         } catch (RuntimeException exception) {
             sender.sendMessage("LazyBuilder performance: " + exception.getMessage());
@@ -52,15 +50,14 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
     private void sendStatus(CommandSender sender) {
         double[] tps = server.getTPS();
         double tps1m = tps.length > 0 ? Math.min(20.0, tps[0]) : 0.0;
-        double tps5m = tps.length > 1 ? Math.min(20.0, tps[1]) : tps1m;
         double mspt = server.getAverageTickTime();
 
-        sender.sendMessage("LazyBuilder build performance tools");
-        sender.sendMessage(String.format(Locale.ROOT, "- TPS: %.2f (1m) / %.2f (5m)", tps1m, tps5m));
+        sender.sendMessage("LazyBuilder build performance");
+        sender.sendMessage(String.format(Locale.ROOT, "- TPS: %.2f", tps1m));
         sender.sendMessage(String.format(Locale.ROOT, "- MSPT: %.2f ms", mspt));
-        sender.sendMessage("- Chunky: " + (pregeneration.available() ? "available" : "optional/not installed"));
-        sender.sendMessage("- spark: bundled by Paper 1.21+");
-        sender.sendMessage("- AI policy tags: lazybuilder_gameplay_ai (opt out), lazybuilder_decorative (force no-AI)");
+        sender.sendMessage("- Chunk pregeneration: " + (pregeneration.available() ? "available" : "optional/not installed"));
+        sender.sendMessage("- Runtime profiling: disabled by design");
+        sender.sendMessage("- AI tags: lazybuilder_gameplay_ai (allow AI), lazybuilder_decorative (force no-AI)");
     }
 
     private void handlePregen(CommandSender sender, String[] args) {
@@ -74,27 +71,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         int centerX = args.length >= 5 ? parseInt(args[4], "centerX") : 0;
         int centerZ = args.length >= 6 ? parseInt(args[5], "centerZ") : 0;
         pregeneration.start(world, shape, centerX, centerZ, radius);
-        sender.sendMessage("Chunky pregeneration started for " + world + " with " + shape + " radius " + radius + " blocks.");
-    }
-
-    private void handleProfile(CommandSender sender, String[] args, boolean lagOnly) {
-        int timeoutSeconds = lagOnly
-                ? (args.length >= 3 ? boundedPositive(args[2], "timeoutSeconds", 30, 1800) : 300)
-                : (args.length >= 2 ? boundedPositive(args[1], "timeoutSeconds", 30, 1800) : 300);
-
-        String command;
-        if (lagOnly) {
-            int thresholdMs = args.length >= 2 ? boundedPositive(args[1], "thresholdMs", 50, 5000) : 100;
-            command = "spark profiler start --only-ticks-over " + thresholdMs + " --timeout " + timeoutSeconds;
-            sender.sendMessage("spark lag profiler started for ticks over " + thresholdMs + " ms, timeout " + timeoutSeconds + " s.");
-        } else {
-            command = "spark profiler start --timeout " + timeoutSeconds;
-            sender.sendMessage("spark profiler started for " + timeoutSeconds + " seconds.");
-        }
-
-        if (!server.dispatchCommand(server.getConsoleSender(), command)) {
-            throw new IllegalStateException("Paper/spark rejected profiling command");
-        }
+        sender.sendMessage("Chunk pregeneration started for " + world + " with " + shape + " radius " + radius + " blocks.");
     }
 
     private static void handleChunkyAction(CommandSender sender, Runnable action, String successMessage) {
@@ -109,14 +86,6 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         return args[1];
     }
 
-    private static int boundedPositive(String value, String name, int min, int max) {
-        int parsed = parseInt(value, name);
-        if (parsed < min || parsed > max) {
-            throw new IllegalArgumentException(name + " must be between " + min + " and " + max);
-        }
-        return parsed;
-    }
-
     private static int parseInt(String value, String name) {
         try {
             return Integer.parseInt(value);
@@ -128,7 +97,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("status", "pregen", "pause", "continue", "cancel", "profile", "profilelag"), args[0]);
+            return filter(List.of("status", "pregen", "pause", "continue", "cancel"), args[0]);
         }
         if (args.length == 4 && "pregen".equalsIgnoreCase(args[0])) {
             return filter(List.of("square", "circle"), args[3]);
