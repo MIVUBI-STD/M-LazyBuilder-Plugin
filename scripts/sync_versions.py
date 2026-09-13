@@ -93,6 +93,12 @@ if old_cargo_version != PRODUCT_VERSION:
     cargo_path.write_text(cargo_text, encoding="utf-8")
     print("updated EngineData/Frontend/RustApp/src-tauri/Cargo.toml")
 
+replace_text(
+    "EngineData/Frontend/RustApp/src-tauri/Cargo.lock",
+    r'(?s:(\[\[package\]\]\s*name\s*=\s*"lazybuilder"\s*version\s*=\s*)"[^"]+")',
+    rf'\g<1>"{PRODUCT_VERSION}"',
+)
+
 for json_path in (
     "EngineData/Frontend/RustApp/package.json",
     "EngineData/Frontend/RustApp/src-tauri/tauri.conf.json",
