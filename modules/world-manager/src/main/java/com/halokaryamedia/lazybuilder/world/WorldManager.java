@@ -13,8 +13,6 @@ import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportSer
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
-import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeState;
-import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeStateRegistry;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ChunkerCliAdapter;
@@ -58,7 +56,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.logging.Level;
 
 /** Canonical server-side owner for World Manager runtime coordination. */
 public final class WorldManager {
@@ -74,15 +71,14 @@ public final class WorldManager {
     private final BuildReadyPolicy buildReadyPolicy;
     private final WorldRegistry worldRegistry;
     private final WorldRegistryPersistence registryPersistence;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldRuntimeGateway runtimeGateway;
     private final WorldLocationGateway locationGateway;
+    private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldRuntimeService worldRuntimeService;
     private final WorldCreationService worldCreationService;
     private final WorldTeleportService worldTeleportService;
     private final WorldLocationTeleportService worldLocationTeleportService;
     private final WorldSettingsService worldSettingsService;
-    private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldFileRepository worldFileRepository;
     private final WorldBackupStore worldBackupStore;
     private final WorldExportArtifactStore worldExportArtifactStore;
@@ -105,29 +101,25 @@ public final class WorldManager {
         this.conversionRuntimePolicy = ConversionRuntimePolicy.defaults();
         this.buildReadyPolicy = BuildReadyPolicy.defaults();
         this.worldRegistry = new WorldRegistry();
-        this.runtimeStates = new WorldRuntimeStateRegistry();
         this.worldOperationCoordinator = new WorldOperationCoordinator();
         this.conversionJobCoordinator = new ConversionJobCoordinator();
 
         this.registryPersistence = new YamlWorldRegistryPersistence(storageLayout.registryPath());
         this.worldFileRepository = new LocalWorldFileRepository(
-                storageLayout.worldsRoot(),
-                storageLayout.workRoot()
-        );
+                storageLayout.worldsRoot(), storageLayout.workRoot());
         this.worldBackupStore = new LocalWorldBackupStore(storageLayout.backupsRoot());
         this.worldExportArtifactStore = new LocalWorldExportArtifactStore(storageLayout.exportsRoot());
+
         long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 200_000L));
         long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 65_536L));
         this.worldImportArtifactStore = new LocalWorldImportArtifactStore(
-                storageLayout.importsRoot(), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
-        );
+                storageLayout.importsRoot(), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L));
 
         int configuredTransferChunkBytes = plugin.getConfig().getInt(
                 "world-manager.transfer.chunk-bytes", TransferWireProtocol.MAX_CHUNK_BYTES);
         int transferChunkBytes = Math.min(
                 TransferWireProtocol.MAX_CHUNK_BYTES,
-                Math.max(1024, configuredTransferChunkBytes)
-        );
+                Math.max(1024, configuredTransferChunkBytes));
         long maxUploadMb = Math.max(1L,
                 plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 16_384L));
         long transferIdleSeconds = Math.max(30L,
@@ -137,11 +129,9 @@ public final class WorldManager {
                 Math.multiplyExact(maxUploadMb, 1024L * 1024L),
                 1,
                 2,
-                Duration.ofSeconds(transferIdleSeconds)
-        );
+                Duration.ofSeconds(transferIdleSeconds));
         this.transferSessionService = new TransferSessionService(
-                storageLayout.importsRoot(), storageLayout.exportsRoot(), storageLayout.transferRoot(), transferPolicy
-        );
+                storageLayout.importsRoot(), storageLayout.exportsRoot(), storageLayout.transferRoot(), transferPolicy);
 
         this.conversionRuntimeStore = new LocalConversionRuntimeStore(storageLayout.conversionRoot());
         int conversionHeapMb = plugin.getConfig().getInt("world-manager.conversion.max-heap-mb", 3072);
@@ -151,8 +141,7 @@ public final class WorldManager {
                 conversionHeapMb,
                 Duration.ofSeconds(30),
                 Duration.ofMinutes(Math.max(1L, conversionTimeoutMinutes)),
-                new OnDemandProcessRunner()
-        );
+                new OnDemandProcessRunner());
         GitHubChunkerReleaseSource releaseSource = new GitHubChunkerReleaseSource();
         this.conversionUpdateService = new ConversionUpdateService(
                 conversionRuntimePolicy,
@@ -161,38 +150,33 @@ public final class WorldManager {
                 releaseSource,
                 converterAdapter,
                 storageLayout.conversionRoot().resolve("downloads"),
-                Clock.systemUTC()
-        );
+                Clock.systemUTC());
 
         this.runtimeGateway = new PaperWorldRuntimeGateway(
                 plugin.getServer(),
-                () -> plugin.getConfig().getString("world-manager.fallback-world", "")
-        );
+                () -> plugin.getConfig().getString("world-manager.fallback-world", ""));
         this.locationGateway = new PaperWorldLocationGateway(plugin.getServer());
-        this.worldRuntimeService = new WorldRuntimeService(worldRegistry, runtimeStates, runtimeGateway);
+
+        this.worldRuntimeService = new WorldRuntimeService(
+                worldRegistry, runtimeGateway, worldOperationCoordinator);
         this.worldCreationService = new WorldCreationService(
-                worldRegistry, registryPersistence, runtimeGateway, runtimeStates, buildReadyPolicy
-        );
-        this.worldTeleportService = new WorldTeleportService(worldRegistry, worldRuntimeService, runtimeGateway);
+                worldRegistry, registryPersistence, runtimeGateway, buildReadyPolicy);
+        this.worldTeleportService = new WorldTeleportService(
+                worldRegistry, worldRuntimeService, runtimeGateway);
         this.worldLocationTeleportService = new WorldLocationTeleportService(
-                worldRegistry, worldRuntimeService, locationGateway
-        );
+                worldRegistry, worldRuntimeService, locationGateway);
         this.worldSettingsService = new WorldSettingsService(
-                worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy
-        );
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy);
         this.worldLifecycleService = new WorldLifecycleService(
-                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates, worldOperationCoordinator
-        );
+                worldRegistry, registryPersistence, worldRuntimeService, worldOperationCoordinator);
         this.worldCloneService = new WorldCloneService(
-                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates,
-                worldOperationCoordinator, worldFileRepository
-        );
+                worldRegistry, registryPersistence, worldRuntimeService,
+                worldOperationCoordinator, worldFileRepository);
         this.worldBackupService = new WorldBackupService(
-                worldRegistry, worldRuntimeService, runtimeStates, worldOperationCoordinator,
-                worldFileRepository, worldBackupStore
-        );
+                worldRegistry, worldRuntimeService, worldOperationCoordinator,
+                worldFileRepository, worldBackupStore);
         this.worldDeleteService = new WorldDeleteService(
-                worldRegistry, registryPersistence, worldRuntimeService, runtimeStates,
+                worldRegistry, registryPersistence, worldRuntimeService,
                 worldOperationCoordinator, worldFileRepository,
                 world -> {
                     String configured = plugin.getConfig().getString("world-manager.fallback-world", "");
@@ -201,65 +185,25 @@ public final class WorldManager {
                     }
                     return !plugin.getServer().getWorlds().isEmpty()
                             && world.folderName().equals(plugin.getServer().getWorlds().get(0).getName());
-                }
-        );
+                });
         this.worldExportService = new WorldExportService(
-                worldRegistry, worldRuntimeService, runtimeStates, worldOperationCoordinator,
+                worldRegistry, worldRuntimeService, worldOperationCoordinator,
                 worldFileRepository, worldExportArtifactStore, conversionRuntimeStore,
-                conversionUpdateService, converterAdapter, conversionJobCoordinator
-        );
+                conversionUpdateService, converterAdapter, conversionJobCoordinator);
         this.worldImportService = new WorldImportService(
-                worldRegistry, registryPersistence, runtimeStates, worldFileRepository,
+                worldRegistry, registryPersistence, worldFileRepository,
                 worldImportArtifactStore, conversionRuntimeStore, conversionUpdateService,
-                converterAdapter, conversionJobCoordinator
-        );
+                converterAdapter, conversionJobCoordinator);
     }
 
     public void start() {
         try {
-            List<WorldRecord> persisted = registryPersistence.load();
-            for (WorldRecord world : persisted) {
+            for (WorldRecord world : registryPersistence.load()) {
                 worldRegistry.register(world);
-                runtimeStates.initialize(
-                        world.id(),
-                        runtimeGateway.isLoaded(world) ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED
-                );
             }
             discoverExistingWorlds();
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
-        }
-
-        for (WorldRecord world : worldRegistry.all()) {
-            if (world.lifecycle() == WorldLifecycle.ACTIVE && world.autoLoad()
-                    && runtimeStates.get(world.id()) == WorldRuntimeState.UNLOADED) {
-                try {
-                    worldRuntimeService.load(world.id());
-                } catch (RuntimeException exception) {
-                    plugin.getLogger().log(Level.SEVERE,
-                            "Failed to auto-load managed world " + world.folderName() + "; leaving it unloaded.",
-                            exception);
-                }
-            }
-        }
-
-        // Reconcile Paper-loaded managed worlds with the registry once at startup.
-        // A managed world marked autoLoad=false should not keep chunk/entity ticking merely
-        // because Paper happened to load it before this plugin. The runtime gateway keeps the
-        // configured/default fallback world loaded, so this cannot remove the server's safety world.
-        for (WorldRecord world : worldRegistry.all()) {
-            if (world.lifecycle() == WorldLifecycle.ACTIVE && !world.autoLoad()
-                    && runtimeStates.get(world.id()) == WorldRuntimeState.LOADED) {
-                try {
-                    worldRuntimeService.unload(world.id());
-                    plugin.getLogger().fine("Unloaded idle managed world " + world.folderName()
-                            + " because autoLoad is disabled.");
-                } catch (RuntimeException exception) {
-                    plugin.getLogger().fine("Kept managed world " + world.folderName()
-                            + " loaded because Paper requires it as an active/fallback world: "
-                            + exception.getMessage());
-                }
-            }
         }
 
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
@@ -269,9 +213,7 @@ public final class WorldManager {
 
     private void discoverExistingWorlds() throws IOException {
         Path worldsRoot = storageLayout.worldsRoot().toAbsolutePath().normalize();
-        if (!Files.isDirectory(worldsRoot)) {
-            return;
-        }
+        if (!Files.isDirectory(worldsRoot)) return;
 
         List<Path> candidates;
         try (var paths = Files.list(worldsRoot)) {
@@ -285,36 +227,21 @@ public final class WorldManager {
         String defaultGameMode = plugin.getServer().getDefaultGameMode().name();
         for (Path candidate : candidates) {
             String folderName = candidate.getFileName().toString();
-            if (worldRegistry.findByFolderName(folderName).isPresent()) {
-                continue;
-            }
-            if (!Files.isRegularFile(candidate.resolve("level.dat"))) {
-                continue;
-            }
+            if (worldRegistry.findByFolderName(folderName).isPresent()) continue;
+            if (!Files.isRegularFile(candidate.resolve("level.dat"))) continue;
 
             World loaded = plugin.getServer().getWorld(folderName);
-            if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) {
-                continue;
-            }
-            if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) {
-                continue;
-            }
+            if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) continue;
+            if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) continue;
 
-            boolean isLoaded = loaded != null;
             WorldRecord discoveredWorld = new WorldRecord(
                     WorldId.create(),
                     folderName,
                     folderName,
                     WorldKind.IMPORTED,
                     WorldLifecycle.ACTIVE,
-                    isLoaded,
-                    defaultGameMode
-            );
+                    defaultGameMode);
             worldRegistry.register(discoveredWorld);
-            runtimeStates.initialize(
-                    discoveredWorld.id(),
-                    isLoaded ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED
-            );
             discovered++;
         }
 
