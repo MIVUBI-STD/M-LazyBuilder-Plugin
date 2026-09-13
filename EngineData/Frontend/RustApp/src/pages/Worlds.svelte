@@ -293,7 +293,7 @@
     operationBusyWorldId = deleteSource.id;
     error = '';
     try {
-      operationTask = await runtimeProduct.worlds.delete({ worldId: deleteSource.id, typedFolderName: deleteConfirmation.trim() });
+      operationTask = await runtimeProduct.worlds.delete({ worldId: deleteSource.id, typedDisplayName: deleteConfirmation.trim() });
       closePanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
