@@ -18,6 +18,8 @@ pub fn run() {
             commands::workspace::workspace_pick_parent,
             commands::workspace::workspace_create,
             commands::workspace::workspace_open_picker,
+            commands::workspace::workspace_adoption_pick,
+            commands::workspace::workspace_adopt,
             commands::workspace::workspace_activate,
             commands::workspace::workspace_close,
             commands::server_manager::server_preflight,
