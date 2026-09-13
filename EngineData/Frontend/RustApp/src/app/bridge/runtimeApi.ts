@@ -12,6 +12,17 @@ export type WorkspaceState = {
   recent: WorkspaceEntry[];
 };
 
+export type WorkspaceProvisioningStatus = {
+  workspaceCreated: boolean;
+  javaReady: boolean;
+  paperReady: boolean;
+  coreModulesReady: boolean;
+  configReady: boolean;
+  eulaAccepted: boolean;
+  ready: boolean;
+  nextStep: string;
+};
+
 export type ServerSnapshot = {
   state: string;
   health: string;
@@ -146,9 +157,10 @@ export type WorldTaskSnapshot = {
 
 export const runtimeApi = {
   getWorkspaceState: () => invoke<WorkspaceState>('workspace_state'),
+  getWorkspaceProvisioningStatus: () => invoke<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
+  acceptWorkspaceEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
   pickWorkspaceParent: () => invoke<string | null>('workspace_pick_parent'),
-  createWorkspace: (parentPath: string, name: string) =>
-    invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
+  createWorkspace: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
   openWorkspace: () => invoke<WorkspaceEntry | null>('workspace_open_picker'),
   activateWorkspace: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
   closeWorkspace: () => invoke<void>('workspace_close'),
