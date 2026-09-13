@@ -48,14 +48,28 @@ Work Server - 1.21.4/
 │   ├── imports/
 │   ├── exports/
 │   ├── backups/
-│   ├── archives/
 │   └── work/
 ├── tools/
 │   └── lazybuilder/
+│       ├── config/
+│       ├── cache/
+│       ├── logs/
+│       ├── disabled-plugins/
+│       └── plugin-backups/
 └── README-Server.txt
 ```
 
-World lifecycle data belongs under `world-system/`; Paper/runtime/plugin files stay under `server/`. Some current source paths remain transitional and should only be migrated as an explicit bounded compatibility-safe slice.
+Canonical desktop-launched runtime ownership is now source-wired:
+
+- actual Paper world folders → `world-system/worlds/`;
+- World-Manager registry/import/export/backup/work data → `world-system/`;
+- converter support assets → `tools/lazybuilder/cache/converter/`;
+- Server-Manager, world-control, and Plugin-Manager configuration → `tools/lazybuilder/config/`;
+- disabled plugin JARs → `tools/lazybuilder/disabled-plugins/`;
+- plugin backups → `tools/lazybuilder/plugin-backups/`;
+- Paper/runtime/plugin files → `server/`.
+
+Archive is currently a World-Manager lifecycle state, not a second physical world store, so no unused `world-system/archives/` directory is created. Manual/non-LazyBuilder launches retain compatibility-safe legacy paths rather than silently moving existing data.
 
 ## Component ownership
 
@@ -67,7 +81,9 @@ Desktop-native authority for:
 - health and CPU/RAM summary;
 - Java/runtime discovery;
 - basic server settings;
-- crash/process handling.
+- crash/process handling;
+- canonical runtime directory bootstrap;
+- launching Paper against `world-system/worlds` and passing the workspace root to Paper.
 
 It is not a Paper plugin.
 
@@ -80,7 +96,8 @@ Desktop-native authority for:
 - duplicate prevention;
 - dependency/compatibility checks;
 - restart-safe enable/disable;
-- safe removal with plugin data preserved by default.
+- safe removal with plugin data preserved by default;
+- compatibility-safe migration of legacy disabled-plugin/category-registry locations.
 
 It is not a Paper plugin.
 
@@ -209,7 +226,7 @@ Performance authority is Paper 1.21.4 native configuration rather than generic o
 
 ## Current proof state
 
-Latest locked source gate is green for:
+The latest completed gate before the final runtime-layout cleanup is green for:
 
 ```text
 Paper modules/tests
@@ -217,11 +234,13 @@ Fabric client build
 Tauri/Svelte/Rust desktop checks
 ```
 
-This proves source/CI health only. It does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
+Subsequent source/doc cleanup must pass its own latest-head gate before being called green. `REMOTE_GITHUB` proof does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
 
 ## Current phase
 
-Remote structural work is complete enough to stop adding speculative scope. The next phase is:
+Remote structural work is complete enough to stop adding speculative scope. Remaining work before live testing is limited to final consistency/packaging checks, not new product features.
+
+Then move to:
 
 ```text
 LOCAL_CODE
