@@ -51,25 +51,10 @@ public final class WorldImportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldImportService(
-            WorldRegistry registry,
-            WorldRegistryPersistence persistence,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldFileRepository files,
-            WorldImportArtifactStore imports,
-            ConversionRuntimeStore conversionStore,
-            ConversionUpdateService updateService,
-            ConverterAdapter converter,
-            ConversionJobCoordinator conversionJobs
-    ) {
-        this(registry, persistence, files, imports, conversionStore, updateService, converter, conversionJobs);
-    }
-
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
-                WorldLifecycle.ACTIVE, false
+                WorldLifecycle.ACTIVE
         );
         WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
         return new ImportTask(UUID.randomUUID(), artifactName, destination, destinationReservation);
