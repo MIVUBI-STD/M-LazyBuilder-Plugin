@@ -24,28 +24,33 @@ public final class ClientWorldController {
     }
 
     public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
+
     public void create(String folderName, String displayName, String kind) {
         beginActivity("Creating world…");
         send(new WorldControlWireProtocol.CreateWorld(folderName, displayName, kind));
     }
-    public void cloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
-        beginActivity("Cloning world…");
+
+    public void duplicateWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
+        beginActivity("Duplicating world…");
         send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
     }
+
     public void deleteWorld(UUID worldId, String typedFolderName) {
         beginActivity("Deleting world…");
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
     }
+
     public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
         beginActivity("Preparing world export…");
         send(new WorldControlWireProtocol.ExportWorld(worldId, targetFormat, artifactName));
     }
+
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
         beginActivity("Validating and importing world…");
         send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
     }
-    public void load(UUID worldId) { send(new WorldControlWireProtocol.LoadWorld(worldId)); }
-    public void unload(UUID worldId) { send(new WorldControlWireProtocol.UnloadWorld(worldId)); }
+
+    /** Teleport owns any required world load; manual load/unload is intentionally not a client action. */
     public void teleport(UUID worldId) { send(new WorldControlWireProtocol.TeleportWorld(worldId)); }
     public void archive(UUID worldId) { send(new WorldControlWireProtocol.ArchiveWorld(worldId)); }
     public void restore(UUID worldId) { send(new WorldControlWireProtocol.RestoreWorld(worldId)); }
@@ -128,7 +133,7 @@ public final class ClientWorldController {
             if (!world.worldId().equals(snapshot.worldId())) continue;
             replace(new WorldControlWireProtocol.WorldSummary(
                     world.worldId(), world.folderName(), world.displayName(), world.kind(), world.lifecycle(),
-                    "LOADED", snapshot.autoLoad(), snapshot.defaultGameMode()));
+                    world.runtimeState(), snapshot.autoLoad(), snapshot.defaultGameMode()));
             return;
         }
     }
