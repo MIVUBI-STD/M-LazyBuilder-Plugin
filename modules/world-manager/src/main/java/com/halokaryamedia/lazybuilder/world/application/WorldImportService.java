@@ -24,7 +24,6 @@ public final class WorldImportService {
 
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldFileRepository files;
     private final WorldImportArtifactStore imports;
     private final ConversionRuntimeStore conversionStore;
@@ -35,7 +34,6 @@ public final class WorldImportService {
     public WorldImportService(
             WorldRegistry registry,
             WorldRegistryPersistence persistence,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldFileRepository files,
             WorldImportArtifactStore imports,
             ConversionRuntimeStore conversionStore,
@@ -45,13 +43,27 @@ public final class WorldImportService {
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.files = Objects.requireNonNull(files, "files");
         this.imports = Objects.requireNonNull(imports, "imports");
         this.conversionStore = Objects.requireNonNull(conversionStore, "conversionStore");
         this.updateService = Objects.requireNonNull(updateService, "updateService");
         this.converter = Objects.requireNonNull(converter, "converter");
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
+    }
+
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldImportService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldFileRepository files,
+            WorldImportArtifactStore imports,
+            ConversionRuntimeStore conversionStore,
+            ConversionUpdateService updateService,
+            ConverterAdapter converter,
+            ConversionJobCoordinator conversionJobs
+    ) {
+        this(registry, persistence, files, imports, conversionStore, updateService, converter, conversionJobs);
     }
 
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
@@ -71,7 +83,6 @@ public final class WorldImportService {
         Path publishSource = null;
         boolean published = false;
         boolean registered = false;
-        boolean stateInitialized = false;
         try {
             stagedInput = files.reserveWorkspace(task.operationId);
             WorldImportArtifactStore.StagedImport staged = imports.stageArchive(task.artifactName, stagedInput);
@@ -104,15 +115,9 @@ public final class WorldImportService {
 
             registry.register(task.destination);
             registered = true;
-            runtimeStates.initialize(task.destination.id(), WorldRuntimeState.UNLOADED);
-            stateInitialized = true;
             persistence.save(registry.all());
             task.completed = true;
 
-            // The uploaded archive is an inbox artifact, not durable world state.
-            // Consume it only after the managed-world publication and registry
-            // persistence have committed. A cleanup failure must not roll back an
-            // already committed world; the leftover artifact may be removed later.
             try {
                 imports.deleteArtifact(task.artifactName);
             } catch (IOException cleanupFailure) {
@@ -120,7 +125,6 @@ public final class WorldImportService {
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (stateInitialized) runtimeStates.remove(task.destination.id());
             if (registered) registry.remove(task.destination.id());
             if (published) {
                 try { files.deleteWorld(task.destination); }
@@ -165,12 +169,8 @@ public final class WorldImportService {
         private boolean closed;
         private IOException artifactCleanupFailure;
 
-        private ImportTask(
-                UUID operationId,
-                String artifactName,
-                WorldRecord destination,
-                WorldRegistry.FolderReservation destinationReservation
-        ) {
+        private ImportTask(UUID operationId, String artifactName, WorldRecord destination,
+                           WorldRegistry.FolderReservation destinationReservation) {
             this.operationId = Objects.requireNonNull(operationId, "operationId");
             this.artifactName = Objects.requireNonNull(artifactName, "artifactName");
             this.destination = Objects.requireNonNull(destination, "destination");
