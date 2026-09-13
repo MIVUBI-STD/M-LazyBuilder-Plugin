@@ -29,7 +29,7 @@
 
   const gb = (mb: number) => mb / 1024;
   const ramStep = () => profile.safeMaxMemoryMb >= 8192 ? 512 : 256;
-  const selectedLabel = () => preset === 'Custom' ? 'Custom / Advanced' : preset;
+  const selectedLabel = () => preset === 'Custom' ? 'Custom' : preset;
   const startupRamFor = (maxMb: number) => {
     if (maxMb <= 4096) return 1024;
     if (maxMb <= 8192) return 2048;
@@ -53,7 +53,7 @@
       snapshot = server;
       error = '';
     } catch (e) {
-      error = String(e);
+      error = friendlyError(e);
     }
   }
 
@@ -61,12 +61,12 @@
     const selected = name === 'Performance' ? profile.performance : profile.boost;
     ramMb = selected.maxMemoryMb;
     preset = name;
-    message = `${name} selected. CPU remains OS managed.`;
+    message = '';
   }
 
   function markCustom() {
     preset = 'Custom';
-    message = 'RAM ceiling changed. Apply resources to save the custom profile.';
+    message = '';
   }
 
   async function save(restart: boolean) {
@@ -75,227 +75,180 @@
     error = '';
     message = '';
     try {
-      const next = await runtimeProduct.server.saveResources({
-        maxMemoryMb: ramMb,
-        preset
-      });
+      const next = await runtimeProduct.server.saveResources({ maxMemoryMb: ramMb, preset });
       syncFromProfile(next);
       if (restart && snapshot.state === 'Online') {
         await runtimeProduct.server.restart();
         snapshot = await runtimeProduct.server.snapshot();
-        message = `${selectedLabel()} resources applied and the server restarted.`;
+        message = 'Settings saved and server restarted.';
       } else {
         message = snapshot.state === 'Online'
-          ? `${selectedLabel()} resources saved. Restart the server to activate them.`
-          : `${selectedLabel()} resources saved. They will activate on the next server start.`;
+          ? 'Settings saved. Restart the server to apply them.'
+          : 'Settings saved.';
       }
     } catch (e) {
-      error = String(e);
+      error = friendlyError(e);
     } finally {
       busy = false;
     }
   }
 
+  function friendlyError(value: unknown) {
+    return String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
+  }
+
   onMount(() => { void load(); });
 </script>
 
-<h1>Settings</h1>
-<p class="subtle">Memory grows only when needed. CPU scheduling stays OS managed so Java and Windows can use the processor naturally.</p>
-
-<section class="resource-overview">
+<section class="page-head">
   <div>
-    <div class="label">Current Resource Mode</div>
-    <div class="mode-value">{selectedLabel()}</div>
-  </div>
-  <div class="hardware-line">
-    <span>{gb(profile.totalMemoryMb).toFixed(1)} GB system RAM</span>
-    <span>•</span>
-    <span>{profile.logicalProcessors} logical CPU</span>
-    <span>•</span>
-    <span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB absolute safe ceiling</span>
+    <h1>Server settings</h1>
+    <p>Configure how much memory this server can use.</p>
   </div>
 </section>
 
-<section class="preset-section">
-  <div class="section-heading">
-    <div>
-      <div class="label">Recommended Presets</div>
-      <p class="subtle">Choose a RAM profile. CPU remains adaptive and OS managed.</p>
-    </div>
+{#if error}
+  <div class="notice error-notice"><strong>Couldn’t save settings</strong><span>{error}</span></div>
+{/if}
+{#if message}
+  <div class="notice success-notice"><span>{message}</span></div>
+{/if}
+
+<section class="settings-section">
+  <div class="section-copy">
+    <h2>Performance</h2>
+    <p>Choose a memory profile based on the size of your builds and workloads.</p>
   </div>
 
-  <div class="preset-grid">
-    <button
-      class="preset-card"
-      class:selected={preset === 'Performance'}
-      disabled={busy}
-      onclick={() => selectPreset('Performance')}
-      aria-pressed={preset === 'Performance'}
-    >
-      <div class="preset-topline">
+  <div class="preset-list">
+    <button class="preset-row" class:selected={preset === 'Performance'} disabled={busy} onclick={() => selectPreset('Performance')}>
+      <span class="radio-dot"></span>
+      <span class="preset-copy">
         <strong>Performance</strong>
-        {#if preset === 'Performance'}<span class="selected-badge">Selected</span>{/if}
-      </div>
-      <p>Default mode. Strong everyday Paper performance with a small startup heap.</p>
-      <div class="preset-stats">
-        <span><b>{gb(profile.performance.minMemoryMb).toFixed(1)} GB</b> startup</span>
-        <span><b>{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
-        <span><b>OS managed</b> CPU</span>
-      </div>
+        <small>Recommended for everyday building and normal Paper workloads.</small>
+      </span>
+      <span class="preset-value">{gb(profile.performance.maxMemoryMb).toFixed(1)} GB</span>
     </button>
 
-    <button
-      class="preset-card"
-      class:selected={preset === 'Boost'}
-      disabled={busy}
-      onclick={() => selectPreset('Boost')}
-      aria-pressed={preset === 'Boost'}
-    >
-      <div class="preset-topline">
+    <button class="preset-row" class:selected={preset === 'Boost'} disabled={busy} onclick={() => selectPreset('Boost')}>
+      <span class="radio-dot"></span>
+      <span class="preset-copy">
         <strong>Boost</strong>
-        {#if preset === 'Boost'}<span class="selected-badge">Selected</span>{/if}
-      </div>
-      <p>Extra RAM headroom for heavy imports, generation and large builds.</p>
-      <div class="preset-stats">
-        <span><b>{gb(profile.boost.minMemoryMb).toFixed(1)} GB</b> startup</span>
-        <span><b>{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</b> max RAM</span>
-        <span><b>OS managed</b> CPU</span>
-      </div>
+        <small>More memory headroom for large builds, generation and imports.</small>
+      </span>
+      <span class="preset-value">{gb(profile.boost.maxMemoryMb).toFixed(1)} GB</span>
     </button>
   </div>
 </section>
 
-<details class="advanced-panel">
-  <summary>
-    <span>
-      <strong>Advanced RAM Control</strong>
-      <small>Set a custom maximum server RAM ceiling</small>
-    </span>
-    <span class="advanced-state">{preset === 'Custom' ? 'Custom active' : 'Optional'}</span>
-  </summary>
+<section class="settings-section">
+  <div class="section-copy">
+    <h2>Memory</h2>
+    <p>Set a custom maximum only when you need more control.</p>
+  </div>
 
-  <div class="advanced-content">
-    <div class="slider-block">
-      <div class="slider-heading">
-        <div>
-          <div class="label">Maximum Server RAM</div>
-          <div class="slider-value">{gb(ramMb).toFixed(1)} GB</div>
-        </div>
-        <span class="limit-note">Startup {gb(startupRamFor(ramMb)).toFixed(1)} GB · Safe max {gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span>
+  <div class="memory-panel">
+    <div class="memory-head">
+      <div>
+        <span class="label">Maximum memory</span>
+        <strong>{gb(ramMb).toFixed(1)} GB</strong>
       </div>
-      <input
-        aria-label="Maximum server RAM allocation"
-        type="range"
-        min="1024"
-        max={Math.max(1024, profile.safeMaxMemoryMb)}
-        step={ramStep()}
-        bind:value={ramMb}
-        oninput={markCustom}
-      />
-      <p class="subtle">Paper starts with a smaller heap and can grow toward this maximum only when workload requires it.</p>
+      <span class="safe-limit">Up to {gb(profile.safeMaxMemoryMb).toFixed(1)} GB recommended</span>
     </div>
+    <input
+      aria-label="Maximum server RAM allocation"
+      type="range"
+      min="1024"
+      max={Math.max(1024, profile.safeMaxMemoryMb)}
+      step={ramStep()}
+      bind:value={ramMb}
+      oninput={markCustom}
+    />
+    <div class="range-labels"><span>1 GB</span><span>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</span></div>
   </div>
-</details>
+</section>
 
-<section class="safety-card">
-  <div>
-    <div class="label">Resource Safety</div>
-    <div class="safety-grid">
-      <span>System RAM <b>{gb(profile.totalMemoryMb).toFixed(1)} GB</b></span>
-      <span>Windows reserve <b>{gb(profile.reservedSystemMemoryMb).toFixed(1)} GB</b></span>
-      <span>Absolute safe ceiling <b>{gb(profile.safeMaxMemoryMb).toFixed(1)} GB</b></span>
-      <span>CPU <b>OS managed</b></span>
-    </div>
+<section class="settings-section compact-section">
+  <div class="section-copy">
+    <h2>System</h2>
+    <p>Detected hardware available to this server.</p>
   </div>
-  <p class="subtle">RAM keeps an explicit safety boundary while the operating system remains responsible for CPU scheduling.</p>
+  <div class="system-grid">
+    <div><span>System memory</span><strong>{gb(profile.totalMemoryMb).toFixed(1)} GB</strong></div>
+    <div><span>Reserved for Windows</span><strong>{gb(profile.reservedSystemMemoryMb).toFixed(1)} GB</strong></div>
+    <div><span>CPU</span><strong>{profile.logicalProcessors} logical cores</strong></div>
+    <div><span>CPU scheduling</span><strong>Automatic</strong></div>
+  </div>
 </section>
 
 {#if profile.warning}
-  <div class="warning-card">
-    <strong>Resource warning</strong>
-    <p>{profile.warning}</p>
-  </div>
+  <div class="warning-card"><strong>Resource warning</strong><p>{profile.warning}</p></div>
 {/if}
 
-{#if error}<p style="color: var(--danger)">{error}</p>{/if}
-{#if message}<p>{message}</p>{/if}
-
 <div class="apply-bar">
-  <div>
+  <div class="apply-summary">
     <strong>{selectedLabel()}</strong>
-    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup → {gb(ramMb).toFixed(1)} GB max · OS managed CPU</span>
+    <span>{gb(startupRamFor(ramMb)).toFixed(1)} GB startup · {gb(ramMb).toFixed(1)} GB maximum</span>
   </div>
-  <div class="actions">
-    <button disabled={busy} onclick={() => save(false)}>Apply Resources</button>
+  <div class="apply-actions">
+    <button class="secondary" disabled={busy} onclick={() => save(false)}>{busy ? 'Saving…' : 'Save changes'}</button>
     {#if snapshot.state === 'Online'}
-      <button disabled={busy} onclick={() => save(true)}>Apply & Restart</button>
+      <button class="primary" disabled={busy} onclick={() => save(true)}>Save & restart</button>
     {/if}
   </div>
 </div>
 
 <style>
-  .resource-overview,
-  .preset-section,
-  .advanced-panel,
-  .safety-card,
-  .warning-card,
-  .apply-bar { margin-top: 16px; }
-
-  .resource-overview,
-  .preset-section,
-  .safety-card,
-  .warning-card,
-  .apply-bar,
-  .advanced-panel {
-    border: 1px solid var(--border, rgba(255,255,255,.1));
-    border-radius: 12px;
-    background: var(--panel, rgba(255,255,255,.03));
-  }
-
-  .resource-overview,
-  .preset-section,
-  .safety-card,
-  .warning-card { padding: 16px; }
-
-  .mode-value { margin-top: 5px; font-size: 1.35rem; font-weight: 700; }
-  .hardware-line { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; font-size: .9rem; opacity: .75; }
-  .preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-
-  .preset-card {
-    width: 100%; min-height: 164px; padding: 16px; text-align: left; border-radius: 12px;
-    border: 1px solid var(--border, rgba(255,255,255,.12));
-    background: var(--panel-strong, rgba(255,255,255,.035)); cursor: pointer;
-  }
-  .preset-card.selected { outline: 2px solid currentColor; outline-offset: -2px; }
-  .preset-topline { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 1.05rem; }
-  .selected-badge, .advanced-state { font-size: .75rem; font-weight: 600; opacity: .75; }
-  .preset-card p { min-height: 48px; margin: 10px 0 14px; opacity: .72; line-height: 1.45; }
-  .preset-stats { display: flex; flex-wrap: wrap; gap: 12px 16px; font-size: .88rem; }
-
-  .advanced-panel > summary {
-    list-style: none; display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; padding: 16px; cursor: pointer;
-  }
-  .advanced-panel > summary::-webkit-details-marker { display: none; }
-  .advanced-panel summary small { display: block; margin-top: 4px; opacity: .62; }
-  .advanced-content { padding: 0 16px 16px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
-  .slider-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-top: 14px; }
-  .slider-value { margin-top: 4px; font-size: 1.12rem; font-weight: 700; }
-  .limit-note { font-size: .78rem; opacity: .6; text-align: right; }
-  input[type='range'] { width: 100%; margin: 12px 0 4px; }
-  .safety-grid { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 9px 0; font-size: .9rem; }
-  .warning-card { border-color: var(--danger, currentColor); }
-  .warning-card p { margin-bottom: 0; }
-
-  .apply-bar {
-    position: sticky; bottom: 12px; display: flex; justify-content: space-between;
-    align-items: center; gap: 18px; padding: 12px 14px; backdrop-filter: blur(14px);
-  }
-  .apply-bar > div:first-child { display: flex; flex-direction: column; gap: 3px; }
-  .apply-bar span { font-size: .82rem; opacity: .68; }
-
-  @media (max-width: 760px) {
-    .preset-grid { grid-template-columns: 1fr; }
-    .apply-bar { align-items: stretch; flex-direction: column; }
+  .page-head { margin-bottom:24px; }
+  .page-head h1 { margin:0; font-size:26px; letter-spacing:-.02em; }
+  .page-head p { margin:6px 0 0; color:var(--muted); font-size:13px; }
+  .notice { display:grid; gap:3px; padding:12px 14px; border-radius:10px; margin-bottom:14px; font-size:13px; }
+  .error-notice { border:1px solid #713940; background:#321b1f; color:#ffdadd; }
+  .success-notice { border:1px solid #315d40; background:#172b1d; color:#a8e5b8; }
+  .settings-section { display:grid; grid-template-columns:210px minmax(0,1fr); gap:34px; padding:22px 0; border-top:1px solid var(--border); }
+  .settings-section:first-of-type { border-top:0; padding-top:0; }
+  .section-copy h2 { margin:0; font-size:15px; }
+  .section-copy p { margin:6px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
+  .preset-list { display:grid; border:1px solid var(--border); border-radius:11px; overflow:hidden; background:var(--surface); }
+  .preset-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; min-height:72px; padding:12px 14px; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+  .preset-row:last-child { border-bottom:0; }
+  .preset-row:hover:not(:disabled) { background:rgba(255,255,255,.02); }
+  .preset-row.selected { background:rgba(96,205,123,.055); }
+  .radio-dot { width:16px; height:16px; border:2px solid #66717b; border-radius:50%; position:relative; }
+  .preset-row.selected .radio-dot { border-color:var(--accent); }
+  .preset-row.selected .radio-dot::after { content:''; position:absolute; inset:3px; border-radius:50%; background:var(--accent); }
+  .preset-copy { display:grid; gap:4px; }
+  .preset-copy small { color:var(--muted); font-size:11px; }
+  .preset-value { color:#cbd2d8; font-size:12px; font-weight:700; }
+  .memory-panel { padding:16px; border:1px solid var(--border); border-radius:11px; background:var(--surface); }
+  .memory-head { display:flex; justify-content:space-between; align-items:flex-end; gap:18px; }
+  .memory-head > div { display:grid; gap:4px; }
+  .memory-head strong { font-size:22px; }
+  .label, .safe-limit { color:var(--muted); font-size:11px; }
+  input[type='range'] { width:100%; margin:20px 0 5px; accent-color:var(--accent); }
+  .range-labels { display:flex; justify-content:space-between; color:var(--muted); font-size:10px; }
+  .system-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--border); border-radius:11px; overflow:hidden; background:var(--surface); }
+  .system-grid div { display:grid; gap:4px; padding:13px 14px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .system-grid div:nth-child(2n) { border-right:0; }
+  .system-grid div:nth-last-child(-n+2) { border-bottom:0; }
+  .system-grid span { color:var(--muted); font-size:11px; }
+  .system-grid strong { font-size:13px; }
+  .warning-card { margin-top:16px; padding:12px 14px; border:1px solid #6b5730; border-radius:10px; background:#2b2518; color:#ebd9aa; font-size:12px; }
+  .warning-card p { margin:5px 0 0; }
+  .apply-bar { position:sticky; bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:18px; margin-top:24px; padding:11px 12px; border:1px solid var(--border); border-radius:11px; background:rgba(25,29,33,.94); backdrop-filter:blur(14px); box-shadow:0 12px 34px rgba(0,0,0,.28); }
+  .apply-summary { display:grid; gap:3px; }
+  .apply-summary span { color:var(--muted); font-size:11px; }
+  .apply-actions { display:flex; gap:8px; }
+  .primary, .secondary { border-radius:9px; padding:9px 13px; font-weight:650; cursor:pointer; }
+  .primary { border:1px solid var(--accent); background:var(--accent); color:#07120b; }
+  .secondary { border:1px solid var(--border); background:var(--surface-2); color:var(--text); }
+  button:disabled { cursor:default; opacity:.48; }
+  @media (max-width:760px) {
+    .settings-section { grid-template-columns:1fr; gap:12px; }
+    .system-grid { grid-template-columns:1fr; }
+    .system-grid div { border-right:0; border-bottom:1px solid var(--border) !important; }
+    .system-grid div:last-child { border-bottom:0 !important; }
+    .apply-bar { flex-direction:column; align-items:stretch; }
+    .apply-actions { justify-content:flex-end; }
   }
 </style>
