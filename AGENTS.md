@@ -8,6 +8,7 @@ User-authorized work proceeds through verified checkpoints; never claim proof ab
 - Material GitHub work follows `GITHUB_RULES.md`.
 - Canonical documentation starts at `docs/README.md`; resolve one domain before loading deeper context.
 - Canonical specialist/jobdesk routing is `docs/04-system/skill-routing.md`.
+- Canonical minimum-flow discipline is `docs/04-system/development-discipline.md`.
 - Current readiness is resolved from current `Local` source plus `docs/05-operations/` only when continuation/proof is material.
 
 ## Execution Context Gate
@@ -26,8 +27,8 @@ For read-only inspection:
 
 ```text
 AGENTS.md
-→ GITHUB_RULES.md core rules when GitHub execution matters
-→ docs/04-system/skill-routing.md when ownership is not already obvious
+→ development-discipline.md
+→ skill-routing.md only when ownership is not obvious
 → smallest canonical owner/evidence
 → CONTEXT.md / docs/05-operations only when continuity matters
 → report → STOP
@@ -62,19 +63,9 @@ STOP condition
 
 Use `.agents/skills/lazybuilder-development-brief/SKILL.md` only when architecture, cross-owner ambiguity, or unresolved success criteria prevents a reliable Standard contract. Clear optimization/audit work does not become Complex merely because several files are involved.
 
-## Domain Routing
-
-```text
-product / feature intent          → docs/01-product/
-world lifecycle / create/settings → docs/02-world-management/
-Fabric client UI / Xaero          → docs/03-client-ui/
-system / ownership / boundaries   → docs/04-system/
-current continuation / proof      → docs/05-operations/
-```
-
 ## Specialist Routing
 
-Load exactly one primary specialist when its execution procedure materially helps. Add another only when semantic ownership actually changes.
+Select the specialist by the **semantic decision**, not by implementation language or edited file. Load exactly one primary specialist. Add another only after ownership actually changes.
 
 ```text
 architecture/cross-owner ambiguity
@@ -99,18 +90,34 @@ shared Paper/Fabric request-result/wire contract
 → lazybuilder-protocol
 ```
 
-Canonical jobdesk details: `docs/04-system/skill-routing.md`.
+Canonical conflict/handoff rules: `docs/04-system/skill-routing.md`.
 
-Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, or other implementation mechanics. Route them to the semantic owner above.
+Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, or implementation mechanics.
+
+## Development Discipline
+
+Every mutation follows `docs/04-system/development-discipline.md`.
+
+Default order:
+
+```text
+No change required?
+→ delete unnecessary path?
+→ reuse current owner/path?
+→ native/platform/existing dependency?
+→ smallest complete addition
+→ new abstraction/system only with proven repeated responsibility
+```
+
+Never trade away trust-boundary validation, security, bounded resource limits, data-loss prevention, recoverability, required error handling, accessibility basics, or explicit user requirements merely to reduce code.
 
 ## Architecture Discipline
 
 - One responsibility has one canonical owner and one primary execution path.
+- One persisted fact has one authority; other layers derive/present it.
 - Do not create duplicate managers, registries, caches, routers, config systems, schedulers, process markers, or compatibility layers without evidence.
-- Shared Paper/Fabric transport contracts are owned by `shared/protocol`; client code must not compile implementation source directly from a Paper module.
-- Commands/UI/listeners are adapters; business rules live in explicit application/domain owners.
-- Keep Paper/Bukkit access at infrastructure boundaries where practical.
-- Prefer small explicit contracts over global/static coordination.
+- Commands/UI/listeners are adapters; business rules live in explicit semantic owners.
+- Shared Paper/Fabric contracts live in `shared/protocol`; desktop loopback HTTP remains Desktop Runtime.
 - Extract abstractions only after a real repeated responsibility exists.
 - Internal maintenance stays internal unless it represents a real user decision.
 
@@ -141,17 +148,19 @@ Use the cheapest proof capable of falsifying the changed claim. A green unrelate
 ## Work Discipline
 
 - Diagnose before editing; fix the first wrong owner.
-- Prefer deletion/consolidation when accepted behavior can stay unchanged.
-- Complete GitHub-verifiable work before escalating local/server residue.
+- Prefer deletion/consolidation when accepted behavior stays unchanged.
 - Reuse fresh evidence; no reassurance scans.
+- Fewest files consistent with clean ownership wins.
 - One coherent outcome should normally be one reviewable commit.
 - Stop the same failed direction after two attempts without new evidence.
 - `No change required` is valid.
+- Stop once accepted behavior + matching proof are complete; future-proofing is not completion work.
 
 ## Canonical Owners
 
 ```text
 repository routing       → AGENTS.md
+minimum-flow discipline  → docs/04-system/development-discipline.md
 specialist/jobdesk map   → docs/04-system/skill-routing.md
 GitHub execution         → GITHUB_RULES.md
 stable project facts     → CONTEXT.md
