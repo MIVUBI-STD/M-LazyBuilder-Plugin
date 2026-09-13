@@ -29,8 +29,8 @@ public final class DeleteWorldScreen extends Screen {
         int panelWidth = Math.min(440, width - 48);
         int left = width / 2 - panelWidth / 2;
 
-        confirmation = new TextFieldWidget(textRenderer, left + 28, 138, panelWidth - 56, 24, Text.literal("Confirm Folder Name"));
-        confirmation.setPlaceholder(Text.literal(world.folderName()));
+        confirmation = new TextFieldWidget(textRenderer, left + 28, 138, panelWidth - 56, 24, Text.literal("Confirm World Name"));
+        confirmation.setPlaceholder(Text.literal(world.displayName()));
         confirmation.setMaxLength(128);
         confirmation.setDrawsBackground(false);
         confirmation.setEditableColor(LbUi.TEXT_PRIMARY);
@@ -51,8 +51,8 @@ public final class DeleteWorldScreen extends Screen {
     private void submit() {
         if (submitting) return;
         String typed = confirmation.getText();
-        if (!typed.equals(world.folderName())) {
-            validation = "Type the exact folder name to confirm deletion.";
+        if (!typed.equals(world.displayName())) {
+            validation = "Type the exact world name to confirm deletion.";
             return;
         }
         validation = null;
@@ -94,7 +94,7 @@ public final class DeleteWorldScreen extends Screen {
                 Text.literal("This permanently removes the managed world and cannot be undone."),
                 left + 24, 88, LbUi.TEXT_SECONDARY);
         context.drawTextWithShadow(textRenderer, Text.literal("Type exactly"), left + 28, 112, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal(world.folderName()), left + 28, 126, LbUi.WARNING);
+        context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 28, 126, LbUi.WARNING);
         LbUi.field(context, confirmation, validation != null);
 
         if (submitting && controller.activityMessage() != null) {
