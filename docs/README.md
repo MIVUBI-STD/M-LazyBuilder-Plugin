@@ -9,10 +9,18 @@ Resolve the task domain first, then load only the smallest canonical set.
 ```text
 PRODUCT / FLOW       → 01-product/
 WORLD MANAGEMENT     → 02-world-management/
-CLIENT UI / XAERO    → 03-client-ui/
+FABRIC CLIENT / XAERO→ 03-client-ui/
 SYSTEM / OWNERSHIP   → 04-system/
 CURRENT OPERATIONS   → 05-operations/
 ```
+
+When execution ownership/jobdesk is unclear, use:
+
+```text
+04-system/skill-routing.md
+```
+
+Do not read every Skill or every domain by default.
 
 ## Canonical Hierarchy
 
@@ -20,46 +28,48 @@ CURRENT OPERATIONS   → 05-operations/
 docs/
 ├── 01-product/            product identity, scope, end-to-end feature flow
 ├── 02-world-management/   world lifecycle, create, settings, transfer, safety
-├── 03-client-ui/          client UI, keybinds, Xaero integration, interaction flow
-├── 04-system/             module/source ownership, context loading, boundaries
+├── 03-client-ui/          Fabric client UI, keybinds, Xaero integration
+├── 04-system/             architecture, ownership, networking, specialist routing
 └── 05-operations/         current status, next action, proof/handoff
 ```
-
-## Current Handoff
-
-`REMOTE_GITHUB` source/CI development is complete. The canonical handoff into local/live validation is:
-
-```text
-docs/05-operations/remote-github-complete.md
-```
-
-For the current phase, read in this order:
-
-```text
-CONTEXT.md
-→ docs/05-operations/README.md
-→ docs/05-operations/remote-github-complete.md
-```
-
-The final verified remote source gate is recorded there. Local/live validation must not be inferred from remote CI success.
 
 ## Fast Task Routing
 
 ```text
-change world creation/settings/lifecycle
-→ 02-world-management/README.md
+change product behavior / user flow
+→ 01-product/README.md
 
-change client UI/map interaction
+change world creation/settings/lifecycle/import/export
+→ 02-world-management/README.md
+→ lazybuilder-world-management when source work begins
+
+change Fabric UI/keybind/Xaero interaction
 → 03-client-ui/README.md
+→ lazybuilder-client-ui
+
+change workspace/server/provisioning/process/runtime/resources
+→ 04-system/skill-routing.md
+→ lazybuilder-desktop-runtime
+
+change Tauri/Svelte desktop presentation
+→ 04-system/skill-routing.md
+→ lazybuilder-desktop-ui
+
+change third-party Paper plugin lifecycle
+→ 04-system/skill-routing.md
+→ lazybuilder-plugin-management
+
+change shared Paper/Fabric wire contract
+→ 04-system/networking.md
+→ lazybuilder-protocol
 
 change architecture/module ownership
 → 04-system/README.md
+→ 04-system/skill-routing.md
+→ lazybuilder-development-brief only if owner remains materially ambiguous
 
 continue prior work / interpret current proof
 → 05-operations/README.md
-
-start LOCAL_CODE / LIVE_SERVER validation
-→ 05-operations/remote-github-complete.md
 ```
 
 ## Context Policy
@@ -67,18 +77,32 @@ start LOCAL_CODE / LIVE_SERVER validation
 1. Start here only when the task domain is not already known.
 2. Read the selected domain README.
 3. Load only the canonical owner needed for the current decision.
-4. Do not preload sibling domains unless the task crosses that boundary.
-5. `05-operations/` is current-state context, not durable design authority.
-6. Git history owns superseded architecture and rationale.
-7. After the REMOTE_GITHUB completion gate, speculative remote refactors are out of scope unless local/live evidence justifies them.
+4. Load exactly one primary specialist when possible.
+5. Do not preload sibling domains/Skills unless semantic ownership changes.
+6. `05-operations/` is current-state context, not durable design authority.
+7. Git history owns superseded architecture and rationale.
 
 ## Authority Roles
 
 ```text
 Docs     = durable semantic policy / contracts
-Skills   = execution procedure
-Source   = implementation/runtime truth
+Skills   = specialist execution procedure
+Source   = current implementation/runtime truth
 Ops docs = current continuation/proof only
 ```
 
 One concern must have one canonical semantic owner. Link instead of duplicating rules.
+
+## Specialist Set
+
+```text
+lazybuilder-development-brief
+lazybuilder-desktop-runtime
+lazybuilder-desktop-ui
+lazybuilder-plugin-management
+lazybuilder-world-management
+lazybuilder-client-ui
+lazybuilder-protocol
+```
+
+The canonical jobdesk map is [`04-system/skill-routing.md`](04-system/skill-routing.md). Do not add a new Skill for an implementation language/tool alone.
