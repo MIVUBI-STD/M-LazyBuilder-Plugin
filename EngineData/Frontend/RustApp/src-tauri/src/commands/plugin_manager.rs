@@ -33,7 +33,6 @@ pub fn plugin_update(
     jar_path: String,
 ) -> Result<PluginInstallResult, String> {
     ensure_plugin_mutation_allowed(&server)?;
-    ensure_third_party_plugin(&plugin_id)?;
     plugins.update(&plugin_id, &jar_path)
 }
 
@@ -45,7 +44,6 @@ pub fn plugin_set_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     ensure_plugin_mutation_allowed(&server)?;
-    ensure_third_party_plugin(&plugin_id)?;
     plugins.set_enabled(&plugin_id, enabled)
 }
 
@@ -56,7 +54,6 @@ pub fn plugin_remove(
     plugin_id: String,
 ) -> Result<(), String> {
     ensure_plugin_mutation_allowed(&server)?;
-    ensure_third_party_plugin(&plugin_id)?;
     plugins.remove(&plugin_id)
 }
 
@@ -68,7 +65,6 @@ pub fn plugin_resolve_duplicates(
     keep_jar_file_name: String,
 ) -> Result<PluginInstallResult, String> {
     ensure_plugin_mutation_allowed(&server)?;
-    ensure_third_party_plugin(&plugin_id)?;
     plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name)
 }
 
@@ -84,18 +80,4 @@ fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), Str
             "Stop the server before changing plugins. Current server state: {other}."
         )),
     }
-}
-
-fn ensure_third_party_plugin(plugin_id: &str) -> Result<(), String> {
-    let canonical = plugin_id
-        .trim()
-        .to_ascii_lowercase()
-        .replace('_', "-");
-    if matches!(canonical.as_str(), "world-manager" | "utilities-manager") {
-        return Err(
-            "LazyBuilder core modules are maintained automatically and cannot be changed through Plugin Manager."
-                .into(),
-        );
-    }
-    Ok(())
 }
