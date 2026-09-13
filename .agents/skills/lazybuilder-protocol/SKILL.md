@@ -22,10 +22,9 @@ source ownership under shared/protocol
 ## Does Not Own
 
 ```text
-Paper implementation behavior      → world-management
-Fabric/Xaero presentation          → client-ui
-desktop loopback HTTP/control      → desktop-runtime
-Svelte/Tauri presentation          → desktop-ui
+Paper implementation behavior → lazybuilder-world-management
+Desktop or Fabric/Xaero UI    → lazybuilder-ui
+desktop loopback HTTP/control → lazybuilder-desktop-runtime
 ```
 
 A `WorldControl*` type located in `shared/protocol` is owned here only for its neutral shared wire semantics. Desktop HTTP request routing/authentication/session behavior remains Desktop Runtime.
