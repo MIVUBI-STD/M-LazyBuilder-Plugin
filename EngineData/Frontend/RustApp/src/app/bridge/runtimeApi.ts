@@ -18,6 +18,7 @@ export type AdoptionPlan = {
   paperJar: string;
   worlds: string[];
   serverEntries: string[];
+  legacyPluginsToDisable: string[];
   preservedEntries: string[];
   warnings: string[];
 };
@@ -38,6 +39,15 @@ export type WorkspaceProvisionResult = {
   paperBuild: number;
   coreVersion: string;
   status: WorkspaceProvisioningStatus;
+};
+
+export type RuntimeUpdateStatus = {
+  currentPaperBuild?: number | null;
+  latestPaperBuild: number;
+  paperUpdateAvailable: boolean;
+  currentCoreVersion?: string | null;
+  bundledCoreVersion: string;
+  coreUpdateAvailable: boolean;
 };
 
 export type ServerSnapshot = {
@@ -176,13 +186,15 @@ export const runtimeApi = {
   getWorkspaceState: () => invoke<WorkspaceState>('workspace_state'),
   getWorkspaceProvisioningStatus: () => invoke<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
   provisionWorkspace: () => invoke<WorkspaceProvisionResult>('workspace_provision'),
+  getWorkspaceRuntimeUpdateStatus: () => invoke<RuntimeUpdateStatus>('workspace_runtime_update_status'),
+  updateWorkspacePaper: () => invoke<RuntimeUpdateStatus>('workspace_update_paper'),
+  syncWorkspaceCore: () => invoke<RuntimeUpdateStatus>('workspace_sync_core'),
   acceptWorkspaceEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
   pickWorkspaceParent: () => invoke<string | null>('workspace_pick_parent'),
   createWorkspace: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
   openWorkspace: () => invoke<WorkspaceEntry | null>('workspace_open_picker'),
   pickAdoptionServer: () => invoke<AdoptionPlan | null>('workspace_adoption_pick'),
-  adoptWorkspace: (rootPath: string, name?: string | null) =>
-    invoke<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
+  adoptWorkspace: (rootPath: string, name?: string | null) => invoke<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
   activateWorkspace: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
   closeWorkspace: () => invoke<void>('workspace_close'),
 
