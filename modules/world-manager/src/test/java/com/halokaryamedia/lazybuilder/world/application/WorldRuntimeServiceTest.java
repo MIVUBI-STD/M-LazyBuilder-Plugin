@@ -93,7 +93,7 @@ class WorldRuntimeServiceTest {
     }
 
     private static WorldRecord world(WorldLifecycle lifecycle) {
-        return new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, lifecycle, true);
+        return new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, lifecycle);
     }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
