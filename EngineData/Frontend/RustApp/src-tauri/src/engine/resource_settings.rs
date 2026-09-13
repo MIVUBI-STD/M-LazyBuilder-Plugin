@@ -44,9 +44,6 @@ pub struct ResourceUpdateRequest {
 pub struct RuntimeResources {
     pub min_memory_mb: u64,
     pub max_memory_mb: u64,
-    // Compatibility-only seam for the existing command builder. Always None:
-    // LazyBuilder no longer applies a hard JVM processor-count limit.
-    pub cpu_threads: Option<u32>,
 }
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
@@ -93,19 +90,6 @@ pub fn save(request: ResourceUpdateRequest) -> Result<ServerResourceProfile, Str
     profile()
 }
 
-pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
-    let hardware = hardware();
-    let preset = match name.trim().to_ascii_lowercase().as_str() {
-        "performance" => preset_for(hardware, PresetKind::Performance),
-        "boost" => preset_for(hardware, PresetKind::Boost),
-        _ => return Err("Unknown resource preset. Use Performance or Boost.".into()),
-    };
-    save(ResourceUpdateRequest {
-        max_memory_mb: preset.max_memory_mb,
-        preset: preset.name,
-    })
-}
-
 pub fn runtime_resources() -> Result<RuntimeResources, String> {
     let hardware = hardware();
     let config = server_config::load()?;
@@ -118,7 +102,6 @@ pub fn runtime_resources() -> Result<RuntimeResources, String> {
     Ok(RuntimeResources {
         min_memory_mb,
         max_memory_mb,
-        cpu_threads: None,
     })
 }
 
