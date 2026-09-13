@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerLogTail, ServerPreflight, ServerSnapshot } from '../app/bridge/runtimeApi';
+  import type { ServerLogTail, ServerPreflight, ServerProcessMetrics, ServerSnapshot } from '../app/bridge/runtimeApi';
 
   let snapshot: ServerSnapshot = {
     state: 'Offline',
@@ -11,6 +11,14 @@
     maxMemoryBytes: 0,
     pid: null,
     logPath: ''
+  };
+  let metrics: ServerProcessMetrics = {
+    available: false,
+    pid: null,
+    cpuPercent: 0,
+    processMemoryBytes: 0,
+    diskReadBytes: 0,
+    diskWriteBytes: 0
   };
   let preflight: ServerPreflight = {
     ready: false,
@@ -45,6 +53,9 @@
     : snapshot.state === 'Detached' ? 'Recovery Required'
     : preflight.ready ? 'Ready' : 'Needs Attention';
 
+  const cpuUsage = () => metrics.available ? metrics.cpuPercent : snapshot.cpuLoadPercent;
+  const ramUsage = () => metrics.available ? metrics.processMemoryBytes : snapshot.usedMemoryBytes;
+
   async function refreshLog() {
     if (!showLog) {
       logTail = { path: snapshot.logPath, content: '', truncated: false };
@@ -55,9 +66,10 @@
 
   async function refresh() {
     try {
-      [snapshot, preflight] = await Promise.all([
+      [snapshot, preflight, metrics] = await Promise.all([
         runtimeProduct.server.snapshot(),
-        runtimeProduct.server.preflight()
+        runtimeProduct.server.preflight(),
+        runtimeProduct.server.metrics()
       ]);
       await refreshLog();
       error = '';
@@ -113,19 +125,23 @@
   });
 
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
+  const mb = (bytes: number) => bytes / 1024 / 1024;
 </script>
 
 <h1>Dashboard</h1>
-<p class="subtle">Server launcher, runtime health, recovery, and local readiness</p>
+<p class="subtle">Server launcher, runtime health, recovery, and lightweight resource monitoring</p>
 
 <div class="cards">
   <div class="card"><div class="label">Server</div><div class="value">{snapshot.state}</div></div>
   <div class="card"><div class="label">Health</div><div class="value">{snapshot.health}</div></div>
-  <div class="card"><div class="label">CPU Load</div><div class="value">{snapshot.cpuLoadPercent.toFixed(1)}%</div></div>
-  <div class="card"><div class="label">RAM Usage</div><div class="value">{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
+  <div class="card"><div class="label">CPU</div><div class="value">{cpuUsage().toFixed(1)}%</div></div>
+  <div class="card"><div class="label">RAM</div><div class="value">{gb(ramUsage()).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</div></div>
+  <div class="card"><div class="label">Disk I/O</div><div class="value">R {mb(metrics.diskReadBytes).toFixed(1)} · W {mb(metrics.diskWriteBytes).toFixed(1)} MB</div></div>
   <div class="card"><div class="label">Launcher</div><div class="value">{launcherState()}</div></div>
-  <div class="card"><div class="label">PID</div><div class="value">{snapshot.pid ?? '—'}</div></div>
+  <div class="card"><div class="label">PID</div><div class="value">{metrics.pid ?? snapshot.pid ?? '—'}</div></div>
 </div>
+
+<p class="subtle" style="margin-top: 8px">Disk I/O shows activity since the previous process sample; monitoring reuses the existing 2-second dashboard refresh loop.</p>
 
 {#if error}
   <div class="card" style="margin-top: 16px">
