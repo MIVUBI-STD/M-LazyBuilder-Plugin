@@ -76,7 +76,7 @@ public final class WorldDeleteService {
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
         boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
         try {
-            runtimeService.unload(worldId);
+            runtimeService.unloadDuringOperation(worldId);
             return new DeleteTask(UUID.randomUUID(), world, wasLoaded, lease);
         } catch (RuntimeException exception) {
             lease.close();
@@ -120,14 +120,12 @@ public final class WorldDeleteService {
     /** Main-thread phase: restore runtime after failure if possible and release the lease. */
     public void finish(DeleteTask task) {
         Objects.requireNonNull(task, "task");
-        if (task.closed) {
-            return;
-        }
+        if (task.closed) return;
 
         RuntimeException failure = null;
         if (!task.committed && task.wasLoaded) {
             try {
-                runtimeService.load(task.world.id());
+                runtimeService.loadDuringOperation(task.world.id());
             } catch (RuntimeException exception) {
                 failure = exception;
             }
@@ -166,13 +164,8 @@ public final class WorldDeleteService {
             this.lease = lease;
         }
 
-        public WorldRecord world() {
-            return world;
-        }
-
-        public boolean committed() {
-            return committed;
-        }
+        public WorldRecord world() { return world; }
+        public boolean committed() { return committed; }
 
         private void requireOpen() {
             if (closed) {
