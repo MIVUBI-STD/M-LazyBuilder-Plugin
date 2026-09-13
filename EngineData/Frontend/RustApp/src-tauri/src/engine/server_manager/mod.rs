@@ -173,7 +173,7 @@ impl ServerManagerState {
 
     pub fn snapshot(&self) -> Result<ServerSnapshot, String> {
         let options = load_options()?;
-        let runtime_resources = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)?;
+        let runtime_resources = resource_settings::runtime_resources()?;
         let mut child_guard = self.child.lock().map_err(|_| "server state lock poisoned".to_string())?;
         let Some(child) = child_guard.as_mut() else {
             if let Some(pid) = self.detached_process()? {
@@ -264,7 +264,7 @@ impl ServerManagerState {
         paths::ensure_runtime_layout()?;
         let worlds_dir = paths::worlds_dir()?;
         let options = load_options()?;
-        let resources = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)?;
+        let resources = resource_settings::runtime_resources()?;
         let (server_dir, paper) = resolve_server_paths(&workspace, &options)?;
         if !server_dir.is_dir() {
             return Err(format!("Server directory was not found: {}", server_dir.display()));
@@ -516,7 +516,7 @@ fn set_runtime_state(state: &Arc<Mutex<String>>, value: &str) -> Result<(), Stri
 }
 
 fn offline_like_snapshot(options: &ServerManagerOptions, state: String, log_path: String) -> ServerSnapshot {
-    let max_memory_mb = resource_settings::runtime_resources(options.min_memory_mb, options.max_memory_mb)
+    let max_memory_mb = resource_settings::runtime_resources()
         .map(|value| value.max_memory_mb)
         .unwrap_or(options.max_memory_mb);
     let health = if state == "Crashed" { "Critical" } else { "Offline" };
