@@ -1,3 +1,4 @@
+use crate::engine::paths;
 use std::thread;
 use std::time::Duration;
 use sysinfo::{Pid, System};
@@ -14,32 +15,44 @@ enum PaperPriority {
     BelowNormal,
 }
 
-pub fn start_for_paper(pid: u32) {
-    thread::spawn(move || run(pid));
+pub fn start() {
+    thread::spawn(run);
 }
 
-fn run(pid: u32) {
-    let paper_pid = Pid::from_u32(pid);
+fn run() {
     let mut system = System::new_all();
+    let mut managed_pid: Option<Pid> = None;
     let mut current = PaperPriority::Normal;
     let mut high_samples = 0u8;
     let mut low_samples = 0u8;
-
-    let _ = set_paper_priority(pid, PaperPriority::Normal);
 
     loop {
         thread::sleep(SAMPLE_INTERVAL);
         system.refresh_all();
 
-        if system.process(paper_pid).is_none() {
-            return;
+        let Some(paper_pid) = managed_paper_pid(&system) else {
+            managed_pid = None;
+            current = PaperPriority::Normal;
+            high_samples = 0;
+            low_samples = 0;
+            continue;
+        };
+
+        if managed_pid != Some(paper_pid) {
+            managed_pid = Some(paper_pid);
+            current = PaperPriority::Normal;
+            high_samples = 0;
+            low_samples = 0;
+            let _ = set_paper_priority(paper_pid.as_u32(), PaperPriority::Normal);
         }
 
         let client_active = minecraft_client_running(&system, paper_pid);
         if !client_active {
             high_samples = 0;
             low_samples = 0;
-            if current != PaperPriority::Normal && set_paper_priority(pid, PaperPriority::Normal) {
+            if current != PaperPriority::Normal
+                && set_paper_priority(paper_pid.as_u32(), PaperPriority::Normal)
+            {
                 current = PaperPriority::Normal;
             }
             continue;
@@ -50,7 +63,7 @@ fn run(pid: u32) {
             high_samples = high_samples.saturating_add(1);
             low_samples = 0;
             if high_samples >= HIGH_SAMPLES_REQUIRED && current != PaperPriority::BelowNormal {
-                if set_paper_priority(pid, PaperPriority::BelowNormal) {
+                if set_paper_priority(paper_pid.as_u32(), PaperPriority::BelowNormal) {
                     current = PaperPriority::BelowNormal;
                 }
                 high_samples = 0;
@@ -59,7 +72,7 @@ fn run(pid: u32) {
             low_samples = low_samples.saturating_add(1);
             high_samples = 0;
             if low_samples >= LOW_SAMPLES_REQUIRED && current != PaperPriority::Normal {
-                if set_paper_priority(pid, PaperPriority::Normal) {
+                if set_paper_priority(paper_pid.as_u32(), PaperPriority::Normal) {
                     current = PaperPriority::Normal;
                 }
                 low_samples = 0;
@@ -69,6 +82,26 @@ fn run(pid: u32) {
             low_samples = 0;
         }
     }
+}
+
+fn managed_paper_pid(system: &System) -> Option<Pid> {
+    let worlds = paths::worlds_dir().ok()?.display().to_string().to_ascii_lowercase();
+    system.processes().iter().find_map(|(pid, process)| {
+        let name = process.name().to_ascii_lowercase();
+        if !name.contains("java") {
+            return None;
+        }
+        let command = process.cmd().join(" ").to_ascii_lowercase();
+        if command.contains("-jar")
+            && command.contains("--universe")
+            && command.contains("nogui")
+            && command.contains(&worlds)
+        {
+            Some(*pid)
+        } else {
+            None
+        }
+    })
 }
 
 fn minecraft_client_running(system: &System, paper_pid: Pid) -> bool {
