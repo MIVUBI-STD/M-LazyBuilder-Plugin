@@ -1,4 +1,5 @@
 pub mod adoption;
+pub mod backup_maintenance;
 pub mod core_modules;
 pub mod java_runtime;
 pub mod paper_performance;
