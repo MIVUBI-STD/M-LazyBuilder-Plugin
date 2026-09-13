@@ -33,7 +33,7 @@ dependencies {
 sourceSets {
     main {
         java {
-            srcDirs = ['src/main/java', '../../modules/world-manager/src/main/java']
+            srcDirs = ['src/main/java', '../../shared/protocol/src/main/java']
             include 'com/halokaryamedia/lazybuilder/client/**'
             include 'com/halokaryamedia/lazybuilder/world/transfer/TransferWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/world/transfer/TransferDescriptor.java'
