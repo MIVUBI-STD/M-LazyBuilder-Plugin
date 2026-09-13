@@ -29,7 +29,6 @@ public final class WorldExportService {
 
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
     private final WorldFileRepository files;
     private final WorldExportArtifactStore artifacts;
@@ -41,7 +40,6 @@ public final class WorldExportService {
     public WorldExportService(
             WorldRegistry registry,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations,
             WorldFileRepository files,
             WorldExportArtifactStore artifacts,
@@ -52,7 +50,6 @@ public final class WorldExportService {
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.files = Objects.requireNonNull(files, "files");
         this.artifacts = Objects.requireNonNull(artifacts, "artifacts");
@@ -60,6 +57,22 @@ public final class WorldExportService {
         this.updateService = Objects.requireNonNull(updateService, "updateService");
         this.converter = Objects.requireNonNull(converter, "converter");
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
+    }
+
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldExportService(
+            WorldRegistry registry,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files,
+            WorldExportArtifactStore artifacts,
+            ConversionRuntimeStore conversionStore,
+            ConversionUpdateService updateService,
+            ConverterAdapter converter,
+            ConversionJobCoordinator conversionJobs
+    ) {
+        this(registry, runtimeService, operations, files, artifacts, conversionStore, updateService, converter, conversionJobs);
     }
 
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
@@ -81,7 +94,7 @@ public final class WorldExportService {
         String safeArtifact = validateArtifactName(artifactName);
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
-        boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
+        boolean wasLoaded = runtimeService.isLoaded(worldId);
         try {
             runtimeService.unloadDuringOperation(worldId);
             return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, area, wasLoaded, lease);
@@ -91,7 +104,6 @@ public final class WorldExportService {
         }
     }
 
-    /** Worker phase 1: capture a consistent filesystem snapshot while the source is quiescent. */
     public void captureSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -192,7 +204,6 @@ public final class WorldExportService {
         if (failure != null) throw failure;
     }
 
-    /** Shutdown-only close path; never attempts to load a world during Paper teardown. */
     public void abandon(ExportTask task) {
         Objects.requireNonNull(task, "task");
         Path abandonedSnapshot = task.closeAndDetachIdleSnapshot();
