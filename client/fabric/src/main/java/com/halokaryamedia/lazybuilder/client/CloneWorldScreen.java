@@ -8,7 +8,7 @@ import net.minecraft.text.Text;
 
 import java.util.Locale;
 
-/** Clone flow keeps heavy copy server-owned while presenting one continuous operation. */
+/** Temporary class-path name; the user-facing flow is Duplicate World. */
 public final class CloneWorldScreen extends Screen {
     private final Screen parent;
     private final ClientWorldController controller;
@@ -19,7 +19,7 @@ public final class CloneWorldScreen extends Screen {
     private long observedRevision;
 
     public CloneWorldScreen(Screen parent, ClientWorldController controller, WorldControlWireProtocol.WorldSummary source) {
-        super(Text.literal("Clone World"));
+        super(Text.literal("Duplicate World"));
         this.parent = parent;
         this.controller = controller;
         this.source = source;
@@ -31,7 +31,7 @@ public final class CloneWorldScreen extends Screen {
         int panelWidth = Math.min(440, width - 48);
         int left = width / 2 - panelWidth / 2;
 
-        displayName = new TextFieldWidget(textRenderer, left + 28, 118, panelWidth - 56, 24, Text.literal("Clone Name"));
+        displayName = new TextFieldWidget(textRenderer, left + 28, 118, panelWidth - 56, 24, Text.literal("Duplicate Name"));
         displayName.setPlaceholder(Text.literal(source.displayName() + " Copy"));
         displayName.setMaxLength(96);
         displayName.setDrawsBackground(false);
@@ -40,10 +40,10 @@ public final class CloneWorldScreen extends Screen {
         displayName.active = !submitting;
         addDrawableChild(displayName);
 
-        LbButtonWidget clone = LbUi.button(left + 28, 162, panelWidth - 56, 28,
-                submitting ? "Cloning…" : "Clone World", LbButtonWidget.Style.PRIMARY, this::submit);
-        clone.active = !submitting;
-        addDrawableChild(clone);
+        LbButtonWidget duplicate = LbUi.button(left + 28, 162, panelWidth - 56, 28,
+                submitting ? "Duplicating…" : "Duplicate World", LbButtonWidget.Style.PRIMARY, this::submit);
+        duplicate.active = !submitting;
+        addDrawableChild(duplicate);
 
         addDrawableChild(LbUi.button(width / 2 - 58, 208, 116, 22,
                 submitting ? "Back to Worlds" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
@@ -58,7 +58,7 @@ public final class CloneWorldScreen extends Screen {
         validation = null;
         submitting = true;
         try {
-            controller.cloneWorld(source.worldId(), folder, display);
+            controller.duplicateWorld(source.worldId(), folder, display);
             observedRevision = controller.revision();
             clearAndInit();
         } catch (RuntimeException exception) {
@@ -113,12 +113,12 @@ public final class CloneWorldScreen extends Screen {
         int left = width / 2 - panelWidth / 2;
         LbUi.elevatedPanel(context, left, 30, panelWidth, 248);
 
-        context.drawTextWithShadow(textRenderer, Text.literal("CLONE WORLD"), left + 24, 48, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("DUPLICATE WORLD"), left + 24, 48, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(source.displayName()), left + 24, 66, LbUi.TEXT_PRIMARY);
         context.drawTextWithShadow(textRenderer,
                 Text.literal("Create an independent copy for another build iteration."),
                 left + 24, 84, LbUi.TEXT_SECONDARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("Clone name"), left + 28, 106, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("Duplicate name"), left + 28, 106, LbUi.TEXT_MUTED);
         LbUi.field(context, displayName, validation != null);
 
         if (submitting && controller.activityMessage() != null) {
