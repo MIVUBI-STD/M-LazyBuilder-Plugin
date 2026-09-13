@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use sysinfo::System;
 
 const MB: u64 = 1024 * 1024;
@@ -11,6 +12,9 @@ const PERFORMANCE_CAP_MB: u64 = 8192;
 const BOOST_CAP_MB: u64 = 12288;
 const CPU_MODE_ADAPTIVE: &str = "Adaptive";
 const CPU_MODE_MANUAL: &str = "Manual";
+
+static CONFIG_CACHE: OnceLock<Mutex<Option<Map<String, Value>>>> = OnceLock::new();
+static HARDWARE_CACHE: OnceLock<Hardware> = OnceLock::new();
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,7 +61,7 @@ pub struct RuntimeResources {
 }
 
 pub fn profile() -> Result<ServerResourceProfile, String> {
-    let hardware = Hardware::detect();
+    let hardware = hardware();
     let config = read_config()?;
     let current_max = config_u64(&config, "maxMemoryMb")
         .unwrap_or(4096)
@@ -72,10 +76,10 @@ pub fn profile() -> Result<ServerResourceProfile, String> {
         .unwrap_or(hardware.logical_processors)
         .clamp(1, hardware.logical_processors);
 
-    let performance = preset_for(&hardware, PresetKind::Performance);
-    let boost = preset_for(&hardware, PresetKind::Boost);
+    let performance = preset_for(hardware, PresetKind::Performance);
+    let boost = preset_for(hardware, PresetKind::Boost);
     let warning = resource_warning(
-        &hardware,
+        hardware,
         current_max,
         &current_cpu_mode,
         current_cpu,
@@ -98,7 +102,7 @@ pub fn profile() -> Result<ServerResourceProfile, String> {
 }
 
 pub fn save(request: ResourceUpdateRequest) -> Result<ServerResourceProfile, String> {
-    let hardware = Hardware::detect();
+    let hardware = hardware();
     let max_memory_mb = request.max_memory_mb.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
     let cpu_threads = request.cpu_threads.clamp(1, hardware.logical_processors);
     let min_memory_mb = recommended_min_memory(max_memory_mb);
@@ -120,10 +124,10 @@ pub fn save(request: ResourceUpdateRequest) -> Result<ServerResourceProfile, Str
 }
 
 pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
-    let hardware = Hardware::detect();
+    let hardware = hardware();
     let preset = match name.trim().to_ascii_lowercase().as_str() {
-        "performance" => preset_for(&hardware, PresetKind::Performance),
-        "boost" => preset_for(&hardware, PresetKind::Boost),
+        "performance" => preset_for(hardware, PresetKind::Performance),
+        "boost" => preset_for(hardware, PresetKind::Boost),
         _ => return Err("Unknown resource preset. Use Performance or Boost.".into()),
     };
     save(ResourceUpdateRequest {
@@ -135,11 +139,15 @@ pub fn apply_preset(name: &str) -> Result<ServerResourceProfile, String> {
 }
 
 pub fn runtime_resources(configured_min_memory_mb: u64, configured_max_memory_mb: u64) -> Result<RuntimeResources, String> {
-    let hardware = Hardware::detect();
+    let hardware = hardware();
     let config = read_config()?;
-    let max_memory_mb = configured_max_memory_mb.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    // Prefer the cached canonical config so Settings changes take effect immediately.
+    let max_memory_mb = config_u64(&config, "maxMemoryMb")
+        .unwrap_or(configured_max_memory_mb)
+        .clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(configured_min_memory_mb);
     // Keep startup heap intentionally small. Paper grows toward Xmx only as workload needs it.
-    let min_memory_mb = configured_min_memory_mb
+    let min_memory_mb = configured_min
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(max_memory_mb));
     let preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
     let cpu_mode = configured_cpu_mode(&config, &preset);
@@ -265,19 +273,34 @@ fn config_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_config_dir()?.join("server-manager.json"))
 }
 
+fn config_cache() -> &'static Mutex<Option<Map<String, Value>>> {
+    CONFIG_CACHE.get_or_init(|| Mutex::new(None))
+}
+
 fn read_config() -> Result<Map<String, Value>, String> {
+    let mut cache = config_cache()
+        .lock()
+        .map_err(|_| "resource config cache lock poisoned".to_string())?;
+    if let Some(config) = cache.as_ref() {
+        return Ok(config.clone());
+    }
+
     let path = config_path()?;
-    if !path.is_file() {
+    let config = if !path.is_file() {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        return Ok(Map::new());
-    }
-    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-    match serde_json::from_str::<Value>(&text).map_err(|error| error.to_string())? {
-        Value::Object(map) => Ok(map),
-        _ => Err("server-manager.json must contain a JSON object".into()),
-    }
+        Map::new()
+    } else {
+        let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        match serde_json::from_str::<Value>(&text).map_err(|error| error.to_string())? {
+            Value::Object(map) => map,
+            _ => return Err("server-manager.json must contain a JSON object".into()),
+        }
+    };
+
+    *cache = Some(config.clone());
+    Ok(config)
 }
 
 fn write_config(config: &Map<String, Value>) -> Result<(), String> {
@@ -295,16 +318,20 @@ fn write_config(config: &Map<String, Value>) -> Result<(), String> {
         match fs::rename(&temporary, &path) {
             Ok(()) => {
                 let _ = fs::remove_file(backup);
-                Ok(())
             }
             Err(error) => {
                 let _ = fs::rename(&backup, &path);
-                Err(error.to_string())
+                return Err(error.to_string());
             }
         }
     } else {
-        fs::rename(temporary, path).map_err(|error| error.to_string())
+        fs::rename(temporary, path).map_err(|error| error.to_string())?;
     }
+
+    *config_cache()
+        .lock()
+        .map_err(|_| "resource config cache lock poisoned".to_string())? = Some(config.clone());
+    Ok(())
 }
 
 fn config_u64(config: &Map<String, Value>, key: &str) -> Option<u64> {
@@ -313,6 +340,10 @@ fn config_u64(config: &Map<String, Value>, key: &str) -> Option<u64> {
 
 fn config_string(config: &Map<String, Value>, key: &str) -> Option<String> {
     config.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+fn hardware() -> &'static Hardware {
+    HARDWARE_CACHE.get_or_init(Hardware::detect)
 }
 
 struct Hardware {
