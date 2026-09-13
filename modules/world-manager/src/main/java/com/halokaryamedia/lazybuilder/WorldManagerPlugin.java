@@ -49,11 +49,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
             WorldIdleUnloadService idleUnload = new WorldIdleUnloadService(
                     worldManager.worldRegistry(),
                     worldManager.worldRuntimeService(),
-                    new com.halokaryamedia.lazybuilder.world.paper.PaperWorldRuntimeGateway(
-                            getServer(),
-                            () -> getConfig().getString("world-manager.fallback-world", "")
-                    ),
                     worldManager.worldOperationCoordinator(),
+                    world -> getServer().getWorld(world.folderName()) != null,
                     world -> {
                         var loaded = getServer().getWorld(world.folderName());
                         return loaded != null && !loaded.getPlayers().isEmpty();
