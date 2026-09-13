@@ -29,17 +29,6 @@ public final class WorldLifecycleService {
         this.runtimeService.attachOperations(this.operations);
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldLifecycleService(
-            WorldRegistry registry,
-            WorldRegistryPersistence persistence,
-            WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldOperationCoordinator operations
-    ) {
-        this(registry, persistence, runtimeService, operations);
-    }
-
     public synchronized WorldRecord archive(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
         if (current.lifecycle() == WorldLifecycle.ARCHIVED) return current;
@@ -48,9 +37,7 @@ public final class WorldLifecycleService {
             boolean wasLoaded = runtimeService.isLoaded(worldId);
             runtimeService.unloadDuringOperation(worldId);
 
-            WorldRecord archived = current
-                    .withLifecycle(WorldLifecycle.ARCHIVED)
-                    .withAutoLoad(false);
+            WorldRecord archived = current.withLifecycle(WorldLifecycle.ARCHIVED);
             registry.updateMetadata(archived);
             try {
                 persistence.save(registry.all());
@@ -79,9 +66,7 @@ public final class WorldLifecycleService {
         if (current.lifecycle() == WorldLifecycle.ACTIVE) return current;
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.RESTORE)) {
-            WorldRecord restored = current
-                    .withLifecycle(WorldLifecycle.ACTIVE)
-                    .withAutoLoad(false);
+            WorldRecord restored = current.withLifecycle(WorldLifecycle.ACTIVE);
             registry.updateMetadata(restored);
             try {
                 persistence.save(registry.all());
