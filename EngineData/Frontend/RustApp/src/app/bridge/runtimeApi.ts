@@ -45,9 +45,6 @@ export type RuntimeUpdateStatus = {
   currentPaperBuild?: number | null;
   latestPaperBuild: number;
   paperUpdateAvailable: boolean;
-  currentCoreVersion?: string | null;
-  bundledCoreVersion: string;
-  coreUpdateAvailable: boolean;
 };
 
 export type ServerSnapshot = {
@@ -189,7 +186,6 @@ export const runtimeApi = {
     provision: () => invoke<WorkspaceProvisionResult>('workspace_provision'),
     runtimeUpdateStatus: () => invoke<RuntimeUpdateStatus>('workspace_runtime_update_status'),
     updatePaper: () => invoke<RuntimeUpdateStatus>('workspace_update_paper'),
-    syncCore: () => invoke<RuntimeUpdateStatus>('workspace_sync_core'),
     acceptEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
     pickParent: () => invoke<string | null>('workspace_pick_parent'),
     create: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
