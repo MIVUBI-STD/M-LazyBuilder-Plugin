@@ -8,13 +8,15 @@ import net.minecraft.world.Heightmap;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Bounded presentation cache for already-loaded client terrain.
  *
  * <p>The cache never owns world truth and never loads chunks. It only avoids
- * re-sampling the same visible surface columns every frame while a map screen
- * is open. Missing/unloaded chunks are rendered as unexplored.</p>
+ * re-sampling the same visible surface columns every frame. Missing/unloaded
+ * chunks are rendered as unexplored. Scope changes clear cached columns so two
+ * managed worlds or dimensions can never share terrain accidentally.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int MAX_COLUMNS = 65_536;
@@ -26,6 +28,14 @@ public final class ClientMapSurfaceCache {
             return size() > MAX_COLUMNS;
         }
     };
+    private String scope = "";
+
+    public void useScope(String scope) {
+        String normalized = Objects.requireNonNullElse(scope, "");
+        if (this.scope.equals(normalized)) return;
+        this.scope = normalized;
+        samples.clear();
+    }
 
     public SurfaceSample sample(ClientWorld world, int blockX, int blockZ) {
         if (!world.getChunkManager().isChunkLoaded(blockX >> 4, blockZ >> 4)) {
