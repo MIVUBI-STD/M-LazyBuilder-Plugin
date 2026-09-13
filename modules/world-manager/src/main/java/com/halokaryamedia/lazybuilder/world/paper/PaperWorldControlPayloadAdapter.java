@@ -92,8 +92,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
-        if (request instanceof WorldControlWireProtocol.CloneWorld clone) {
-            handleClone(player, clone);
+        if (request instanceof WorldControlWireProtocol.CloneWorld duplicate) {
+            handleDuplicate(player, duplicate);
             return;
         }
         if (request instanceof WorldControlWireProtocol.DeleteWorld delete) {
@@ -185,14 +185,14 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 settingsService.setSpawnToPlayer(player.getUniqueId(), new WorldId(setting.worldId()));
                 yield settingsSummary(settingsService.snapshot(new WorldId(setting.worldId())));
             }
-            case WorldControlWireProtocol.CloneWorld ignored -> throw new IllegalStateException("Clone must use async path");
+            case WorldControlWireProtocol.CloneWorld ignored -> throw new IllegalStateException("Duplicate must use async path");
             case WorldControlWireProtocol.DeleteWorld ignored -> throw new IllegalStateException("Delete must use async path");
             case WorldControlWireProtocol.ExportWorld ignored -> throw new IllegalStateException("Export must use async path");
             case WorldControlWireProtocol.ImportWorld ignored -> throw new IllegalStateException("Import must use async path");
         };
     }
 
-    private void handleClone(Player player, WorldControlWireProtocol.CloneWorld request) {
+    private void handleDuplicate(Player player, WorldControlWireProtocol.CloneWorld request) {
         if (!beginHeavy(player)) return;
         scheduleHeavy(
                 player,
@@ -202,7 +202,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         request.displayName(),
                         WorldHeavyOperationOrchestrator.Progress.NONE
                 ),
-                result -> encode(new WorldControlWireProtocol.WorldChanged("CLONE", summary(result)))
+                result -> encode(new WorldControlWireProtocol.WorldChanged("DUPLICATE", summary(result)))
         );
     }
 
@@ -313,7 +313,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private WorldControlWireProtocol.WorldSummary summary(WorldRecord world) {
         return new WorldControlWireProtocol.WorldSummary(
                 world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
-                world.lifecycle().name(), runtime.state(world.id()).name(), world.autoLoad(), world.defaultGameMode());
+                world.lifecycle().name(), runtime.isLoaded(world.id()) ? "LOADED" : "UNLOADED",
+                world.autoLoad(), world.defaultGameMode());
     }
 
     private static WorldControlWireProtocol.WorldSummary summaryDeleted(WorldRecord world) {
