@@ -29,6 +29,23 @@ pub fn server_start(state: State<'_, ServerManagerState>) -> Result<(), String> 
 
 #[tauri::command]
 pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
+    stop_with_recovery(&state)
+}
+
+#[tauri::command]
+pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
+    stop_with_recovery(&state)?;
+    ensure_provisioned()?;
+    process_identity::sanitize_before_start()?;
+    startup_guard::ensure_memory_headroom()?;
+    let performance = paper_performance::apply_before_managed_start()?;
+    let _performance_summary = (performance.changed, performance.message);
+    state.start()?;
+    let _ = process_identity::record_after_start();
+    Ok(())
+}
+
+fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
     match state.stop() {
         Ok(()) => Ok(()),
         Err(stop_error) => {
@@ -49,24 +66,14 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
                     let _ = state.snapshot();
                     Ok(())
                 }
-                Ok(result) => Err(format!("{stop_error}; stop recovery did not terminate PID {}: {}", result.pid, result.message)),
+                Ok(result) => Err(format!(
+                    "{stop_error}; stop recovery did not terminate PID {}: {}",
+                    result.pid, result.message
+                )),
                 Err(recovery_error) => Err(format!("{stop_error}; stop recovery also failed: {recovery_error}")),
             }
         }
     }
-}
-
-#[tauri::command]
-pub fn server_restart(state: State<'_, ServerManagerState>) -> Result<(), String> {
-    server_stop(state.clone())?;
-    ensure_provisioned()?;
-    process_identity::sanitize_before_start()?;
-    startup_guard::ensure_memory_headroom()?;
-    let performance = paper_performance::apply_before_managed_start()?;
-    let _performance_summary = (performance.changed, performance.message);
-    state.start()?;
-    let _ = process_identity::record_after_start();
-    Ok(())
 }
 
 fn ensure_provisioned() -> Result<(), String> {
