@@ -63,26 +63,25 @@ pub struct RuntimeResources {
 pub fn profile() -> Result<ServerResourceProfile, String> {
     let hardware = hardware();
     let config = read_config()?;
-    let current_max = config_u64(&config, "maxMemoryMb")
-        .unwrap_or(4096)
-        .clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
+    let configured_max = config_u64(&config, "maxMemoryMb").unwrap_or(4096);
+    let current_max = configured_max.clamp(MIN_SERVER_MEMORY_MB, hardware.safe_max_memory_mb);
     let configured_min = config_u64(&config, "minMemoryMb").unwrap_or(1024);
     let current_min = configured_min
         .clamp(MIN_SERVER_MEMORY_MB, recommended_min_memory(current_max));
     let current_preset = config_string(&config, "resourcePreset").unwrap_or_else(|| "Custom".into());
     let current_cpu_mode = configured_cpu_mode(&config, &current_preset);
-    let current_cpu = config_u64(&config, "cpuThreads")
+    let configured_cpu = config_u64(&config, "cpuThreads")
         .map(|value| value as u32)
-        .unwrap_or(hardware.logical_processors)
-        .clamp(1, hardware.logical_processors);
+        .unwrap_or(hardware.logical_processors);
+    let current_cpu = configured_cpu.clamp(1, hardware.logical_processors);
 
     let performance = preset_for(hardware, PresetKind::Performance);
     let boost = preset_for(hardware, PresetKind::Boost);
     let warning = resource_warning(
         hardware,
-        current_max,
+        configured_max,
         &current_cpu_mode,
-        current_cpu,
+        configured_cpu,
     );
 
     Ok(ServerResourceProfile {
@@ -313,14 +312,28 @@ fn write_config(config: &Map<String, Value>) -> Result<(), String> {
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
     if path.exists() {
         let backup = path.with_extension("json.resources.previous");
-        let _ = fs::remove_file(&backup);
-        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
+        let backup_incoming = path.with_extension("json.resources.previous.incoming");
+        if backup_incoming.exists() {
+            fs::remove_file(&backup_incoming).map_err(|error| error.to_string())?;
+        }
+        fs::copy(&path, &backup_incoming).map_err(|error| error.to_string())?;
+        if backup.exists() {
+            fs::remove_file(&backup).map_err(|error| error.to_string())?;
+        }
+        fs::rename(&backup_incoming, &backup).map_err(|error| error.to_string())?;
+
+        let swap = path.with_extension("json.resources.swap");
+        if swap.exists() {
+            fs::remove_file(&swap).map_err(|error| error.to_string())?;
+        }
+        fs::rename(&path, &swap).map_err(|error| error.to_string())?;
         match fs::rename(&temporary, &path) {
             Ok(()) => {
-                let _ = fs::remove_file(backup);
+                let _ = fs::remove_file(swap);
             }
             Err(error) => {
-                let _ = fs::rename(&backup, &path);
+                let _ = fs::rename(&swap, &path);
+                let _ = fs::remove_file(&temporary);
                 return Err(error.to_string());
             }
         }
