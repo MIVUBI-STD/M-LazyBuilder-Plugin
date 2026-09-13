@@ -1,5 +1,7 @@
-use crate::engine::workspace_registry::{self, WorkspaceEntry};
+use crate::engine::server_manager::ServerManagerState;
+use crate::engine::workspace_registry::{self, ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
+use tauri::State;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +19,17 @@ pub fn workspace_state() -> Result<WorkspaceState, String> {
 }
 
 #[tauri::command]
+pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
+    workspace_registry::provisioning_status()
+}
+
+#[tauri::command]
+pub fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
+    workspace_registry::accept_eula()?;
+    workspace_registry::provisioning_status()
+}
+
+#[tauri::command]
 pub fn workspace_pick_parent() -> Result<Option<String>, String> {
     Ok(rfd::FileDialog::new()
         .set_title("Choose where to create the LazyBuilder server")
@@ -25,12 +38,18 @@ pub fn workspace_pick_parent() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-pub fn workspace_create(parent_path: String, name: String) -> Result<WorkspaceEntry, String> {
+pub fn workspace_create(
+    state: State<'_, ServerManagerState>,
+    parent_path: String,
+    name: String,
+) -> Result<WorkspaceEntry, String> {
+    ensure_switch_allowed(&state)?;
     workspace_registry::create(&PathBuf::from(parent_path), &name)
 }
 
 #[tauri::command]
-pub fn workspace_open_picker() -> Result<Option<WorkspaceEntry>, String> {
+pub fn workspace_open_picker(state: State<'_, ServerManagerState>) -> Result<Option<WorkspaceEntry>, String> {
+    ensure_switch_allowed(&state)?;
     let Some(path) = rfd::FileDialog::new()
         .set_title("Open LazyBuilder server workspace")
         .pick_folder() else {
@@ -40,11 +59,29 @@ pub fn workspace_open_picker() -> Result<Option<WorkspaceEntry>, String> {
 }
 
 #[tauri::command]
-pub fn workspace_activate(id: String) -> Result<WorkspaceEntry, String> {
+pub fn workspace_activate(
+    state: State<'_, ServerManagerState>,
+    id: String,
+) -> Result<WorkspaceEntry, String> {
+    ensure_switch_allowed(&state)?;
     workspace_registry::activate(&id)
 }
 
 #[tauri::command]
-pub fn workspace_close() -> Result<(), String> {
+pub fn workspace_close(state: State<'_, ServerManagerState>) -> Result<(), String> {
+    ensure_switch_allowed(&state)?;
     workspace_registry::deactivate()
+}
+
+fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
+    if workspace_registry::current()?.is_none() {
+        return Ok(());
+    }
+    let snapshot = state.snapshot()?;
+    match snapshot.state.as_str() {
+        "Offline" | "Crashed" => Ok(()),
+        other => Err(format!(
+            "Stop the active server before switching workspaces. Current server state: {other}."
+        )),
+    }
 }
