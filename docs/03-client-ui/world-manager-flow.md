@@ -4,135 +4,227 @@ Canonical owner for the user-facing World Manager navigation and operation flow.
 
 ## Goal
 
-The World Manager UI exposes server/application capabilities through one predictable client surface. The client is presentation/input only; it must not create a second lifecycle, settings, transfer, registry, or filesystem authority.
+The World Manager is a daily builder workspace, not a server administration console. Builders should be able to reach common tasks quickly without understanding registry IDs, transfer sessions, destination folders, artifact storage, conversion internals, or host filesystem details.
+
+The client remains presentation/input only; it must not create a second lifecycle, settings, transfer, registry, or filesystem authority.
 
 ## Primary navigation
 
 ```text
-Open LazyBuilder
-→ World Manager
-   ├── Worlds
-   ├── Create World
-   ├── Import World
-   └── Map / Xaero
+M
+→ World Map
+   └── Worlds
+       → World Manager
 ```
 
-`Worlds` is the default landing surface.
+The fullscreen map is the primary LazyBuilder entry. World Manager is secondary and returns to the exact existing map screen so camera/zoom/selection state is preserved.
 
-## Worlds
+## Daily builder paths
 
-Each row/card represents one canonical managed `WorldId` and shows decision-relevant state:
+Common tasks must remain shallow:
 
 ```text
-Display Name
-folder name
-ACTIVE / ARCHIVED
-LOADED / UNLOADED
-kind
+Move to another world
+M → Worlds → select world → Teleport
+
+Create a build world
+M → Worlds → + Add World → Create New World
+
+Import an existing world
+M → Worlds → + Add World → Import Existing World
+
+Export / back up a world
+M → Worlds → select world → Export World
+
+Change common world behavior
+M → Worlds → select world → Settings
 ```
 
-Primary actions come from canonical server state. Secondary actions open the existing management screens rather than creating per-command subsystems.
+Internal implementation concepts are hidden unless they are required for safety.
 
-## Manage World
+## Worlds workspace
+
+Desktop/wide layout uses a stable list-detail workspace:
 
 ```text
-Manage World
-├── Teleport
-├── Settings
-├── Clone
-├── Export
-├── Load / Unload
-├── Archive / Restore
-└── Delete
+Managed Worlds            Selected World
+├── world A               ├── status
+├── world B               ├── Teleport / Load
+└── world C               ├── Export World
+                          └── Settings / Clone / Archive / Delete
 ```
+
+Rows show only decision-relevant state. Folder names may appear as subdued metadata on sufficiently wide layouts, but are not treated as a primary builder decision.
+
+Primary actions:
+
+```text
+Teleport
+Load / Unload
+Export World
+```
+
+Management actions:
+
+```text
+Settings
+Clone
+Archive / Restore
+Delete
+```
+
+Destructive actions use danger styling and explicit confirmation.
+
+## Responsive navigation
+
+Minecraft GUI Scale can produce very narrow logical screen widths. The World Manager must not assume desktop width.
 
 Rules:
 
-- show actions from canonical server state;
-- do not infer success locally;
-- destructive actions require explicit confirmation;
-- Delete confirmation must satisfy the server's exact-name guard;
-- long operations use canonical operation/task state;
-- completion refreshes affected state from the server.
+- at normal/wide widths, use list + detail side by side;
+- below the compact breakpoint, use one pane at a time;
+- compact list → tap/select world → compact detail;
+- Back/ESC from compact detail returns to the world list before leaving World Manager;
+- action buttons stack vertically when a detail pane is too narrow for two columns;
+- page size adapts to available vertical space;
+- no control may require horizontal scrolling or render outside the screen.
+
+This keeps the interaction model identical across GUI Scale settings while changing only layout density.
+
+## Add World
+
+`+ Add World` intentionally contains exactly two choices:
+
+```text
+Create New World
+Import Existing World
+```
+
+On wide layouts these appear as two cards. On narrow layouts they stack vertically. There is no separate Upload Manager or destination-folder screen.
 
 ## Create World
 
 ```text
-Create World
-→ World Folder
-→ Display Name
-→ Type: Flat | Void
-→ Create
+Create New World
+→ World Name
+→ World Type: Flat | Void
+→ Create World
+→ visible server processing
+→ return to World Manager after authoritative success
 ```
 
-Advanced settings are intentionally not duplicated into Create. New worlds use canonical BUILD_READY defaults.
+The server folder name is generated automatically and collision-safe. Builders do not type internal folder paths.
+
+Advanced settings remain separate so creation stays quick.
 
 ## Import World
 
 ```text
-Import World
-→ destination folder + display name
+Import Existing World
+→ optional World Name
 → native file picker (.zip / .mcworld)
-→ bounded transfer upload
-→ server validation / optional conversion
-→ publish as managed world
-→ return canonical world state
+→ prepare/hash
+→ bounded upload with real byte progress
+→ server validation/import/conversion
+→ publish managed world
+→ return after authoritative completion
 ```
 
-The picker and upload are transport details of one Import flow. There is no separate Upload Manager.
+The file picker is the first meaningful import action. Internal destination naming is automatic. Upload and server import are one visible operation rather than two disconnected screens.
 
 ## Export World
 
-Whole-world Export is reached from the managed-world surface.
-
 ```text
-Export
-→ artifact name
-→ native Java 1.21.4 target in current UI
-→ safe server snapshot/package
-→ existing transfer download
-→ native save dialog
+Export World
+→ file name
+→ prepare safe server snapshot
+→ Save As
+→ bounded download with real byte progress
+→ checksum/finalize
+→ return after completion
 ```
 
-Additional target formats should only be surfaced when the client receives a verified supported-format catalog. `Export Area` remains a map/Xaero action because spatial selection belongs to map presentation, while still reusing the same Export and transfer owners.
+Do not close the screen immediately after requesting export. The builder should always know whether the system is preparing, waiting for Save As, downloading, complete, or failed.
+
+`Export Area` remains a map action because spatial selection belongs to the map, while still reusing the canonical export/transfer owners.
+
+## Clone World
+
+```text
+Clone
+→ optional Clone Name
+→ Clone World
+→ visible server processing
+→ return after completion
+```
+
+The destination folder is generated automatically. The builder chooses the human-facing clone name only.
 
 ## Settings
 
-Settings use one server snapshot and one canonical mutation path. The compact current surface includes:
+Settings use builder-facing language and server-authoritative snapshots.
+
+Current surface:
 
 ```text
-Auto Load
+Load on Server Start
+PVP
 Default Game Mode
 Difficulty
-PVP
-Set Current Position as Spawn
-Reset to BUILD_READY
+Set Current Position as World Spawn
+Reset Builder Defaults
 ```
 
-The client displays server-returned state after mutation. It does not maintain a second settings store or polling loop.
+Internal terms such as `BUILD_READY` are not exposed as primary labels.
 
-## Map / Xaero
+## Archive and Delete
+
+Archive is reversible and uses a confirmation modal.
+
+Permanent Delete intentionally adds friction:
 
 ```text
-Xaero fullscreen map
-├── Teleport Here
-└── Export Area
+Delete Permanently
+→ warning
+→ type exact internal folder name
+→ server deletion
+→ return after authoritative completion
 ```
 
-Map actions remain contextual and spatial. They do not replace the general World Manager surface.
+Exact-name confirmation is retained because it is a safety mechanism, not normal navigation.
 
 ## Operation feedback
 
-Use consistent bounded states:
+Use one consistent state model:
 
 ```text
 idle
-requesting / running
-success
+choosing input
+preparing
+uploading / downloading
+server processing
+complete
 error
 ```
 
-Do not fake progress percentages when the server has no authoritative progress value. Errors should identify the failed action and recovery step without exposing host filesystem paths or stack traces.
+Only show percentages when an authoritative byte/operation percentage exists. Never fake progress.
+
+While a heavy operation is active, conflicting world-management actions are disabled.
+
+## Visual system
+
+Client screens use the first-party LazyBuilder visual system rather than vanilla Minecraft button chrome:
+
+```text
+LbUi
+LbButtonWidget
+custom panels
+custom fields
+custom progress
+primary / secondary / ghost / danger hierarchy
+```
+
+Visual direction is a restrained dark editor/workspace UI: high legibility, limited accent color, clear action hierarchy, minimal decoration, and no dependency on an external UI mod.
 
 ## Channel / protocol shape
 
@@ -142,37 +234,20 @@ lazybuilder:map       spatial map intents only
 lazybuilder:transfer  file bytes only
 ```
 
-`lazybuilder:world` delegates to existing World-Manager services. It does not own duplicate business logic, registry state, operation locking, conversion, or file operations.
-
-## Current implementation boundary
-
-The first-party Fabric World Manager is source-implemented for:
-
-```text
-list / refresh
-create Flat / Void
-teleport
-load / unload
-archive / restore
-clone
-settings
-permanent delete
-import publication
-native Java 1.21.4 whole-world export
-```
-
-Native file dialogs, transfer controllers, Xaero actions, and the dedicated `lazybuilder:world` control path are also source-implemented. Remote CI proves compilation/tests only; runtime UI and Paper behavior still require live validation.
+No UI simplification may create duplicate business logic. Server validation and world state remain authoritative.
 
 ## Efficiency rules
 
-- list worlds only on screen open, explicit refresh, or after relevant mutation;
+- list worlds on screen open, explicit refresh, or relevant mutation;
 - no world-list polling;
 - no settings polling;
 - no client-side shadow registry;
 - no directory scanning on the client;
 - reuse server-returned snapshots;
-- expensive file/conversion work remains server-side and request-bound.
+- one transfer controller;
+- one map presentation owner;
+- expensive file/conversion work remains request-bound and server-owned.
 
 ## Proof boundary
 
-Remote CI can prove protocol encoding, source wiring, state mapping, navigation compilation, and server delegation. Layout quality, actual input behavior, native dialogs, Xaero placement/transforms, real transfer behavior, and perceived responsiveness require `LOCAL_CODE` / `LIVE_SERVER` testing.
+Implementation is intentionally being completed before final validation. Final proof must cover multiple Minecraft GUI Scale values, narrow and wide logical resolutions, keyboard/mouse navigation, native file dialogs, real import/export transfers, Paper permissions, operation failures, map return-state preservation, and live builder workflows on a Minecraft 1.21.4 client/server pair.
