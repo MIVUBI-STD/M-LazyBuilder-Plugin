@@ -55,7 +55,7 @@ public final class WorldBackupService {
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.BACKUP);
         boolean wasLoaded = runtimeStates.get(worldId) == WorldRuntimeState.LOADED;
         try {
-            runtimeService.unload(worldId);
+            runtimeService.unloadDuringOperation(worldId);
             UUID operationId = UUID.randomUUID();
             String backupId = world.folderName() + "-" + operationId;
             return new BackupTask(operationId, backupId, world, wasLoaded, lease);
@@ -98,7 +98,7 @@ public final class WorldBackupService {
         RuntimeException failure = null;
         if (task.wasLoaded) {
             try {
-                runtimeService.load(task.world.id());
+                runtimeService.loadDuringOperation(task.world.id());
             } catch (RuntimeException exception) {
                 failure = exception;
             }
