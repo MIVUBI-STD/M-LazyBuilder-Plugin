@@ -36,7 +36,7 @@ export type WorkspaceProvisioningStatus = {
 
 export type WorkspaceProvisionResult = {
   javaPath: string;
-  paperBuild: number;
+  paperBuild?: number | null;
   coreVersion: string;
   status: WorkspaceProvisioningStatus;
 };
