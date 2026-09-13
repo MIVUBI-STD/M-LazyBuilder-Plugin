@@ -21,31 +21,22 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         saveDefaultConfig();
         this.featureRegistry = new UtilityFeatureRegistry();
 
-        WorldSafetySettings worldSafetySettings = new WorldSafetySettings(
-                getConfig().getBoolean("features.world-safety.protections.explosions", true),
-                getConfig().getBoolean("features.world-safety.protections.leaves-decay", true),
-                getConfig().getBoolean("features.world-safety.protections.farmland-trample", true),
-                getConfig().getBoolean("features.world-safety.protections.dragon-egg-teleport", true)
-        );
-        featureRegistry.register(new WorldSafetyFeature(this, worldSafetySettings));
+        ConfigurationSection worldSafetySection = requireSection("features.world-safety");
+        featureRegistry.register(new WorldSafetyFeature(this, WorldSafetySettings.from(worldSafetySection)));
 
-        ConfigurationSection movementSection = getConfig().getConfigurationSection("features.movement");
-        if (movementSection == null) movementSection = getConfig().createSection("features.movement");
-        MovementSettings movementSettings = MovementSettings.from(movementSection);
-        featureRegistry.register(new MovementFeature(this, movementSettings));
+        ConfigurationSection movementSection = requireSection("features.movement");
+        featureRegistry.register(new MovementFeature(this, MovementSettings.from(movementSection)));
 
-        ConfigurationSection buildHelpersSection = getConfig().getConfigurationSection("features.build-helpers");
-        if (buildHelpersSection == null) buildHelpersSection = getConfig().createSection("features.build-helpers");
-        BuildHelpersSettings buildHelpersSettings = BuildHelpersSettings.from(buildHelpersSection);
-        featureRegistry.register(new BuildHelpersFeature(this, buildHelpersSettings));
+        ConfigurationSection buildHelpersSection = requireSection("features.build-helpers");
+        featureRegistry.register(new BuildHelpersFeature(this, BuildHelpersSettings.from(buildHelpersSection)));
 
-        if (getConfig().getBoolean("features.world-safety.enabled", true)) {
+        if (worldSafetySection.getBoolean("enabled", true)) {
             featureRegistry.enable(WorldSafetyFeature.ID);
         }
-        if (getConfig().getBoolean("features.movement.enabled", true)) {
+        if (movementSection.getBoolean("enabled", true)) {
             featureRegistry.enable(MovementFeature.ID);
         }
-        if (getConfig().getBoolean("features.build-helpers.enabled", true)) {
+        if (buildHelpersSection.getBoolean("enabled", true)) {
             featureRegistry.enable(BuildHelpersFeature.ID);
         }
 
@@ -64,5 +55,10 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             }
         }
         getLogger().info("Utilities-Manager disabled.");
+    }
+
+    private ConfigurationSection requireSection(String path) {
+        ConfigurationSection section = getConfig().getConfigurationSection(path);
+        return section != null ? section : getConfig().createSection(path);
     }
 }
