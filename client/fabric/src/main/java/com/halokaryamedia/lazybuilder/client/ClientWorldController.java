@@ -16,6 +16,7 @@ public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
     private String lastError;
+    private String activityMessage;
     private long revision;
 
     public ClientWorldController(Consumer<String> completedExportHandler) {
@@ -27,15 +28,19 @@ public final class ClientWorldController {
         send(new WorldControlWireProtocol.CreateWorld(folderName, displayName, kind));
     }
     public void cloneWorld(UUID sourceWorldId, String destinationFolder, String displayName) {
+        beginActivity("Cloning world…");
         send(new WorldControlWireProtocol.CloneWorld(sourceWorldId, destinationFolder, displayName));
     }
     public void deleteWorld(UUID worldId, String typedFolderName) {
+        beginActivity("Deleting world…");
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedFolderName));
     }
     public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
+        beginActivity("Preparing world export…");
         send(new WorldControlWireProtocol.ExportWorld(worldId, targetFormat, artifactName));
     }
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
+        beginActivity("Validating and importing world…");
         send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
     }
     public void load(UUID worldId) { send(new WorldControlWireProtocol.LoadWorld(worldId)); }
@@ -65,6 +70,7 @@ public final class ClientWorldController {
                     settings.remove(changed.world().worldId());
                 } else replace(changed.world());
                 lastError = null;
+                activityMessage = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
                         "World " + changed.action().toLowerCase() + ": " + changed.world().displayName());
@@ -82,12 +88,14 @@ public final class ClientWorldController {
             }
             case WorldControlWireProtocol.ExportReady export -> {
                 lastError = null;
+                activityMessage = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer("Export ready: " + export.artifactName());
                 completedExportHandler.accept(export.artifactName());
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 lastError = error.message();
+                activityMessage = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer("LazyBuilder world: " + error.message());
             }
@@ -98,13 +106,21 @@ public final class ClientWorldController {
         worlds = List.of();
         settings.clear();
         lastError = null;
+        activityMessage = null;
         revision++;
     }
 
     public List<WorldControlWireProtocol.WorldSummary> worlds() { return worlds; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public String lastError() { return lastError; }
+    public String activityMessage() { return activityMessage; }
     public long revision() { return revision; }
+
+    private void beginActivity(String message) {
+        activityMessage = message;
+        lastError = null;
+        revision++;
+    }
 
     private void synchronizeSummary(WorldControlWireProtocol.SettingsSnapshot snapshot) {
         for (WorldControlWireProtocol.WorldSummary world : worlds) {
