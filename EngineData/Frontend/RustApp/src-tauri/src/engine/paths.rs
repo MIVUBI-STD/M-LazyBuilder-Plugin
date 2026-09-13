@@ -1,9 +1,12 @@
+use crate::engine::workspace_registry;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 pub const WORKSPACE_ENV: &str = "LAZYBUILDER_WORKSPACE_ROOT";
 
 pub fn workspace_root() -> Result<PathBuf, String> {
+    // Explicit environment override remains available for development/automation,
+    // but installed-app runtime authority comes from the persistent workspace registry.
     if let Ok(configured) = std::env::var(WORKSPACE_ENV) {
         let path = PathBuf::from(configured);
         if path.is_dir() {
@@ -12,36 +15,12 @@ pub fn workspace_root() -> Result<PathBuf, String> {
         return Err("LAZYBUILDER_WORKSPACE_ROOT does not point to a directory".into());
     }
 
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(parent) = executable.parent() {
-            if let Some(root) = find_workspace(parent) {
-                return canonical_directory(&root, "detected workspace");
-            }
-        }
-    }
-
-    let current = std::env::current_dir().map_err(|error| error.to_string())?;
-    if let Some(root) = find_workspace(&current) {
-        return canonical_directory(&root, "detected workspace");
-    }
-
-    canonical_directory(&current, "current directory")
+    workspace_registry::active_workspace()
 }
 
 fn canonical_directory(path: &Path, label: &str) -> Result<PathBuf, String> {
     path.canonicalize()
         .map_err(|error| format!("Could not resolve {label}: {error}"))
-}
-
-fn find_workspace(start: &Path) -> Option<PathBuf> {
-    for ancestor in start.ancestors() {
-        let runtime_layout = ancestor.join("server").is_dir();
-        let source_layout = ancestor.join("pom.xml").is_file() && ancestor.join("modules").is_dir();
-        if runtime_layout || source_layout {
-            return Some(ancestor.to_path_buf());
-        }
-    }
-    None
 }
 
 pub fn safe_relative_path(value: &str, label: &str) -> Result<PathBuf, String> {
@@ -96,9 +75,10 @@ pub fn worlds_dir() -> Result<PathBuf, String> {
 }
 
 pub fn ensure_runtime_layout() -> Result<(), String> {
-    // Archive is lifecycle metadata today, not a second physical world store. Keep the
-    // runtime root limited to directories with an active owner so maintenance stays clear.
+    let root = workspace_root()?;
     let directories = [
+        root.join("server"),
+        root.join("server").join("plugins"),
         worlds_dir()?,
         world_system_dir()?.join("imports"),
         world_system_dir()?.join("exports"),
