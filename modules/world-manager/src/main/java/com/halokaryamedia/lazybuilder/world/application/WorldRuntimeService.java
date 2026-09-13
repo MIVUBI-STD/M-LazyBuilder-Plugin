@@ -42,10 +42,6 @@ public final class WorldRuntimeService {
         return runtime.isLoaded(requireWorld(id));
     }
 
-    public boolean hasPlayers(WorldId id) {
-        return runtime.hasPlayers(requireWorld(id));
-    }
-
     public WorldRecord load(WorldId id) {
         ensureNoExternalOperation(id);
         return loadInternal(id);
