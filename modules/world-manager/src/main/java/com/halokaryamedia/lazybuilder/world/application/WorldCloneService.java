@@ -35,18 +35,6 @@ public final class WorldCloneService {
         this.files = Objects.requireNonNull(files, "files");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldCloneService(
-            WorldRegistry registry,
-            WorldRegistryPersistence persistence,
-            WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldOperationCoordinator operations,
-            WorldFileRepository files
-    ) {
-        this(registry, persistence, runtimeService, operations, files);
-    }
-
     public CloneTask prepare(WorldId sourceId, String destinationFolder, String displayName) {
         Objects.requireNonNull(sourceId, "sourceId");
         WorldRecord source = registry.find(sourceId)
@@ -57,7 +45,7 @@ public final class WorldCloneService {
 
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, source.kind(),
-                WorldLifecycle.ACTIVE, false, source.defaultGameMode()
+                WorldLifecycle.ACTIVE, source.defaultGameMode()
         );
 
         WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
