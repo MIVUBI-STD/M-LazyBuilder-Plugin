@@ -73,6 +73,30 @@ class WorldRuntimeServiceTest {
         assertEquals(0, runtime.loadCount);
     }
 
+    @Test
+    void externalLoadAndUnloadAreBlockedWhileHeavyOperationOwnsWorld() {
+        WorldRegistry registry = new WorldRegistry();
+        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        WorldRecord world = world(WorldLifecycle.ACTIVE);
+        registry.register(world);
+        states.initialize(world.id(), WorldRuntimeState.LOADED);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService service = new WorldRuntimeService(registry, states, runtime, operations);
+
+        try (WorldOperationCoordinator.Lease ignored = operations.acquire(world.id(), WorldOperationType.EXPORT)) {
+            assertThrows(IllegalStateException.class, () -> service.unload(world.id()));
+            assertEquals(WorldRuntimeState.LOADED, service.state(world.id()));
+
+            service.unloadDuringOperation(world.id());
+            assertEquals(WorldRuntimeState.UNLOADED, service.state(world.id()));
+
+            assertThrows(IllegalStateException.class, () -> service.load(world.id()));
+            service.loadDuringOperation(world.id());
+            assertEquals(WorldRuntimeState.LOADED, service.state(world.id()));
+        }
+    }
+
     private static WorldRecord world(WorldLifecycle lifecycle) {
         return new WorldRecord(
                 WorldId.create(),
