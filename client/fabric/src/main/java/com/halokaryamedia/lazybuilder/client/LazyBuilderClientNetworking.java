@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.client.net.WorldPayload;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -20,6 +21,7 @@ public final class LazyBuilderClientNetworking {
     private final ClientWorldController worldController;
     private final ClientMapController mapController;
     private final ClientTransferController transferController;
+    private String observedWorldKey;
 
     public LazyBuilderClientNetworking(
             ClientWorldController worldController,
@@ -46,12 +48,30 @@ public final class LazyBuilderClientNetworking {
         ClientPlayNetworking.registerGlobalReceiver(WorldPayload.ID, (payload, context) ->
                 context.client().execute(() -> handleWorld(payload.bytes())));
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(this::refreshManagedContext));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
+            observedWorldKey = currentWorldKey(client);
+            refreshManagedContext();
+        }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+            observedWorldKey = null;
             worldController.reset();
             mapController.reset();
             transferController.reset();
         }));
+
+        // World changes can happen outside LazyBuilder via portals, commands, or other
+        // plugins. Detect only the identity edge and refresh server authority once per
+        // actual world transition; this does not continuously poll the network.
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            String current = currentWorldKey(client);
+            if (Objects.equals(current, observedWorldKey)) return;
+            observedWorldKey = current;
+            if (current != null && client.getNetworkHandler() != null) {
+                refreshManagedContext();
+            } else {
+                mapController.reset();
+            }
+        });
     }
 
     public static void sendMap(byte[] payload) {
@@ -101,6 +121,11 @@ public final class LazyBuilderClientNetworking {
     private void refreshManagedContext() {
         mapController.refreshCurrentWorld();
         worldController.refresh();
+    }
+
+    private static String currentWorldKey(MinecraftClient client) {
+        if (client.world == null) return null;
+        return client.world.getRegistryKey().getValue().toString();
     }
 
     public static void notifyPlayer(String message) {
