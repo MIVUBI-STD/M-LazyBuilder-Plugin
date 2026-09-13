@@ -13,18 +13,11 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Phased Clone use case.
- *
- * <p>prepare/finish own Paper lifecycle work. executeFilePhase owns heavy
- * filesystem work and is intended for a request-scoped worker thread. No worker
- * is kept alive while World Manager is idle.</p>
- */
+/** Phased Duplicate World use case; heavy filesystem work stays request-bound. */
 public final class WorldCloneService {
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
     private final WorldRuntimeService runtimeService;
-    private final WorldRuntimeStateRegistry runtimeStates;
     private final WorldOperationCoordinator operations;
     private final WorldFileRepository files;
 
@@ -32,42 +25,46 @@ public final class WorldCloneService {
             WorldRegistry registry,
             WorldRegistryPersistence persistence,
             WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry runtimeStates,
             WorldOperationCoordinator operations,
             WorldFileRepository files
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
-        this.runtimeStates = Objects.requireNonNull(runtimeStates, "runtimeStates");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.files = Objects.requireNonNull(files, "files");
     }
 
-    /** Main-thread phase: validate, acquire the world lease, and make the source quiescent. */
+    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
+    public WorldCloneService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeService runtimeService,
+            WorldRuntimeStateRegistry ignoredLegacyStates,
+            WorldOperationCoordinator operations,
+            WorldFileRepository files
+    ) {
+        this(registry, persistence, runtimeService, operations, files);
+    }
+
     public CloneTask prepare(WorldId sourceId, String destinationFolder, String displayName) {
         Objects.requireNonNull(sourceId, "sourceId");
         WorldRecord source = registry.find(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + sourceId));
         if (source.lifecycle() != WorldLifecycle.ACTIVE) {
-            throw new IllegalStateException("Archived worlds must be restored before cloning: " + source.folderName());
+            throw new IllegalStateException("Archived worlds must be restored before duplicating: " + source.folderName());
         }
 
         WorldRecord destination = new WorldRecord(
-                WorldId.create(),
-                destinationFolder,
-                displayName,
-                source.kind(),
-                WorldLifecycle.ACTIVE,
-                false,
-                source.defaultGameMode()
+                WorldId.create(), destinationFolder, displayName, source.kind(),
+                WorldLifecycle.ACTIVE, false, source.defaultGameMode()
         );
 
         WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
         WorldOperationCoordinator.Lease lease = null;
         try {
             lease = operations.acquire(sourceId, WorldOperationType.CLONE);
-            boolean wasLoaded = runtimeStates.get(sourceId) == WorldRuntimeState.LOADED;
+            boolean wasLoaded = runtimeService.isLoaded(sourceId);
             runtimeService.unloadDuringOperation(sourceId);
             return new CloneTask(UUID.randomUUID(), source, destination, wasLoaded, lease, destinationReservation);
         } catch (RuntimeException exception) {
@@ -77,14 +74,12 @@ public final class WorldCloneService {
         }
     }
 
-    /** Worker-thread phase: sanitized copy, publish, then durable registry publication. */
     public WorldRecord executeFilePhase(CloneTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         Path staged = null;
         boolean published = false;
         boolean registered = false;
-        boolean stateInitialized = false;
         try {
             staged = files.stageCopy(task.source, task.operationId, WorldCopyProfile.CLONE);
             files.publishStagedWorld(staged, task.destination.folderName());
@@ -93,34 +88,24 @@ public final class WorldCloneService {
 
             registry.register(task.destination);
             registered = true;
-            runtimeStates.initialize(task.destination.id(), WorldRuntimeState.UNLOADED);
-            stateInitialized = true;
             persistence.save(registry.all());
             task.committed = true;
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (stateInitialized) runtimeStates.remove(task.destination.id());
             if (registered) registry.remove(task.destination.id());
             if (published) {
-                try {
-                    files.deleteWorld(task.destination);
-                } catch (IOException cleanupFailure) {
-                    exception.addSuppressed(cleanupFailure);
-                }
+                try { files.deleteWorld(task.destination); }
+                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             }
             if (staged != null) {
-                try {
-                    files.deleteWorkspace(staged);
-                } catch (IOException cleanupFailure) {
-                    exception.addSuppressed(cleanupFailure);
-                }
+                try { files.deleteWorkspace(staged); }
+                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             }
-            throw new IllegalStateException("Failed to clone world " + task.source.folderName()
+            throw new IllegalStateException("Failed to duplicate world " + task.source.folderName()
                     + " to " + task.destination.folderName(), exception);
         }
     }
 
-    /** Main-thread phase: restore the source load state and release operation ownership. */
     public void finish(CloneTask task) {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
@@ -147,14 +132,9 @@ public final class WorldCloneService {
         private boolean committed;
         private boolean closed;
 
-        private CloneTask(
-                UUID operationId,
-                WorldRecord source,
-                WorldRecord destination,
-                boolean wasLoaded,
-                WorldOperationCoordinator.Lease lease,
-                WorldRegistry.FolderReservation destinationReservation
-        ) {
+        private CloneTask(UUID operationId, WorldRecord source, WorldRecord destination, boolean wasLoaded,
+                          WorldOperationCoordinator.Lease lease,
+                          WorldRegistry.FolderReservation destinationReservation) {
             this.operationId = operationId;
             this.source = source;
             this.destination = destination;
@@ -168,20 +148,15 @@ public final class WorldCloneService {
         public boolean committed() { return committed; }
 
         private void requireOpen() {
-            if (closed) throw new IllegalStateException("Clone task is already closed");
+            if (closed) throw new IllegalStateException("Duplicate task is already closed");
         }
 
         private void close() {
             if (closed) return;
             RuntimeException failure = null;
-            try {
-                lease.close();
-            } catch (RuntimeException exception) {
-                failure = exception;
-            }
-            try {
-                destinationReservation.close();
-            } catch (RuntimeException exception) {
+            try { lease.close(); } catch (RuntimeException exception) { failure = exception; }
+            try { destinationReservation.close(); }
+            catch (RuntimeException exception) {
                 if (failure == null) failure = exception;
                 else failure.addSuppressed(exception);
             }
