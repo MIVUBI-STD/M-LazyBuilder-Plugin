@@ -35,18 +35,6 @@ public final class WorldBackupService {
         this.backups = Objects.requireNonNull(backups, "backups");
     }
 
-    /** Migration bridge only; legacy runtime-state registry is intentionally ignored. */
-    public WorldBackupService(
-            WorldRegistry registry,
-            WorldRuntimeService runtimeService,
-            WorldRuntimeStateRegistry ignoredLegacyStates,
-            WorldOperationCoordinator operations,
-            WorldFileRepository files,
-            WorldBackupStore backups
-    ) {
-        this(registry, runtimeService, operations, files, backups);
-    }
-
     public BackupTask prepare(WorldId worldId) {
         Objects.requireNonNull(worldId, "worldId");
         WorldRecord world = registry.find(worldId)
@@ -103,17 +91,19 @@ public final class WorldBackupService {
 
         RuntimeException failure = null;
         if (task.wasLoaded) {
-            try {
-                runtimeService.loadDuringOperation(task.world.id());
-            } catch (RuntimeException exception) {
-                failure = exception;
-            }
+            try { runtimeService.loadDuringOperation(task.world.id()); }
+            catch (RuntimeException exception) { failure = exception; }
         }
         task.close();
         if (failure != null) throw failure;
     }
 
-    public record BackupResult(String backupId, String fileName) {}
+    public record BackupResult(String backupId, String artifactName) {
+        public BackupResult {
+            Objects.requireNonNull(backupId, "backupId");
+            Objects.requireNonNull(artifactName, "artifactName");
+        }
+    }
 
     public static final class BackupTask {
         private final UUID operationId;
@@ -135,7 +125,6 @@ public final class WorldBackupService {
         }
 
         public WorldRecord world() { return world; }
-        public String backupId() { return backupId; }
         public boolean committed() { return committed; }
         public IOException cleanupFailure() { return cleanupFailure; }
 
