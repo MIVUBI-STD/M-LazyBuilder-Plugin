@@ -5,7 +5,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 
-/** Compact server-authoritative settings surface with one consistent visual hierarchy. */
+/** Compact server-authoritative settings surface with builder-facing terminology. */
 public final class WorldSettingsScreen extends Screen {
     private static final String[] GAME_MODES = {"SURVIVAL", "CREATIVE", "ADVENTURE", "SPECTATOR"};
     private static final String[] DIFFICULTIES = {"PEACEFUL", "EASY", "NORMAL", "HARD"};
@@ -46,7 +46,7 @@ public final class WorldSettingsScreen extends Screen {
         int y = 112;
 
         addDrawableChild(LbUi.button(contentLeft, y, half, 26,
-                "Auto Load   " + onOff(settings.autoLoad()), LbButtonWidget.Style.SECONDARY,
+                "Load on Server Start   " + onOff(settings.autoLoad()), LbButtonWidget.Style.SECONDARY,
                 () -> controller.setAutoLoad(world.worldId(), !settings.autoLoad())));
         addDrawableChild(LbUi.button(contentLeft + half + 10, y, half, 26,
                 "PVP   " + onOff(settings.pvpEnabled()), LbButtonWidget.Style.SECONDARY,
@@ -54,7 +54,7 @@ public final class WorldSettingsScreen extends Screen {
 
         y += 40;
         addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 26,
-                "Game Mode   " + titleCase(settings.defaultGameMode()), LbButtonWidget.Style.GHOST,
+                "Default Game Mode   " + titleCase(settings.defaultGameMode()), LbButtonWidget.Style.GHOST,
                 () -> controller.setDefaultMode(world.worldId(), next(GAME_MODES, settings.defaultGameMode()))));
 
         y += 34;
@@ -64,12 +64,12 @@ public final class WorldSettingsScreen extends Screen {
 
         y += 44;
         addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 26,
-                "Set Current Position as Spawn", LbButtonWidget.Style.SECONDARY,
+                "Set Current Position as World Spawn", LbButtonWidget.Style.SECONDARY,
                 () -> controller.setSpawnHere(world.worldId())));
 
         y += 36;
         addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 24,
-                "Reset to BUILD_READY", LbButtonWidget.Style.DANGER, this::confirmReset));
+                "Reset Builder Defaults", LbButtonWidget.Style.DANGER, this::confirmReset));
 
         addDrawableChild(LbUi.button(width / 2 - 50, height - 34, 100, 22,
                 "Back", LbButtonWidget.Style.GHOST, this::close));
@@ -79,8 +79,8 @@ public final class WorldSettingsScreen extends Screen {
         if (client == null) return;
         client.setScreen(new ConfirmWorldActionScreen(
                 this,
-                Text.literal("Reset to BUILD_READY"),
-                Text.literal("Reset builder-safe defaults for " + world.displayName() + "?"),
+                Text.literal("Reset Builder Defaults"),
+                Text.literal("Restore builder-safe defaults for " + world.displayName() + "?"),
                 "Reset",
                 () -> controller.resetBuildReady(world.worldId())
         ));
@@ -105,12 +105,12 @@ public final class WorldSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("WORLD SETTINGS"), left + 24, 46, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), left + 24, 64, LbUi.TEXT_PRIMARY);
         context.drawTextWithShadow(textRenderer,
-                Text.literal("Builder-safe runtime defaults. Changes are saved by the server."),
+                Text.literal("Common builder settings. Changes are saved by the server."),
                 left + 24, 82, LbUi.TEXT_SECONDARY);
 
         WorldControlWireProtocol.SettingsSnapshot settings = controller.settings(world.worldId());
         if (settings == null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Loading server settings…"),
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Loading world settings…"),
                     width / 2, 128, LbUi.TEXT_SECONDARY);
             if (controller.lastError() != null) {
                 context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
@@ -124,7 +124,7 @@ public final class WorldSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("BUILD TOOLS"), left + 28, 224, LbUi.TEXT_MUTED);
 
         String runtime = "Weather  " + titleCase(settings.weather()) + "    •    Time  " + settings.timeOfDayTicks();
-        String spawn = "Spawn  " + round(settings.spawnX()) + ", " + round(settings.spawnY()) + ", " + round(settings.spawnZ());
+        String spawn = "World Spawn  " + round(settings.spawnX()) + ", " + round(settings.spawnY()) + ", " + round(settings.spawnZ());
         context.drawTextWithShadow(textRenderer, Text.literal(runtime), left + 28, panelBottom - 46, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(spawn), left + 28, panelBottom - 30, LbUi.TEXT_MUTED);
 
