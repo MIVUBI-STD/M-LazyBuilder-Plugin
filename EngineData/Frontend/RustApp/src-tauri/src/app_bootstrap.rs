@@ -25,7 +25,6 @@ pub fn run() {
             commands::workspace::workspace_accept_eula,
             commands::workspace::workspace_pick_parent,
             commands::workspace::workspace_create,
-            commands::workspace::workspace_open_picker,
             commands::workspace::workspace_adoption_pick,
             commands::workspace::workspace_adopt,
             commands::workspace::workspace_activate,
