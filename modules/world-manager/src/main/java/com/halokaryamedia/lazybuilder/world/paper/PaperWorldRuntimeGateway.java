@@ -13,6 +13,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldSpawningSettings;
 import com.halokaryamedia.lazybuilder.world.application.WorldWeather;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
+import net.kyori.adventure.util.TriState;
 import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
@@ -38,6 +39,7 @@ import java.util.function.Supplier;
 
 /** Paper/Bukkit implementation of the World Manager runtime boundary. */
 public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
+    private static final int DEFAULT_SPAWN_CHUNK_RADIUS = 2;
     private static final SpawnCategory[] WATER_CATEGORIES = {
             SpawnCategory.WATER_ANIMAL,
             SpawnCategory.WATER_AMBIENT,
@@ -69,7 +71,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         WorldCreator creator = new WorldCreator(record.folderName())
                 .environment(World.Environment.NORMAL)
                 .generateStructures(policy.structuresEnabled())
-                .keepSpawnInMemory(policy.spawnChunksPersistent());
+                .keepSpawnLoaded(TriState.byBoolean(policy.spawnChunksPersistent()));
 
         if (record.kind() == WorldKind.FLAT) {
             creator.type(WorldType.FLAT);
@@ -185,8 +187,6 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
             }
         }
 
-        // Paper's save=true unload is the single durability boundary here. Calling
-        // World#save first would force a second synchronous world save on the main thread.
         if (!server.unloadWorld(target, true)) {
             throw new IllegalStateException("Paper refused to unload world: " + record.folderName());
         }
@@ -210,17 +210,11 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         List<GameRuleSetting> rules = new ArrayList<>();
         for (GameRule<?> rule : GameRule.values()) {
             Object value = world.getGameRuleValue(rule);
-            if (value == null) {
-                continue;
-            }
+            if (value == null) continue;
             GameRuleValueType type;
-            if (rule.getType().equals(Boolean.class)) {
-                type = GameRuleValueType.BOOLEAN;
-            } else if (rule.getType().equals(Integer.class)) {
-                type = GameRuleValueType.INTEGER;
-            } else {
-                continue;
-            }
+            if (rule.getType().equals(Boolean.class)) type = GameRuleValueType.BOOLEAN;
+            else if (rule.getType().equals(Integer.class)) type = GameRuleValueType.INTEGER;
+            else continue;
             rules.add(new GameRuleSetting(rule.getName(), type, String.valueOf(value)));
         }
         rules.sort(Comparator.comparing(GameRuleSetting::name));
@@ -242,32 +236,16 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         requireLoadedWorld(record).setDifficulty(Difficulty.valueOf(Objects.requireNonNull(difficulty, "difficulty").name()));
     }
 
-    @Override
-    public void setPvp(WorldRecord record, boolean enabled) {
-        requirePrimaryThread();
-        requireLoadedWorld(record).setPVP(enabled);
-    }
-
-    @Override
-    public void setTime(WorldRecord record, long ticks) {
-        requirePrimaryThread();
-        requireLoadedWorld(record).setTime(ticks);
-    }
-
-    @Override
-    public void setWeather(WorldRecord record, WorldWeather weather) {
-        requirePrimaryThread();
-        applyWeather(requireLoadedWorld(record), Objects.requireNonNull(weather, "weather"));
-    }
+    @Override public void setPvp(WorldRecord record, boolean enabled) { requirePrimaryThread(); requireLoadedWorld(record).setPVP(enabled); }
+    @Override public void setTime(WorldRecord record, long ticks) { requirePrimaryThread(); requireLoadedWorld(record).setTime(ticks); }
+    @Override public void setWeather(WorldRecord record, WorldWeather weather) { requirePrimaryThread(); applyWeather(requireLoadedWorld(record), Objects.requireNonNull(weather, "weather")); }
 
     @Override
     public void setGameRule(WorldRecord record, String ruleName, String value) {
         requirePrimaryThread();
         World world = requireLoadedWorld(record);
         GameRule<?> raw = GameRule.getByName(Objects.requireNonNull(ruleName, "ruleName"));
-        if (raw == null) {
-            throw new IllegalArgumentException("Unknown gamerule: " + ruleName);
-        }
+        if (raw == null) throw new IllegalArgumentException("Unknown gamerule: " + ruleName);
         String normalized = Objects.requireNonNull(value, "value").strip();
         if (raw.getType().equals(Boolean.class)) {
             if (!normalized.equalsIgnoreCase("true") && !normalized.equalsIgnoreCase("false")) {
@@ -311,9 +289,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
             case MONSTERS -> world.setSpawnFlags(enabled, world.getAllowAnimals());
             case AMBIENT -> world.setTicksPerSpawns(SpawnCategory.AMBIENT, enabled ? -1 : 0);
             case WATER -> {
-                for (SpawnCategory category : WATER_CATEGORIES) {
-                    world.setTicksPerSpawns(category, enabled ? -1 : 0);
-                }
+                for (SpawnCategory category : WATER_CATEGORIES) world.setTicksPerSpawns(category, enabled ? -1 : 0);
             }
             case PATROL -> setBooleanRule(world, "doPatrolSpawning", enabled);
             case WANDERING_TRADER -> setBooleanRule(world, "doTraderSpawning", enabled);
@@ -347,11 +323,7 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     private static boolean waterSpawningEnabled(World world) {
-        for (SpawnCategory category : WATER_CATEGORIES) {
-            if (world.getTicksPerSpawns(category) != 0) {
-                return true;
-            }
-        }
+        for (SpawnCategory category : WATER_CATEGORIES) if (world.getTicksPerSpawns(category) != 0) return true;
         return false;
     }
 
@@ -372,29 +344,21 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         requirePrimaryThread();
         Player player = requireOnlinePlayer(playerId);
         World target = requireLoadedWorld(record);
-        if (!player.teleport(target.getSpawnLocation())) {
-            throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
-        }
-        if (gameMode != null) {
-            player.setGameMode(GameMode.valueOf(gameMode.name()));
-        }
+        if (!player.teleport(target.getSpawnLocation())) throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
+        if (gameMode != null) player.setGameMode(GameMode.valueOf(gameMode.name()));
     }
 
     private Player requireOnlinePlayer(UUID playerId) {
         Objects.requireNonNull(playerId, "playerId");
         Player player = server.getPlayer(playerId);
-        if (player == null || !player.isOnline()) {
-            throw new IllegalStateException("Player is not online: " + playerId);
-        }
+        if (player == null || !player.isOnline()) throw new IllegalStateException("Player is not online: " + playerId);
         return player;
     }
 
     private World requireLoadedWorld(WorldRecord record) {
         Objects.requireNonNull(record, "record");
         World world = server.getWorld(record.folderName());
-        if (world == null) {
-            throw new IllegalStateException("Target world is not loaded: " + record.folderName());
-        }
+        if (world == null) throw new IllegalStateException("Target world is not loaded: " + record.folderName());
         return world;
     }
 
@@ -402,15 +366,10 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         String configured = fallbackWorldName.get();
         if (configured != null && !configured.isBlank()) {
             World fallback = server.getWorld(configured.strip());
-            if (fallback == null) {
-                throw new IllegalStateException("Configured fallback world is not loaded: " + configured.strip());
-            }
+            if (fallback == null) throw new IllegalStateException("Configured fallback world is not loaded: " + configured.strip());
             return fallback;
         }
-
-        if (server.getWorlds().isEmpty()) {
-            throw new IllegalStateException("No loaded world is available as fallback");
-        }
+        if (server.getWorlds().isEmpty()) throw new IllegalStateException("No loaded world is available as fallback");
         return server.getWorlds().get(0);
     }
 
@@ -418,7 +377,8 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         world.setDifficulty(Difficulty.valueOf(policy.difficulty().name()));
         world.setPVP(policy.pvpEnabled());
         world.setSpawnFlags(policy.naturalMobSpawning(), policy.naturalMobSpawning());
-        world.setKeepSpawnInMemory(policy.spawnChunksPersistent());
+        setRule(world, GameRule.SPAWN_CHUNK_RADIUS, Integer.class,
+                policy.spawnChunksPersistent() ? DEFAULT_SPAWN_CHUNK_RADIUS : 0);
         world.setTime(policy.timeOfDayTicks());
         applyWeather(world, policy.weather());
 
@@ -436,41 +396,24 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     private static WorldWeather currentWeather(World world) {
-        if (world.isThundering()) {
-            return WorldWeather.THUNDER;
-        }
-        if (world.hasStorm()) {
-            return WorldWeather.RAIN;
-        }
+        if (world.isThundering()) return WorldWeather.THUNDER;
+        if (world.hasStorm()) return WorldWeather.RAIN;
         return WorldWeather.CLEAR;
     }
 
     private static void applyWeather(World world, WorldWeather weather) {
         switch (weather) {
-            case CLEAR -> {
-                world.setStorm(false);
-                world.setThundering(false);
-            }
-            case RAIN -> {
-                world.setStorm(true);
-                world.setThundering(false);
-            }
-            case THUNDER -> {
-                world.setStorm(true);
-                world.setThundering(true);
-            }
+            case CLEAR -> { world.setStorm(false); world.setThundering(false); }
+            case RAIN -> { world.setStorm(true); world.setThundering(false); }
+            case THUNDER -> { world.setStorm(true); world.setThundering(true); }
         }
     }
 
     private static void createVoidSpawnPlatform(World world) {
         for (int x = -2; x <= 2; x++) {
-            for (int z = -2; z <= 2; z++) {
-                world.getBlockAt(x, VoidChunkGenerator.PLATFORM_Y, z).setType(Material.STONE, false);
-            }
+            for (int z = -2; z <= 2; z++) world.getBlockAt(x, VoidChunkGenerator.PLATFORM_Y, z).setType(Material.STONE, false);
         }
-        if (!world.setSpawnLocation(0, VoidChunkGenerator.SPAWN_Y, 0)) {
-            throw new IllegalStateException("Failed to set Void World spawn location");
-        }
+        if (!world.setSpawnLocation(0, VoidChunkGenerator.SPAWN_Y, 0)) throw new IllegalStateException("Failed to set Void World spawn location");
     }
 
     @SuppressWarnings({"deprecation", "unchecked"})
@@ -486,18 +429,14 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     @SuppressWarnings("deprecation")
     private static void setBooleanRule(World world, String name, boolean value) {
         GameRule<?> raw = GameRule.getByName(name);
-        if (raw == null) {
-            throw new IllegalStateException("Required gamerule is unavailable: " + name);
-        }
+        if (raw == null) throw new IllegalStateException("Required gamerule is unavailable: " + name);
         setRule(world, raw, Boolean.class, value);
     }
 
     @SuppressWarnings("deprecation")
     private static void setIntegerRule(World world, String name, int value) {
         GameRule<?> raw = GameRule.getByName(name);
-        if (raw == null) {
-            throw new IllegalStateException("Required gamerule is unavailable: " + name);
-        }
+        if (raw == null) throw new IllegalStateException("Required gamerule is unavailable: " + name);
         setRule(world, raw, Integer.class, value);
     }
 
@@ -510,14 +449,10 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     private static void requirePrimaryThread() {
-        if (!Bukkit.isPrimaryThread()) {
-            throw new IllegalStateException("Paper world lifecycle operations must run on the primary server thread");
-        }
+        if (!Bukkit.isPrimaryThread()) throw new IllegalStateException("Paper world lifecycle operations must run on the primary server thread");
     }
 
     private static final class DeleteFailure extends RuntimeException {
-        private DeleteFailure(IOException cause) {
-            super(cause);
-        }
+        private DeleteFailure(IOException cause) { super(cause); }
     }
 }
