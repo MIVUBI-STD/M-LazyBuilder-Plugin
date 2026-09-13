@@ -22,6 +22,18 @@ export type ServerPreflight = {
   issues: string[];
 };
 
+export type DetachedRecoveryResult = {
+  pid: number;
+  stopped: boolean;
+  message: string;
+};
+
+export type ServerLogTail = {
+  path: string;
+  content: string;
+  truncated: boolean;
+};
+
 export type PluginSummary = {
   id: string;
   displayName: string;
@@ -119,6 +131,8 @@ export const runtimeApi = {
   startServer: () => invoke<void>('server_start'),
   stopServer: () => invoke<void>('server_stop'),
   restartServer: () => invoke<void>('server_restart'),
+  recoverDetachedServer: () => invoke<DetachedRecoveryResult>('server_recover_detached'),
+  readServerLogTail: (path: string) => invoke<ServerLogTail>('server_log_tail', { path }),
 
   listPlugins: () => invoke<PluginSummary[]>('plugin_list'),
   pickPluginJar: () => invoke<string | null>('plugin_pick_jar'),
