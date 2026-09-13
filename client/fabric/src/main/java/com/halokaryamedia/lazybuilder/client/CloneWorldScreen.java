@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -19,11 +18,7 @@ public final class CloneWorldScreen extends Screen {
     private boolean submitting;
     private long observedRevision;
 
-    public CloneWorldScreen(
-            Screen parent,
-            ClientWorldController controller,
-            WorldControlWireProtocol.WorldSummary source
-    ) {
+    public CloneWorldScreen(Screen parent, ClientWorldController controller, WorldControlWireProtocol.WorldSummary source) {
         super(Text.literal("Clone World"));
         this.parent = parent;
         this.controller = controller;
@@ -33,25 +28,25 @@ public final class CloneWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        int center = width / 2;
-        int panelWidth = Math.min(360, width - 50);
-        int left = center - panelWidth / 2;
-        int fieldWidth = panelWidth - 32;
-        int fieldLeft = left + 16;
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
 
-        displayName = new TextFieldWidget(textRenderer, fieldLeft, 108, fieldWidth, 22, Text.literal("Clone Name"));
+        displayName = new TextFieldWidget(textRenderer, left + 28, 118, panelWidth - 56, 24, Text.literal("Clone Name"));
         displayName.setPlaceholder(Text.literal(source.displayName() + " Copy"));
         displayName.setMaxLength(96);
+        displayName.setDrawsBackground(false);
+        displayName.setEditableColor(LbUi.TEXT_PRIMARY);
+        displayName.setUneditableColor(LbUi.TEXT_DISABLED);
         displayName.active = !submitting;
         addDrawableChild(displayName);
 
-        ButtonWidget clone = ButtonWidget.builder(Text.literal(submitting ? "Cloning…" : "Clone World"), button -> submit())
-                .dimensions(fieldLeft, 150, fieldWidth, 24).build();
+        LbButtonWidget clone = LbUi.button(left + 28, 162, panelWidth - 56, 28,
+                submitting ? "Cloning…" : "Clone World", LbButtonWidget.Style.PRIMARY, this::submit);
         clone.active = !submitting;
         addDrawableChild(clone);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal(submitting ? "Back" : "Cancel"), button -> close())
-                .dimensions(center - 50, 188, 100, 20).build());
+        addDrawableChild(LbUi.button(width / 2 - 50, 208, 100, 22,
+                submitting ? "Back" : "Cancel", LbButtonWidget.Style.GHOST, this::close));
         if (!submitting) setInitialFocus(displayName);
     }
 
@@ -113,26 +108,32 @@ public final class CloneWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context, mouseX, mouseY, delta);
-        int center = width / 2;
-        int panelWidth = Math.min(360, width - 50);
-        int left = center - panelWidth / 2;
-        context.fill(left, 38, left + panelWidth, 230, 0xB9191E25);
-        super.render(context, mouseX, mouseY, delta);
+        LbUi.background(context, width, height);
+        int panelWidth = Math.min(440, width - 48);
+        int left = width / 2 - panelWidth / 2;
+        LbUi.elevatedPanel(context, left, 30, panelWidth, 248);
 
-        context.drawCenteredTextWithShadow(textRenderer, title, center, 52, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Source: " + source.displayName()), center, 72, 0xAEB7C4);
-        context.drawTextWithShadow(textRenderer, Text.literal("Clone Name"), displayName.getX(), 96, 0xAEB7C4);
+        context.drawTextWithShadow(textRenderer, Text.literal("CLONE WORLD"), left + 24, 48, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(source.displayName()), left + 24, 66, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal("Create an independent copy for another build iteration."),
+                left + 24, 84, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Clone name"), left + 28, 106, LbUi.TEXT_MUTED);
+        LbUi.field(context, displayName, validation != null);
 
         if (submitting && controller.activityMessage() != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()), center, 216, 0xD8DEE9);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.activityMessage()),
+                    width / 2, 248, LbUi.TEXT_SECONDARY);
         } else if (validation != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation), center, 216, 0xFF7777);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
+                    width / 2, 248, LbUi.DANGER_BRIGHT);
         } else {
             context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal("A unique server folder is generated automatically."), center, 216, 0x7F8996);
+                    Text.literal("LazyBuilder generates a unique internal folder automatically."),
+                    width / 2, 248, LbUi.TEXT_MUTED);
         }
+
+        super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
