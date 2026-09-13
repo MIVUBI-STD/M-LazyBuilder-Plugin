@@ -50,6 +50,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Generate frontend lockfile
+        run: npm install --package-lock-only --ignore-scripts
       - name: Install frontend dependencies
         run: npm install
       - name: Typecheck Svelte frontend
@@ -58,6 +60,8 @@ jobs:
         run: npm run build:frontend
       - name: Generate Tauri icon assets
         run: npx tauri icon src-tauri/app-icon.svg
+      - name: Generate Rust lockfile
+        run: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
       - name: Cache Rust dependencies and target
         uses: actions/cache@v4
         with:
@@ -65,8 +69,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             EngineData/Frontend/RustApp/src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('EngineData/Frontend/RustApp/src-tauri/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('EngineData/Frontend/RustApp/src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Check Rust/Tauri backend
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Upload generated dependency locks
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-lockfiles
+          path: |
+            EngineData/Frontend/RustApp/package-lock.json
+            EngineData/Frontend/RustApp/src-tauri/Cargo.lock
+          if-no-files-found: error
