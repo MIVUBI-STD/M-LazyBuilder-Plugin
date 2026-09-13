@@ -57,7 +57,7 @@ public final class ClientMapSurfaceCache {
 
     private String scope = "";
     private Path scopeDirectory;
-    private long scopeGeneration;
+    private volatile long scopeGeneration;
     private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
 
     public void useScope(String scope, Path storageRoot) {
@@ -77,10 +77,9 @@ public final class ClientMapSurfaceCache {
         pending.clear();
         completedLoads.clear();
 
-        // Preserve map memory produced by the previous whole-scope format. The
-        // migration runs once and publishes regional files through the same
-        // ordered writer used for normal persistence.
-        if (scopeDirectory != null) migrateLegacySnapshot(storageRoot, normalized, scopeGeneration);
+        if (scopeDirectory != null) {
+            migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
+        }
     }
 
     /** Returns remembered terrain immediately and queues missing loaded terrain. */
@@ -153,12 +152,13 @@ public final class ClientMapSurfaceCache {
 
     /** Queues snapshots of all dirty resident regions without blocking rendering. */
     public void flushAsync() {
-        if (scopeDirectory == null) return;
+        Path directory = scopeDirectory;
+        if (directory == null) return;
         for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
             RegionData region = entry.getValue();
             if (!region.dirty || region.samples.isEmpty()) continue;
             region.dirty = false;
-            enqueueRegionWrite(scopeDirectory, entry.getKey(), new HashMap<>(region.samples));
+            enqueueRegionWrite(directory, entry.getKey(), new HashMap<>(region.samples));
         }
     }
 
@@ -171,14 +171,15 @@ public final class ClientMapSurfaceCache {
 
         RegionData created = new RegionData();
         regions.put(regionKey, created);
-        if (scheduleLoad && scopeDirectory != null) scheduleRegionLoad(regionKey, created, scopeGeneration);
+        Path directory = scopeDirectory;
+        if (scheduleLoad && directory != null) scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
         return created;
     }
 
-    private void scheduleRegionLoad(long regionKey, RegionData region, long generation) {
+    private void scheduleRegionLoad(Path directory, long regionKey, RegionData region, long generation) {
         if (region.loadScheduled) return;
         region.loadScheduled = true;
-        Path file = regionFile(scopeDirectory, regionKey);
+        Path file = regionFile(directory, regionKey);
         CompletableFuture.supplyAsync(() -> readRegion(file))
                 .thenAccept(samples -> completedLoads.add(new LoadedRegion(generation, regionKey, samples)));
     }
@@ -197,7 +198,6 @@ public final class ClientMapSurfaceCache {
                 region.loadScheduled = true;
                 regions.put(loaded.regionKey, region);
             }
-            // Live samples always win over stale disk data that completed later.
             for (Map.Entry<Integer, SurfaceSample> entry : loaded.samples.entrySet()) {
                 region.samples.putIfAbsent(entry.getKey(), entry.getValue());
             }
@@ -207,13 +207,14 @@ public final class ClientMapSurfaceCache {
 
     private void pruneRegions() {
         if (regions.size() <= MAX_LOADED_REGIONS) return;
+        Path directory = scopeDirectory;
         Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
         while (regions.size() > MAX_LOADED_REGIONS && iterator.hasNext()) {
             Map.Entry<Long, RegionData> eldest = iterator.next();
             RegionData region = eldest.getValue();
-            if (region.dirty && scopeDirectory != null && !region.samples.isEmpty()) {
+            if (region.dirty && directory != null && !region.samples.isEmpty()) {
                 region.dirty = false;
-                enqueueRegionWrite(scopeDirectory, eldest.getKey(), new HashMap<>(region.samples));
+                enqueueRegionWrite(directory, eldest.getKey(), new HashMap<>(region.samples));
             }
             iterator.remove();
         }
@@ -225,30 +226,43 @@ public final class ClientMapSurfaceCache {
         pending.add(key);
     }
 
-    private void enqueueRegionWrite(Path directory, long regionKey, Map<Integer, SurfaceSample> snapshot) {
+    private synchronized void enqueueRegionWrite(
+            Path directory,
+            long regionKey,
+            Map<Integer, SurfaceSample> snapshot
+    ) {
         Path destination = regionFile(directory, regionKey);
         writeTail = writeTail.handle((ignored, failure) -> null)
                 .thenRunAsync(() -> writeRegion(destination, snapshot));
     }
 
-    private void migrateLegacySnapshot(Path storageRoot, String normalizedScope, long generation) {
+    private void migrateLegacySnapshot(
+            Path storageRoot,
+            String normalizedScope,
+            Path targetDirectory,
+            long generation
+    ) {
         Path legacy = storageRoot.resolve(safeName(normalizedScope) + ".surface.gz");
         if (!Files.isRegularFile(legacy)) return;
-        Path migratedMarker = scopeDirectory.resolve(".legacy-v1-migrated");
+        Path migratedMarker = targetDirectory.resolve(".legacy-v1-migrated");
         if (Files.exists(migratedMarker)) return;
 
         CompletableFuture.runAsync(() -> {
             Map<Long, Map<Integer, SurfaceSample>> partitioned = readLegacySnapshot(legacy);
             if (partitioned.isEmpty() || generation != scopeGeneration) return;
             for (Map.Entry<Long, Map<Integer, SurfaceSample>> entry : partitioned.entrySet()) {
-                enqueueRegionWrite(scopeDirectory, entry.getKey(), entry.getValue());
+                enqueueRegionWrite(targetDirectory, entry.getKey(), entry.getValue());
             }
-            writeTail = writeTail.handle((ignored, failure) -> null).thenRunAsync(() -> {
-                try {
-                    Files.createDirectories(scopeDirectory);
-                    Files.writeString(migratedMarker, "v1\n");
-                } catch (IOException ignored) { }
-            });
+            enqueueMarkerWrite(targetDirectory, migratedMarker);
+        });
+    }
+
+    private synchronized void enqueueMarkerWrite(Path targetDirectory, Path marker) {
+        writeTail = writeTail.handle((ignored, failure) -> null).thenRunAsync(() -> {
+            try {
+                Files.createDirectories(targetDirectory);
+                Files.writeString(marker, "v1\n");
+            } catch (IOException ignored) { }
         });
     }
 
