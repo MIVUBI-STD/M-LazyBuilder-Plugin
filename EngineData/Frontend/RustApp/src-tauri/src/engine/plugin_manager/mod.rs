@@ -129,9 +129,6 @@ impl PluginManagerState {
 
         let current = &existing[0];
         let current_version = current.metadata.as_ref().expect("validated scan").version.clone();
-        let backup = rollback_backup_path(&workspace, &canonical_id);
-        publish_backup(&current.path, &backup)?;
-
         let target_dir = if current.enabled { plugins_directory(&workspace) } else { disabled_directory(&workspace) };
         fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
         let destination = target_dir.join(safe_jar_name(&incoming.name, &incoming.version));
@@ -142,6 +139,13 @@ impl PluginManagerState {
 
         let staged = destination.with_extension("jar.incoming");
         stage_copy(&source, &staged)?;
+
+        let backup = rollback_backup_path(&workspace, &canonical_id);
+        if let Err(error) = publish_backup(&current.path, &backup) {
+            let _ = fs::remove_file(&staged);
+            return Err(error);
+        }
+
         let update_result = if same_destination {
             replace_file(&staged, &destination)
         } else {
@@ -149,7 +153,9 @@ impl PluginManagerState {
         };
         if let Err(error) = update_result {
             let _ = fs::remove_file(&staged);
-            let _ = fs::remove_file(&destination);
+            if !same_destination {
+                let _ = fs::remove_file(&destination);
+            }
             let rollback = restore_from_backup(&backup, &current.path);
             return match rollback {
                 Ok(()) => Err(format!("Plugin update failed and previous JAR was restored: {error}")),
@@ -225,6 +231,52 @@ impl PluginManagerState {
         Ok(())
     }
 
+    pub fn remove_problem(&self, problem_id: &str, jar_file_name: &str) -> Result<(), String> {
+        let _guard = self.lock()?;
+        let workspace = workspace()?;
+        let requested = validate_jar_file_name(jar_file_name)?;
+        let expected_problem_id = problem_id_from_path(Path::new(&requested));
+        if normalize_id(problem_id) != normalize_id(&expected_problem_id) {
+            return Err("Problem plugin identity does not match the selected JAR.".into());
+        }
+        if looks_like_core_jar(&requested) {
+            return Err("LazyBuilder core modules are repaired automatically and cannot be removed through Plugin Manager.".into());
+        }
+
+        let candidates = [
+            plugins_directory(&workspace).join(&requested),
+            disabled_directory(&workspace).join(&requested),
+            legacy_disabled_directory(&workspace).join(&requested),
+        ];
+        let existing = candidates.into_iter().filter(|path| path.is_file()).collect::<Vec<_>>();
+        if existing.is_empty() {
+            return Ok(());
+        }
+        if existing.len() > 1 {
+            return Err("Multiple problem JARs share this filename. Resolve the duplicate files before cleanup.".into());
+        }
+
+        let source = &existing[0];
+        if read_metadata(source).is_ok() {
+            return Err("Selected JAR now contains valid plugin metadata and is no longer eligible for problem cleanup.".into());
+        }
+
+        let rollback = backup_directory(&workspace).join(format!(".{}.problem.rollback.jar", normalize_id(problem_id)));
+        publish_backup(source, &rollback)?;
+        if let Err(error) = fs::remove_file(source) {
+            let restore = restore_from_backup(&rollback, source);
+            let _ = fs::remove_file(&rollback);
+            return match restore {
+                Ok(()) => Err(format!("Could not remove invalid plugin JAR; previous file was restored: {error}")),
+                Err(rollback_error) => Err(format!(
+                    "Could not remove invalid plugin JAR: {error}; rollback also failed: {rollback_error}"
+                )),
+            };
+        }
+        let _ = fs::remove_file(rollback);
+        Ok(())
+    }
+
     pub fn resolve_duplicates(
         &self,
         plugin_id: &str,
@@ -235,21 +287,14 @@ impl PluginManagerState {
         let canonical_id = normalize_id(plugin_id);
         ensure_third_party_id(&canonical_id)?;
 
-        let requested = Path::new(keep_jar_file_name)
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| "Invalid plugin filename.".to_string())?;
-        if requested != keep_jar_file_name {
-            return Ok(failed_result(canonical_id, "Invalid plugin filename."));
-        }
-
+        let requested = validate_jar_file_name(keep_jar_file_name)?;
         let existing = find_all_by_id(&workspace, &canonical_id)?;
         if existing.len() < 2 {
             return Ok(failed_result(canonical_id, "No duplicate plugin JARs were found."));
         }
         let Some(keep_index) = existing.iter().position(|item| {
             item.path.file_name().and_then(|value| value.to_str())
-                .map(|value| value.eq_ignore_ascii_case(requested)).unwrap_or(false)
+                .map(|value| value.eq_ignore_ascii_case(&requested)).unwrap_or(false)
         }) else {
             return Ok(failed_result(canonical_id, "Selected JAR is not one of the duplicate candidates."));
         };
@@ -444,13 +489,38 @@ fn parse_paper_dependencies(value: Option<&serde_yaml::Value>) -> Vec<String> {
     match value {
         Some(serde_yaml::Value::Sequence(values)) => values.iter()
             .filter_map(|value| value.as_str()).map(normalize_id).collect(),
-        Some(serde_yaml::Value::Mapping(values)) => values.iter()
-            .filter_map(|(key, config)| {
-                let name = key.as_str()?;
-                if paper_dependency_required(config) { Some(normalize_id(name)) } else { None }
-            })
-            .collect(),
+        Some(serde_yaml::Value::Mapping(values)) => {
+            let has_scopes = values.keys().any(|key| {
+                key.as_str().map(|name| matches!(name.to_ascii_lowercase().as_str(), "bootstrap" | "server")) == Some(true)
+            });
+            if has_scopes {
+                let mut dependencies = Vec::new();
+                for (scope, entries) in values {
+                    let Some(scope_name) = scope.as_str() else { continue; };
+                    if matches!(scope_name.to_ascii_lowercase().as_str(), "bootstrap" | "server") {
+                        collect_dependency_mapping(entries, &mut dependencies);
+                    } else if paper_dependency_required(entries) {
+                        dependencies.push(normalize_id(scope_name));
+                    }
+                }
+                dependencies
+            } else {
+                let mut dependencies = Vec::new();
+                collect_dependency_mapping(value.expect("mapping value"), &mut dependencies);
+                dependencies
+            }
+        }
         _ => Vec::new(),
+    }
+}
+
+fn collect_dependency_mapping(value: &serde_yaml::Value, dependencies: &mut Vec<String>) {
+    let serde_yaml::Value::Mapping(values) = value else { return; };
+    for (key, config) in values {
+        let Some(name) = key.as_str() else { continue; };
+        if paper_dependency_required(config) {
+            dependencies.push(normalize_id(name));
+        }
     }
 }
 
@@ -597,6 +667,21 @@ fn safe_jar_name(name: &str, version: &str) -> String {
     format!("{}-{}.jar", safe(name), safe(version))
 }
 
+fn validate_jar_file_name(value: &str) -> Result<String, String> {
+    let path = Path::new(value);
+    let name = path.file_name().and_then(|value| value.to_str())
+        .ok_or_else(|| "Invalid plugin filename.".to_string())?;
+    if name != value || !name.to_ascii_lowercase().ends_with(".jar") {
+        return Err("Plugin operation accepts one JAR filename only.".into());
+    }
+    Ok(name.to_string())
+}
+
+fn looks_like_core_jar(file_name: &str) -> bool {
+    let value = file_name.to_ascii_lowercase();
+    value.starts_with("world-manager-") || value.starts_with("utilities-manager-")
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name().and_then(|value| value.to_str()).unwrap_or("unknown").to_string()
 }
@@ -719,4 +804,19 @@ fn success_result(plugin_id: String, message: impl Into<String>) -> PluginInstal
 }
 fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstallResult {
     PluginInstallResult { success: false, plugin_id, message: Some(message.into()), restart_required: false }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_paper_dependencies;
+    use serde_yaml::Value;
+
+    #[test]
+    fn parses_scoped_paper_dependencies_without_treating_scope_names_as_plugins() {
+        let value: Value = serde_yaml::from_str(
+            "bootstrap:\n  BootstrapDep:\n    required: true\nserver:\n  RuntimeDep:\n    required: true\n  OptionalDep:\n    required: false\n",
+        ).expect("valid yaml");
+        let dependencies = parse_paper_dependencies(Some(&value));
+        assert_eq!(dependencies, vec!["bootstrapdep", "runtimedep"]);
+    }
 }
