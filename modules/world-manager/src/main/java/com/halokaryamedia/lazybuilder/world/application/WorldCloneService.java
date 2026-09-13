@@ -52,9 +52,6 @@ public final class WorldCloneService {
         if (source.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Archived worlds must be restored before cloning: " + source.folderName());
         }
-        if (registry.findByFolderName(destinationFolder).isPresent()) {
-            throw new IllegalArgumentException("Destination world folder is already managed: " + destinationFolder);
-        }
 
         WorldRecord destination = new WorldRecord(
                 WorldId.create(),
@@ -66,13 +63,16 @@ public final class WorldCloneService {
                 source.defaultGameMode()
         );
 
-        WorldOperationCoordinator.Lease lease = operations.acquire(sourceId, WorldOperationType.CLONE);
-        boolean wasLoaded = runtimeStates.get(sourceId) == WorldRuntimeState.LOADED;
+        WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
+        WorldOperationCoordinator.Lease lease = null;
         try {
+            lease = operations.acquire(sourceId, WorldOperationType.CLONE);
+            boolean wasLoaded = runtimeStates.get(sourceId) == WorldRuntimeState.LOADED;
             runtimeService.unloadDuringOperation(sourceId);
-            return new CloneTask(UUID.randomUUID(), source, destination, wasLoaded, lease);
+            return new CloneTask(UUID.randomUUID(), source, destination, wasLoaded, lease, destinationReservation);
         } catch (RuntimeException exception) {
-            lease.close();
+            if (lease != null) lease.close();
+            destinationReservation.close();
             throw exception;
         }
     }
@@ -99,12 +99,8 @@ public final class WorldCloneService {
             task.committed = true;
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (stateInitialized) {
-                runtimeStates.remove(task.destination.id());
-            }
-            if (registered) {
-                registry.remove(task.destination.id());
-            }
+            if (stateInitialized) runtimeStates.remove(task.destination.id());
+            if (registered) registry.remove(task.destination.id());
             if (published) {
                 try {
                     files.deleteWorld(task.destination);
@@ -124,12 +120,11 @@ public final class WorldCloneService {
         }
     }
 
-    /** Main-thread phase: restore the source load state and release the operation lease. */
+    /** Main-thread phase: restore the source load state and release operation ownership. */
     public void finish(CloneTask task) {
         Objects.requireNonNull(task, "task");
-        if (task.closed) {
-            return;
-        }
+        if (task.closed) return;
+
         RuntimeException failure = null;
         if (task.wasLoaded) {
             try {
@@ -139,9 +134,7 @@ public final class WorldCloneService {
             }
         }
         task.close();
-        if (failure != null) {
-            throw failure;
-        }
+        if (failure != null) throw failure;
     }
 
     public static final class CloneTask {
@@ -150,6 +143,7 @@ public final class WorldCloneService {
         private final WorldRecord destination;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
+        private final WorldRegistry.FolderReservation destinationReservation;
         private boolean committed;
         private boolean closed;
 
@@ -158,13 +152,15 @@ public final class WorldCloneService {
                 WorldRecord source,
                 WorldRecord destination,
                 boolean wasLoaded,
-                WorldOperationCoordinator.Lease lease
+                WorldOperationCoordinator.Lease lease,
+                WorldRegistry.FolderReservation destinationReservation
         ) {
             this.operationId = operationId;
             this.source = source;
             this.destination = destination;
             this.wasLoaded = wasLoaded;
             this.lease = lease;
+            this.destinationReservation = destinationReservation;
         }
 
         public WorldRecord source() { return source; }
@@ -172,16 +168,25 @@ public final class WorldCloneService {
         public boolean committed() { return committed; }
 
         private void requireOpen() {
-            if (closed) {
-                throw new IllegalStateException("Clone task is already closed");
-            }
+            if (closed) throw new IllegalStateException("Clone task is already closed");
         }
 
         private void close() {
-            if (!closed) {
+            if (closed) return;
+            RuntimeException failure = null;
+            try {
                 lease.close();
-                closed = true;
+            } catch (RuntimeException exception) {
+                failure = exception;
             }
+            try {
+                destinationReservation.close();
+            } catch (RuntimeException exception) {
+                if (failure == null) failure = exception;
+                else failure.addSuppressed(exception);
+            }
+            closed = true;
+            if (failure != null) throw failure;
         }
     }
 }
