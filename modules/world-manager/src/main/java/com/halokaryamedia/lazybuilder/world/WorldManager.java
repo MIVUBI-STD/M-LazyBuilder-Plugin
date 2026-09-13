@@ -47,7 +47,6 @@ import com.halokaryamedia.lazybuilder.world.transfer.TransferWireProtocol;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -57,6 +56,7 @@ import java.util.logging.Level;
 /** Canonical server-side owner for World Manager runtime coordination. */
 public final class WorldManager {
     private final JavaPlugin plugin;
+    private final WorldStorageLayout storageLayout;
     private final ConversionRuntimePolicy conversionRuntimePolicy;
     private final ConversionRuntimeStore conversionRuntimeStore;
     private final ConversionJobCoordinator conversionJobCoordinator;
@@ -89,6 +89,12 @@ public final class WorldManager {
 
     public WorldManager(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.storageLayout = WorldStorageLayout.resolve(
+                plugin.getServer().getWorldContainer().toPath(),
+                plugin.getDataFolder().toPath(),
+                System.getenv(WorldStorageLayout.WORKSPACE_ENV)
+        );
+        this.storageLayout.ensureDirectories();
         this.conversionRuntimePolicy = ConversionRuntimePolicy.defaults();
         this.buildReadyPolicy = BuildReadyPolicy.defaults();
         this.worldRegistry = new WorldRegistry();
@@ -96,24 +102,17 @@ public final class WorldManager {
         this.worldOperationCoordinator = new WorldOperationCoordinator();
         this.conversionJobCoordinator = new ConversionJobCoordinator();
 
-        Path worldDataRoot = plugin.getDataFolder().toPath().resolve("world");
-        Path registryPath = worldDataRoot.resolve("registry.yml");
-        Path conversionRoot = worldDataRoot.resolve("runtime").resolve("converter");
-        Path importsRoot = worldDataRoot.resolve("imports");
-        Path exportsRoot = worldDataRoot.resolve("exports");
-        Path backupsRoot = worldDataRoot.resolve("backups");
-        Path transferRoot = worldDataRoot.resolve("transfer");
-        this.registryPersistence = new YamlWorldRegistryPersistence(registryPath);
+        this.registryPersistence = new YamlWorldRegistryPersistence(storageLayout.registryPath());
         this.worldFileRepository = new LocalWorldFileRepository(
-                plugin.getServer().getWorldContainer().toPath(),
-                worldDataRoot.resolve("work")
+                storageLayout.worldsRoot(),
+                storageLayout.workRoot()
         );
-        this.worldBackupStore = new LocalWorldBackupStore(backupsRoot);
-        this.worldExportArtifactStore = new LocalWorldExportArtifactStore(exportsRoot);
+        this.worldBackupStore = new LocalWorldBackupStore(storageLayout.backupsRoot());
+        this.worldExportArtifactStore = new LocalWorldExportArtifactStore(storageLayout.exportsRoot());
         long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 200_000L));
         long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 65_536L));
         this.worldImportArtifactStore = new LocalWorldImportArtifactStore(
-                importsRoot, maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
+                storageLayout.importsRoot(), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L)
         );
 
         int configuredTransferChunkBytes = plugin.getConfig().getInt(
@@ -134,10 +133,10 @@ public final class WorldManager {
                 Duration.ofSeconds(transferIdleSeconds)
         );
         this.transferSessionService = new TransferSessionService(
-                importsRoot, exportsRoot, transferRoot, transferPolicy
+                storageLayout.importsRoot(), storageLayout.exportsRoot(), storageLayout.transferRoot(), transferPolicy
         );
 
-        this.conversionRuntimeStore = new LocalConversionRuntimeStore(conversionRoot);
+        this.conversionRuntimeStore = new LocalConversionRuntimeStore(storageLayout.conversionRoot());
         int conversionHeapMb = plugin.getConfig().getInt("world-manager.conversion.max-heap-mb", 3072);
         long conversionTimeoutMinutes = plugin.getConfig().getLong("world-manager.conversion.timeout-minutes", 60L);
         this.converterAdapter = new ChunkerCliAdapter(
@@ -154,7 +153,7 @@ public final class WorldManager {
                 releaseSource,
                 releaseSource,
                 converterAdapter,
-                conversionRoot.resolve("downloads"),
+                storageLayout.conversionRoot().resolve("downloads"),
                 Clock.systemUTC()
         );
 
@@ -235,13 +234,16 @@ public final class WorldManager {
                 }
             }
         }
-        plugin.getLogger().fine("World Manager ready with " + worldRegistry.size() + " managed worlds.");
+        plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
+                + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
+                + " storage layout.");
     }
 
     public void stop() {
         // Transfer/conversion/file workers are request-bound; there is no idle process to stop.
     }
 
+    public WorldStorageLayout storageLayout() { return storageLayout; }
     public ConversionRuntimePolicy conversionRuntimePolicy() { return conversionRuntimePolicy; }
     public ConversionRuntimeStore conversionRuntimeStore() { return conversionRuntimeStore; }
     public ConversionJobCoordinator conversionJobCoordinator() { return conversionJobCoordinator; }
