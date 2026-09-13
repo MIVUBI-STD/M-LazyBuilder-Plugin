@@ -136,23 +136,33 @@ pub fn create(parent: &Path, name: &str) -> Result<WorkspaceEntry, String> {
 }
 
 pub fn open(root: &Path) -> Result<WorkspaceEntry, String> {
+    open_with_display_name(root, None)
+}
+
+pub fn open_with_display_name(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEntry, String> {
     let root = root.canonicalize().map_err(|error| format!("Could not resolve server workspace: {error}"))?;
     if !root.is_dir() {
         return Err("Selected workspace is not a directory".into());
     }
+    let requested_name = requested_name.map(validate_display_name).transpose()?;
 
     let name = match read_manifest(&root)? {
         Some(mut manifest) => {
             validate_manifest(&manifest)?;
+            if let Some(name) = requested_name.as_ref() {
+                manifest.name = name.clone();
+            }
             manifest.last_opened_unix_seconds = now_unix_seconds();
             write_manifest(&root, manifest.clone())?;
             manifest.name
         }
         None if looks_like_legacy_lazybuilder_workspace(&root) => {
-            let name = root.file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("LazyBuilder Server")
-                .to_string();
+            let name = requested_name.unwrap_or_else(|| {
+                root.file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("LazyBuilder Server")
+                    .to_string()
+            });
             let id = workspace_id(&root.display().to_string());
             write_manifest(&root, WorkspaceManifest {
                 schema_version: WORKSPACE_SCHEMA_VERSION,
@@ -218,8 +228,6 @@ pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
     let core_modules_ready = world_manager_ready && utilities_manager_ready;
     let eula_accepted = read_eula(&root)?;
 
-    // Managed Java provisioning is intentionally owned by the next runtime-provider phase.
-    // Until then, system/explicit Java is validated by Server-Manager preflight.
     let java_ready = true;
     let ready = workspace_created && java_ready && paper_ready && core_modules_ready && config_ready && eula_accepted;
     let next_step = if !workspace_created {
@@ -462,6 +470,20 @@ fn validate_workspace_name(value: &str) -> Result<String, String> {
     }
     if trimmed.ends_with('.') || trimmed.ends_with(' ') {
         return Err("Server name may not end with a dot or space".into());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn validate_display_name(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("Workspace display name is required".into());
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("Workspace display name contains control characters".into());
+    }
+    if trimmed.chars().count() > 96 {
+        return Err("Workspace display name is too long".into());
     }
     Ok(trimmed.to_string())
 }
