@@ -8,13 +8,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /** Client presentation state for the general World Manager surface. */
 public final class ClientWorldController {
+    private final Consumer<String> completedExportHandler;
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
     private String lastError;
     private long revision;
+
+    public ClientWorldController(Consumer<String> completedExportHandler) {
+        this.completedExportHandler = Objects.requireNonNull(completedExportHandler, "completedExportHandler");
+    }
 
     public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
     public void create(String folderName, String displayName, String kind) {
@@ -77,8 +83,8 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.ExportReady export -> {
                 lastError = null;
                 revision++;
-                LazyBuilderClientNetworking.notifyPlayer(
-                        "Export ready: " + export.artifactName());
+                LazyBuilderClientNetworking.notifyPlayer("Export ready: " + export.artifactName());
+                completedExportHandler.accept(export.artifactName());
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 lastError = error.message();
