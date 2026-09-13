@@ -7,7 +7,6 @@ import com.halokaryamedia.lazybuilder.world.application.WorldBackupService;
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
-import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldSpawnControl;
@@ -40,6 +39,7 @@ public final class PaperLocalControlServer {
     public static final String TOKEN_ENV = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
     public static final String PORT_ENV = "LAZYBUILDER_WORLD_CONTROL_PORT";
     public static final int DEFAULT_PORT = 17842;
+    public static final int PROTOCOL_VERSION = 2;
 
     private static final Gson GSON = new Gson();
     private static final int MAX_JSON_BODY_BYTES = 256 * 1024;
@@ -49,7 +49,6 @@ public final class PaperLocalControlServer {
     private final JavaPlugin plugin;
     private final PaperMainThreadDispatcher mainThread;
     private final WorldRegistry registry;
-    private final WorldRuntimeService runtime;
     private final WorldCreationService creation;
     private final WorldSettingsService settings;
     private final WorldLifecycleService lifecycle;
@@ -65,7 +64,6 @@ public final class PaperLocalControlServer {
     public PaperLocalControlServer(
             JavaPlugin plugin,
             WorldRegistry registry,
-            WorldRuntimeService runtime,
             WorldCreationService creation,
             WorldSettingsService settings,
             WorldLifecycleService lifecycle,
@@ -78,7 +76,6 @@ public final class PaperLocalControlServer {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.mainThread = new PaperMainThreadDispatcher(plugin);
         this.registry = Objects.requireNonNull(registry, "registry");
-        this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.creation = Objects.requireNonNull(creation, "creation");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
@@ -132,7 +129,7 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
             return;
         }
-        sendJson(exchange, 200, new StatusResponse("ready", 1));
+        sendJson(exchange, 200, new StatusResponse("ready", PROTOCOL_VERSION));
     }
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
@@ -155,11 +152,10 @@ public final class PaperLocalControlServer {
                 sendError(exchange, 400, "invalid_world_id", "World id is invalid.");
                 return;
             }
-            switch (parts[1]) {
-                case "load" -> handleLoad(exchange, worldId);
-                case "unload" -> handleUnload(exchange, worldId);
-                case "settings" -> handleSettings(exchange, worldId);
-                default -> sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
+            if ("settings".equals(parts[1])) {
+                handleSettings(exchange, worldId);
+            } else {
+                sendError(exchange, 404, "not_found", "Unknown World-Manager route.");
             }
         } catch (IllegalArgumentException exception) {
             sendError(exchange, 400, "invalid_request", exception.getMessage());
@@ -250,7 +246,7 @@ public final class PaperLocalControlServer {
 
     private void handleTaskStart(HttpExchange exchange, String relative) throws Exception {
         switch (relative) {
-            case "/clone" -> handleCloneTaskStart(exchange);
+            case "/duplicate" -> handleDuplicateTaskStart(exchange);
             case "/backup" -> handleBackupTaskStart(exchange);
             case "/export" -> handleExportTaskStart(exchange);
             case "/import" -> handleImportTaskStart(exchange);
@@ -282,18 +278,18 @@ public final class PaperLocalControlServer {
         sendJson(exchange, 202, taskResponse(queued));
     }
 
-    private void handleCloneTaskStart(HttpExchange exchange) throws Exception {
-        CloneTaskStartRequest request = readJson(exchange, CloneTaskStartRequest.class);
+    private void handleDuplicateTaskStart(HttpExchange exchange) throws Exception {
+        DuplicateTaskStartRequest request = readJson(exchange, DuplicateTaskStartRequest.class);
         WorldId sourceId = requireManagedWorldId(request.worldId());
         String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
         String displayName = request.displayName() == null || request.displayName().isBlank()
                 ? destinationFolder
                 : request.displayName().trim();
         WorldTaskSnapshot queued = taskRunner.submit(
-                WorldTaskType.CLONE,
+                WorldTaskType.DUPLICATE,
                 sourceId,
-                "Clone queued.",
-                progress -> heavyOperations.cloneWorld(
+                "Duplicate queued.",
+                progress -> heavyOperations.duplicateWorld(
                         sourceId, destinationFolder, displayName, progress::update).id().toString()
         );
         sendJson(exchange, 202, taskResponse(queued));
@@ -346,13 +342,13 @@ public final class PaperLocalControlServer {
     private void handleDeleteTaskStart(HttpExchange exchange) throws Exception {
         DeleteTaskStartRequest request = readJson(exchange, DeleteTaskStartRequest.class);
         WorldId worldId = requireManagedWorldId(request.worldId());
-        String confirmation = requireNonBlank(request.typedFolderName(), "typedFolderName");
+        String confirmation = requireNonBlank(request.typedDisplayName(), "typedDisplayName");
         WorldTaskSnapshot queued = taskRunner.submit(
                 WorldTaskType.DELETE,
                 worldId,
                 "Delete queued.",
                 progress -> heavyOperations.deleteWorld(
-                        worldId, confirmation, progress::update).folderName()
+                        worldId, confirmation, progress::update).displayName()
         );
         sendJson(exchange, 202, taskResponse(queued));
     }
@@ -408,7 +404,7 @@ public final class PaperLocalControlServer {
     private void handleWorldCollection(HttpExchange exchange) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
             sendJson(exchange, 200, new WorldListResponse(mainThread.call(() -> registry.all().stream()
-                    .map(this::summary).toList())));
+                    .map(PaperLocalControlServer::summary).toList())));
             return;
         }
         if ("POST".equals(exchange.getRequestMethod())) {
@@ -427,22 +423,6 @@ public final class PaperLocalControlServer {
         sendError(exchange, 405, "method_not_allowed", "Only GET and POST are supported.");
     }
 
-    private void handleLoad(HttpExchange exchange, WorldId worldId) throws Exception {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
-            return;
-        }
-        sendJson(exchange, 200, summary(mainThread.call(() -> runtime.load(worldId))));
-    }
-
-    private void handleUnload(HttpExchange exchange, WorldId worldId) throws Exception {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
-            return;
-        }
-        sendJson(exchange, 200, summary(mainThread.call(() -> runtime.unload(worldId))));
-    }
-
     private void handleSettings(HttpExchange exchange, WorldId worldId) throws Exception {
         if ("GET".equals(exchange.getRequestMethod())) {
             sendJson(exchange, 200, settingsResponse(mainThread.call(() -> settings.snapshot(worldId))));
@@ -457,7 +437,6 @@ public final class PaperLocalControlServer {
     }
 
     private WorldSettingsSnapshot applySettings(WorldId worldId, UpdateWorldSettingsRequest request) {
-        if (request.autoLoad() != null) settings.setAutoLoad(worldId, request.autoLoad());
         if (request.defaultGameMode() != null) settings.setDefaultGameMode(
                 worldId, WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase()));
         if (request.timeOfDayTicks() != null) settings.setTime(worldId, request.timeOfDayTicks());
@@ -472,10 +451,10 @@ public final class PaperLocalControlServer {
         return settings.snapshot(worldId);
     }
 
-    private ManagedWorldResponse summary(WorldRecord world) {
+    private static ManagedWorldResponse summary(WorldRecord world) {
         return new ManagedWorldResponse(
-                world.id().toString(), world.displayName(), world.kind().name(), world.lifecycle().name(),
-                runtime.state(world.id()).name(), world.autoLoad(), world.defaultGameMode());
+                world.id().toString(), world.displayName(), world.kind().name(),
+                world.lifecycle().name(), world.defaultGameMode());
     }
 
     private static TaskResponse taskResponse(WorldTaskSnapshot snapshot) {
@@ -495,7 +474,7 @@ public final class PaperLocalControlServer {
 
     private static WorldSettingsResponse settingsResponse(WorldSettingsSnapshot snapshot) {
         return new WorldSettingsResponse(
-                snapshot.world().id().toString(), snapshot.world().displayName(), snapshot.world().autoLoad(),
+                snapshot.world().id().toString(), snapshot.world().displayName(),
                 snapshot.defaultGameMode().name(), snapshot.runtime().timeOfDayTicks(),
                 snapshot.runtime().weather().name(), snapshot.runtime().spawning().naturalSpawning(),
                 gameRuleBoolean(snapshot, "doDaylightCycle"), gameRuleBoolean(snapshot, "doWeatherCycle"));
@@ -512,9 +491,7 @@ public final class PaperLocalControlServer {
         if (body.length > MAX_JSON_BODY_BYTES) {
             throw new IllegalArgumentException("Request body exceeds the local control JSON limit.");
         }
-        if (body.length == 0) {
-            throw new IllegalArgumentException("Request body is required.");
-        }
+        if (body.length == 0) throw new IllegalArgumentException("Request body is required.");
         try {
             T payload = GSON.fromJson(new String(body, StandardCharsets.UTF_8), type);
             if (payload == null) throw new IllegalArgumentException("Request body is required.");
@@ -584,19 +561,19 @@ public final class PaperLocalControlServer {
     private record WorldListResponse(List<ManagedWorldResponse> worlds) {}
     private record TaskListResponse(List<TaskResponse> tasks) {}
     private record ManagedWorldResponse(String id, String displayName, String kind, String lifecycle,
-                                        String runtimeState, boolean autoLoad, String defaultGameMode) {}
+                                        String defaultGameMode) {}
     private record TaskResponse(String taskId, String type, String worldId, String state, int progressPercent,
                                 String message, String result, String error, String createdAt, String updatedAt) {}
     private record TaskStartRequest(String worldId) {}
-    private record CloneTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
+    private record DuplicateTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
     private record ImportTaskStartRequest(String artifactName, String destinationFolder, String displayName) {}
-    private record DeleteTaskStartRequest(String worldId, String typedFolderName) {}
+    private record DeleteTaskStartRequest(String worldId, String typedDisplayName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
-    private record UpdateWorldSettingsRequest(Boolean autoLoad, String defaultGameMode, Long timeOfDayTicks,
+    private record UpdateWorldSettingsRequest(String defaultGameMode, Long timeOfDayTicks,
                                                String weather, Boolean naturalSpawning, Boolean daylightCycle,
                                                Boolean weatherCycle) {}
-    private record WorldSettingsResponse(String id, String displayName, boolean autoLoad, String defaultGameMode,
+    private record WorldSettingsResponse(String id, String displayName, String defaultGameMode,
                                          long timeOfDayTicks, String weather, boolean naturalSpawning,
                                          boolean daylightCycle, boolean weatherCycle) {}
 }
