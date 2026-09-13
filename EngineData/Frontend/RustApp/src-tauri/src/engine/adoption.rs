@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdoptionPlan {
     pub root: String,
@@ -217,7 +217,7 @@ fn move_recorded(source: &Path, destination: &Path, moved: &mut Vec<(PathBuf, Pa
     if !source.exists() { return Ok(()); }
     if let Some(parent) = destination.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
     fs::rename(source, destination).map_err(|error| format!("Could not move {}: {error}", source.display()))?;
-    moved.push((source.to_path_buf(), destination.to_path_buf()));
+    moved.push((source.to_path_buf(), destination.to_path_buf());
     Ok(())
 }
 
