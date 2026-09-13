@@ -1,5 +1,6 @@
 use crate::engine::workspace_registry::{self, WorkspaceEntry};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,7 @@ pub struct AdoptionPlan {
     pub paper_jar: String,
     pub worlds: Vec<String>,
     pub server_entries: Vec<String>,
+    pub legacy_plugins_to_disable: Vec<String>,
     pub preserved_entries: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -32,11 +34,12 @@ pub fn analyze(root: &Path) -> Result<AdoptionPlan, String> {
     let paper = detect_paper_jar(&root)?;
     let worlds = detect_worlds(&root)?;
     let server_entries = detect_server_entries(&root, &paper, &worlds)?;
+    let legacy_plugins_to_disable = detect_replaced_plugins(&root.join("plugins"))?;
     if !root.join("server.properties").is_file() && worlds.is_empty() {
         return Err("The selected folder does not look like an initialized Paper server.".into());
     }
 
-    let recognized = server_entries.iter().chain(worlds.iter()).cloned().collect::<std::collections::HashSet<_>>();
+    let recognized = server_entries.iter().chain(worlds.iter()).cloned().collect::<HashSet<_>>();
     let preserved_entries = fs::read_dir(&root)
         .map_err(|error| error.to_string())?
         .filter_map(Result::ok)
@@ -49,6 +52,12 @@ pub fn analyze(root: &Path) -> Result<AdoptionPlan, String> {
         "Stop the existing Minecraft server before adoption. LazyBuilder will not terminate an independently launched Paper process.".into(),
         "Only recognized Paper runtime entries and detected world folders will be moved. Unknown files are preserved in place.".into(),
     ];
+    if !legacy_plugins_to_disable.is_empty() {
+        warnings.push(format!(
+            "{} legacy plugin(s) replaced by LazyBuilder will be moved to tools/lazybuilder/disabled-plugins instead of deleted.",
+            legacy_plugins_to_disable.len()
+        ));
+    }
     if !preserved_entries.is_empty() {
         warnings.push(format!("{} unrecognized root item(s) will remain untouched.", preserved_entries.len()));
     }
@@ -59,6 +68,7 @@ pub fn analyze(root: &Path) -> Result<AdoptionPlan, String> {
         paper_jar: paper,
         worlds,
         server_entries,
+        legacy_plugins_to_disable,
         preserved_entries,
         warnings,
     })
@@ -69,17 +79,21 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
     let root = PathBuf::from(&plan.root);
     let server = root.join("server");
     let worlds_root = root.join("world-system").join("worlds");
+    let disabled_plugins = root.join("tools").join("lazybuilder").join("disabled-plugins");
     fs::create_dir_all(&server).map_err(|error| error.to_string())?;
     fs::create_dir_all(&worlds_root).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&disabled_plugins).map_err(|error| error.to_string())?;
 
-    // Preflight every destination before moving anything, so an existing canonical
-    // destination can never be overwritten by adoption.
+    // Preflight every destination before moving anything, so adoption never overwrites.
     for world in &plan.worlds {
         ensure_destination_free(&worlds_root.join(world))?;
     }
     for entry in &plan.server_entries {
         let destination = if entry == &plan.paper_jar { server.join("paper.jar") } else { server.join(entry) };
         ensure_destination_free(&destination)?;
+    }
+    for plugin in &plan.legacy_plugins_to_disable {
+        ensure_destination_free(&disabled_plugins.join(plugin))?;
     }
 
     let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -91,6 +105,16 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
             let destination = if entry == &plan.paper_jar { server.join("paper.jar") } else { server.join(entry) };
             move_recorded(&root.join(entry), &destination, &mut moved)?;
         }
+
+        // The plugins directory is now canonical under server/plugins. Disable only
+        // legacy features that LazyBuilder explicitly replaces; all external build tools stay active.
+        for plugin in &plan.legacy_plugins_to_disable {
+            move_recorded(
+                &server.join("plugins").join(plugin),
+                &disabled_plugins.join(plugin),
+                &mut moved,
+            )?;
+        }
         Ok(())
     })();
 
@@ -99,8 +123,6 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
         return Err(format!("Server adoption failed and moved entries were rolled back: {error}"));
     }
 
-    // workspace_registry::open is the single authority that creates canonical
-    // LazyBuilder metadata and registers/activates the workspace.
     let entry = match workspace_registry::open(&root) {
         Ok(entry) => entry,
         Err(error) => {
@@ -109,8 +131,7 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
         }
     };
 
-    // A user-provided display name is intentionally registry/UI metadata only for v1;
-    // filesystem names are never changed during adoption.
+    // A custom display name can be added later without renaming the filesystem root.
     let _ = requested_name;
     Ok(entry)
 }
@@ -163,6 +184,26 @@ fn detect_server_entries(root: &Path, paper: &str, worlds: &[String]) -> Result<
     entries.sort();
     entries.dedup();
     Ok(entries)
+}
+
+fn detect_replaced_plugins(plugins: &Path) -> Result<Vec<String>, String> {
+    if !plugins.is_dir() { return Ok(Vec::new()); }
+    let mut result = Vec::new();
+    for entry in fs::read_dir(plugins).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry.file_type().map_err(|error| error.to_string())?.is_file() { continue; }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else { continue; };
+        let normalized = name.to_ascii_lowercase().replace(['_', ' '], "-");
+        let replaced = normalized.ends_with(".jar") && (
+            normalized.contains("multiverse-core")
+                || normalized.contains("voidworld")
+                || normalized.contains("buildersutilities")
+                || normalized.contains("builders-utilities")
+        );
+        if replaced { result.push(name); }
+    }
+    result.sort();
+    Ok(result)
 }
 
 fn ensure_destination_free(path: &Path) -> Result<(), String> {
