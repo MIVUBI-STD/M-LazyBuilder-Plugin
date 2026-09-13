@@ -1,5 +1,4 @@
 use crate::commands;
-use crate::commands::server_metrics::ServerMetricsState;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
 
@@ -8,7 +7,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
-        .manage(ServerMetricsState::default())
         .manage(PluginManagerState::default())
         .invoke_handler(tauri::generate_handler![
             commands::server_manager::server_preflight,
@@ -16,7 +14,6 @@ pub fn run() {
             commands::server_manager::server_start,
             commands::server_manager::server_stop,
             commands::server_manager::server_restart,
-            commands::server_metrics::server_process_metrics,
             commands::server_tools::server_log_tail,
             commands::server_tools::server_recover_detached,
             commands::resource_settings::server_resource_profile,
