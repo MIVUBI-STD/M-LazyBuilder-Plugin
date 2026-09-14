@@ -1,3 +1,4 @@
+use crate::engine::java_runtime;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -92,7 +93,11 @@ pub fn current() -> Result<Option<WorkspaceEntry>, String> {
 
 pub fn list() -> Result<Vec<WorkspaceEntry>, String> {
     let mut registry = load_registry()?;
+    let before = registry.servers.len();
     registry.servers.retain(|entry| Path::new(&entry.path).is_dir());
+    if registry.servers.len() != before {
+        save_registry(&registry)?;
+    }
     registry.servers.sort_by(|left, right| right.last_opened_unix_seconds.cmp(&left.last_opened_unix_seconds));
     Ok(registry.servers)
 }
@@ -218,11 +223,13 @@ pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
     let utilities_manager_ready = contains_plugin_prefix(&plugins, "Utilities-Manager-")?;
     let core_modules_ready = world_manager_ready && utilities_manager_ready;
     let eula_accepted = read_eula(&root)?;
+    let java_ready = java_runtime::managed_java_ready();
 
-    let java_ready = true;
     let ready = workspace_created && java_ready && paper_ready && core_modules_ready && config_ready && eula_accepted;
     let next_step = if !workspace_created {
         "Create workspace metadata"
+    } else if !java_ready {
+        "Install Java 21 runtime"
     } else if !paper_ready {
         "Provision Paper 1.21.4"
     } else if !core_modules_ready {
@@ -272,9 +279,12 @@ fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, Stri
             last_opened_unix_seconds: now,
         });
     }
+    let result = registry.servers.iter().find(|entry| entry.id == id)
+        .cloned()
+        .ok_or_else(|| "Registered server workspace could not be recovered".to_string())?;
     save_registry(&registry)?;
     set_active_memory(Some(canonical))?;
-    Ok(registry.servers.into_iter().find(|entry| entry.id == id).expect("registered workspace missing"))
+    Ok(result)
 }
 
 fn active_workspace_memory() -> Result<Option<PathBuf>, String> {
