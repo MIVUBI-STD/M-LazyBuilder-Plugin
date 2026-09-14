@@ -4,7 +4,7 @@ package com.halokaryamedia.lazybuilder.utility;
  * Persisted Utility Manager preferences.
  *
  * Defaults preserve familiar Minecraft behavior. Passive conveniences that do not
- * introduce a new workflow may default on; visual/connection behavior remains opt-in.
+ * introduce a new workflow may default on; visual/automatic behavior remains opt-in.
  */
 public record UtilityPreferences(
         boolean borderlessWindow,
@@ -12,6 +12,7 @@ public record UtilityPreferences(
         boolean extendedChatHistory,
         boolean keepChatDraft,
         boolean chatTimestamps,
+        boolean reconnectButton,
         boolean autoReconnect,
         boolean organizeScreenshotsByProject
 ) {
@@ -22,6 +23,7 @@ public record UtilityPreferences(
                 true,
                 true,
                 false,
+                true,
                 false,
                 false
         );
