@@ -21,6 +21,42 @@ World Manager is a builder workspace, not a server administration panel. Runtime
 
 Xaero World Map 1.21.4 remains the interaction-quality reference for fullscreen map behavior. LazyBuilder follows the familiar mental model without copying Xaero source, assets, icons, branding, or proprietary implementation.
 
+## Native LazyBuilder area-selection language
+
+Area selection is implemented entirely inside LazyBuilder. The UX intentionally follows familiar Minecraft chunk-selection conventions so builders who already know advanced world-conversion tools do not need to learn a new spatial model, but LazyBuilder does not embed, invoke, import, copy, or depend on another application's UI, source, assets, branding, selection component, or runtime for this feature.
+
+Canonical ownership:
+
+```text
+LazyBuilder WorldMapScreen
+├── chunk grid presentation
+├── region boundary presentation
+├── selection rectangle
+├── move / edge-resize / corner-resize interaction
+├── chunk snapping
+├── coordinate + size HUD
+└── transient selected-area state
+```
+
+The selection UI is therefore a first-party LazyBuilder world feature. External conversion tooling remains isolated behind the server conversion adapter and has no ownership of map interaction or area-selection presentation.
+
+The familiar spatial language is:
+
+```text
+thin grid       = 16×16 block chunk boundaries
+stronger grid   = 32×32 chunk / 512×512 block region boundaries
+highlight       = selected export area
+inside drag     = move selection
+edge drag       = resize one axis
+corner drag     = resize two axes
+empty-map drag  = pan map
+wheel           = zoom
+ESC             = cancel selection
+ENTER           = continue to export review
+```
+
+Chunk grid visibility is zoom-dependent so the map remains readable at wide scales. Selected-area state is transient, bound to the current managed world, and cleared when the world changes or the operation finishes.
+
 ## Map behavior
 
 Required behavior:
@@ -35,7 +71,7 @@ right click           contextual actions
 ESC                    close context, then selection, then map
 hover                  live X/Z coordinates
 player marker          directional marker
-area selection         visible rectangle + explicit Export Area action
+area selection         editable chunk-aligned rectangle + explicit Continue
 ```
 
 LazyBuilder-specific map actions are:
