@@ -112,10 +112,9 @@ public final class ClientMapSurfaceCache {
         SurfaceSample sw = sample(world, blockX - offset, blockZ + offset);
         SurfaceSample se = sample(world, blockX + offset, blockZ + offset);
 
-        SurfaceSample[] footprint = {center, nw, ne, sw, se};
-        int explored = exploredCount(footprint);
+        int explored = explored(center) + explored(nw) + explored(ne) + explored(sw) + explored(se);
         if (explored < 3) return center.explored() ? center : SurfaceSample.UNEXPLORED;
-        return blend(footprint);
+        return blendFive(center, nw, ne, sw, se);
     }
 
     /** Samples bounded live terrain and also merges bounded async region loads. */
@@ -373,32 +372,65 @@ public final class ClientMapSurfaceCache {
         return localZ * REGION_SIZE + localX;
     }
 
-    private static int exploredCount(SurfaceSample... values) {
-        int count = 0;
-        for (SurfaceSample value : values) {
-            if (value != null && value.explored()) count++;
-        }
-        return count;
+    private static int explored(SurfaceSample value) {
+        return value != null && value.explored() ? 1 : 0;
     }
 
-    private static SurfaceSample blend(SurfaceSample... values) {
+    private static SurfaceSample blendFive(
+            SurfaceSample center,
+            SurfaceSample nw,
+            SurfaceSample ne,
+            SurfaceSample sw,
+            SurfaceSample se
+    ) {
         long red = 0;
         long green = 0;
         long blue = 0;
         long height = 0;
         int count = 0;
 
-        for (SurfaceSample value : values) {
-            if (value == null || !value.explored()) continue;
-            int color = value.color();
+        if (center != null && center.explored()) {
+            int color = center.color();
             red += (color >>> 16) & 0xFF;
             green += (color >>> 8) & 0xFF;
             blue += color & 0xFF;
-            height += value.height();
+            height += center.height();
             count++;
         }
-        if (count == 0) return SurfaceSample.UNEXPLORED;
+        if (nw != null && nw.explored()) {
+            int color = nw.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += nw.height();
+            count++;
+        }
+        if (ne != null && ne.explored()) {
+            int color = ne.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += ne.height();
+            count++;
+        }
+        if (sw != null && sw.explored()) {
+            int color = sw.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += sw.height();
+            count++;
+        }
+        if (se != null && se.explored()) {
+            int color = se.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += se.height();
+            count++;
+        }
 
+        if (count == 0) return SurfaceSample.UNEXPLORED;
         int color = 0xFF000000
                 | ((int) (red / count) << 16)
                 | ((int) (green / count) << 8)
