@@ -127,21 +127,41 @@ export type ManagedWorldSummary = {
   displayName: string;
   kind: string;
   lifecycle: string;
-  runtimeState: string;
-  autoLoad: boolean;
   defaultGameMode: string;
 };
 
-export type CreateWorldRequest = { folderName: string; displayName: string; kind: 'FLAT' | 'VOID' };
-export type CloneWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
-export type ExportWorldRequest = { worldId: string; targetFormat: string; artifactName: string };
-export type ImportWorldRequest = { artifactName: string; destinationFolder: string; displayName: string };
-export type DeleteWorldRequest = { worldId: string; typedDisplayName: string };
+export type CreateWorldRequest = {
+  folderName: string;
+  displayName: string;
+  kind: 'FLAT' | 'VOID';
+};
+
+export type DuplicateWorldRequest = {
+  worldId: string;
+  destinationFolder: string;
+  displayName: string;
+};
+
+export type ExportWorldRequest = {
+  worldId: string;
+  targetFormat: string;
+  artifactName: string;
+};
+
+export type ImportWorldRequest = {
+  artifactName: string;
+  destinationFolder: string;
+  displayName: string;
+};
+
+export type DeleteWorldRequest = {
+  worldId: string;
+  typedDisplayName: string;
+};
 
 export type WorldSettingsSnapshot = {
   id: string;
   displayName: string;
-  autoLoad: boolean;
   defaultGameMode: string;
   timeOfDayTicks: number;
   weather: string;
@@ -151,7 +171,6 @@ export type WorldSettingsSnapshot = {
 };
 
 export type UpdateWorldSettingsRequest = Partial<{
-  autoLoad: boolean;
   defaultGameMode: string;
   timeOfDayTicks: number;
   weather: string;
@@ -212,8 +231,6 @@ export const runtimeApi = {
   worlds: {
     list: () => invoke<ManagedWorldSummary[]>('world_list'),
     create: (request: CreateWorldRequest) => invoke<ManagedWorldSummary>('world_create', { request }),
-    load: (worldId: string) => invoke<ManagedWorldSummary>('world_load', { worldId }),
-    unload: (worldId: string) => invoke<ManagedWorldSummary>('world_unload', { worldId }),
     settings: (worldId: string) => invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
     updateSettings: (worldId: string, request: UpdateWorldSettingsRequest) => invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
     tasks: () => invoke<WorldTaskSnapshot[]>('world_task_list'),
@@ -221,7 +238,7 @@ export const runtimeApi = {
     archive: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
     restore: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId }),
     backup: (worldId: string) => invoke<WorldTaskSnapshot>('world_backup', { worldId }),
-    clone: (request: CloneWorldRequest) => invoke<WorldTaskSnapshot>('world_clone', { request }),
+    duplicate: (request: DuplicateWorldRequest) => invoke<WorldTaskSnapshot>('world_duplicate', { request }),
     export: (request: ExportWorldRequest) => invoke<WorldTaskSnapshot>('world_export', { request }),
     delete: (request: DeleteWorldRequest) => invoke<WorldTaskSnapshot>('world_delete', { request }),
     pickImport: () => invoke<string | null>('world_import_pick'),
