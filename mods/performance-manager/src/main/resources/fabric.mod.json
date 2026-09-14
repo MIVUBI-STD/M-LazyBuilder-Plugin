@@ -3,7 +3,7 @@
   "id": "lazybuilder_performance_manager",
   "version": "${version}",
   "name": "LazyBuilder Performance Manager",
-  "description": "Performance status and coordination for the LazyBuilder client without replacing specialist optimization mods.",
+  "description": "First-party LazyBuilder client performance runtime for frame stability, resource policy, workload pressure, and lightweight diagnostics.",
   "authors": ["halokaryamedia-source"],
   "environment": "client",
   "entrypoints": {
