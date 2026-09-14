@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
+import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
@@ -25,6 +26,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Thin Paper adapter for the Fabric World Manager control surface. */
 public final class PaperWorldControlPayloadAdapter implements PluginMessageListener {
@@ -39,10 +41,14 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldLifecycleService lifecycle;
     private final WorldSettingsService settingsService;
     private final WorldExportService exportService;
+    private final ConversionUpdateService conversionUpdates;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
     /** At most one heavy result can be pending per player because heavyInFlight is single-flight. */
     private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
+    /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
+    private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
     private volatile boolean started;
     private volatile boolean stopping;
 
@@ -54,6 +60,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             WorldLifecycleService lifecycle,
             WorldSettingsService settingsService,
             WorldExportService exportService,
+            ConversionUpdateService conversionUpdates,
             WorldHeavyOperationOrchestrator heavyOperations
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -63,6 +70,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.settingsService = Objects.requireNonNull(settingsService, "settingsService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
+        this.conversionUpdates = Objects.requireNonNull(conversionUpdates, "conversionUpdates");
         this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
     }
 
@@ -82,6 +90,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         started = false;
         heavyInFlight.clear();
         pendingHeavyCompletion.clear();
+        formatWaiters.clear();
+        formatRefreshInFlight.set(false);
     }
 
     @Override
@@ -97,6 +107,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
+        if (request instanceof WorldControlWireProtocol.GetExportFormats) {
+            handleExportFormats(player);
+            return;
+        }
         if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) {
             handleDuplicate(player, duplicate);
             return;
@@ -136,10 +150,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         player.hasPermission(MANAGE_PERMISSION),
                         player.hasPermission(TELEPORT_PERMISSION));
             }
-            case WorldControlWireProtocol.GetExportFormats ignored -> {
-                requireManage(player);
-                yield new WorldControlWireProtocol.ExportFormats(exportService.supportedFormats());
-            }
+            case WorldControlWireProtocol.GetExportFormats ignored ->
+                    throw new IllegalStateException("Export formats must use async capability path");
             case WorldControlWireProtocol.CreateWorld create -> {
                 requireManage(player);
                 WorldRecord world = creation.create(create.folderName(), create.displayName(),
@@ -194,6 +206,67 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             case WorldControlWireProtocol.ExportWorld ignored -> throw new IllegalStateException("Export must use async path");
             case WorldControlWireProtocol.ImportWorld ignored -> throw new IllegalStateException("Import must use async path");
         };
+    }
+
+    private void handleExportFormats(Player player) {
+        try {
+            requireManage(player);
+        } catch (RuntimeException exception) {
+            send(player, WorldControlWireProtocol.error(exception.getMessage()));
+            return;
+        }
+
+        // Keep the UI responsive: publish the verified local catalog immediately.
+        send(player, encode(new WorldControlWireProtocol.ExportFormats(exportService.supportedFormats())));
+        formatWaiters.add(player.getUniqueId());
+        if (!formatRefreshInFlight.compareAndSet(false, true)) return;
+
+        try {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                Exception failure = null;
+                try {
+                    conversionUpdates.checkIfDue();
+                } catch (Exception exception) {
+                    failure = exception;
+                }
+
+                if (stopping || !started) {
+                    formatWaiters.clear();
+                    formatRefreshInFlight.set(false);
+                    return;
+                }
+
+                List<String> refreshed = exportService.supportedFormats();
+                Exception finalFailure = failure;
+                try {
+                    plugin.getServer().getScheduler().runTask(plugin,
+                            () -> completeExportFormatRefresh(refreshed, finalFailure));
+                } catch (RuntimeException scheduleFailure) {
+                    formatWaiters.clear();
+                    formatRefreshInFlight.set(false);
+                }
+            });
+        } catch (RuntimeException scheduleFailure) {
+            formatWaiters.clear();
+            formatRefreshInFlight.set(false);
+        }
+    }
+
+    private void completeExportFormatRefresh(List<String> formats, Exception failure) {
+        try {
+            if (stopping || !started) return;
+            byte[] payload = encode(new WorldControlWireProtocol.ExportFormats(formats));
+            for (UUID owner : Set.copyOf(formatWaiters)) {
+                Player online = plugin.getServer().getPlayer(owner);
+                if (online != null && online.isOnline()) send(online, payload);
+            }
+            if (failure != null && formats.size() <= 1) {
+                plugin.getLogger().fine("Optional export capability refresh unavailable: " + failure.getMessage());
+            }
+        } finally {
+            formatWaiters.clear();
+            formatRefreshInFlight.set(false);
+        }
     }
 
     private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
