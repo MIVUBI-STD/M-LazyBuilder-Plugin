@@ -73,13 +73,17 @@ ACTIVE / ARCHIVED durable lifecycle only
 Duplicate terminology
 permission-aware World Manager UI
 Map Action V2 current-world push / clear
-World Control V3 capability-aware list
+World Control V5 capability + import-review contract
 unified Import / Export workspace
+server-authoritative Import inspection before final Import
+explicit cleanup for abandoned reviewed Import uploads
 client + server transfer storage preflight
 heavy-operation reconnect completion recovery
 editable chunk-aligned Map Export Area selection
 server-side full-chunk canonicalization
 ```
+
+Import review cleanup is event-driven. Failed inspection deletes an unusable upload immediately. Closing the review, switching away from Import, or choosing another file sends an explicit discard intent; Paper only accepts it for the requesting player's currently tracked reviewed artifact. Final Import remains a separate authoritative validation/publish path.
 
 The area-selection surface is first-party LazyBuilder UI. Its chunk grid, region grid, selection rectangle, move/resize handles, coordinate HUD, snapping, and review flow do not depend on an external converter UI/runtime. External conversion software remains isolated behind the backend conversion adapter only when an actual format conversion is required.
 
@@ -120,6 +124,8 @@ Static invariants checked in this pass:
 - the server never trusts a custom client to provide already-aligned bounds;
 - selected-area export uses the same WorldExportService path as whole-world export;
 - area completion has bounded reconnect recovery;
+- import inspection is metadata/review only and final Import revalidates the archive;
+- abandoned review cleanup is scoped to the requesting player's tracked reviewed artifact;
 - transfer sessions themselves remain fail-closed and disconnect-cleaned;
 - no manual Load/Unload or `autoLoad` product path was reintroduced;
 - no standalone Import/Export/Clone screen path was reintroduced;
@@ -138,7 +144,7 @@ The final validation sequence for the current World Manager pass is:
 
 ```text
 1. current Local compile/test
-2. Paper + Fabric protocol compatibility (World V3 / Map V2)
+2. Paper + Fabric protocol compatibility (World V5 / Map V2)
 3. M → Map → Worlds navigation across GUI scales
 4. current-world push through LazyBuilder teleport, command, portal and unmanaged world
 5. Pinned / Recent / Search / Archived behavior
@@ -159,11 +165,17 @@ The final validation sequence for the current World Manager pass is:
     - Edit Selection round trip
 13. area export server full-chunk canonicalization
 14. Import .zip / .mcworld
+    - upload → inspection → review → explicit Import
+    - source edition/version presentation
+    - Choose Different File resets old suggestion
+    - close/tab-switch/choose-different removes abandoned reviewed upload
+    - failed final Import remains retryable without reupload when safe
 15. native file dialogs, large transfer, checksum and disk-space failures
 16. disconnect/reconnect
     - whole-world heavy completion recovery
     - selected-area export completion recovery
     - transfer-session cleanup/restart behavior
+    - import-review artifact behavior when disconnecting during inspection/review
 17. shutdown/restart cleanup and persistence
 ```
 
