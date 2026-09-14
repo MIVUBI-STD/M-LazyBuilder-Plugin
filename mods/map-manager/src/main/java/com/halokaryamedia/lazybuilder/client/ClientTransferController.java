@@ -20,6 +20,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /**
@@ -33,6 +35,12 @@ import java.util.function.Consumer;
 public final class ClientTransferController {
     private static final Consumer<String> NO_UPLOAD_CALLBACK = ignored -> { };
     private static final Runnable NO_CANCEL_CALLBACK = () -> { };
+
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "LazyBuilder-Transfer-IO");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private Upload upload;
     private Download download;
@@ -115,6 +123,12 @@ public final class ClientTransferController {
         setStatus(TransferStatus.idle());
     }
 
+    /** Releases transfer-local resources and prevents any new transfer I/O during client shutdown. */
+    public void shutdownIo() {
+        reset();
+        ioExecutor.shutdown();
+    }
+
     public TransferStatus status() {
         return status;
     }
@@ -144,7 +158,7 @@ public final class ClientTransferController {
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
-        }).whenComplete((prepared, failure) -> clientExecute(() -> {
+        }, ioExecutor).whenComplete((prepared, failure) -> clientExecute(() -> {
             if (failure != null) {
                 uploadFinished = NO_UPLOAD_CALLBACK;
                 uploadCancelled = NO_CANCEL_CALLBACK;
@@ -227,7 +241,7 @@ public final class ClientTransferController {
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
-        }).whenComplete((batch, failure) -> clientExecute(() -> {
+        }, ioExecutor).whenComplete((batch, failure) -> clientExecute(() -> {
             if (upload != state) return;
             state.batchReadInFlight = false;
             if (failure != null) {
@@ -319,7 +333,7 @@ public final class ClientTransferController {
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
-        }).whenComplete((ignored, failure) -> clientExecute(() -> {
+        }, ioExecutor).whenComplete((ignored, failure) -> clientExecute(() -> {
             if (download != state) return;
             state.pendingWrites--;
             if (failure != null) {
@@ -363,7 +377,7 @@ public final class ClientTransferController {
             } catch (IOException exception) {
                 throw new RuntimeException(exception);
             }
-        }).whenComplete((ignored, failure) -> clientExecute(() -> {
+        }, ioExecutor).whenComplete((ignored, failure) -> clientExecute(() -> {
             if (download != state) return;
             if (failure != null) {
                 cleanupLocalDownload();
