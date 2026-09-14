@@ -121,7 +121,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             case WorldControlWireProtocol.ListWorlds ignored -> {
                 requireAnyWorldPermission(player);
                 List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream().map(this::summary).toList();
-                yield new WorldControlWireProtocol.WorldList(worlds);
+                yield new WorldControlWireProtocol.WorldList(
+                        worlds,
+                        player.hasPermission(MANAGE_PERMISSION),
+                        player.hasPermission(TELEPORT_PERMISSION));
             }
             case WorldControlWireProtocol.GetExportFormats ignored -> {
                 requireManage(player);
