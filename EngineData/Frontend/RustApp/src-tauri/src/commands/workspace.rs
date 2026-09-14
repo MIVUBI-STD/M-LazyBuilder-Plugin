@@ -97,7 +97,7 @@ pub fn workspace_activate(
     state: State<'_, ServerManagerState>,
     id: String,
 ) -> Result<WorkspaceEntry, String> {
-    ensure_switch_allowed(&state)?;
+    ensure_activation_allowed(&state, &id)?;
     workspace_registry::activate(&id)
 }
 
@@ -107,8 +107,16 @@ pub fn workspace_close(state: State<'_, ServerManagerState>) -> Result<(), Strin
     workspace_registry::deactivate()
 }
 
+fn ensure_activation_allowed(state: &ServerManagerState, target_id: &str) -> Result<(), String> {
+    server_process_guard::ensure_no_running_paper_except(Some(target_id))?;
+    if workspace_registry::current()?.is_none() {
+        return Ok(());
+    }
+    ensure_runtime_update_allowed(state)
+}
+
 fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
-    server_process_guard::ensure_no_running_paper_outside_active()?;
+    server_process_guard::ensure_no_running_paper_except(None)?;
     if workspace_registry::current()?.is_none() {
         return Ok(());
     }
