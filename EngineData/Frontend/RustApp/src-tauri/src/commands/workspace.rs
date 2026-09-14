@@ -91,13 +91,18 @@ pub fn workspace_adoption_pick(
 }
 
 #[tauri::command]
-pub fn workspace_adopt(
-    state: State<'_, ServerManagerState>,
+pub async fn workspace_adopt(
+    app: AppHandle,
     root_path: String,
     name: Option<String>,
 ) -> Result<WorkspaceEntry, String> {
-    ensure_switch_allowed(&state)?;
-    adoption::execute(&PathBuf::from(root_path), name.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        ensure_switch_allowed(&state)?;
+        adoption::execute(&PathBuf::from(root_path), name.as_deref())
+    })
+    .await
+    .map_err(|error| format!("Server adoption task failed: {error}"))?
 }
 
 #[tauri::command]
