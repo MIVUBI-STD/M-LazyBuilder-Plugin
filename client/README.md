@@ -25,3 +25,5 @@ client/
 Cross-manager architecture verification is documented in `docs/04-system/client-cross-manager-audit-lock.md`.
 
 The post-C4 builder review is documented in `docs/04-system/build-utility-overlap-audit.md`. Its first-pass decision is intentionally conservative: do not create a generic Builder Utilities tool layer and do not duplicate Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, or other specialist editing workflows. Any future builder-facing feature must first demonstrate a narrow non-tool workflow gap and fit one of the existing Manager ownership boundaries.
+
+Session/project-context review is documented in `docs/04-system/session-project-context-audit.md`. Map Manager already has server-authoritative current managed-world context through the existing map protocol/controller path, so no additional Session Manager, Project Context service, persistent project identity, or permanent world HUD should be introduced. Future review/collaboration features must reuse that existing world context only when a concrete handoff flow requires it.
