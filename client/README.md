@@ -29,7 +29,7 @@ The post-C4 builder review is documented in `docs/04-system/build-utility-overla
 The completed non-tool reviews are:
 
 - `docs/04-system/session-project-context-audit.md` — reuse existing authoritative managed-world context; no Session/Project Manager or permanent context HUD;
-- `docs/04-system/review-collaboration-audit.md` — the only approved narrow collaboration candidate is on-demand `Copy Review Reference` in Map Manager;
+- `docs/04-system/review-collaboration-audit.md` — `Copy Review Reference` is implemented in Map Manager as an on-demand world/location/dimension handoff with no protocol change or cross-Manager dependency;
 - `docs/04-system/reliability-recovery-audit.md` — no Recovery Manager, duplicate autosave/backup/snapshot/rollback, retry daemon, or resumable-transfer subsystem; keep failure context actionable and operation-local.
 
 Any future builder-facing feature must begin from a concrete workflow problem and pass a fresh ownership/overlap review. The existing three Managers remain the complete LazyBuilder client architecture.
