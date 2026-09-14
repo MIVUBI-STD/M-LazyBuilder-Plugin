@@ -32,6 +32,10 @@ public final class WorldLifecycleService {
     public synchronized WorldRecord archive(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
         if (current.lifecycle() == WorldLifecycle.ARCHIVED) return current;
+        if (runtimeService.hasPlayers(worldId)) {
+            throw new IllegalStateException("Cannot archive " + current.displayName()
+                    + " while builders are inside the world");
+        }
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.ARCHIVE)) {
             boolean wasLoaded = runtimeService.isLoaded(worldId);
@@ -56,7 +60,7 @@ public final class WorldLifecycleService {
                         exception.addSuppressed(reloadFailure);
                     }
                 }
-                throw new IllegalStateException("Failed to archive world: " + current.folderName(), exception);
+                throw new IllegalStateException("Failed to archive world: " + current.displayName(), exception);
             }
         }
     }
@@ -78,7 +82,7 @@ public final class WorldLifecycleService {
                 } catch (IOException | RuntimeException rollbackFailure) {
                     exception.addSuppressed(rollbackFailure);
                 }
-                throw new IllegalStateException("Failed to restore archived world: " + current.folderName(), exception);
+                throw new IllegalStateException("Failed to restore archived world: " + current.displayName(), exception);
             }
         }
     }
