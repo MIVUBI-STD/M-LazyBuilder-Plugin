@@ -11,11 +11,16 @@ import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
+import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
@@ -30,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Thin Paper adapter for the Fabric World Manager control surface. */
-public final class PaperWorldControlPayloadAdapter implements PluginMessageListener {
+public final class PaperWorldControlPayloadAdapter implements PluginMessageListener, Listener {
     public static final String CHANNEL = "lazybuilder:world";
     public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
     public static final String TELEPORT_PERMISSION = "lazybuilder.world.teleport";
@@ -50,6 +55,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
     /** One inspected upload is owned by each player until import succeeds or the review is discarded. */
     private final Map<UUID, String> reviewedImportArtifacts = new ConcurrentHashMap<>();
+    /** Inspection completion is not reconnect-resumable: an offline owner causes the uploaded review artifact to be discarded. */
+    private final Set<UUID> inspectionInFlight = ConcurrentHashMap.newKeySet();
     /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
     private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
@@ -85,20 +92,35 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         stopping = false;
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
         started = true;
     }
 
     public void stop() {
         if (!started) return;
         stopping = true;
+        HandlerList.unregisterAll(this);
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
         started = false;
         heavyInFlight.clear();
         pendingHeavyCompletion.clear();
         reviewedImportArtifacts.clear();
+        inspectionInFlight.clear();
         formatWaiters.clear();
         formatRefreshInFlight.set(false);
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        if (!started || stopping) return;
+        UUID owner = event.getPlayer().getUniqueId();
+        formatWaiters.remove(owner);
+        if (inspectionInFlight.contains(owner)) return;
+        String reviewed = reviewedImportArtifacts.get(owner);
+        if (reviewed != null && !heavyInFlight.contains(owner)) {
+            discardReviewedArtifact(owner, reviewed);
+        }
     }
 
     @Override
@@ -294,15 +316,82 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (previous != null && !previous.equals(request.artifactName())) {
             discardReviewedArtifact(owner, previous);
         }
-        scheduleHeavy(
-                player,
-                () -> importService.inspect(request.artifactName()),
-                result -> {
-                    reviewedImportArtifacts.put(owner, result.artifactName());
-                    return encode(new WorldControlWireProtocol.ImportInspection(
-                            result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName()));
+        inspectionInFlight.add(owner);
+        scheduleImportInspection(player, request.artifactName());
+    }
+
+    private void scheduleImportInspection(Player player, String artifactName) {
+        UUID owner = player.getUniqueId();
+        try {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                WorldImportArtifactStore.ImportInspection result = null;
+                Exception failure = null;
+                try {
+                    result = importService.inspect(artifactName);
+                } catch (Exception exception) {
+                    failure = exception;
                 }
-        );
+
+                if (stopping || !started) {
+                    inspectionInFlight.remove(owner);
+                    heavyInFlight.remove(owner);
+                    return;
+                }
+
+                WorldImportArtifactStore.ImportInspection finalResult = result;
+                Exception finalFailure = failure;
+                try {
+                    plugin.getServer().getScheduler().runTask(plugin,
+                            () -> completeImportInspection(owner, finalResult, finalFailure));
+                } catch (RuntimeException scheduleFailure) {
+                    inspectionInFlight.remove(owner);
+                    heavyInFlight.remove(owner);
+                }
+            });
+        } catch (RuntimeException scheduleFailure) {
+            inspectionInFlight.remove(owner);
+            heavyInFlight.remove(owner);
+            if (started && !stopping && player.isOnline()) {
+                send(player, WorldControlWireProtocol.error("World Manager is shutting down"));
+            }
+        }
+    }
+
+    private void completeImportInspection(
+            UUID owner,
+            WorldImportArtifactStore.ImportInspection result,
+            Exception failure
+    ) {
+        try {
+            if (stopping || !started) return;
+            Player online = plugin.getServer().getPlayer(owner);
+            if (failure != null) {
+                if (online != null && online.isOnline()) {
+                    send(online, WorldControlWireProtocol.error(failure.getMessage()));
+                }
+                return;
+            }
+            if (result == null) return;
+            if (online == null || !online.isOnline()) {
+                discardInspectionResult(owner, result.artifactName());
+                return;
+            }
+            reviewedImportArtifacts.put(owner, result.artifactName());
+            send(online, encode(new WorldControlWireProtocol.ImportInspection(
+                    result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName())));
+        } finally {
+            inspectionInFlight.remove(owner);
+            heavyInFlight.remove(owner);
+        }
+    }
+
+    private void discardInspectionResult(UUID owner, String artifactName) {
+        try {
+            importService.discard(artifactName);
+        } catch (RuntimeException exception) {
+            plugin.getLogger().warning("Could not discard disconnected import inspection artifact for " + owner + ": "
+                    + exception.getMessage());
+        }
     }
 
     private void handleDiscardImport(Player player, WorldControlWireProtocol.DiscardImport request) {
