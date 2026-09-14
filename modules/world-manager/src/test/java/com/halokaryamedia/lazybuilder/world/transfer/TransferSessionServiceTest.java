@@ -47,6 +47,10 @@ class TransferSessionServiceTest {
 
         assertEquals(imports.resolve("world.zip").toAbsolutePath().normalize(), published);
         assertArrayEquals(content, Files.readAllBytes(published));
+        assertTrue(service.ownsCompletedUpload(owner, "world.zip"));
+        assertFalse(service.ownsCompletedUpload(UUID.randomUUID(), "world.zip"));
+        service.releaseCompletedUpload(owner, "world.zip");
+        assertFalse(service.ownsCompletedUpload(owner, "world.zip"));
         assertEquals(0, service.activeUploads());
         assertFalse(Files.exists(transfer.resolve(descriptor.sessionId() + ".upload.part")));
     }
@@ -64,6 +68,7 @@ class TransferSessionServiceTest {
         assertThrows(java.io.IOException.class, () -> service.finishUpload(owner, descriptor.sessionId()));
         assertEquals(0, service.activeUploads());
         assertFalse(Files.exists(tempDir.resolve("imports/bad.mcworld")));
+        assertFalse(service.ownsCompletedUpload(owner, "bad.mcworld"));
     }
 
     @Test
