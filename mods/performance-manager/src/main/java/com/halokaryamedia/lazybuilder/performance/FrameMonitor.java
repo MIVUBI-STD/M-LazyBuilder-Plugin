@@ -15,6 +15,7 @@ public final class FrameMonitor {
     private int sampleCount;
     private int cursor;
     private double rollingTotalMs;
+    private double currentFrameMs;
     private double worstRecentMs;
     private int badSamples;
     private int severeSamples;
@@ -46,6 +47,7 @@ public final class FrameMonitor {
     void recordFrameTimeMs(double frameTimeMs) {
         if (!Double.isFinite(frameTimeMs) || frameTimeMs <= 0.0D) return;
 
+        currentFrameMs = frameTimeMs;
         double replaced = frameTimes[cursor];
         if (sampleCount < WINDOW_SIZE) {
             sampleCount++;
@@ -64,6 +66,10 @@ public final class FrameMonitor {
         }
 
         updatePressure(frameTimeMs);
+    }
+
+    public double currentFrameTimeMs() {
+        return currentFrameMs;
     }
 
     public double averageFrameTimeMs() {
