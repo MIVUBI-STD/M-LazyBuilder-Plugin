@@ -12,12 +12,14 @@ This document covers only client-side Fabric responsibilities. Build-specific he
 
 ```text
 LazyBuilder Client Suite
-├── Map Manager
-├── Utility Manager
-└── Performance Manager
+├── Map Manager              -> 1 Fabric mod / 1 JAR
+├── Utility Manager          -> 1 Fabric mod / 1 JAR
+└── Performance Manager      -> 1 Fabric mod / 1 JAR
 ```
 
-Each manager is a distinct client responsibility. Features must have exactly one owner.
+Each manager is exactly one deployable Fabric mod. Internal identifiers such as Fabric `mod id` and Gradle artifact names are implementation metadata for that same mod; they are not additional plugins/mods and must not be presented to users as separate components.
+
+Each manager owns one responsibility. Features must have exactly one owner.
 
 ### Map Manager
 
@@ -35,12 +37,17 @@ Map Manager does **not** own generic client conveniences, renderer optimization,
 
 The current `client/fabric` implementation is the source to be migrated/renamed into Map Manager. The current mod identity `lazybuilder_client` / `LazyBuilder Client` is therefore transitional.
 
-Target identity:
+User-facing component:
 
 ```text
-Display name: LazyBuilder Map Manager
-Mod id:       lazybuilder_map_manager
-Artifact:     lazybuilder-map-manager
+LazyBuilder Map Manager
+```
+
+Implementation metadata for this same single mod:
+
+```text
+Fabric mod id: lazybuilder_map_manager
+Build artifact: lazybuilder-map-manager.jar
 ```
 
 The rename must be performed as a controlled migration rather than a blind package rename because the current client also owns shared UI/bootstrap classes and World-Manager protocol integration.
@@ -72,15 +79,22 @@ Rules:
 - Utility Manager must not create a parallel inventory, block browser, command workflow, build HUD, camera tool, or editing system
 - visual/behavior-changing features should be opt-in unless they are invisible compatibility improvements
 
-Target identity:
+User-facing component:
 
 ```text
-Display name: LazyBuilder Utility Manager
-Mod id:       lazybuilder_utility_manager
-Artifact:     lazybuilder-utility-manager
+LazyBuilder Utility Manager
 ```
 
-Note: this is a **Fabric client manager** and is distinct from the existing Paper `Utilities-Manager`. Runtime and artifact naming must always make that distinction explicit in documentation and build output.
+Implementation metadata for this same single mod:
+
+```text
+Fabric mod id: lazybuilder_utility_manager
+Build artifact: lazybuilder-utility-manager.jar
+```
+
+This is one Fabric mod, not three components. The mod id and JAR name are only technical identifiers.
+
+Note: this is a **Fabric client manager** and is distinct from the existing Paper `Utilities-Manager`. Runtime naming must make that distinction explicit in technical documentation when ambiguity is possible.
 
 ### Performance Manager
 
@@ -108,13 +122,20 @@ The following remain external foundations unless a future architecture review ex
 
 Performance Manager may detect and coordinate these mods, but it does not copy their source or replace their algorithms.
 
-Target identity:
+User-facing component:
 
 ```text
-Display name: LazyBuilder Performance Manager
-Mod id:       lazybuilder_performance_manager
-Artifact:     lazybuilder-performance-manager
+LazyBuilder Performance Manager
 ```
+
+Implementation metadata for this same single mod:
+
+```text
+Fabric mod id: lazybuilder_performance_manager
+Build artifact: lazybuilder-performance-manager.jar
+```
+
+This is one Fabric mod and produces one Manager artifact. The internal mod id is not an additional plugin.
 
 ## External build-tool boundary
 
@@ -144,30 +165,31 @@ The following categories are therefore deferred from LazyBuilder client implemen
 
 ## Ownership rules
 
-1. **Map Manager = world/map workflow.**
-2. **Utility Manager = client convenience and usability.**
-3. **Performance Manager = resource/performance coordination.**
-4. **Axiom/external tools = building and world editing.**
-5. Vanilla behavior stays authoritative where it already provides a familiar workflow.
-6. Do not add a shortcut when a setting, context action, or existing vanilla interaction is sufficient.
-7. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods; link/integrate only where useful.
-8. Shared services such as notifications must have one implementation and may be consumed by multiple managers through a small stable client contract.
-9. No manager imports another manager's implementation packages.
-10. Build-specific utilities remain parked until Map, Utility, and Performance boundaries are stable.
+1. **One Manager = one Fabric mod = one output JAR.**
+2. **Map Manager = world/map workflow.**
+3. **Utility Manager = client convenience and usability.**
+4. **Performance Manager = resource/performance coordination.**
+5. **Axiom/external tools = building and world editing.**
+6. Vanilla behavior stays authoritative where it already provides a familiar workflow.
+7. Do not add a shortcut when a setting, context action, or existing vanilla interaction is sufficient.
+8. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods; link/integrate only where useful.
+9. Shared services such as notifications must have one implementation and may be consumed by multiple managers through a small stable client contract.
+10. No manager imports another manager's implementation packages.
+11. Build-specific utilities remain parked until Map, Utility, and Performance boundaries are stable.
 
 ## Target repository shape
 
-The current `client/fabric` project is a single Fabric mod. The target is a small client suite with independent source boundaries while keeping common contracts minimal.
-
-Preferred eventual layout:
+The current `client/fabric` project is a single Fabric mod. The target is a small client suite with three independently deployable Fabric mods, one per Manager.
 
 ```text
 client/
-├── map-manager/
-├── utility-manager/
-├── performance-manager/
+├── map-manager/             -> lazybuilder-map-manager.jar
+├── utility-manager/         -> lazybuilder-utility-manager.jar
+├── performance-manager/     -> lazybuilder-performance-manager.jar
 └── README.md
 ```
+
+There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, profiles, notifications, or map subfeatures. They remain internal packages/modules inside their owning Manager.
 
 Shared protocol types that are genuinely consumed by Paper and Fabric remain in the existing versioned protocol ownership model. A new generic shared client implementation tree must not be created merely for convenience.
 
@@ -179,26 +201,31 @@ If the three Fabric managers need a tiny shared client contract (for example not
 
 - inventory the current `client/fabric` classes by ownership
 - keep all existing world/map behavior intact
-- rename artifact/display/mod identity from generic LazyBuilder Client to Map Manager
+- rename the single existing Fabric mod from generic LazyBuilder Client to Map Manager
+- produce one `lazybuilder-map-manager.jar`
 - move only classes that are proven to belong to another manager; do not refactor for cosmetic reasons
 - keep protocol compatibility unchanged during the rename
 
 ### Phase C2 — Utility Manager scaffold
 
-- create independent Fabric module
+- create one independent Fabric mod
+- produce one `lazybuilder-utility-manager.jar`
 - establish configuration/persistence foundation
-- implement only approved non-tool conveniences
+- implement only approved non-tool conveniences as internal features
 - add no mandatory default keybinds
 
 ### Phase C3 — Performance Manager scaffold
 
-- create independent Fabric module
+- create one independent Fabric mod
+- produce one `lazybuilder-performance-manager.jar`
 - implement capability detection and monitoring first
 - add background FPS behavior and profiles only after baseline detection is stable
 - treat external optimization mods as optional capabilities
 
 ### Phase C4 — Cross-manager verification
 
+- verify each Manager produces exactly one Fabric mod artifact
+- verify no subfeature becomes an unnecessary standalone mod
 - verify independent build boundaries
 - verify no duplicate semantic ownership
 - verify managers work when installed independently where their feature set allows it
@@ -215,8 +242,8 @@ Generic-looking classes such as `LazyBuilderClient`, `LazyBuilderClientUi`, `LbU
 
 The repository already contains a Paper `Utilities-Manager`. To avoid ambiguity:
 
-- documentation should say **Fabric Utility Manager** when runtime matters
-- documentation should say **Paper Utilities-Manager** for the server plugin
-- artifact and mod IDs remain runtime-specific and unambiguous
+- the user-facing Fabric mod is simply **LazyBuilder Utility Manager**
+- technical documentation may say **Fabric Utility Manager** when runtime distinction is necessary
+- technical documentation should say **Paper Utilities-Manager** for the server plugin
 
 Do not rename the existing Paper Utilities-Manager as part of this client migration.
