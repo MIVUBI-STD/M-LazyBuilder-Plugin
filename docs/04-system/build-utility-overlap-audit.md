@@ -113,6 +113,25 @@ Map Manager already has server-authoritative current managed-world state through
 
 The term `project` must not become a new Fabric identity concept unless a first-class project domain is defined separately. Current client authority is the managed world.
 
+## Review / collaboration decision
+
+The review/collaboration audit is complete in `review-collaboration-audit.md`.
+
+Do not create an in-game issue tracker, notes database, persistent review-marker system, live collaboration protocol, saved review camera system, or automatic media-upload workflow.
+
+One narrow feature survives the overlap/value review:
+
+```text
+Copy Review Reference
+= current managed-world identity
++ current player block position
++ current dimension
+```
+
+The reference is generated on demand and copied as portable text for use in existing external team systems. It is not stored or synchronized by LazyBuilder.
+
+This feature belongs to Map Manager because managed-world authority already exists there. It must not introduce a dependency on Utility Manager merely for clipboard access, and it requires no protocol change for the first implementation.
+
 ## Interaction standard
 
 Any surviving feature must follow the builder's existing mental model:
@@ -146,6 +165,6 @@ The existing three Managers remain the complete LazyBuilder client architecture.
 
 ## Next review
 
-The next review is **Review / Collaboration**. It should evaluate whether one compact handoff/reference flow provides real value using existing Map Manager current-world authority, without creating issue tracking, notes storage, camera tooling, coordinate HUDs, or another collaboration subsystem inside Minecraft.
+The next review is **Reliability / Recovery**. It should identify warnings, failure context, or recovery-oriented information that protects the builder workflow without introducing autosave, backup, snapshot, or build-state systems that belong to existing world-management or external editing owners.
 
 Do not revisit build/editing categories unless a concrete missing workflow is demonstrated that Vanilla/Axiom/WorldEdit cannot reasonably cover.
