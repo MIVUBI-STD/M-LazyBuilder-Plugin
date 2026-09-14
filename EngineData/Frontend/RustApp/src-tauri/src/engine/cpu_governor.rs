@@ -123,11 +123,17 @@ fn minecraft_client_running(system: &System, paper_pid: Pid) -> bool {
 
 #[cfg(windows)]
 fn set_paper_priority(pid: u32, priority: PaperPriority) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
-        PROCESS_SET_INFORMATION,
-    };
+    type Handle = *mut core::ffi::c_void;
+    const PROCESS_SET_INFORMATION: u32 = 0x0200;
+    const NORMAL_PRIORITY_CLASS: u32 = 0x0000_0020;
+    const BELOW_NORMAL_PRIORITY_CLASS: u32 = 0x0000_4000;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn OpenProcess(desired_access: u32, inherit_handle: i32, process_id: u32) -> Handle;
+        fn SetPriorityClass(process: Handle, priority_class: u32) -> i32;
+        fn CloseHandle(object: Handle) -> i32;
+    }
 
     let class = match priority {
         PaperPriority::Normal => NORMAL_PRIORITY_CLASS,
@@ -136,11 +142,11 @@ fn set_paper_priority(pid: u32, priority: PaperPriority) -> bool {
 
     unsafe {
         let handle = OpenProcess(PROCESS_SET_INFORMATION, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return false;
         }
         let changed = SetPriorityClass(handle, class) != 0;
-        CloseHandle(handle);
+        let _ = CloseHandle(handle);
         changed
     }
 }
