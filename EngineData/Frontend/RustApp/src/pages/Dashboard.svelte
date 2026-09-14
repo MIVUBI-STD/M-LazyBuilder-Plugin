@@ -180,11 +180,11 @@
 
 {#if logOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && (logOpen = false)}>
-    <section class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="server-log-title">
+    <div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="server-log-title">
       <header><div><h2 id="server-log-title">Server log</h2><p>{logTail.path ? logTail.path.split(/[\\/]/).pop() : 'latest.log'}{logTail.truncated ? ' · showing recent lines' : ''}</p></div><button class="icon-button" aria-label="Close server log" onclick={() => (logOpen = false)}>×</button></header>
       <pre>{logTail.content || 'No server log output is available yet.'}</pre>
       <footer><button class="secondary" disabled={logBusy} onclick={loadLog}>{logBusy ? 'Refreshing…' : 'Refresh'}</button><button class="primary" onclick={() => (logOpen = false)}>Done</button></footer>
-    </section>
+    </div>
   </div>
 {/if}
 
