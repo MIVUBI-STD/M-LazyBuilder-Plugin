@@ -18,9 +18,10 @@ pub struct ServerLogTail {
 #[tauri::command]
 pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
     let workspace = canonical_or_normalized(paths::workspace_root()?);
-    let log_root = canonical_or_normalized(workspace.join("server").join("logs"));
+    let paper_log_root = canonical_or_normalized(workspace.join("server").join("logs"));
+    let lazybuilder_log_root = canonical_or_normalized(paths::lazybuilder_logs_dir()?);
     let requested = if path.trim().is_empty() {
-        log_root.join("latest.log")
+        paper_log_root.join("latest.log")
     } else {
         PathBuf::from(path.trim())
     };
@@ -30,9 +31,11 @@ pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("log")) == Some(true);
-    let is_direct_server_log = requested.parent() == Some(log_root.as_path());
-    if !requested.starts_with(&log_root) || !is_direct_server_log || !is_log {
-        return Err("Refusing to read a log outside this server's log directory.".into());
+    let direct_allowed_parent = requested.parent().is_some_and(|parent| {
+        parent == paper_log_root.as_path() || parent == lazybuilder_log_root.as_path()
+    });
+    if !direct_allowed_parent || !is_log {
+        return Err("Refusing to read a log outside this server's managed log directories.".into());
     }
     if !requested.is_file() {
         return Ok(ServerLogTail {
