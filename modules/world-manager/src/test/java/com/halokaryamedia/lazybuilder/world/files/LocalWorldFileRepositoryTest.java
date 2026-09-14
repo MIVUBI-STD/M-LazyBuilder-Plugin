@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -78,6 +79,42 @@ class LocalWorldFileRepositoryTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> repository.publishStagedWorld(tempDir.resolve("outside"), "Unsafe"));
+    }
+
+    @Test
+    void startupRecoveryDeletesOnlyTypedDisposableWorkspaces() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        Files.createDirectories(worldRoot.resolve("Build"));
+        Files.writeString(worldRoot.resolve("Build/level.dat"), "level");
+        Files.createDirectories(worldRoot.resolve("DeleteMe"));
+        Files.writeString(worldRoot.resolve("DeleteMe/level.dat"), "level");
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        Path generic = repository.reserveWorkspace(UUID.randomUUID());
+        Files.createDirectories(generic);
+        Files.writeString(generic.resolve("partial.bin"), "partial");
+
+        Path copied = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.SNAPSHOT);
+        WorldRecord deleteMe = new WorldRecord(WorldId.create(), "DeleteMe", "Delete Me",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        Path deleteStage = repository.stageDelete(deleteMe, UUID.randomUUID());
+
+        Path legacyUnknown = workRoot.resolve(UUID.randomUUID().toString());
+        Files.createDirectories(legacyUnknown);
+        Files.writeString(legacyUnknown.resolve("unknown.bin"), "unknown");
+
+        assertTrue(generic.getFileName().toString().endsWith(".work"));
+        assertTrue(copied.getFileName().toString().endsWith(".copy"));
+        assertTrue(deleteStage.getFileName().toString().endsWith(".delete"));
+
+        assertEquals(2, repository.recoverTransientWorkspaces());
+
+        assertFalse(Files.exists(generic));
+        assertFalse(Files.exists(copied));
+        assertTrue(Files.exists(deleteStage), "delete staging may be the only surviving world copy");
+        assertTrue(Files.exists(legacyUnknown), "untyped legacy workspace must not be guessed safe to delete");
     }
 
     private static WorldRecord world() {
