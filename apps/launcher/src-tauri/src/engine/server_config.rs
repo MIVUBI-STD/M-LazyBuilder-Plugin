@@ -13,7 +13,6 @@ pub struct ServerConfig {
     pub max_memory_mb: u64,
     pub graceful_stop_timeout_seconds: u64,
     pub startup_timeout_seconds: u64,
-    pub resource_preset: String,
 }
 
 impl Default for ServerConfig {
@@ -26,7 +25,6 @@ impl Default for ServerConfig {
             max_memory_mb: 2048,
             graceful_stop_timeout_seconds: 30,
             startup_timeout_seconds: 90,
-            resource_preset: "Performance".into(),
         }
     }
 }
