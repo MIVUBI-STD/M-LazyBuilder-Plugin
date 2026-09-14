@@ -1,71 +1,55 @@
 # LazyBuilder Performance Manager
 
-LazyBuilder Performance Manager is the Fabric client performance coordination layer for Minecraft Java 1.21.4.
+LazyBuilder Performance Manager is the first-party Fabric client performance runtime for Minecraft Java 1.21.4.
 
-## Boundary
+## Goal
 
-Performance Manager owns performance status, lightweight resource policy, and awareness of optional optimizer capabilities. It does not replace renderer, shader, culling, memory, or immediate-render optimization engines.
+Keep the Minecraft client smooth, stable, and responsive without lowering visual quality by default. LazyBuilder owns the performance behavior it requires; third-party optimization mods are not mandatory runtime owners.
 
-External specialist foundations remain external, including Sodium, Iris, ImmediatelyFast, FerriteCore, EntityCulling, and MoreCulling.
+## P0 scope
 
-## Product rules
+The current baseline provides:
 
-- one Manager = one Fabric mod = one output JAR;
-- no dependency on Map Manager or Utility Manager implementation packages;
-- no renderer/shader/culling algorithm is copied into LazyBuilder;
-- no graphics-quality setting is silently changed;
-- no default keybind is required;
-- capability detection is passive;
-- performance metrics are captured on demand and no history database is maintained;
-- native background FPS policy must automatically stand down when Dynamic FPS is installed;
-- new Performance features require an ownership/overlap review instead of being added by default.
+- allocation-free rolling frame timing over a bounded 60-frame window;
+- internal frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
+- a workload budget for LazyBuilder-owned work classes (`CRITICAL`, `NORMAL`, `DEFERRED`);
+- first-party unfocused/minimized FPS policy;
+- on-demand performance snapshots;
+- no permanent HUD, metrics history database, background worker, or graphics auto-tuning.
 
-## Implemented C3 scope
-
-The current first-scope implementation provides three layers:
-
-1. `PerformanceManagerClient.capabilities()` — immutable optional-mod capability snapshot;
-2. `PerformanceManagerClient.currentState()` — lightweight on-demand performance snapshot;
-3. guarded native background FPS fallback for clients without Dynamic FPS.
-
-Detected capabilities currently include:
+## Runtime model
 
 ```text
-Sodium
-Iris
-ImmediatelyFast
-FerriteCore
-EntityCulling
-MoreCulling
-Sodium Extra
-Reese's Sodium Options
-Dynamic FPS
+PerformanceManagerClient
+└── PerformanceRuntime
+    ├── FrameMonitor
+    ├── WorkloadBudget
+    ├── BackgroundResourcePolicy
+    └── PerformanceSnapshotReader
 ```
 
-Detection uses Fabric Loader mod presence only. Performance Manager does not import those mods' implementation packages and does not require them to be installed.
+One client render callback records frame timing. One end-client-tick hook updates the workload budget and background FPS policy. No dedicated thread or polling worker is created.
 
-The current state snapshot observes:
+## Frame pressure
+
+Frame pressure is an internal scheduling signal, not a graphics-quality controller.
 
 ```text
-FPS
-Approximate frame time derived from FPS
-JVM used / max memory
-Render distance
-Simulation distance
-Window focused state
-Window minimized state
-Detected optimizer capabilities
+NORMAL
+→ CRITICAL + NORMAL + DEFERRED LazyBuilder work allowed
+
+ELEVATED
+→ CRITICAL + NORMAL allowed
+
+HEAVY
+→ CRITICAL only
 ```
 
-State capture is read-only and only runs when requested. No performance-history sampler, renderer hook, or permanent HUD is registered.
+Critical correctness work such as input, network handling, and authoritative session state must never be suppressed merely to improve FPS.
 
-Exact Iris shader-active detection is intentionally not guessed through fragile reflection. Iris presence is exposed as a capability first; active-shader integration may only be reconsidered if a stable public integration boundary and concrete use case exist.
+## Background resource policy
 
-## Background FPS policy
-
-When `dynamic_fps` is installed, LazyBuilder does not apply its native background limiter.
-
-When Dynamic FPS is absent, the default policy is:
+Default policy:
 
 ```properties
 background.enabled=true
@@ -73,26 +57,42 @@ background.unfocused_fps=30
 background.minimized_fps=10
 ```
 
-The policy changes only Minecraft's temporary window framerate limit. It does not rewrite the user's configured video-option FPS limit. When the window becomes focused again, the current user FPS limit becomes authoritative again.
+The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured video-option FPS limit. When focus returns, the current user limit is authoritative again.
 
-The controller uses one lightweight end-client-tick hook because focus/minimize state can change at runtime. It performs no metrics history sampling, renderer work, or external-mod calls on that tick.
+This behavior is owned by LazyBuilder. It no longer yields ownership to Dynamic FPS or another optional provider.
 
-## Scope lock
+## Diagnostics
 
-The current Performance Manager scope is considered sufficient for the architecture phase. The following remain deferred until a separate review proves a non-overlapping need:
+`PerformanceManagerClient.currentSnapshot()` captures diagnostics on demand:
 
-- performance HUD or permanent overlay;
-- performance profiles such as Balanced, Large Map, Visual Review, or Custom;
-- automatic render/simulation-distance tuning;
-- automatic graphics-quality changes;
-- Sodium settings cloning or replacement UI;
-- Iris settings cloning or shader management;
-- renderer hooks or renderer abstraction;
-- memory optimization or GC controls;
-- chunk/render optimization engines;
-- entity/block culling implementations;
-- FPS/frame-time history storage.
+```text
+FPS
+Approximate current frame time
+Rolling average frame time
+Worst recent frame time
+JVM used / max memory
+Render distance
+Simulation distance
+Window focused / minimized state
+Current frame pressure
+```
 
-Dynamic FPS is an optional external provider, not a required dependency. The native LazyBuilder policy only covers the narrow unfocused/minimized FPS fallback and must not grow into a Dynamic FPS clone.
+Memory and option reads are not sampled continuously.
 
-See `docs/04-system/performance-manager-audit-lock.md` for the full ownership and overlap decisions.
+## Ownership rule
+
+Performance capabilities required by LazyBuilder must have first-party implementations maintained and versioned with LazyBuilder. External projects may inform problem analysis, but LazyBuilder must not require them for its core performance behavior.
+
+Deeper rendering, chunk, culling, memory, and batching optimizations are intentionally outside P0. They require separate measurable-benefit and regression-risk review before implementation.
+
+## Configuration
+
+Only real user decisions are configurable:
+
+```properties
+background.enabled=true
+background.unfocused_fps=30
+background.minimized_fps=10
+```
+
+Frame-pressure thresholds remain internal until runtime profiling proves a user-facing setting is necessary.
