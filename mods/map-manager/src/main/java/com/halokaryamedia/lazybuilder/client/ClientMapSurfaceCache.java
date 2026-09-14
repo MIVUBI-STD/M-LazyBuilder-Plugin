@@ -60,7 +60,6 @@ public final class ClientMapSurfaceCache {
     private Path scopeDirectory;
     private volatile long scopeGeneration;
     private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
-    private LoadedRegion activeCompletedLoad;
     private Iterator<Map.Entry<Integer, SurfaceSample>> activeCompletedEntries;
     private RegionData activeCompletedRegion;
 
@@ -80,7 +79,6 @@ public final class ClientMapSurfaceCache {
         regions.clear();
         pending.clear();
         completedLoads.clear();
-        activeCompletedLoad = null;
         activeCompletedEntries = null;
         activeCompletedRegion = null;
 
@@ -211,7 +209,6 @@ public final class ClientMapSurfaceCache {
                     regions.put(loaded.regionKey, region);
                 }
 
-                activeCompletedLoad = loaded;
                 activeCompletedRegion = region;
                 activeCompletedEntries = loaded.samples.entrySet().iterator();
                 if (!activeCompletedEntries.hasNext()) {
@@ -233,7 +230,6 @@ public final class ClientMapSurfaceCache {
 
     private void finishActiveCompletedLoad() {
         if (activeCompletedRegion != null) activeCompletedRegion.loaded = true;
-        activeCompletedLoad = null;
         activeCompletedEntries = null;
         activeCompletedRegion = null;
     }
@@ -245,6 +241,7 @@ public final class ClientMapSurfaceCache {
         while (regions.size() > MAX_LOADED_REGIONS && iterator.hasNext()) {
             Map.Entry<Long, RegionData> eldest = iterator.next();
             RegionData region = eldest.getValue();
+            if (region == activeCompletedRegion) continue;
             if (region.dirty && directory != null && !region.samples.isEmpty()) {
                 region.dirty = false;
                 enqueueRegionWrite(directory, eldest.getKey(), new HashMap<>(region.samples));
