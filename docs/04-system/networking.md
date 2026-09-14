@@ -4,13 +4,14 @@ Canonical owner for LazyBuilder client/server networking boundaries.
 
 ## Product rule
 
-LazyBuilder owns its application protocol, transfer state, validation, permissions, and recovery. Normal LazyBuilder feature traffic must not depend on a third-party networking service, VPN product, SaaS relay, cloud queue, object store, HTTP API, or WebSocket gateway.
+LazyBuilder owns its application protocol, transfer state, validation, permissions, and recovery. Normal in-game feature traffic must not depend on a third-party networking service, SaaS relay, cloud queue, object store, HTTP API, or WebSocket gateway.
 
 ```text
 LazyBuilder Fabric Client
         │
         │ existing Minecraft play connection
         │
+        ├── lazybuilder:world
         ├── lazybuilder:map
         └── lazybuilder:transfer
                     │
@@ -18,130 +19,216 @@ LazyBuilder Fabric Client
            LazyBuilder Paper Plugin
 ```
 
-V1 does not open a second listening port and does not create another long-lived socket. It reuses the already-established Minecraft connection and adds only versioned, bounded LazyBuilder payloads.
+The in-game data plane reuses the already-established Minecraft connection. It does not create a second long-lived socket or a second world-management network plane.
 
 ## Authority
 
-The server remains authoritative.
-
 ```text
-client owns      presentation, selection, local file dialog
-protocol owns    typed framing, version, payload bounds
-server owns      permissions, sessions, ordering, checksums, world state
+client owns      presentation, local navigation preferences, selection, native file dialog
+protocol owns    typed framing, version, payload bounds, neutral request/result shapes
+server owns      permissions, world semantics, sessions, ordering, checksums, runtime truth
 filesystem owns  safe staging/publication under LazyBuilder roots
 ```
 
-A network provider must never become a semantic authority for worlds, transfers, permissions, conversion, or recovery.
+A transport/provider must never become semantic authority for worlds, permissions, conversion, lifecycle, or recovery.
+
+## Channel ownership
+
+### `lazybuilder:world`
+
+General managed-world/product intents.
+
+Current shared contract is **World Control V3**.
+
+Includes:
+
+```text
+world list + canManage/canTeleport presentation capabilities
+create
+teleport to managed world
+archive / restore
+duplicate
+delete
+world settings
+import / export requests
+verified export-format catalog
+```
+
+Intentionally excludes:
+
+```text
+manual LoadWorld / UnloadWorld
+SetAutoLoad
+runtimeState product metadata
+CloneWorld
+```
+
+Paper remains final authorization/domain authority even though capability flags are sent so Fabric can avoid showing irrelevant controls.
+
+### `lazybuilder:map`
+
+Spatial map intents plus current managed-world presentation state.
+
+Current shared contract is **Map Action V2**.
+
+Includes:
+
+```text
+TeleportLocation
+ExportArea
+CurrentWorldRequest
+CurrentWorldResult
+CurrentWorldCleared
+```
+
+Paper may push current-world changes from actual `PlayerChangedWorldEvent` transitions. Entering an unmanaged world explicitly clears prior managed-world state on the client.
+
+Map payloads do not own general world settings/lifecycle or file bytes.
+
+### `lazybuilder:transfer`
+
+File bytes only.
+
+Import/export UI and world semantics do not create a second transfer implementation.
 
 ## Transport independence
 
 LazyBuilder application behavior is independent from how the Minecraft server becomes reachable.
 
-Direct LAN, normal public-IP hosting, IPv6, router port forwarding, a self-hosted VPN, or an optional third-party tunnel can all carry the same Minecraft connection without changing LazyBuilder's protocol or feature flow.
+LAN, public-IP hosting, IPv6, router forwarding, self-hosted VPN, or an optional third-party tunnel can carry the same Minecraft connection without changing LazyBuilder's application protocol.
 
-Products such as Tailscale, ZeroTier, Cloudflare Tunnel, or similar are optional deployment infrastructure only. LazyBuilder does not detect them, call their APIs, store their identity, or require them to function once the client can reach the Minecraft server.
+Tailscale, ZeroTier, Cloudflare Tunnel, or similar products are optional deployment infrastructure only. LazyBuilder does not make them world/domain authorities.
 
-A server behind CGNAT or a firewall with no inbound route still needs some network-level route for a remote player. That cannot be solved purely by the plugin without introducing a relay, NAT-traversal service, VPN, or another externally reachable endpoint. Building such infrastructure into LazyBuilder is outside V1 because it would create a second network stack, more attack surface, persistent background work, and a new operational dependency.
+A server behind CGNAT/firewall still requires some network-level route. Solving Internet routing inside the plugin would require a relay/NAT-traversal/VPN layer and is outside this protocol architecture.
 
 ## File transfer
 
-World-file transfer remains inside the Minecraft play connection.
+World-file transfer stays inside the Minecraft play connection.
 
 ```text
 BEGIN
 → bounded session
-→ 24 KiB data chunks
-→ up to 4 chunks in the active credit window
+→ bounded data chunks
+→ bounded active credit window
 → ordered server lane
 → SHA-256 validation
-→ atomic publication
+→ atomic publication/finalization
 → FINISH / ABORT
 ```
 
-The transfer protocol uses one seekable file channel per active local/server file. Chunks are read/written by absolute position rather than repeatedly reopening the file and skipping from byte zero. The server serializes application requests per player while allowing unrelated players to progress independently.
+The implementation uses one seekable file channel per active local/server file. Chunk I/O uses absolute positions rather than reopening and skipping from byte zero.
 
-The four-chunk window is intentionally bounded. It reduces round-trip latency sensitivity without introducing an unbounded queue, permanent transfer worker, or custom TCP implementation.
+The bounded window reduces round-trip sensitivity without introducing an unbounded queue or permanent worker.
 
-## Resilience contract
+## Transfer resilience
 
-V1 relies on the Minecraft connection for ordered/reliable delivery and therefore does not implement a second retransmission protocol. LazyBuilder handles failures at the application/session boundary instead:
+The Minecraft connection supplies ordered/reliable transport. LazyBuilder handles failures at the application/session boundary:
 
 ```text
 malformed / out-of-order request
 → fail closed
-→ discard affected session
+→ clean affected session
 
 player disconnect
-→ abort all sessions for that player
+→ abort active transfer sessions for that player
 → close file channels
-→ remove partial upload
+→ remove partial transfer files
 
-inactive transfer
-→ reclaim on the next request from that owner after the configured idle timeout
-→ no polling timer required
-
-new upload
-→ validate declared size
-→ reject when configured size limit is exceeded
-→ reject when current transfer filesystem has insufficient usable space
+inactive session
+→ reclaim opportunistically after configured idle timeout
+→ no polling cleanup daemon
 ```
 
-Default idle timeout is 300 seconds and is configurable as `world-manager.transfer.session-idle-seconds`. The minimum accepted configured value is 30 seconds. Activity is refreshed only after a chunk successfully reads/writes; invalid traffic cannot keep a session alive indefinitely.
+There is intentionally no cross-connection byte-transfer resume token. If the connection drops during an active byte transfer, that transfer restarts rather than maintaining a second resumable transport/security layer.
 
-There is intentionally no cross-connection resume token in V1. If the underlying Minecraft connection is lost, the partial server upload/client download is discarded and the user starts that transfer again. Resume should be added only if live large-file testing proves restart cost is materially worse than the added state/security complexity.
+Heavy world-operation **completion** is separate from byte-transfer resume: the world-control adapter may retain one bounded pending completion per player so an already-finished Duplicate/Delete/Import/Export result can be surfaced after reconnect. This does not preserve partial transfer bytes.
+
+## Storage preflight
+
+Upload/import:
+
+```text
+declared upload size
+→ validate configured maximum
+→ verify server transfer filesystem usable space
+→ begin session
+```
+
+Download/export:
+
+```text
+server returns authoritative TransferDescriptor size
+→ client checks selected save-location usable space
+→ begin local file creation/download
+```
+
+Insufficient storage fails early with actionable user-facing feedback. Partial files are cleaned when the operation fails.
 
 ## Idle requirements
 
-When no player requests work:
+When no request is active:
 
-- no LazyBuilder transfer worker;
+- no transfer worker loop;
 - no transfer polling;
 - no heartbeat loop;
 - no relay connection;
-- no additional socket listener;
+- no extra socket listener;
 - no file watcher;
 - no converter process;
-- no periodic network update check.
+- no periodic client/server capability polling.
 
-All active work is request/event driven. Idle-session expiry is opportunistic and disconnect-driven rather than timer-driven.
+World idle-unload is a separate Paper runtime-maintenance concern, not network polling.
 
 ## Security and failure behavior
 
-- all management transfer actions require `lazybuilder.world.manage`;
-- map teleport requires `lazybuilder.world.teleport`;
+- management mutations require `lazybuilder.world.manage`;
+- map/world teleport requires `lazybuilder.world.teleport` where applicable;
 - protocol version mismatch fails closed;
-- payload and chunk sizes are bounded;
-- transfer sessions are bound to the initiating player UUID;
+- payload/chunk sizes are bounded;
+- transfer sessions bind to initiating player UUID;
 - filenames cannot escape owned roots;
 - uploads publish only after declared size and SHA-256 match;
-- downloads are finalized client-side only after SHA-256 validation;
-- malformed/out-of-order requests discard affected session state rather than leaving a stale session;
-- stale sessions cannot permanently consume a per-owner slot once that owner sends another request;
-- disconnect and plugin shutdown close active file channels and request-owned state.
+- downloads finalize locally only after SHA-256 validation;
+- malformed/out-of-order requests clean affected state;
+- disconnect/plugin shutdown closes active transfer channels and request-owned state;
+- server never trusts Fabric permission presentation as authorization.
 
-Minecraft's established connection supplies the underlying ordered/reliable transport. LazyBuilder does not attempt to replace TCP, encryption at the deployment layer, authentication performed by the Minecraft server, or Internet routing.
+## Conversion updater egress
 
-## External network egress
-
-The Chunker runtime updater is not part of the LazyBuilder client/server data plane. It is a bounded, user-triggered maintenance/bootstrap dependency:
+The conversion-runtime updater is not part of the Minecraft client/server data plane.
 
 ```text
 conversion requested
 → verified current runtime exists?
-   ├── yes → current runtime can continue without update-network availability
-   └── no  → runtime source is needed before conversion can run
+   ├── yes → use it even if update network is unavailable
+   └── no  → verified runtime acquisition is required before conversion
 ```
 
-The current automatic source uses the official Chunker GitHub release endpoint, with release digest and compatibility verification. Network failure never invalidates an already verified local runtime.
+The current runtime source uses the approved Chunker release source with verification. A network failure must never invalidate an already verified installed runtime.
 
-If deployment later requires **zero external egress**, solve that at the converter adapter boundary with local/manual verified runtime provisioning. Do not add a relay, proxy, or alternate LazyBuilder network plane merely to fetch the converter.
+If a deployment requires zero external egress, solve that at the converter adapter/runtime provisioning boundary. Do not add a new LazyBuilder relay/proxy/network plane.
 
 ## External software boundaries
 
-"Independent networking" does not mean LazyBuilder reimplements every software dependency. Paper/Fabric provide the Minecraft runtime APIs, Xaero is an optional map UI integration, and Chunker is an isolated conversion engine. None of those should own LazyBuilder's network protocol or client/server transfer state.
+Paper and Fabric provide runtime APIs. Xaero may be used only as an interaction-quality reference for the fullscreen map; it is not required as LazyBuilder's network owner or runtime dependency. Chunker remains an isolated conversion implementation detail.
 
-Third-party version changes must remain absorbed at their adapter boundary whenever the LazyBuilder product contract has not changed.
+Third-party changes should be absorbed at adapter boundaries whenever the LazyBuilder product contract has not changed.
 
 ## Proof boundary
 
-Remote CI can prove protocol codecs, bounds, session ownership, ordered application processing, stale-session reclamation, disk-capacity preflight behavior at the source level, cleanup semantics, and both Paper/Fabric compilation. Real throughput, packet behavior under latency/loss, disconnect timing, multi-gigabyte filesystem behavior, NAT routing, and Internet reachability require local/live measurement.
+Source/static review can prove codecs, bounds, ownership, cleanup paths, and version alignment. Fresh local/live proof is still required for current `Local`:
+
+```text
+World Control V3 Paper/Fabric interoperability
+Map Action V2 current-world push
+permission behavior
+large upload/download throughput
+native save/picker flow
+insufficient client/server storage
+disconnect timing
+pending heavy completion after reconnect
+checksum/failure cleanup
+multi-gigabyte filesystem behavior
+```
+
+Do not treat the older historical CI run as proof of these current protocol revisions.
