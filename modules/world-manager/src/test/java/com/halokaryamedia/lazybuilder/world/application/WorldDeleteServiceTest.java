@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -28,7 +27,7 @@ class WorldDeleteServiceTest {
         Fixture fixture = fixture(true);
 
         WorldDeleteService.DeleteTask task = fixture.service.prepare(fixture.world.id(), "Build");
-        assertEquals(WorldRuntimeState.UNLOADED, fixture.states.get(fixture.world.id()));
+        assertFalse(fixture.runtime.loaded);
 
         fixture.service.executeFilePhase(task);
         fixture.service.finish(task);
@@ -53,7 +52,7 @@ class WorldDeleteServiceTest {
         assertFalse(task.committed());
         assertTrue(fixture.registry.find(fixture.world.id()).isPresent());
         assertTrue(fixture.files.restored);
-        assertEquals(WorldRuntimeState.LOADED, fixture.states.get(fixture.world.id()));
+        assertTrue(fixture.runtime.loaded);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
@@ -73,7 +72,7 @@ class WorldDeleteServiceTest {
     }
 
     @Test
-    void deleteRequiresExactCanonicalFolderConfirmation() {
+    void deleteRequiresExactDisplayNameConfirmation() {
         Fixture fixture = fixture(false);
         assertThrows(IllegalArgumentException.class,
                 () -> fixture.service.prepare(fixture.world.id(), "build"));
@@ -82,24 +81,22 @@ class WorldDeleteServiceTest {
     private static Fixture fixture(boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
-                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE, true);
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
-        states.initialize(world.id(), loaded ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED);
         FakeRuntime runtime = new FakeRuntime(loaded);
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, states, runtime);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.saved = registry.all();
-        WorldOperationCoordinator operations = new WorldOperationCoordinator();
         FakeFiles files = new FakeFiles();
         WorldDeleteService service = new WorldDeleteService(
-                registry, persistence, runtimeService, states, operations, files);
-        return new Fixture(registry, states, persistence, operations, files, service, world);
+                registry, persistence, runtimeService, operations, files);
+        return new Fixture(registry, runtime, persistence, operations, files, service, world);
     }
 
     private record Fixture(
             WorldRegistry registry,
-            WorldRuntimeStateRegistry states,
+            FakeRuntime runtime,
             MemoryPersistence persistence,
             WorldOperationCoordinator operations,
             FakeFiles files,
