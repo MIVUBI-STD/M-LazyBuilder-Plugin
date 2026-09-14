@@ -1,32 +1,69 @@
 # World Management
 
-Canonical owner for LazyBuilder world lifecycle and world-setting behavior.
+Canonical owner for LazyBuilder managed-world lifecycle, Paper runtime coordination, settings, filesystem operations, and import/export behavior.
 
 ## Ownership
 
-LazyBuilder World Manager is the intended native replacement for Multiverse-Core for the required builder workflow. It talks directly to Paper/Bukkit APIs; Multiverse is not part of the target runtime architecture.
+LazyBuilder World Manager is the native managed-world authority for the required builder workflow. It talks directly to Paper/Bukkit APIs; Multiverse is not part of the target runtime architecture.
 
-## World Identity / Registry
+Fabric and Desktop are presentation/control clients. They do not own world lifecycle, filesystem publication, conversion, registry state, or Paper mutations.
 
-Each managed world has one stable LazyBuilder identity that is independent from its presentation name and runtime load state.
+## Canonical world model
+
+Each managed world has one stable LazyBuilder identity independent from presentation name and current Paper load state.
 
 ```text
 WorldId          → internal UUID identity
 folderName       → canonical filesystem identity
-displayName      → user-facing mutable name
+displayName      → builder-facing name
 kind             → FLAT | VOID | IMPORTED
 lifecycle        → ACTIVE | ARCHIVED
-autoLoad         → durable startup preference
 defaultGameMode  → durable world-entry preference
 ```
 
-`LOADED`, `UNLOADED`, `LOADING`, and `UNLOADING` are runtime state and must not be stored as durable registry lifecycle metadata.
+There is deliberately no durable `autoLoad` field and no durable runtime-state field.
 
-The folder name is not renamed by a normal metadata update. Any future filesystem rename must be an explicit file/lifecycle operation so registry metadata can never get ahead of disk state. Folder uniqueness is case-insensitive to avoid ambiguous cross-platform world ownership.
+Persistent product lifecycle is exactly:
 
-The in-memory registry remains the canonical runtime owner. Durable metadata is persisted to `plugins/LazyBuilder/world/registry.yml` through one persistence boundary. Startup performs one bounded read; there is no registry polling or filesystem watcher. Writes publish through a temporary file and atomic move where supported.
+```text
+ACTIVE
+ARCHIVED
+```
 
-## Create World — Confirmed V1
+`Loaded`, `Unloaded`, `Loading`, and `Unloading` are transient Paper runtime facts and must not become registry lifecycle metadata, client product states, or a second runtime-state registry.
+
+Folder identity is not renamed by a normal metadata update. Any future filesystem rename must be an explicit file/lifecycle operation so registry metadata can never get ahead of disk state. Folder uniqueness remains case-insensitive.
+
+The in-memory registry is the canonical managed-world metadata owner. Durable metadata is persisted through one YAML persistence boundary. Startup performs one bounded read plus bounded adoption of eligible existing Paper world folders; there is no registry polling or filesystem watcher.
+
+Legacy registry input may contain removed fields such as `auto-load`; migration may tolerate and ignore those keys, but current persistence must not write them back.
+
+## Automatic runtime behavior
+
+Runtime ownership is Paper-authoritative:
+
+```text
+required world use
+→ load automatically if needed
+
+world empty + idle timeout + no conflicting operation
+→ unload automatically
+```
+
+Normal users do not manually Load or Unload worlds.
+
+`WorldRuntimeService` is a coordination boundary over Paper truth, not a shadow state machine. It may ask the runtime gateway whether a world is currently loaded and may load/unload it when an application use case requires that behavior.
+
+Runtime safety rules:
+
+- archived worlds cannot be loaded for normal use;
+- fallback/default world cannot be unsafely unloaded;
+- idle unload applies only to eligible managed ACTIVE worlds;
+- a world with builders inside is not unloaded for a snapshot/destructive operation;
+- active world-operation leases block conflicting external runtime changes;
+- automatic unload is delayed by idle timeout to avoid thrashing.
+
+## Create World
 
 ```text
 Create World
@@ -34,9 +71,9 @@ Create World
 └── Void World
 ```
 
-Creation intentionally exposes only the world name and type. Advanced settings belong to World Settings.
+Creation exposes only the builder-facing name and world type. Internal folder identity is derived/sanitized automatically. Advanced settings belong to World Settings.
 
-Both world kinds use one `WorldCreationService` path:
+Both kinds use one `WorldCreationService` path:
 
 ```text
 validate identity
@@ -47,29 +84,26 @@ validate identity
 → publish success
 ```
 
-If registry publication fails after runtime creation, the new runtime world is rolled back instead of reporting a partially managed world.
+If registry publication fails after runtime creation, the new runtime world is rolled back rather than reporting a partially managed world.
 
-### Flat World
+### Flat
 
 - vanilla `WorldType.FLAT` generation;
-- default vanilla flat layers;
+- vanilla-compatible flat layers;
 - structures disabled through the approved policy;
-- automatic `BUILD_READY` profile;
+- automatic BUILD_READY profile;
 - no separate custom flat generator.
 
-### Void World
+### Void
 
 - one minimal all-air `ChunkGenerator`;
-- vanilla noise, surface, caves, decorations, mobs, and structures disabled;
-- centered 5×5 stone spawn platform at Y=64;
-- world spawn at Y=65;
-- automatic `BUILD_READY` profile.
+- noise/surface/caves/decorations/mobs/structures disabled;
+- small safe spawn platform;
+- automatic BUILD_READY profile.
 
 ## BUILD_READY
 
-Every created world is immediately suitable for map building.
-
-`BuildReadyPolicy` is the single source owner for the initial builder-safe defaults. It is applied during world creation or by an explicit Reset to Build Ready action; it is not a background enforcement loop. Later World Settings changes remain authoritative until the user explicitly resets them.
+`BuildReadyPolicy` owns initial builder-safe defaults. It is applied during world creation or by explicit Reset Builder Defaults. It is not a background enforcement loop.
 
 Default policy:
 
@@ -82,53 +116,48 @@ PVP                     OFF
 weather                 CLEAR
 weather cycle           OFF
 daylight cycle          OFF
-time                    DAY (6000 ticks)
+time                    DAY (6000)
 fire tick               OFF
 mob griefing            OFF
 random tick speed       0
 patrol spawning         OFF
 wandering trader        OFF
-insomnia/phantom        OFF
+insomnia / phantom      OFF
 warden spawning         OFF
 raids                   OFF
-spawn-chunk persistence OFF when safe through target API
+spawn-chunk persistence OFF when safe
 ```
 
-Do not override unrelated vanilla gamerules merely for completeness. World Settings owns explicit later overrides. Domain policy stays independent from Bukkit/Paper enum types; the Paper adapter maps it to runtime APIs.
+Unrelated vanilla gamerules remain vanilla until explicitly changed.
 
-`default game mode = CREATIVE` is a LazyBuilder world-entry preference rather than a global server default. Teleport to World applies the target world's durable preference after a successful teleport.
+`defaultGameMode` is a durable LazyBuilder world-entry preference. Teleport to World applies the target world's preference after successful teleport.
 
-## Load / Unload
+## Teleport
 
-Runtime state has one ephemeral owner:
+Teleport is the normal user path into a managed world:
 
 ```text
-UNLOADED → LOADING → LOADED → UNLOADING → UNLOADED
+Teleport request
+→ require ACTIVE world
+→ load world if needed
+→ teleport player to canonical spawn
+→ apply world-entry game mode
+→ authoritative success
 ```
 
-Stable endpoints are idempotent: loading an already-loaded world and unloading an already-unloaded world are no-ops. A failed load returns state to `UNLOADED`; a failed unload returns state to `LOADED`.
+Manual Load/Unload is not a prerequisite and is not a user-facing workflow.
 
-Startup initializes runtime state from Paper once and auto-loads only records that are both `ACTIVE` and `autoLoad=true`. This is startup work, not periodic polling.
-
-Unload safety is owned by the Paper runtime boundary:
-
-- the global fallback world cannot be unloaded;
-- players are moved to the fallback spawn before unload;
-- failure to move any player cancels the unload;
-- the target world is saved before Paper unloads it;
-- blank fallback configuration resolves to the server's primary loaded world;
-- an explicit fallback name must already be loaded.
+Map teleport uses the same world/runtime ownership and only adds spatial location resolution.
 
 ## World Settings
 
-World Settings uses one `WorldSettingsService`. Opening a settings snapshot is an explicit request and may load an unloaded target once; there is no settings polling.
+World Settings uses one `WorldSettingsService`. Opening a settings snapshot is an explicit request and may load an ACTIVE world if Paper-owned settings need to be read. There is no settings polling.
 
-Ownership is split by the real source of truth:
+Ownership:
 
 ```text
 LazyBuilder registry
-├── Auto Load
-└── Default Game Mode / world-entry preference
+└── Default Game Mode
 
 Paper world state
 ├── Difficulty
@@ -140,141 +169,256 @@ Paper world state
 └── Spawning controls
 ```
 
-Runtime settings are read back from Paper after load. The UI/protocol must display the canonical values returned by the server rather than assuming a requested mutation succeeded.
+`Auto Load` / `Load on Server Start` is not a World Settings feature.
 
-### General
-
-Implemented source contract:
-
-- Default Game Mode;
-- Difficulty;
-- PVP;
-- Auto Load;
-- Spawn Location;
-- Set Current Position as Spawn.
-
-`Default Game Mode` is persisted with the managed-world registry and consumed by Teleport to World. `Auto Load` remains the existing durable startup preference. Other General values are Paper-owned world state.
+The client displays canonical values returned by the server after mutations; it does not assume local success.
 
 ### Gamerules
 
-The full gamerule list is discovered from `GameRule.values()` in the active target API. LazyBuilder does not maintain a second static version list. Each returned rule carries its runtime type (`BOOLEAN` or `INTEGER`) and canonical current value.
-
-Common-rule presentation such as Daylight Cycle, Weather Cycle, Mob Griefing, Fire Tick, Mob Spawning, Keep Inventory, and Random Tick Speed is a client presentation concern over the same canonical gamerules. `Show All Gamerules` must use this discovered list rather than a hardcoded copy.
-
-### Environment
-
-Time and Weather mutations write directly to Paper. Time Lock, Weather Lock, Random Tick, Fire Spread, and Mob Griefing are presentations of the same canonical gamerules where applicable; do not create duplicate state for the Environment tab.
+The full gamerule list is discovered from the active Paper API when needed. LazyBuilder must not maintain a second static version list.
 
 ### Spawning
 
-Spawning is one presentation over Paper/vanilla state; LazyBuilder does not run a custom spawn engine.
+Spawning presentation maps to existing Paper/vanilla state; LazyBuilder does not run a custom spawn engine.
 
 ```text
-Natural Mob Spawning  → doMobSpawning gamerule
-Animals               → Paper world animal spawn flag
-Monsters              → Paper world monster spawn flag
-Ambient               → SpawnCategory.AMBIENT ticks-per-spawn
-Water                 → WATER_ANIMAL + WATER_AMBIENT + WATER_UNDERGROUND_CREATURE + AXOLOTL
-Patrol                 → doPatrolSpawning gamerule
-Wandering Trader      → doTraderSpawning gamerule
-Insomnia / Phantoms   → doInsomnia gamerule
-Warden                 → doWardenSpawning gamerule
-Raids                  → inverse disableRaids gamerule
+Natural Mob Spawning  → doMobSpawning
+Animals               → Paper animal spawn flag
+Monsters              → Paper monster spawn flag
+Ambient               → SpawnCategory.AMBIENT interval
+Water                 → vanilla water spawn categories
+Patrol                 → doPatrolSpawning
+Wandering Trader      → doTraderSpawning
+Insomnia / Phantoms   → doInsomnia
+Warden                 → doWardenSpawning
+Raids                  → inverse disableRaids
 ```
 
-For Ambient and Water, `0` disables the relevant vanilla categories and `-1` restores their server/Minecraft default interval. No previous interval is cached by LazyBuilder, so there is no hidden second source of truth. Spawning state is read only when the settings snapshot is requested or after an explicit mutation.
+### Reset Builder Defaults
 
-### Reset to Build Ready
+Explicitly reapplies `BuildReadyPolicy` and restores the durable Default Game Mode preference. It does not create future enforcement.
 
-`Reset to Build Ready` is explicit. It reapplies the existing `BuildReadyPolicy` to the loaded Paper world and restores the durable Default Game Mode preference to the BUILD_READY value. It does not start a daemon or future enforcement loop.
+## Operation model
 
-## File Operations Foundation
-
-World Manager now owns one path-safe local filesystem boundary for future Clone, Delete, Import, Export, and conversion workflows.
+Heavy or lifecycle work is represented as transient operations, never as world lifecycle values.
 
 ```text
-WorldOperationCoordinator
-├── one active operation per world
-├── request-bound lease
-└── no scheduler / no polling / no persistent worker
-
-WorldFileRepository
-├── stage managed-world copy
-├── publish staged world
-├── delete owned world directory
-└── delete owned workspace
+DUPLICATE
+BACKUP
+IMPORT
+EXPORT
+ARCHIVE
+RESTORE
+DELETE
 ```
 
-Workspaces live under `plugins/LazyBuilder/world/work/<operation-id>`. World folders are resolved only as direct children of Paper's configured world container; arbitrary user paths are never accepted by delete/publish operations.
+`WorldOperationCoordinator` owns one active operation lease per affected world. It is request-bound and does not introduce a scheduler/polling daemon.
 
-Copy profiles are explicit:
+Different worlds may operate independently where the underlying resource owner allows it. Conversion remains globally serialized by its dedicated conversion lease because the conversion runtime requires that protection.
+
+## Filesystem foundation
+
+`WorldFileRepository` is the single path-safe managed-world filesystem boundary for staging, publishing, deleting, and workspace cleanup.
+
+Rules:
+
+- managed world folders resolve only under the canonical world root;
+- user input never becomes an arbitrary delete/publish path;
+- symbolic-link world roots / staged links fail closed;
+- partial staging is cleaned on failure;
+- heavy copy/delete work runs away from the Paper main thread after the required Paper quiesce step;
+- Paper mutations remain on the primary thread.
+
+Copy profiles:
 
 ```text
 SNAPSHOT
 ├── keep world identity/data
 └── omit session.lock
 
-CLONE
+DUPLICATE
 ├── omit session.lock
 ├── omit uid.dat
 └── omit playerdata / advancements / stats
 ```
 
-The repository refuses symbolic-link world roots and symbolic links encountered while staging a copy. Partial staging directories are cleaned when a copy fails. Filesystem work is synchronous at this boundary by design; higher-level request services must dispatch heavy copy/delete work away from the Paper main thread. No background file watcher or idle file worker is introduced.
+Do not recreate `CLONE` terminology or a parallel copy framework.
 
-The operation coordinator is the shared conflict guard for later Clone/Archive/Delete/Import/Export/Conversion use cases so two destructive or heavy operations cannot act on the same world at the same time. Different worlds may operate independently.
+## Duplicate
 
-## Confirmed Capability Surface
+User-facing and backend terminology is **Duplicate**.
 
 ```text
-Map Preview (Xaero integration)
-Teleport to Location
-World Browser / Teleport to World
-Create World
+source ACTIVE world
+→ validate destination identity
+→ block if builders remain inside when snapshot consistency requires unload
+→ acquire DUPLICATE lease
+→ snapshot/copy through WorldFileRepository
+→ publish independent destination
+→ fresh WorldId
+→ lifecycle ACTIVE
+→ persist
+→ restore source runtime if it was previously loaded
+```
+
+Duplicate does not inherit Pinned/Recent client preferences or runtime loaded state.
+
+## Archive / Restore
+
+Archive is reversible workspace cleanup, not a physical archive directory.
+
+```text
+ACTIVE
+→ Archive
+→ ARCHIVED
+
+ARCHIVED
+→ Restore
+→ ACTIVE
+```
+
+Archive is blocked while builders are inside the world. It does not silently move them to fallback merely to complete the action.
+
+Archived worlds are excluded from normal daily use and must be restored before Teleport, Settings requiring runtime access, Duplicate, Backup, or Export.
+
+## Delete
+
+Delete is permanent and uses immutable WorldId as backend identity.
+
+Safety:
+
+- builder confirmation uses exact visible display name;
+- fallback/default world is protected;
+- occupied world deletion is blocked;
+- file deletion stages before registry commit where possible;
+- failure before commit restores staged world data;
+- cleanup retry state remains bounded to the operation.
+
+Internal folder identity is not required from the builder merely for confirmation.
+
+## Backup
+
+Backup uses the same snapshot/quiesce safety model and one existing backup store. It is not exposed as a second world lifecycle.
+
+Occupied worlds are blocked if the backup path requires consistent unload/snapshot semantics.
+
+## Import / Export / conversion
+
+Detailed conversion behavior is canonical in [`conversion.md`](conversion.md).
+
+Product model:
+
+```text
+World Manager
+↓
+Import / Export
+↓
+existing Import / Export services
+↓
+verified on-demand conversion runtime when required
+```
+
+Chunker/converter runtime names are implementation details and must not become product navigation.
+
+### Export
+
+- native Java 1.21.4 keeps a direct fast path;
+- additional Java/Bedrock targets appear only from the verified runtime catalog;
+- whole-world and Map Export Area reuse `WorldExportService`;
+- selected map rectangle is transient request context;
+- extension is derived by target (`.zip` Java, `.mcworld` Bedrock);
+- snapshot source is restored as soon as the consistent snapshot is secured;
+- occupied-world export is blocked rather than silently ejecting builders.
+
+### Import
+
+- file-first `.zip` / `.mcworld` workflow;
+- bounded upload/extraction validation;
+- source edition/version detection;
+- canonical managed target Java 1.21.4;
+- fresh WorldId;
+- lifecycle ACTIVE;
+- no silent overwrite of an existing world.
+
+## Current capability surface
+
+```text
+World Map
+Teleport Here
+Export Area
+World Browser / Teleport
+Create Flat / Void
 Manage World
 World Settings
 Import / Export
-Clone
-Load / Unload
-Archive / Delete
+Duplicate
+Archive / Restore
+Delete
+automatic runtime loading / idle unload
 ```
 
-Import/export/conversion details are owned by `conversion.md`.
-
-## Safety Rules
-
-- Server plugin is authoritative.
-- Paper world lifecycle and settings calls execute on the primary server thread.
-- Create never loads an existing folder as if it were a new world.
-- Registry persistence is fail-closed; malformed metadata blocks startup instead of silently discarding ownership.
-- LazyBuilder-only settings are rolled back in memory if registry persistence fails.
-- Gamerule writes validate the actual Paper rule type before applying values.
-- Spawning controls map to existing Paper/vanilla controls and never introduce a background spawn monitor.
-- File operations resolve only canonical owned roots and never recursively delete a path supplied directly by a user.
-- Conflicting heavy/destructive operations on the same world are rejected by one operation coordinator.
-- Delete/archive/clone/export validate current world state.
-- Destructive operations require explicit confirmation.
-- Players must not be stranded in an unloading/deleting world.
-- File operations must not run unsafely against live world writes.
-- Runtime claims require LIVE_SERVER proof.
-
-## Implementation Order
-
-Current implementation proceeds from stable ownership outward:
+There is no normal capability named:
 
 ```text
-world identity + registry          ✅ source + CI
-BUILD_READY policy                 ✅ source + CI
-Flat / Void creation               ✅ source + CI
-Load / Unload                      ✅ source + CI
-Teleport to World                  ✅ source + CI
-World Settings core                ✅ source + CI
-Spawning controls                  ✅ source + CI
-File operations foundation         ✅ source, CI pending
-→ Manage World lifecycle operations
-→ internal conversion runtime
-→ Import / Export
-→ client mod + Xaero integration
+Load World
+Unload World
+Auto Load
+Clone
 ```
 
-Remote CI proves compilation and targeted unit-test behavior only when the corresponding run is green. Actual Paper generation, gamerule/settings/spawning mutation, filesystem behavior on the live server, player evacuation, world load/unload/teleport, rollback, and persistence behavior remain LOCAL_CODE/LIVE_SERVER concerns.
+## Client/server boundary
+
+Fabric presentation is canonical in `docs/03-client-ui/`.
+
+Current shared contracts:
+
+```text
+World Control V3
+Map Action V2
+Transfer bounded protocol
+```
+
+World Control V3 intentionally excludes manual runtime-state product actions and carries `canManage` / `canTeleport` only for presentation shaping; Paper still performs final authorization.
+
+Map Action V2 can push authoritative current-world changes from actual player world transitions, including an explicit clear when the player enters an unmanaged world.
+
+## Safety rules
+
+- Server plugin is authoritative.
+- Paper world lifecycle/settings calls execute on the primary server thread.
+- Create never adopts an arbitrary existing folder as a new world.
+- Registry persistence is fail-closed for malformed ownership metadata.
+- Runtime load state is derived from Paper, never persisted as lifecycle.
+- File operations resolve canonical owned roots only.
+- Conflicting world operations are rejected by one operation coordinator.
+- Occupied worlds are not silently evacuated for heavy/destructive file operations.
+- Fallback/default world remains protected.
+- Import/export transfer validates bounds/checksums and cleans partial state.
+- Runtime claims require LIVE_SERVER proof.
+
+## Proof boundary
+
+Current `Local` source is ahead of fresh proof. Historical CI does not prove the current head.
+
+Final validation must cover:
+
+```text
+compile/unit tests
+Paper + Fabric World V3 / Map V2 interoperability
+existing-world adoption
+Teleport auto-load
+idle auto-unload
+occupied-world guards
+World Settings
+Duplicate
+Archive / Restore / Delete
+whole-world Export
+Map Export Area
+Import .zip / .mcworld
+conversion targets
+large transfer / disk-space failure / checksum
+permissions
+reconnect / shutdown cleanup
+```
+
+Do not claim these runtime behaviors validated until the final local/live phase has run.
