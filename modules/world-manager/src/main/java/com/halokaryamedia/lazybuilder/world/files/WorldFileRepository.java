@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.UUID;
 
 /** Path-safe filesystem boundary for World Manager file operations. */
@@ -27,9 +28,26 @@ public interface WorldFileRepository {
         return 0;
     }
 
+    /**
+     * Reconciles explicitly attributable delete staging after restart. A staged world whose
+     * registry record still exists is restored; one whose registry record is already absent is
+     * a committed delete and its staging is discarded. Unattributable legacy staging is preserved.
+     */
+    default DeleteRecovery recoverDeleteWorkspaces(Collection<WorldRecord> managedWorlds) throws IOException {
+        return new DeleteRecovery(0, 0, 0);
+    }
+
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
     void deleteWorld(WorldRecord world) throws IOException;
 
     void deleteWorkspace(Path workspace) throws IOException;
+
+    record DeleteRecovery(int restored, int discarded, int preserved) {
+        public DeleteRecovery {
+            if (restored < 0 || discarded < 0 || preserved < 0) {
+                throw new IllegalArgumentException("Delete recovery counts must not be negative");
+            }
+        }
+    }
 }
