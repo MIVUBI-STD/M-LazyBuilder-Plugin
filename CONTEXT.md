@@ -16,7 +16,7 @@ LazyBuilder
 
 External build tools such as Axiom, FastAsyncWorldEdit, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external and are not rebuilt unless a separate explicit requirement appears.
 
-## Repository Authority
+## Repository authority
 
 ```text
 Local = active development / source authority
@@ -25,15 +25,14 @@ main  = stable / release authority
 
 Do not create side development branches unless the user explicitly requests isolation.
 
-## Engineering Model
+## Engineering model
 
 - one semantic owner per responsibility;
 - one primary execution path per behavior;
 - no duplicate managers, registries, schedulers, config systems, process markers, or filesystem authorities;
-- modules remain independently maintainable;
 - internal maintenance stays internal unless the user has a real product decision;
 - prefer deletion/consolidation before introducing a new abstraction;
-- source/CI proof is distinct from local/live runtime proof;
+- source proof is distinct from local/live runtime proof;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
 - no idle/background subsystem without a concrete need;
 - use the cheapest proof capable of falsifying the changed claim.
@@ -50,7 +49,7 @@ Canonical specialist routing:
 docs/04-system/skill-routing.md
 ```
 
-Current specialist set is intentionally limited to five:
+Specialist set:
 
 ```text
 lazybuilder-desktop-runtime
@@ -62,9 +61,9 @@ lazybuilder-protocol
 
 Do not add another Skill unless a repeated responsibility has a materially different execution procedure that cannot be routed cleanly to these owners.
 
-## Remote Proof History
+## Proof history
 
-An earlier complete remote source/CI gate exists:
+An earlier complete remote source/CI gate exists at:
 
 ```text
 head: fcae5870192252bcecc63c5f0c458bed446a64a8
@@ -76,15 +75,9 @@ Tauri desktop        SUCCESS
 Overall              SUCCESS
 ```
 
-Later source simplification continued on `Local`; therefore that older gate is historical evidence, not proof of the current post-simplification head.
+That run is historical evidence only. World Manager and Fabric UI have changed substantially after that head. The current `Local` branch therefore requires a fresh compile/test/live proof pass before release claims are made.
 
-The current continuation/proof owner is:
-
-```text
-docs/05-operations/README.md
-```
-
-## Server Workspace Target
+## Server workspace target
 
 ```text
 Work Server - 1.21.4/
@@ -118,9 +111,9 @@ Canonical desktop-launched runtime ownership:
 - minimum plugin rollback snapshots → `tools/lazybuilder/plugin-backups/`;
 - Paper/runtime/plugin files → `server/`.
 
-Archive is a World-Manager lifecycle state, not a second physical world store, so no unused `world-system/archives/` directory is created.
+Archive is a lifecycle state, not a second physical world store. Do not create `world-system/archives/`.
 
-## Component Ownership
+## Component ownership
 
 ### Server-Manager
 
@@ -138,9 +131,7 @@ Desktop-native authority for:
 - resource/runtime settings;
 - launching Paper against `world-system/worlds` and passing the workspace root to Paper.
 
-It is not a Paper plugin.
-
-Runtime policy after simplification:
+Runtime policy:
 
 ```text
 Paper update          -> explicit user decision
@@ -150,8 +141,6 @@ resource tuning       -> Performance / Boost / Custom RAM
 process identity      -> one server-process.json marker
 server configuration  -> one server_config owner
 ```
-
-There is no separate `process_identity` sidecar/module and no manual CPU-allocation product flow.
 
 ### Plugin-Manager
 
@@ -163,48 +152,88 @@ Desktop-native authority for third-party Paper plugin lifecycle:
 - duplicate detection/resolution;
 - dependency/compatibility checks;
 - restart-safe enable/disable;
-- safe JAR removal with plugin data always preserved;
+- safe JAR removal with plugin data preserved;
 - minimum rollback state required for plugin mutation.
 
-It is not a Paper plugin.
-
-Plugin Manager invariants after simplification:
-
-```text
-filesystem + plugin metadata = primary truth
-category                     = derived, not persisted authority
-remove-data/quarantine       = not a supported product path
-plugin data on remove        = preserved
-historical backup retention  = removed
-persistent rollback          = one previous-valid JAR snapshot when needed
-hot reload                    = unsupported; restart remains explicit
-```
-
-Do not recreate `plugin-registry.json` category ownership or timestamped backup history without a proven product requirement.
+Do not recreate persistent category ownership, timestamped backup history, or hot-reload behavior without a proven requirement.
 
 ### World-Manager
 
-Paper-side authority for world lifecycle and files. It owns:
+Paper-side authority for managed world lifecycle, runtime coordination, files, settings, import/export/conversion, and transfer safety.
 
-- browse/select worlds;
+Canonical persistent lifecycle:
+
+```text
+ACTIVE
+ARCHIVED
+```
+
+Loaded/unloaded/loading/unloading are not durable world states. Paper is the runtime authority.
+
+Canonical runtime behavior:
+
+```text
+Teleport / settings / required use
+→ load automatically when needed
+
+world empty + idle + no conflicting operation
+→ unload automatically
+```
+
+Manual Load/Unload and per-world `autoLoad` are not product features.
+
+World Manager owns:
+
+- discover/adopt managed Paper worlds;
 - create Flat/Void;
 - BUILD_READY application;
 - teleport;
-- load/unload;
-- clone;
+- automatic runtime load/unload coordination;
+- Duplicate;
 - backup;
-- archive/restore;
-- safe delete;
-- import/export/conversion;
-- settings and managed metadata;
-- bounded long-running world tasks;
-- transfer/import/export filesystem safety.
+- Archive/Restore;
+- safe Delete;
+- Import/Export/edition-version conversion;
+- settings and durable managed metadata;
+- bounded world operations;
+- transfer/import/export filesystem safety;
+- converter capability discovery and request-bound execution.
 
-Desktop and Fabric only present/control these services through explicit transport contracts. They do not duplicate World-Manager business logic or filesystem ownership.
+Operations are transient operations, not lifecycle values.
 
-World-Manager was re-audited under the minimum-flow discipline. No architecture reduction is currently justified. Keep its bounded task runner, conversion lease, registry, Paper adapter, file/transfer owners, and conversion adapter because they each have distinct runtime responsibilities.
+```text
+DUPLICATE
+BACKUP
+IMPORT
+EXPORT
+ARCHIVE
+RESTORE
+DELETE
+```
 
-World-Manager source architecture remains structurally locked unless local/live evidence demonstrates a real boundary defect.
+Operations that require a consistent filesystem snapshot are blocked while builders remain inside the target world. World Manager does not silently eject builders merely to Duplicate/Export/Archive/Delete.
+
+User-facing copy says `Duplicate`, never `Clone`. Internal legacy Clone classes/screens/routes are removed.
+
+### Import / Export
+
+Import and Export are one World Manager capability. Chunker/converter runtime is internal implementation only and never product navigation.
+
+```text
+World Manager
+↓
+Import / Export
+↓
+canonical Import / Export services
+↓
+verified on-demand conversion runtime when required
+```
+
+Native Java 1.21.4 uses the fast path. Other target formats appear in UI only when the verified server runtime reports support.
+
+Import is file-first and always publishes a new managed world. Source format/version is detected automatically; canonical server target remains Java Edition 1.21.4.
+
+Export uses the same service path for whole-world and Map Export Area. Map area is transient context and must never become a saved daily preset.
 
 ### Utilities-Manager
 
@@ -228,11 +257,9 @@ Build Helpers
 - Glazed Terracotta Rotate
 ```
 
-Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family are intentionally excluded. Movement/Noclip already owns LazyBuilder-specific spectator movement transition; normal Minecraft/Paper spectator controls own camera targeting.
+Banner Creator, Armor Color Creator, Special Builder Items, and a custom Spectator helper family remain excluded.
 
-Utilities-Manager source architecture remains structurally locked unless local/live evidence proves a defect.
-
-## Client / Desktop Boundaries
+## Client / Desktop boundaries
 
 Desktop canonical source:
 
@@ -247,62 +274,130 @@ Stack:
 - TypeScript
 - Rust native backend
 
-Desktop frontend uses one grouped typed runtime bridge:
+Desktop work is separate from the current Fabric World Manager UI pass. Do not modify launcher UX as part of World Manager cleanup unless the user explicitly requests it.
 
-```text
-runtimeApi
-├── workspace
-├── server
-├── plugins
-└── worlds
-```
-
-A compatibility alias may remain temporarily for old imports, but there is no second mapping/business layer.
-
-Fabric client canonical source:
+Fabric canonical source:
 
 ```text
 client/fabric/
 ```
 
-World control channels remain separated by responsibility:
+Transport ownership:
 
 ```text
-lazybuilder:world     general world control/state
-lazybuilder:map       spatial map intents
-lazybuilder:transfer  file bytes
+lazybuilder:world     general managed-world/product intents
+lazybuilder:map       spatial map intents/current-world push
+lazybuilder:transfer  file bytes only
 ```
 
-The first-party Fabric World Manager surface is source-implemented for list/refresh, Create, Teleport, Load/Unload, Archive/Restore, Clone, Settings, permanent Delete, Import publication, native Java 1.21.4 whole-world Export, and the native LazyBuilder Map Preview entry point. Xaero is not a runtime dependency. Map Preview remains incomplete relative to the target Xaero-like experience and requires live validation.
-
-## Local Windows Runtime Evidence
-
-The current LIVE_SERVER validation machine uses these paths:
+Current protocol contracts:
 
 ```text
-Repository: D:\Work\AI Stuff\LazyBuilder
-Modrinth App: C:\Users\Administrator\AppData\Roaming\ModrinthApp
-Minecraft profile: C:\Users\Administrator\AppData\Roaming\ModrinthApp\profiles\1.21.4 Testing
-Installed client mod: <profile>\mods\lazybuilder-client-0.1.0-SNAPSHOT.jar
-Paper workspace: D:\Work\Minecraft\Java-Version\Java Build Server\Test\Test
-Paper endpoint: 127.0.0.1:25565
-Managed Java: C:\Users\Administrator\AppData\Local\LazyBuilder\runtimes\java-21\bin\java.exe
-TEMP/TMP: C:\Temp\LazyBuilderGradleTemp
+World Control V3
+- no manual Load/Unload
+- no autoLoad/runtimeState metadata
+- Duplicate terminology
+- verified Export format catalog
+- canManage / canTeleport presentation capabilities
+
+Map Action V2
+- map teleport / area export
+- server-observed current managed world
+- explicit CurrentWorldCleared when player enters unmanaged world
 ```
 
-The renamed Modrinth profile retains a compatibility junction at `1.21.4 Build (1)` pointing to `1.21.4 Testing`. The local player used for live checks is `Berchman` (`7fee50f6-17ad-4ada-95e0-4595e943cc54`), configured as Paper OP level 4.
+## Fabric UX target
 
-Current reproducible local/live issues for the next repair pass:
+Primary entry:
 
-- native Map Preview is not yet visually equivalent to the Xaero-style target;
-- managed-world onboarding/current-world synchronization is incomplete;
-- Map Preview actions must remain disabled until a managed current world is resolved;
-- existing/default Paper worlds are not automatically adopted into the World-Manager registry;
-- Utilities-Manager runtime output still exposes `${project.version}` in plugin metadata;
-- the Modrinth profile rename still depends on a local compatibility junction;
-- desktop-managed Paper lifecycle and direct local Paper lifecycle still need one end-to-end proof path.
+```text
+M
+→ World Map
+→ Worlds
+```
 
-## BUILD_READY Defaults
+World Manager:
+
+```text
+WORLDS
+├── Search
+├── Pinned
+├── Recent
+├── All Worlds
+├── Archived Worlds
+└── + Add World
+    ├── Create World
+    └── Import World
+```
+
+Pinned and Recent are client-owned, user-scoped, server-scoped navigation preferences. Pinned does not mean keep-loaded. Recent means the player was actually observed inside the world.
+
+Manage World:
+
+```text
+Teleport
+Import / Export
+Duplicate
+World Settings
+Archive
+Delete
+```
+
+Import / Export is one final workspace:
+
+```text
+IMPORT / EXPORT
+[ Export ] [ Import ]
+```
+
+Entry behavior:
+
+```text
+Manage World → Export tab
+Add World    → Import tab
+Map selection → Export tab with transient area
+```
+
+Daily Export defaults are user/server scoped, not per-world. Advanced overrides remain temporary unless the user explicitly saves them as default.
+
+No standalone Import screen, standalone Export screen, Clone screen, or manual runtime-state UI should return.
+
+## Map direction
+
+The first-party fullscreen map follows the familiar Xaero-style mental model without copying Xaero code/assets/branding:
+
+```text
+left drag       pan
+wheel           cursor-anchored zoom
+CTRL + wheel    precise zoom
+middle click    recenter
+right click     contextual actions
+hover           X/Z coordinates
+selection       Export Area
+```
+
+`ClientMapSurfaceCache` uses bounded regional presentation storage per managed world + dimension. It never becomes server authority and never force-loads chunks.
+
+## Transfer and recovery
+
+Transfer uses the canonical bounded plugin-message transfer system; no extra HTTP/WebSocket/cloud transport is introduced.
+
+Safety includes:
+
+- checksum validation;
+- bounded chunk/pipeline behavior;
+- server upload disk-space check;
+- client save-location disk-space check once authoritative download size is known;
+- partial-file cleanup;
+- disconnect cleanup;
+- idle session expiry;
+- one active client transfer flow.
+
+Leaving the Import / Export screen does not imply cancellation. The UI uses `Continue in Background`. Safe cancellation is not exposed until it exists end-to-end.
+
+Heavy world operations are single-flight per player. One bounded pending completion may be retained so a completed heavy action can be surfaced after reconnect rather than leaving a permanent stuck state.
+
+## BUILD_READY defaults
 
 New builder worlds target:
 
@@ -321,7 +416,7 @@ New builder worlds target:
 
 Flat uses a simple vanilla-compatible flat preset. Void is empty terrain with a small safe spawn platform.
 
-## Plugin Modernization Direction
+## Plugin modernization direction
 
 ```text
 KEEP / EXTERNAL BUILD TOOLS
@@ -348,35 +443,31 @@ REMOVE FROM NEW BASELINE
 
 Performance authority is Paper 1.21.4 native configuration rather than generic optimizer plugins.
 
-## Proof State
+## Validation state
 
-Remote proof covers source/static/CI evidence only. It does not prove installed Windows desktop behavior, running Paper lifecycle, Fabric runtime UI, native dialogs, Xaero mixins, network transfer, converter quality, real filesystem permissions, or gameplay behavior.
+The current branch is still **source-level implementation**, not fresh compile/live proof.
 
-The current phase is intentionally:
+Do not claim current `Local` is compile-validated or runtime-validated until the final validation phase runs.
 
-```text
-LOCAL_CODE
-↓
-LIVE_SERVER
-```
-
-Do not add more speculative remote refactors before current source is built locally.
-
-Priority validation:
+Final validation priority for the current World Manager pass:
 
 ```text
-1. current local build/toolchain
-2. Desktop start/stop/restart + managed Java/runtime paths
-3. canonical runtime filesystem creation
-4. process marker + detached recovery safety
-5. internal bundled core sync / manual Paper update separation
-6. Plugin Manager install/update/enable-disable/remove/duplicates
-7. World-Manager enable/control bridges
-8. Fabric World Manager lifecycle UI
-9. Import/Export + transfer + native dialogs
-10. Xaero Teleport Here / Export Area
-11. Utilities World Safety / Movement / Build Helpers
-12. restart/shutdown persistence and cleanup
+1. current Local compile/test
+2. Paper + Fabric protocol compatibility (World V3 / Map V2)
+3. M → Map → Worlds navigation across GUI scales
+4. current-world push through normal teleport, command, portal and unmanaged world
+5. Pinned / Recent / Search / Archived behavior
+6. permission-limited UI and server authorization
+7. automatic load + idle unload
+8. occupied-world safeguards
+9. Duplicate / Archive / Restore / Delete
+10. whole-world Export native fast path
+11. capability-driven conversion targets
+12. Map Export Area through the same Export workspace
+13. Import .zip / .mcworld
+14. native file dialogs, large transfer, checksum and disk-space failures
+15. disconnect/reconnect and pending completion recovery
+16. shutdown/restart cleanup and persistence
 ```
 
-Only reproducible `LOCAL_CODE` / `LIVE_SERVER` defects should reopen source work. Fix them directly on `Local` at the smallest wrong owner. Do not reopen locked architecture unless runtime evidence demonstrates a real architecture-level requirement.
+Fix reproducible defects at the smallest wrong owner. Do not reopen duplicated architecture or reintroduce legacy runtime-state/product flows merely to work around a local bug.
