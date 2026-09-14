@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.client;
 
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.MapColor;
 import net.minecraft.client.world.ClientWorld;
@@ -37,7 +38,7 @@ import java.util.zip.GZIPOutputStream;
  * partitioned into sparse 128x128-block regions so large explored worlds do not
  * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
- * <p>Resident region data uses primitive fixed-capacity arrays plus a BitSet
+ * <p>Resident region data uses lazily allocated primitive arrays plus a BitSet
  * instead of boxed map entries. Disk I/O stays sparse and compatible with the
  * existing region format. Region files load off the render thread and dirty
  * regions are written through one ordered LazyBuilder-owned I/O lane.</p>
@@ -68,11 +69,14 @@ public final class ClientMapSurfaceCache {
     private String scope = "";
     private Path scopeDirectory;
     private volatile long scopeGeneration;
-    private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
     private RegionSnapshot activeCompletedSnapshot;
     private RegionData activeCompletedRegion;
     private int activeCompletedIndex;
     private int residentSampleCount;
+
+    public ClientMapSurfaceCache() {
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> shutdownIo());
+    }
 
     public void useScope(String scope, Path storageRoot) {
         String normalized = Objects.requireNonNullElse(scope, "");
@@ -176,7 +180,7 @@ public final class ClientMapSurfaceCache {
     /** Queues sparse primitive snapshots of all dirty resident regions without blocking rendering. */
     public void flushAsync() {
         Path directory = scopeDirectory;
-        if (directory == null) return;
+        if (directory == null || ioExecutor.isShutdown()) return;
         for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
             RegionData region = entry.getValue();
             if (!region.dirty || region.isEmpty()) continue;
@@ -185,8 +189,9 @@ public final class ClientMapSurfaceCache {
         }
     }
 
-    /** Queues final dirty snapshots and lets the dedicated I/O lane finish them during client shutdown. */
+    /** Queues final dirty snapshots and lets the dedicated I/O lane drain before JVM exit. */
     public void shutdownIo() {
+        if (ioExecutor.isShutdown()) return;
         flushAsync();
         ioExecutor.shutdown();
     }
@@ -206,7 +211,7 @@ public final class ClientMapSurfaceCache {
     }
 
     private void scheduleRegionLoad(Path directory, long regionKey, RegionData region, long generation) {
-        if (region.loadScheduled) return;
+        if (region.loadScheduled || ioExecutor.isShutdown()) return;
         region.loadScheduled = true;
         Path file = regionFile(directory, regionKey);
         CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
@@ -290,14 +295,10 @@ public final class ClientMapSurfaceCache {
         pending.add(key);
     }
 
-    private synchronized void enqueueRegionWrite(
-            Path directory,
-            long regionKey,
-            RegionSnapshot snapshot
-    ) {
+    private void enqueueRegionWrite(Path directory, long regionKey, RegionSnapshot snapshot) {
+        if (ioExecutor.isShutdown()) return;
         Path destination = regionFile(directory, regionKey);
-        writeTail = writeTail.handle((ignored, failure) -> null)
-                .thenRunAsync(() -> writeRegion(destination, snapshot), ioExecutor);
+        ioExecutor.execute(() -> writeRegion(destination, snapshot));
     }
 
     private void migrateLegacySnapshot(
@@ -307,7 +308,7 @@ public final class ClientMapSurfaceCache {
             long generation
     ) {
         Path legacy = storageRoot.resolve(safeName(normalizedScope) + ".surface.gz");
-        if (!Files.isRegularFile(legacy)) return;
+        if (!Files.isRegularFile(legacy) || ioExecutor.isShutdown()) return;
         Path migratedMarker = targetDirectory.resolve(".legacy-v1-migrated");
         if (Files.exists(migratedMarker)) return;
 
@@ -315,17 +316,11 @@ public final class ClientMapSurfaceCache {
             Map<Long, RegionData> partitioned = readLegacySnapshot(legacy);
             if (partitioned.isEmpty() || generation != scopeGeneration) return;
             for (Map.Entry<Long, RegionData> entry : partitioned.entrySet()) {
-                enqueueRegionWrite(targetDirectory, entry.getKey(), entry.getValue().snapshot());
+                writeRegion(regionFile(targetDirectory, entry.getKey()), entry.getValue().snapshot());
             }
-            enqueueMarkerWrite(targetDirectory, migratedMarker);
-        }, ioExecutor);
-    }
-
-    private synchronized void enqueueMarkerWrite(Path targetDirectory, Path marker) {
-        writeTail = writeTail.handle((ignored, failure) -> null).thenRunAsync(() -> {
             try {
                 Files.createDirectories(targetDirectory);
-                Files.writeString(marker, "v1\n");
+                Files.writeString(migratedMarker, "v1\n");
             } catch (IOException ignored) { }
         }, ioExecutor);
     }
@@ -527,21 +522,22 @@ public final class ClientMapSurfaceCache {
     }
 
     private static final class RegionData {
-        private final int[] colors = new int[REGION_CAPACITY];
-        private final int[] heights = new int[REGION_CAPACITY];
-        private final BitSet present = new BitSet(REGION_CAPACITY);
+        private int[] colors;
+        private int[] heights;
+        private BitSet present;
         private int size;
         private boolean loadScheduled;
         private boolean loaded;
         private boolean dirty;
 
         private SurfaceSample get(int index) {
-            if (!present.get(index)) return null;
+            if (present == null || !present.get(index)) return null;
             return new SurfaceSample(colors[index], heights[index], true);
         }
 
         /** Returns true when this call inserted a previously absent slot. */
         private boolean put(int index, SurfaceSample sample) {
+            ensureStorage();
             boolean inserted = !present.get(index);
             colors[index] = sample.color();
             heights[index] = sample.height();
@@ -554,6 +550,7 @@ public final class ClientMapSurfaceCache {
 
         /** Returns true when the absent slot was inserted. */
         private boolean putIfAbsent(int index, SurfaceSample sample) {
+            ensureStorage();
             if (present.get(index)) return false;
             colors[index] = sample.color();
             heights[index] = sample.height();
@@ -583,6 +580,13 @@ public final class ClientMapSurfaceCache {
                 cursor++;
             }
             return new RegionSnapshot(indices, snapshotColors, snapshotHeights);
+        }
+
+        private void ensureStorage() {
+            if (present != null) return;
+            colors = new int[REGION_CAPACITY];
+            heights = new int[REGION_CAPACITY];
+            present = new BitSet(REGION_CAPACITY);
         }
     }
 
