@@ -46,7 +46,8 @@ public final class ClientMapSurfaceCache {
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
     private static final int MAX_PENDING = 262_144;
-    private static final int MAX_COMPLETED_LOADS_PER_TICK = 16;
+    private static final int MAX_LIVE_SAMPLES_PER_FRAME = 1024;
+    private static final int MAX_COMPLETED_ENTRIES_PER_FRAME = 4096;
 
     public static final int UNEXPLORED_COLOR = 0xFF101419;
 
@@ -59,6 +60,9 @@ public final class ClientMapSurfaceCache {
     private Path scopeDirectory;
     private volatile long scopeGeneration;
     private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
+    private LoadedRegion activeCompletedLoad;
+    private Iterator<Map.Entry<Integer, SurfaceSample>> activeCompletedEntries;
+    private RegionData activeCompletedRegion;
 
     public void useScope(String scope, Path storageRoot) {
         String normalized = Objects.requireNonNullElse(scope, "");
@@ -76,6 +80,9 @@ public final class ClientMapSurfaceCache {
         regions.clear();
         pending.clear();
         completedLoads.clear();
+        activeCompletedLoad = null;
+        activeCompletedEntries = null;
+        activeCompletedRegion = null;
 
         if (scopeDirectory != null) {
             migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
@@ -115,15 +122,18 @@ public final class ClientMapSurfaceCache {
 
     /** Samples bounded live terrain and also merges bounded async region loads. */
     public int processPending(ClientWorld world, int budget) {
-        drainCompletedLoads();
-        if (budget <= 0 || pending.isEmpty()) {
+        int mergeBudget = Math.min(Math.max(0, budget), MAX_COMPLETED_ENTRIES_PER_FRAME);
+        drainCompletedLoads(mergeBudget);
+
+        int sampleBudget = Math.min(Math.max(0, budget), MAX_LIVE_SAMPLES_PER_FRAME);
+        if (sampleBudget <= 0 || pending.isEmpty()) {
             pruneRegions();
             return 0;
         }
 
         int processed = 0;
         Iterator<Long> iterator = pending.iterator();
-        while (iterator.hasNext() && processed < budget) {
+        while (iterator.hasNext() && processed < sampleBudget) {
             long key = iterator.next();
             iterator.remove();
             int x = unpackX(key);
@@ -184,25 +194,48 @@ public final class ClientMapSurfaceCache {
                 .thenAccept(samples -> completedLoads.add(new LoadedRegion(generation, regionKey, samples)));
     }
 
-    private void drainCompletedLoads() {
-        int drained = 0;
-        while (drained < MAX_COMPLETED_LOADS_PER_TICK) {
-            LoadedRegion loaded = completedLoads.poll();
-            if (loaded == null) break;
-            drained++;
-            if (loaded.generation != scopeGeneration) continue;
+    private int drainCompletedLoads(int budget) {
+        if (budget <= 0) return 0;
 
-            RegionData region = regions.get(loaded.regionKey);
-            if (region == null) {
-                region = new RegionData();
-                region.loadScheduled = true;
-                regions.put(loaded.regionKey, region);
+        int processed = 0;
+        while (processed < budget) {
+            if (activeCompletedEntries == null) {
+                LoadedRegion loaded = completedLoads.poll();
+                if (loaded == null) break;
+                if (loaded.generation != scopeGeneration) continue;
+
+                RegionData region = regions.get(loaded.regionKey);
+                if (region == null) {
+                    region = new RegionData();
+                    region.loadScheduled = true;
+                    regions.put(loaded.regionKey, region);
+                }
+
+                activeCompletedLoad = loaded;
+                activeCompletedRegion = region;
+                activeCompletedEntries = loaded.samples.entrySet().iterator();
+                if (!activeCompletedEntries.hasNext()) {
+                    finishActiveCompletedLoad();
+                    continue;
+                }
             }
-            for (Map.Entry<Integer, SurfaceSample> entry : loaded.samples.entrySet()) {
-                region.samples.putIfAbsent(entry.getKey(), entry.getValue());
+
+            while (processed < budget && activeCompletedEntries.hasNext()) {
+                Map.Entry<Integer, SurfaceSample> entry = activeCompletedEntries.next();
+                activeCompletedRegion.samples.putIfAbsent(entry.getKey(), entry.getValue());
+                processed++;
             }
-            region.loaded = true;
+
+            if (!activeCompletedEntries.hasNext()) finishActiveCompletedLoad();
         }
+        return processed;
+    }
+
+    private void finishActiveCompletedLoad() {
+        if (activeCompletedRegion != null) activeCompletedRegion.loaded = true;
+        activeCompletedLoad = null;
+        activeCompletedEntries = null;
+        activeCompletedRegion = null;
     }
 
     private void pruneRegions() {
