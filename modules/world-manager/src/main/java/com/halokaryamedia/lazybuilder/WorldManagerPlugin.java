@@ -106,6 +106,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
                 worldManager.worldExportService(),
                 worldManager.worldImportService(),
                 worldManager.conversionUpdateService(),
+                worldManager.transferSessionService(),
                 heavyOperations
         );
         this.worldControlPayloadAdapter.start();
