@@ -116,6 +116,7 @@ public final class WorldExportService {
     public void captureSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
+        requireQuiescentSnapshotSource(task);
         Path snapshot = null;
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
@@ -215,6 +216,26 @@ public final class WorldExportService {
         Objects.requireNonNull(task, "task");
         Path abandonedSnapshot = task.closeAndDetachIdleSnapshot();
         cleanupWorkspace(abandonedSnapshot);
+    }
+
+    private void requireQuiescentSnapshotSource(ExportTask task) {
+        WorldId id = task.source.id();
+        if (operations.activeOperation(id) != WorldOperationType.EXPORT) {
+            throw new IllegalStateException("Export snapshot no longer owns the world operation: " + task.source.displayName());
+        }
+        WorldRecord current = registry.find(id)
+                .orElseThrow(() -> new IllegalStateException("Export source is no longer managed: " + task.source.displayName()));
+        if (current.lifecycle() != WorldLifecycle.ACTIVE) {
+            throw new IllegalStateException("Export source is no longer active: " + current.displayName());
+        }
+        if (runtimeService.hasPlayers(id)) {
+            throw new IllegalStateException("Cannot snapshot " + current.displayName()
+                    + " while builders are inside the world");
+        }
+        if (runtimeService.isLoaded(id)) {
+            throw new IllegalStateException("Cannot snapshot " + current.displayName()
+                    + " because it became loaded after export preparation");
+        }
     }
 
     static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
