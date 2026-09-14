@@ -61,6 +61,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final Map<UUID, String> inspectionInFlight = new ConcurrentHashMap<>();
     /** Once a player disconnects during inspection, that review stays abandoned even if they reconnect quickly. */
     private final Set<UUID> abandonedInspectionOwners = ConcurrentHashMap.newKeySet();
+    /** Reviewed uploads cannot be deleted while another heavy operation may still be reading them. */
+    private final Set<UUID> discardReviewedAfterHeavy = ConcurrentHashMap.newKeySet();
     /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
     private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
@@ -111,7 +113,9 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
         abandonedInspectionOwners.addAll(inspectionInFlight.keySet());
         for (Map.Entry<UUID, String> entry : Map.copyOf(reviewedImportArtifacts).entrySet()) {
-            if (!heavyInFlight.contains(entry.getKey())) {
+            if (heavyInFlight.contains(entry.getKey())) {
+                discardReviewedAfterHeavy.add(entry.getKey());
+            } else {
                 discardReviewedArtifact(entry.getKey(), entry.getValue());
             }
         }
@@ -120,10 +124,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
 
         started = false;
-        heavyInFlight.clear();
         pendingHeavyCompletion.clear();
-        reviewedImportArtifacts.clear();
-        inspectionInFlight.clear();
         formatWaiters.clear();
         formatRefreshInFlight.set(false);
     }
@@ -138,9 +139,12 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
         String reviewed = reviewedImportArtifacts.get(owner);
-        if (reviewed != null && !heavyInFlight.contains(owner)) {
-            discardReviewedArtifact(owner, reviewed);
+        if (reviewed == null) return;
+        if (heavyInFlight.contains(owner)) {
+            discardReviewedAfterHeavy.add(owner);
+            return;
         }
+        discardReviewedArtifact(owner, reviewed);
     }
 
     @Override
@@ -472,6 +476,12 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
     }
 
+    private void discardDeferredReviewedArtifact(UUID owner) {
+        if (!discardReviewedAfterHeavy.remove(owner)) return;
+        String reviewed = reviewedImportArtifacts.get(owner);
+        if (reviewed != null) discardReviewedArtifact(owner, reviewed);
+    }
+
     private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
         if (!beginHeavy(player)) return;
         scheduleHeavy(
@@ -576,6 +586,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 }
 
                 if (stopping || !started) {
+                    discardDeferredReviewedArtifact(owner);
                     heavyInFlight.remove(owner);
                     return;
                 }
@@ -588,10 +599,12 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         return response.encode(finalResult);
                     }));
                 } catch (RuntimeException scheduleFailure) {
+                    discardDeferredReviewedArtifact(owner);
                     heavyInFlight.remove(owner);
                 }
             });
         } catch (RuntimeException scheduleFailure) {
+            discardDeferredReviewedArtifact(owner);
             heavyInFlight.remove(owner);
             if (started && !stopping && player.isOnline()) {
                 send(player, WorldControlWireProtocol.error("World Manager is shutting down"));
@@ -610,6 +623,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 pendingHeavyCompletion.put(owner, payload);
             }
         } finally {
+            discardDeferredReviewedArtifact(owner);
             heavyInFlight.remove(owner);
         }
     }
