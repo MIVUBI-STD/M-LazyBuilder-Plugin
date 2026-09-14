@@ -13,7 +13,10 @@ public final class LazyBuilderClient implements ClientModInitializer {
     public void onInitializeClient() {
         new LazyBuilderClientNetworking(WORLDS, MAPS, TRANSFERS).register();
         LazyBuilderClientUi.register(WORLDS, TRANSFERS, MAPS);
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> TRANSFERS.reset());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            TRANSFERS.reset();
+            ClientFileDialogs.shutdown();
+        });
     }
 
     public static ClientWorldController worlds() { return WORLDS; }
