@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder_performance_manager",
+  "version": "${version}",
+  "name": "LazyBuilder Performance Manager",
+  "description": "Performance status and coordination for the LazyBuilder client without replacing specialist optimization mods.",
+  "authors": ["halokaryamedia-source"],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
