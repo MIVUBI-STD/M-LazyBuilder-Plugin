@@ -20,20 +20,22 @@ pub fn workspace_state() -> Result<WorkspaceState, String> {
 }
 
 #[tauri::command]
-pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
-    workspace_registry::provisioning_status()
+pub async fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
+    tauri::async_runtime::spawn_blocking(workspace_registry::provisioning_status)
+        .await
+        .map_err(|error| format!("Server readiness check failed: {error}"))?
 }
 
 #[tauri::command]
-pub async fn workspace_provision(
-    app: AppHandle,
-    state: State<'_, ServerManagerState>,
-) -> Result<provisioning::ProvisionResult, String> {
-    ensure_runtime_update_allowed(&state)?;
-    let resource_dir = app.path().resource_dir().ok();
-    tauri::async_runtime::spawn_blocking(move || provisioning::provision_active(resource_dir.as_deref()))
-        .await
-        .map_err(|error| format!("Server provisioning task failed: {error}"))?
+pub async fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        ensure_runtime_update_allowed(&state)?;
+        let resource_dir = app.path().resource_dir().ok();
+        provisioning::provision_active(resource_dir.as_deref())
+    })
+    .await
+    .map_err(|error| format!("Server provisioning task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -44,19 +46,24 @@ pub async fn workspace_runtime_update_status() -> Result<runtime_updates::Runtim
 }
 
 #[tauri::command]
-pub async fn workspace_update_paper(
-    state: State<'_, ServerManagerState>,
-) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
-    ensure_runtime_update_allowed(&state)?;
-    tauri::async_runtime::spawn_blocking(runtime_updates::update_paper)
-        .await
-        .map_err(|error| format!("Paper update task failed: {error}"))?
+pub async fn workspace_update_paper(app: AppHandle) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        ensure_runtime_update_allowed(&state)?;
+        runtime_updates::update_paper()
+    })
+    .await
+    .map_err(|error| format!("Paper update task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
-    workspace_registry::accept_eula()?;
-    workspace_registry::provisioning_status()
+pub async fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        workspace_registry::accept_eula()?;
+        workspace_registry::provisioning_status()
+    })
+    .await
+    .map_err(|error| format!("EULA acceptance task failed: {error}"))?
 }
 
 #[tauri::command]
