@@ -72,7 +72,7 @@ class LocalWorldFileRepositoryTest {
         assertTrue(Files.exists(worldRoot.resolve("BuildCopy/level.dat")));
 
         WorldRecord copy = new WorldRecord(WorldId.create(), "BuildCopy", "Build Copy",
-                WorldKind.FLAT, WorldLifecycle.ACTIVE, false);
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
         repository.deleteWorld(copy);
         assertFalse(Files.exists(worldRoot.resolve("BuildCopy")));
 
@@ -81,6 +81,6 @@ class LocalWorldFileRepositoryTest {
     }
 
     private static WorldRecord world() {
-        return new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE, false);
+        return new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
     }
 }
