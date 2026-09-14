@@ -22,8 +22,16 @@ final class JavaLevelDataVersion {
     }
 
     static OptionalInt read(Path levelDat) {
-        try (InputStream raw = Files.newInputStream(levelDat);
-             InputStream gzip = new GZIPInputStream(raw);
+        try (InputStream raw = Files.newInputStream(levelDat)) {
+            return read(raw);
+        } catch (IOException | RuntimeException malformed) {
+            return OptionalInt.empty();
+        }
+    }
+
+    /** Reads one standalone level.dat stream without trusting any external metadata. */
+    static OptionalInt read(InputStream levelDat) {
+        try (InputStream gzip = new GZIPInputStream(levelDat);
              DataInputStream in = new DataInputStream(new LimitedInputStream(gzip, MAX_DECOMPRESSED_BYTES))) {
             int rootType = in.readUnsignedByte();
             if (rootType != 10) return OptionalInt.empty();
