@@ -17,15 +17,16 @@ External specialist foundations remain external, including Sodium, Iris, Immedia
 - no default keybind is required;
 - capability detection is passive;
 - performance metrics are captured on demand and no history database is maintained;
-- native background FPS policy must automatically stand down when Dynamic FPS is installed.
+- native background FPS policy must automatically stand down when Dynamic FPS is installed;
+- new Performance features require an ownership/overlap review instead of being added by default.
 
-## Implemented C3 layers
+## Implemented C3 scope
 
-The current implementation provides three layers:
+The current first-scope implementation provides three layers:
 
 1. `PerformanceManagerClient.capabilities()` — immutable optional-mod capability snapshot;
 2. `PerformanceManagerClient.currentState()` — lightweight on-demand performance snapshot;
-3. guarded native background FPS policy for clients without Dynamic FPS.
+3. guarded native background FPS fallback for clients without Dynamic FPS.
 
 Detected capabilities currently include:
 
@@ -58,7 +59,7 @@ Detected optimizer capabilities
 
 State capture is read-only and only runs when requested. No performance-history sampler, renderer hook, or permanent HUD is registered.
 
-Exact Iris shader-active detection is intentionally not guessed through fragile reflection. Iris presence is exposed as a capability first; active-shader integration may be added only if a stable public boundary is available.
+Exact Iris shader-active detection is intentionally not guessed through fragile reflection. Iris presence is exposed as a capability first; active-shader integration may only be reconsidered if a stable public integration boundary and concrete use case exist.
 
 ## Background FPS policy
 
@@ -74,19 +75,24 @@ background.minimized_fps=10
 
 The policy changes only Minecraft's temporary window framerate limit. It does not rewrite the user's configured video-option FPS limit. When the window becomes focused again, the current user FPS limit becomes authoritative again.
 
-The controller uses one lightweight end-client-tick hook because focus/minimize state can change at runtime. It performs no sampling, persistence, renderer work, or external-mod calls on that tick.
+The controller uses one lightweight end-client-tick hook because focus/minimize state can change at runtime. It performs no metrics history sampling, renderer work, or external-mod calls on that tick.
 
-## Deferred
+## Scope lock
 
-The following remain out of the active product surface until independently justified:
+The current Performance Manager scope is considered sufficient for the architecture phase. The following remain deferred until a separate review proves a non-overlapping need:
 
 - performance HUD or permanent overlay;
-- performance profiles;
+- performance profiles such as Balanced, Large Map, Visual Review, or Custom;
+- automatic render/simulation-distance tuning;
 - automatic graphics-quality changes;
-- Sodium/Iris settings cloning;
-- renderer hooks;
-- memory optimization;
+- Sodium settings cloning or replacement UI;
+- Iris settings cloning or shader management;
+- renderer hooks or renderer abstraction;
+- memory optimization or GC controls;
 - chunk/render optimization engines;
-- replacement implementations for specialist optimization mods.
+- entity/block culling implementations;
+- FPS/frame-time history storage.
 
-The next review should decide whether any additional coordination is actually needed beyond capability awareness, state inspection, and guarded background resource policy before introducing profiles or settings surfaces.
+Dynamic FPS is an optional external provider, not a required dependency. The native LazyBuilder policy only covers the narrow unfocused/minimized FPS fallback and must not grow into a Dynamic FPS clone.
+
+See `docs/04-system/performance-manager-audit-lock.md` for the full ownership and overlap decisions.
