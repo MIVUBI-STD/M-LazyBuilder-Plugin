@@ -15,16 +15,19 @@ struct ProcessMarker {
 /// Read-only cross-workspace safety guard.
 ///
 /// ServerManager remains the lifecycle/process authority. This helper only prevents the
-/// Server Library from activating or creating another workspace while a Paper process
-/// belonging to a different registered LazyBuilder workspace is still alive after an
-/// abnormal launcher exit.
-pub fn ensure_no_running_paper_outside_active() -> Result<(), String> {
+/// Server Library from opening or creating a different workspace while a Paper process
+/// belonging to another registered LazyBuilder workspace is still alive after an
+/// abnormal launcher exit. `allowed_workspace_id` lets the user reopen the workspace
+/// that owns that detached process so ServerManager can recover or stop it.
+pub fn ensure_no_running_paper_except(allowed_workspace_id: Option<&str>) -> Result<(), String> {
     let active_id = workspace_registry::current()?.map(|entry| entry.id);
     let servers = workspace_registry::list()?;
     let mut system = System::new_all();
 
     for server in servers {
-        if active_id.as_deref() == Some(server.id.as_str()) {
+        if active_id.as_deref() == Some(server.id.as_str())
+            || allowed_workspace_id == Some(server.id.as_str())
+        {
             continue;
         }
 
@@ -49,7 +52,7 @@ pub fn ensure_no_running_paper_outside_active() -> Result<(), String> {
         }
 
         return Err(format!(
-            "{} is still running in the background. Reopen that server and stop it before opening, creating, or adopting another server.",
+            "{} is still running in the background. Open that server and stop it before opening, creating, or adopting another server.",
             server.name
         ));
     }
