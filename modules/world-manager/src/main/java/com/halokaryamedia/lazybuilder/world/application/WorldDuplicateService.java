@@ -42,6 +42,10 @@ public final class WorldDuplicateService {
         if (source.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Archived worlds must be restored before duplicating: " + source.displayName());
         }
+        if (runtimeService.hasPlayers(sourceId)) {
+            throw new IllegalStateException("Cannot duplicate " + source.displayName()
+                    + " while builders are inside the world");
+        }
 
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, source.kind(),
