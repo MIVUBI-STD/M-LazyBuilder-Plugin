@@ -107,6 +107,8 @@ jobs:
         run: gradle -p client/map-manager --no-daemon build
       - name: Compile Utility Manager
         run: gradle -p client/utility-manager --no-daemon build
+      - name: Compile Performance Manager
+        run: gradle -p client/performance-manager --no-daemon build
 
   tauri-desktop:
     needs: paper
