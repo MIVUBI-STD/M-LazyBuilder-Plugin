@@ -61,8 +61,8 @@ permissions:
       lazybuilder.utilities.reload: true
 
   lazybuilder.utilities.help:
-    description: Use the LazyBuilder Utilities help hub.
-    default: false
+    description: View the safe LazyBuilder Utilities discovery/help hub.
+    default: true
   lazybuilder.utilities.gamemode:
     description: Use familiar LazyBuilder gamemode shortcuts.
     default: false

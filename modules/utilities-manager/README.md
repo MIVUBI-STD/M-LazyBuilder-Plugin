@@ -20,12 +20,12 @@ LazyBuilder preserves normal Minecraft/WorldEdit muscle memory. Frequently used 
 
 ```text
 /lb
-/lb help [movement|build|minecraft|worldedit]
+/lb help [movement|build|world|minecraft|worldedit]
 /lb status     # admin diagnostics
 /lb reload     # admin config reload
 ```
 
-The player-facing help stays concise. When WorldEdit/FAWE is present, `/lb` can point builders toward a small curated set of familiar commands without reimplementing them.
+The help hub itself is safe and visible by default so a non-OP user is not left without discovery. Actual builder actions remain permission-gated and the help output only presents actions available under the current feature/config/permission state. WorldEdit/FAWE references are curated and never reimplement those commands.
 
 ## Permission model
 
@@ -36,7 +36,7 @@ lazybuilder.builder
 lazybuilder.admin
 ```
 
-`lazybuilder.builder` grants normal Utilities command and build-helper permissions. `lazybuilder.admin` includes the builder role plus status/reload diagnostics. Fine-grained child permissions remain available for servers that need them.
+`lazybuilder.builder` grants normal Utilities command and build-helper permissions. `lazybuilder.admin` includes the builder role plus status/reload diagnostics. Fine-grained child permissions remain available. `lazybuilder.utilities.help` is intentionally safe-by-default; it does not grant the actions it describes.
 
 ## Feature families
 
@@ -71,14 +71,18 @@ Movement uses one per-player runtime state so Fly, Noclip, gamemode shortcuts, a
 - Fly intent is reapplied across explicit gamemode changes and temporary Noclip transitions.
 - transient state is restored on player quit and plugin shutdown.
 
+Configuration uses the simple key `abilities.fly`. The previous `abilities.advanced-fly` key is still read when `fly` is absent so existing Local configs do not silently change behavior.
+
 ### Build Helpers
 
 Build helpers use stable Bukkit block-data APIs and only run for players with `lazybuilder.utilities.build`.
 
 - interactive helpers accept the main hand only, preventing duplicate off-hand execution;
-- Iron Door Toggle runs on right-click;
+- Iron Door Toggle resolves both door halves and applies one logical open/close state;
 - Double Slab Break uses the sneak guard by default, leaves one bottom slab, and does not create item drops in Creative;
 - Glazed Terracotta Rotate uses sneak + right-click by default and rotates cardinal facing clockwise.
+
+`/lb help build` reports the current helper switches rather than documenting disabled behavior as available.
 
 ### World Safety
 
@@ -93,13 +97,25 @@ features:
       exclude-worlds: []
 ```
 
-`all` protects every world except exclusions. `include` protects only explicitly included worlds, still honoring exclusions.
+`all` protects every world except exclusions. `include` protects only explicitly included worlds, still honoring exclusions. `/lb help world` exposes the active protections and scope so builders can understand non-vanilla behavior such as protected TNT or leaves.
 
 ## Configuration and reload
 
 The three canonical feature sections are required. Missing entire sections or invalid World Safety scope modes are rejected instead of silently enabling defaults under a typo.
 
-`/lb reload` validates the candidate config before shutting down the current feature runtime. If validation fails, the current runtime is kept.
+`/lb reload` validates the candidate config before shutting down the current feature runtime. If candidate activation fails after shutdown, Utilities attempts to restore the previous runtime; if rollback itself fails, the plugin disables rather than claiming a healthy partial state.
+
+## Diagnostics
+
+`/lb status` distinguishes feature states:
+
+```text
+READY
+DISABLED
+FAILED
+```
+
+A failed feature includes a concise reason. Command health is reported separately as declared/bound command coverage, so an intentionally disabled feature is not confused with a missing command declaration.
 
 ## Maintenance constraints
 

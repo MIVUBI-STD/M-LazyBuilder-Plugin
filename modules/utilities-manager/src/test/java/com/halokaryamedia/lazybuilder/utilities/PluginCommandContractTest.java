@@ -21,6 +21,7 @@ final class PluginCommandContractTest {
             assertNotNull(pluginYml.getConfigurationSection("commands." + command), command);
         }
         assertTrue(pluginYml.getStringList("commands.nightvision.aliases").contains("nv"));
+        assertTrue(pluginYml.getBoolean("permissions.lazybuilder.utilities.help.default"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.fly"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.build"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.admin.children.lazybuilder.utilities.reload"));

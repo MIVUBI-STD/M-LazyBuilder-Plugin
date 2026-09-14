@@ -6,8 +6,9 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.Directional;
-import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.type.Door;
 import org.bukkit.block.data.type.Slab;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
@@ -67,10 +68,10 @@ public final class BuildHelpersFeature implements UtilityFeature, Listener {
         if (!player.hasPermission(BUILD_PERMISSION)) return;
         Block block = event.getClickedBlock();
         if (block == null || block.getType() != Material.IRON_DOOR) return;
-        if (!(block.getBlockData() instanceof Openable openable)) return;
+        if (!(block.getBlockData() instanceof Door door)) return;
 
-        openable.setOpen(!openable.isOpen());
-        block.setBlockData(openable, true);
+        boolean nextOpen = !door.isOpen();
+        applyDoorState(block, door, nextOpen);
         event.setUseInteractedBlock(Event.Result.DENY);
     }
 
@@ -108,6 +109,21 @@ public final class BuildHelpersFeature implements UtilityFeature, Listener {
         directional.setFacing(clockwise(directional.getFacing()));
         block.setBlockData(directional, true);
         event.setUseInteractedBlock(Event.Result.DENY);
+    }
+
+    private void applyDoorState(Block clicked, Door clickedData, boolean open) {
+        Door updatedClicked = (Door) clickedData.clone();
+        updatedClicked.setOpen(open);
+        clicked.setBlockData(updatedClicked, true);
+
+        Block other = clicked.getRelative(clickedData.getHalf() == Bisected.Half.BOTTOM ? BlockFace.UP : BlockFace.DOWN);
+        if (other.getType() != Material.IRON_DOOR) return;
+        if (!(other.getBlockData() instanceof Door otherData)) return;
+        if (otherData.getHalf() == clickedData.getHalf()) return;
+
+        Door updatedOther = (Door) otherData.clone();
+        updatedOther.setOpen(open);
+        other.setBlockData(updatedOther, true);
     }
 
     static boolean acceptsHand(EquipmentSlot hand) {

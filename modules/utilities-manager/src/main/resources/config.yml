@@ -16,7 +16,7 @@ features:
   movement:
     enabled: true
     abilities:
-      advanced-fly: true
+      fly: true
       noclip: true
       night-vision: true
 

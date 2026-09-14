@@ -1,8 +1,12 @@
 package com.halokaryamedia.lazybuilder.utilities;
 
+import com.halokaryamedia.lazybuilder.utilities.UtilitiesManagerPlugin.FeatureStatus;
 import com.halokaryamedia.lazybuilder.utilities.feature.buildhelpers.BuildHelpersFeature;
+import com.halokaryamedia.lazybuilder.utilities.feature.buildhelpers.BuildHelpersSettings;
 import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementFeature;
+import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementSettings;
 import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetyFeature;
+import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetySettings;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -34,7 +38,7 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         String sub = args[0].toLowerCase(Locale.ROOT);
         return switch (sub) {
             case "help" -> {
-                showHelp(sender, args.length >= 2 ? args[1] : "home");
+                showHelp(sender, args);
                 yield true;
             }
             case "status" -> {
@@ -47,7 +51,7 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
                 boolean success = plugin.reloadUtilities();
                 sender.sendMessage(success
                         ? "LazyBuilder Utilities reloaded."
-                        : "Utilities reload failed; check the server console.");
+                        : "Utilities reload failed; previous runtime was kept when possible. Check console if needed.");
                 yield true;
             }
             default -> {
@@ -67,79 +71,235 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
             return filter(options, args[0]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("help")) {
-            List<String> options = new ArrayList<>(List.of("movement", "build", "minecraft"));
+            List<String> options = new ArrayList<>(List.of("movement", "build", "world", "minecraft"));
             if (plugin.hasWorldEdit()) options.add("worldedit");
             return filter(options, args[1]);
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("help") && args[1].equalsIgnoreCase("worldedit") && plugin.hasWorldEdit()) {
+            return filter(List.of("navigation", "selection", "edit", "clipboard", "history"), args[2]);
         }
         return List.of();
     }
 
     private void showHome(CommandSender sender) {
-        sender.sendMessage("LazyBuilder Utilities");
-        sender.sendMessage("Quick commands: /fly  /noclip  /nv  /gmc");
+        sender.sendMessage(Component.text("LazyBuilder Utilities"));
         if (sender instanceof Player player) {
-            player.sendMessage(menuLink("[ Movement ]", "/lb help movement", "Movement shortcuts"));
-            player.sendMessage(menuLink("[ Build ]", "/lb help build", "Builder interaction helpers"));
-            player.sendMessage(menuLink("[ Minecraft ]", "/lb help minecraft", "Useful vanilla commands"));
+            Component quick = Component.text("Quick: ")
+                    .append(quickLink(player, "Fly", "/fly", "Toggle or set builder flight", canUseFly(player)))
+                    .append(Component.space())
+                    .append(quickLink(player, "Noclip", "/noclip", "Temporary spectator-based noclip", canUseNoclip(player)))
+                    .append(Component.space())
+                    .append(quickLink(player, "NV", "/nv", "Toggle Night Vision", canUseNightVision(player)))
+                    .append(Component.space())
+                    .append(quickLink(player, "Creative", "/gmc", "Switch to Creative", canUseGamemode(player)));
+            player.sendMessage(quick);
+
+            Component categories = menuLink("[ Movement ]", "/lb help movement", "Movement shortcuts")
+                    .append(Component.space())
+                    .append(menuLink("[ Build ]", "/lb help build", "Builder interaction helpers"))
+                    .append(Component.space())
+                    .append(menuLink("[ World ]", "/lb help world", "World protection status"));
+            player.sendMessage(categories);
+
+            Component references = menuLink("[ Minecraft ]", "/lb help minecraft", "Useful vanilla commands");
             if (plugin.hasWorldEdit()) {
-                player.sendMessage(menuLink("[ WorldEdit ]", "/lb help worldedit", "Useful familiar WorldEdit commands"));
+                references = references.append(Component.space())
+                        .append(menuLink("[ WorldEdit ]", "/lb help worldedit", "Useful familiar WorldEdit commands"));
             }
+            player.sendMessage(references);
         } else {
-            sender.sendMessage("Use /lb help for command guidance.");
+            sender.sendMessage("Use /lb help movement|build|world|minecraft for guidance.");
         }
     }
 
-    private void showHelp(CommandSender sender, String category) {
-        switch (category.toLowerCase(Locale.ROOT)) {
-            case "movement" -> {
-                sender.sendMessage("Movement");
-                sender.sendMessage("/fly [speed] - Toggle flight or set/update fly speed.");
-                sender.sendMessage("/noclip - Toggle temporary spectator-based noclip.");
-                sender.sendMessage("/nv - Toggle Night Vision. /nightvision also works.");
-                sender.sendMessage("/gmc /gms /gma /gmsp - Familiar gamemode shortcuts.");
-            }
-            case "build" -> {
-                sender.sendMessage("Build Helpers");
-                sender.sendMessage("Iron Door - right-click to toggle.");
-                sender.sendMessage("Double Slab - sneak + break to remove one layer.");
-                sender.sendMessage("Glazed Terracotta - sneak + right-click to rotate.");
-            }
-            case "minecraft" -> {
-                sender.sendMessage("Useful Minecraft Commands");
-                sender.sendMessage("/tp  /time  /weather  /gamerule  /effect  /give  /clear");
-                sender.sendMessage("LazyBuilder reuses these instead of creating duplicate commands.");
-            }
-            case "worldedit" -> {
-                if (!plugin.hasWorldEdit()) {
-                    sender.sendMessage("WorldEdit/FAWE is not currently detected.");
-                    return;
-                }
-                sender.sendMessage("Useful WorldEdit Commands");
-                sender.sendMessage("/j  /thru  /up  /asc  /desc");
-                sender.sendMessage("//wand  //set  //replace");
-                sender.sendMessage("These remain owned by WorldEdit/FAWE.");
-            }
+    private void showHelp(CommandSender sender, String[] args) {
+        String category = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "home";
+        switch (category) {
+            case "movement" -> showMovementHelp(sender);
+            case "build" -> showBuildHelp(sender);
+            case "world" -> showWorldHelp(sender);
+            case "minecraft" -> showMinecraftHelp(sender);
+            case "worldedit" -> showWorldEditHelp(sender, args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "home");
             default -> showHome(sender);
+        }
+    }
+
+    private void showMovementHelp(CommandSender sender) {
+        sender.sendMessage("Movement");
+        if (plugin.featureStatus(MovementFeature.ID) != FeatureStatus.READY) {
+            sender.sendMessage("Movement utilities are " + statusWord(MovementFeature.ID) + ".");
+            return;
+        }
+
+        MovementSettings settings = plugin.movementSettings();
+        int shown = 0;
+        if (sender.hasPermission("lazybuilder.utilities.fly") && settings.fly()) {
+            sender.sendMessage("/fly [speed] - Toggle flight or set/update fly speed.");
+            shown++;
+        }
+        if (sender.hasPermission("lazybuilder.utilities.noclip") && settings.noclip()) {
+            sender.sendMessage("/noclip - Toggle temporary spectator-based noclip.");
+            shown++;
+        }
+        if (sender.hasPermission("lazybuilder.utilities.nightvision") && settings.nightVision()) {
+            sender.sendMessage("/nv - Toggle Night Vision. /nightvision also works.");
+            shown++;
+        }
+        if (sender.hasPermission("lazybuilder.utilities.gamemode")) {
+            sender.sendMessage("/gmc /gms /gma /gmsp - Familiar gamemode shortcuts.");
+            shown++;
+        }
+        if (shown == 0) sender.sendMessage("No Movement utilities are available for your role.");
+    }
+
+    private void showBuildHelp(CommandSender sender) {
+        sender.sendMessage("Build Helpers");
+        if (!sender.hasPermission("lazybuilder.utilities.build")) {
+            sender.sendMessage("Build helpers are not available for your role.");
+            return;
+        }
+        if (plugin.featureStatus(BuildHelpersFeature.ID) != FeatureStatus.READY) {
+            sender.sendMessage("Build Helpers are " + statusWord(BuildHelpersFeature.ID) + ".");
+            return;
+        }
+
+        BuildHelpersSettings settings = plugin.buildHelpersSettings();
+        sender.sendMessage("Iron Door: " + onOff(settings.ironDoorToggle()) + " - right-click to toggle.");
+        sender.sendMessage("Double Slab: " + onOff(settings.doubleSlabBreak()) + " - sneak + break removes one layer (bottom remains).");
+        sender.sendMessage("Glazed Terracotta: " + onOff(settings.glazedTerracottaRotate()) + " - sneak + right-click rotates.");
+    }
+
+    private void showWorldHelp(CommandSender sender) {
+        sender.sendMessage("World Protection");
+        if (plugin.featureStatus(WorldSafetyFeature.ID) != FeatureStatus.READY) {
+            sender.sendMessage("World Safety is " + statusWord(WorldSafetyFeature.ID) + ".");
+            return;
+        }
+        WorldSafetySettings settings = plugin.worldSafetySettings();
+        sender.sendMessage("Explosions: " + onOff(settings.explosions()) + " | Leaves: " + onOff(settings.leavesDecay()));
+        sender.sendMessage("Farmland: " + onOff(settings.farmlandTrample()) + " | Dragon Egg: " + onOff(settings.dragonEggTeleport()));
+        sender.sendMessage("Scope: " + scopeSummary(settings));
+    }
+
+    private void showMinecraftHelp(CommandSender sender) {
+        sender.sendMessage("Useful Minecraft Commands");
+        sender.sendMessage("/tp - Teleport players or yourself.");
+        sender.sendMessage("/time - Change world time.");
+        sender.sendMessage("/weather - Change weather.");
+        sender.sendMessage("/gamerule - Adjust vanilla world behavior.");
+    }
+
+    private void showWorldEditHelp(CommandSender sender, String page) {
+        if (!plugin.hasWorldEdit()) {
+            sender.sendMessage("WorldEdit/FAWE is not currently detected.");
+            return;
+        }
+        switch (page) {
+            case "navigation" -> {
+                sender.sendMessage("WorldEdit - Navigation");
+                sender.sendMessage("/j  /thru  /up  /asc  /desc");
+            }
+            case "selection" -> {
+                sender.sendMessage("WorldEdit - Selection");
+                sender.sendMessage("//wand  //pos1  //pos2  //expand  //contract");
+            }
+            case "edit" -> {
+                sender.sendMessage("WorldEdit - Edit");
+                sender.sendMessage("//set  //replace  //stack  //move");
+            }
+            case "clipboard" -> {
+                sender.sendMessage("WorldEdit - Clipboard");
+                sender.sendMessage("//copy  //cut  //paste  //rotate  //flip");
+            }
+            case "history" -> {
+                sender.sendMessage("WorldEdit - History");
+                sender.sendMessage("//undo  //redo  //clearhistory");
+            }
+            default -> {
+                sender.sendMessage("WorldEdit - Builder Reference");
+                if (sender instanceof Player player) {
+                    player.sendMessage(menuLink("[ Navigation ]", "/lb help worldedit navigation", "Movement commands")
+                            .append(Component.space()).append(menuLink("[ Selection ]", "/lb help worldedit selection", "Selection commands"))
+                            .append(Component.space()).append(menuLink("[ Edit ]", "/lb help worldedit edit", "Editing commands")));
+                    player.sendMessage(menuLink("[ Clipboard ]", "/lb help worldedit clipboard", "Clipboard commands")
+                            .append(Component.space()).append(menuLink("[ History ]", "/lb help worldedit history", "Undo/redo commands")));
+                } else {
+                    sender.sendMessage("Use /lb help worldedit navigation|selection|edit|clipboard|history");
+                }
+            }
         }
     }
 
     private void showStatus(CommandSender sender) {
         sender.sendMessage("LazyBuilder Utilities Status");
-        sender.sendMessage("Movement: " + ready(MovementFeature.ID));
-        sender.sendMessage("Build Helpers: " + ready(BuildHelpersFeature.ID));
-        sender.sendMessage("World Safety: " + ready(WorldSafetyFeature.ID));
-        sender.sendMessage("Commands: " + plugin.healthyCommandCount() + "/" + plugin.canonicalCommandCount() + " bound (+ /nv alias)");
+        showFeatureStatus(sender, "Movement", MovementFeature.ID);
+        showFeatureStatus(sender, "Build Helpers", BuildHelpersFeature.ID);
+        showFeatureStatus(sender, "World Safety", WorldSafetyFeature.ID);
+        sender.sendMessage("Commands: " + plugin.boundCommandCount() + "/" + plugin.canonicalCommandCount() + " bound (+ /nv alias)");
         sender.sendMessage("Version: " + plugin.getPluginMeta().getVersion());
     }
 
-    private String ready(String featureId) {
-        return plugin.featureEnabled(featureId) ? "READY" : "DISABLED/FAILED";
+    private void showFeatureStatus(CommandSender sender, String label, String featureId) {
+        FeatureStatus status = plugin.featureStatus(featureId);
+        sender.sendMessage(label + ": " + status.name());
+        if (status == FeatureStatus.FAILED) {
+            String reason = plugin.featureFailure(featureId);
+            if (reason != null) sender.sendMessage("  Reason: " + reason);
+        }
+    }
+
+    private boolean canUseFly(CommandSender sender) {
+        return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
+                && plugin.movementSettings().fly()
+                && sender.hasPermission("lazybuilder.utilities.fly");
+    }
+
+    private boolean canUseNoclip(CommandSender sender) {
+        return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
+                && plugin.movementSettings().noclip()
+                && sender.hasPermission("lazybuilder.utilities.noclip");
+    }
+
+    private boolean canUseNightVision(CommandSender sender) {
+        return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
+                && plugin.movementSettings().nightVision()
+                && sender.hasPermission("lazybuilder.utilities.nightvision");
+    }
+
+    private boolean canUseGamemode(CommandSender sender) {
+        return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
+                && sender.hasPermission("lazybuilder.utilities.gamemode");
+    }
+
+    private String statusWord(String featureId) {
+        return plugin.featureStatus(featureId).name().toLowerCase(Locale.ROOT);
+    }
+
+    private String onOff(boolean enabled) {
+        return enabled ? "ON" : "OFF";
+    }
+
+    private String scopeSummary(WorldSafetySettings settings) {
+        if (settings.scopeMode().equals("include")) {
+            return settings.includeWorlds().isEmpty()
+                    ? "included worlds: none"
+                    : "included worlds: " + String.join(", ", settings.includeWorlds());
+        }
+        if (!settings.excludeWorlds().isEmpty()) {
+            return "all worlds except: " + String.join(", ", settings.excludeWorlds());
+        }
+        return "all worlds";
     }
 
     private boolean requirePermission(CommandSender sender, String permission) {
         if (sender.hasPermission(permission)) return true;
         sender.sendMessage("You do not have permission to use this command.");
         return false;
+    }
+
+    private Component quickLink(Player player, String label, String command, String hover, boolean available) {
+        if (!available) return Component.text("[ " + label + " ]").hoverEvent(HoverEvent.showText(Component.text("Not available for your current role/config")));
+        return menuLink("[ " + label + " ]", command, hover);
     }
 
     private Component menuLink(String label, String command, String hover) {

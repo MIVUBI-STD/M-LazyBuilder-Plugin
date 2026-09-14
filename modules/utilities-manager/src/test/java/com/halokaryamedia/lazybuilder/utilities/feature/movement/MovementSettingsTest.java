@@ -13,7 +13,7 @@ final class MovementSettingsTest {
 
         MovementSettings settings = MovementSettings.from(section);
 
-        assertTrue(settings.advancedFly());
+        assertTrue(settings.fly());
         assertTrue(settings.noclip());
         assertTrue(settings.nightVision());
     }
@@ -21,14 +21,24 @@ final class MovementSettingsTest {
     @Test
     void readsEachAbilityIndependently() {
         MemoryConfiguration section = new MemoryConfiguration();
-        section.set("abilities.advanced-fly", false);
+        section.set("abilities.fly", false);
         section.set("abilities.noclip", true);
         section.set("abilities.night-vision", false);
 
         MovementSettings settings = MovementSettings.from(section);
 
-        assertFalse(settings.advancedFly());
+        assertFalse(settings.fly());
         assertTrue(settings.noclip());
         assertFalse(settings.nightVision());
+    }
+
+    @Test
+    void readsLegacyAdvancedFlyKeyWhenNewKeyIsAbsent() {
+        MemoryConfiguration section = new MemoryConfiguration();
+        section.set("abilities.advanced-fly", false);
+
+        MovementSettings settings = MovementSettings.from(section);
+
+        assertFalse(settings.fly());
     }
 }

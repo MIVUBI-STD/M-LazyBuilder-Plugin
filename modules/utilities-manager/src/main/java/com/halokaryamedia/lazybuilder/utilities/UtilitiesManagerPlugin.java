@@ -16,8 +16,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.logging.Level;
 
 /** Paper bootstrap for LazyBuilder Utilities-Manager. */
@@ -26,7 +28,18 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             "gmc", "gms", "gma", "gmsp", "fly", "noclip", "nightvision", "lb"
     );
 
+    public enum FeatureStatus {
+        READY,
+        DISABLED,
+        FAILED
+    }
+
     private UtilityFeatureRegistry featureRegistry;
+    private final Map<String, Boolean> requestedFeatures = new HashMap<>();
+    private final Map<String, String> featureFailures = new HashMap<>();
+    private MovementSettings movementSettings;
+    private BuildHelpersSettings buildHelpersSettings;
+    private WorldSafetySettings worldSafetySettings;
 
     @Override
     public void onEnable() {
@@ -43,19 +56,12 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
 
         getLogger().info("Utilities-Manager enabled with "
                 + featureRegistry.registeredFeatureIds().size() + " registered feature families and "
-                + healthyCommandCount() + "/" + CANONICAL_COMMANDS.size() + " command bindings ready.");
+                + boundCommandCount() + "/" + CANONICAL_COMMANDS.size() + " command bindings ready.");
     }
 
     @Override
     public void onDisable() {
-        if (featureRegistry != null) {
-            try {
-                featureRegistry.disableAll();
-            } catch (RuntimeException exception) {
-                getLogger().log(Level.SEVERE,
-                        "One or more Utilities-Manager features did not disable cleanly.", exception);
-            }
-        }
+        disableCurrentRegistry("One or more Utilities-Manager features did not disable cleanly.");
         getLogger().info("Utilities-Manager disabled.");
     }
 
@@ -70,41 +76,79 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             return false;
         }
 
-        UtilityFeatureRegistry previous = featureRegistry;
+        YamlConfiguration previous = new YamlConfiguration();
         try {
-            if (previous != null) {
-                previous.disableAll();
-            }
+            previous.loadFromString(getConfig().saveToString());
+            validateConfiguration(previous);
+        } catch (InvalidConfigurationException | RuntimeException exception) {
+            getLogger().log(Level.SEVERE, "Current Utilities configuration could not be snapshotted safely.", exception);
+            return false;
+        }
+
+        UtilityFeatureRegistry oldRegistry = featureRegistry;
+        try {
+            if (oldRegistry != null) oldRegistry.disableAll();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Utilities reload stopped because current features did not disable cleanly.", exception);
             return false;
         }
 
         try {
-            reloadConfig();
             installFeatures(candidate);
             bindHubCommand();
+            reloadConfig();
             getLogger().info("Utilities-Manager configuration reloaded.");
             return true;
-        } catch (RuntimeException exception) {
-            getLogger().log(Level.SEVERE, "Utilities config was valid but could not be activated cleanly.", exception);
+        } catch (RuntimeException activationFailure) {
+            getLogger().log(Level.SEVERE, "Utilities candidate activation failed; restoring previous runtime.", activationFailure);
+            disableCurrentRegistry("Partially activated Utilities candidate did not disable cleanly during rollback.");
+            try {
+                installFeatures(previous);
+                bindHubCommand();
+                getLogger().warning("Previous Utilities runtime restored after reload failure.");
+            } catch (RuntimeException rollbackFailure) {
+                getLogger().log(Level.SEVERE, "Utilities rollback failed; disabling plugin to avoid a partial runtime.", rollbackFailure);
+                getServer().getPluginManager().disablePlugin(this);
+            }
             return false;
         }
     }
 
-    public boolean featureEnabled(String featureId) {
-        return featureRegistry != null && featureRegistry.isEnabled(featureId);
+    public FeatureStatus featureStatus(String featureId) {
+        if (!requestedFeatures.getOrDefault(featureId, false)) return FeatureStatus.DISABLED;
+        if (featureFailures.containsKey(featureId)) return FeatureStatus.FAILED;
+        return featureRegistry != null && featureRegistry.isEnabled(featureId)
+                ? FeatureStatus.READY
+                : FeatureStatus.FAILED;
     }
 
-    public int healthyCommandCount() {
+    public String featureFailure(String featureId) {
+        return featureFailures.get(featureId);
+    }
+
+    public MovementSettings movementSettings() {
+        return movementSettings;
+    }
+
+    public BuildHelpersSettings buildHelpersSettings() {
+        return buildHelpersSettings;
+    }
+
+    public WorldSafetySettings worldSafetySettings() {
+        return worldSafetySettings;
+    }
+
+    public int boundCommandCount() {
         int healthy = 0;
         for (String commandName : CANONICAL_COMMANDS) {
-            PluginCommand command = getCommand(commandName);
-            if (command != null && command.getExecutor() != null) {
-                healthy++;
-            }
+            if (isCommandBound(commandName)) healthy++;
         }
         return healthy;
+    }
+
+    public boolean isCommandBound(String commandName) {
+        PluginCommand command = getCommand(commandName);
+        return command != null && command.getExecutor() != null;
     }
 
     public int canonicalCommandCount() {
@@ -117,28 +161,53 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     }
 
     private void installFeatures(Configuration configuration) {
-        UtilityFeatureRegistry registry = new UtilityFeatureRegistry();
-
         ConfigurationSection worldSafetySection = requireSection(configuration, "features.world-safety");
         ConfigurationSection movementSection = requireSection(configuration, "features.movement");
         ConfigurationSection buildHelpersSection = requireSection(configuration, "features.build-helpers");
 
-        registry.register(new WorldSafetyFeature(this, WorldSafetySettings.from(worldSafetySection)));
-        registry.register(new MovementFeature(this, MovementSettings.from(movementSection)));
-        registry.register(new BuildHelpersFeature(this, BuildHelpersSettings.from(buildHelpersSection)));
+        WorldSafetySettings nextWorldSafety = WorldSafetySettings.from(worldSafetySection);
+        MovementSettings nextMovement = MovementSettings.from(movementSection);
+        BuildHelpersSettings nextBuildHelpers = BuildHelpersSettings.from(buildHelpersSection);
+
+        UtilityFeatureRegistry registry = new UtilityFeatureRegistry();
+        registry.register(new WorldSafetyFeature(this, nextWorldSafety));
+        registry.register(new MovementFeature(this, nextMovement));
+        registry.register(new BuildHelpersFeature(this, nextBuildHelpers));
 
         featureRegistry = registry;
+        worldSafetySettings = nextWorldSafety;
+        movementSettings = nextMovement;
+        buildHelpersSettings = nextBuildHelpers;
+        requestedFeatures.clear();
+        featureFailures.clear();
+
         enableConfiguredFeature(registry, WorldSafetyFeature.ID, worldSafetySection.getBoolean("enabled", true));
         enableConfiguredFeature(registry, MovementFeature.ID, movementSection.getBoolean("enabled", true));
         enableConfiguredFeature(registry, BuildHelpersFeature.ID, buildHelpersSection.getBoolean("enabled", true));
     }
 
     private void enableConfiguredFeature(UtilityFeatureRegistry registry, String id, boolean requested) {
+        requestedFeatures.put(id, requested);
         if (!requested) return;
         try {
             registry.enable(id);
         } catch (RuntimeException exception) {
+            featureFailures.put(id, conciseFailure(exception));
             getLogger().log(Level.SEVERE, "Utilities feature '" + id + "' failed to enable; other families will continue.", exception);
+        }
+    }
+
+    private String conciseFailure(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
+    }
+
+    private void disableCurrentRegistry(String failureMessage) {
+        if (featureRegistry == null) return;
+        try {
+            featureRegistry.disableAll();
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE, failureMessage, exception);
         }
     }
 
