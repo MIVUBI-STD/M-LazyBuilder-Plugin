@@ -1,4 +1,4 @@
-use crate::engine::{java_runtime, paper_performance, runtime_updates, server_process_guard, startup_guard, workspace_registry};
+use crate::engine::{java_runtime, paper_performance, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry};
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::{AppHandle, Manager, State};
 
@@ -14,6 +14,7 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 
 #[tauri::command]
 pub fn server_start(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
+    let _lease = ServerStartLease::acquire()?;
     prepare_managed_start(&app)?;
     state.start()
 }
@@ -26,6 +27,7 @@ pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
 #[tauri::command]
 pub fn server_restart(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
     stop_with_recovery(&state)?;
+    let _lease = ServerStartLease::acquire()?;
     prepare_managed_start(&app)?;
     state.start()
 }
