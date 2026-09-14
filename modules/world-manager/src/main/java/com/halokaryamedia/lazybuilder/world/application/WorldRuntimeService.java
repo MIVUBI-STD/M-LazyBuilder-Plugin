@@ -88,6 +88,10 @@ public final class WorldRuntimeService {
 
     private WorldRecord unloadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
+        if (hasPlayers.test(world)) {
+            throw new IllegalStateException("Cannot unload " + world.displayName()
+                    + " while builders are inside the world");
+        }
         if (runtime.isLoaded(world)) runtime.unloadWorld(world);
         return world;
     }
