@@ -1,6 +1,6 @@
 # LazyBuilder Client Manager Architecture Lock
 
-Status: architecture lock for the `Local` branch before client-side expansion.
+Status: architecture lock for the `Local` branch after Map, Utility, and Performance scope audits.
 
 ## Purpose
 
@@ -58,28 +58,26 @@ Build artifact: lazybuilder-map-manager.jar
 
 Owns passive, non-building client convenience only.
 
-Current approved scope:
+Current implemented and locked scope:
 
-- window mode / borderless behavior
-- focus and window preference persistence
-- clean loading/reload UX where safe
+- borderless window presentation
 - extended chat history
-- persistent chat draft
-- copy-message convenience
-- optional timestamps and message filtering
-- reconnect button and optional auto-reconnect
-- client UI preference persistence
-- screenshot organization as an opt-in convenience
-- shared client notifications
-- small clipboard conveniences
-- optional compact information display that does not replace vanilla F3
+- persistent unsent chat draft within the current session
+- reconnect button
+- contextual copy of connection/disconnect details
+- resource-reload completion notice
+- shared native-toast notification surface
+- contextual screenshot naming while preserving vanilla `F2`
+- preference persistence for implemented behavior only
+
+Deferred ideas such as Auto Reconnect, Chat Timestamps, Compact Info, Message Filtering, and replacement loading visuals are not active product scope. They may only return after a separate ownership/value review.
 
 Rules:
 
 - no default shortcut is required for Utility Manager
 - vanilla controls remain authoritative (`E`, `F2`, `F3`, chat controls, etc.)
-- Utility Manager must not create a parallel inventory, block browser, command workflow, build HUD, camera tool, or editing system
-- visual/behavior-changing features should be opt-in unless they are invisible compatibility improvements
+- Utility Manager must not create a parallel inventory, block browser, command workflow, build HUD, camera tool, editing system, generic clipboard manager, or performance engine
+- visual/behavior-changing features should be opt-in unless they are nearly invisible compatibility improvements
 
 User-facing component:
 
@@ -98,18 +96,22 @@ This is one Fabric mod, not three components. The mod id and JAR name are only t
 
 Note: this is a **Fabric client manager** and is distinct from the existing Paper `Utilities-Manager`. Runtime naming must make that distinction explicit in technical documentation when ambiguity is possible.
 
+See `utility-manager-audit-lock.md` for the detailed scope decision.
+
 ### Performance Manager
 
-Owns performance coordination and resource behavior, not renderer internals.
+Owns performance coordination and lightweight resource policy, not renderer internals.
 
-Approved native scope:
+Current implemented and locked scope:
 
-- FPS / frame-time / memory status
-- performance profiles such as Balanced, Large Map, Visual Review, and Custom
-- background FPS behavior for unfocused/minimized/idle states
 - capability detection for installed optimization mods
-- lightweight integration/control surface for relevant vanilla/Sodium/Iris settings where safe
-- performance warnings/status without notification spam
+- on-demand FPS / approximate frame-time / JVM-memory status
+- on-demand render-distance and simulation-distance status
+- on-demand window focus/minimized state
+- minimal background FPS fallback for unfocused/minimized windows
+- automatic handoff to Dynamic FPS when that external provider is installed
+
+Performance profiles, permanent HUD/overlay, graphics auto-tuning, Sodium/Iris setting cloning, shader management, renderer hooks, memory optimization, chunk optimization, culling algorithms, and metrics-history storage are deferred. They are not approved by default.
 
 Performance Manager must **not** reimplement specialist engines.
 
@@ -122,7 +124,13 @@ The following remain external foundations unless a future architecture review ex
 - EntityCulling
 - MoreCulling
 
-Performance Manager may detect and coordinate these mods, but it does not copy their source or replace their algorithms.
+Optional external conveniences/providers may also be detected without being absorbed:
+
+- Sodium Extra
+- Reese's Sodium Options
+- Dynamic FPS
+
+Performance Manager may detect and coordinate these mods, but it does not copy their source, import their implementation packages, replace their algorithms, or mirror their complete settings surfaces.
 
 User-facing component:
 
@@ -138,6 +146,8 @@ Build artifact: lazybuilder-performance-manager.jar
 ```
 
 This is one Fabric mod and produces one Manager artifact. The internal mod id is not an additional plugin.
+
+See `performance-manager-audit-lock.md` for the detailed scope decision.
 
 ## External build-tool boundary
 
@@ -174,12 +184,13 @@ The following categories are therefore deferred from LazyBuilder client implemen
 5. **Axiom/external tools = building and world editing.**
 6. Vanilla behavior stays authoritative where it already provides a familiar workflow.
 7. Do not add a shortcut when a setting, context action, or existing vanilla interaction is sufficient.
-8. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods; link/integrate only where useful.
+8. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods.
 9. Shared services must have one implementation and may be consumed by multiple managers only through a small stable client contract when a second real consumer exists.
 10. No manager imports another manager's implementation packages.
 11. Build-specific utilities remain parked until Map, Utility, and Performance boundaries are stable.
+12. New Utility or Performance features must pass an ownership/overlap review before implementation.
 
-## Target repository shape
+## Repository shape
 
 ```text
 client/
@@ -189,11 +200,11 @@ client/
 └── README.md
 ```
 
-Map Manager is implemented. Utility Manager and Performance Manager are planned independent Fabric mods. There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, profiles, notifications, or map subfeatures.
+All three client Managers now exist as independent Fabric source authorities. There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, notifications, or map subfeatures.
 
 Shared protocol types that are genuinely consumed by Paper and Fabric remain in the existing versioned protocol ownership model. A new generic shared client implementation tree must not be created merely for convenience.
 
-## Migration order
+## Migration phases
 
 ### Phase C1 — Map Manager identity and path migration
 
@@ -201,23 +212,28 @@ Shared protocol types that are genuinely consumed by Paper and Fabric remain in 
 - use `client/map-manager/` as the single source authority
 - produce one `lazybuilder-map-manager.jar`
 - keep protocol compatibility unchanged
-- defer Java package cleanup until a separate verified mechanical change is justified
 
-### Phase C2 — Utility Manager scaffold
+Status: implemented.
 
-- create one independent Fabric mod
-- produce one `lazybuilder-utility-manager.jar`
-- establish configuration/persistence foundation
-- implement only approved non-tool conveniences as internal features
-- add no mandatory default keybinds
+### Phase C2 — Utility Manager
 
-### Phase C3 — Performance Manager scaffold
+- one independent Fabric mod
+- one `lazybuilder-utility-manager.jar`
+- implemented non-tool conveniences only
+- no mandatory default keybinds
+- active scope locked by Utility audit
 
-- create one independent Fabric mod
-- produce one `lazybuilder-performance-manager.jar`
-- implement capability detection and monitoring first
-- add background FPS behavior and profiles only after baseline detection is stable
-- treat external optimization mods as optional capabilities
+Status: implemented / scope locked.
+
+### Phase C3 — Performance Manager
+
+- one independent Fabric mod
+- one `lazybuilder-performance-manager.jar`
+- capability detection and on-demand state first
+- minimal background FPS fallback only where no external provider owns it
+- no profiles/UI/optimizer-engine expansion without a new review
+
+Status: implemented baseline / scope locked.
 
 ### Phase C4 — Cross-manager verification
 
@@ -228,6 +244,8 @@ Shared protocol types that are genuinely consumed by Paper and Fabric remain in 
 - verify managers work when installed independently where their feature set allows it
 - verify Map Manager does not require Utility or Performance Manager to preserve current functionality
 - verify compatibility with Axiom and the external performance stack
+
+This is the next client-architecture phase.
 
 ## Naming collision note
 
