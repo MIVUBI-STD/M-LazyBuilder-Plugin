@@ -113,17 +113,20 @@ A shared implementation is only justified after a second real consumer needs the
 Map Manager
 Fabric id: lazybuilder_map_manager
 Artifact: lazybuilder-map-manager.jar
+Source: mods/map-manager/
 
 Utility Manager
 Fabric id: lazybuilder_utility_manager
 Artifact: lazybuilder-utility-manager.jar
+Source: mods/utility-manager/
 
 Performance Manager
 Fabric id: lazybuilder_performance_manager
 Artifact: lazybuilder-performance-manager.jar
+Source: mods/performance-manager/
 ```
 
-All three remain independent Fabric source authorities under `client/`.
+All three remain independent Fabric source authorities under `mods/`.
 
 ## External compatibility lock
 
