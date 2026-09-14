@@ -62,11 +62,42 @@ Current proof authority: `docs/05-operations/current-verification.md`.
 
 ### Launcher / Server-Manager
 
-`apps/launcher/` is the canonical Tauri 2 + Svelte 5 + Rust desktop source. It owns workspace bootstrap, managed Java/Paper discovery, start/stop/restart, process identity/recovery, health/resource settings, Paper provisioning/update, and internal bundled core synchronization.
+`apps/launcher/` is the canonical Tauri 2 + Svelte 5 + Rust desktop source. It owns workspace bootstrap, managed Java/Paper discovery, start/stop/restart, process identity/recovery, health/resource settings, Paper provisioning/update, and internal bundled runtime synchronization.
 
 ### Plugin-Manager
 
 Also inside `apps/launcher/`. It owns third-party Paper plugin inventory, metadata, install/update, dependency/compatibility checks, duplicate resolution, restart-safe enable/disable, safe JAR removal with plugin data preserved, and minimum rollback state.
+
+### Client Setup / Modrinth integration
+
+Also inside `apps/launcher/`, under the desktop runtime `client_integration` owner.
+
+Modrinth App remains authoritative for:
+
+```text
+Minecraft installation/profile
+Fabric loader installation
+general mods and modpacks
+launching Minecraft
+```
+
+LazyBuilder Client Setup owns only:
+
+```text
+detect Modrinth profiles
+user-selected profile persistence
+Minecraft 1.21.4 + Fabric compatibility verification
+status/install/update/repair for:
+  lazybuilder-map-manager-*.jar
+  lazybuilder-utility-manager-*.jar
+  lazybuilder-performance-manager-*.jar
+```
+
+It must never modify unrelated files in the selected profile `mods/` directory, create Minecraft instances, or become a second general mod manager. There is no background profile watcher; checks are request-bound to the Client Setup surface and `Sync Client`.
+
+Current Modrinth metadata is database-backed. LazyBuilder intentionally does not couple to Modrinth's private database schema. Profile folders remain under Modrinth's `profiles/` directory; compatibility is verified from profile-local runtime evidence (`logs/latest.log`) after the profile has been launched, with legacy `profile.json` accepted only as a compatibility fallback.
+
+Runtime-ready Launcher packages include the three tested Fabric JARs from the same source revision as the desktop package so Client Setup does not fetch arbitrary client builds at runtime.
 
 ### World-Manager
 
@@ -113,7 +144,7 @@ lazybuilder:map       Map Action V2
 lazybuilder:transfer  bounded file bytes only
 ```
 
-Desktop ↔ Paper local control is a separate authenticated loopback contract currently at protocol version 2.
+Desktop ↔ Paper local control is a separate authenticated loopback contract currently at protocol version 2. Client Setup is local desktop/filesystem integration and does not add another Minecraft network protocol.
 
 ## Runtime workspace target
 
@@ -137,7 +168,7 @@ Work Server - 1.21.4/
     └── plugin-backups/
 ```
 
-Archive is lifecycle metadata, not a second physical world store.
+Archive is lifecycle metadata, not a second physical world store. Modrinth profiles remain external user-owned Minecraft client workspaces and are not moved into the server workspace.
 
 ## Validation authority
 
@@ -151,6 +182,6 @@ current Local HEAD
 → LIVE_SERVER proof for actual Paper/Minecraft behavior
 ```
 
-`REMOTE_GITHUB` success proves source/static/build/package claims only. It does not prove installed Windows behavior, real Paper lifecycle, Fabric interaction inside Minecraft, large-file transfer behavior, gameplay behavior, or restart/shutdown persistence.
+`REMOTE_GITHUB` success proves source/static/build/package claims only. It does not prove installed Windows behavior, real Paper lifecycle, Fabric interaction inside Minecraft, actual Modrinth profile discovery/sync on the target PC, large-file transfer behavior, gameplay behavior, or restart/shutdown persistence.
 
 The phase after repository synchronization is local/runtime proof, not architecture expansion. Fix reproducible defects at the smallest owning boundary.
