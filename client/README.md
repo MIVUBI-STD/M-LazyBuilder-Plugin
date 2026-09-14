@@ -1,8 +1,6 @@
 # LazyBuilder client modules
 
-LazyBuilder client-side functionality is organized as Manager-owned Fabric mods.
-
-Current implemented client managers:
+LazyBuilder client-side functionality is organized as three Manager-owned Fabric mods.
 
 ```text
 LazyBuilder Client Suite
@@ -11,19 +9,17 @@ LazyBuilder Client Suite
 └── Performance Manager
 ```
 
-Map Manager owns the existing in-game world/map surfaces, navigation, transfer UI, world settings UI, and Fabric-to-Paper World-Manager transport. It does not own server-side World-Manager lifecycle, registry, filesystem, conversion, backup, import/export, or deletion logic; those remain canonical server-side responsibilities.
+Map Manager owns world/map workflow, navigation, transfer UI, world settings UI, and Fabric-to-Paper World-Manager transport. Utility Manager owns passive non-building client convenience. Performance Manager owns performance status and the narrow background-FPS fallback that automatically stands down when Dynamic FPS is present.
 
-Utility Manager owns passive non-building client convenience only. Its active scope is locked separately and must not absorb building or performance ownership.
-
-Performance Manager is currently at the C3 baseline: one independent Fabric mod that passively detects optional performance/graphics capabilities. It does not yet apply FPS policy, profiles, graphics changes, or renderer integration.
-
-Each Manager remains one Fabric mod and one JAR; subfeatures must not become separate mods.
+Each Manager remains one Fabric mod and one JAR. No Manager imports another Manager's implementation packages, and subfeatures must not become separate runtime components.
 
 Current source boundaries:
 
 ```text
 client/
-├── map-manager/          implemented
+├── map-manager/          implemented / scope locked
 ├── utility-manager/      implemented / scope locked
-└── performance-manager/  scaffolded / capability detection baseline
+└── performance-manager/  implemented baseline / scope locked
 ```
+
+Cross-manager architecture verification is documented in `docs/04-system/client-cross-manager-audit-lock.md`. Build-specific utilities remain outside these three Managers and must pass a separate overlap review against Vanilla, Axiom, WorldEdit, and other specialist tools before implementation.
