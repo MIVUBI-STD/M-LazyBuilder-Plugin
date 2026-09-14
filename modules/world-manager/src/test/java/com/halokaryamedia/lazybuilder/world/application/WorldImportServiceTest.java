@@ -35,9 +35,8 @@ class WorldImportServiceTest {
     @TempDir Path tempDir;
 
     @Test
-    void trustedNativeImportPublishesFreshUnloadedRecordWithoutConverter() throws Exception {
+    void trustedNativeImportPublishesFreshActiveRecordWithoutConverter() throws Exception {
         WorldRegistry registry = new WorldRegistry();
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeFiles files = new FakeFiles(tempDir);
         FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
@@ -50,7 +49,7 @@ class WorldImportServiceTest {
                 Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
         );
         WorldImportService service = new WorldImportService(
-                registry, persistence, states, files, imports,
+                registry, persistence, files, imports,
                 runtimeStore, updates, converter, new ConversionJobCoordinator()
         );
 
@@ -60,8 +59,7 @@ class WorldImportServiceTest {
 
         assertTrue(task.completed());
         assertEquals("ImportedBuild", imported.folderName());
-        assertFalse(imported.autoLoad());
-        assertEquals(WorldRuntimeState.UNLOADED, states.get(imported.id()));
+        assertEquals(com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle.ACTIVE, imported.lifecycle());
         assertEquals(1, persistence.saved.size());
         assertTrue(files.published);
     }
@@ -69,7 +67,6 @@ class WorldImportServiceTest {
     @Test
     void failedConversionCleansEveryOwnedWorkspace() throws Exception {
         WorldRegistry registry = new WorldRegistry();
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeFiles files = new FakeFiles(tempDir);
         FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, null);
@@ -106,7 +103,7 @@ class WorldImportServiceTest {
                 Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
         );
         WorldImportService service = new WorldImportService(
-                registry, persistence, states, files, imports,
+                registry, persistence, files, imports,
                 runtimeStore, updates, converter, new ConversionJobCoordinator()
         );
 
@@ -138,17 +135,17 @@ class WorldImportServiceTest {
             reserved.add(workspace);
             return workspace;
         }
-        @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) throws java.io.IOException {
+        @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException {
             Files.move(stagedWorld, root.resolve(destinationFolder));
             published = true;
         }
-        @Override public void deleteWorld(WorldRecord world) throws java.io.IOException {
+        @Override public void deleteWorld(WorldRecord world) throws IOException {
             Path path = root.resolve(world.folderName());
             if (Files.exists(path)) try (var walk = Files.walk(path)) {
                 for (Path item : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(item);
             }
         }
-        @Override public void deleteWorkspace(Path workspace) throws java.io.IOException {
+        @Override public void deleteWorkspace(Path workspace) throws IOException {
             if (Files.notExists(workspace)) return;
             try (var walk = Files.walk(workspace)) {
                 for (Path item : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(item);
@@ -165,7 +162,7 @@ class WorldImportServiceTest {
             this.trustedFormat = trustedFormat;
         }
 
-        @Override public StagedImport stageArchive(String artifactName, Path workspace) throws java.io.IOException {
+        @Override public StagedImport stageArchive(String artifactName, Path workspace) throws IOException {
             Files.createDirectory(workspace);
             Files.writeString(workspace.resolve("level.dat"), "level");
             return new StagedImport(workspace, edition, trustedFormat);
