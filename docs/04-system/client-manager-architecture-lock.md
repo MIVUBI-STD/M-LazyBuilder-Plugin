@@ -1,6 +1,6 @@
 # LazyBuilder Client Manager Architecture Lock
 
-Status: architecture lock for the `Local` branch after Map, Utility, and Performance scope audits.
+Status: architecture lock for the `Local` branch after Map, Utility, Performance, and cross-manager audits.
 
 ## Purpose
 
@@ -237,15 +237,23 @@ Status: implemented baseline / scope locked.
 
 ### Phase C4 — Cross-manager verification
 
-- verify each Manager produces exactly one Fabric mod artifact
-- verify no subfeature becomes an unnecessary standalone mod
-- verify independent build boundaries
-- verify no duplicate semantic ownership
-- verify managers work when installed independently where their feature set allows it
-- verify Map Manager does not require Utility or Performance Manager to preserve current functionality
-- verify compatibility with Axiom and the external performance stack
+Verified architecture requirements:
 
-This is the next client-architecture phase.
+- each Manager has one Fabric identity and one artifact identity;
+- Map Manager is the only client Manager wired to shared World-Manager protocol;
+- Utility Manager and Performance Manager remain independent of Map Manager implementation packages;
+- no Manager imports another Manager's implementation packages;
+- Utility window presentation and Performance focus/minimized reads are separate ownership domains rather than duplicate systems;
+- no generic shared client implementation module is currently justified;
+- external build tools and specialist performance engines retain their ownership.
+
+Status: complete / architecture locked.
+
+See `client-cross-manager-audit-lock.md` for the final C4 audit.
+
+## Next architecture gate
+
+Client Manager expansion is closed by default. The next design discussion should be a separate **build-utility overlap audit** before any builder-facing feature is implemented. That audit must begin from what Vanilla, Axiom, WorldEdit, and the current mod stack already provide rather than from a wishlist of new tools.
 
 ## Naming collision note
 
