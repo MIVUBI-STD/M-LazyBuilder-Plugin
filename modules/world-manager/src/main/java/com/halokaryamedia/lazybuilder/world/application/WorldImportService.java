@@ -55,26 +55,17 @@ public final class WorldImportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /**
-     * Read-only bounded inspection used by the client review step before final import.
-     * Invalid/unreadable uploads are discarded immediately so a failed review cannot
-     * leave an unusable inbox artifact behind. Final import still revalidates the file.
-     */
     public WorldImportArtifactStore.ImportInspection inspect(String artifactName) {
         retryPendingCommittedArtifactCleanup();
         try {
             return imports.inspectArtifact(artifactName);
         } catch (IOException | RuntimeException exception) {
-            try {
-                imports.deleteArtifact(artifactName);
-            } catch (IOException cleanupFailure) {
-                exception.addSuppressed(cleanupFailure);
-            }
+            try { imports.deleteArtifact(artifactName); }
+            catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             throw new IllegalStateException("Could not inspect uploaded world", exception);
         }
     }
 
-    /** Deletes one reviewed upload that the builder explicitly chose not to import. */
     public void discard(String artifactName) {
         retryPendingCommittedArtifactCleanup();
         try {
@@ -139,6 +130,12 @@ public final class WorldImportService {
             persistence.save(registry.all());
             task.completed = true;
 
+            try {
+                files.markPublishedWorldCommitted(task.destination.folderName());
+            } catch (IOException cleanupFailure) {
+                task.publicationMarkerCleanupFailure = cleanupFailure;
+            }
+
             pendingCommittedArtifactCleanup.add(task.artifactName);
             try {
                 imports.markCommittedCleanupPending(task.artifactName);
@@ -170,6 +167,14 @@ public final class WorldImportService {
 
     public void finish(ImportTask task) {
         Objects.requireNonNull(task, "task");
+        if (task.completed && task.publicationMarkerCleanupFailure != null) {
+            try {
+                files.markPublishedWorldCommitted(task.destination.folderName());
+                task.publicationMarkerCleanupFailure = null;
+            } catch (IOException ignored) {
+                // Startup publication reconciliation uses persisted registry truth.
+            }
+        }
         if (task.completed && task.artifactCleanupFailure != null) {
             IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
             task.artifactCleanupFailure = cleanupFailure;
@@ -177,10 +182,6 @@ public final class WorldImportService {
         task.close();
     }
 
-    /**
-     * Loads only explicit durable cleanup markers and retries them. Ordinary uploaded
-     * or reviewed inbox files are never inferred as stale and are therefore untouched.
-     */
     public void recoverPendingCommittedArtifactCleanup() {
         try {
             pendingCommittedArtifactCleanup.addAll(imports.pendingCommittedCleanupArtifacts());
@@ -190,7 +191,6 @@ public final class WorldImportService {
         retryPendingCommittedArtifactCleanup();
     }
 
-    /** Best-effort retry used on later Import request boundaries and shutdown; never turns a committed import into failure. */
     public void retryPendingCommittedArtifactCleanup() {
         for (String artifactName : Set.copyOf(pendingCommittedArtifactCleanup)) {
             retryCommittedArtifactCleanup(artifactName);
@@ -240,6 +240,7 @@ public final class WorldImportService {
         private boolean completed;
         private boolean closed;
         private IOException artifactCleanupFailure;
+        private IOException publicationMarkerCleanupFailure;
 
         private ImportTask(UUID operationId, String artifactName, WorldRecord destination,
                            WorldRegistry.FolderReservation destinationReservation) {
@@ -252,6 +253,7 @@ public final class WorldImportService {
         public WorldRecord destination() { return destination; }
         public boolean completed() { return completed; }
         public IOException artifactCleanupFailure() { return artifactCleanupFailure; }
+        public IOException publicationMarkerCleanupFailure() { return publicationMarkerCleanupFailure; }
 
         private void requireOpen() {
             if (closed) throw new IllegalStateException("Import task is already closed");
