@@ -1,6 +1,6 @@
 # Map Manager Migration Audit
 
-Status: C1 source-ownership audit for the `Local` branch.
+Status: C1 identity migration applied on the `Local` branch; source-path/package move intentionally deferred.
 
 ## Goal
 
@@ -14,139 +14,86 @@ Product rule:
 
 Technical identifiers such as Fabric mod IDs and Gradle artifact names are implementation details of that one mod, not separate plugins.
 
-## Current finding
+## Ownership finding
 
 The current `client/fabric` source is overwhelmingly Map Manager-owned. Its entrypoint constructs only world, map, and transfer controllers; its UI entrypoint opens the world map; and its networking is the World-Manager/map/transfer bridge.
 
-Therefore the migration should be a controlled **identity/package cleanup**, not a functional split of the existing mod.
+Therefore C1 is an identity/package cleanup, not a functional split of the existing mod.
 
-## Ownership classification
+### Map Manager-owned source
 
-### Map Manager — definite ownership
+Current world/map/transfer screens, controllers, preferences, payload adapters, networking, `LazyBuilderClient`, `LazyBuilderClientUi`, `LbUi`, and `LbButtonWidget` remain inside the same Map Manager mod for C1.
 
-These classes belong directly to Map Manager because they implement world/map/transfer behavior:
+Do not create `client-core`, `client-common`, `shared-ui`, or another mandatory runtime dependency. A shared client contract may be extracted later only after another Manager has a proven need for the same stable contract.
 
-- `AddWorldScreen`
-- `ClientFileDialogs`
-- `ClientMapController`
-- `ClientMapSurfaceCache`
-- `ClientTransferController`
-- `ClientWorldController`
-- `ConfirmWorldActionScreen`
-- `CreateWorldScreen`
-- `DeleteWorldScreen`
-- `DuplicateWorldScreen`
-- `WorldManagerScreen`
-- `WorldMapScreen`
-- `WorldNavigationPreferences`
-- `WorldSettingsScreen`
-- `WorldTransferPreferences`
-- `WorldTransferScreen`
-- `net/MapPayload`
-- `net/TransferPayload`
-- `net/WorldPayload`
-- `LazyBuilderClientNetworking`
+## Identity inventory and applied rename
 
-### Generic-looking classes — keep inside Map Manager
-
-The following names look generic, but their current implementation is not a reusable client framework:
-
-- `LazyBuilderClient`
-- `LazyBuilderClientUi`
-- `LbUi`
-- `LbButtonWidget`
-
-Decision: **keep them in Map Manager for C1**.
-
-Reasoning:
-
-- `LazyBuilderClient` constructs only `ClientWorldController`, `ClientMapController`, and `ClientTransferController` and registers their networking/UI.
-- `LazyBuilderClientUi` registers the `M` key to open `WorldMapScreen` and primes World-Manager capabilities.
-- `LbUi` and `LbButtonWidget` are currently only the visual primitives used by the existing Fabric map/world screens.
-- There is no proven second client manager consuming these classes yet.
-
-Do not create `client-core`, `client-common`, `shared-ui`, or another mandatory runtime dependency during C1.
-
-If Utility Manager or Performance Manager later needs a genuinely shared UI contract, extract the smallest stable contract only after a real second consumer exists.
-
-## C1 migration boundary
-
-C1 should change identity and organization only. It must not add Utility Manager or Performance Manager features.
-
-Allowed C1 changes:
-
-1. Rename the Fabric mod display identity from generic `LazyBuilder Client` to `LazyBuilder Map Manager`.
-2. Rename the build artifact to `lazybuilder-map-manager.jar`.
-3. Rename the Fabric mod ID to the Map Manager-specific ID as a coordinated compatibility migration.
-4. Rename the root Gradle project accordingly.
-5. Rename client bootstrap/UI classes where doing so improves ownership clarity.
-6. Update documentation and resource keys that explicitly refer to the old generic client identity.
-7. Preserve the existing default map key behavior unless a conflict is found.
-
-Not allowed during C1:
-
-- no Utility Manager implementation
-- no Performance Manager implementation
-- no build/helper tools
-- no Axiom duplication
-- no new generic client framework
-- no renderer/performance engine work
-- no feature redesign of world/map/transfer behavior
-
-## Recommended package direction
-
-Do not perform a repository-wide cosmetic package rewrite merely to make paths look new.
-
-Preferred end state is an ownership-explicit package, for example:
+The old generic identity had three technical surfaces belonging to the same single mod:
 
 ```text
-com.halokaryamedia.lazybuilder.mapmanager
+Display name: LazyBuilder Client
+Fabric mod id: lazybuilder_client
+Gradle/artifact: lazybuilder-client
 ```
 
-with subpackages introduced only where they improve clarity, such as:
+They have now been coordinated to the Map Manager identity:
 
 ```text
-mapmanager/
-├── ui/
-├── map/
-├── world/
-├── transfer/
-└── net/
+Display name: LazyBuilder Map Manager
+Fabric mod id: lazybuilder_map_manager
+Gradle/artifact: lazybuilder-map-manager
 ```
 
-However package movement should be done in a dedicated mechanical migration after identity changes are validated. Avoid mixing large package moves with behavior changes.
+This is still exactly **one Fabric mod and one output JAR**.
+
+### Files changed for identity migration
+
+- `client/fabric/src/main/resources/fabric.mod.json`
+  - display name changed to `LazyBuilder Map Manager`
+  - Fabric mod id changed to `lazybuilder_map_manager`
+  - description narrowed to Map Manager ownership
+- `client/fabric/gradle.properties`
+  - artifact base name changed to `lazybuilder-map-manager`
+- `client/fabric/settings.gradle`
+  - Gradle root project changed to `lazybuilder-map-manager`
+- `client/README.md`
+  - current Fabric component documented as Map Manager
+- root `README.md`
+  - client Manager architecture and current implementation status documented
+
+## Intentionally unchanged during this step
+
+The following remain unchanged to avoid mixing identity migration with a large mechanical source move:
+
+- source directory: `client/fabric/`
+- Java package: `com.halokaryamedia.lazybuilder.client`
+- entrypoint class: `LazyBuilderClient`
+- existing `M` map key behavior
+- language namespace `assets/lazybuilder`
+- key IDs such as `key.lazybuilder.open_world_map`
+- World-Manager wire/protocol identifiers
+- world/map/transfer behavior
+
+The `lazybuilder` resource/key namespace is a suite namespace rather than the old Fabric mod ID, so there is no requirement to rename it merely because the mod ID changed.
 
 ## Compatibility considerations
 
-Changing the Fabric mod ID can affect:
+Changing the Fabric mod ID can affect external launchers/modpacks or third-party code that explicitly checks `lazybuilder_client`. No repository-owned runtime dependency currently requires preserving the old ID. Protocol identifiers remain unchanged because they represent World-Manager transport, not the client mod identity.
 
-- user config/keybinding category identifiers
-- any external mod that checks for the old ID
-- launcher/modpack metadata
-- saved mod configuration paths if the ID is used there
+## C1 boundary
 
-Before deleting the transitional identity, C1 implementation must search the repository for `lazybuilder_client`, `lazybuilder-client`, `LazyBuilder Client`, and generic key/category identifiers and update them as one coordinated migration.
+Not part of C1:
 
-World-Manager wire/protocol identifiers must remain unchanged unless they explicitly encode the client mod identity. Protocol behavior is not part of this rename.
+- Utility Manager implementation
+- Performance Manager implementation
+- build/helper utilities
+- Axiom duplication
+- renderer/performance engine work
+- world/map/transfer feature redesign
+- cosmetic repository-wide package rewrites
 
-## Expected C1 result
+## Verification checkpoint
 
-From the user's perspective there is exactly one existing LazyBuilder Fabric mod after migration:
+The exact current `Local` HEAD must pass the repository `Verify` workflow after the identity rename. Do not treat older green runs as proof for the renamed identity.
 
-```text
-LazyBuilder Map Manager
-```
-
-It produces exactly one deployable JAR and retains all current world/map/transfer functionality.
-
-Utility Manager and Performance Manager remain future independent mods and are not bundled into this JAR during C1.
-
-## Next implementation checkpoint
-
-Before modifying source files:
-
-1. inventory every old generic client identity occurrence;
-2. classify each occurrence as display name, Fabric mod ID, artifact/build name, Java class/package, resource key, documentation, or protocol identifier;
-3. prepare one coordinated rename set;
-4. perform the rename without behavior changes;
-5. run the repository's exact-HEAD verification workflow after the rename.
+After identity verification is green, the next mechanical decision is whether moving `client/fabric` to `client/map-manager` materially improves maintenance. That path move must be performed separately and must include CI/scripts that currently reference `client/fabric`.
