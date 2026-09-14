@@ -46,15 +46,22 @@ public final class ClientMapController {
         if (exportBusy) throw new IllegalStateException("An Export Area request is already active");
         MapActionWireProtocol.CurrentWorldResult current = currentWorld;
         if (current == null) {
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet.");
-            return;
+            throw new IllegalStateException("Current managed world is not available for area export");
         }
+
         WorldId worldId = current.worldId();
         exportBusy = true;
         lastError = null;
         revision++;
-        LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.exportAreaRequest(
-                worldId, x1, z1, x2, z2, targetFormat, artifactName));
+        try {
+            LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.exportAreaRequest(
+                    worldId, x1, z1, x2, z2, targetFormat, artifactName));
+        } catch (RuntimeException exception) {
+            exportBusy = false;
+            lastError = "Could not send Export Area request";
+            revision++;
+            throw exception;
+        }
     }
 
     public void accept(MapActionWireProtocol.Response response) {
