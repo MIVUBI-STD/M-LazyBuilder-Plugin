@@ -65,11 +65,13 @@ Movement uses one per-player runtime state so Fly, Noclip, gamemode shortcuts, a
 
 - `/fly` toggles flight.
 - `/fly <speed>` enables flight or updates speed while flight is already active.
+- Fly speed accepts only finite values from `0.1` through `10`.
 - `/noclip` temporarily enters Spectator and restores the previous game mode when disabled.
 - Running a gamemode shortcut while Noclip is active ends LazyBuilder's temporary Noclip ownership and applies the requested game mode.
 - Calling `/noclip` while already in normal Spectator does not create a fake Noclip session.
 - Fly intent is reapplied across explicit gamemode changes and temporary Noclip transitions.
 - transient state is restored on player quit and plugin shutdown.
+- familiar Movement commands remain bound even when the Movement family is intentionally disabled, so users receive an explicit disabled-state response instead of ambiguous fallback behavior.
 
 Configuration uses the simple key `abilities.fly`. The previous `abilities.advanced-fly` key is still read when `fly` is absent so existing Local configs do not silently change behavior.
 
@@ -79,8 +81,9 @@ Build helpers use stable Bukkit block-data APIs and only run for players with `l
 
 - interactive helpers accept the main hand only, preventing duplicate off-hand execution;
 - Iron Door Toggle resolves both door halves and applies one logical open/close state;
-- Double Slab Break uses the sneak guard by default, leaves one bottom slab, and does not create item drops in Creative;
-- Glazed Terracotta Rotate uses sneak + right-click by default and rotates cardinal facing clockwise.
+- Double Slab Break leaves one bottom slab and does not create item drops in Creative;
+- Glazed Terracotta Rotate rotates cardinal facing clockwise;
+- the help text reflects whether the configured sneak guards are actually required.
 
 `/lb help build` reports the current helper switches rather than documenting disabled behavior as available.
 
@@ -97,11 +100,13 @@ features:
       exclude-worlds: []
 ```
 
-`all` protects every world except exclusions. `include` protects only explicitly included worlds, still honoring exclusions. `/lb help world` exposes the active protections and scope so builders can understand non-vanilla behavior such as protected TNT or leaves.
+`all` protects every world except exclusions. `include` protects only explicitly included worlds, still honoring exclusions. Include mode requires at least one nonblank world while World Safety is enabled. World names are matched case-insensitively and surrounding whitespace is ignored.
+
+`/lb help world` exposes the active protections and a safe scope summary so builders can understand non-vanilla behavior such as protected TNT or leaves. Exact include/exclude world names are only shown to users with the Utilities status permission.
 
 ## Configuration and reload
 
-The three canonical feature sections are required. Missing entire sections or invalid World Safety scope modes are rejected instead of silently enabling defaults under a typo.
+The three canonical feature sections are required. Boolean switches, scope mode, and world-list shapes are validated before activation so malformed values are rejected instead of silently becoming defaults.
 
 `/lb reload` validates the candidate config before shutting down the current feature runtime. If candidate activation fails after shutdown, Utilities attempts to restore the previous runtime; if rollback itself fails, the plugin disables rather than claiming a healthy partial state.
 
@@ -115,7 +120,11 @@ DISABLED
 FAILED
 ```
 
-A failed feature includes a concise reason. Command health is reported separately as declared/bound command coverage, so an intentionally disabled feature is not confused with a missing command declaration.
+A failed feature includes a concise reason. Command diagnostics verify that canonical commands are registered to the expected LazyBuilder executor rather than merely checking for a non-null Bukkit executor. Potential short-label collisions are reported separately so another plugin shadowing `/fly`, `/gmc`, or similar names is visible to admins.
+
+## Verification
+
+The independent `utilities` CI job compiles/tests Utilities-Manager without waiting on unrelated Paper modules and uploads the tested Utilities JAR for that exact SHA. Repository-wide release readiness still requires the complete Paper and other required gates.
 
 ## Maintenance constraints
 
