@@ -49,7 +49,7 @@ class WorldTaskRunnerTest {
         WorldTaskRunner runner = new WorldTaskRunner(new WorldTaskRegistry(), 1, Duration.ofSeconds(1));
         runner.close();
         assertThrows(IllegalStateException.class,
-                () -> runner.submit(WorldTaskType.CLONE, WorldId.create(), "Queued", progress -> "unused"));
+                () -> runner.submit(WorldTaskType.DUPLICATE, WorldId.create(), "Queued", progress -> "unused"));
     }
 
     @Test
@@ -67,7 +67,7 @@ class WorldTaskRunnerTest {
 
             runner.submit(WorldTaskType.EXPORT, WorldId.create(), "queued", progress -> "queued");
             IllegalStateException rejection = assertThrows(IllegalStateException.class,
-                    () -> runner.submit(WorldTaskType.CLONE, WorldId.create(), "overflow", progress -> "overflow"));
+                    () -> runner.submit(WorldTaskType.DUPLICATE, WorldId.create(), "overflow", progress -> "overflow"));
             assertTrue(rejection.getMessage().contains("queue is full"));
             assertTrue(registry.recent().stream().anyMatch(snapshot ->
                     snapshot.state() == WorldTaskState.FAILED && snapshot.error().contains("queue is full")));
