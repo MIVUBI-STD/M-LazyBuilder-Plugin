@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldLocationTeleportServiceTest {
@@ -22,9 +23,11 @@ class WorldLocationTeleportServiceTest {
         );
         registry.register(world);
 
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         FakeLocationGateway locations = new FakeLocationGateway();
-        WorldLocationTeleportService service = new WorldLocationTeleportService(registry, runtimeService, locations);
+        WorldLocationTeleportService service = new WorldLocationTeleportService(
+                registry, runtimeService, locations, operations);
         UUID player = UUID.randomUUID();
 
         WorldLocationTeleportService.TeleportResult result = service.teleport(player, world.id(), -17, 35);
@@ -40,12 +43,37 @@ class WorldLocationTeleportServiceTest {
         assertEquals(80.0D, result.resolved().y());
     }
 
+    @Test
+    void mapTeleportCannotInterleaveWithArchiveOperation() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        WorldRecord world = new WorldRecord(
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE
+        );
+        registry.register(world);
+
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        FakeLocationGateway locations = new FakeLocationGateway();
+        WorldLocationTeleportService service = new WorldLocationTeleportService(
+                registry, runtimeService, locations, operations);
+
+        try (WorldOperationCoordinator.Lease ignored = operations.acquire(world.id(), WorldOperationType.ARCHIVE)) {
+            assertThrows(IllegalStateException.class,
+                    () -> service.teleport(UUID.randomUUID(), world.id(), 0, 0));
+        }
+
+        assertEquals(0, runtime.loadCount);
+        assertEquals(0, locations.teleportCount);
+    }
+
     private static final class FakeLocationGateway implements WorldLocationGateway {
         private UUID playerId;
         private WorldRecord world;
         private int x;
         private int z;
         private WorldGameMode gameMode;
+        private int teleportCount;
 
         @Override
         public ResolvedLocation teleportToSafeSurface(UUID playerId, WorldRecord world, int blockX, int blockZ,
@@ -55,6 +83,7 @@ class WorldLocationTeleportServiceTest {
             this.x = blockX;
             this.z = blockZ;
             this.gameMode = gameMode;
+            teleportCount++;
             return new ResolvedLocation(blockX + 0.5D, 80.0D, blockZ + 0.5D);
         }
     }
