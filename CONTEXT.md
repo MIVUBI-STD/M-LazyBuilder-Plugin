@@ -247,7 +247,7 @@ World Safety
 - dragon egg teleport protection
 
 Movement
-- Advanced Fly
+- Fly
 - Noclip
 - Night Vision
 
