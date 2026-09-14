@@ -205,6 +205,12 @@ public final class WorldManager {
 
     public void start() {
         try {
+            int recoveredWorkspaces = worldFileRepository.recoverTransientWorkspaces();
+            if (recoveredWorkspaces > 0) {
+                plugin.getLogger().info("Recovered " + recoveredWorkspaces
+                        + " interrupted transient World Manager workspace"
+                        + (recoveredWorkspaces == 1 ? "" : "s") + ".");
+            }
             for (WorldRecord world : registryPersistence.load()) {
                 worldRegistry.register(world);
             }
