@@ -95,7 +95,7 @@ expect(
     PRODUCT_VERSION,
 )
 
-# Client manager identity and isolation contract.
+# Client source identity and isolation contract. Performance Manager remains source-only/deferred in V1.
 for manager, contract in CLIENT_MANAGERS.items():
     manager_root = ROOT / "mods" / manager
     props_text = (manager_root / "gradle.properties").read_text(encoding="utf-8")
@@ -151,6 +151,42 @@ for label, prefix in (
     match = re.search(rf'"({re.escape(prefix)}-[^"]+\.jar)"', core_modules)
     expected_name = f"{prefix}-{SNAPSHOT_VERSION}.jar"
     expect(label, match.group(1) if match else None, expected_name)
+
+# Simplified V1 runtime scope must remain narrow.
+client_integration = (launcher_root / "src-tauri/src/engine/client_integration.rs").read_text(encoding="utf-8")
+for required in (
+    "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
+    "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
+    "const MODS: [ClientModSpec; 2]",
+):
+    if required not in client_integration:
+        errors.append(f"Client Setup V1 contract is missing required marker: {required}")
+if "lazybuilder-performance-manager-" in client_integration:
+    errors.append("Client Setup V1 must not require or install Performance Manager")
+if "profile.json" in client_integration:
+    errors.append("Client Setup V1 must not restore legacy profile.json metadata authority")
+
+engine_mod = (launcher_root / "src-tauri/src/engine/mod.rs").read_text(encoding="utf-8")
+for removed_owner in ("cpu_governor", "paper_performance"):
+    if removed_owner in engine_mod:
+        errors.append(f"Launcher simplification regressed: {removed_owner} was reintroduced")
+    if (launcher_root / f"src-tauri/src/engine/{removed_owner}.rs").exists():
+        errors.append(f"Launcher simplification regressed: {removed_owner}.rs exists again")
+
+if "modules/world-manager" in core_modules or "modules/utilities-manager" in core_modules:
+    errors.append("Core module runtime resolution still references removed modules/ source paths")
+
+workflow = (ROOT / ".github/workflows/verify.yml").read_text(encoding="utf-8")
+if re.search(r"(?m)^  utilities:\s*$", workflow):
+    errors.append("Verify workflow restored the duplicate standalone utilities job")
+for required_build in (
+    "gradle -p mods/map-manager --no-daemon build",
+    "gradle -p mods/utility-manager --no-daemon build",
+):
+    if required_build not in workflow:
+        errors.append(f"Verify workflow is missing required V1 Fabric build: {required_build}")
+if "gradle -p mods/performance-manager" in workflow:
+    errors.append("Verify workflow must not make Performance Manager a V1 package gate")
 
 paper_provider = (launcher_root / "src-tauri/src/engine/paper_provider.rs").read_text(encoding="utf-8")
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^ (]+)', paper_provider)
