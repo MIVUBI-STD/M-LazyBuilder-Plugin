@@ -35,10 +35,13 @@ The current `Verify` workflow is the minimum remote gate and must pass for the e
 
 ```text
 consistency     canonical version + repository contract checks
-paper           Maven compile + automated tests
+utilities       independent Utilities-Manager compile/test + tested JAR artifact
+paper           Maven compile + automated tests for the complete Paper reactor
 fabric          pinned Gradle 8.12 client build
 tauri-desktop   frontend typecheck/build + Rust check/test + Windows installer build
 ```
+
+The independent `utilities` job is component proof only: it allows Utilities-Manager to be verified even when an unrelated Paper module fails. It does not replace the complete `paper` gate for a repository-wide release claim.
 
 Only after all required jobs succeed may the SHA be described as `REMOTE_GITHUB green`.
 
