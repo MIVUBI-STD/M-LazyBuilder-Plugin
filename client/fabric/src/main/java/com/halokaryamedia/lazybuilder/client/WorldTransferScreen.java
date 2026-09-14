@@ -411,8 +411,11 @@ public final class WorldTransferScreen extends Screen {
         int cardWidth = panelWidth - 44;
         int cardHeight = area == null ? 52 : 88;
         LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
-        context.drawTextWithShadow(textRenderer, Text.literal("USING DEFAULT SETTINGS"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(defaultFormat())), cardX + 12, cardY + 26, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(isCurrentDefault() ? "USING DEFAULT SETTINGS" : "USING CUSTOM SETTINGS"),
+                cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(selectedExportFormat)),
+                cardX + 12, cardY + 26, LbUi.TEXT_PRIMARY);
         if (area == null) {
             context.drawTextWithShadow(textRenderer, Text.literal("Entire world"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
         } else {
