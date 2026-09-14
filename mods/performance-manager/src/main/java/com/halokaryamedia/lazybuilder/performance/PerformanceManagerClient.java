@@ -2,48 +2,42 @@ package com.halokaryamedia.lazybuilder.performance;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
-    private static final BackgroundFpsController BACKGROUND_FPS = new BackgroundFpsController();
-
-    private static PerformanceCapabilities capabilities = new PerformanceCapabilities(
-            false, false, false, false, false, false, false, false, false
-    );
-    private static PerformancePreferences preferences = PerformancePreferences.defaults();
-    private static PerformanceConfigStore configStore;
+    private static PerformanceRuntime runtime;
 
     @Override
     public void onInitializeClient() {
-        capabilities = PerformanceCapabilityDetector.detect();
-        configStore = new PerformanceConfigStore(FabricLoader.getInstance().getConfigDir());
-        preferences = configStore.load();
+        runtime = new PerformanceRuntime(FabricLoader.getInstance().getConfigDir());
 
-        // The only continuous hook in Performance Manager is the lightweight background
-        // framerate policy. It automatically becomes a no-op when Dynamic FPS is installed.
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-                BACKGROUND_FPS.update(client, preferences, capabilities)
+        HudRenderCallback.EVENT.register((drawContext, tickCounter) ->
+                runtime.recordFrame(System.nanoTime())
         );
+
+        ClientTickEvents.END_CLIENT_TICK.register(runtime::tick);
     }
 
-    public static PerformanceCapabilities capabilities() {
-        return capabilities;
+    public static FramePressure pressure() {
+        return runtime == null ? FramePressure.NORMAL : runtime.pressure();
+    }
+
+    public static WorkloadBudget workloadBudget() {
+        return runtime == null ? new WorkloadBudget() : runtime.workloadBudget();
     }
 
     public static PerformancePreferences preferences() {
-        return preferences;
+        return runtime == null ? PerformancePreferences.defaults() : runtime.preferences();
     }
 
     public static void updatePreferences(PerformancePreferences updated) {
-        preferences = updated;
-        if (configStore != null) configStore.save(updated);
+        if (runtime != null) runtime.updatePreferences(updated);
     }
 
-    /** Captures current state on demand; no metrics history or background sampling is stored. */
-    public static PerformanceState currentState() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        return PerformanceStateReader.capture(client, capabilities);
+    /** Captures current diagnostics on demand; no metrics history database is maintained. */
+    public static PerformanceSnapshot currentSnapshot() {
+        return runtime == null ? null : runtime.snapshot();
     }
 }
