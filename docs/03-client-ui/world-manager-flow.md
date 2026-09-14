@@ -200,14 +200,101 @@ Saved daily defaults are validated against the current supported-format/capabili
 
 ## Export Area
 
-Spatial selection belongs to the map:
+Area selection follows the general interaction pattern familiar from map editors and advanced world-conversion tools: the builder manipulates a visible rectangle instead of typing coordinates or constructing a box with two separate corner clicks.
+
+Canonical flow:
 
 ```text
-Map selection
+Map
+→ right click
 → Export Area
+→ editable chunk-aligned selection appears around the clicked position
+→ drag inside to move
+→ drag corner/edge handles to resize
+→ Continue
 → Import / Export workspace (Export tab)
-→ Selected Area supplied as transient context
+→ review selection + format
+→ Export Area
 ```
+
+### Selection behavior
+
+The selection owner is the map. It is transient presentation/request context, never world metadata or an export preset.
+
+Rules:
+
+- initial selection is a practical 8 × 8 chunk rectangle around the chosen map position;
+- selection is stored as inclusive chunk coordinates;
+- one chunk is 16 × 16 blocks;
+- every move and resize snaps naturally to chunk boundaries;
+- selection can never become zero-sized;
+- dragging inside the rectangle moves it without changing size;
+- four corner handles resize both axes;
+- four edge handles resize one axis;
+- dragging an edge/corner past the opposite edge keeps the rectangle valid by normalizing min/max bounds;
+- clicking/dragging outside the selection pans the map;
+- mouse wheel keeps normal cursor-anchored map zoom;
+- middle click keeps recenter-on-player behavior;
+- right-click context actions are suppressed while selection mode is active so editing has one unambiguous interaction model;
+- `Esc` cancels selection mode;
+- `Enter` is equivalent to Continue;
+- selection is tied to the managed world where it was created and is cleared if the current managed world changes.
+
+### Grid presentation
+
+Selection mode overlays spatial guidance on top of the normal map:
+
+```text
+thin grid      = 16 × 16 block chunk boundaries
+stronger grid = 32 × 32 chunk / 512 × 512 block region boundaries
+highlight     = selected rectangle
+handles       = editable edges/corners
+```
+
+Chunk lines may fade out automatically when zoomed too far out to remain readable. Region lines remain as the coarser orientation layer. The grid is presentation-only and never becomes a second map database.
+
+### Selection HUD
+
+The user primarily chooses the area visually. Coordinates are confirmation, not input.
+
+While editing, the map shows live selection information:
+
+```text
+EXPORT AREA
+46 × 37 chunks   •   736 × 592 blocks
+X 112 → 847      Z -352 → 239
+
+[ Cancel ] [ Continue ]
+```
+
+Block ranges are derived from the selected inclusive chunk range:
+
+```text
+minBlock = minChunk * 16
+maxBlock = maxChunk * 16 + 15
+```
+
+This guarantees the displayed coordinates match the actual chunk-aligned export request.
+
+### Export review
+
+The Export workspace remains the final confirmation surface and shows the selection read-only:
+
+```text
+USING DEFAULT SETTINGS
+Java Edition · 1.21.4
+
+Selected area
+46 × 37 chunks · 736 × 592 blocks
+X 112 → 847   Z -352 → 239
+
+[ Export Area ]
+[ Edit Selection ] [ Advanced ▸ ]
+```
+
+`Edit Selection` returns to the same map instance with the existing rectangle intact. The user does not reconstruct the selection.
+
+Once an area export is submitted, returning to the map does not imply cancellation. The submitted request owns its captured rectangle; completed/continued-in-background export clears the editable selection so the map cannot suggest that an already-submitted rectangle is still pending.
 
 This reuses the canonical Export service and UI. There is no second export implementation.
 
@@ -349,4 +436,4 @@ The protocol should model product concepts, not leak stale runtime-state machine
 
 ## Proof boundary
 
-Source review can prove ownership, terminology, navigation, and contracts. Final proof still requires local Fabric compilation and live Java 1.21.4 client/server validation across GUI scales, real native dialogs, large transfers, reconnects, conversion paths, permissions, archive/delete safeguards, automatic idle unloading, and builder usability.
+Source review can prove ownership, terminology, navigation, chunk-aligned selection math, and contracts. Final proof still requires local Fabric compilation and live Java 1.21.4 client/server validation across GUI scales, real map dragging/resizing at multiple zoom levels, negative coordinates, world changes while editing, real native dialogs, large transfers, reconnects, conversion paths, permissions, archive/delete safeguards, automatic idle unloading, and builder usability.
