@@ -1,6 +1,6 @@
 param(
     [switch]$SkipTests,
-    [switch]$AllowMissingCore,
+    [switch]$AllowMissingRuntime,
     [switch]$UpdateInstalled
 )
 
@@ -27,12 +27,10 @@ $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapJar = Join-Path $ClientModsDir 'lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientJar = Join-Path $ClientModsDir 'lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
-$PerformanceJar = Join-Path $ClientModsDir 'lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
 $WorldTargetJar = Join-Path $RepoRoot 'plugins\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesTargetJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapTargetJar = Join-Path $RepoRoot 'mods\map-manager\build\libs\lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientTargetJar = Join-Path $RepoRoot 'mods\utility-manager\build\libs\lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
-$PerformanceTargetJar = Join-Path $RepoRoot 'mods\performance-manager\build\libs\lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
 $PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
@@ -42,11 +40,11 @@ Write-Host "Repository: $RepoRoot"
 Write-Host "Launcher:   $AppRoot"
 Write-Host ''
 
-if ($UpdateInstalled -and $AllowMissingCore) {
+if ($UpdateInstalled -and $AllowMissingRuntime) {
     throw 'Installed Launcher update is blocked in compile-only mode because the installed app must remain runtime-ready.'
 }
 
-if (-not $AllowMissingCore) {
+if (-not $AllowMissingRuntime) {
     Require-Command java 'Install or activate Java 21.'
     Require-Command mvn 'Install Apache Maven and make mvn available on PATH.'
     Require-Command gradle 'Install Gradle 8.12 and make gradle available on PATH.'
@@ -57,17 +55,15 @@ if (-not $AllowMissingCore) {
         mvn --batch-mode --no-transfer-progress verify
         if ($LASTEXITCODE -ne 0) { throw "Maven verification failed with exit code $LASTEXITCODE." }
 
-        Write-Host '[runtime] Building LazyBuilder Fabric client mods...' -ForegroundColor Cyan
+        Write-Host '[runtime] Building required LazyBuilder Fabric client mods...' -ForegroundColor Cyan
         gradle -p mods/map-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Map Manager build failed with exit code $LASTEXITCODE." }
         gradle -p mods/utility-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Utility Manager build failed with exit code $LASTEXITCODE." }
-        gradle -p mods/performance-manager --no-daemon build
-        if ($LASTEXITCODE -ne 0) { throw "Performance Manager build failed with exit code $LASTEXITCODE." }
     }
     finally { Pop-Location }
 
-    $RequiredBuildOutputs = @($WorldTargetJar, $UtilitiesTargetJar, $MapTargetJar, $UtilityClientTargetJar, $PerformanceTargetJar)
+    $RequiredBuildOutputs = @($WorldTargetJar, $UtilitiesTargetJar, $MapTargetJar, $UtilityClientTargetJar)
     foreach ($Output in $RequiredBuildOutputs) {
         if (-not (Test-Path $Output)) { throw "Runtime verification completed but required artifact was not found: $Output" }
     }
@@ -78,18 +74,18 @@ if (-not $AllowMissingCore) {
     Copy-Item $UtilitiesTargetJar $UtilitiesJar -Force
     Copy-Item $MapTargetJar $MapJar -Force
     Copy-Item $UtilityClientTargetJar $UtilityClientJar -Force
-    Copy-Item $PerformanceTargetJar $PerformanceJar -Force
-    Write-Host 'Matching tested server plugins and client mods staged for the desktop package.' -ForegroundColor Green
+    Get-ChildItem $ClientModsDir -Filter 'lazybuilder-performance-manager-*.jar' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    Write-Host 'Matching tested server plugins and required client mods staged for the desktop package.' -ForegroundColor Green
     Write-Host ''
 }
 
 $MissingRuntime = @()
-foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceJar)) {
+foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar)) {
     if (-not (Test-Path $Path)) { $MissingRuntime += (Split-Path $Path -Leaf) }
 }
 if ($MissingRuntime.Count -gt 0) {
     $MissingText = $MissingRuntime -join ', '
-    if (-not $AllowMissingCore) { throw "Runtime-ready Launcher build blocked: bundled runtime components are missing ($MissingText)." }
+    if (-not $AllowMissingRuntime) { throw "Runtime-ready Launcher build blocked: bundled runtime components are missing ($MissingText)." }
     Write-Warning "Compile-only mode: runtime components are missing ($MissingText)."
     Write-Warning 'The produced app must not be used for fresh server or Client Setup runtime validation.'
     Write-Host ''
