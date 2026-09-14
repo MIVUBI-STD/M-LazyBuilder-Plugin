@@ -189,10 +189,11 @@ upload
    ├── Import World          → final validation/publish consumes the artifact
    ├── Choose Different File → discard old reviewed artifact, then choose/upload again
    ├── switch away           → discard reviewed artifact
+   ├── disconnect            → discard reviewed artifact; in-flight inspection discards on completion
    └── close                 → discard reviewed artifact
 ```
 
-A failed inspection deletes the unusable uploaded artifact immediately. A final Import failure intentionally keeps a valid artifact available for retry when the backend has not committed the world. Cleanup is request/event-driven; do not add an inbox polling daemon or a second transfer implementation. Changing source file also clears the prior auto-suggested name so metadata from one source cannot leak into the next review.
+A failed inspection deletes the unusable uploaded artifact immediately. If the player disconnects while inspection is still running, the inspection may finish but its result is not retained as a reconnect-pending review: Paper discards that upload once inspection completes. A final Import failure intentionally keeps a valid artifact available for retry while the player remains in the active import flow and the backend has not committed the world. Cleanup is request/event-driven; do not add an inbox polling daemon or a second transfer implementation. Changing source file also clears the prior auto-suggested name so metadata from one source cannot leak into the next review.
 
 ### Conversion presentation
 
