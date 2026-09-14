@@ -18,6 +18,15 @@ public interface WorldFileRepository {
         throw new UnsupportedOperationException("Workspace reservation is not supported by this repository");
     }
 
+    /**
+     * Removes only transient workspaces that are safe to discard after a previous process ended.
+     * Destructive delete staging is intentionally excluded because it may be the only surviving
+     * copy of a managed world after an interrupted delete operation.
+     */
+    default int recoverTransientWorkspaces() throws IOException {
+        return 0;
+    }
+
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
     void deleteWorld(WorldRecord world) throws IOException;
