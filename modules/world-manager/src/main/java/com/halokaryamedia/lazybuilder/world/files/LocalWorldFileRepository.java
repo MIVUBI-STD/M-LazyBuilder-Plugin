@@ -11,9 +11,11 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -30,6 +32,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String WORK_SUFFIX = ".work";
     private static final String COPY_SUFFIX = ".copy";
     private static final String DELETE_SUFFIX = ".delete";
+    private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
 
     private final Path worldRoot;
     private final Path workspaceRoot;
@@ -55,11 +58,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             copyTree(sourcePath, destination, profile);
             return destination;
         } catch (IOException | RuntimeException exception) {
-            try {
-                deleteTree(destination);
-            } catch (IOException cleanupFailure) {
-                exception.addSuppressed(cleanupFailure);
-            }
+            try { deleteTree(destination); }
+            catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             throw exception;
         }
     }
@@ -72,8 +72,6 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
             throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
         }
-        // Delete staging embeds the original safe folder name so restart recovery can
-        // reconcile it against persisted registry truth without guessing by directory contents.
         Path destination = reserveDeleteWorkspace(operationId, world.folderName());
         moveDirectory(source, destination);
         return destination;
@@ -88,18 +86,13 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     public int recoverTransientWorkspaces() throws IOException {
         if (Files.notExists(workspaceRoot)) return 0;
         requireSafeWorkspaceRoot();
-
         int recovered = 0;
         try (var children = Files.list(workspaceRoot)) {
             for (Path child : children.toList()) {
-                String name = child.getFileName().toString();
-                if (!isRecoverableTransientName(name)) continue;
+                if (!isRecoverableTransientName(child.getFileName().toString())) continue;
                 Path target = requireDirectWorkspace(child);
-                if (Files.isSymbolicLink(target)) {
-                    Files.deleteIfExists(target);
-                } else {
-                    deleteTree(target);
-                }
+                if (Files.isSymbolicLink(target)) Files.deleteIfExists(target);
+                else deleteTree(target);
                 recovered++;
             }
         }
@@ -122,7 +115,6 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             for (Path child : children.toList()) {
                 String name = child.getFileName().toString();
                 if (!name.endsWith(DELETE_SUFFIX)) continue;
-
                 Optional<DeleteWorkspaceIdentity> identity = parseDeleteWorkspaceName(name);
                 Path staged = requireDirectWorkspace(child);
                 if (identity.isEmpty() || Files.isSymbolicLink(staged) || !Files.isDirectory(staged)) {
@@ -134,22 +126,77 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 if (managedFolders.contains(folderName)) {
                     Path destination = worldPath(folderName);
                     if (Files.exists(destination)) {
-                        // Registry says the delete never committed, but both copies exist.
-                        // Preserve staging rather than deciding which copy is authoritative.
                         preserved++;
                         continue;
                     }
                     moveDirectory(staged, destination);
                     restored++;
                 } else {
-                    // Persisted registry no longer contains the world, so the destructive
-                    // operation committed before the previous process ended.
                     deleteTree(staged);
                     discarded++;
                 }
             }
         }
         return new DeleteRecovery(restored, discarded, preserved);
+    }
+
+    @Override
+    public PublishRecovery recoverPublishedWorlds(Collection<WorldRecord> managedWorlds) throws IOException {
+        Objects.requireNonNull(managedWorlds, "managedWorlds");
+        if (Files.notExists(worldRoot)) return new PublishRecovery(0, 0);
+        if (!Files.isDirectory(worldRoot) || Files.isSymbolicLink(worldRoot)) {
+            throw new IOException("World container is unsafe");
+        }
+        Set<String> managedFolders = new HashSet<>();
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+
+        int finalized = 0;
+        int discarded = 0;
+        try (var children = Files.list(worldRoot)) {
+            for (Path child : children.toList()) {
+                if (!Files.isDirectory(child) || Files.isSymbolicLink(child)) continue;
+                Path marker = child.resolve(PENDING_PUBLISH_MARKER);
+                if (Files.notExists(marker)) continue;
+                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+                    throw new IOException("Pending publication marker is unsafe in " + child.getFileName());
+                }
+                String folderName = child.getFileName().toString();
+                if (managedFolders.contains(folderName)) {
+                    Files.delete(marker);
+                    finalized++;
+                } else {
+                    deleteTree(child);
+                    discarded++;
+                }
+            }
+        }
+        return new PublishRecovery(finalized, discarded);
+    }
+
+    @Override
+    public void markPublishedWorldCommitted(String destinationFolder) throws IOException {
+        Path destination = worldPath(destinationFolder);
+        if (!Files.isDirectory(destination) || Files.isSymbolicLink(destination)) {
+            throw new IOException("Published world is missing or unsafe: " + destinationFolder);
+        }
+        Path marker = destination.resolve(PENDING_PUBLISH_MARKER);
+        if (Files.exists(marker) && (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker))) {
+            throw new IOException("Pending publication marker is unsafe in " + destinationFolder);
+        }
+        Files.deleteIfExists(marker);
+    }
+
+    @Override
+    public ManagedWorldAudit auditManagedWorldFolders(Collection<WorldRecord> managedWorlds) throws IOException {
+        Objects.requireNonNull(managedWorlds, "managedWorlds");
+        List<String> missing = new ArrayList<>();
+        List<String> unsafe = new ArrayList<>();
+        for (WorldRecord world : managedWorlds) {
+            Path target = worldPath(world.folderName());
+            if (Files.notExists(target)) missing.add(world.folderName());
+            else if (!Files.isDirectory(target) || Files.isSymbolicLink(target)) unsafe.add(world.folderName());
+        }
+        return new ManagedWorldAudit(missing, unsafe);
     }
 
     @Override
@@ -161,6 +208,14 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
         if (Files.exists(destination)) {
             throw new IOException("Destination world already exists: " + destinationFolder);
+        }
+
+        String sourceName = source.getFileName().toString();
+        boolean transactionalPublish = sourceName.endsWith(WORK_SUFFIX) || sourceName.endsWith(COPY_SUFFIX);
+        if (transactionalPublish) {
+            Path marker = source.resolve(PENDING_PUBLISH_MARKER);
+            if (Files.exists(marker)) throw new IOException("Staged world already contains a publication marker");
+            Files.createFile(marker);
         }
         moveDirectory(source, destination);
     }
@@ -180,11 +235,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     public void deleteWorkspace(Path workspace) throws IOException {
         Path target = requireDirectWorkspace(workspace);
         if (Files.notExists(target)) return;
-        if (Files.isSymbolicLink(target)) {
-            Files.delete(target);
-            return;
-        }
-        deleteTree(target);
+        if (Files.isSymbolicLink(target)) Files.delete(target);
+        else deleteTree(target);
     }
 
     private Path reserveTypedWorkspace(UUID operationId, String suffix) throws IOException {
@@ -192,9 +244,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         Files.createDirectories(workspaceRoot);
         requireSafeWorkspaceRoot();
         Path destination = workspacePath(operationId + suffix);
-        if (Files.exists(destination)) {
-            throw new IOException("Workspace already exists: " + destination.getFileName());
-        }
+        if (Files.exists(destination)) throw new IOException("Workspace already exists: " + destination.getFileName());
         return destination;
     }
 
@@ -206,9 +256,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         String encodedFolder = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8));
         Path destination = workspacePath(operationId + "." + encodedFolder + DELETE_SUFFIX);
-        if (Files.exists(destination)) {
-            throw new IOException("Workspace already exists: " + destination.getFileName());
-        }
+        if (Files.exists(destination)) throw new IOException("Workspace already exists: " + destination.getFileName());
         return destination;
     }
 
@@ -224,12 +272,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         else if (name.endsWith(COPY_SUFFIX)) suffix = COPY_SUFFIX;
         else return false;
         String id = name.substring(0, name.length() - suffix.length());
-        try {
-            UUID.fromString(id);
-            return true;
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
+        try { UUID.fromString(id); return true; }
+        catch (IllegalArgumentException ignored) { return false; }
     }
 
     private static Optional<DeleteWorkspaceIdentity> parseDeleteWorkspaceName(String name) {
@@ -285,11 +329,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     private static void moveDirectory(Path source, Path destination) throws IOException {
-        try {
-            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, destination);
-        }
+        try { Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE); }
+        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, destination); }
     }
 
     private Path worldPath(String folderName) {
