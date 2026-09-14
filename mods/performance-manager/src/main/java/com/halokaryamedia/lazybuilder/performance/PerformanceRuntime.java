@@ -18,6 +18,11 @@ public final class PerformanceRuntime {
     }
 
     public void recordFrame(long nowNanos) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || !client.isWindowFocused() || client.getWindow() == null || client.getWindow().isMinimized()) {
+            frameMonitor.pauseFrameClock();
+            return;
+        }
         frameMonitor.recordFrame(nowNanos);
     }
 
