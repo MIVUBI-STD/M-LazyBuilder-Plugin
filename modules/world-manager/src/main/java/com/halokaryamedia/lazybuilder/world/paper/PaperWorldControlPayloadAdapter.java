@@ -16,6 +16,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
+import com.halokaryamedia.lazybuilder.world.transfer.TransferSessionService;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
@@ -49,6 +50,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldExportService exportService;
     private final WorldImportService importService;
     private final ConversionUpdateService conversionUpdates;
+    private final TransferSessionService transfers;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
     /** At most one heavy result can be pending per player because heavyInFlight is single-flight. */
@@ -75,6 +77,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             WorldExportService exportService,
             WorldImportService importService,
             ConversionUpdateService conversionUpdates,
+            TransferSessionService transfers,
             WorldHeavyOperationOrchestrator heavyOperations
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -86,6 +89,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.exportService = Objects.requireNonNull(exportService, "exportService");
         this.importService = Objects.requireNonNull(importService, "importService");
         this.conversionUpdates = Objects.requireNonNull(conversionUpdates, "conversionUpdates");
+        this.transfers = Objects.requireNonNull(transfers, "transfers");
         this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
     }
 
@@ -328,6 +332,18 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private void handleInspectImport(Player player, WorldControlWireProtocol.InspectImport request) {
         if (!beginHeavy(player)) return;
         UUID owner = player.getUniqueId();
+        try {
+            if (!transfers.ownsCompletedUpload(owner, request.artifactName())) {
+                heavyInFlight.remove(owner);
+                send(player, WorldControlWireProtocol.error(
+                        "Import review is only available for a world file uploaded by this client."));
+                return;
+            }
+        } catch (RuntimeException exception) {
+            heavyInFlight.remove(owner);
+            send(player, WorldControlWireProtocol.error(exception.getMessage()));
+            return;
+        }
         String previous = reviewedImportArtifacts.get(owner);
         if (previous != null && !previous.equals(request.artifactName())) {
             discardReviewedArtifact(owner, previous);
@@ -397,6 +413,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             }
             Player online = plugin.getServer().getPlayer(owner);
             if (failure != null) {
+                transfers.releaseCompletedUpload(owner, artifactName);
                 if (!abandoned && online != null && online.isOnline()) {
                     send(online, WorldControlWireProtocol.error(failure.getMessage()));
                 }
@@ -423,6 +440,9 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         } catch (RuntimeException exception) {
             plugin.getLogger().warning("Could not discard disconnected import inspection artifact for " + owner + ": "
                     + exception.getMessage());
+        } finally {
+            try { transfers.releaseCompletedUpload(owner, artifactName); }
+            catch (RuntimeException ignored) { }
         }
     }
 
@@ -446,6 +466,9 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         } catch (RuntimeException exception) {
             plugin.getLogger().warning("Could not discard abandoned import artifact for " + owner + ": "
                     + exception.getMessage());
+        } finally {
+            try { transfers.releaseCompletedUpload(owner, artifactName); }
+            catch (RuntimeException ignored) { }
         }
     }
 
@@ -480,7 +503,15 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!beginHeavy(player)) return;
         UUID owner = player.getUniqueId();
         String reviewed = reviewedImportArtifacts.get(owner);
-        if (!request.artifactName().equals(reviewed)) {
+        boolean ownsUpload;
+        try {
+            ownsUpload = transfers.ownsCompletedUpload(owner, request.artifactName());
+        } catch (RuntimeException exception) {
+            heavyInFlight.remove(owner);
+            send(player, WorldControlWireProtocol.error(exception.getMessage()));
+            return;
+        }
+        if (!request.artifactName().equals(reviewed) || !ownsUpload) {
             heavyInFlight.remove(owner);
             send(player, WorldControlWireProtocol.error(
                     "Import requires the currently reviewed upload. Choose and review the world file again."));
@@ -496,6 +527,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 ),
                 result -> {
                     reviewedImportArtifacts.remove(owner, request.artifactName());
+                    transfers.releaseCompletedUpload(owner, request.artifactName());
                     return encode(new WorldControlWireProtocol.WorldChanged("IMPORT", summary(result)));
                 }
         );
