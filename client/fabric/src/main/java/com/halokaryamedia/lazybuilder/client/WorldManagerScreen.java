@@ -79,9 +79,11 @@ public final class WorldManagerScreen extends Screen {
         int maxOffset = Math.max(0, currentEntries.size() - maxVisibleEntries(l));
         scrollOffset = Math.max(0, Math.min(scrollOffset, maxOffset));
 
-        if (!l.compact || !compactDetail) addListControls(l);
-        WorldControlWireProtocol.WorldSummary selected = selected();
-        if (selected != null && (!l.compact || compactDetail)) addManageControls(l, selected);
+        if (controller.worldListReady()) {
+            if (!l.compact || !compactDetail) addListControls(l);
+            WorldControlWireProtocol.WorldSummary selected = selected();
+            if (selected != null && (!l.compact || compactDetail)) addManageControls(l, selected);
+        }
 
         if (l.compact && compactDetail) {
             addDrawableChild(LbUi.button(l.left + 12, l.bottom + 8, 108, 20, "Back to Worlds",
@@ -125,7 +127,7 @@ public final class WorldManagerScreen extends Screen {
             addDrawableChild(add);
         }
 
-        int y = 96;
+        int y = 98;
         int shown = 0;
         for (int i = scrollOffset; i < currentEntries.size() && shown < maxVisibleEntries(l); i++, shown++) {
             ListEntry entry = currentEntries.get(i);
@@ -134,13 +136,13 @@ public final class WorldManagerScreen extends Screen {
                 continue;
             }
             addWorldRow(l, entry.world, y, busy);
-            y += 32;
+            y += 34;
         }
 
         if (query.isBlank() && controller.canManage()) {
             int footerY = l.bottom - 28;
             LbButtonWidget archived = LbUi.button(left + 14, footerY, Math.max(110, width - 28), 20,
-                    showArchived ? "Hide Archived" : "Archived Worlds  " + archivedCount(),
+                    showArchived ? "Hide Archived Worlds" : "Archived Worlds  ·  " + archivedCount(),
                     LbButtonWidget.Style.GHOST, () -> {
                         showArchived = !showArchived;
                         scrollOffset = 0;
@@ -161,25 +163,29 @@ public final class WorldManagerScreen extends Screen {
         boolean canTeleport = controller.canTeleport() && !archived;
         boolean canManage = controller.canManage();
 
-        LbButtonWidget pin = LbUi.button(left, y, 22, 26, pinned ? "★" : "☆",
-                pinned ? LbButtonWidget.Style.SECONDARY : LbButtonWidget.Style.GHOST, () -> {
-                    NAVIGATION.togglePinned(world.worldId());
-                    searchEditing = false;
-                    clearAndInit();
-                });
-        pin.active = !archived && !busy;
-        addDrawableChild(pin);
+        int leadingWidth = archived ? 0 : 28;
+        if (!archived) {
+            LbButtonWidget pin = LbUi.button(left, y, 22, 26, pinned ? "★" : "☆",
+                    pinned ? LbButtonWidget.Style.SECONDARY : LbButtonWidget.Style.GHOST, () -> {
+                        NAVIGATION.togglePinned(world.worldId());
+                        searchEditing = false;
+                        clearAndInit();
+                    });
+            pin.active = !busy;
+            addDrawableChild(pin);
+        }
 
         int rightActionWidth = (canTeleport ? 70 : 0) + (canManage ? 68 : 0);
-        int nameWidth = Math.max(70, width - 28 - rightActionWidth);
-        LbButtonWidget name = LbUi.button(left + 28, y, nameWidth, 26,
+        int nameWidth = Math.max(70, width - leadingWidth - rightActionWidth);
+        int nameX = left + leadingWidth;
+        LbButtonWidget name = LbUi.button(nameX, y, nameWidth, 26,
                 world.displayName(), world.worldId().equals(selectedWorld)
                         ? LbButtonWidget.Style.SECONDARY : LbButtonWidget.Style.GHOST,
                 () -> openManage(world.worldId(), l.compact));
         name.active = canManage && !busy;
         addDrawableChild(name);
 
-        int actionX = left + 28 + nameWidth + 6;
+        int actionX = nameX + nameWidth + 6;
         if (canTeleport) {
             LbButtonWidget teleport = LbUi.button(actionX, y, 64, 26,
                     current ? "Here" : "Teleport",
@@ -192,7 +198,7 @@ public final class WorldManagerScreen extends Screen {
 
         if (canManage) {
             LbButtonWidget manage = LbUi.button(actionX, y, 62, 26,
-                    "Manage", LbButtonWidget.Style.GHOST,
+                    archived ? "Restore" : "Manage", LbButtonWidget.Style.GHOST,
                     () -> openManage(world.worldId(), l.compact));
             manage.active = !busy;
             addDrawableChild(manage);
@@ -211,7 +217,7 @@ public final class WorldManagerScreen extends Screen {
         boolean busy = operationBusy();
         int x = l.detailPaneLeft() + 24;
         int contentWidth = Math.max(1, l.detailPaneWidth() - 48);
-        int y = 124;
+        int y = 126;
 
         if (!controller.canManage()) {
             if (controller.canTeleport() && !"ARCHIVED".equals(world.lifecycle()) && !isCurrentWorld(world.worldId())) {
@@ -228,7 +234,7 @@ public final class WorldManagerScreen extends Screen {
                     LbButtonWidget.Style.PRIMARY, () -> controller.restore(world.worldId()));
             restore.active = !busy;
             addDrawableChild(restore);
-            y += 48;
+            y += 52;
             LbButtonWidget delete = LbUi.button(x, y, contentWidth, 26, "Delete Permanently",
                     LbButtonWidget.Style.DANGER,
                     () -> { if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world)); });
@@ -242,16 +248,16 @@ public final class WorldManagerScreen extends Screen {
                     LbButtonWidget.Style.PRIMARY, () -> controller.teleport(world.worldId()));
             teleport.active = !busy;
             addDrawableChild(teleport);
+            y += 44;
         }
-        y += 44;
 
-        LbButtonWidget transfer = LbUi.button(x, y, contentWidth, 28, "Import / Export",
+        LbButtonWidget transfer = LbUi.button(x, y, contentWidth, 30, "Import / Export",
                 LbButtonWidget.Style.SECONDARY,
                 () -> { if (client != null) client.setScreen(new WorldTransferScreen(
                         this, controller, transfers, world, WorldTransferScreen.Tab.EXPORT)); });
         transfer.active = !busy;
         addDrawableChild(transfer);
-        y += 40;
+        y += 42;
 
         LbButtonWidget duplicate = LbUi.button(x, y, contentWidth, 26, "Duplicate",
                 LbButtonWidget.Style.GHOST,
@@ -265,7 +271,7 @@ public final class WorldManagerScreen extends Screen {
                 () -> { if (client != null) client.setScreen(new WorldSettingsScreen(this, controller, world)); });
         settings.active = !busy;
         addDrawableChild(settings);
-        y += 46;
+        y += 48;
 
         LbButtonWidget archive = LbUi.button(x, y, contentWidth, 24, "Archive",
                 LbButtonWidget.Style.GHOST, () -> confirmArchive(world));
@@ -281,8 +287,7 @@ public final class WorldManagerScreen extends Screen {
     }
 
     private void confirmArchive(WorldControlWireProtocol.WorldSummary world) {
-        if (client == null || !controller.canManage()) return;
-        if (isCurrentWorld(world.worldId())) return;
+        if (client == null || !controller.canManage() || isCurrentWorld(world.worldId())) return;
         client.setScreen(new ConfirmWorldActionScreen(
                 this,
                 Text.literal("Archive World"),
@@ -367,15 +372,13 @@ public final class WorldManagerScreen extends Screen {
     }
 
     private void observeCurrentWorld() {
-        if (maps.currentWorld() != null) {
-            NAVIGATION.recordVisited(maps.currentWorld().worldId().value());
-        }
+        if (maps.currentWorld() != null) NAVIGATION.recordVisited(maps.currentWorld().worldId().value());
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         Layout l = layout();
-        if ((!l.compact || !compactDetail)
+        if (controller.worldListReady() && (!l.compact || !compactDetail)
                 && mouseX >= l.listLeft() && mouseX <= l.listLeft() + l.listPaneWidth()
                 && mouseY >= 88 && mouseY <= l.bottom) {
             int maxOffset = Math.max(0, currentEntries.size() - maxVisibleEntries(l));
@@ -397,7 +400,7 @@ public final class WorldManagerScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("LAZYBUILDER"), l.left, 14, LbUi.TEXT_MUTED);
 
         if (!l.compact || !compactDetail) renderWorldListPane(context, l);
-        if (!l.compact || compactDetail) renderManagePane(context, l);
+        if (controller.worldListReady() && (!l.compact || compactDetail)) renderManagePane(context, l);
         renderOperationStatus(context, l);
         super.render(context, mouseX, mouseY, delta);
     }
@@ -407,39 +410,63 @@ public final class WorldManagerScreen extends Screen {
         int width = l.listPaneWidth();
         LbUi.panel(context, left, 34, width, l.bottom - 34);
         context.drawTextWithShadow(textRenderer, Text.literal("WORLDS"), left + 14, 42, LbUi.TEXT_PRIMARY);
+
+        if (!controller.worldListReady()) {
+            renderInitialState(context, left, width);
+            return;
+        }
+
         if (!controller.canManage() && controller.canTeleport()) {
-            context.drawTextWithShadow(textRenderer, Text.literal("Navigation access"), left + 76, 42, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal("Navigation only"), left + 76, 42, LbUi.TEXT_MUTED);
         }
         if (search != null) LbUi.field(context, search, false);
         LbUi.divider(context, left + 14, 88, left + width - 14);
 
-        int y = 96;
+        int y = 98;
         int shown = 0;
         for (int i = scrollOffset; i < currentEntries.size() && shown < maxVisibleEntries(l); i++, shown++) {
             ListEntry entry = currentEntries.get(i);
             if (entry.world == null) {
-                context.drawTextWithShadow(textRenderer, Text.literal(entry.section), left + 16, y + 6, LbUi.TEXT_MUTED);
+                context.drawTextWithShadow(textRenderer, Text.literal(entry.section), left + 16, y + 5, LbUi.TEXT_MUTED);
+                context.fill(left + 86, y + 9, left + width - 16, y + 10, LbUi.BORDER);
                 y += 22;
                 continue;
             }
-            if (isCurrentWorld(entry.world.worldId())) {
-                context.drawTextWithShadow(textRenderer, Text.literal("You are here"),
-                        left + 44, y + 18, LbUi.SUCCESS);
-            }
-            y += 32;
+            y += 34;
         }
 
-        if (currentEntries.isEmpty()) {
-            String title = query.isBlank() ? "No worlds yet" : "No active worlds match your search";
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(title), left + width / 2, 132, LbUi.TEXT_SECONDARY);
-            if (query.isBlank() && controller.canManage()) {
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal("Create or import a world to begin"),
-                        left + width / 2, 150, LbUi.TEXT_MUTED);
-            } else if (controller.canManage() && archivedSearchMatches() > 0) {
-                context.drawCenteredTextWithShadow(textRenderer,
-                        Text.literal(archivedSearchMatches() + " archived match(es) — clear search and open Archived Worlds"),
-                        left + width / 2, 150, LbUi.TEXT_MUTED);
-            }
+        if (currentEntries.isEmpty()) renderEmptyState(context, left, width);
+    }
+
+    private void renderInitialState(DrawContext context, int left, int width) {
+        String error = controller.lastError();
+        if (error == null && controller.worldListPending()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Loading worlds…"),
+                    left + width / 2, 126, LbUi.TEXT_SECONDARY);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Reading the server workspace"),
+                    left + width / 2, 144, LbUi.TEXT_MUTED);
+            return;
+        }
+        String title = error != null && error.toLowerCase(Locale.ROOT).contains("permission")
+                ? "World Manager access is not available"
+                : "Could not load worlds";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(title),
+                left + width / 2, 126, error == null ? LbUi.TEXT_SECONDARY : LbUi.DANGER_BRIGHT);
+        context.drawCenteredTextWithShadow(textRenderer,
+                Text.literal(error == null ? "Return to the map and try again." : friendlyError(error)),
+                left + width / 2, 146, LbUi.TEXT_MUTED);
+    }
+
+    private void renderEmptyState(DrawContext context, int left, int width) {
+        String title = query.isBlank() ? "No active worlds yet" : "No worlds match your search";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(title), left + width / 2, 132, LbUi.TEXT_SECONDARY);
+        if (query.isBlank() && controller.canManage()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Create or import a world to begin"),
+                    left + width / 2, 150, LbUi.TEXT_MUTED);
+        } else if (controller.canManage() && archivedSearchMatches() > 0) {
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal(archivedSearchMatches() + " archived match(es) are available"),
+                    left + width / 2, 150, LbUi.TEXT_MUTED);
         }
     }
 
@@ -451,7 +478,7 @@ public final class WorldManagerScreen extends Screen {
         WorldControlWireProtocol.WorldSummary world = selected();
         if (world == null) {
             context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal(controller.canManage() ? "Select Manage on a world" : "Select a world to navigate"),
+                    Text.literal(controller.canManage() ? "Choose Manage on a world" : "Choose a world to navigate"),
                     left + width / 2, 112, LbUi.TEXT_MUTED);
             return;
         }
@@ -462,12 +489,16 @@ public final class WorldManagerScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), x, 66, LbUi.TEXT_PRIMARY);
         String subtitle = "ARCHIVED".equals(world.lifecycle()) ? "Archived" : isCurrentWorld(world.worldId())
                 ? "You are here" : titleCase(world.kind());
-        context.drawTextWithShadow(textRenderer, Text.literal(subtitle), x, 84,
-                "ARCHIVED".equals(world.lifecycle()) ? LbUi.TEXT_SECONDARY : LbUi.TEXT_MUTED);
+        int subtitleColor = "ARCHIVED".equals(world.lifecycle()) ? LbUi.WARNING
+                : isCurrentWorld(world.worldId()) ? LbUi.SUCCESS : LbUi.TEXT_MUTED;
+        context.drawTextWithShadow(textRenderer, Text.literal(subtitle), x, 84, subtitleColor);
         LbUi.divider(context, x, 106, left + width - 24);
 
+        if (isCurrentWorld(world.worldId()) && controller.canManage()) {
+            context.drawTextWithShadow(textRenderer, Text.literal("Current workspace"), x, 112, LbUi.TEXT_MUTED);
+        }
         if (controller.lastError() != null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(controller.lastError()),
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(friendlyError(controller.lastError())),
                     left + width / 2, l.bottom - 18, LbUi.DANGER_BRIGHT);
         }
     }
@@ -511,7 +542,7 @@ public final class WorldManagerScreen extends Screen {
     }
 
     private int maxVisibleEntries(Layout l) {
-        return Math.max(3, (l.bottom - 140) / 28);
+        return Math.max(3, (l.bottom - 142) / 30);
     }
 
     private Layout layout() {
@@ -552,6 +583,16 @@ public final class WorldManagerScreen extends Screen {
         if (value == null || value.isBlank()) return "";
         String lower = value.toLowerCase(Locale.ROOT).replace('_', ' ');
         return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    }
+
+    private static String friendlyError(String message) {
+        if (message == null || message.isBlank()) return "World Manager could not complete the request.";
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("permission")) return "Your server role does not allow this action.";
+        if (lower.contains("builders are inside")) return "Move builders out of this world, then try again.";
+        if (lower.contains("disk space") || lower.contains("storage")) return "There is not enough storage for this operation.";
+        if (lower.contains("shutting down")) return "The server is shutting down. Try again after reconnecting.";
+        return message;
     }
 
     private record ListEntry(String section, WorldControlWireProtocol.WorldSummary world) {}
