@@ -27,7 +27,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.keepChatDraft());
         assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
-        assertFalse(preferences.autoReconnect());
+        assertFalse(preferences.contextualScreenshotNames());
     }
 
     @Test
@@ -35,12 +35,9 @@ final class UtilityConfigStoreTest {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
         UtilityPreferences expected = new UtilityPreferences(
                 true,
-                true,
                 false,
                 false,
-                true,
                 false,
-                true,
                 true
         );
 
@@ -58,7 +55,7 @@ final class UtilityConfigStoreTest {
                         + "chat.extended_history=not-a-boolean\n"
                         + "chat.keep_draft=FALSE\n"
                         + "connection.reconnect_button=not-a-boolean\n"
-                        + "connection.auto_reconnect=TRUE\n"
+                        + "screenshots.contextual_names=TRUE\n"
         );
 
         UtilityPreferences preferences = store.load();
@@ -67,9 +64,16 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.extendedChatHistory());
         assertFalse(preferences.keepChatDraft());
         assertTrue(preferences.reconnectButton());
-        assertTrue(preferences.autoReconnect());
-        assertFalse(preferences.compactInfo());
-        assertFalse(preferences.chatTimestamps());
-        assertFalse(preferences.organizeScreenshotsByProject());
+        assertTrue(preferences.contextualScreenshotNames());
+    }
+
+    @Test
+    void legacyScreenshotPreferenceIsMigratedOnRead() throws IOException {
+        UtilityConfigStore store = new UtilityConfigStore(tempDir);
+        Files.writeString(store.configFile(), "screenshots.organize_by_project=TRUE\n");
+
+        UtilityPreferences preferences = store.load();
+
+        assertTrue(preferences.contextualScreenshotNames());
     }
 }
