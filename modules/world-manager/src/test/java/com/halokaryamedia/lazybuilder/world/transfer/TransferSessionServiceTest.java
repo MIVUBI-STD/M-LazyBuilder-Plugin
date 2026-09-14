@@ -72,6 +72,49 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void unclaimedCompletedUploadIsDiscardedByDisconnectCleanup() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), tempDir.resolve("transfer"),
+                new TransferPolicy(4, 1024, 1, 1)
+        );
+        UUID owner = UUID.randomUUID();
+        byte[] content = new byte[]{1,2,3,4};
+        TransferDescriptor descriptor = service.beginUpload(owner, "orphan.zip", content.length, sha256(content));
+        service.acceptUploadChunk(owner, descriptor.sessionId(), 0, content);
+        service.finishUpload(owner, descriptor.sessionId());
+
+        assertTrue(Files.exists(imports.resolve("orphan.zip")));
+        service.abortAllForOwner(owner);
+
+        assertFalse(Files.exists(imports.resolve("orphan.zip")));
+        assertFalse(service.ownsCompletedUpload(owner, "orphan.zip"));
+    }
+
+    @Test
+    void claimedCompletedUploadSurvivesTransferDisconnectUntilReviewReleasesIt() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), tempDir.resolve("transfer"),
+                new TransferPolicy(4, 1024, 1, 1)
+        );
+        UUID owner = UUID.randomUUID();
+        byte[] content = new byte[]{5,6,7,8};
+        TransferDescriptor descriptor = service.beginUpload(owner, "review.zip", content.length, sha256(content));
+        service.acceptUploadChunk(owner, descriptor.sessionId(), 0, content);
+        service.finishUpload(owner, descriptor.sessionId());
+
+        assertTrue(service.claimCompletedUpload(owner, "review.zip"));
+        assertFalse(service.claimCompletedUpload(owner, "review.zip"));
+        service.abortAllForOwner(owner);
+
+        assertTrue(Files.exists(imports.resolve("review.zip")));
+        assertTrue(service.ownsCompletedUpload(owner, "review.zip"));
+        service.releaseCompletedUpload(owner, "review.zip");
+        assertFalse(service.ownsCompletedUpload(owner, "review.zip"));
+    }
+
+    @Test
     void downloadIsExplicitSequentialAndBoundToOwner() throws Exception {
         Path exports = tempDir.resolve("exports");
         Files.createDirectories(exports);
