@@ -158,7 +158,13 @@ public final class WorldManager {
         this.locationGateway = new PaperWorldLocationGateway(plugin.getServer());
 
         this.worldRuntimeService = new WorldRuntimeService(
-                worldRegistry, runtimeGateway, worldOperationCoordinator);
+                worldRegistry,
+                runtimeGateway,
+                worldOperationCoordinator,
+                world -> {
+                    World loaded = plugin.getServer().getWorld(world.folderName());
+                    return loaded != null && !loaded.getPlayers().isEmpty();
+                });
         this.worldCreationService = new WorldCreationService(
                 worldRegistry, registryPersistence, runtimeGateway, buildReadyPolicy);
         this.worldTeleportService = new WorldTeleportService(
