@@ -20,6 +20,7 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +41,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldExportService exportService;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
+    /** At most one heavy result can be pending per player because heavyInFlight is single-flight. */
+    private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
     private volatile boolean started;
     private volatile boolean stopping;
 
@@ -78,11 +81,13 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
         started = false;
         heavyInFlight.clear();
+        pendingHeavyCompletion.clear();
     }
 
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (!started || stopping || !CHANNEL.equals(channel)) return;
+        flushPendingCompletion(player);
 
         final WorldControlWireProtocol.Request request;
         try {
@@ -114,6 +119,11 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         } catch (IOException | RuntimeException exception) {
             send(player, WorldControlWireProtocol.error(exception.getMessage()));
         }
+    }
+
+    private void flushPendingCompletion(Player player) {
+        byte[] pending = pendingHeavyCompletion.remove(player.getUniqueId());
+        if (pending != null) send(player, pending);
     }
 
     private WorldControlWireProtocol.Response handle(Player player, WorldControlWireProtocol.Request request) {
@@ -296,9 +306,13 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private void completeHeavy(UUID owner, ResponseSupplier responseSupplier) {
         try {
             if (stopping || !started) return;
+            byte[] payload = responseSupplier.get();
             Player online = plugin.getServer().getPlayer(owner);
-            if (online == null || !online.isOnline()) return;
-            send(online, responseSupplier.get());
+            if (online != null && online.isOnline()) {
+                send(online, payload);
+            } else {
+                pendingHeavyCompletion.put(owner, payload);
+            }
         } finally {
             heavyInFlight.remove(owner);
         }
