@@ -88,9 +88,16 @@ src-tauri/resources/core/
 
 If either JAR is missing, the normal build stops before producing an installer. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
 
-For an explicit Launcher compile/typecheck check only, run the PowerShell script directly with:
+For an explicit Launcher compile/typecheck check only, either run:
 
 ```powershell
+.\BUILD-LAUNCHER.cmd -AllowMissingCore
+```
+
+or invoke the PowerShell script directly:
+
+```powershell
+cd EngineData\Frontend\RustApp
 .\build-local.ps1 -AllowMissingCore
 ```
 
