@@ -25,7 +25,11 @@ pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
 }
 
 #[tauri::command]
-pub async fn workspace_provision(app: AppHandle) -> Result<provisioning::ProvisionResult, String> {
+pub async fn workspace_provision(
+    app: AppHandle,
+    state: State<'_, ServerManagerState>,
+) -> Result<provisioning::ProvisionResult, String> {
+    ensure_runtime_update_allowed(&state)?;
     let resource_dir = app.path().resource_dir().ok();
     tauri::async_runtime::spawn_blocking(move || provisioning::provision_active(resource_dir.as_deref()))
         .await
