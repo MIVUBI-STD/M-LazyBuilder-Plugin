@@ -61,10 +61,6 @@ public final class WorldExportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /**
-     * Read-only verified target catalog for presentation. This never triggers network/update work.
-     * Native Java 1.21.4 is always available; converter targets appear only from a verified current runtime.
-     */
     public List<String> supportedFormats() {
         LinkedHashSet<String> formats = new LinkedHashSet<>();
         formats.add(NATIVE_SERVER_FORMAT);
@@ -73,9 +69,7 @@ public final class WorldExportService {
                     .map(value -> value == null ? "" : value.strip().toUpperCase(Locale.ROOT))
                     .filter(value -> !value.isBlank())
                     .forEach(formats::add));
-        } catch (IOException ignored) {
-            // Capability discovery is advisory; native export remains available.
-        }
+        } catch (IOException ignored) { }
         return List.copyOf(formats);
     }
 
@@ -101,7 +95,6 @@ public final class WorldExportService {
 
         String format = normalizeFormat(targetFormat);
         String safeArtifact = validateArtifactName(artifactName);
-
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
         boolean wasLoaded = runtimeService.isLoaded(worldId);
         try {
@@ -132,7 +125,7 @@ public final class WorldExportService {
         task.requireOpen();
         task.requireSnapshot();
         if (task.sourceRestoreResolved) return;
-        restoreSourceIfStillActive(task);
+        task.sourceRestored = restoreSourceIfStillActive(task);
         task.sourceRestoreResolved = true;
     }
 
@@ -198,7 +191,7 @@ public final class WorldExportService {
         RuntimeException failure = null;
         if (!task.sourceRestoreResolved) {
             try {
-                restoreSourceIfStillActive(task);
+                task.sourceRestored = restoreSourceIfStillActive(task);
                 task.sourceRestoreResolved = true;
             } catch (RuntimeException exception) {
                 failure = exception;
@@ -235,12 +228,13 @@ public final class WorldExportService {
         }
     }
 
-    private void restoreSourceIfStillActive(ExportTask task) {
-        if (!task.wasLoaded) return;
+    private boolean restoreSourceIfStillActive(ExportTask task) {
+        if (!task.wasLoaded) return false;
         WorldId id = task.source.id();
         WorldRecord current = registry.find(id).orElse(null);
-        if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return;
+        if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return false;
         if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
+        return true;
     }
 
     static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
@@ -320,6 +314,7 @@ public final class WorldExportService {
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
         private volatile boolean sourceRestoreResolved;
+        private volatile boolean sourceRestored;
         private volatile boolean completed;
         private volatile boolean closed;
         private Path snapshot;
@@ -340,7 +335,7 @@ public final class WorldExportService {
         public String targetFormat() { return targetFormat; }
         public WorldAreaSelection area() { return area; }
         public boolean completed() { return completed; }
-        public boolean sourceRestored() { return sourceRestoreResolved; }
+        public boolean sourceRestored() { return sourceRestored; }
 
         private synchronized void requireOpen() {
             if (closed) throw new IllegalStateException("Export task is already closed");
