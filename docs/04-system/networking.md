@@ -38,7 +38,7 @@ A transport/provider must never become semantic authority for worlds, permission
 
 General managed-world/product intents.
 
-Current shared contract is **World Control V3**.
+Current shared contract is **World Control V4**.
 
 Includes:
 
@@ -52,7 +52,10 @@ delete
 world settings
 import / export requests
 verified export-format catalog
+server-authoritative import inspection before final import
 ```
+
+Import inspection is a read-only review step after the client upload completes. Paper inspects the staged artifact with bounded parsing and returns presentation metadata such as detected edition, source version when known, and a suggested world name. Final Import remains a separate explicit request and re-runs the authoritative import validation/publish path.
 
 Intentionally excludes:
 
@@ -141,7 +144,7 @@ inactive session
 
 There is intentionally no cross-connection byte-transfer resume token. If the connection drops during an active byte transfer, that transfer restarts rather than maintaining a second resumable transport/security layer.
 
-Heavy world-operation **completion** is separate from byte-transfer resume: the world-control adapter may retain one bounded pending completion per player so an already-finished Duplicate/Delete/Import/Export result can be surfaced after reconnect. This does not preserve partial transfer bytes.
+Heavy world-operation **completion** is separate from byte-transfer resume: the world-control adapter may retain one bounded pending completion per player so an already-finished Duplicate/Delete/Import/Export/Import Inspection result can be surfaced after reconnect. This does not preserve partial transfer bytes.
 
 ## Storage preflight
 
@@ -181,13 +184,14 @@ World idle-unload is a separate Paper runtime-maintenance concern, not network p
 
 ## Security and failure behavior
 
-- management mutations require `lazybuilder.world.manage`;
+- management mutations and import inspection require `lazybuilder.world.manage`;
 - map/world teleport requires `lazybuilder.world.teleport` where applicable;
 - protocol version mismatch fails closed;
 - payload/chunk sizes are bounded;
 - transfer sessions bind to initiating player UUID;
 - filenames cannot escape owned roots;
 - uploads publish only after declared size and SHA-256 match;
+- import inspection never publishes a world and final import revalidates the archive;
 - downloads finalize locally only after SHA-256 validation;
 - malformed/out-of-order requests clean affected state;
 - disconnect/plugin shutdown closes active transfer channels and request-owned state;
@@ -219,7 +223,8 @@ Third-party changes should be absorbed at adapter boundaries whenever the LazyBu
 Source/static review can prove codecs, bounds, ownership, cleanup paths, and version alignment. Fresh local/live proof is still required for current `Local`:
 
 ```text
-World Control V3 Paper/Fabric interoperability
+World Control V4 Paper/Fabric interoperability
+Import upload → inspection → review → explicit import
 Map Action V2 current-world push
 permission behavior
 large upload/download throughput
