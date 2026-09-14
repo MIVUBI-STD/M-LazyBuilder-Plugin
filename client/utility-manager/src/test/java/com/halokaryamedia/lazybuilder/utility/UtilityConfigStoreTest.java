@@ -16,19 +16,31 @@ final class UtilityConfigStoreTest {
     Path tempDir;
 
     @Test
-    void missingConfigCreatesConservativeDefaults() {
+    void missingConfigCreatesSafeDefaults() {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
 
         UtilityPreferences preferences = store.load();
 
         assertEquals(UtilityPreferences.defaults(), preferences);
         assertTrue(Files.isRegularFile(store.configFile()));
+        assertTrue(preferences.extendedChatHistory());
+        assertTrue(preferences.keepChatDraft());
+        assertFalse(preferences.borderlessWindow());
+        assertFalse(preferences.autoReconnect());
     }
 
     @Test
     void saveAndLoadRoundTrip() {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
-        UtilityPreferences expected = new UtilityPreferences(true, true, true, true, true);
+        UtilityPreferences expected = new UtilityPreferences(
+                true,
+                true,
+                false,
+                false,
+                true,
+                true,
+                true
+        );
 
         store.save(expected);
 
@@ -36,16 +48,21 @@ final class UtilityConfigStoreTest {
     }
 
     @Test
-    void malformedBooleanFallsBackWithoutEnablingFeature() throws IOException {
+    void malformedBooleanFallsBackToFeatureDefault() throws IOException {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
         Files.writeString(
                 store.configFile(),
-                "window.borderless=not-a-boolean\nconnection.auto_reconnect=TRUE\n"
+                "window.borderless=not-a-boolean\n"
+                        + "chat.extended_history=not-a-boolean\n"
+                        + "chat.keep_draft=FALSE\n"
+                        + "connection.auto_reconnect=TRUE\n"
         );
 
         UtilityPreferences preferences = store.load();
 
         assertFalse(preferences.borderlessWindow());
+        assertTrue(preferences.extendedChatHistory());
+        assertFalse(preferences.keepChatDraft());
         assertTrue(preferences.autoReconnect());
         assertFalse(preferences.compactInfo());
         assertFalse(preferences.chatTimestamps());
