@@ -6,7 +6,7 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Lightweight background framerate policy used only when Dynamic FPS is absent.
- * It changes the Window framerate limit temporarily and never rewrites the user's video option.
+ * It updates Minecraft 1.21.4's runtime inactivity FPS limiter and never rewrites the user's video option.
  */
 public final class BackgroundFpsController {
     private int lastAppliedLimit = Integer.MIN_VALUE;
@@ -36,7 +36,7 @@ public final class BackgroundFpsController {
         }
 
         if (targetLimit != lastAppliedLimit) {
-            client.getWindow().setFramerateLimit(targetLimit);
+            client.getInactivityFpsLimiter().setMaxFps(targetLimit);
             lastAppliedLimit = targetLimit;
         }
     }
