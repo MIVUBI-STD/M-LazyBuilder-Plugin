@@ -245,6 +245,13 @@ public final class WorldManager {
                         + audit.missingFolders() + ", unsafe=" + audit.unsafeFolders());
             }
 
+            int reconciledArchivedWorlds = worldLifecycleService.reconcilePersistedRuntimeState();
+            if (reconciledArchivedWorlds > 0) {
+                plugin.getLogger().info("Unloaded " + reconciledArchivedWorlds
+                        + " archived world" + (reconciledArchivedWorlds == 1 ? "" : "s")
+                        + " to match persisted lifecycle state.");
+            }
+
             discoverExistingWorlds();
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
