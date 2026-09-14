@@ -14,7 +14,7 @@ public final class LazyBuilderClient implements ClientModInitializer {
         new LazyBuilderClientNetworking(WORLDS, MAPS, TRANSFERS).register();
         LazyBuilderClientUi.register(WORLDS, TRANSFERS, MAPS);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            TRANSFERS.reset();
+            TRANSFERS.shutdownIo();
             ClientFileDialogs.shutdown();
         });
     }
