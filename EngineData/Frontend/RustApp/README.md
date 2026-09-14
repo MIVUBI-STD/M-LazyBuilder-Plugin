@@ -48,7 +48,7 @@ Use:
 .\BUILD-LAUNCHER.cmd
 ```
 
-`BUILD-LAUNCHER.cmd` is only the build helper. The actual LazyBuilder application delivered to the user is an `.exe`, matching the familiar Windows launcher model used by apps such as Modrinth.
+For a normal runtime-ready package, this is now the single local entrypoint. It first compiles/tests the current Paper reactor, stages the matching World-Manager and Utilities-Manager JARs into the Tauri resource directory, then verifies and packages the desktop application.
 
 A successful normal build publishes exactly one clean handoff folder:
 
@@ -73,7 +73,9 @@ For repeated Local-PC testing after LazyBuilder is already installed, close the 
 This is the preferred local iteration flow. It:
 
 ```text
-cleans old local installer handoff files
+builds/tests the current Paper core
+→ stages matching World-Manager + Utilities-Manager JARs
+→ cleans old local installer handoff files
 → verifies/typechecks/tests Launcher
 → builds the current Tauri package
 → uses that package as a temporary in-place update transaction
@@ -85,12 +87,14 @@ After success there is no new user-facing installer left behind. Open LazyBuilde
 
 The update flow intentionally refuses to run while `lazybuilder.exe` is open and refuses compile-only builds with missing core JARs. This avoids partial application replacement.
 
-The build/update scripts intentionally operate only on the Desktop Launcher. They do not compile Fabric or Paper modules.
+The normal build/update path compiles the Paper core required by the desktop package. It still does not compile the independent Fabric client Managers; their build/runtime proof remains a separate client validation path.
 
-The verification/build performs:
+The desktop verification/build performs:
 
 ```text
-npm ci
+mvn verify
+→ stage matching Paper core JARs
+→ npm ci
 → Svelte typecheck
 → frontend production build
 → Tauri icon generation
@@ -103,6 +107,8 @@ Required local tools:
 
 ```text
 Windows 10/11
+Java 21
+Apache Maven
 Node.js 24+
 Rust stable toolchain (rustup/cargo)
 Microsoft C++ Build Tools required by Tauri
@@ -111,7 +117,7 @@ WebView2 runtime
 
 ### Core JAR requirement
 
-A Launcher build does not compile Paper modules. Runtime-ready build/update requires matching core JARs already present in:
+Runtime-ready build/update always requires matching core JARs:
 
 ```text
 src-tauri/resources/core/
@@ -119,7 +125,7 @@ src-tauri/resources/core/
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
 ```
 
-If either JAR is missing, normal packaging and installed-app update stop before replacing the app. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
+The normal `BUILD-LAUNCHER.cmd` / `UPDATE-LAUNCHER.cmd` flow now produces and stages these JARs automatically from the current checkout after `mvn verify`. A runtime-ready local package therefore does not depend on a hidden manual copy step.
 
 For an explicit Launcher compile/typecheck check only, run:
 
@@ -134,7 +140,7 @@ cd EngineData\Frontend\RustApp
 .\build-local.ps1 -AllowMissingCore
 ```
 
-Compile-only mode is not suitable for updating the installed Launcher or validating fresh-server provisioning.
+Compile-only mode skips Paper core build/staging and is not suitable for updating the installed Launcher or validating fresh-server provisioning.
 
 ### World Manager compatibility
 

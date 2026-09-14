@@ -34,16 +34,17 @@ A successful workflow for an older SHA is historical evidence only. A skipped, c
 The current `Verify` workflow is the minimum remote gate and must pass for the exact candidate SHA:
 
 ```text
-consistency     canonical version + repository contract checks
-utilities       independent Utilities-Manager compile/test + tested JAR artifact
-paper           Maven compile + automated tests for the complete Paper reactor
-fabric          pinned Gradle 8.12 client build
-tauri-desktop   frontend typecheck/build + Rust check/test + Windows installer build
+consistency      canonical version + repository contract checks
+utilities        independent Utilities-Manager compile/test + tested JAR artifact
+paper            Maven compile + automated tests for the complete Paper reactor
+fabric           pinned Gradle 8.12 builds for Map, Utility, and Performance Managers
+launcher-check   Svelte typecheck/build + Rust check/test on Windows
+tauri-desktop    tested Paper core staging + Svelte/Rust checks + Windows installer build
 ```
 
 The independent `utilities` job is component proof only: it allows Utilities-Manager to be verified even when an unrelated Paper module fails. It does not replace the complete `paper` gate for a repository-wide release claim.
 
-Only after all required jobs succeed may the SHA be described as `REMOTE_GITHUB green`.
+Only after all six required jobs succeed may the SHA be described as `REMOTE_GITHUB green`.
 
 ## Runtime proof boundary
 
@@ -64,7 +65,7 @@ Those remain `LOCAL_CODE` and `LIVE_SERVER` responsibilities.
 
 ## Current World Manager source state
 
-The current `Local` source contract has advanced beyond the older local defect list. The following are now source-implemented and require fresh proof rather than being treated as known-unfixed architecture gaps:
+The current `Local` source contract has advanced beyond the older local defect list. The following are source-implemented and require fresh proof rather than being treated as known-unfixed architecture gaps:
 
 ```text
 managed-world adoption / current-world synchronization
@@ -132,13 +133,21 @@ Static invariants checked in this pass:
 - desktop loopback protocol versioning remains separate from Minecraft World/Map protocol versions;
 - launcher UX remains outside this World Manager pass.
 
-This static audit is intentionally **not** compile proof. Source APIs can still fail because of imports, generics, dependency resolution, or build configuration. Those claims begin only at the next validation gate.
-
 ## Current proof status
 
-The branch is still **source-level implementation** until a fresh validation pass is run for the exact current `Local` HEAD.
+The source/architecture is beyond the earlier source-only implementation state: the remote workflow now covers repository consistency, Paper tests, all three Fabric Manager builds, Launcher checks, and the Windows Tauri package path.
 
-Do not claim current `Local` is compile-validated or runtime-validated yet.
+For the **current** `Local` HEAD, however, status is always resolved dynamically from the exact-head `Verify` run. Do not preserve a permanent SHA or run number in this document. Use this rule:
+
+```text
+all six exact-head Verify jobs succeed
+→ REMOTE_GITHUB green
+
+any required exact-head job missing / queued / failed / cancelled
+→ REMOTE_GITHUB not yet proven
+```
+
+`REMOTE_GITHUB green` still does not promote the branch to `LOCAL_CODE` or `LIVE_SERVER` validated. Local Windows and Minecraft runtime proof remain required.
 
 The final validation sequence for the current World Manager pass is:
 

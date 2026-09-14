@@ -28,6 +28,8 @@ $RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..\..')
 $CoreDir = Join-Path $AppRoot 'src-tauri\resources\core'
 $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
+$WorldTargetJar = Join-Path $RepoRoot 'modules\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
+$UtilitiesTargetJar = Join-Path $RepoRoot 'modules\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
@@ -41,6 +43,40 @@ Write-Host "Repository: $RepoRoot"
 Write-Host "Launcher:   $AppRoot"
 Write-Host ''
 
+if ($UpdateInstalled -and $AllowMissingCore) {
+    throw 'Installed Launcher update is blocked in compile-only mode because the installed app must remain runtime-ready.'
+}
+
+if (-not $AllowMissingCore) {
+    Require-Command java 'Install or activate Java 21.'
+    Require-Command mvn 'Install Apache Maven and make mvn available on PATH.'
+
+    Write-Host '[core] Building and testing matching Paper core modules...' -ForegroundColor Cyan
+    Push-Location $RepoRoot
+    try {
+        mvn --batch-mode --no-transfer-progress verify
+        if ($LASTEXITCODE -ne 0) {
+            throw "Maven core verification failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    if (-not (Test-Path $WorldTargetJar)) {
+        throw 'Maven verification completed but the World-Manager JAR was not found.'
+    }
+    if (-not (Test-Path $UtilitiesTargetJar)) {
+        throw 'Maven verification completed but the Utilities-Manager JAR was not found.'
+    }
+
+    New-Item -ItemType Directory -Force -Path $CoreDir | Out-Null
+    Copy-Item $WorldTargetJar $WorldJar -Force
+    Copy-Item $UtilitiesTargetJar $UtilitiesJar -Force
+    Write-Host 'Matching tested core JARs staged for the desktop package.' -ForegroundColor Green
+    Write-Host ''
+}
+
 $MissingCore = @()
 if (-not (Test-Path $WorldJar)) { $MissingCore += 'World-Manager-0.1.0-SNAPSHOT.jar' }
 if (-not (Test-Path $UtilitiesJar)) { $MissingCore += 'Utilities-Manager-0.1.0-SNAPSHOT.jar' }
@@ -48,10 +84,7 @@ if (-not (Test-Path $UtilitiesJar)) { $MissingCore += 'Utilities-Manager-0.1.0-S
 if ($MissingCore.Count -gt 0) {
     $MissingText = $MissingCore -join ', '
     if (-not $AllowMissingCore) {
-        throw "Runtime-ready Launcher build blocked: matching core JARs are missing from src-tauri/resources/core ($MissingText). Stage the tested core JARs first. Use -AllowMissingCore only for an explicit compile-only Launcher check."
-    }
-    if ($UpdateInstalled) {
-        throw 'Installed Launcher update is blocked in compile-only mode because the installed app must remain runtime-ready.'
+        throw "Runtime-ready Launcher build blocked: matching core JARs are missing from src-tauri/resources/core ($MissingText)."
     }
     Write-Warning "Compile-only mode: core JARs are missing ($MissingText)."
     Write-Warning 'The produced app must not be used to validate Prepare Server or a fresh server workflow.'

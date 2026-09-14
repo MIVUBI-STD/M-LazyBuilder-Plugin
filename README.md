@@ -15,9 +15,9 @@ LazyBuilder
 │   ├── World-Manager
 │   └── Utilities-Manager
 └── Client Managers
-    ├── Map Manager          (implemented)
-    ├── Utility Manager      (planned)
-    └── Performance Manager  (planned)
+    ├── Map Manager          (implemented / scope locked)
+    ├── Utility Manager      (implemented / scope locked)
+    └── Performance Manager  (implemented baseline / scope locked)
 ```
 
 ## Repository layout
@@ -27,11 +27,13 @@ EngineData/Frontend/RustApp/  Canonical LazyBuilder desktop app (Tauri 2 + Svelt
 shared/protocol/               Neutral Paper/Fabric wire contracts and shared value types
 modules/world-manager/         World lifecycle, import/export, archive, settings, transfer
 modules/utilities-manager/     Small builder/server convenience features
-client/map-manager/            LazyBuilder Map Manager Fabric source
+client/map-manager/            Fabric world/map/transfer client
+client/utility-manager/        Fabric passive client convenience
+client/performance-manager/    Fabric performance/resource coordination baseline
 docs/                          Canonical product/system/operations docs
 ```
 
-The current implemented Fabric mod is **LazyBuilder Map Manager**. Utility Manager and Performance Manager remain separate planned client managers; each Manager is one Fabric mod and one output JAR.
+The client architecture is exactly three independently maintained Fabric Managers. Map Manager owns world/map/transfer workflow, Utility Manager owns passive non-build client convenience, and Performance Manager owns performance/resource coordination. Each Manager is one Fabric mod and one output JAR.
 
 The desktop has one source authority: `EngineData/Frontend/RustApp`. Svelte owns presentation/application state; Rust owns desktop-native process, filesystem, Plugin-Manager, Server-Manager, and World-Manager client behavior.
 

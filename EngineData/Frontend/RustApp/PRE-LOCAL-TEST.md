@@ -4,7 +4,7 @@ This checklist is Launcher-only. Paper/Fabric failures outside the desktop Launc
 
 ## Source gate
 
-Before moving to the local PC, confirm the current `Local` HEAD passes:
+Before moving to the local PC, confirm the current `Local` HEAD passes the exact-head `Verify` workflow. The Launcher-specific remote checks include:
 
 ```text
 npm ci
@@ -15,7 +15,7 @@ cargo check --locked --manifest-path src-tauri/Cargo.toml
 cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-The Windows workflow job `launcher-check` is the canonical CI proof for this gate.
+The Windows workflow jobs `launcher-check` and `tauri-desktop` are the canonical CI proof for the Launcher source/package gate. Repository-wide readiness additionally requires the other required Verify jobs for the same HEAD.
 
 ## Runtime-ready package gate
 
@@ -27,7 +27,16 @@ src-tauri/resources/core/
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
 ```
 
-`BUILD-LAUNCHER.cmd` must stop instead of producing a runtime-ready installer when either core JAR is missing.
+`BUILD-LAUNCHER.cmd` now owns the complete runtime-ready local build path:
+
+```text
+mvn verify
+→ stage current World-Manager + Utilities-Manager JARs
+→ verify Launcher
+→ build Windows package
+```
+
+The build must stop if Paper verification fails or the expected tested JARs are not produced. `-AllowMissingCore` remains an explicit compile-only exception and must not be used for runtime-ready testing.
 
 ## First local install
 
@@ -86,6 +95,7 @@ UPDATE-LAUNCHER.cmd
 
 Expected behavior:
 
+- current Paper core is rebuilt/tested and staged before packaging;
 - update is blocked while LazyBuilder is still running;
 - the installed LazyBuilder is replaced in place;
 - existing server workspaces/configuration remain intact;
@@ -98,7 +108,9 @@ Expected behavior:
 Local testing is considered clean when:
 
 ```text
-Launcher verification green
+exact-head remote verification green
++ runtime-ready local package built from current tested Paper core
++ Launcher verification green
 + no console popups
 + one managed Paper instance only
 + workspace switching safety works

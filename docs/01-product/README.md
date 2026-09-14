@@ -28,16 +28,19 @@ The first-party Fabric World Manager surface is source-implemented for:
 World list / refresh
 Create Flat / Void
 Teleport
-Load / Unload
+automatic runtime load + idle unload
 Archive / Restore
-Clone
+Duplicate
 General Settings
 Permanent Delete
-Import publication
+Import upload → inspection → review → explicit Import
 Native Java 1.21.4 whole-world Export
+first-party chunk-aligned Export Area selection
 ```
 
-Xaero remains contextual for `Teleport Here` and `Export Area`. File bytes use the existing transfer path rather than a second upload/download subsystem.
+Manual Load/Unload controls, `autoLoad`, and legacy Clone terminology are not part of the current product path. Managed worlds load when required by canonical operations and become eligible for idle unload when safe.
+
+Map interaction and Export Area selection are first-party LazyBuilder surfaces. Xaero or other external map tools may remain interaction-quality references or optional user tools, but they are not runtime owners or required dependencies for LazyBuilder world/map operations. File bytes use the existing transfer path rather than a second upload/download subsystem.
 
 The durable world feature contract is owned by `../02-world-management/README.md`. The canonical client navigation/operation flow is owned by `../03-client-ui/world-manager-flow.md`.
 
@@ -52,6 +55,18 @@ Build Helpers
 ```
 
 Creation Tools and duplicate custom Spectator controls are not part of the current product scope. Utilities details are owned by `../../modules/utilities-manager/README.md` and the architecture lock under `../04-system/`.
+
+### Client Managers
+
+The Fabric client architecture is exactly three Managers:
+
+```text
+Map Manager          world / map / transfer workflow
+Utility Manager      passive non-build client convenience
+Performance Manager  performance/resource coordination baseline
+```
+
+All three are source-implemented. Their ownership remains independent and building/editing workflows stay external to Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, and other specialist tools.
 
 ### Desktop
 

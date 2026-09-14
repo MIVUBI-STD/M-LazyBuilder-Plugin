@@ -75,9 +75,9 @@ The three Fabric Managers do not import one another's implementation packages by
 EngineData/Frontend/RustApp/   canonical Tauri/Svelte/Rust desktop
 modules/world-manager/         Paper World-Manager
 modules/utilities-manager/     Paper Utilities-Manager
-client/map-manager/            implemented Fabric Map Manager
-client/utility-manager/        planned Fabric Utility Manager
-client/performance-manager/    planned Fabric Performance Manager
+client/map-manager/            implemented / scope locked Fabric Map Manager
+client/utility-manager/        implemented / scope locked Fabric Utility Manager
+client/performance-manager/    implemented baseline / scope locked Fabric Performance Manager
 docs/                          canonical product/system/operations docs
 ```
 
