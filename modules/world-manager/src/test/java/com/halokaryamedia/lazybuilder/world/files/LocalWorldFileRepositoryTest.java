@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -115,6 +116,66 @@ class LocalWorldFileRepositoryTest {
         assertFalse(Files.exists(copied));
         assertTrue(Files.exists(deleteStage), "delete staging may be the only surviving world copy");
         assertTrue(Files.exists(legacyUnknown), "untyped legacy workspace must not be guessed safe to delete");
+    }
+
+    @Test
+    void interruptedUncommittedDeleteRestoresWorldFromPersistedRegistryTruth() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        WorldRecord managed = new WorldRecord(WorldId.create(), "Delete Me", "Delete Me",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        Files.createDirectories(worldRoot.resolve(managed.folderName()));
+        Files.writeString(worldRoot.resolve(managed.folderName()).resolve("level.dat"), "level");
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        Path staged = repository.stageDelete(managed, UUID.randomUUID());
+        assertFalse(Files.exists(worldRoot.resolve(managed.folderName())));
+        assertTrue(Files.exists(staged.resolve("level.dat")));
+
+        WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of(managed));
+
+        assertEquals(1, result.restored());
+        assertEquals(0, result.discarded());
+        assertEquals(0, result.preserved());
+        assertTrue(Files.exists(worldRoot.resolve(managed.folderName()).resolve("level.dat")));
+        assertFalse(Files.exists(staged));
+    }
+
+    @Test
+    void interruptedCommittedDeleteDiscardsStagingWhenRegistryRecordIsGone() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        WorldRecord managed = new WorldRecord(WorldId.create(), "DeleteMe", "Delete Me",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        Files.createDirectories(worldRoot.resolve(managed.folderName()));
+        Files.writeString(worldRoot.resolve(managed.folderName()).resolve("level.dat"), "level");
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        Path staged = repository.stageDelete(managed, UUID.randomUUID());
+
+        WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
+
+        assertEquals(0, result.restored());
+        assertEquals(1, result.discarded());
+        assertEquals(0, result.preserved());
+        assertFalse(Files.exists(staged));
+        assertFalse(Files.exists(worldRoot.resolve(managed.folderName())));
+    }
+
+    @Test
+    void unattributableOrConflictingDeleteStagingIsPreserved() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        Files.createDirectories(workRoot);
+        Path legacy = workRoot.resolve(UUID.randomUUID() + ".delete");
+        Files.createDirectories(legacy);
+        Files.writeString(legacy.resolve("level.dat"), "level");
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
+
+        assertEquals(1, result.preserved());
+        assertTrue(Files.exists(legacy), "legacy delete staging has no safe target identity and must be preserved");
     }
 
     private static WorldRecord world() {
