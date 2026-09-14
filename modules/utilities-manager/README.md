@@ -1,129 +1,111 @@
 # Utilities-Manager
 
-Utilities-Manager owns small builder/server convenience features that do not belong to world lifecycle or server process management.
+Utilities-Manager owns small, familiar builder conveniences that do not belong to world lifecycle, desktop process management, plugin installation, or performance tuning.
 
-## Feature ownership rule
+## Builder-first command contract
 
-Utilities are grouped by **real responsibility**, not by one package/class/plugin per command.
+LazyBuilder preserves normal Minecraft/WorldEdit muscle memory. Frequently used builder commands stay short and direct:
 
 ```text
-com.halokaryamedia.lazybuilder.utilities
-  feature/
-    movement/
-    buildhelpers/
-    worldsafety/
+/gmc /gms /gma /gmsp
+/fly [speed]
+/noclip
+/nightvision (/nv)
+/lb
 ```
 
-Each responsibility package may contain the listeners, commands, services, small state/config objects, and tests required by that feature family. A package must not reach into another package's implementation internals.
+`/lb` is a discovery/help hub, not a replacement namespace. Vanilla commands such as `/tp`, `/time`, `/weather`, and `/gamerule`, plus familiar WorldEdit/FAWE commands, remain owned by those tools instead of being duplicated by LazyBuilder.
 
-`UtilityFeature` is the small lifecycle boundary registered by `UtilityFeatureRegistry`. One registered feature may expose several closely related commands/listeners when they share the same responsibility and lifecycle.
+### `/lb`
 
-Do not create a new framework layer, executor, registry, or Paper plugin merely because another command is added.
+```text
+/lb
+/lb help [movement|build|minecraft|worldedit]
+/lb status     # admin diagnostics
+/lb reload     # admin config reload
+```
+
+The player-facing help stays concise. When WorldEdit/FAWE is present, `/lb` can point builders toward a small curated set of familiar commands without reimplementing them.
+
+## Permission model
+
+Assign the role permission rather than OP solely for Utilities access:
+
+```text
+lazybuilder.builder
+lazybuilder.admin
+```
+
+`lazybuilder.builder` grants normal Utilities command and build-helper permissions. `lazybuilder.admin` includes the builder role plus status/reload diagnostics. Fine-grained child permissions remain available for servers that need them.
 
 ## Feature families
 
 ```text
-Movement — implemented
-  Advanced Fly
-  Noclip
-  Night Vision
+Movement
+  /gmc /gms /gma /gmsp
+  /fly [speed]
+  /noclip
+  /nightvision (/nv)
 
-Build Helpers — implemented
+Build Helpers
   Iron Door Toggle
   Double Slab Break
   Glazed Terracotta Rotate
 
-World Safety — implemented
+World Safety
   Explosion block-damage protection
   Leaves decay protection
   Farmland trample protection
-  Dragon egg interaction/teleport protection
+  Dragon egg interaction protection
 ```
 
-Banner Creator, Armor Color Creator, and Special Builder Items are intentionally **out of scope** because they are not used in the current builder-server workflow.
+### Movement behavior
 
-A separate Spectator feature family is also intentionally **not implemented**. `Movement/Noclip` already owns the LazyBuilder-specific transition into spectator movement, while normal Minecraft/Paper spectator controls own camera targeting. Duplicating those controls in Utilities would create overlapping ownership without adding a required capability.
+Movement uses one per-player runtime state so Fly, Noclip, gamemode shortcuts, and Night Vision do not independently fight over player state.
 
-### Movement
-
-Movement is one cohesive lifecycle owner with independent ability switches and per-player reversible state.
-
-Commands:
-
-```text
-/fly [speed]      toggle Advanced Fly; optional multiplier 0.1–10.0
-/noclip           toggle stable spectator-based noclip
-/nightvision      toggle persistent builder night vision
-/nv               alias for /nightvision
-```
-
-Noclip intentionally uses Bukkit spectator mode rather than NMS collision manipulation. The player's previous game mode is restored when noclip is turned off or the feature shuts down. Advanced Fly stores and restores the previous allow-flight/flying/fly-speed state. Night Vision restores any pre-existing night-vision effect instead of deleting it permanently.
+- `/fly` toggles flight.
+- `/fly <speed>` enables flight or updates speed while flight is already active.
+- `/noclip` temporarily enters Spectator and restores the previous game mode when disabled.
+- Running a gamemode shortcut while Noclip is active ends LazyBuilder's temporary Noclip ownership and applies the requested game mode.
+- Calling `/noclip` while already in normal Spectator does not create a fake Noclip session.
+- Fly intent is reapplied across explicit gamemode changes and temporary Noclip transitions.
+- transient state is restored on player quit and plugin shutdown.
 
 ### Build Helpers
 
-Build Helpers is one listener-based lifecycle owner with independent behavior switches.
+Build helpers use stable Bukkit block-data APIs and only run for players with `lazybuilder.utilities.build`.
 
-- Iron Door Toggle: right-clicking an iron door toggles its open state directly for builders, without introducing a redstone-control subsystem.
-- Double Slab Break: breaking a double slab while sneaking removes one slab, leaves a bottom slab in place, and drops one matching slab item. The sneak guard is configurable and enabled by default to avoid surprising normal block breaks.
-- Glazed Terracotta Rotate: sneak-right-clicking glazed terracotta rotates its facing clockwise by 90 degrees. The sneak guard is independently configurable.
-
-The helpers intentionally use stable Bukkit block-data APIs and do not depend on WorldEdit, NMS, or a background worker.
+- interactive helpers accept the main hand only, preventing duplicate off-hand execution;
+- Iron Door Toggle runs on right-click;
+- Double Slab Break uses the sneak guard by default, leaves one bottom slab, and does not create item drops in Creative;
+- Glazed Terracotta Rotate uses sneak + right-click by default and rotates cardinal facing clockwise.
 
 ### World Safety
 
-World Safety is one cohesive lifecycle owner with independently configurable protections. Explosion protection preserves the explosion itself while clearing its block-destruction list, so the feature does not become a generic entity-damage or gameplay authority. Farmland protection covers both player physical interaction and entity conversion to dirt. Dragon egg protection denies vanilla block interaction that would move the egg.
-
-WorldEdit aliases, global physics disabling, redstone disabling, world lifecycle, performance optimization, and generic server administration are explicitly out of scope.
-
-## Lifecycle contract
-
-Feature lifecycle is fail-isolated:
-
-- a feature is marked enabled only after `enable()` succeeds;
-- a feature remains marked enabled when its `disable()` fails, so registry state does not falsely report successful cleanup;
-- `disableAll()` attempts every enabled feature in reverse enable order even when one cleanup fails;
-- cleanup failures are aggregated and reported by the plugin bootstrap rather than preventing unrelated feature cleanup.
-
-## Configuration
+World Safety remains independent from World-Manager. Scope is configured locally:
 
 ```yaml
 features:
   world-safety:
-    enabled: true
-    protections:
-      explosions: true
-      leaves-decay: true
-      farmland-trample: true
-      dragon-egg-teleport: true
-
-  movement:
-    enabled: true
-    abilities:
-      advanced-fly: true
-      noclip: true
-      night-vision: true
-
-  build-helpers:
-    enabled: true
-    helpers:
-      iron-door-toggle: true
-      double-slab-break: true
-      glazed-terracotta-rotate: true
-    interaction:
-      require-sneak-for-slab: true
-      require-sneak-for-rotate: true
+    scope:
+      mode: all        # all | include
+      include-worlds: []
+      exclude-worlds: []
 ```
 
-Feature families are enabled by default for the builder-server baseline, while each contained behavior can be disabled independently.
+`all` protects every world except exclusions. `include` protects only explicitly included worlds, still honoring exclusions.
+
+## Configuration and reload
+
+The three canonical feature sections are required. Missing entire sections or invalid World Safety scope modes are rejected instead of silently enabling defaults under a typo.
+
+`/lb reload` validates the candidate config before shutting down the current feature runtime. If validation fails, the current runtime is kept.
 
 ## Maintenance constraints
 
-- no background worker unless a feature genuinely requires work while active;
+- no background polling/worker for Utilities;
 - no dependency on World-Manager internals;
-- Paper API first, no NMS unless a proven requirement exists;
-- each responsibility feature can be enabled/disabled independently through its own config key when implemented;
-- disabling one feature must not disable the whole plugin;
-- feature tests live inside Utilities-Manager and do not require World-Manager tests to pass;
-- version bumps are independent from World-Manager;
-- prefer one cohesive feature family over many command-sized micro-features;
-- do not duplicate vanilla/Paper spectator controls unless a concrete missing capability is demonstrated.
+- Paper/Bukkit API first, no NMS without a proven requirement;
+- no duplicate Vanilla/WorldEdit command families;
+- command/help adapters do not become new business-rule owners;
+- gameplay behavior still requires LIVE_SERVER verification even after source/build/tests are green.

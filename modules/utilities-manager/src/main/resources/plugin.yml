@@ -3,9 +3,14 @@ version: ${project.version}
 main: com.halokaryamedia.lazybuilder.utilities.UtilitiesManagerPlugin
 api-version: '1.21'
 author: Halo Karya Media
-description: Modular builder/server utility features for the LazyBuilder suite.
+description: Familiar builder utilities and safe building conveniences for the LazyBuilder suite.
 
 commands:
+  lb:
+    description: Open the LazyBuilder Utilities help hub.
+    usage: /lb [help|status|reload]
+    aliases: [lazybuilder]
+    permission: lazybuilder.utilities.help
   gmc:
     description: Switch to Creative mode.
     usage: /gmc
@@ -23,11 +28,11 @@ commands:
     usage: /gmsp
     permission: lazybuilder.utilities.gamemode
   fly:
-    description: Toggle LazyBuilder Advanced Fly, optionally with a speed multiplier.
+    description: Toggle builder flight or set/update its speed.
     usage: /fly [speed]
     permission: lazybuilder.utilities.fly
   noclip:
-    description: Toggle stable spectator-based noclip movement.
+    description: Toggle temporary spectator-based noclip movement.
     usage: /noclip
     permission: lazybuilder.utilities.noclip
   nightvision:
@@ -37,15 +42,45 @@ commands:
     permission: lazybuilder.utilities.nightvision
 
 permissions:
+  lazybuilder.builder:
+    description: Familiar day-to-day LazyBuilder capabilities for builders.
+    default: op
+    children:
+      lazybuilder.utilities.help: true
+      lazybuilder.utilities.gamemode: true
+      lazybuilder.utilities.fly: true
+      lazybuilder.utilities.noclip: true
+      lazybuilder.utilities.nightvision: true
+      lazybuilder.utilities.build: true
+  lazybuilder.admin:
+    description: LazyBuilder administration and diagnostics.
+    default: op
+    children:
+      lazybuilder.builder: true
+      lazybuilder.utilities.status: true
+      lazybuilder.utilities.reload: true
+
+  lazybuilder.utilities.help:
+    description: Use the LazyBuilder Utilities help hub.
+    default: false
   lazybuilder.utilities.gamemode:
-    description: Use basic LazyBuilder gamemode shortcuts.
-    default: op
+    description: Use familiar LazyBuilder gamemode shortcuts.
+    default: false
   lazybuilder.utilities.fly:
-    description: Use Utilities-Manager Advanced Fly.
-    default: op
+    description: Use LazyBuilder Fly.
+    default: false
   lazybuilder.utilities.noclip:
-    description: Use Utilities-Manager spectator-based Noclip.
-    default: op
+    description: Use LazyBuilder Noclip.
+    default: false
   lazybuilder.utilities.nightvision:
-    description: Use Utilities-Manager Night Vision.
-    default: op
+    description: Use LazyBuilder Night Vision.
+    default: false
+  lazybuilder.utilities.build:
+    description: Use passive LazyBuilder build helpers.
+    default: false
+  lazybuilder.utilities.status:
+    description: View Utilities runtime diagnostics.
+    default: false
+  lazybuilder.utilities.reload:
+    description: Reload Utilities configuration.
+    default: false

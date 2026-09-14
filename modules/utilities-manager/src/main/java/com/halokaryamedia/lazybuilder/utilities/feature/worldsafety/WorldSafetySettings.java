@@ -2,14 +2,21 @@ package com.halokaryamedia.lazybuilder.utilities.feature.worldsafety;
 
 import org.bukkit.configuration.ConfigurationSection;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-/** Immutable behavior switches owned by the World Safety feature family. */
+/** Immutable behavior switches and world scope owned by World Safety. */
 public record WorldSafetySettings(
         boolean explosions,
         boolean leavesDecay,
         boolean farmlandTrample,
-        boolean dragonEggTeleport
+        boolean dragonEggTeleport,
+        String scopeMode,
+        Set<String> includeWorlds,
+        Set<String> excludeWorlds
 ) {
     public static WorldSafetySettings from(ConfigurationSection section) {
         Objects.requireNonNull(section, "section");
@@ -17,7 +24,23 @@ public record WorldSafetySettings(
                 section.getBoolean("protections.explosions", true),
                 section.getBoolean("protections.leaves-decay", true),
                 section.getBoolean("protections.farmland-trample", true),
-                section.getBoolean("protections.dragon-egg-teleport", true)
+                section.getBoolean("protections.dragon-egg-teleport", true),
+                Objects.requireNonNullElse(section.getString("scope.mode"), "all").toLowerCase(Locale.ROOT),
+                normalize(section.getStringList("scope.include-worlds")),
+                normalize(section.getStringList("scope.exclude-worlds"))
         );
+    }
+
+    public boolean appliesTo(String worldName) {
+        String normalized = worldName.toLowerCase(Locale.ROOT);
+        if (excludeWorlds.contains(normalized)) return false;
+        if (scopeMode.equals("include")) return includeWorlds.contains(normalized);
+        return true;
+    }
+
+    private static Set<String> normalize(List<String> values) {
+        return values.stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

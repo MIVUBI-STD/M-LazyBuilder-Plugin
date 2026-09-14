@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class WorldSafetySettingsTest {
     @Test
-    void defaultsEveryProtectionOn() {
+    void defaultsEveryProtectionOnForAllWorlds() {
         YamlConfiguration config = new YamlConfiguration();
         WorldSafetySettings settings = WorldSafetySettings.from(config.createSection("world-safety"));
 
@@ -16,6 +16,7 @@ final class WorldSafetySettingsTest {
         assertTrue(settings.leavesDecay());
         assertTrue(settings.farmlandTrample());
         assertTrue(settings.dragonEggTeleport());
+        assertTrue(settings.appliesTo("world"));
     }
 
     @Test
@@ -33,5 +34,20 @@ final class WorldSafetySettingsTest {
         assertTrue(settings.leavesDecay());
         assertFalse(settings.farmlandTrample());
         assertTrue(settings.dragonEggTeleport());
+    }
+
+    @Test
+    void supportsIncludeAndExcludeWorldScope() {
+        YamlConfiguration config = new YamlConfiguration();
+        var section = config.createSection("world-safety");
+        section.set("scope.mode", "include");
+        section.set("scope.include-worlds", java.util.List.of("BuildWorld", "TestWorld"));
+        section.set("scope.exclude-worlds", java.util.List.of("TestWorld"));
+
+        WorldSafetySettings settings = WorldSafetySettings.from(section);
+
+        assertTrue(settings.appliesTo("buildworld"));
+        assertFalse(settings.appliesTo("testworld"));
+        assertFalse(settings.appliesTo("survival"));
     }
 }

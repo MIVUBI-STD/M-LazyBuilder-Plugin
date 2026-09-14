@@ -1,6 +1,12 @@
 features:
   world-safety:
     enabled: true
+    scope:
+      # all = protect every world except exclusions
+      # include = protect only worlds listed in include-worlds
+      mode: all
+      include-worlds: []
+      exclude-worlds: []
     protections:
       explosions: true
       leaves-decay: true
