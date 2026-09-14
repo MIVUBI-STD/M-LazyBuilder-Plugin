@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.world.files;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -11,9 +13,11 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -22,6 +26,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
     private static final String JAVA_1_21_4 = "JAVA_1_21_4";
     private static final int IO_BUFFER_BYTES = 64 * 1024;
+    private static final int MAX_INSPECT_LEVEL_DAT_BYTES = 16 * 1024 * 1024;
 
     private final Path importsRoot;
     private final long maxEntries;
@@ -33,6 +38,67 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         if (maxUncompressedBytes < 1) throw new IllegalArgumentException("maxUncompressedBytes must be positive");
         this.maxEntries = maxEntries;
         this.maxUncompressedBytes = maxUncompressedBytes;
+    }
+
+    @Override
+    public ImportInspection inspectArtifact(String artifactName) throws IOException {
+        Path artifact = resolveArtifact(artifactName);
+        List<String> entryNames = new ArrayList<>();
+        byte[] levelDat = null;
+        String levelPath = null;
+        long entries = 0;
+        byte[] buffer = new byte[IO_BUFFER_BYTES];
+
+        try (InputStream fileIn = Files.newInputStream(artifact);
+             BufferedInputStream bufferedIn = new BufferedInputStream(fileIn, IO_BUFFER_BYTES);
+             ZipInputStream zip = new ZipInputStream(bufferedIn)) {
+            for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
+                if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
+                String name = normalizeEntryName(entry.getName());
+                if (name.isBlank()) continue;
+                entryNames.add(name);
+                if (entry.isDirectory() || !isLevelDat(name)) continue;
+
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                int total = 0;
+                for (int read; (read = zip.read(buffer)) >= 0;) {
+                    if (read == 0) continue;
+                    total += read;
+                    if (total > MAX_INSPECT_LEVEL_DAT_BYTES) {
+                        throw new IOException("Import level.dat exceeds inspection limit");
+                    }
+                    bytes.write(buffer, 0, read);
+                }
+                if (levelPath == null || pathDepth(name) < pathDepth(levelPath)) {
+                    levelPath = name;
+                    levelDat = bytes.toByteArray();
+                }
+            }
+        }
+
+        if (levelPath == null || levelDat == null) {
+            throw new IOException("Import archive does not contain a Minecraft level.dat");
+        }
+
+        String rootPrefix = levelPath.substring(0, levelPath.length() - "level.dat".length());
+        boolean bedrock = entryNames.stream().anyMatch(name -> name.startsWith(rootPrefix + "db/"));
+        DetectedEdition edition = bedrock ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
+        String version = "Unknown";
+        if (edition == DetectedEdition.JAVA) {
+            OptionalInt dataVersion = JavaLevelDataVersion.read(new ByteArrayInputStream(levelDat));
+            if (dataVersion.isPresent()) {
+                version = dataVersion.getAsInt() == JavaLevelDataVersion.JAVA_1_21_4
+                        ? "1.21.4"
+                        : "DataVersion " + dataVersion.getAsInt();
+            }
+        }
+
+        return new ImportInspection(
+                artifact.getFileName().toString(),
+                edition,
+                version,
+                suggestedName(artifact.getFileName().toString())
+        );
     }
 
     @Override
@@ -105,7 +171,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
              ZipInputStream zip = new ZipInputStream(bufferedIn)) {
             for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
-                String name = entry.getName().replace('\\', '/');
+                String name = normalizeEntryName(entry.getName());
                 if (name.isBlank()) continue;
                 Path output = target.resolve(name).normalize();
                 if (!output.startsWith(target)) throw new IOException("Import archive contains path traversal");
@@ -160,6 +226,29 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Files.deleteIfExists(root.resolve("session.lock"));
         Files.deleteIfExists(root.resolve("uid.dat"));
         Files.deleteIfExists(root.resolve(TRANSFER_MARKER));
+    }
+
+    private static String normalizeEntryName(String value) {
+        return value == null ? "" : value.replace('\\', '/');
+    }
+
+    private static boolean isLevelDat(String name) {
+        return name.equals("level.dat") || name.endsWith("/level.dat");
+    }
+
+    private static int pathDepth(String name) {
+        int depth = 0;
+        for (int i = 0; i < name.length(); i++) if (name.charAt(i) == '/') depth++;
+        return depth;
+    }
+
+    private static String suggestedName(String artifactName) {
+        String value = artifactName.strip();
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".mcworld")) value = value.substring(0, value.length() - 8);
+        else if (lower.endsWith(".zip")) value = value.substring(0, value.length() - 4);
+        value = value.strip();
+        return value.isEmpty() ? "Imported World" : value;
     }
 
     private static String validateSingleName(String value) {
