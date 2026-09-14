@@ -23,6 +23,13 @@ pub fn managed_java_path() -> Result<PathBuf, String> {
     Ok(runtime_root()?.join("bin").join("java.exe"))
 }
 
+pub fn managed_java_ready() -> bool {
+    managed_java_path()
+        .ok()
+        .filter(|java| java.is_file())
+        .is_some_and(|java| validate_java_21(&java).is_ok())
+}
+
 pub fn ensure_managed_java() -> Result<PathBuf, String> {
     let java = managed_java_path()?;
     if java.is_file() && validate_java_21(&java).is_ok() {
