@@ -27,15 +27,15 @@ Therefore, a useful review handoff can be generated on demand from existing stat
 | Automatic screenshot + upload workflow | Reject | Expands into media/storage/sharing infrastructure and duplicates vanilla F2 plus external sharing tools. |
 | Teleport-link protocol | Reject for now | Adds a new transport/command contract when plain coordinates are sufficient for handoff. |
 | Copy managed-world reference | Keep as component | Uses existing authoritative Map Manager world state and no persistence. |
-| Copy current review reference | Approve for minimal implementation | Combines existing world identity with current local location into one portable text handoff. |
+| Copy current review reference | Implemented | Combines existing world identity with current local location into one portable text handoff. |
 
-## Approved minimal concept: Review Reference
+## Implemented minimal concept: Review Reference
 
 The only collaboration feature approved by this audit is an on-demand **Review Reference**.
 
 Its purpose is simple: let a builder copy enough context to paste into Slack, Discord, email, GitHub, a task tracker, or another existing communication system.
 
-Recommended canonical text shape:
+Canonical text shape:
 
 ```text
 World: <display name>
@@ -43,8 +43,6 @@ World ID: <world id>
 Location: <x> <y> <z>
 Dimension: <dimension id>
 ```
-
-Folder name may be included only if it materially helps internal identification. It should not replace the stable world id.
 
 The reference is generated at the moment the user requests it. It is not stored by LazyBuilder.
 
@@ -59,13 +57,13 @@ Map Manager
 └── Review Reference formatting / contextual copy action
 ```
 
-Utility Manager must not become a dependency merely because it contains a small clipboard helper. Cross-manager implementation imports remain forbidden. Map Manager may use Minecraft's native clipboard path directly for this contextual action.
+Utility Manager is not a dependency merely because it contains a small clipboard helper. Cross-manager implementation imports remain forbidden. Map Manager uses Minecraft's native clipboard path directly for this contextual action.
 
-No shared client module should be extracted for clipboard behavior at this stage; the operation is too small to justify new coupling.
+No shared client module is extracted for clipboard behavior; the operation is too small to justify new coupling.
 
 ## Interaction contract
 
-Review Reference must remain contextual and low-friction:
+Review Reference remains contextual and low-friction:
 
 - no default keybind;
 - no radial menu;
@@ -77,21 +75,19 @@ Review Reference must remain contextual and low-friction:
 - no screenshot requirement;
 - no teleport side effect.
 
-Preferred placement is an existing Map Manager/map context surface where the current managed-world state is already visible or relevant.
-
-The action should be unavailable when no managed world is active rather than fabricating a world identity.
+The implementation is placed in the existing `WorldMapScreen` right-click action surface. The action is disabled when no managed world, player, or client world is available.
 
 ## Location rules
 
 Location is observation only, not a build/edit feature.
 
-Use the player's current block position and current dimension at copy time. Do not add a permanent coordinate overlay, saved waypoint list, camera bookmark, or navigation system.
+The implementation reads the player's current block position and current dimension at copy time. It does not add a permanent coordinate overlay, saved waypoint list, camera bookmark, or navigation system.
 
 Coordinates remain plain portable information. Existing map/build tools remain responsible for navigation, waypointing, cameras, and editing.
 
 ## External collaboration boundary
 
-LazyBuilder should produce portable context, not own the receiving workflow.
+LazyBuilder produces portable context, not the receiving workflow.
 
 ```text
 LazyBuilder Review Reference
@@ -105,7 +101,7 @@ If direct external integrations are proposed later, they require a separate prod
 
 ## Rejected expansion
 
-The approved Review Reference must not grow by default into:
+The implemented Review Reference must not grow by default into:
 
 - issue creation;
 - assignees/status/priority;
@@ -122,23 +118,15 @@ The approved Review Reference must not grow by default into:
 
 Each of those would create a distinct subsystem rather than a lightweight handoff.
 
-## Implementation gate
+## Implementation result
 
-A future implementation is acceptable only if it can be completed as a small Map Manager contextual action using existing current-world authority and vanilla client state.
+`Copy Review Reference` is implemented as a small Map Manager contextual action using existing current-world authority and vanilla client state.
 
-No protocol version change is required for the first implementation because world identity already exists in Map Manager and position/dimension are available locally.
-
-If implementation reveals that new persistent or synchronized state is required, stop and re-audit instead of expanding the feature implicitly.
-
-## Audit result
-
-Review / Collaboration has one approved narrow gap:
+No protocol version change, persistent state, background process, new keybind, or cross-Manager dependency was required.
 
 ```text
 Copy Review Reference
-= managed world identity + current location + dimension
+= managed world identity + current player block location + current dimension
 ```
 
-Everything else remains external or deferred.
-
-The next non-tool builder review is **Reliability / Recovery**: identify warnings or recovery context that can prevent workflow mistakes without inventing autosave, backup, or build-state systems already owned elsewhere.
+Review / Collaboration is therefore complete for the current scope. Any expansion requires a new ownership/overlap review.
