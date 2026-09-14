@@ -55,11 +55,7 @@ public final class WorldIdleUnloadService {
     public void tick(long nowMillis) {
         for (WorldRecord world : registry.all()) {
             WorldId id = world.id();
-            if (world.lifecycle() != WorldLifecycle.ACTIVE
-                    || protectedWorld.test(world)
-                    || !isLoaded.test(world)
-                    || hasPlayers.test(world)
-                    || operations.activeOperation(id) != null) {
+            if (!eligible(world, id)) {
                 emptySince.remove(id);
                 continue;
             }
@@ -67,13 +63,33 @@ public final class WorldIdleUnloadService {
             long since = emptySince.computeIfAbsent(id, ignored -> nowMillis);
             if (nowMillis - since < idleMillis) continue;
 
-            try {
-                runtimeService.unload(id);
+            try (WorldOperationCoordinator.Lease ignored =
+                         operations.acquire(id, WorldOperationType.IDLE_UNLOAD)) {
+                WorldRecord current = registry.find(id).orElse(null);
+                if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE
+                        || protectedWorld.test(current)
+                        || !isLoaded.test(current)
+                        || hasPlayers.test(current)) {
+                    emptySince.remove(id);
+                    continue;
+                }
+
+                runtimeService.unloadDuringOperation(id);
                 emptySince.remove(id);
             } catch (RuntimeException ignored) {
-                // Runtime may reject an unload for a transient safety reason. Retry only after another idle window.
+                // Another operation may have won the lease after the eligibility check, or
+                // runtime may reject the unload for a transient safety reason. Start a new
+                // idle window before retrying instead of racing the active operation.
                 emptySince.put(id, nowMillis);
             }
         }
+    }
+
+    private boolean eligible(WorldRecord world, WorldId id) {
+        return world.lifecycle() == WorldLifecycle.ACTIVE
+                && !protectedWorld.test(world)
+                && isLoaded.test(world)
+                && !hasPlayers.test(world)
+                && operations.activeOperation(id) == null;
     }
 }
