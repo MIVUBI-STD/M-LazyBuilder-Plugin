@@ -22,4 +22,6 @@ client/
 └── performance-manager/  implemented baseline / scope locked
 ```
 
-Cross-manager architecture verification is documented in `docs/04-system/client-cross-manager-audit-lock.md`. Build-specific utilities remain outside these three Managers and must pass a separate overlap review against Vanilla, Axiom, WorldEdit, and other specialist tools before implementation.
+Cross-manager architecture verification is documented in `docs/04-system/client-cross-manager-audit-lock.md`.
+
+The post-C4 builder review is documented in `docs/04-system/build-utility-overlap-audit.md`. Its first-pass decision is intentionally conservative: do not create a generic Builder Utilities tool layer and do not duplicate Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, or other specialist editing workflows. Any future builder-facing feature must first demonstrate a narrow non-tool workflow gap and fit one of the existing Manager ownership boundaries.
