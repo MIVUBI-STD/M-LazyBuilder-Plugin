@@ -30,6 +30,27 @@ src-tauri/src/engine/   desktop-native runtime/domain logic
 
 Minecraft world authority remains in `plugins/world-manager/`. The Launcher may call its authenticated loopback bridge, but it must not duplicate world lifecycle, transfer, conversion, or filesystem ownership.
 
+## Client Setup / Modrinth
+
+LazyBuilder does not replace Modrinth App and does not launch Minecraft itself. The desktop `client_integration` owner only maintains LazyBuilder-owned Fabric components in one user-selected Modrinth profile.
+
+```text
+Modrinth owns
+- Minecraft installation/profile
+- Fabric loader
+- general mods/modpacks
+- launching Minecraft
+
+LazyBuilder owns
+- lazybuilder-map-manager-*.jar
+- lazybuilder-utility-manager-*.jar
+- lazybuilder-performance-manager-*.jar
+- compatibility/status check for Minecraft 1.21.4 + Fabric
+- install/update/duplicate cleanup for those three prefixes only
+```
+
+Client Setup scans Modrinth profiles only when the Settings surface is opened/refreshed or the user performs a Sync. There is no background watcher. The selected profile is persisted in `%APPDATA%\LazyBuilder\client-integration.json` and can be repaired with one `Sync Client` action. Other files in the profile `mods/` directory are never modified.
+
 ## Local Windows build
 
 Repository-root entrypoints:
@@ -44,7 +65,8 @@ Normal runtime-ready build:
 ```text
 BUILD-LAUNCHER.cmd
 → mvn verify
-→ stage matching World-Manager + Utilities-Manager JARs
+→ Gradle 8.12 build for all three Fabric Managers
+→ stage matching Paper core + LazyBuilder client JARs
 → npm ci
 → Svelte typecheck/build
 → cargo check/test
@@ -60,13 +82,7 @@ dist/LazyBuilder/
 └── README.txt
 ```
 
-For repeated installed-app testing, close LazyBuilder and use:
-
-```text
-UPDATE-LAUNCHER.cmd
-```
-
-The update path rebuilds/tests the current Paper core, stages matching JARs, builds a temporary installer, updates the installed application, then removes the temporary installer handoff. Server workspaces and user data are preserved.
+For repeated installed-app testing, close LazyBuilder and use `UPDATE-LAUNCHER.cmd`. Server workspaces, selected Modrinth profile, and normal LazyBuilder user data are preserved.
 
 Required local tools:
 
@@ -74,28 +90,29 @@ Required local tools:
 Windows 10/11
 Java 21
 Apache Maven
+Gradle 8.12
 Node.js 24+
 Rust stable toolchain
 Microsoft C++ Build Tools
 WebView2 runtime
 ```
 
-## Core resources
+## Bundled runtime resources
 
-Runtime-ready builds require:
+Runtime-ready builds require tested artifacts from the same source revision:
 
 ```text
 src-tauri/resources/core/
 ├── World-Manager-0.1.0-SNAPSHOT.jar
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
+
+src-tauri/resources/client-mods/
+├── lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
+├── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+└── lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
 ```
 
-The root build/update entrypoints stage these automatically from:
-
-```text
-plugins/world-manager/target/
-plugins/utilities-manager/target/
-```
+Generated JARs are staged by local build/CI and are not committed.
 
 For explicit Launcher compile/typecheck work only:
 
@@ -104,12 +121,8 @@ cd apps\launcher
 .\build-local.ps1 -AllowMissingCore
 ```
 
-Compile-only mode is not suitable for fresh-server runtime validation or installed-app updating.
+Compile-only mode is not suitable for fresh-server or Client Setup runtime validation.
 
 ## Protocol boundary
 
 The Launcher expects desktop loopback protocol version `2`. This contract is separate from the Minecraft World Control V5 and Map Action V2 protocols.
-
-## Windows behavior
-
-The Tauri executable uses the Windows GUI subsystem. Managed Java/Paper processes are launched without separate console windows; server output is surfaced through LazyBuilder.

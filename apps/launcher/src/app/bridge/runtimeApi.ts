@@ -1,196 +1,32 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export type WorkspaceEntry = {
-  id: string;
-  name: string;
-  path: string;
-  lastOpenedUnixSeconds: number;
-};
-
-export type WorkspaceState = {
-  active?: WorkspaceEntry | null;
-  recent: WorkspaceEntry[];
-};
-
-export type AdoptionPlan = {
-  root: string;
-  name: string;
-  paperJar: string;
-  worlds: string[];
-  serverEntries: string[];
-  legacyPluginsToDisable: string[];
-  preservedEntries: string[];
-  warnings: string[];
-};
-
-export type WorkspaceProvisioningStatus = {
-  workspaceCreated: boolean;
-  javaReady: boolean;
-  paperReady: boolean;
-  coreModulesReady: boolean;
-  configReady: boolean;
-  eulaAccepted: boolean;
-  ready: boolean;
-  nextStep: string;
-};
-
-export type WorkspaceProvisionResult = {
-  javaPath: string;
-  paperBuild?: number | null;
-  coreVersion: string;
-  status: WorkspaceProvisioningStatus;
-};
-
-export type RuntimeUpdateStatus = {
-  currentPaperBuild?: number | null;
-  latestPaperBuild: number;
-  paperUpdateAvailable: boolean;
-};
-
-export type ServerSnapshot = {
-  state: string;
-  health: string;
-  cpuLoadPercent: number;
-  usedMemoryBytes: number;
-  maxMemoryBytes: number;
-  pid?: number | null;
-  logPath: string;
-};
-
-export type ServerPreflight = {
-  ready: boolean;
-  workspace: string;
-  serverDirectory: string;
-  paperJar: string;
-  worldsDirectory: string;
-  javaPath: string;
-  javaVersion: string;
-  logDirectory: string;
-  issues: string[];
-};
-
-export type DetachedRecoveryResult = {
-  pid: number;
-  stopped: boolean;
-  message: string;
-};
-
-export type ServerLogTail = {
-  path: string;
-  content: string;
-  truncated: boolean;
-};
-
-export type ResourcePreset = {
-  name: string;
-  maxMemoryMb: number;
-  minMemoryMb: number;
-};
-
-export type ServerResourceProfile = {
-  totalMemoryMb: number;
-  reservedSystemMemoryMb: number;
-  safeMaxMemoryMb: number;
-  logicalProcessors: number;
-  currentMaxMemoryMb: number;
-  currentMinMemoryMb: number;
-  currentPreset: string;
-  performance: ResourcePreset;
-  boost: ResourcePreset;
-  warning: string;
-};
-
-export type ResourceUpdateRequest = {
-  maxMemoryMb: number;
-  preset: string;
-};
-
-export type PluginSummary = {
-  id: string;
-  displayName: string;
-  version: string;
-  category: string;
-  state: string;
-  problemDetail?: string | null;
-  candidateFiles?: string[] | null;
-};
-
-export type PluginInstallResult = {
-  success: boolean;
-  pluginId: string;
-  message?: string | null;
-  restartRequired: boolean;
-};
-
-export type ManagedWorldSummary = {
-  id: string;
-  displayName: string;
-  kind: string;
-  lifecycle: string;
-  defaultGameMode: string;
-};
-
-export type CreateWorldRequest = {
-  folderName: string;
-  displayName: string;
-  kind: 'FLAT' | 'VOID';
-};
-
-export type DuplicateWorldRequest = {
-  worldId: string;
-  destinationFolder: string;
-  displayName: string;
-};
-
-export type ExportWorldRequest = {
-  worldId: string;
-  targetFormat: string;
-  artifactName: string;
-};
-
-export type ImportWorldRequest = {
-  artifactName: string;
-  destinationFolder: string;
-  displayName: string;
-};
-
-export type DeleteWorldRequest = {
-  worldId: string;
-  typedDisplayName: string;
-};
-
-export type WorldSettingsSnapshot = {
-  id: string;
-  displayName: string;
-  defaultGameMode: string;
-  timeOfDayTicks: number;
-  weather: string;
-  naturalSpawning: boolean;
-  daylightCycle: boolean;
-  weatherCycle: boolean;
-};
-
-export type UpdateWorldSettingsRequest = Partial<{
-  defaultGameMode: string;
-  timeOfDayTicks: number;
-  weather: string;
-  naturalSpawning: boolean;
-  daylightCycle: boolean;
-  weatherCycle: boolean;
-}>;
-
-export type WorldTaskSnapshot = {
-  taskId: string;
-  taskType: string;
-  worldId?: string | null;
-  state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
-  progressPercent: number;
-  message: string;
-  result: string;
-  error: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
+export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
+export type AdoptionPlan = { root: string; name: string; paperJar: string; worlds: string[]; serverEntries: string[]; legacyPluginsToDisable: string[]; preservedEntries: string[]; warnings: string[] };
+export type WorkspaceProvisioningStatus = { workspaceCreated: boolean; javaReady: boolean; paperReady: boolean; coreModulesReady: boolean; configReady: boolean; eulaAccepted: boolean; ready: boolean; nextStep: string };
+export type WorkspaceProvisionResult = { javaPath: string; paperBuild?: number | null; coreVersion: string; status: WorkspaceProvisioningStatus };
+export type RuntimeUpdateStatus = { currentPaperBuild?: number | null; latestPaperBuild: number; paperUpdateAvailable: boolean };
+export type ServerSnapshot = { state: string; health: string; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
+export type ServerPreflight = { ready: boolean; workspace: string; serverDirectory: string; paperJar: string; worldsDirectory: string; javaPath: string; javaVersion: string; logDirectory: string; issues: string[] };
+export type DetachedRecoveryResult = { pid: number; stopped: boolean; message: string };
+export type ServerLogTail = { path: string; content: string; truncated: boolean };
+export type ResourcePreset = { name: string; maxMemoryMb: number; minMemoryMb: number };
+export type ServerResourceProfile = { totalMemoryMb: number; reservedSystemMemoryMb: number; safeMaxMemoryMb: number; logicalProcessors: number; currentMaxMemoryMb: number; currentMinMemoryMb: number; currentPreset: string; performance: ResourcePreset; boost: ResourcePreset; warning: string };
+export type ResourceUpdateRequest = { maxMemoryMb: number; preset: string };
+export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: string; problemDetail?: string | null; candidateFiles?: string[] | null };
+export type PluginInstallResult = { success: boolean; pluginId: string; message?: string | null; restartRequired: boolean };
+export type ClientProfileSummary = { name: string; path: string; gameVersion?: string | null; loader?: string | null; compatible: boolean; selected: boolean };
+export type ClientModStatus = { id: string; displayName: string; state: string; installedFiles: string[]; targetFile: string; bundled: boolean };
+export type ClientIntegrationStatus = { modrinthDetected: boolean; profiles: ClientProfileSummary[]; selectedProfile?: ClientProfileSummary | null; mods: ClientModStatus[]; ready: boolean; message: string };
+export type ManagedWorldSummary = { id: string; displayName: string; kind: string; lifecycle: string; defaultGameMode: string };
+export type CreateWorldRequest = { folderName: string; displayName: string; kind: 'FLAT' | 'VOID' };
+export type DuplicateWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
+export type ExportWorldRequest = { worldId: string; targetFormat: string; artifactName: string };
+export type ImportWorldRequest = { artifactName: string; destinationFolder: string; displayName: string };
+export type DeleteWorldRequest = { worldId: string; typedDisplayName: string };
+export type WorldSettingsSnapshot = { id: string; displayName: string; defaultGameMode: string; timeOfDayTicks: number; weather: string; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean };
+export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: string; timeOfDayTicks: number; weather: string; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean }>;
+export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
 
 export const runtimeApi = {
   workspace: {
@@ -227,6 +63,11 @@ export const runtimeApi = {
     remove: (pluginId: string) => invoke<void>('plugin_remove', { pluginId }),
     removeProblem: (pluginId: string, jarFileName: string) => invoke<void>('plugin_remove_problem', { pluginId, jarFileName }),
     resolveDuplicates: (pluginId: string, keepJarFileName: string) => invoke<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName })
+  },
+  client: {
+    status: () => invoke<ClientIntegrationStatus>('client_integration_status'),
+    selectProfile: (profilePath: string) => invoke<ClientIntegrationStatus>('client_integration_select_profile', { profilePath }),
+    sync: () => invoke<ClientIntegrationStatus>('client_integration_sync')
   },
   worlds: {
     list: () => invoke<ManagedWorldSummary[]>('world_list'),

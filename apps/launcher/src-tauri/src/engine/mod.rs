@@ -1,4 +1,5 @@
 pub mod adoption;
+pub mod client_integration;
 pub mod core_modules;
 pub mod cpu_governor;
 pub mod java_runtime;

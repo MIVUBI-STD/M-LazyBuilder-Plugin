@@ -27,7 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "resources": ["resources/core"],
+    "resources": ["resources/core", "resources/client-mods"],
     "windows": {
       "allowDowngrades": false,
       "nsis": {
