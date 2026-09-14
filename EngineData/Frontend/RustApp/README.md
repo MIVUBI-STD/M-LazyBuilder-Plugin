@@ -76,9 +76,9 @@ src-tauri/target/release/lazybuilder.exe
 src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
 
-### Core JAR note
+### Core JAR requirement
 
-A Launcher build does not compile Paper modules. For a full server provisioning/runtime test, matching core JARs must already exist in:
+A Launcher build does not compile Paper modules. The normal `BUILD-LAUNCHER.cmd` path is intended to produce a runtime-ready package, so matching core JARs must already exist in:
 
 ```text
 src-tauri/resources/core/
@@ -86,7 +86,19 @@ src-tauri/resources/core/
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
 ```
 
-If they are absent, the build script prints a warning but still allows Launcher compilation. This keeps Launcher development independent from unrelated Paper/Fabric compile failures.
+If either JAR is missing, the normal build stops before producing an installer. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
+
+For an explicit Launcher compile/typecheck check only, run the PowerShell script directly with:
+
+```powershell
+.\build-local.ps1 -AllowMissingCore
+```
+
+That mode is not suitable for validating fresh-server provisioning.
+
+### World Manager compatibility
+
+The Launcher checks the running World Manager desktop bridge protocol before listing worlds. This Launcher expects protocol version `2`. A mismatched core component is reported as an update/synchronization problem rather than being allowed to fail later through stale world actions.
 
 ### Windows window behavior
 
