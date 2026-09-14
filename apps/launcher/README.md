@@ -32,7 +32,7 @@ Minecraft world authority remains in `plugins/world-manager/`. The Launcher may 
 
 ## Client Setup / Modrinth
 
-LazyBuilder does not replace Modrinth App and does not launch Minecraft itself. The desktop `client_integration` owner only maintains LazyBuilder-owned Fabric components in one user-selected Modrinth profile.
+`Client` is a global Launcher surface; it does not belong to one server workspace. LazyBuilder does not replace Modrinth App and does not launch Minecraft itself. The desktop `client_integration` owner only maintains LazyBuilder-owned Fabric components in one explicitly selected Modrinth profile.
 
 ```text
 Modrinth owns
@@ -49,7 +49,17 @@ LazyBuilder owns
 - install/update/duplicate cleanup for those three prefixes only
 ```
 
-Client Setup scans Modrinth profiles only when the Settings surface is opened/refreshed or the user performs a Sync. There is no background watcher. The selected profile is persisted in `%APPDATA%\LazyBuilder\client-integration.json` and can be repaired with one `Sync Client` action. Other files in the profile `mods/` directory are never modified.
+Client Setup scans known Modrinth profile locations when the global Client surface is opened/refreshed. Custom locations are selected by choosing the exact `.../profiles/<profile>` folder; LazyBuilder derives `<profile>/mods` itself. There is no background watcher.
+
+The canonical Client Setup config is stored under `%LOCALAPPDATA%\LazyBuilder\config\client-integration.json` (with `%APPDATA%` only as an environment fallback). Existing legacy `%APPDATA%\LazyBuilder\client-integration.json` data is migrated automatically when found.
+
+`Sync Client` is transactional across all three LazyBuilder components: new JARs are staged and verified first, current LazyBuilder-owned JARs are backed up, and a failed publish restores the previous set. Third-party mod files are never part of the transaction. Sync is blocked while a running Java/Minecraft process is using the selected profile.
+
+## Server runtime safety
+
+Server library entries are durable even when their storage path is temporarily unavailable; opening the unavailable entry reports the path problem instead of deleting it from the library. A server may be stopped while still in `Starting` state. Paper startup stdout/stderr is captured in the workspace LazyBuilder logs until Paper reaches `Done`, after which the normal Paper `latest.log` is the primary UI log.
+
+Adopting a plain Paper server performs a best-effort live Java process check before any migration so files are not moved while that server is running.
 
 ## Local Windows build
 
