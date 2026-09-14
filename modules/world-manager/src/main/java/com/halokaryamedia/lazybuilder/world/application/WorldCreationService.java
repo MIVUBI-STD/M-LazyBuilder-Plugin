@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.application;
 
+import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
@@ -9,12 +10,14 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.UUID;
 
 /** Canonical Create World use case. Runtime load truth comes directly from Paper. */
 public final class WorldCreationService {
     private final WorldRegistry registry;
     private final WorldRegistryPersistence persistence;
     private final WorldRuntimeGateway runtime;
+    private final WorldFileRepository files;
     private final BuildReadyPolicy buildReadyPolicy;
 
     public WorldCreationService(
@@ -23,9 +26,26 @@ public final class WorldCreationService {
             WorldRuntimeGateway runtime,
             BuildReadyPolicy buildReadyPolicy
     ) {
+        this(registry, persistence, runtime, new WorldFileRepository() {
+            @Override public java.nio.file.Path stageCopy(WorldRecord source, UUID operationId, com.halokaryamedia.lazybuilder.world.files.WorldCopyProfile profile) { throw new UnsupportedOperationException(); }
+            @Override public java.nio.file.Path stageDelete(WorldRecord world, UUID operationId) { throw new UnsupportedOperationException(); }
+            @Override public void publishStagedWorld(java.nio.file.Path stagedWorld, String destinationFolder) { throw new UnsupportedOperationException(); }
+            @Override public void deleteWorld(WorldRecord world) { throw new UnsupportedOperationException(); }
+            @Override public void deleteWorkspace(java.nio.file.Path workspace) { throw new UnsupportedOperationException(); }
+        }, buildReadyPolicy);
+    }
+
+    public WorldCreationService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeGateway runtime,
+            WorldFileRepository files,
+            BuildReadyPolicy buildReadyPolicy
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.files = Objects.requireNonNull(files, "files");
         this.buildReadyPolicy = Objects.requireNonNull(buildReadyPolicy, "buildReadyPolicy");
     }
 
@@ -39,22 +59,34 @@ public final class WorldCreationService {
                 WorldId.create(), folderName, displayName, kind,
                 WorldLifecycle.ACTIVE, buildReadyPolicy.defaultGameMode().name()
         );
+        UUID operationId = UUID.randomUUID();
 
         try (WorldRegistry.FolderReservation ignored = registry.reserveFolder(record.folderName())) {
-            runtime.createNewWorld(record, buildReadyPolicy);
+            try {
+                files.markCreatePending(operationId, record.folderName());
+            } catch (IOException exception) {
+                throw new IllegalStateException("Could not start Create World transaction: " + folderName, exception);
+            }
+
+            boolean runtimeCreated = false;
             boolean registered = false;
             try {
+                runtime.createNewWorld(record, buildReadyPolicy);
+                runtimeCreated = true;
                 registry.register(record);
                 registered = true;
                 persistence.save(registry.all());
+                try { files.clearCreatePending(operationId, record.folderName()); }
+                catch (IOException ignoredCleanup) { }
                 return record;
             } catch (IOException | RuntimeException exception) {
                 if (registered) registry.remove(record.id());
-                try {
-                    runtime.rollbackCreatedWorld(record);
-                } catch (RuntimeException rollbackFailure) {
-                    exception.addSuppressed(rollbackFailure);
+                if (runtimeCreated) {
+                    try { runtime.rollbackCreatedWorld(record); }
+                    catch (RuntimeException rollbackFailure) { exception.addSuppressed(rollbackFailure); }
                 }
+                try { files.clearCreatePending(operationId, record.folderName()); }
+                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
                 throw new IllegalStateException("Failed to publish newly created world: " + folderName, exception);
             }
         }
