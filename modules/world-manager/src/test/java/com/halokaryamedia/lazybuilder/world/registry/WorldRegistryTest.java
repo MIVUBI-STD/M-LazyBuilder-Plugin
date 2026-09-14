@@ -41,7 +41,6 @@ class WorldRegistryTest {
 
         reservation.close();
         try (WorldRegistry.FolderReservation ignored = registry.reserveFolder("IMPORTEDBUILD")) {
-            // A completed publication may register while it still owns the reservation.
             registry.register(world("ImportedBuild", "Imported Build"));
         }
 
@@ -53,13 +52,13 @@ class WorldRegistryTest {
     void rejectsUnsafeFolderNames() {
         assertThrows(IllegalArgumentException.class,
                 () -> new WorldRecord(WorldId.create(), "../world", "World", WorldKind.IMPORTED,
-                        WorldLifecycle.ACTIVE, false));
+                        WorldLifecycle.ACTIVE));
         assertThrows(IllegalArgumentException.class,
                 () -> new WorldRecord(WorldId.create(), "folder/world", "World", WorldKind.IMPORTED,
-                        WorldLifecycle.ACTIVE, false));
+                        WorldLifecycle.ACTIVE));
         assertThrows(IllegalArgumentException.class,
                 () -> new WorldRecord(WorldId.create(), " world ", "World", WorldKind.IMPORTED,
-                        WorldLifecycle.ACTIVE, false));
+                        WorldLifecycle.ACTIVE));
     }
 
     @Test
@@ -70,14 +69,16 @@ class WorldRegistryTest {
 
         WorldRecord updated = world.withDisplayName("New Name")
                 .withLifecycle(WorldLifecycle.ARCHIVED)
-                .withAutoLoad(false);
+                .withDefaultGameMode("ADVENTURE");
         registry.updateMetadata(updated);
 
-        assertEquals("New Name", registry.find(world.id()).orElseThrow().displayName());
-        assertEquals(WorldLifecycle.ARCHIVED, registry.find(world.id()).orElseThrow().lifecycle());
+        WorldRecord stored = registry.find(world.id()).orElseThrow();
+        assertEquals("New Name", stored.displayName());
+        assertEquals(WorldLifecycle.ARCHIVED, stored.lifecycle());
+        assertEquals("ADVENTURE", stored.defaultGameMode());
 
         WorldRecord renamedFolder = new WorldRecord(world.id(), "Build_Renamed", "New Name", world.kind(),
-                world.lifecycle(), world.autoLoad());
+                world.lifecycle(), world.defaultGameMode());
         assertThrows(IllegalArgumentException.class, () -> registry.updateMetadata(renamedFolder));
     }
 
@@ -117,8 +118,7 @@ class WorldRegistryTest {
                 folderName,
                 displayName,
                 WorldKind.FLAT,
-                WorldLifecycle.ACTIVE,
-                true
+                WorldLifecycle.ACTIVE
         );
     }
 }
