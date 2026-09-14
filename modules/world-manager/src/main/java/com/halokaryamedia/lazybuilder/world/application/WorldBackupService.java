@@ -40,7 +40,11 @@ public final class WorldBackupService {
         WorldRecord world = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
         if (world.lifecycle() != WorldLifecycle.ACTIVE) {
-            throw new IllegalStateException("Archived worlds must be restored before backup: " + world.folderName());
+            throw new IllegalStateException("Archived worlds must be restored before backup: " + world.displayName());
+        }
+        if (runtimeService.hasPlayers(worldId)) {
+            throw new IllegalStateException("Cannot back up " + world.displayName()
+                    + " while builders are inside the world");
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.BACKUP);
@@ -68,7 +72,7 @@ public final class WorldBackupService {
             return new BackupResult(task.backupId, artifact.getFileName().toString());
         } catch (IOException | RuntimeException exception) {
             primaryFailure = new IllegalStateException(
-                    "Failed to back up world " + task.world.folderName(), exception);
+                    "Failed to back up world " + task.world.displayName(), exception);
             throw primaryFailure;
         } finally {
             if (staged != null) {
@@ -78,7 +82,7 @@ public final class WorldBackupService {
                     if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
                     else if (!task.committed) {
                         throw new IllegalStateException(
-                                "Failed to clean backup workspace for " + task.world.folderName(), cleanupFailure);
+                                "Failed to clean backup workspace for " + task.world.displayName(), cleanupFailure);
                     } else task.cleanupFailure = cleanupFailure;
                 }
             }
