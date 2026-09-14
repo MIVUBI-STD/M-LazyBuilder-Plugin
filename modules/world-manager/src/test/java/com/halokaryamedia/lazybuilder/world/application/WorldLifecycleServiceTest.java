@@ -69,6 +69,52 @@ class WorldLifecycleServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
+    @Test
+    void startupReconciliationUnloadsPersistedArchivedWorld() {
+        Fixture fixture = fixture(WorldLifecycle.ARCHIVED, true, false);
+
+        int reconciled = fixture.service.reconcilePersistedRuntimeState();
+
+        assertEquals(1, reconciled);
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.unloadCount);
+        assertEquals(WorldLifecycle.ARCHIVED,
+                fixture.registry.find(fixture.world.id()).orElseThrow().lifecycle());
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void startupReconciliationLeavesActiveWorldRuntimeUntouched() {
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, false);
+
+        int reconciled = fixture.service.reconcilePersistedRuntimeState();
+
+        assertEquals(0, reconciled);
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(0, fixture.runtime.unloadCount);
+    }
+
+    @Test
+    void startupReconciliationFailsClosedWhenBuildersAreInsideArchivedWorld() {
+        WorldRegistry registry = new WorldRegistry();
+        WorldRecord world = new WorldRecord(
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ARCHIVED);
+        registry.register(world);
+        FakeRuntime runtime = new FakeRuntime(true);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(
+                registry, runtime, operations, ignored -> true);
+        MemoryPersistence persistence = new MemoryPersistence();
+        persistence.saved = registry.all();
+        WorldLifecycleService service = new WorldLifecycleService(
+                registry, persistence, runtimeService, operations, ignored -> false);
+
+        assertThrows(IllegalStateException.class, service::reconcilePersistedRuntimeState);
+        assertTrue(runtime.loaded);
+        assertEquals(0, runtime.unloadCount);
+        assertFalse(operations.isBusy(world.id()));
+    }
+
     private static Fixture fixture(WorldLifecycle lifecycle, boolean loaded, boolean protectedWorld) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
