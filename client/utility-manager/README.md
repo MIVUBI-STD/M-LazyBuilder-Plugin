@@ -16,4 +16,10 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 - no dependency on Map Manager implementation packages;
 - no pollers/watchers/background workers unless an active feature proves they are required.
 
-C2 begins with this buildable no-behavior scaffold so the module boundary can be verified before features are added.
+## C2 foundation
+
+The current implementation provides only the Manager bootstrap and preference persistence foundation. Preferences are stored in Fabric's normal config directory as `lazybuilder-utility-manager.properties`.
+
+All behavior-changing preferences currently default to `false`. Loading the configuration does **not** activate borderless mode, compact HUD, timestamps, auto-reconnect, screenshot organization, or any other client behavior yet. Each feature will be implemented and reviewed independently before it is wired to its preference.
+
+This keeps Utility Manager buildable and persistent without introducing hidden behavior or a new workflow during the foundation phase.
