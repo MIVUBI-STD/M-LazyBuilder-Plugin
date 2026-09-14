@@ -92,8 +92,13 @@ public final class WorldExportService {
         WorldRecord source = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
         if (source.lifecycle() != WorldLifecycle.ACTIVE) {
-            throw new IllegalStateException("Archived worlds must be restored before export: " + source.folderName());
+            throw new IllegalStateException("Restore " + source.displayName() + " before exporting it");
         }
+        if (runtimeService.hasPlayers(worldId)) {
+            throw new IllegalStateException("Cannot export " + source.displayName()
+                    + " while builders are inside the world");
+        }
+
         String format = normalizeFormat(targetFormat);
         String safeArtifact = validateArtifactName(artifactName);
 
@@ -117,7 +122,7 @@ public final class WorldExportService {
             task.attachSnapshot(snapshot);
         } catch (IOException | RuntimeException exception) {
             cleanupWorkspace(snapshot);
-            throw new IllegalStateException("Failed to snapshot world " + task.source.folderName(), exception);
+            throw new IllegalStateException("Failed to prepare " + task.source.displayName() + " for export", exception);
         }
     }
 
@@ -149,12 +154,11 @@ public final class WorldExportService {
 
             ensureConversionRuntime();
             ConversionRuntimeStore.InstalledRuntime runtime = conversionStore.current()
-                    .orElseThrow(() -> new IllegalStateException("No verified conversion runtime is installed"));
+                    .orElseThrow(() -> new IllegalStateException("Conversion support is not ready yet"));
             boolean supported = runtime.manifest().supportedFormats().stream()
                     .anyMatch(format -> format.equalsIgnoreCase(task.targetFormat));
             if (!supported) {
-                throw new IllegalArgumentException("Target format is not supported by the active conversion runtime: "
-                        + task.targetFormat);
+                throw new IllegalArgumentException("The selected export version is no longer supported by this server");
             }
 
             if (task.area != null) pruning = writeAreaPruning(task.area, snapshot);
@@ -174,8 +178,7 @@ public final class WorldExportService {
             task.completed = true;
             return new ExportResult(artifact, task.targetFormat, true, task.area);
         } catch (IOException | RuntimeException exception) {
-            throw new IllegalStateException("Failed to export world " + task.source.folderName()
-                    + " as " + task.targetFormat, exception);
+            throw new IllegalStateException("Could not export " + task.source.displayName(), exception);
         } finally {
             if (pruning != null) {
                 try { Files.deleteIfExists(pruning); } catch (IOException ignored) { }
@@ -245,9 +248,9 @@ public final class WorldExportService {
         catch (IOException exception) { updateFailure = exception; }
         if (conversionStore.current().isPresent()) return;
         if (updateFailure != null) {
-            throw new IOException("Conversion runtime update failed and no verified runtime is installed", updateFailure);
+            throw new IOException("Conversion support could not be prepared and no verified runtime is available", updateFailure);
         }
-        throw new IOException("No verified conversion runtime is installed");
+        throw new IOException("Conversion support is not available yet");
     }
 
     private void cleanupWorkspace(Path workspace) {
@@ -260,7 +263,7 @@ public final class WorldExportService {
         Objects.requireNonNull(value, "targetFormat");
         String normalized = value.strip().toUpperCase(Locale.ROOT);
         if (normalized.isEmpty() || !normalized.matches("[A-Z0-9_]+")) {
-            throw new IllegalArgumentException("targetFormat must be one converter format id");
+            throw new IllegalArgumentException("Selected export format is invalid");
         }
         return normalized;
     }
@@ -270,7 +273,7 @@ public final class WorldExportService {
         if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
                 || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
                 || value.chars().anyMatch(Character::isISOControl)) {
-            throw new IllegalArgumentException("artifactName must be one safe file base name");
+            throw new IllegalArgumentException("File name is invalid");
         }
         return value;
     }
