@@ -17,8 +17,8 @@ pub struct WorkspaceEntry { pub id: String, pub name: String, pub path: String, 
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkspaceRegistryFile { schema_version: u32, #[serde(default)] active_workspace_id: Option<String>, servers: Vec<WorkspaceEntry> }
-impl Default for WorkspaceRegistryFile { fn default() -> Self { Self { schema_version: REGISTRY_SCHEMA_VERSION, active_workspace_id: None, servers: Vec::new() } } }
+struct WorkspaceRegistryFile { schema_version: u32, servers: Vec<WorkspaceEntry> }
+impl Default for WorkspaceRegistryFile { fn default() -> Self { Self { schema_version: REGISTRY_SCHEMA_VERSION, servers: Vec::new() } } }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,7 +113,7 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     let path = registry_path()?; if !path.is_file() { return Ok(WorkspaceRegistryFile::default()); }
     let text = fs::read_to_string(&path).map_err(|error| error.to_string())?; let mut registry: WorkspaceRegistryFile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
-    registry.active_workspace_id = None; registry.servers.retain(|entry| !entry.path.trim().is_empty()); Ok(registry)
+    registry.servers.retain(|entry| !entry.path.trim().is_empty()); Ok(registry)
 }
 fn save_registry(registry: &WorkspaceRegistryFile) -> Result<(), String> {
     let path = registry_path()?; if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
