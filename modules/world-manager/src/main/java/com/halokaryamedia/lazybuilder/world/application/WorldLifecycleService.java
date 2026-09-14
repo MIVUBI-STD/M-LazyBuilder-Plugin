@@ -42,6 +42,30 @@ public final class WorldLifecycleService {
         this.runtimeService.attachOperations(this.operations);
     }
 
+    /**
+     * Reconciles persisted lifecycle truth with live Paper state during startup.
+     * ACTIVE worlds may remain unloaded by design; ARCHIVED worlds must never remain loaded.
+     * If builders are already inside an archived world, startup fails closed instead of
+     * teleporting or unloading them implicitly.
+     */
+    public synchronized int reconcilePersistedRuntimeState() {
+        int unloaded = 0;
+        for (WorldRecord world : registry.all()) {
+            if (world.lifecycle() != WorldLifecycle.ARCHIVED) continue;
+            if (!runtimeService.isLoaded(world.id())) continue;
+            if (runtimeService.hasPlayers(world.id())) {
+                throw new IllegalStateException("Archived world is loaded with builders inside: "
+                        + world.displayName());
+            }
+            try (WorldOperationCoordinator.Lease ignored =
+                         operations.acquire(world.id(), WorldOperationType.ARCHIVE)) {
+                runtimeService.unloadDuringOperation(world.id());
+                unloaded++;
+            }
+        }
+        return unloaded;
+    }
+
     public synchronized WorldRecord archive(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
         if (current.lifecycle() == WorldLifecycle.ARCHIVED) return current;
