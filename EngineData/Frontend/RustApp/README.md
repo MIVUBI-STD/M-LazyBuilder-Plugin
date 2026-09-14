@@ -33,13 +33,15 @@ Minecraft world authority stays inside `modules/world-manager`. The Rust desktop
 
 ## Local Windows Build
 
-The repository includes a Launcher-only build entrypoint at the repository root:
+The repository includes a Launcher-only developer build entrypoint at the repository root:
 
 ```text
 BUILD-LAUNCHER.cmd
 ```
 
-Double-click it on Windows, or run:
+`BUILD-LAUNCHER.cmd` is only the build helper. The actual LazyBuilder application delivered to the user is an `.exe`, matching the familiar Windows launcher model used by apps such as Modrinth.
+
+Double-click the helper on Windows, or run:
 
 ```powershell
 .\BUILD-LAUNCHER.cmd
@@ -69,12 +71,25 @@ Microsoft C++ Build Tools required by Tauri
 WebView2 runtime
 ```
 
-Build outputs:
+## Final Windows output
+
+After a successful build, use the stable output folder at the repository root:
 
 ```text
-src-tauri/target/release/lazybuilder.exe
-src-tauri/target/release/bundle/nsis/*-setup.exe
+dist/
+└── LazyBuilder/
+    ├── LazyBuilder-Setup.exe   ← recommended, install this like Modrinth
+    ├── LazyBuilder.exe         ← raw developer diagnostic binary
+    └── README.txt
 ```
+
+For normal local testing or distribution, use:
+
+```text
+LazyBuilder-Setup.exe
+```
+
+The internal Tauri build locations still exist under `src-tauri/target/release`, but builders should not need to browse those directories.
 
 ### Core JAR requirement
 
@@ -86,7 +101,7 @@ src-tauri/resources/core/
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
 ```
 
-If either JAR is missing, the normal build stops before producing an installer. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
+If either JAR is missing, the normal build stops before producing a runtime-ready installer. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
 
 For an explicit Launcher compile/typecheck check only, either run:
 
