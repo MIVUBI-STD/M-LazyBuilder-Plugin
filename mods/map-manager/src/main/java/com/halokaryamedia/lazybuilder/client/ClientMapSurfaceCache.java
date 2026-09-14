@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -36,10 +37,10 @@ import java.util.zip.GZIPOutputStream;
  * partitioned into sparse 128x128-block regions so large explored worlds do not
  * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
- * <p>Only a bounded set of regions remains resident. Region files load off the
- * render thread and dirty regions are written through one ordered LazyBuilder-owned
- * I/O lane, preventing an older snapshot from racing a newer snapshot for the same
- * file without consuming the JVM common async pool.</p>
+ * <p>Resident region data uses primitive fixed-capacity arrays plus a BitSet
+ * instead of boxed map entries. Disk I/O stays sparse and compatible with the
+ * existing region format. Region files load off the render thread and dirty
+ * regions are written through one ordered LazyBuilder-owned I/O lane.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int FORMAT_VERSION = 2;
@@ -68,8 +69,9 @@ public final class ClientMapSurfaceCache {
     private Path scopeDirectory;
     private volatile long scopeGeneration;
     private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
-    private Iterator<Map.Entry<Integer, SurfaceSample>> activeCompletedEntries;
+    private RegionSnapshot activeCompletedSnapshot;
     private RegionData activeCompletedRegion;
+    private int activeCompletedIndex;
     private int residentSampleCount;
 
     public void useScope(String scope, Path storageRoot) {
@@ -88,8 +90,9 @@ public final class ClientMapSurfaceCache {
         regions.clear();
         pending.clear();
         completedLoads.clear();
-        activeCompletedEntries = null;
+        activeCompletedSnapshot = null;
         activeCompletedRegion = null;
+        activeCompletedIndex = 0;
         residentSampleCount = 0;
 
         if (scopeDirectory != null) {
@@ -100,7 +103,7 @@ public final class ClientMapSurfaceCache {
     /** Returns remembered terrain immediately and queues missing loaded terrain. */
     public SurfaceSample sample(ClientWorld world, int blockX, int blockZ) {
         RegionData region = regionFor(blockX, blockZ, true);
-        SurfaceSample cached = region.samples.get(localIndex(blockX, blockZ));
+        SurfaceSample cached = region.get(localIndex(blockX, blockZ));
         if (cached != null) return cached;
 
         queueIfLoaded(world, blockX, blockZ, pack(blockX, blockZ));
@@ -153,8 +156,7 @@ public final class ClientMapSurfaceCache {
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
 
             RegionData region = regionFor(x, z, true);
-            int index = localIndex(x, z);
-            if (region.samples.put(index, readSurface(world, x, z)) == null) residentSampleCount++;
+            if (region.put(localIndex(x, z), readSurface(world, x, z))) residentSampleCount++;
             region.dirty = true;
             processed++;
         }
@@ -171,15 +173,15 @@ public final class ClientMapSurfaceCache {
         return residentSampleCount;
     }
 
-    /** Queues snapshots of all dirty resident regions without blocking rendering. */
+    /** Queues sparse primitive snapshots of all dirty resident regions without blocking rendering. */
     public void flushAsync() {
         Path directory = scopeDirectory;
         if (directory == null) return;
         for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
             RegionData region = entry.getValue();
-            if (!region.dirty || region.samples.isEmpty()) continue;
+            if (!region.dirty || region.isEmpty()) continue;
             region.dirty = false;
-            enqueueRegionWrite(directory, entry.getKey(), new HashMap<>(region.samples));
+            enqueueRegionWrite(directory, entry.getKey(), region.snapshot());
         }
     }
 
@@ -208,7 +210,11 @@ public final class ClientMapSurfaceCache {
         region.loadScheduled = true;
         Path file = regionFile(directory, regionKey);
         CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
-                .thenAccept(samples -> completedLoads.add(new LoadedRegion(generation, regionKey, samples)));
+                .thenAccept(snapshot -> {
+                    if (generation == scopeGeneration) {
+                        completedLoads.add(new LoadedRegion(generation, regionKey, snapshot));
+                    }
+                });
     }
 
     private int drainCompletedLoads(int budget) {
@@ -216,7 +222,7 @@ public final class ClientMapSurfaceCache {
 
         int processed = 0;
         while (processed < budget) {
-            if (activeCompletedEntries == null) {
+            if (activeCompletedSnapshot == null) {
                 LoadedRegion loaded = completedLoads.poll();
                 if (loaded == null) break;
                 if (loaded.generation != scopeGeneration) continue;
@@ -229,30 +235,36 @@ public final class ClientMapSurfaceCache {
                 }
 
                 activeCompletedRegion = region;
-                activeCompletedEntries = loaded.samples.entrySet().iterator();
-                if (!activeCompletedEntries.hasNext()) {
+                activeCompletedSnapshot = loaded.snapshot;
+                activeCompletedIndex = 0;
+                if (activeCompletedSnapshot.size() == 0) {
                     finishActiveCompletedLoad();
                     continue;
                 }
             }
 
-            while (processed < budget && activeCompletedEntries.hasNext()) {
-                Map.Entry<Integer, SurfaceSample> entry = activeCompletedEntries.next();
-                if (activeCompletedRegion.samples.putIfAbsent(entry.getKey(), entry.getValue()) == null) {
-                    residentSampleCount++;
-                }
+            while (processed < budget && activeCompletedIndex < activeCompletedSnapshot.size()) {
+                int index = activeCompletedSnapshot.indices[activeCompletedIndex];
+                SurfaceSample sample = new SurfaceSample(
+                        activeCompletedSnapshot.colors[activeCompletedIndex],
+                        activeCompletedSnapshot.heights[activeCompletedIndex],
+                        true
+                );
+                if (activeCompletedRegion.putIfAbsent(index, sample)) residentSampleCount++;
+                activeCompletedIndex++;
                 processed++;
             }
 
-            if (!activeCompletedEntries.hasNext()) finishActiveCompletedLoad();
+            if (activeCompletedIndex >= activeCompletedSnapshot.size()) finishActiveCompletedLoad();
         }
         return processed;
     }
 
     private void finishActiveCompletedLoad() {
         if (activeCompletedRegion != null) activeCompletedRegion.loaded = true;
-        activeCompletedEntries = null;
+        activeCompletedSnapshot = null;
         activeCompletedRegion = null;
+        activeCompletedIndex = 0;
     }
 
     private void pruneRegions() {
@@ -263,11 +275,11 @@ public final class ClientMapSurfaceCache {
             Map.Entry<Long, RegionData> eldest = iterator.next();
             RegionData region = eldest.getValue();
             if (region == activeCompletedRegion) continue;
-            if (region.dirty && directory != null && !region.samples.isEmpty()) {
+            if (region.dirty && directory != null && !region.isEmpty()) {
                 region.dirty = false;
-                enqueueRegionWrite(directory, eldest.getKey(), new HashMap<>(region.samples));
+                enqueueRegionWrite(directory, eldest.getKey(), region.snapshot());
             }
-            residentSampleCount -= region.samples.size();
+            residentSampleCount -= region.size();
             iterator.remove();
         }
     }
@@ -281,7 +293,7 @@ public final class ClientMapSurfaceCache {
     private synchronized void enqueueRegionWrite(
             Path directory,
             long regionKey,
-            Map<Integer, SurfaceSample> snapshot
+            RegionSnapshot snapshot
     ) {
         Path destination = regionFile(directory, regionKey);
         writeTail = writeTail.handle((ignored, failure) -> null)
@@ -300,10 +312,10 @@ public final class ClientMapSurfaceCache {
         if (Files.exists(migratedMarker)) return;
 
         CompletableFuture.runAsync(() -> {
-            Map<Long, Map<Integer, SurfaceSample>> partitioned = readLegacySnapshot(legacy);
+            Map<Long, RegionData> partitioned = readLegacySnapshot(legacy);
             if (partitioned.isEmpty() || generation != scopeGeneration) return;
-            for (Map.Entry<Long, Map<Integer, SurfaceSample>> entry : partitioned.entrySet()) {
-                enqueueRegionWrite(targetDirectory, entry.getKey(), entry.getValue());
+            for (Map.Entry<Long, RegionData> entry : partitioned.entrySet()) {
+                enqueueRegionWrite(targetDirectory, entry.getKey(), entry.getValue().snapshot());
             }
             enqueueMarkerWrite(targetDirectory, migratedMarker);
         }, ioExecutor);
@@ -318,8 +330,8 @@ public final class ClientMapSurfaceCache {
         }, ioExecutor);
     }
 
-    private static Map<Long, Map<Integer, SurfaceSample>> readLegacySnapshot(Path source) {
-        Map<Long, Map<Integer, SurfaceSample>> result = new HashMap<>();
+    private static Map<Long, RegionData> readLegacySnapshot(Path source) {
+        Map<Long, RegionData> result = new HashMap<>();
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(
                 new GZIPInputStream(Files.newInputStream(source))))) {
             if (in.readInt() != LEGACY_FORMAT_VERSION) return result;
@@ -330,7 +342,7 @@ public final class ClientMapSurfaceCache {
                 int z = unpackZ(packed);
                 SurfaceSample sample = new SurfaceSample(in.readInt(), in.readInt(), true);
                 long regionKey = pack(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(z, REGION_SIZE));
-                result.computeIfAbsent(regionKey, ignored -> new HashMap<>())
+                result.computeIfAbsent(regionKey, ignored -> new RegionData())
                         .put(localIndex(x, z), sample);
             }
         } catch (IOException ignored) {
@@ -339,26 +351,27 @@ public final class ClientMapSurfaceCache {
         return result;
     }
 
-    private static Map<Integer, SurfaceSample> readRegion(Path source) {
-        Map<Integer, SurfaceSample> result = new HashMap<>();
-        if (source == null || !Files.isRegularFile(source)) return result;
+    private static RegionSnapshot readRegion(Path source) {
+        if (source == null || !Files.isRegularFile(source)) return RegionSnapshot.EMPTY;
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(
                 new GZIPInputStream(Files.newInputStream(source))))) {
-            if (in.readInt() != FORMAT_VERSION) return result;
+            if (in.readInt() != FORMAT_VERSION) return RegionSnapshot.EMPTY;
             int count = Math.max(0, Math.min(REGION_CAPACITY, in.readInt()));
+            int[] indices = new int[count];
+            int[] colors = new int[count];
+            int[] heights = new int[count];
             for (int i = 0; i < count; i++) {
-                int localIndex = in.readUnsignedShort();
-                int color = in.readInt();
-                int height = in.readInt();
-                result.put(localIndex, new SurfaceSample(color, height, true));
+                indices[i] = in.readUnsignedShort();
+                colors[i] = in.readInt();
+                heights[i] = in.readInt();
             }
+            return new RegionSnapshot(indices, colors, heights);
         } catch (IOException ignored) {
-            result.clear();
+            return RegionSnapshot.EMPTY;
         }
-        return result;
     }
 
-    private static void writeRegion(Path destination, Map<Integer, SurfaceSample> snapshot) {
+    private static void writeRegion(Path destination, RegionSnapshot snapshot) {
         Path parent = destination.getParent();
         Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
         try {
@@ -367,10 +380,10 @@ public final class ClientMapSurfaceCache {
                     new GZIPOutputStream(Files.newOutputStream(temporary))))) {
                 out.writeInt(FORMAT_VERSION);
                 out.writeInt(snapshot.size());
-                for (Map.Entry<Integer, SurfaceSample> entry : snapshot.entrySet()) {
-                    out.writeShort(entry.getKey());
-                    out.writeInt(entry.getValue().color());
-                    out.writeInt(entry.getValue().height());
+                for (int i = 0; i < snapshot.size(); i++) {
+                    out.writeShort(snapshot.indices[i]);
+                    out.writeInt(snapshot.colors[i]);
+                    out.writeInt(snapshot.heights[i]);
                 }
             }
             try {
@@ -514,13 +527,80 @@ public final class ClientMapSurfaceCache {
     }
 
     private static final class RegionData {
-        private final Map<Integer, SurfaceSample> samples = new HashMap<>();
+        private final int[] colors = new int[REGION_CAPACITY];
+        private final int[] heights = new int[REGION_CAPACITY];
+        private final BitSet present = new BitSet(REGION_CAPACITY);
+        private int size;
         private boolean loadScheduled;
         private boolean loaded;
         private boolean dirty;
+
+        private SurfaceSample get(int index) {
+            if (!present.get(index)) return null;
+            return new SurfaceSample(colors[index], heights[index], true);
+        }
+
+        /** Returns true when this call inserted a previously absent slot. */
+        private boolean put(int index, SurfaceSample sample) {
+            boolean inserted = !present.get(index);
+            colors[index] = sample.color();
+            heights[index] = sample.height();
+            if (inserted) {
+                present.set(index);
+                size++;
+            }
+            return inserted;
+        }
+
+        /** Returns true when the absent slot was inserted. */
+        private boolean putIfAbsent(int index, SurfaceSample sample) {
+            if (present.get(index)) return false;
+            colors[index] = sample.color();
+            heights[index] = sample.height();
+            present.set(index);
+            size++;
+            return true;
+        }
+
+        private boolean isEmpty() {
+            return size == 0;
+        }
+
+        private int size() {
+            return size;
+        }
+
+        private RegionSnapshot snapshot() {
+            if (size == 0) return RegionSnapshot.EMPTY;
+            int[] indices = new int[size];
+            int[] snapshotColors = new int[size];
+            int[] snapshotHeights = new int[size];
+            int cursor = 0;
+            for (int index = present.nextSetBit(0); index >= 0; index = present.nextSetBit(index + 1)) {
+                indices[cursor] = index;
+                snapshotColors[cursor] = colors[index];
+                snapshotHeights[cursor] = heights[index];
+                cursor++;
+            }
+            return new RegionSnapshot(indices, snapshotColors, snapshotHeights);
+        }
     }
 
-    private record LoadedRegion(long generation, long regionKey, Map<Integer, SurfaceSample> samples) { }
+    private record RegionSnapshot(int[] indices, int[] colors, int[] heights) {
+        private static final RegionSnapshot EMPTY = new RegionSnapshot(new int[0], new int[0], new int[0]);
+
+        private RegionSnapshot {
+            if (indices.length != colors.length || colors.length != heights.length) {
+                throw new IllegalArgumentException("Region snapshot arrays must have equal length");
+            }
+        }
+
+        private int size() {
+            return indices.length;
+        }
+    }
+
+    private record LoadedRegion(long generation, long regionKey, RegionSnapshot snapshot) { }
 
     public record SurfaceSample(int color, int height, boolean explored) {
         private static final SurfaceSample UNEXPLORED =
