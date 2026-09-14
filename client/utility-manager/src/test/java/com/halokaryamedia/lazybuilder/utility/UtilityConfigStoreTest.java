@@ -25,6 +25,7 @@ final class UtilityConfigStoreTest {
         assertTrue(Files.isRegularFile(store.configFile()));
         assertTrue(preferences.extendedChatHistory());
         assertTrue(preferences.keepChatDraft());
+        assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
         assertFalse(preferences.autoReconnect());
     }
@@ -38,6 +39,7 @@ final class UtilityConfigStoreTest {
                 false,
                 false,
                 true,
+                false,
                 true,
                 true
         );
@@ -55,6 +57,7 @@ final class UtilityConfigStoreTest {
                 "window.borderless=not-a-boolean\n"
                         + "chat.extended_history=not-a-boolean\n"
                         + "chat.keep_draft=FALSE\n"
+                        + "connection.reconnect_button=not-a-boolean\n"
                         + "connection.auto_reconnect=TRUE\n"
         );
 
@@ -63,6 +66,7 @@ final class UtilityConfigStoreTest {
         assertFalse(preferences.borderlessWindow());
         assertTrue(preferences.extendedChatHistory());
         assertFalse(preferences.keepChatDraft());
+        assertTrue(preferences.reconnectButton());
         assertTrue(preferences.autoReconnect());
         assertFalse(preferences.compactInfo());
         assertFalse(preferences.chatTimestamps());
