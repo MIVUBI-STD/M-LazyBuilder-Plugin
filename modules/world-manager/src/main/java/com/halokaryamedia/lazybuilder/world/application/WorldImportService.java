@@ -51,6 +51,15 @@ public final class WorldImportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
+    /** Read-only bounded inspection used by the client review step before final import. */
+    public WorldImportArtifactStore.ImportInspection inspect(String artifactName) {
+        try {
+            return imports.inspectArtifact(artifactName);
+        } catch (IOException | RuntimeException exception) {
+            throw new IllegalStateException("Could not inspect uploaded world", exception);
+        }
+    }
+
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
