@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.utility;
 
+import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
 /** Fabric client entrypoint for LazyBuilder Utility Manager. */
@@ -12,7 +14,10 @@ public final class UtilityManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
-        // C2 foundation only: loading preferences does not apply feature behavior yet.
+
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
+                ReconnectState.capture(client.getCurrentServerEntry())
+        );
     }
 
     public static UtilityPreferences preferences() {
