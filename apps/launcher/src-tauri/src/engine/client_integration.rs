@@ -3,10 +3,11 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 pub const TARGET_MINECRAFT_VERSION: &str = "1.21.4";
+const MAX_LOG_SCAN_BYTES: u64 = 2 * 1024 * 1024;
 
 const MODS: [ClientModSpec; 3] = [
     ClientModSpec {
@@ -90,17 +91,7 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
     let modrinth_detected = !profile_roots().is_empty();
     let mods = match selected_profile.as_ref() {
         Some(profile) if profile.compatible => component_statuses(Path::new(&profile.path), resource_dir)?,
-        _ => MODS
-            .iter()
-            .map(|spec| ClientModStatus {
-                id: spec.id.into(),
-                display_name: spec.display_name.into(),
-                state: "Not checked".into(),
-                installed_files: Vec::new(),
-                target_file: spec.file_name.into(),
-                bundled: resolve_source(resource_dir, *spec).is_ok(),
-            })
-            .collect(),
+        _ => unchecked_component_statuses(resource_dir),
     };
 
     let ready = selected_profile.as_ref().is_some_and(|profile| profile.compatible)
@@ -108,8 +99,15 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
 
     let message = if !modrinth_detected {
         "Modrinth App profiles were not detected on this PC.".into()
+    } else if profiles.is_empty() {
+        "No Modrinth profiles were found.".into()
     } else if selected_profile.is_none() {
         "Choose the Modrinth profile you use for LazyBuilder.".into()
+    } else if selected_profile
+        .as_ref()
+        .is_some_and(|profile| profile.game_version.is_none() || profile.loader.is_none())
+    {
+        "Open this profile once from Modrinth so LazyBuilder can verify its Minecraft version and Fabric loader.".into()
     } else if !selected_profile.as_ref().is_some_and(|profile| profile.compatible) {
         format!("LazyBuilder requires Minecraft {TARGET_MINECRAFT_VERSION} with Fabric.")
     } else if ready {
@@ -130,12 +128,12 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
 
 pub fn select_profile(profile_path: &str) -> Result<(), String> {
     let requested = canonical_profile_path(Path::new(profile_path))?;
-    let profiles = discover_profiles(None)?;
-    let selected = profiles
-        .iter()
-        .find(|profile| Path::new(&profile.path) == requested)
+    let selected = inspect_profile(&requested, Some(&requested))?
         .ok_or_else(|| "The selected folder is not a detected Modrinth profile.".to_string())?;
     if !selected.compatible {
+        if selected.game_version.is_none() || selected.loader.is_none() {
+            return Err("Open this profile once from Modrinth, then try again so LazyBuilder can verify Minecraft 1.21.4 + Fabric.".into());
+        }
         return Err(format!(
             "This profile is not compatible with LazyBuilder. Required: Minecraft {TARGET_MINECRAFT_VERSION} + Fabric."
         ));
@@ -168,6 +166,7 @@ pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
         .map(|spec| resolve_source(resource_dir, *spec).map(|path| (*spec, path)))
         .collect::<Result<_, _>>()?;
 
+    // Stage and verify every new file before removing any installed LazyBuilder file.
     for (spec, source) in &sources {
         let incoming = mods_dir.join(format!("{}.incoming", spec.file_name));
         if incoming.exists() {
@@ -192,6 +191,20 @@ pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn unchecked_component_statuses(resource_dir: Option<&Path>) -> Vec<ClientModStatus> {
+    MODS
+        .iter()
+        .map(|spec| ClientModStatus {
+            id: spec.id.into(),
+            display_name: spec.display_name.into(),
+            state: "Not checked".into(),
+            installed_files: Vec::new(),
+            target_file: spec.file_name.into(),
+            bundled: resolve_source(resource_dir, *spec).is_ok(),
+        })
+        .collect()
 }
 
 fn component_statuses(profile_path: &Path, resource_dir: Option<&Path>) -> Result<Vec<ClientModStatus>, String> {
@@ -261,25 +274,47 @@ fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<Client
     if !path.is_dir() {
         return Ok(None);
     }
-    let metadata_path = path.join("profile.json");
-    if !metadata_path.is_file() {
-        return Ok(None);
-    }
-    let text = fs::read_to_string(&metadata_path)
-        .map_err(|error| format!("Could not read {}: {error}", metadata_path.display()))?;
-    let json: Value = serde_json::from_str(&text)
-        .map_err(|error| format!("Could not parse {}: {error}", metadata_path.display()))?;
 
-    let name = find_json_string(&json, &["name", "displayname", "display_name"])
-        .or_else(|| path.file_name().and_then(|value| value.to_str()).map(ToOwned::to_owned))
-        .unwrap_or_else(|| "Modrinth profile".into());
-    let game_version = find_json_string(
-        &json,
-        &["gameversion", "game_version", "minecraftversion", "minecraft_version"],
-    );
-    let loader = find_json_string(&json, &["loader", "loadertype", "loader_type", "modloader", "mod_loader"]);
+    // Current Modrinth versions keep instance metadata in app.db. We intentionally do
+    // not couple LazyBuilder to that private database schema. A profile that has been
+    // launched exposes the authoritative runtime pair in Fabric's latest.log. Older
+    // Modrinth installations may still have profile.json, which remains a fallback.
+    let folder_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Modrinth profile")
+        .to_string();
+    let mut name = folder_name;
+    let mut game_version = None;
+    let mut loader = None;
+
+    let legacy_metadata_path = path.join("profile.json");
+    if legacy_metadata_path.is_file() {
+        if let Ok(text) = fs::read_to_string(&legacy_metadata_path) {
+            if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                name = find_json_string(&json, &["name", "displayname", "display_name"]).unwrap_or(name);
+                game_version = find_json_string(
+                    &json,
+                    &["gameversion", "game_version", "minecraftversion", "minecraft_version"],
+                );
+                loader = find_json_string(
+                    &json,
+                    &["loader", "loadertype", "loader_type", "modloader", "mod_loader"],
+                );
+            }
+        }
+    }
+
+    if let Some((runtime_version, runtime_loader)) = runtime_identity_from_latest_log(path)? {
+        // Runtime evidence wins over potentially stale legacy metadata.
+        game_version = Some(runtime_version);
+        loader = Some(runtime_loader);
+    }
+
     let compatible = game_version.as_deref() == Some(TARGET_MINECRAFT_VERSION)
-        && loader.as_deref().is_some_and(|value| value.to_ascii_lowercase().contains("fabric"));
+        && loader
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().contains("fabric"));
 
     Ok(Some(ClientProfileSummary {
         name,
@@ -291,14 +326,45 @@ fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<Client
     }))
 }
 
+fn runtime_identity_from_latest_log(profile_path: &Path) -> Result<Option<(String, String)>, String> {
+    let log_path = profile_path.join("logs").join("latest.log");
+    if !log_path.is_file() {
+        return Ok(None);
+    }
+    let mut file = fs::File::open(&log_path)
+        .map_err(|error| format!("Could not inspect {}: {error}", log_path.display()))?;
+    let length = file.metadata().map_err(|error| error.to_string())?.len();
+    if length > MAX_LOG_SCAN_BYTES {
+        file.seek(SeekFrom::End(-(MAX_LOG_SCAN_BYTES as i64)))
+            .map_err(|error| error.to_string())?;
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    let text = String::from_utf8_lossy(&bytes);
+
+    for line in text.lines().rev() {
+        let Some((_, after_minecraft)) = line.split_once("Loading Minecraft ") else {
+            continue;
+        };
+        let Some((version, after_version)) = after_minecraft.split_once(" with Fabric Loader ") else {
+            continue;
+        };
+        if version.trim().is_empty() || after_version.trim().is_empty() {
+            continue;
+        }
+        return Ok(Some((version.trim().to_string(), "fabric".into())));
+    }
+    Ok(None)
+}
+
 fn find_json_string(value: &Value, keys: &[&str]) -> Option<String> {
     match value {
         Value::Object(map) => {
             for (key, value) in map {
-                let normalized = key.to_ascii_lowercase().replace(['-', ' '], "_");
+                let normalized = normalize_key(key);
                 let compact = normalized.replace('_', "");
                 if keys.iter().any(|candidate| {
-                    let candidate_normalized = candidate.to_ascii_lowercase().replace(['-', ' '], "_");
+                    let candidate_normalized = normalize_key(candidate);
                     normalized == candidate_normalized || compact == candidate_normalized.replace('_', "")
                 }) {
                     if let Some(text) = value.as_str() {
@@ -313,6 +379,13 @@ fn find_json_string(value: &Value, keys: &[&str]) -> Option<String> {
     }
 }
 
+fn normalize_key(value: &str) -> String {
+    value
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_")
+}
+
 fn profile_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(explicit) = env::var_os("MODRINTH_PROFILES_DIR") {
@@ -321,6 +394,7 @@ fn profile_roots() -> Vec<PathBuf> {
     if let Some(appdata) = env::var_os("APPDATA") {
         let appdata = PathBuf::from(appdata);
         push_existing_root(&mut roots, appdata.join("ModrinthApp").join("profiles"));
+        push_existing_root(&mut roots, appdata.join("com.modrinth.ModrinthApp").join("profiles"));
         push_existing_root(&mut roots, appdata.join("com.modrinth.theseus").join("profiles"));
     }
     if let Some(local) = env::var_os("LOCALAPPDATA") {
@@ -330,8 +404,11 @@ fn profile_roots() -> Vec<PathBuf> {
 }
 
 fn push_existing_root(roots: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !candidate.is_dir() {
+        return;
+    }
     if let Ok(canonical) = candidate.canonicalize() {
-        if candidate.is_dir() && !roots.contains(&canonical) {
+        if !roots.contains(&canonical) {
             roots.push(canonical);
         }
     }
@@ -467,18 +544,32 @@ fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn finds_nested_modrinth_profile_metadata() {
+    fn finds_nested_legacy_profile_metadata() {
         let value: Value = serde_json::json!({
             "name": "Builder 1.21.4",
-            "metadata": {
-                "game_version": "1.21.4",
-                "loader": "fabric"
-            }
+            "metadata": { "game_version": "1.21.4", "loader": "fabric" }
         });
         assert_eq!(find_json_string(&value, &["gameversion", "game_version"]).as_deref(), Some("1.21.4"));
         assert_eq!(find_json_string(&value, &["loader"]).as_deref(), Some("fabric"));
+    }
+
+    #[test]
+    fn detects_fabric_runtime_identity_from_latest_log() {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("lazybuilder-client-profile-{unique}"));
+        let logs = root.join("logs");
+        fs::create_dir_all(&logs).unwrap();
+        fs::write(
+            logs.join("latest.log"),
+            "[main/INFO]: Loading Minecraft 1.21.4 with Fabric Loader 0.16.10\n",
+        )
+        .unwrap();
+        let identity = runtime_identity_from_latest_log(&root).unwrap();
+        assert_eq!(identity, Some(("1.21.4".into(), "fabric".into())));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
