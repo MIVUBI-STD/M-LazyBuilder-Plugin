@@ -8,19 +8,23 @@ import net.minecraft.util.math.RotationAxis;
 
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Fullscreen LazyBuilder world map.
  *
- * <p>The interaction contract follows the established fullscreen-map mental
- * model: map-first presentation, continuous drag panning, cursor-anchored
- * animated zoom, fine zoom with CTRL, cursor-local context actions, persistent
- * explored terrain, directional player indication and map-native area selection.</p>
+ * <p>The map owns spatial presentation and selection only. Export format,
+ * packaging and conversion stay in the canonical Import / Export workspace.</p>
  */
 public final class WorldMapScreen extends Screen {
     private static final int TOP_BAR = 30;
     private static final int BOTTOM_BAR = 26;
+    private static final int SELECTION_BOTTOM_BAR = 58;
     private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
+    private static final int CHUNK_BLOCKS = 16;
+    private static final int REGION_BLOCKS = 512;
+    private static final int DEFAULT_SELECTION_CHUNKS = 8;
+    private static final int HANDLE_RADIUS = 5;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
     private static final double PRECISE_ZOOM_FACTOR = 1.18;
@@ -36,7 +40,7 @@ public final class WorldMapScreen extends Screen {
     private double animatedZoom = 2.0;
     private double targetZoom = 2.0;
     private boolean centeredOnce;
-    private boolean dragging;
+    private boolean draggingMap;
 
     private boolean zoomAnchored;
     private double zoomAnchorWorldX;
@@ -45,10 +49,18 @@ public final class WorldMapScreen extends Screen {
     private double zoomAnchorScreenY;
 
     private boolean areaMode;
-    private Integer areaX1;
-    private Integer areaZ1;
-    private Integer areaX2;
-    private Integer areaZ2;
+    private UUID selectionWorldId;
+    private int minChunkX;
+    private int maxChunkX;
+    private int minChunkZ;
+    private int maxChunkZ;
+    private DragMode selectionDrag = DragMode.NONE;
+    private int dragStartChunkX;
+    private int dragStartChunkZ;
+    private int dragMinChunkX;
+    private int dragMaxChunkX;
+    private int dragMinChunkZ;
+    private int dragMaxChunkZ;
 
     private boolean contextOpen;
     private int contextBlockX;
@@ -86,44 +98,18 @@ public final class WorldMapScreen extends Screen {
                 "+", LbButtonWidget.Style.GHOST,
                 () -> discreteZoom(-1, width - 18, 15)));
 
-        if (contextOpen) addContextButtons();
+        if (areaMode) addSelectionActions();
+        else if (contextOpen) addContextButtons();
     }
 
     private void addContextButtons() {
         int menuWidth = 164;
         int itemHeight = 21;
-        int itemCount = selectionReady() ? 2 : 5;
+        int itemCount = 5;
         int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
         int panelY = Math.max(TOP_BAR + 4,
                 Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 30), contextScreenY));
         int y = panelY + 25;
-
-        if (selectionReady()) {
-            addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                    "Export Selection", LbButtonWidget.Style.PRIMARY, () -> {
-                        if (client == null) return;
-                        var current = maps.currentWorld();
-                        if (current == null) {
-                            LazyBuilderClientNetworking.notifyPlayer(
-                                    "LazyBuilder: current world is not managed yet.");
-                            return;
-                        }
-                        int x1 = areaX1;
-                        int z1 = areaZ1;
-                        int x2 = areaX2;
-                        int z2 = areaZ2;
-                        clearAreaSelection();
-                        client.setScreen(WorldTransferScreen.forArea(
-                                this, worlds, transfers, maps, current, x1, z1, x2, z2));
-                    }));
-            y += itemHeight;
-            addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                    "Cancel Selection", LbButtonWidget.Style.GHOST, () -> {
-                        clearAreaSelection();
-                        clearAndInit();
-                    }));
-            return;
-        }
 
         addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
                 "Teleport Here", LbButtonWidget.Style.PRIMARY, () -> {
@@ -133,16 +119,11 @@ public final class WorldMapScreen extends Screen {
                 }));
         y += itemHeight;
 
-        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Export Area", LbButtonWidget.Style.SECONDARY, () -> {
-                    areaMode = true;
-                    areaX1 = null;
-                    areaZ1 = null;
-                    areaX2 = null;
-                    areaZ2 = null;
-                    contextOpen = false;
-                    clearAndInit();
-                }));
+        LbButtonWidget exportArea = LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Export Area", LbButtonWidget.Style.SECONDARY,
+                () -> beginAreaSelection(contextBlockX, contextBlockZ));
+        exportArea.active = maps.currentWorld() != null && worlds.canManage();
+        addDrawableChild(exportArea);
         y += itemHeight;
 
         addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
@@ -170,12 +151,93 @@ public final class WorldMapScreen extends Screen {
                 }));
     }
 
+    private void addSelectionActions() {
+        int y = height - 41;
+        int continueWidth = 92;
+        int cancelWidth = 72;
+        int gap = 8;
+        int right = width - 10;
+
+        addDrawableChild(LbUi.button(right - continueWidth, y, continueWidth, 24,
+                "Continue", LbButtonWidget.Style.PRIMARY, this::continueAreaExport));
+        addDrawableChild(LbUi.button(right - continueWidth - gap - cancelWidth, y, cancelWidth, 24,
+                "Cancel", LbButtonWidget.Style.GHOST, () -> {
+                    clearAreaSelection();
+                    clearAndInit();
+                }));
+    }
+
+    private void beginAreaSelection(int blockX, int blockZ) {
+        var current = maps.currentWorld();
+        if (current == null) {
+            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: open a managed world before selecting an export area.");
+            return;
+        }
+        if (!worlds.canManage()) {
+            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: your server role does not allow area export.");
+            return;
+        }
+
+        int centerChunkX = Math.floorDiv(blockX, CHUNK_BLOCKS);
+        int centerChunkZ = Math.floorDiv(blockZ, CHUNK_BLOCKS);
+        int before = DEFAULT_SELECTION_CHUNKS / 2;
+        int after = DEFAULT_SELECTION_CHUNKS - before - 1;
+        minChunkX = centerChunkX - before;
+        maxChunkX = centerChunkX + after;
+        minChunkZ = centerChunkZ - before;
+        maxChunkZ = centerChunkZ + after;
+        selectionWorldId = current.worldId().value();
+        areaMode = true;
+        contextOpen = false;
+        selectionDrag = DragMode.NONE;
+        clearAndInit();
+    }
+
+    private void continueAreaExport() {
+        if (!areaMode || client == null) return;
+        var current = maps.currentWorld();
+        if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
+            clearAreaSelection();
+            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: the selected area no longer belongs to the current world.");
+            clearAndInit();
+            return;
+        }
+
+        client.setScreen(WorldTransferScreen.forArea(
+                this,
+                worlds,
+                transfers,
+                maps,
+                current,
+                minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ()));
+    }
+
+    /** Called by the export workspace after a selected-area export completes. */
+    void finishAreaExport() {
+        clearAreaSelection();
+    }
+
+    @Override
+    public void tick() {
+        if (areaMode) {
+            var current = maps.currentWorld();
+            if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
+                clearAreaSelection();
+                LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: area selection cleared because the current world changed.");
+                clearAndInit();
+            }
+        }
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         updateZoomAnimation();
         context.fill(0, 0, width, height, LbUi.BACKGROUND);
         renderMap(context);
-        renderSelection(context);
+        if (areaMode) {
+            renderSelectionGrid(context);
+            renderSelection(context, mouseX, mouseY);
+        }
         renderCursor(context, mouseX, mouseY);
         renderHud(context, mouseX, mouseY);
         renderContextMenuBackground(context);
@@ -212,8 +274,7 @@ public final class WorldMapScreen extends Screen {
 
                 int blockX = (int) Math.floor((originCellX + cx) * blocksPerCell);
                 int blockZ = (int) Math.floor((originCellZ + cz) * blocksPerCell);
-                ClientMapSurfaceCache.SurfaceSample sample =
-                        SURFACE.sampleArea(world, blockX, blockZ, sampleSpan);
+                ClientMapSurfaceCache.SurfaceSample sample = SURFACE.sampleArea(world, blockX, blockZ, sampleSpan);
                 context.fill(screenX, screenY, screenX + pixel, screenY + pixel, sample.color());
             }
         }
@@ -249,18 +310,96 @@ public final class WorldMapScreen extends Screen {
         context.getMatrices().pop();
     }
 
+    private void renderSelectionGrid(DrawContext context) {
+        Bounds bounds = mapBounds();
+        double bpp = blocksPerPixel();
+        double chunkPixels = CHUNK_BLOCKS / bpp;
+        double regionPixels = REGION_BLOCKS / bpp;
+
+        double worldLeft = centerX + (bounds.left - bounds.centerX()) * bpp;
+        double worldRight = centerX + (bounds.right - bounds.centerX()) * bpp;
+        double worldTop = centerZ + (bounds.top - bounds.centerY()) * bpp;
+        double worldBottom = centerZ + (bounds.bottom - bounds.centerY()) * bpp;
+
+        if (chunkPixels >= 6.0) {
+            int firstChunkX = Math.floorDiv((int) Math.floor(worldLeft), CHUNK_BLOCKS) - 1;
+            int lastChunkX = Math.floorDiv((int) Math.ceil(worldRight), CHUNK_BLOCKS) + 1;
+            for (int chunkX = firstChunkX; chunkX <= lastChunkX; chunkX++) {
+                int x = worldToScreenX(chunkX * CHUNK_BLOCKS, bounds);
+                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 1, bounds.bottom, 0x355D6B7D);
+            }
+            int firstChunkZ = Math.floorDiv((int) Math.floor(worldTop), CHUNK_BLOCKS) - 1;
+            int lastChunkZ = Math.floorDiv((int) Math.ceil(worldBottom), CHUNK_BLOCKS) + 1;
+            for (int chunkZ = firstChunkZ; chunkZ <= lastChunkZ; chunkZ++) {
+                int y = worldToScreenZ(chunkZ * CHUNK_BLOCKS, bounds);
+                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 1, 0x355D6B7D);
+            }
+        }
+
+        if (regionPixels >= 8.0) {
+            int firstRegionX = Math.floorDiv((int) Math.floor(worldLeft), REGION_BLOCKS) - 1;
+            int lastRegionX = Math.floorDiv((int) Math.ceil(worldRight), REGION_BLOCKS) + 1;
+            for (int regionX = firstRegionX; regionX <= lastRegionX; regionX++) {
+                int x = worldToScreenX(regionX * REGION_BLOCKS, bounds);
+                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 2, bounds.bottom, 0x667B8DA5);
+            }
+            int firstRegionZ = Math.floorDiv((int) Math.floor(worldTop), REGION_BLOCKS) - 1;
+            int lastRegionZ = Math.floorDiv((int) Math.ceil(worldBottom), REGION_BLOCKS) + 1;
+            for (int regionZ = firstRegionZ; regionZ <= lastRegionZ; regionZ++) {
+                int y = worldToScreenZ(regionZ * REGION_BLOCKS, bounds);
+                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 2, 0x667B8DA5);
+            }
+        }
+    }
+
+    private void renderSelection(DrawContext context, int mouseX, int mouseY) {
+        SelectionRect rect = selectionRect();
+        if (rect == null) return;
+
+        int left = Math.max(mapBounds().left, rect.left);
+        int right = Math.min(mapBounds().right, rect.right);
+        int top = Math.max(mapBounds().top, rect.top);
+        int bottom = Math.min(mapBounds().bottom, rect.bottom);
+        if (right <= left || bottom <= top) return;
+
+        context.fill(left, top, right, bottom, 0x346C91FF);
+        context.fill(left, top, right, top + 2, LbUi.ACCENT_BRIGHT);
+        context.fill(left, bottom - 2, right, bottom, LbUi.ACCENT_BRIGHT);
+        context.fill(left, top, left + 2, bottom, LbUi.ACCENT_BRIGHT);
+        context.fill(right - 2, top, right, bottom, LbUi.ACCENT_BRIGHT);
+
+        DragMode hover = hitSelection(mouseX, mouseY);
+        for (Handle handle : handles(rect)) {
+            int radius = handle.mode == hover || handle.mode == selectionDrag ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
+            int color = handle.mode == hover || handle.mode == selectionDrag ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
+            context.fill(handle.x - radius, handle.y - radius, handle.x + radius + 1, handle.y + radius + 1, 0xAA10151C);
+            context.fill(handle.x - radius + 2, handle.y - radius + 2,
+                    handle.x + radius - 1, handle.y + radius - 1, color);
+        }
+    }
+
     private void renderCursor(DrawContext context, int mouseX, int mouseY) {
         if (contextOpen || !mapBounds().contains(mouseX, mouseY)) return;
+        if (areaMode) {
+            DragMode hover = hitSelection(mouseX, mouseY);
+            String hint = switch (hover) {
+                case MOVE -> "Move selection";
+                case N, S, E, W, NE, NW, SE, SW -> "Resize selection";
+                default -> "Drag map";
+            };
+            context.drawTextWithShadow(textRenderer, Text.literal(hint), mouseX + 9, mouseY + 9, LbUi.TEXT_SECONDARY);
+        }
         int color = areaMode ? 0xBB8AA8FF : 0x667F8A98;
         context.fill(mouseX - 5, mouseY, mouseX + 6, mouseY + 1, color);
         context.fill(mouseX, mouseY - 5, mouseX + 1, mouseY + 6, color);
     }
 
     private void renderHud(DrawContext context, int mouseX, int mouseY) {
+        int bottomBar = areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR;
         context.fill(0, 0, width, TOP_BAR, 0xE314181E);
         context.fill(0, TOP_BAR - 1, width, TOP_BAR, LbUi.BORDER);
-        context.fill(0, height - BOTTOM_BAR, width, height, 0xE314181E);
-        context.fill(0, height - BOTTOM_BAR, width, height - BOTTOM_BAR + 1, LbUi.BORDER);
+        context.fill(0, height - bottomBar, width, height, 0xE314181E);
+        context.fill(0, height - bottomBar, width, height - bottomBar + 1, LbUi.BORDER);
 
         String worldName = maps.currentWorld() == null ? "World Map" : maps.currentWorld().displayName();
         String dimension = client == null || client.world == null
@@ -274,17 +413,25 @@ public final class WorldMapScreen extends Screen {
         String coords = hovered == null
                 ? zoomText
                 : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomText;
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2, height - 17, LbUi.TEXT_SECONDARY);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2,
+                areaMode ? height - 51 : height - 17, LbUi.TEXT_SECONDARY);
+
+        if (areaMode) {
+            int chunksX = maxChunkX - minChunkX + 1;
+            int chunksZ = maxChunkZ - minChunkZ + 1;
+            String size = chunksX + " × " + chunksZ + " chunks   •   "
+                    + (chunksX * CHUNK_BLOCKS) + " × " + (chunksZ * CHUNK_BLOCKS) + " blocks";
+            context.drawTextWithShadow(textRenderer, Text.literal("EXPORT AREA"), 10, height - 37, LbUi.ACCENT_BRIGHT);
+            context.drawTextWithShadow(textRenderer, Text.literal(size), 82, height - 37, LbUi.TEXT_PRIMARY);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("X " + minBlockX() + " → " + maxBlockX() + "   Z " + minBlockZ() + " → " + maxBlockZ()),
+                    10, height - 21, LbUi.TEXT_SECONDARY);
+            return;
+        }
 
         String leftStatus;
         int leftColor;
-        if (selectionReady()) {
-            leftStatus = "Selection ready — choose Export Selection";
-            leftColor = LbUi.ACCENT_BRIGHT;
-        } else if (areaMode) {
-            leftStatus = areaX1 == null ? "Export Area — select first corner" : "Export Area — select second corner";
-            leftColor = LbUi.ACCENT_BRIGHT;
-        } else if (SURFACE.pendingCount() > 0) {
+        if (SURFACE.pendingCount() > 0) {
             leftStatus = "Mapping " + SURFACE.pendingCount() + " columns…";
             leftColor = LbUi.TEXT_MUTED;
         } else {
@@ -304,9 +451,9 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderContextMenuBackground(DrawContext context) {
-        if (!contextOpen) return;
+        if (!contextOpen || areaMode) return;
         int menuWidth = 164;
-        int itemCount = selectionReady() ? 2 : 5;
+        int itemCount = 5;
         int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
         int panelY = Math.max(TOP_BAR + 4,
                 Math.min(height - BOTTOM_BAR - (itemCount * 21 + 30), contextScreenY));
@@ -315,46 +462,39 @@ public final class WorldMapScreen extends Screen {
         context.fill(panelX - 2, panelY - 2, panelX + menuWidth + 2, panelBottom + 2, 0x77000000);
         LbUi.elevatedPanel(context, panelX, panelY, menuWidth, panelBottom - panelY);
         context.fill(panelX + 1, panelY + 1, panelX + menuWidth - 1, panelY + 23, LbUi.SURFACE_3);
-        context.drawTextWithShadow(textRenderer,
-                Text.literal(selectionReady() ? "Export Area" : "Map Actions"),
+        context.drawTextWithShadow(textRenderer, Text.literal("Map Actions"),
                 panelX + 7, panelY + 8, LbUi.TEXT_PRIMARY);
-        if (!selectionReady()) {
-            String coordinate = "X " + contextBlockX + "   Z " + contextBlockZ;
-            context.drawTextWithShadow(textRenderer, Text.literal(coordinate),
-                    panelX + 7, panelBottom - 13, LbUi.TEXT_MUTED);
-        }
-    }
-
-    private void renderSelection(DrawContext context) {
-        if (!areaMode || areaX1 == null || areaZ1 == null) return;
-        Bounds bounds = mapBounds();
-        int x2 = areaX2 == null ? areaX1 : areaX2;
-        int z2 = areaZ2 == null ? areaZ1 : areaZ2;
-
-        int sx1 = worldToScreenX(areaX1, bounds);
-        int sy1 = worldToScreenZ(areaZ1, bounds);
-        int sx2 = worldToScreenX(x2, bounds);
-        int sy2 = worldToScreenZ(z2, bounds);
-
-        int left = Math.max(bounds.left, Math.min(sx1, sx2));
-        int right = Math.min(bounds.right, Math.max(sx1, sx2));
-        int top = Math.max(bounds.top, Math.min(sy1, sy2));
-        int bottom = Math.min(bounds.bottom, Math.max(sy1, sy2));
-        if (right <= left || bottom <= top) return;
-
-        context.fill(left, top, right, bottom, 0x286C91FF);
-        context.fill(left, top, right, top + 2, LbUi.ACCENT_BRIGHT);
-        context.fill(left, bottom - 2, right, bottom, LbUi.ACCENT_BRIGHT);
-        context.fill(left, top, left + 2, bottom, LbUi.ACCENT_BRIGHT);
-        context.fill(right - 2, top, right, bottom, LbUi.ACCENT_BRIGHT);
+        String coordinate = "X " + contextBlockX + "   Z " + contextBlockZ;
+        context.drawTextWithShadow(textRenderer, Text.literal(coordinate),
+                panelX + 7, panelBottom - 13, LbUi.TEXT_MUTED);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
 
+        if (button == 2) {
+            centerOnPlayer();
+            return true;
+        }
+
+        if (areaMode) {
+            if (button == 1) return true;
+            if (button == 0) {
+                DragMode hit = hitSelection(mouseX, mouseY);
+                int[] chunk = screenToChunk(mouseX, mouseY);
+                if (chunk == null) return true;
+                if (hit != DragMode.NONE) {
+                    beginSelectionDrag(hit, chunk[0], chunk[1]);
+                } else {
+                    draggingMap = true;
+                }
+                return true;
+            }
+            return true;
+        }
+
         if (button == 1) {
-            if (areaMode && areaX1 != null && areaX2 == null) return true;
             int[] world = screenToWorld(mouseX, mouseY);
             if (world == null) return true;
             contextBlockX = world[0];
@@ -367,31 +507,8 @@ public final class WorldMapScreen extends Screen {
         }
 
         if (button == 0) {
-            if (areaMode) {
-                int[] world = screenToWorld(mouseX, mouseY);
-                if (world == null) return true;
-                if (areaX1 == null) {
-                    areaX1 = world[0];
-                    areaZ1 = world[1];
-                } else if (areaX2 == null) {
-                    areaX2 = world[0];
-                    areaZ2 = world[1];
-                    contextBlockX = world[0];
-                    contextBlockZ = world[1];
-                    contextScreenX = (int) mouseX;
-                    contextScreenY = (int) mouseY;
-                    contextOpen = true;
-                    clearAndInit();
-                }
-                return true;
-            }
-            dragging = true;
+            draggingMap = true;
             contextOpen = false;
-            return true;
-        }
-
-        if (button == 2) {
-            centerOnPlayer();
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -399,7 +516,15 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (button == 0 && dragging && !areaMode) {
+        if (button != 0) return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+
+        if (areaMode && selectionDrag != DragMode.NONE) {
+            int[] chunk = screenToChunk(mouseX, mouseY);
+            if (chunk != null) updateSelectionDrag(chunk[0], chunk[1]);
+            return true;
+        }
+
+        if (draggingMap) {
             centerX -= deltaX * blocksPerPixel();
             centerZ -= deltaY * blocksPerPixel();
             zoomAnchored = false;
@@ -410,9 +535,11 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && dragging) {
-            dragging = false;
-            return true;
+        if (button == 0) {
+            boolean handled = draggingMap || selectionDrag != DragMode.NONE;
+            draggingMap = false;
+            selectionDrag = DragMode.NONE;
+            if (handled) return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -427,6 +554,94 @@ public final class WorldMapScreen extends Screen {
         return true;
     }
 
+    private void beginSelectionDrag(DragMode mode, int chunkX, int chunkZ) {
+        selectionDrag = mode;
+        dragStartChunkX = chunkX;
+        dragStartChunkZ = chunkZ;
+        dragMinChunkX = minChunkX;
+        dragMaxChunkX = maxChunkX;
+        dragMinChunkZ = minChunkZ;
+        dragMaxChunkZ = maxChunkZ;
+    }
+
+    private void updateSelectionDrag(int chunkX, int chunkZ) {
+        if (selectionDrag == DragMode.MOVE) {
+            int dx = chunkX - dragStartChunkX;
+            int dz = chunkZ - dragStartChunkZ;
+            minChunkX = dragMinChunkX + dx;
+            maxChunkX = dragMaxChunkX + dx;
+            minChunkZ = dragMinChunkZ + dz;
+            maxChunkZ = dragMaxChunkZ + dz;
+            return;
+        }
+
+        int x1 = dragMinChunkX;
+        int x2 = dragMaxChunkX;
+        int z1 = dragMinChunkZ;
+        int z2 = dragMaxChunkZ;
+        switch (selectionDrag) {
+            case NW -> { x1 = chunkX; z1 = chunkZ; }
+            case N -> z1 = chunkZ;
+            case NE -> { x2 = chunkX; z1 = chunkZ; }
+            case E -> x2 = chunkX;
+            case SE -> { x2 = chunkX; z2 = chunkZ; }
+            case S -> z2 = chunkZ;
+            case SW -> { x1 = chunkX; z2 = chunkZ; }
+            case W -> x1 = chunkX;
+            default -> { return; }
+        }
+        minChunkX = Math.min(x1, x2);
+        maxChunkX = Math.max(x1, x2);
+        minChunkZ = Math.min(z1, z2);
+        maxChunkZ = Math.max(z1, z2);
+    }
+
+    private DragMode hitSelection(double mouseX, double mouseY) {
+        if (!areaMode) return DragMode.NONE;
+        SelectionRect rect = selectionRect();
+        if (rect == null) return DragMode.NONE;
+
+        for (Handle handle : handles(rect)) {
+            if (Math.abs(mouseX - handle.x) <= HANDLE_RADIUS + 3
+                    && Math.abs(mouseY - handle.y) <= HANDLE_RADIUS + 3) return handle.mode;
+        }
+        if (mouseX > rect.left + HANDLE_RADIUS && mouseX < rect.right - HANDLE_RADIUS
+                && mouseY > rect.top + HANDLE_RADIUS && mouseY < rect.bottom - HANDLE_RADIUS) {
+            return DragMode.MOVE;
+        }
+        return DragMode.NONE;
+    }
+
+    private Handle[] handles(SelectionRect rect) {
+        int midX = rect.left + (rect.right - rect.left) / 2;
+        int midY = rect.top + (rect.bottom - rect.top) / 2;
+        return new Handle[]{
+                new Handle(rect.left, rect.top, DragMode.NW),
+                new Handle(midX, rect.top, DragMode.N),
+                new Handle(rect.right, rect.top, DragMode.NE),
+                new Handle(rect.right, midY, DragMode.E),
+                new Handle(rect.right, rect.bottom, DragMode.SE),
+                new Handle(midX, rect.bottom, DragMode.S),
+                new Handle(rect.left, rect.bottom, DragMode.SW),
+                new Handle(rect.left, midY, DragMode.W)
+        };
+    }
+
+    private SelectionRect selectionRect() {
+        if (!areaMode) return null;
+        Bounds bounds = mapBounds();
+        int left = worldToScreenX(minBlockX(), bounds);
+        int right = worldToScreenX((maxChunkX + 1) * CHUNK_BLOCKS, bounds);
+        int top = worldToScreenZ(minBlockZ(), bounds);
+        int bottom = worldToScreenZ((maxChunkZ + 1) * CHUNK_BLOCKS, bounds);
+        return new SelectionRect(Math.min(left, right), Math.min(top, bottom), Math.max(left, right), Math.max(top, bottom));
+    }
+
+    private int minBlockX() { return minChunkX * CHUNK_BLOCKS; }
+    private int maxBlockX() { return maxChunkX * CHUNK_BLOCKS + CHUNK_BLOCKS - 1; }
+    private int minBlockZ() { return minChunkZ * CHUNK_BLOCKS; }
+    private int maxBlockZ() { return maxChunkZ * CHUNK_BLOCKS + CHUNK_BLOCKS - 1; }
+
     private void discreteZoom(int direction, double screenX, double screenY) {
         int current = nearestZoomIndex(targetZoom);
         int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, current + direction));
@@ -434,9 +649,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void preciseZoom(int direction, double screenX, double screenY) {
-        double next = direction > 0
-                ? targetZoom * PRECISE_ZOOM_FACTOR
-                : targetZoom / PRECISE_ZOOM_FACTOR;
+        double next = direction > 0 ? targetZoom * PRECISE_ZOOM_FACTOR : targetZoom / PRECISE_ZOOM_FACTOR;
         setZoomTarget(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)), screenX, screenY);
     }
 
@@ -484,6 +697,10 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (areaMode && (keyCode == 257 || keyCode == 335)) {
+            continueAreaExport();
+            return true;
+        }
         if (keyCode == 256) {
             if (contextOpen) {
                 contextOpen = false;
@@ -501,15 +718,10 @@ public final class WorldMapScreen extends Screen {
 
     private void clearAreaSelection() {
         areaMode = false;
-        areaX1 = null;
-        areaZ1 = null;
-        areaX2 = null;
-        areaZ2 = null;
+        selectionWorldId = null;
+        selectionDrag = DragMode.NONE;
+        draggingMap = false;
         contextOpen = false;
-    }
-
-    private boolean selectionReady() {
-        return areaMode && areaX1 != null && areaZ1 != null && areaX2 != null && areaZ2 != null;
     }
 
     private void centerOnPlayer() {
@@ -536,6 +748,12 @@ public final class WorldMapScreen extends Screen {
         return new int[]{(int) Math.floor(exact[0]), (int) Math.floor(exact[1])};
     }
 
+    private int[] screenToChunk(double mouseX, double mouseY) {
+        int[] world = screenToWorld(mouseX, mouseY);
+        if (world == null) return null;
+        return new int[]{Math.floorDiv(world[0], CHUNK_BLOCKS), Math.floorDiv(world[1], CHUNK_BLOCKS)};
+    }
+
     private int worldToScreenX(int blockX, Bounds bounds) {
         return bounds.centerX() + (int) Math.round((blockX - centerX) / blocksPerPixel());
     }
@@ -544,9 +762,7 @@ public final class WorldMapScreen extends Screen {
         return bounds.centerY() + (int) Math.round((blockZ - centerZ) / blocksPerPixel());
     }
 
-    private double zoom() {
-        return animatedZoom;
-    }
+    private double zoom() { return animatedZoom; }
 
     private String zoomLabel() {
         if (zoom() >= 1.0) return String.format(Locale.ROOT, "Zoom 1:%.1f", zoom());
@@ -554,27 +770,32 @@ public final class WorldMapScreen extends Screen {
     }
 
     private Bounds mapBounds() {
-        return new Bounds(0, TOP_BAR, width, height - BOTTOM_BAR);
+        return new Bounds(0, TOP_BAR, width, height - (areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR));
     }
 
     @Override
-    public boolean shouldPause() {
-        return false;
-    }
+    public boolean shouldPause() { return false; }
 
     @Override
     public void close() {
+        if (areaMode) {
+            clearAreaSelection();
+            clearAndInit();
+            return;
+        }
         SURFACE.flushAsync();
         if (client != null) client.setScreen(null);
     }
+
+    private enum DragMode { NONE, MOVE, N, NE, E, SE, S, SW, W, NW }
+    private record Handle(int x, int y, DragMode mode) {}
+    private record SelectionRect(int left, int top, int right, int bottom) {}
 
     private record Bounds(int left, int top, int right, int bottom) {
         int width() { return right - left; }
         int height() { return bottom - top; }
         int centerX() { return left + width() / 2; }
         int centerY() { return top + height() / 2; }
-        boolean contains(double x, double y) {
-            return x >= left && x < right && y >= top && y < bottom;
-        }
+        boolean contains(double x, double y) { return x >= left && x < right && y >= top && y < bottom; }
     }
 }
