@@ -82,6 +82,11 @@ public final class WorldDuplicateService {
             registered = true;
             persistence.save(registry.all());
             task.committed = true;
+            try {
+                files.markPublishedWorldCommitted(task.destination.folderName());
+            } catch (IOException cleanupFailure) {
+                task.publicationMarkerCleanupFailure = cleanupFailure;
+            }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
             if (registered) registry.remove(task.destination.id());
@@ -110,6 +115,14 @@ public final class WorldDuplicateService {
                 failure = exception;
             }
         }
+        if (task.committed && task.publicationMarkerCleanupFailure != null) {
+            try {
+                files.markPublishedWorldCommitted(task.destination.folderName());
+                task.publicationMarkerCleanupFailure = null;
+            } catch (IOException ignored) {
+                // Startup reconciliation will clear the marker from a persisted world.
+            }
+        }
         task.close();
         if (failure != null) throw failure;
     }
@@ -123,6 +136,7 @@ public final class WorldDuplicateService {
         private final WorldRegistry.FolderReservation destinationReservation;
         private boolean committed;
         private boolean closed;
+        private IOException publicationMarkerCleanupFailure;
 
         private DuplicateTask(UUID operationId, WorldRecord source, WorldRecord destination, boolean wasLoaded,
                               WorldOperationCoordinator.Lease lease,
@@ -138,6 +152,7 @@ public final class WorldDuplicateService {
         public WorldRecord source() { return source; }
         public WorldRecord destination() { return destination; }
         public boolean committed() { return committed; }
+        public IOException publicationMarkerCleanupFailure() { return publicationMarkerCleanupFailure; }
 
         private void requireOpen() {
             if (closed) throw new IllegalStateException("Duplicate task is already closed");
