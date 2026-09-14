@@ -21,7 +21,7 @@ import java.util.UUID;
  * request handlers from an appropriate worker context, never from an idle loop.</p>
  */
 public final class LocalWorldFileRepository implements WorldFileRepository {
-    private static final Set<String> CLONE_EXCLUDED_DIRECTORIES = Set.of("playerdata", "advancements", "stats");
+    private static final Set<String> DUPLICATE_EXCLUDED_DIRECTORIES = Set.of("playerdata", "advancements", "stats");
 
     private final Path worldRoot;
     private final Path workspaceRoot;
@@ -123,8 +123,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + directory);
                 }
                 Path relative = source.relativize(directory);
-                if (profile == WorldCopyProfile.CLONE && relative.getNameCount() == 1
-                        && CLONE_EXCLUDED_DIRECTORIES.contains(relative.getFileName().toString())) {
+                if (profile == WorldCopyProfile.DUPLICATE && relative.getNameCount() == 1
+                        && DUPLICATE_EXCLUDED_DIRECTORIES.contains(relative.getFileName().toString())) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 Files.createDirectories(destination.resolve(relative));
@@ -146,7 +146,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
     private static boolean shouldSkipFile(Path relative, WorldCopyProfile profile) {
         if (relative.getNameCount() == 1 && relative.getFileName().toString().equals("session.lock")) return true;
-        return profile == WorldCopyProfile.CLONE
+        return profile == WorldCopyProfile.DUPLICATE
                 && relative.getNameCount() == 1
                 && relative.getFileName().toString().equals("uid.dat");
     }
