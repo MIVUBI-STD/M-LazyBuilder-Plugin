@@ -14,8 +14,10 @@ LazyBuilder
 ├── Paper Modules
 │   ├── World-Manager
 │   └── Utilities-Manager
-└── Client
-    └── Fabric integration
+└── Client Managers
+    ├── Map Manager          (implemented)
+    ├── Utility Manager      (planned)
+    └── Performance Manager  (planned)
 ```
 
 ## Repository layout
@@ -25,15 +27,17 @@ EngineData/Frontend/RustApp/  Canonical LazyBuilder desktop app (Tauri 2 + Svelt
 shared/protocol/               Neutral Paper/Fabric wire contracts and shared value types
 modules/world-manager/         World lifecycle, import/export, archive, settings, transfer
 modules/utilities-manager/     Small builder/server convenience features
-client/fabric/                 Fabric client and in-game World-Manager surfaces
-docs/                          Product, architecture, UI, and operational contracts
+client/fabric/                 Current Map Manager Fabric source (transitional C1 path)
+docs/                          Canonical product/system/operations docs
 ```
+
+The current Fabric mod is **LazyBuilder Map Manager**. The `client/fabric` directory name is temporarily retained while the C1 identity migration is validated; folder/package movement is a separate mechanical step.
 
 The desktop has one source authority: `EngineData/Frontend/RustApp`. Svelte owns presentation/application state; Rust owns desktop-native process, filesystem, Plugin-Manager, Server-Manager, and World-Manager client behavior.
 
 Shared client/server transport types are owned by `shared/protocol`; Fabric must not compile implementation source directly from a Paper module.
 
-Each manager owns its own source boundary, tests, configuration, artifact, and version. Unrelated modules must remain independently updateable.
+Each manager owns its own source boundary, tests, configuration, artifact, and version. Unrelated modules must remain independently updateable. One Manager produces one deployable mod/JAR; internal subfeatures must not become unnecessary standalone mods.
 
 The active development authority is `Local`; `main` remains the stable/release authority. Structural work is validated through CI before live-server testing.
 
