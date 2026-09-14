@@ -89,6 +89,31 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void explicitDiscardRemovesReviewedArtifact() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("discard must not probe converter"); };
+        ConversionUpdateService updates = new ConversionUpdateService(
+                ConversionRuntimePolicy.defaults(), runtimeStore, Optional::empty,
+                (release, directory) -> { throw new AssertionError("discard must not download runtime"); },
+                converter, tempDir.resolve("downloads"),
+                Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
+        );
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates, converter, new ConversionJobCoordinator()
+        );
+
+        service.discard("Reviewed.zip");
+
+        assertEquals(List.of("Reviewed.zip"), imports.deletedArtifacts);
+        assertFalse(files.published);
+    }
+
+    @Test
     void failedConversionCleansEveryOwnedWorkspace() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
