@@ -63,6 +63,7 @@ public final class WorldBackupService {
     public BackupResult executeFilePhase(BackupTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
+        requireQuiescentSnapshotSource(task);
         Path staged = null;
         IllegalStateException primaryFailure = null;
         try {
@@ -100,6 +101,26 @@ public final class WorldBackupService {
         }
         task.close();
         if (failure != null) throw failure;
+    }
+
+    private void requireQuiescentSnapshotSource(BackupTask task) {
+        WorldId id = task.world.id();
+        if (operations.activeOperation(id) != WorldOperationType.BACKUP) {
+            throw new IllegalStateException("Backup snapshot no longer owns the world operation: " + task.world.displayName());
+        }
+        WorldRecord current = registry.find(id)
+                .orElseThrow(() -> new IllegalStateException("Backup source is no longer managed: " + task.world.displayName()));
+        if (current.lifecycle() != WorldLifecycle.ACTIVE) {
+            throw new IllegalStateException("Backup source is no longer active: " + current.displayName());
+        }
+        if (runtimeService.hasPlayers(id)) {
+            throw new IllegalStateException("Cannot snapshot " + current.displayName()
+                    + " while builders are inside the world");
+        }
+        if (runtimeService.isLoaded(id)) {
+            throw new IllegalStateException("Cannot snapshot " + current.displayName()
+                    + " because it became loaded after backup preparation");
+        }
     }
 
     public record BackupResult(String backupId, String artifactName) {
