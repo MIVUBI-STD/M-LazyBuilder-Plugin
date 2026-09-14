@@ -38,12 +38,11 @@ class WorldExportServiceTest {
     @Test
     void nativeExportRestoresLoadedWorldImmediatelyAfterSnapshot() throws Exception {
         WorldRegistry registry = new WorldRegistry();
-        WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE, true);
+        WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
-        states.initialize(world.id(), WorldRuntimeState.LOADED);
-        FakeRuntime runtime = new FakeRuntime();
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, states, runtime);
+        FakeRuntime runtime = new FakeRuntime(true);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         FakeFiles files = new FakeFiles(tempDir);
         FakeArtifacts artifacts = new FakeArtifacts(tempDir);
         FakeStore store = new FakeStore();
@@ -55,27 +54,26 @@ class WorldExportServiceTest {
                 converter, tempDir.resolve("downloads"),
                 Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
         );
-        WorldOperationCoordinator operations = new WorldOperationCoordinator();
         WorldExportService service = new WorldExportService(
-                registry, runtimeService, states, operations, files, artifacts,
+                registry, runtimeService, operations, files, artifacts,
                 store, updates, converter, new ConversionJobCoordinator()
         );
 
         WorldExportService.ExportTask task = service.prepare(
                 world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
-        assertEquals(WorldRuntimeState.UNLOADED, states.get(world.id()));
+        assertFalse(runtime.loaded);
 
         service.captureSnapshot(task);
-        assertEquals(WorldRuntimeState.UNLOADED, states.get(world.id()));
+        assertFalse(runtime.loaded);
 
         service.resumeSourceAfterSnapshot(task);
-        assertEquals(WorldRuntimeState.LOADED, states.get(world.id()));
+        assertTrue(runtime.loaded);
         assertTrue(task.sourceRestored());
         assertEquals(1, runtime.unloadCount);
         assertEquals(1, runtime.loadCount);
 
         WorldExportService.ExportResult result = service.processSnapshot(task);
-        assertEquals(WorldRuntimeState.LOADED, states.get(world.id()));
+        assertTrue(runtime.loaded);
         service.finish(task);
 
         assertFalse(result.converted());
@@ -87,13 +85,15 @@ class WorldExportServiceTest {
     }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
+        private boolean loaded;
         int loadCount;
         int unloadCount;
+        FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {}
         @Override public void rollbackCreatedWorld(WorldRecord world) {}
-        @Override public boolean isLoaded(WorldRecord world) { return true; }
-        @Override public void loadWorld(WorldRecord world) { loadCount++; }
-        @Override public void unloadWorld(WorldRecord world) { unloadCount++; }
+        @Override public boolean isLoaded(WorldRecord world) { return loaded; }
+        @Override public void loadWorld(WorldRecord world) { loaded = true; loadCount++; }
+        @Override public void unloadWorld(WorldRecord world) { loaded = false; unloadCount++; }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {}
     }
 
