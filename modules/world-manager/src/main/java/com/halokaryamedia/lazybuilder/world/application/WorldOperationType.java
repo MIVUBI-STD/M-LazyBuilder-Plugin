@@ -9,5 +9,6 @@ public enum WorldOperationType {
     DELETE,
     IMPORT,
     EXPORT,
-    CONVERSION
+    CONVERSION,
+    TELEPORT
 }
