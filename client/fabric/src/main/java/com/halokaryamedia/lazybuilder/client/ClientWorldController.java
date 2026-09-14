@@ -18,8 +18,10 @@ public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
-    private boolean canManage;
-    private boolean canTeleport;
+    // Before the first authoritative WorldList arrives permission is unknown, not denied.
+    // Map-first actions therefore remain discoverable; Paper still authorizes every request.
+    private boolean canManage = true;
+    private boolean canTeleport = true;
     private boolean worldListReady;
     private boolean worldListPending;
     private String lastError;
@@ -135,8 +137,8 @@ public final class ClientWorldController {
         worlds = List.of();
         exportFormats = List.of(NATIVE_EXPORT_FORMAT);
         settings.clear();
-        canManage = false;
-        canTeleport = false;
+        canManage = true;
+        canTeleport = true;
         worldListReady = false;
         worldListPending = false;
         lastError = null;
