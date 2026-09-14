@@ -16,6 +16,8 @@ class WorldControlWireProtocolTest {
         UUID id = UUID.randomUUID();
         assertEquals(new WorldControlWireProtocol.ListWorlds(), roundTrip(new WorldControlWireProtocol.ListWorlds()));
         assertEquals(new WorldControlWireProtocol.GetExportFormats(), roundTrip(new WorldControlWireProtocol.GetExportFormats()));
+        assertEquals(new WorldControlWireProtocol.InspectImport("incoming.zip"),
+                roundTrip(new WorldControlWireProtocol.InspectImport("incoming.zip")));
         assertEquals(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT"),
                 roundTrip(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT")));
         assertEquals(new WorldControlWireProtocol.TeleportWorld(id), roundTrip(new WorldControlWireProtocol.TeleportWorld(id)));
@@ -62,6 +64,11 @@ class WorldControlWireProtocolTest {
 
         var formats = new WorldControlWireProtocol.ExportFormats(List.of("JAVA_1_21_4", "BEDROCK_1_21_0"));
         assertEquals(formats, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(formats)));
+
+        var inspection = new WorldControlWireProtocol.ImportInspection(
+                "incoming.zip", "JAVA", "1.21.4", "Incoming");
+        assertEquals(inspection,
+                WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(inspection)));
     }
 
     @Test
