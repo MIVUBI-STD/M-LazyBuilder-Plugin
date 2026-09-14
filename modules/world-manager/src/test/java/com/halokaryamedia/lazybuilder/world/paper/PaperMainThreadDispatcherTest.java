@@ -9,6 +9,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -70,5 +71,35 @@ class PaperMainThreadDispatcherTest {
         );
         assertTrue(failure.getMessage().contains("timed out"));
         assertTrue(submitted.get().isCancelled());
+    }
+
+    @Test
+    void cleanupDispatchDefersExistingInterruptUntilCleanupCompletes() throws Exception {
+        AtomicReference<Callable<?>> submittedAction = new AtomicReference<>();
+        PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
+                new PaperMainThreadDispatcher.SchedulerBridge() {
+                    @Override public boolean isPrimaryThread() { return false; }
+                    @Override public <T> Future<T> submit(Callable<T> action) {
+                        submittedAction.set(action);
+                        CompletableFuture<T> future = new CompletableFuture<>();
+                        try {
+                            future.complete(action.call());
+                        } catch (Exception exception) {
+                            future.completeExceptionally(exception);
+                        }
+                        return future;
+                    }
+                },
+                Duration.ofSeconds(1)
+        );
+
+        Thread.currentThread().interrupt();
+        try {
+            assertEquals("cleaned", dispatcher.callCleanup(() -> "cleaned"));
+            assertTrue(Thread.currentThread().isInterrupted(), "cleanup must restore the caller interrupt flag");
+            assertFalse(submittedAction.get() == null, "cleanup must still be submitted while caller is interrupted");
+        } finally {
+            Thread.interrupted();
+        }
     }
 }
