@@ -18,6 +18,8 @@ class WorldControlWireProtocolTest {
         assertEquals(new WorldControlWireProtocol.GetExportFormats(), roundTrip(new WorldControlWireProtocol.GetExportFormats()));
         assertEquals(new WorldControlWireProtocol.InspectImport("incoming.zip"),
                 roundTrip(new WorldControlWireProtocol.InspectImport("incoming.zip")));
+        assertEquals(new WorldControlWireProtocol.DiscardImport("incoming.zip"),
+                roundTrip(new WorldControlWireProtocol.DiscardImport("incoming.zip")));
         assertEquals(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT"),
                 roundTrip(new WorldControlWireProtocol.CreateWorld("build", "Build", "FLAT")));
         assertEquals(new WorldControlWireProtocol.TeleportWorld(id), roundTrip(new WorldControlWireProtocol.TeleportWorld(id)));
