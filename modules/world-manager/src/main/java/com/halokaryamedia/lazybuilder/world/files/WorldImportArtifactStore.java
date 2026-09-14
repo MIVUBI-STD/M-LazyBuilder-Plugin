@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.world.files;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 /** Bounded import-artifact boundary owned by World Manager. */
 public interface WorldImportArtifactStore {
@@ -27,6 +28,19 @@ public interface WorldImportArtifactStore {
      * deletion.</p>
      */
     default void deleteArtifact(String artifactName) throws IOException { }
+
+    /**
+     * Durably records that an already-committed import still needs its source
+     * upload removed. This marker is intentionally separate from ordinary review
+     * ownership so startup recovery never guesses which inbox files are safe to delete.
+     */
+    default void markCommittedCleanupPending(String artifactName) throws IOException { }
+
+    /** Clears the durable committed-cleanup marker after artifact deletion succeeds. */
+    default void clearCommittedCleanupPending(String artifactName) throws IOException { }
+
+    /** Returns only artifacts explicitly marked for post-commit cleanup recovery. */
+    default List<String> pendingCommittedCleanupArtifacts() throws IOException { return List.of(); }
 
     enum DetectedEdition { JAVA, BEDROCK }
 
