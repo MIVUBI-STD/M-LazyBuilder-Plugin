@@ -8,9 +8,17 @@ import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Native file dialog adapter. Dialog work exists only while the user requested it. */
 public final class ClientFileDialogs {
+    private static final ExecutorService DIALOG_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "LazyBuilder-File-Dialog");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     private ClientFileDialogs() {}
 
     public static CompletableFuture<Optional<Path>> chooseImport() {
@@ -24,7 +32,7 @@ public final class ClientFileDialogs {
                         "Import Minecraft World", null, filters, "Minecraft worlds", false);
                 return selected == null ? Optional.empty() : Optional.of(Path.of(selected));
             }
-        }));
+        }, DIALOG_EXECUTOR));
     }
 
     public static CompletableFuture<Optional<Path>> chooseExportDestination(String suggestedName) {
@@ -38,7 +46,11 @@ public final class ClientFileDialogs {
                         "Save LazyBuilder Export", suggestedName, filters, "Minecraft worlds");
                 return selected == null ? Optional.empty() : Optional.of(Path.of(selected));
             }
-        }));
+        }, DIALOG_EXECUTOR));
+    }
+
+    public static void shutdown() {
+        DIALOG_EXECUTOR.shutdown();
     }
 
     private static CompletableFuture<Optional<Path>> completeOnClient(
