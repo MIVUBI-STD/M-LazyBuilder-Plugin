@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -17,9 +18,12 @@ public final class UtilityManagerClient implements ClientModInitializer {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
 
-        ClientLifecycleEvents.CLIENT_STARTED.register(client ->
-                BorderlessWindowController.applyIfEnabled(client, preferences.borderlessWindow())
-        );
+        ResourceReloadNotifier.register();
+
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
+            ResourceReloadNotifier.markClientStarted();
+            BorderlessWindowController.applyIfEnabled(client, preferences.borderlessWindow());
+        });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 ReconnectState.capture(client.getCurrentServerEntry())
