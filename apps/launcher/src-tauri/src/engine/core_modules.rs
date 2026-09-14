@@ -51,16 +51,8 @@ impl Drop for CoreSyncTransaction {
 }
 
 pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<CoreSyncTransaction, String> {
-    let world_source = resolve_source(
-        app_resource_dir,
-        WORLD_FILE_NAME,
-        "modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar",
-    )?;
-    let utilities_source = resolve_source(
-        app_resource_dir,
-        UTILITIES_FILE_NAME,
-        "modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar",
-    )?;
+    let world_source = resolve_source(app_resource_dir, WORLD_FILE_NAME)?;
+    let utilities_source = resolve_source(app_resource_dir, UTILITIES_FILE_NAME)?;
 
     let plugins = workspace.join("server").join("plugins");
     let backups = workspace
@@ -311,24 +303,16 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
-fn resolve_source(
-    resource_dir: Option<&Path>,
-    file_name: &str,
-    source_relative: &str,
-) -> Result<PathBuf, String> {
-    if let Some(resource_dir) = resource_dir {
-        let bundled = resource_dir.join("resources").join("core").join(file_name);
-        if bundled.is_file() {
-            return Ok(bundled);
-        }
-    }
-    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
-    let source_build = source_root.join(source_relative);
-    if source_build.is_file() {
-        return Ok(source_build);
+fn resolve_source(resource_dir: Option<&Path>, file_name: &str) -> Result<PathBuf, String> {
+    let resource_dir = resource_dir.ok_or_else(|| {
+        format!("LazyBuilder core module {file_name} is unavailable because the packaged resource directory could not be resolved.")
+    })?;
+    let bundled = resource_dir.join("resources").join("core").join(file_name);
+    if bundled.is_file() {
+        return Ok(bundled);
     }
     Err(format!(
-        "LazyBuilder core module {file_name} is unavailable. Release builds must bundle core modules; development builds must run Maven package first."
+        "LazyBuilder core module {file_name} is unavailable. Runtime-ready Launcher builds must bundle the tested core pair."
     ))
 }
 
@@ -382,7 +366,7 @@ mod tests {
         let bundled = root.join("resources").join("core").join(WORLD_FILE_NAME);
         fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         fs::write(&bundled, b"test-jar").unwrap();
-        let resolved = resolve_source(Some(&root), WORLD_FILE_NAME, "missing/source.jar").unwrap();
+        let resolved = resolve_source(Some(&root), WORLD_FILE_NAME).unwrap();
         assert_eq!(resolved, bundled);
         let _ = fs::remove_dir_all(root);
     }
