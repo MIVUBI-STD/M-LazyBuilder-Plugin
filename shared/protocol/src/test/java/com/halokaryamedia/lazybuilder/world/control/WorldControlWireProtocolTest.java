@@ -44,7 +44,7 @@ class WorldControlWireProtocolTest {
         UUID id = UUID.randomUUID();
         var world = new WorldControlWireProtocol.WorldSummary(
                 id, "build", "Build", "FLAT", "ACTIVE", "CREATIVE");
-        var list = new WorldControlWireProtocol.WorldList(List.of(world));
+        var list = new WorldControlWireProtocol.WorldList(List.of(world), true, false);
         assertEquals(list, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(list)));
 
         var changed = new WorldControlWireProtocol.WorldChanged("DUPLICATE", world);
