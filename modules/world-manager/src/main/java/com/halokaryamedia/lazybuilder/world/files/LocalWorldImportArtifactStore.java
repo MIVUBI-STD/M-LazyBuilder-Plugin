@@ -8,12 +8,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -169,38 +169,42 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     @Override
     public void markCommittedCleanupPending(String artifactName) throws IOException {
         String safe = validateArtifactName(artifactName);
-        Path directory = cleanupMarkerDirectory();
-        Files.createDirectories(directory);
-        Path marker = cleanupMarkerPath(safe);
-        Files.writeString(marker, safe, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+        Path directory = ensureCleanupMarkerDirectory();
+        Path marker = cleanupMarkerPath(directory, safe);
+        try {
+            Files.createFile(marker);
+        } catch (FileAlreadyExistsException ignored) {
+            // Idempotent durable marker.
+        }
     }
 
     @Override
     public void clearCommittedCleanupPending(String artifactName) throws IOException {
         String safe = validateArtifactName(artifactName);
-        Files.deleteIfExists(cleanupMarkerPath(safe));
+        Path directory = existingCleanupMarkerDirectory();
+        if (directory == null) return;
+        Files.deleteIfExists(cleanupMarkerPath(directory, safe));
     }
 
     @Override
     public List<String> pendingCommittedCleanupArtifacts() throws IOException {
-        Path directory = cleanupMarkerDirectory();
-        if (!Files.isDirectory(directory)) return List.of();
+        Path directory = existingCleanupMarkerDirectory();
+        if (directory == null) return List.of();
         List<String> pending = new ArrayList<>();
         try (var stream = Files.list(directory)) {
             for (Path marker : stream.sorted().toList()) {
-                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)
-                        || !marker.getFileName().toString().endsWith(CLEANUP_MARKER_SUFFIX)) {
-                    continue;
-                }
-                String value;
+                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) continue;
+                String markerName = marker.getFileName().toString();
+                if (!markerName.endsWith(CLEANUP_MARKER_SUFFIX)) continue;
+                String encoded = markerName.substring(0, markerName.length() - CLEANUP_MARKER_SUFFIX.length());
                 try {
-                    value = validateArtifactName(Files.readString(marker, StandardCharsets.UTF_8));
-                } catch (IOException | RuntimeException invalidMarker) {
-                    continue;
-                }
-                if (cleanupMarkerPath(value).equals(marker.toAbsolutePath().normalize())) {
-                    pending.add(value);
+                    String value = validateArtifactName(new String(
+                            Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
+                    if (cleanupMarkerPath(directory, value).equals(marker.toAbsolutePath().normalize())) {
+                        pending.add(value);
+                    }
+                } catch (IllegalArgumentException invalidMarker) {
+                    // Unknown marker names are never trusted as deletion authority.
                 }
             }
         }
@@ -228,10 +232,31 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         return importsRoot.resolve(COMMITTED_CLEANUP_DIR).toAbsolutePath().normalize();
     }
 
-    private Path cleanupMarkerPath(String artifactName) {
+    private Path ensureCleanupMarkerDirectory() throws IOException {
+        Path directory = cleanupMarkerDirectory();
+        if (Files.exists(directory)) {
+            if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) {
+                throw new IOException("Import cleanup marker directory is unsafe");
+            }
+        } else {
+            Files.createDirectories(directory);
+        }
+        return directory;
+    }
+
+    private Path existingCleanupMarkerDirectory() throws IOException {
+        Path directory = cleanupMarkerDirectory();
+        if (Files.notExists(directory)) return null;
+        if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) {
+            throw new IOException("Import cleanup marker directory is unsafe");
+        }
+        return directory;
+    }
+
+    private static Path cleanupMarkerPath(Path directory, String artifactName) {
         String encoded = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(artifactName.getBytes(StandardCharsets.UTF_8));
-        return cleanupMarkerDirectory().resolve(encoded + CLEANUP_MARKER_SUFFIX).toAbsolutePath().normalize();
+        return directory.resolve(encoded + CLEANUP_MARKER_SUFFIX).toAbsolutePath().normalize();
     }
 
     private void extractBounded(Path archive, Path target) throws IOException {
