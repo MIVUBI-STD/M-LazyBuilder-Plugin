@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -35,9 +37,9 @@ import java.util.zip.GZIPOutputStream;
  * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
  * <p>Only a bounded set of regions remains resident. Region files load off the
- * render thread and dirty regions are written through one ordered async write
- * lane, preventing an older snapshot from racing a newer snapshot for the same
- * file.</p>
+ * render thread and dirty regions are written through one ordered LazyBuilder-owned
+ * I/O lane, preventing an older snapshot from racing a newer snapshot for the same
+ * file without consuming the JVM common async pool.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int FORMAT_VERSION = 2;
@@ -55,6 +57,11 @@ public final class ClientMapSurfaceCache {
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LinkedHashSet<Long> pending = new LinkedHashSet<>();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "LazyBuilder-Map-IO");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private String scope = "";
     private Path scopeDirectory;
@@ -169,6 +176,12 @@ public final class ClientMapSurfaceCache {
         }
     }
 
+    /** Queues final dirty snapshots and lets the dedicated I/O lane finish them during client shutdown. */
+    public void shutdownIo() {
+        flushAsync();
+        ioExecutor.shutdown();
+    }
+
     private RegionData regionFor(int blockX, int blockZ, boolean scheduleLoad) {
         int regionX = Math.floorDiv(blockX, REGION_SIZE);
         int regionZ = Math.floorDiv(blockZ, REGION_SIZE);
@@ -187,7 +200,7 @@ public final class ClientMapSurfaceCache {
         if (region.loadScheduled) return;
         region.loadScheduled = true;
         Path file = regionFile(directory, regionKey);
-        CompletableFuture.supplyAsync(() -> readRegion(file))
+        CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
                 .thenAccept(samples -> completedLoads.add(new LoadedRegion(generation, regionKey, samples)));
     }
 
@@ -262,7 +275,7 @@ public final class ClientMapSurfaceCache {
     ) {
         Path destination = regionFile(directory, regionKey);
         writeTail = writeTail.handle((ignored, failure) -> null)
-                .thenRunAsync(() -> writeRegion(destination, snapshot));
+                .thenRunAsync(() -> writeRegion(destination, snapshot), ioExecutor);
     }
 
     private void migrateLegacySnapshot(
@@ -283,7 +296,7 @@ public final class ClientMapSurfaceCache {
                 enqueueRegionWrite(targetDirectory, entry.getKey(), entry.getValue());
             }
             enqueueMarkerWrite(targetDirectory, migratedMarker);
-        });
+        }, ioExecutor);
     }
 
     private synchronized void enqueueMarkerWrite(Path targetDirectory, Path marker) {
@@ -292,7 +305,7 @@ public final class ClientMapSurfaceCache {
                 Files.createDirectories(targetDirectory);
                 Files.writeString(marker, "v1\n");
             } catch (IOException ignored) { }
-        });
+        }, ioExecutor);
     }
 
     private static Map<Long, Map<Integer, SurfaceSample>> readLegacySnapshot(Path source) {
