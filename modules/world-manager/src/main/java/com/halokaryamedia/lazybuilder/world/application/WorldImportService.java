@@ -16,7 +16,9 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Request-bound Import World flow. Imported worlds publish only after validation succeeds. */
 public final class WorldImportService {
@@ -30,6 +32,8 @@ public final class WorldImportService {
     private final ConversionUpdateService updateService;
     private final ConverterAdapter converter;
     private final ConversionJobCoordinator conversionJobs;
+    /** Successful imports whose source upload could not yet be deleted. Retried only on explicit lifecycle events. */
+    private final Set<String> pendingCommittedArtifactCleanup = ConcurrentHashMap.newKeySet();
 
     public WorldImportService(
             WorldRegistry registry,
@@ -57,6 +61,7 @@ public final class WorldImportService {
      * leave an unusable inbox artifact behind. Final import still revalidates the file.
      */
     public WorldImportArtifactStore.ImportInspection inspect(String artifactName) {
+        retryPendingCommittedArtifactCleanup();
         try {
             return imports.inspectArtifact(artifactName);
         } catch (IOException | RuntimeException exception) {
@@ -71,14 +76,17 @@ public final class WorldImportService {
 
     /** Deletes one reviewed upload that the builder explicitly chose not to import. */
     public void discard(String artifactName) {
+        retryPendingCommittedArtifactCleanup();
         try {
             imports.deleteArtifact(artifactName);
+            pendingCommittedArtifactCleanup.remove(artifactName);
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Could not discard uploaded world", exception);
         }
     }
 
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
+        retryPendingCommittedArtifactCleanup();
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
                 WorldLifecycle.ACTIVE
@@ -132,8 +140,10 @@ public final class WorldImportService {
 
             try {
                 imports.deleteArtifact(task.artifactName);
+                pendingCommittedArtifactCleanup.remove(task.artifactName);
             } catch (IOException cleanupFailure) {
                 task.artifactCleanupFailure = cleanupFailure;
+                pendingCommittedArtifactCleanup.add(task.artifactName);
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
@@ -152,7 +162,34 @@ public final class WorldImportService {
 
     public void finish(ImportTask task) {
         Objects.requireNonNull(task, "task");
+        if (task.completed && task.artifactCleanupFailure != null) {
+            if (retryCommittedArtifactCleanup(task.artifactName)) {
+                task.artifactCleanupFailure = null;
+            }
+        }
         task.close();
+    }
+
+    /** Best-effort retry used on request boundaries and shutdown; never turns a committed import into failure. */
+    public void retryPendingCommittedArtifactCleanup() {
+        for (String artifactName : Set.copyOf(pendingCommittedArtifactCleanup)) {
+            retryCommittedArtifactCleanup(artifactName);
+        }
+    }
+
+    int pendingCommittedArtifactCleanupCount() {
+        return pendingCommittedArtifactCleanup.size();
+    }
+
+    private boolean retryCommittedArtifactCleanup(String artifactName) {
+        if (!pendingCommittedArtifactCleanup.contains(artifactName)) return true;
+        try {
+            imports.deleteArtifact(artifactName);
+            pendingCommittedArtifactCleanup.remove(artifactName);
+            return true;
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private void ensureConversionRuntime() throws IOException {
