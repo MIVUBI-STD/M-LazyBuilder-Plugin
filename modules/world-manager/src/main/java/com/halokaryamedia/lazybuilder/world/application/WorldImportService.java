@@ -51,11 +51,20 @@ public final class WorldImportService {
         this.conversionJobs = Objects.requireNonNull(conversionJobs, "conversionJobs");
     }
 
-    /** Read-only bounded inspection used by the client review step before final import. */
+    /**
+     * Read-only bounded inspection used by the client review step before final import.
+     * Invalid/unreadable uploads are discarded immediately so a failed review cannot
+     * leave an unusable inbox artifact behind. Final import still revalidates the file.
+     */
     public WorldImportArtifactStore.ImportInspection inspect(String artifactName) {
         try {
             return imports.inspectArtifact(artifactName);
         } catch (IOException | RuntimeException exception) {
+            try {
+                imports.deleteArtifact(artifactName);
+            } catch (IOException cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
             throw new IllegalStateException("Could not inspect uploaded world", exception);
         }
     }
