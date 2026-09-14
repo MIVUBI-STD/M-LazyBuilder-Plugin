@@ -37,17 +37,19 @@ final class WorldSafetySettingsTest {
     }
 
     @Test
-    void supportsIncludeAndExcludeWorldScope() {
+    void supportsIncludeAndExcludeWorldScopeWithTrimmedCaseInsensitiveNames() {
         YamlConfiguration config = new YamlConfiguration();
         var section = config.createSection("world-safety");
-        section.set("scope.mode", "include");
-        section.set("scope.include-worlds", java.util.List.of("BuildWorld", "TestWorld"));
-        section.set("scope.exclude-worlds", java.util.List.of("TestWorld"));
+        section.set("scope.mode", " INCLUDE ");
+        section.set("scope.include-worlds", java.util.List.of(" BuildWorld ", "TestWorld", "   "));
+        section.set("scope.exclude-worlds", java.util.List.of(" testworld "));
 
         WorldSafetySettings settings = WorldSafetySettings.from(section);
 
         assertTrue(settings.appliesTo("buildworld"));
+        assertTrue(settings.appliesTo(" BuildWorld "));
         assertFalse(settings.appliesTo("testworld"));
         assertFalse(settings.appliesTo("survival"));
+        assertFalse(settings.includeWorlds().contains(""));
     }
 }

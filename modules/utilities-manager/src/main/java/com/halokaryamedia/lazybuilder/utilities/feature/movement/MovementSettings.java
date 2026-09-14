@@ -25,9 +25,4 @@ public record MovementSettings(
                 abilities.getBoolean("night-vision", true)
         );
     }
-
-    /** Source-compatible accessor while existing runtime code migrates to the simpler config name. */
-    public boolean advancedFly() {
-        return fly;
-    }
 }

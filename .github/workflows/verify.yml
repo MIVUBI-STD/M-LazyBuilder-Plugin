@@ -60,6 +60,13 @@ jobs:
           cache: maven
       - name: Compile and test Utilities-Manager independently
         run: mvn --batch-mode --no-transfer-progress -pl modules/utilities-manager -am verify
+      - name: Upload tested Utilities-Manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: LazyBuilder-Utilities-${{ github.sha }}
+          path: modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 7
 
   paper:
     runs-on: ubuntu-latest

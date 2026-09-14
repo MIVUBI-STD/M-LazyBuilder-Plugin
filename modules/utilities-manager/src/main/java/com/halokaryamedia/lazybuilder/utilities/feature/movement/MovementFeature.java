@@ -53,7 +53,6 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
     @Override
     public void enable() {
         if (enabled) return;
-        bindCommands();
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         enabled = true;
     }
@@ -131,7 +130,7 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
     }
 
     private boolean handleFly(Player player, String[] args) {
-        if (!settings.advancedFly()) {
+        if (!settings.fly()) {
             player.sendMessage("Fly is disabled in Utilities config.");
             return true;
         }
@@ -155,8 +154,8 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
                 player.sendMessage("Usage: /fly [speed 0.1-10]");
                 return true;
             }
-            if (multiplier < 0.1D || multiplier > 10.0D) {
-                player.sendMessage("Fly speed must be between 0.1 and 10.");
+            if (!isValidFlyMultiplier(multiplier)) {
+                player.sendMessage("Fly speed must be a finite number between 0.1 and 10.");
                 return true;
             }
             if (!state.flyActive) {
@@ -353,7 +352,11 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         }
     }
 
-    private void bindCommands() {
+    /**
+     * Binds all familiar movement commands even when the feature is disabled by config.
+     * This keeps command ownership deterministic and lets the executor explain the disabled state.
+     */
+    public void bindCommands() {
         List<PluginCommand> resolved = new ArrayList<>();
         for (String commandName : COMMANDS) {
             PluginCommand command = plugin.getCommand(commandName);
@@ -366,6 +369,10 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
             command.setExecutor(this);
             command.setTabCompleter(this);
         }
+    }
+
+    static boolean isValidFlyMultiplier(double multiplier) {
+        return Double.isFinite(multiplier) && multiplier >= 0.1D && multiplier <= 10.0D;
     }
 
     static float toFlySpeed(double multiplier) {

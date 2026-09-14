@@ -75,7 +75,10 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
             if (plugin.hasWorldEdit()) options.add("worldedit");
             return filter(options, args[1]);
         }
-        if (args.length == 3 && args[0].equalsIgnoreCase("help") && args[1].equalsIgnoreCase("worldedit") && plugin.hasWorldEdit()) {
+        if (args.length == 3
+                && args[0].equalsIgnoreCase("help")
+                && args[1].equalsIgnoreCase("worldedit")
+                && plugin.hasWorldEdit()) {
             return filter(List.of("navigation", "selection", "edit", "clipboard", "history"), args[2]);
         }
         return List.of();
@@ -85,13 +88,13 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.text("LazyBuilder Utilities"));
         if (sender instanceof Player player) {
             Component quick = Component.text("Quick: ")
-                    .append(quickLink(player, "Fly", "/fly", "Toggle or set builder flight", canUseFly(player)))
+                    .append(quickLink("Fly", "/fly", "Toggle or set builder flight", canUseFly(player)))
                     .append(Component.space())
-                    .append(quickLink(player, "Noclip", "/noclip", "Temporary spectator-based noclip", canUseNoclip(player)))
+                    .append(quickLink("Noclip", "/noclip", "Temporary spectator-based noclip", canUseNoclip(player)))
                     .append(Component.space())
-                    .append(quickLink(player, "NV", "/nv", "Toggle Night Vision", canUseNightVision(player)))
+                    .append(quickLink("NV", "/nv", "Toggle Night Vision", canUseNightVision(player)))
                     .append(Component.space())
-                    .append(quickLink(player, "Creative", "/gmc", "Switch to Creative", canUseGamemode(player)));
+                    .append(quickLink("Creative", "/gmc", "Switch to Creative", canUseGamemode(player)));
             player.sendMessage(quick);
 
             Component categories = menuLink("[ Movement ]", "/lb help movement", "Movement shortcuts")
@@ -165,8 +168,16 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
 
         BuildHelpersSettings settings = plugin.buildHelpersSettings();
         sender.sendMessage("Iron Door: " + onOff(settings.ironDoorToggle()) + " - right-click to toggle.");
-        sender.sendMessage("Double Slab: " + onOff(settings.doubleSlabBreak()) + " - sneak + break removes one layer (bottom remains).");
-        sender.sendMessage("Glazed Terracotta: " + onOff(settings.glazedTerracottaRotate()) + " - sneak + right-click rotates.");
+
+        String slabAction = settings.requireSneakForSlab()
+                ? "sneak + break removes one layer (bottom remains)."
+                : "break a double slab to remove one layer (bottom remains).";
+        sender.sendMessage("Double Slab: " + onOff(settings.doubleSlabBreak()) + " - " + slabAction);
+
+        String rotateAction = settings.requireSneakForRotate()
+                ? "sneak + right-click rotates."
+                : "right-click rotates.";
+        sender.sendMessage("Glazed Terracotta: " + onOff(settings.glazedTerracottaRotate()) + " - " + rotateAction);
     }
 
     private void showWorldHelp(CommandSender sender) {
@@ -178,7 +189,7 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         WorldSafetySettings settings = plugin.worldSafetySettings();
         sender.sendMessage("Explosions: " + onOff(settings.explosions()) + " | Leaves: " + onOff(settings.leavesDecay()));
         sender.sendMessage("Farmland: " + onOff(settings.farmlandTrample()) + " | Dragon Egg: " + onOff(settings.dragonEggTeleport()));
-        sender.sendMessage("Scope: " + scopeSummary(settings));
+        sender.sendMessage("Scope: " + scopeSummary(sender, settings));
     }
 
     private void showMinecraftHelp(CommandSender sender) {
@@ -191,7 +202,7 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
 
     private void showWorldEditHelp(CommandSender sender, String page) {
         if (!plugin.hasWorldEdit()) {
-            sender.sendMessage("WorldEdit/FAWE is not currently detected.");
+            sender.sendMessage("WorldEdit/FAWE is not currently enabled.");
             return;
         }
         switch (page) {
@@ -235,7 +246,12 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         showFeatureStatus(sender, "Movement", MovementFeature.ID);
         showFeatureStatus(sender, "Build Helpers", BuildHelpersFeature.ID);
         showFeatureStatus(sender, "World Safety", WorldSafetyFeature.ID);
-        sender.sendMessage("Commands: " + plugin.boundCommandCount() + "/" + plugin.canonicalCommandCount() + " bound (+ /nv alias)");
+        sender.sendMessage("Commands: " + plugin.readyCommandCount() + "/" + plugin.canonicalCommandCount() + " ready (+ /nv alias)");
+
+        List<String> shadowed = plugin.shadowedCommands();
+        if (!shadowed.isEmpty()) {
+            sender.sendMessage("Command conflicts: " + String.join(", ", shadowed) + " (another plugin may own the short label)");
+        }
         sender.sendMessage("Version: " + plugin.getPluginMeta().getVersion());
     }
 
@@ -279,13 +295,14 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         return enabled ? "ON" : "OFF";
     }
 
-    private String scopeSummary(WorldSafetySettings settings) {
+    private String scopeSummary(CommandSender sender, WorldSafetySettings settings) {
+        boolean detailed = sender.hasPermission("lazybuilder.utilities.status");
         if (settings.scopeMode().equals("include")) {
-            return settings.includeWorlds().isEmpty()
-                    ? "included worlds: none"
-                    : "included worlds: " + String.join(", ", settings.includeWorlds());
+            if (!detailed) return "selected worlds";
+            return "included worlds: " + String.join(", ", settings.includeWorlds());
         }
         if (!settings.excludeWorlds().isEmpty()) {
+            if (!detailed) return "all worlds with exclusions";
             return "all worlds except: " + String.join(", ", settings.excludeWorlds());
         }
         return "all worlds";
@@ -297,8 +314,11 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         return false;
     }
 
-    private Component quickLink(Player player, String label, String command, String hover, boolean available) {
-        if (!available) return Component.text("[ " + label + " ]").hoverEvent(HoverEvent.showText(Component.text("Not available for your current role/config")));
+    private Component quickLink(String label, String command, String hover, boolean available) {
+        if (!available) {
+            return Component.text("[ " + label + " ]")
+                    .hoverEvent(HoverEvent.showText(Component.text("Not available for your current role/config")));
+        }
         return menuLink("[ " + label + " ]", command, hover);
     }
 

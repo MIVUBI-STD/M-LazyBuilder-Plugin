@@ -16,6 +16,17 @@ final class MovementPolicyTest {
     }
 
     @Test
+    void rejectsNonFiniteAndOutOfRangeFlyMultipliers() {
+        assertTrue(MovementFeature.isValidFlyMultiplier(0.1D));
+        assertTrue(MovementFeature.isValidFlyMultiplier(10.0D));
+        assertFalse(MovementFeature.isValidFlyMultiplier(Double.NaN));
+        assertFalse(MovementFeature.isValidFlyMultiplier(Double.POSITIVE_INFINITY));
+        assertFalse(MovementFeature.isValidFlyMultiplier(Double.NEGATIVE_INFINITY));
+        assertFalse(MovementFeature.isValidFlyMultiplier(0.0D));
+        assertFalse(MovementFeature.isValidFlyMultiplier(10.1D));
+    }
+
+    @Test
     void doesNotCreateFakeNoclipSessionForSpectator() {
         assertFalse(MovementFeature.shouldCreateNoclipSession(GameMode.SPECTATOR));
         assertTrue(MovementFeature.shouldCreateNoclipSession(GameMode.CREATIVE));

@@ -25,14 +25,14 @@ public record WorldSafetySettings(
                 section.getBoolean("protections.leaves-decay", true),
                 section.getBoolean("protections.farmland-trample", true),
                 section.getBoolean("protections.dragon-egg-teleport", true),
-                Objects.requireNonNullElse(section.getString("scope.mode"), "all").toLowerCase(Locale.ROOT),
+                Objects.requireNonNullElse(section.getString("scope.mode"), "all").trim().toLowerCase(Locale.ROOT),
                 normalize(section.getStringList("scope.include-worlds")),
                 normalize(section.getStringList("scope.exclude-worlds"))
         );
     }
 
     public boolean appliesTo(String worldName) {
-        String normalized = worldName.toLowerCase(Locale.ROOT);
+        String normalized = normalizeName(worldName);
         if (excludeWorlds.contains(normalized)) return false;
         if (scopeMode.equals("include")) return includeWorlds.contains(normalized);
         return true;
@@ -40,7 +40,13 @@ public record WorldSafetySettings(
 
     private static Set<String> normalize(List<String> values) {
         return values.stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
+                .filter(Objects::nonNull)
+                .map(WorldSafetySettings::normalizeName)
+                .filter(value -> !value.isEmpty())
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static String normalizeName(String value) {
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 }

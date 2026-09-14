@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,5 +26,10 @@ final class PluginCommandContractTest {
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.fly"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.build"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.admin.children.lazybuilder.utilities.reload"));
+
+        String version = pluginYml.getString("version");
+        assertNotNull(version);
+        assertFalse(version.isBlank());
+        assertFalse(version.contains("${"), "plugin.yml version must be Maven-filtered");
     }
 }
