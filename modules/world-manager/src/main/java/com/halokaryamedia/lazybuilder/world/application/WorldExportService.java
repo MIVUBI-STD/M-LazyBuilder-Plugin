@@ -202,10 +202,9 @@ public final class WorldExportService {
         if (failure != null) throw failure;
     }
 
+    /** Cancel uses the same guarded source restoration and cleanup contract as normal completion. */
     public void abandon(ExportTask task) {
-        Objects.requireNonNull(task, "task");
-        Path abandonedSnapshot = task.closeAndDetachIdleSnapshot();
-        cleanupWorkspace(abandonedSnapshot);
+        finish(Objects.requireNonNull(task, "task"));
     }
 
     private void requireQuiescentSnapshotSource(ExportTask task) {
