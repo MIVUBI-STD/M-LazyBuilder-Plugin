@@ -24,8 +24,12 @@ client/
 
 Cross-manager architecture verification is documented in `docs/04-system/client-cross-manager-audit-lock.md`.
 
-The post-C4 builder review is documented in `docs/04-system/build-utility-overlap-audit.md`. Its first-pass decision is intentionally conservative: do not create a generic Builder Utilities tool layer and do not duplicate Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, or other specialist editing workflows. Any future builder-facing feature must first demonstrate a narrow non-tool workflow gap and fit one of the existing Manager ownership boundaries.
+The post-C4 builder review is documented in `docs/04-system/build-utility-overlap-audit.md`. Its final decision is conservative: do not create a generic Builder Utilities tool layer and do not duplicate Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, or other specialist editing workflows.
 
-Session/project-context review is documented in `docs/04-system/session-project-context-audit.md`. Map Manager already has server-authoritative current managed-world context through the existing map protocol/controller path, so no additional Session Manager, Project Context service, persistent project identity, or permanent world HUD should be introduced.
+The completed non-tool reviews are:
 
-Review/collaboration review is documented in `docs/04-system/review-collaboration-audit.md`. The only approved narrow collaboration gap is an on-demand Map Manager `Review Reference`: current managed-world identity plus the player's current block location and dimension, copied as portable text. LazyBuilder should not become an issue tracker, notes database, review-marker store, live collaboration service, or media-sharing platform.
+- `docs/04-system/session-project-context-audit.md` — reuse existing authoritative managed-world context; no Session/Project Manager or permanent context HUD;
+- `docs/04-system/review-collaboration-audit.md` — the only approved narrow collaboration candidate is on-demand `Copy Review Reference` in Map Manager;
+- `docs/04-system/reliability-recovery-audit.md` — no Recovery Manager, duplicate autosave/backup/snapshot/rollback, retry daemon, or resumable-transfer subsystem; keep failure context actionable and operation-local.
+
+Any future builder-facing feature must begin from a concrete workflow problem and pass a fresh ownership/overlap review. The existing three Managers remain the complete LazyBuilder client architecture.
