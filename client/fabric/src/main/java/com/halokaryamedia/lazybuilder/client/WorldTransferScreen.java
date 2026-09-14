@@ -182,9 +182,9 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private void initImport(int contentLeft, int contentWidth) {
-        int y = advanced ? 192 : 174;
+        int y = advanced ? 210 : 188;
         if (advanced) {
-            importName = new TextFieldWidget(textRenderer, contentLeft, 150, contentWidth, 24, Text.literal("World Name"));
+            importName = new TextFieldWidget(textRenderer, contentLeft, 144, contentWidth, 24, Text.literal("World Name"));
             importName.setText(importDisplayName);
             importName.setPlaceholder(Text.literal("Optional — uses detected file name"));
             importName.setMaxLength(96);
@@ -412,20 +412,23 @@ public final class WorldTransferScreen extends Screen {
         int cardX = left + 22;
         int cardY = 106;
         int cardWidth = panelWidth - 44;
-        LbUi.panel(context, cardX, cardY, cardWidth, advanced ? 76 : 54);
+        int cardHeight = advanced ? 92 : 70;
+        LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
         context.drawTextWithShadow(textRenderer, Text.literal("IMPORT WORLD"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
         if (advanced) {
             context.drawTextWithShadow(textRenderer, Text.literal("World name"), cardX + 12, cardY + 28, LbUi.TEXT_SECONDARY);
             if (importName != null) LbUi.field(context, importName, validation != null);
             context.drawTextWithShadow(textRenderer, Text.literal("Source edition and version are detected automatically."),
-                    cardX + 12, cardY + 61, LbUi.TEXT_MUTED);
+                    cardX + 12, cardY + 62, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal("Managed target  ·  Java Edition 1.21.4"),
+                    cardX + 12, cardY + 77, LbUi.TEXT_PRIMARY);
         } else {
             context.drawTextWithShadow(textRenderer,
                     Text.literal("Choose a .zip or .mcworld. Detection is automatic."),
-                    cardX + 12, cardY + 28, LbUi.TEXT_SECONDARY);
+                    cardX + 12, cardY + 30, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("Managed target  ·  Java Edition 1.21.4"),
+                    cardX + 12, cardY + 49, LbUi.TEXT_PRIMARY);
         }
-        context.drawTextWithShadow(textRenderer, Text.literal("Managed target  ·  Java Edition 1.21.4"),
-                left + 30, advanced ? 242 : 222, LbUi.TEXT_PRIMARY);
     }
 
     private void renderStatus(DrawContext context, int left, int panelWidth, int panelHeight) {
