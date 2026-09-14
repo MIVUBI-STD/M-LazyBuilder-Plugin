@@ -24,7 +24,6 @@ def replace_text(path: str, pattern: str, replacement: str, expected: int = 1) -
         print(f"updated {path}")
 
 
-# Maven parent/module versions. All LazyBuilder Java artifacts intentionally move together.
 replace_text(
     "pom.xml",
     r"(?s:(<groupId>com\.halokaryamedia</groupId>\s*<artifactId>lazybuilder-parent</artifactId>\s*<version>)[^<]+(</version>))",
@@ -48,14 +47,13 @@ for pom, artifact_id in child_poms.items():
         rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
     )
 
-# Map Manager Fabric version.
-replace_text(
-    "client/map-manager/gradle.properties",
-    r"^mod_version=[^\r\n]*$",
-    f"mod_version={SNAPSHOT_VERSION}",
-)
+for manager in ("map-manager", "utility-manager"):
+    replace_text(
+        f"client/{manager}/gradle.properties",
+        r"^mod_version=[^\r\n]*$",
+        f"mod_version={SNAPSHOT_VERSION}",
+    )
 
-# Rust/Tauri runtime constants and package metadata.
 replace_text(
     "EngineData/Frontend/RustApp/src-tauri/src/engine/core_modules.rs",
     r'^pub const CORE_VERSION: &str = "[^"]+";$',

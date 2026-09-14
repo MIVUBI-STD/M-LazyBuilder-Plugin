@@ -68,9 +68,10 @@ expect(
     PRODUCT_VERSION,
 )
 
-gradle_properties = (ROOT / "client/map-manager/gradle.properties").read_text(encoding="utf-8")
-match = re.search(r"(?m)^mod_version=(.+)$", gradle_properties)
-expect("Map Manager mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
+for manager in ("map-manager", "utility-manager"):
+    props = (ROOT / f"client/{manager}/gradle.properties").read_text(encoding="utf-8")
+    match = re.search(r"(?m)^mod_version=(.+)$", props)
+    expect(f"{manager} mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
 
 core_modules = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/core_modules.rs").read_text(encoding="utf-8")
 match = re.search(r'pub const CORE_VERSION: &str = "([^"]+)";', core_modules)
@@ -91,11 +92,15 @@ java_runtime = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/java_ru
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^"]+)";', java_runtime)
 expect("Managed Java user-agent", match.group(1) if match else None, PRODUCT_VERSION)
 
-fabric_build = (ROOT / "client/map-manager/build.gradle").read_text(encoding="utf-8")
-if "../../modules/world-manager/src/main/java" in fabric_build:
+map_build = (ROOT / "client/map-manager/build.gradle").read_text(encoding="utf-8")
+if "../../modules/world-manager/src/main/java" in map_build:
     errors.append("Map Manager build still compiles source directly from World-Manager")
-if "../../shared/protocol/src/main/java" not in fabric_build:
+if "../../shared/protocol/src/main/java" not in map_build:
     errors.append("Map Manager build is not wired to shared/protocol")
+
+utility_build = (ROOT / "client/utility-manager/build.gradle").read_text(encoding="utf-8")
+if "map-manager" in utility_build or "../../shared/protocol" in utility_build:
+    errors.append("Utility Manager scaffold has an unintended Map Manager/shared protocol build dependency")
 
 legacy_protocol_paths = (
     "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
