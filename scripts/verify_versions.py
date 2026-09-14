@@ -14,6 +14,27 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 errors: list[str] = []
 
+CLIENT_MANAGERS = {
+    "map-manager": {
+        "mod_id": "lazybuilder_map_manager",
+        "name": "LazyBuilder Map Manager",
+        "artifact": "lazybuilder-map-manager",
+        "package": "com.halokaryamedia.lazybuilder.client.",
+    },
+    "utility-manager": {
+        "mod_id": "lazybuilder_utility_manager",
+        "name": "LazyBuilder Utility Manager",
+        "artifact": "lazybuilder-utility-manager",
+        "package": "com.halokaryamedia.lazybuilder.utility.",
+    },
+    "performance-manager": {
+        "mod_id": "lazybuilder_performance_manager",
+        "name": "LazyBuilder Performance Manager",
+        "artifact": "lazybuilder-performance-manager",
+        "package": "com.halokaryamedia.lazybuilder.performance.",
+    },
+}
+
 
 def expect(label: str, actual: str | None, expected: str) -> None:
     if actual != expected:
@@ -28,6 +49,11 @@ def maven_versions(path: str) -> tuple[str | None, str | None]:
         version.text.strip() if version is not None and version.text else None,
         parent_version.text.strip() if parent_version is not None and parent_version.text else None,
     )
+
+
+def gradle_property(text: str, key: str) -> str | None:
+    match = re.search(rf"(?m)^{re.escape(key)}=(.+)$", text)
+    return match.group(1).strip() if match else None
 
 
 root_version, root_parent = maven_versions("pom.xml")
@@ -68,10 +94,51 @@ expect(
     PRODUCT_VERSION,
 )
 
-for manager in ("map-manager", "utility-manager", "performance-manager"):
-    props = (ROOT / f"client/{manager}/gradle.properties").read_text(encoding="utf-8")
-    match = re.search(r"(?m)^mod_version=(.+)$", props)
-    expect(f"{manager} mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
+# Client manager identity and isolation contract.
+for manager, contract in CLIENT_MANAGERS.items():
+    manager_root = ROOT / "client" / manager
+    props_text = (manager_root / "gradle.properties").read_text(encoding="utf-8")
+    expect(f"{manager} mod_version", gradle_property(props_text, "mod_version"), SNAPSHOT_VERSION)
+    expect(f"{manager} artifact", gradle_property(props_text, "archives_base_name"), contract["artifact"])
+
+    metadata_files = list((manager_root / "src/main/resources").glob("fabric.mod.json"))
+    if len(metadata_files) != 1:
+        errors.append(f"{manager}: expected exactly one fabric.mod.json, found {len(metadata_files)}")
+    else:
+        metadata = json.loads(metadata_files[0].read_text(encoding="utf-8"))
+        expect(f"{manager} Fabric id", metadata.get("id"), contract["mod_id"])
+        expect(f"{manager} display name", metadata.get("name"), contract["name"])
+        if metadata.get("environment") != "client":
+            errors.append(f"{manager}: Fabric environment must remain client-only")
+
+        depends = metadata.get("depends", {})
+        for other_manager, other_contract in CLIENT_MANAGERS.items():
+            if other_manager != manager and other_contract["mod_id"] in depends:
+                errors.append(f"{manager}: must not depend on {other_manager} Fabric mod")
+
+    build_text = (manager_root / "build.gradle").read_text(encoding="utf-8")
+    for other_manager, other_contract in CLIENT_MANAGERS.items():
+        if other_manager == manager:
+            continue
+        forbidden_tokens = (
+            f"client/{other_manager}",
+            f"../{other_manager}",
+            other_contract["artifact"],
+            other_contract["mod_id"],
+        )
+        if any(token in build_text for token in forbidden_tokens):
+            errors.append(f"{manager}: Gradle build references {other_manager}")
+
+    source_root = manager_root / "src/main/java"
+    if source_root.is_dir():
+        for java_file in source_root.rglob("*.java"):
+            source = java_file.read_text(encoding="utf-8")
+            for other_manager, other_contract in CLIENT_MANAGERS.items():
+                if other_manager == manager:
+                    continue
+                if other_contract["package"] in source:
+                    relative = java_file.relative_to(ROOT)
+                    errors.append(f"{manager}: {relative} references {other_manager} implementation package")
 
 core_modules = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/core_modules.rs").read_text(encoding="utf-8")
 match = re.search(r'pub const CORE_VERSION: &str = "([^"]+)";', core_modules)
@@ -100,8 +167,8 @@ if "../../shared/protocol/src/main/java" not in map_build:
 
 for manager in ("utility-manager", "performance-manager"):
     build = (ROOT / f"client/{manager}/build.gradle").read_text(encoding="utf-8")
-    if "map-manager" in build or "../../shared/protocol" in build:
-        errors.append(f"{manager} has an unintended Map Manager/shared protocol build dependency")
+    if "../../shared/protocol" in build:
+        errors.append(f"{manager} has an unintended shared World-Manager protocol dependency")
 
 legacy_protocol_paths = (
     "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
