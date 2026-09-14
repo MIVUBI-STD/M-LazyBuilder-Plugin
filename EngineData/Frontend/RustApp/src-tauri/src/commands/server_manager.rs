@@ -1,4 +1,4 @@
-use crate::engine::{java_runtime, paper_performance, runtime_updates, startup_guard, workspace_registry};
+use crate::engine::{java_runtime, paper_performance, runtime_updates, server_process_guard, startup_guard, workspace_registry};
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::{AppHandle, Manager, State};
 
@@ -42,6 +42,9 @@ pub fn server_recover_detached(state: State<'_, ServerManagerState>) -> Result<D
 /// JAR to self-heal at start time instead of being rejected before the sync owner
 /// gets a chance to repair it.
 fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
+    let active = workspace_registry::current()?
+        .ok_or_else(|| "No LazyBuilder server workspace is active.".to_string())?;
+    server_process_guard::ensure_no_running_paper_except(Some(&active.id))?;
     ensure_base_provisioned()?;
     ensure_bundled_core(app)?;
     ensure_provisioned()?;
