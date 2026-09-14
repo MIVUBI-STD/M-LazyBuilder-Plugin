@@ -20,7 +20,7 @@ class LocalWorldFileRepositoryTest {
     Path tempDir;
 
     @Test
-    void cloneProfileRemovesIdentityAndPlayerLocalData() throws Exception {
+    void duplicateProfileRemovesIdentityAndPlayerLocalData() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");
         Path source = worldRoot.resolve("Build");
@@ -33,7 +33,7 @@ class LocalWorldFileRepositoryTest {
         Files.writeString(source.resolve("playerdata/player.dat"), "player");
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
-        Path staged = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.CLONE);
+        Path staged = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
 
         assertTrue(Files.exists(staged.resolve("level.dat")));
         assertTrue(Files.exists(staged.resolve("region/r.0.0.mca")));
@@ -67,7 +67,7 @@ class LocalWorldFileRepositoryTest {
         Files.writeString(source.resolve("level.dat"), "level");
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
-        Path staged = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.CLONE);
+        Path staged = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
         repository.publishStagedWorld(staged, "BuildCopy");
         assertTrue(Files.exists(worldRoot.resolve("BuildCopy/level.dat")));
 
