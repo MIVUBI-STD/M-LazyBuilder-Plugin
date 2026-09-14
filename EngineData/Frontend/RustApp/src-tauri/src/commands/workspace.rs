@@ -1,5 +1,5 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{adoption, java_runtime, provisioning, runtime_updates, workspace_registry};
+use crate::engine::{adoption, provisioning, runtime_updates, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
@@ -21,7 +21,7 @@ pub fn workspace_state() -> Result<WorkspaceState, String> {
 
 #[tauri::command]
 pub fn workspace_provisioning_status() -> Result<ProvisioningStatus, String> {
-    resolved_provisioning_status()
+    workspace_registry::provisioning_status()
 }
 
 #[tauri::command]
@@ -48,7 +48,7 @@ pub fn workspace_update_paper(
 #[tauri::command]
 pub fn workspace_accept_eula() -> Result<ProvisioningStatus, String> {
     workspace_registry::accept_eula()?;
-    resolved_provisioning_status()
+    workspace_registry::provisioning_status()
 }
 
 #[tauri::command]
@@ -105,21 +105,6 @@ pub fn workspace_activate(
 pub fn workspace_close(state: State<'_, ServerManagerState>) -> Result<(), String> {
     ensure_switch_allowed(&state)?;
     workspace_registry::deactivate()
-}
-
-fn resolved_provisioning_status() -> Result<ProvisioningStatus, String> {
-    let mut status = workspace_registry::provisioning_status()?;
-    status.java_ready = java_runtime::managed_java_path()?.is_file();
-    status.ready = status.workspace_created
-        && status.java_ready
-        && status.paper_ready
-        && status.core_modules_ready
-        && status.config_ready
-        && status.eula_accepted;
-    if !status.java_ready {
-        status.next_step = "Provision managed Java 21".into();
-    }
-    Ok(status)
 }
 
 fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
