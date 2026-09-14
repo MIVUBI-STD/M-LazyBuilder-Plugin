@@ -55,8 +55,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
     /** One inspected upload is owned by each player until import succeeds or the review is discarded. */
     private final Map<UUID, String> reviewedImportArtifacts = new ConcurrentHashMap<>();
-    /** Inspection completion is not reconnect-resumable: an offline owner causes the uploaded review artifact to be discarded. */
-    private final Set<UUID> inspectionInFlight = ConcurrentHashMap.newKeySet();
+    /** Exact upload currently being inspected for each player. */
+    private final Map<UUID, String> inspectionInFlight = new ConcurrentHashMap<>();
+    /** Once a player disconnects during inspection, that review stays abandoned even if they reconnect quickly. */
+    private final Set<UUID> abandonedInspectionOwners = ConcurrentHashMap.newKeySet();
     /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
     private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
@@ -102,6 +104,17 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         HandlerList.unregisterAll(this);
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
+
+        abandonedInspectionOwners.addAll(inspectionInFlight.keySet());
+        for (Map.Entry<UUID, String> entry : Map.copyOf(reviewedImportArtifacts).entrySet()) {
+            if (!heavyInFlight.contains(entry.getKey())) {
+                discardReviewedArtifact(entry.getKey(), entry.getValue());
+            }
+        }
+        for (Map.Entry<UUID, String> entry : Map.copyOf(inspectionInFlight).entrySet()) {
+            discardInspectionResult(entry.getKey(), entry.getValue());
+        }
+
         started = false;
         heavyInFlight.clear();
         pendingHeavyCompletion.clear();
@@ -116,7 +129,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!started || stopping) return;
         UUID owner = event.getPlayer().getUniqueId();
         formatWaiters.remove(owner);
-        if (inspectionInFlight.contains(owner)) return;
+        if (inspectionInFlight.containsKey(owner)) {
+            abandonedInspectionOwners.add(owner);
+            return;
+        }
         String reviewed = reviewedImportArtifacts.get(owner);
         if (reviewed != null && !heavyInFlight.contains(owner)) {
             discardReviewedArtifact(owner, reviewed);
@@ -316,7 +332,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (previous != null && !previous.equals(request.artifactName())) {
             discardReviewedArtifact(owner, previous);
         }
-        inspectionInFlight.add(owner);
+        abandonedInspectionOwners.remove(owner);
+        inspectionInFlight.put(owner, request.artifactName());
         scheduleImportInspection(player, request.artifactName());
     }
 
@@ -333,7 +350,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 }
 
                 if (stopping || !started) {
-                    inspectionInFlight.remove(owner);
+                    if (result != null) discardInspectionResult(owner, result.artifactName());
+                    else discardInspectionResult(owner, artifactName);
+                    abandonedInspectionOwners.remove(owner);
+                    inspectionInFlight.remove(owner, artifactName);
                     heavyInFlight.remove(owner);
                     return;
                 }
@@ -342,14 +362,19 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 Exception finalFailure = failure;
                 try {
                     plugin.getServer().getScheduler().runTask(plugin,
-                            () -> completeImportInspection(owner, finalResult, finalFailure));
+                            () -> completeImportInspection(owner, artifactName, finalResult, finalFailure));
                 } catch (RuntimeException scheduleFailure) {
-                    inspectionInFlight.remove(owner);
+                    if (finalResult != null) discardInspectionResult(owner, finalResult.artifactName());
+                    else discardInspectionResult(owner, artifactName);
+                    abandonedInspectionOwners.remove(owner);
+                    inspectionInFlight.remove(owner, artifactName);
                     heavyInFlight.remove(owner);
                 }
             });
         } catch (RuntimeException scheduleFailure) {
-            inspectionInFlight.remove(owner);
+            discardInspectionResult(owner, artifactName);
+            abandonedInspectionOwners.remove(owner);
+            inspectionInFlight.remove(owner, artifactName);
             heavyInFlight.remove(owner);
             if (started && !stopping && player.isOnline()) {
                 send(player, WorldControlWireProtocol.error("World Manager is shutting down"));
@@ -359,20 +384,26 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void completeImportInspection(
             UUID owner,
+            String artifactName,
             WorldImportArtifactStore.ImportInspection result,
             Exception failure
     ) {
         try {
-            if (stopping || !started) return;
+            boolean abandoned = abandonedInspectionOwners.remove(owner);
+            if (stopping || !started) {
+                if (result != null) discardInspectionResult(owner, result.artifactName());
+                else discardInspectionResult(owner, artifactName);
+                return;
+            }
             Player online = plugin.getServer().getPlayer(owner);
             if (failure != null) {
-                if (online != null && online.isOnline()) {
+                if (!abandoned && online != null && online.isOnline()) {
                     send(online, WorldControlWireProtocol.error(failure.getMessage()));
                 }
                 return;
             }
             if (result == null) return;
-            if (online == null || !online.isOnline()) {
+            if (abandoned || online == null || !online.isOnline()) {
                 discardInspectionResult(owner, result.artifactName());
                 return;
             }
@@ -380,7 +411,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             send(online, encode(new WorldControlWireProtocol.ImportInspection(
                     result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName())));
         } finally {
-            inspectionInFlight.remove(owner);
+            inspectionInFlight.remove(owner, artifactName);
+            abandonedInspectionOwners.remove(owner);
             heavyInFlight.remove(owner);
         }
     }
