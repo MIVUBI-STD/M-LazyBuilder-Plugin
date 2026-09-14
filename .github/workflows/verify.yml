@@ -49,6 +49,18 @@ jobs:
       - name: Test Rust/Tauri backend
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
+  utilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile and test Utilities-Manager independently
+        run: mvn --batch-mode --no-transfer-progress -pl modules/utilities-manager -am verify
+
   paper:
     runs-on: ubuntu-latest
     steps:
