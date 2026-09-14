@@ -1,6 +1,7 @@
 param(
     [switch]$SkipTests,
-    [switch]$AllowMissingCore
+    [switch]$AllowMissingCore,
+    [switch]$UpdateInstalled
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,9 +29,14 @@ $CoreDir = Join-Path $AppRoot 'src-tauri\resources\core'
 $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
+$NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
 Write-Host ''
-Write-Host 'LazyBuilder Launcher - Local Windows Build' -ForegroundColor Cyan
+if ($UpdateInstalled) {
+    Write-Host 'LazyBuilder Launcher - Clean Local Update' -ForegroundColor Cyan
+} else {
+    Write-Host 'LazyBuilder Launcher - Local Windows Build' -ForegroundColor Cyan
+}
 Write-Host "Repository: $RepoRoot"
 Write-Host "Launcher:   $AppRoot"
 Write-Host ''
@@ -44,9 +50,28 @@ if ($MissingCore.Count -gt 0) {
     if (-not $AllowMissingCore) {
         throw "Runtime-ready Launcher build blocked: matching core JARs are missing from src-tauri/resources/core ($MissingText). Stage the tested core JARs first. Use -AllowMissingCore only for an explicit compile-only Launcher check."
     }
+    if ($UpdateInstalled) {
+        throw 'Installed Launcher update is blocked in compile-only mode because the installed app must remain runtime-ready.'
+    }
     Write-Warning "Compile-only mode: core JARs are missing ($MissingText)."
     Write-Warning 'The produced app must not be used to validate Prepare Server or a fresh server workflow.'
     Write-Host ''
+}
+
+if ($UpdateInstalled) {
+    $Running = @(Get-Process -Name 'lazybuilder' -ErrorAction SilentlyContinue)
+    if ($Running.Count -gt 0) {
+        throw 'LazyBuilder is currently running. Close the Launcher first, then run UPDATE-LAUNCHER.cmd again.'
+    }
+}
+
+# Every build starts from a clean handoff/output surface. Old local installers must
+# never accumulate and be mistaken for the current test build.
+if (Test-Path $PublishDir) {
+    Remove-Item $PublishDir -Recurse -Force
+}
+if (Test-Path $NsisDir) {
+    Get-ChildItem $NsisDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
 Push-Location $AppRoot
@@ -68,36 +93,56 @@ try {
         Write-Host '[4/5] Rust/Tauri tests skipped by request.' -ForegroundColor Yellow
     }
 
-    Write-Host '[5/5] Building Windows Launcher and installer...' -ForegroundColor Cyan
-    # Tauri owns the production frontend build and Windows NSIS packaging.
+    Write-Host '[5/5] Building Windows Launcher package...' -ForegroundColor Cyan
+    # Tauri creates an NSIS package because that is the safe owner for replacing the
+    # installed executable and bundled resources. Update mode treats it as a temporary
+    # transaction artifact and deletes it immediately after a successful in-place update.
     npx tauri build
 
     $Exe = Join-Path $AppRoot 'src-tauri\target\release\lazybuilder.exe'
-    $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
     if (-not (Test-Path $Exe)) {
         throw 'Tauri reported success but lazybuilder.exe was not found in the expected release directory.'
     }
 
     $Installers = @()
     if (Test-Path $NsisDir) {
-        $Installers = @(Get-ChildItem $NsisDir -Filter '*-setup.exe' | Sort-Object LastWriteTime -Descending)
+        $Installers = @(Get-ChildItem $NsisDir -Filter '*-setup.exe' -File | Sort-Object LastWriteTime -Descending)
     }
-    if ($Installers.Count -eq 0) {
-        throw 'Tauri reported success but no NSIS installer was found in the expected bundle directory.'
+    if ($Installers.Count -ne 1) {
+        throw "Expected exactly one freshly built NSIS installer, found $($Installers.Count)."
+    }
+    $FreshInstaller = $Installers[0].FullName
+
+    if ($UpdateInstalled) {
+        Write-Host ''
+        Write-Host 'Updating the installed LazyBuilder in place...' -ForegroundColor Cyan
+        $UpdateProcess = Start-Process -FilePath $FreshInstaller -ArgumentList '/S' -Wait -PassThru
+        if ($UpdateProcess.ExitCode -ne 0) {
+            throw "LazyBuilder update installer exited with code $($UpdateProcess.ExitCode)."
+        }
+
+        # The update package is intentionally temporary. Keep source/build caches for
+        # fast developer iteration, but remove every user-facing installer handoff.
+        if (Test-Path $PublishDir) {
+            Remove-Item $PublishDir -Recurse -Force
+        }
+        Get-ChildItem $NsisDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+
+        Write-Host ''
+        Write-Host 'Installed Launcher updated successfully.' -ForegroundColor Green
+        Write-Host 'No new installer was kept. Previous local installer handoff files were removed.' -ForegroundColor Green
+        Write-Host 'Server workspaces and LazyBuilder user data were not deleted.'
+        Write-Host ''
+        Write-Host 'Open LazyBuilder normally from the Start Menu/shortcut and continue local testing.' -ForegroundColor Cyan
+        return
     }
 
-    # Publish a simple, stable output layout for local testing and release handoff.
-    # Like Modrinth, the installer EXE is the primary user-facing artifact.
-    if (Test-Path $PublishDir) {
-        Remove-Item $PublishDir -Recurse -Force
-    }
+    # Normal packaging path: expose exactly one stable installer name. Rebuilding
+    # replaces this folder instead of accumulating versioned/old installer files.
     New-Item -ItemType Directory -Force -Path $PublishDir | Out-Null
-
     $PublishedInstaller = Join-Path $PublishDir 'LazyBuilder-Setup.exe'
-    Copy-Item $Installers[0].FullName $PublishedInstaller -Force
+    Copy-Item $FreshInstaller $PublishedInstaller -Force
 
-    # Keep the raw desktop binary for developer diagnostics only. The installer is
-    # the recommended runtime path because Tauri resources are installed with it.
     $PublishedExe = Join-Path $PublishDir 'LazyBuilder.exe'
     Copy-Item $Exe $PublishedExe -Force
 
@@ -105,7 +150,7 @@ try {
         'LazyBuilder Windows build',
         '',
         'Recommended:',
-        '  LazyBuilder-Setup.exe  - install and run LazyBuilder normally',
+        '  LazyBuilder-Setup.exe  - install/update and run LazyBuilder normally',
         '',
         'Developer diagnostic binary:',
         '  LazyBuilder.exe        - raw Tauri executable',
@@ -118,7 +163,7 @@ try {
     Write-Host ''
     Write-Host 'Build complete.' -ForegroundColor Green
     Write-Host ''
-    Write-Host 'Use this file like Modrinth:' -ForegroundColor Cyan
+    Write-Host 'Installer:' -ForegroundColor Cyan
     Write-Host "  $PublishedInstaller" -ForegroundColor Green
     Write-Host ''
     Write-Host 'Developer binary:'
