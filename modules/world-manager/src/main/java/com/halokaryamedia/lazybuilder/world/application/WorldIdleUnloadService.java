@@ -18,6 +18,7 @@ public final class WorldIdleUnloadService {
     private final WorldOperationCoordinator operations;
     private final Predicate<WorldRecord> isLoaded;
     private final Predicate<WorldRecord> hasPlayers;
+    private final Predicate<WorldRecord> protectedWorld;
     private final long idleMillis;
     private final Map<WorldId, Long> emptySince = new HashMap<>();
 
@@ -29,11 +30,24 @@ public final class WorldIdleUnloadService {
             Predicate<WorldRecord> hasPlayers,
             Duration idleTimeout
     ) {
+        this(registry, runtimeService, operations, isLoaded, hasPlayers, ignored -> false, idleTimeout);
+    }
+
+    public WorldIdleUnloadService(
+            WorldRegistry registry,
+            WorldRuntimeService runtimeService,
+            WorldOperationCoordinator operations,
+            Predicate<WorldRecord> isLoaded,
+            Predicate<WorldRecord> hasPlayers,
+            Predicate<WorldRecord> protectedWorld,
+            Duration idleTimeout
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
         this.operations = Objects.requireNonNull(operations, "operations");
         this.isLoaded = Objects.requireNonNull(isLoaded, "isLoaded");
         this.hasPlayers = Objects.requireNonNull(hasPlayers, "hasPlayers");
+        this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
         this.idleMillis = Math.max(30_000L, Objects.requireNonNull(idleTimeout, "idleTimeout").toMillis());
     }
 
@@ -42,6 +56,7 @@ public final class WorldIdleUnloadService {
         for (WorldRecord world : registry.all()) {
             WorldId id = world.id();
             if (world.lifecycle() != WorldLifecycle.ACTIVE
+                    || protectedWorld.test(world)
                     || !isLoaded.test(world)
                     || hasPlayers.test(world)
                     || operations.activeOperation(id) != null) {
@@ -56,7 +71,7 @@ public final class WorldIdleUnloadService {
                 runtimeService.unload(id);
                 emptySince.remove(id);
             } catch (RuntimeException ignored) {
-                // Fallback/default worlds may be intentionally non-unloadable. Retry only after another idle window.
+                // Runtime may reject an unload for a transient safety reason. Retry only after another idle window.
                 emptySince.put(id, nowMillis);
             }
         }
