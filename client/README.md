@@ -34,4 +34,6 @@ The completed non-tool reviews are:
 
 Final source/static readiness is documented in `docs/04-system/final-client-pre-handoff-audit.md`. That audit closes further client scope for the current phase, fixes the remaining obvious screenshot/reload/background-FPS static issues, and records the exact Minecraft 1.21.4 compile/runtime checks that still belong to the later local/Codex proof stage.
 
+The execution plan for that next phase is `docs/05-operations/client-implementation-proof-handoff.md`. It defines the exact Gradle build order, runtime matrices, defect severity, stop conditions, completion criteria, and a ready-to-use Codex workspace prompt. The proof phase must validate the existing architecture rather than expand it.
+
 Any future builder-facing feature must begin from a concrete workflow problem and pass a fresh ownership/overlap review. The existing three Managers remain the complete LazyBuilder client architecture.
