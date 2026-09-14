@@ -223,13 +223,25 @@ public final class WorldManager {
                         + ", preserved=" + deleteRecovery.preserved() + ".");
             }
 
+            WorldFileRepository.PublishRecovery publishRecovery =
+                    worldFileRepository.recoverPublishedWorlds(worldRegistry.all());
+            if (publishRecovery.finalized() > 0 || publishRecovery.discarded() > 0) {
+                plugin.getLogger().info("Publish recovery: finalized=" + publishRecovery.finalized()
+                        + ", discarded=" + publishRecovery.discarded() + ".");
+            }
+
+            WorldFileRepository.ManagedWorldAudit audit =
+                    worldFileRepository.auditManagedWorldFolders(worldRegistry.all());
+            if (!audit.healthy()) {
+                throw new IllegalStateException("Managed world filesystem divergence; missing="
+                        + audit.missingFolders() + ", unsafe=" + audit.unsafeFolders());
+            }
+
             discoverExistingWorlds();
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
         }
 
-        // Cleanup recovery is explicit and marker-driven. It never scans ordinary
-        // import inbox files, so valid uploads/reviews are not guessed to be stale.
         worldImportService.recoverPendingCommittedArtifactCleanup();
 
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
@@ -293,7 +305,6 @@ public final class WorldManager {
     }
 
     public void stop() {
-        // One final event-bound retry before shutdown. No background cleanup worker exists.
         worldImportService.retryPendingCommittedArtifactCleanup();
     }
 
