@@ -63,27 +63,28 @@ if root_parent is not None:
 
 for pom in (
     "shared/protocol/pom.xml",
-    "modules/world-manager/pom.xml",
-    "modules/utilities-manager/pom.xml",
+    "plugins/world-manager/pom.xml",
+    "plugins/utilities-manager/pom.xml",
 ):
     version, parent_version = maven_versions(pom)
     expect(pom, version, SNAPSHOT_VERSION)
     expect(f"{pom} parent", parent_version, SNAPSHOT_VERSION)
 
-package = json.loads((ROOT / "EngineData/Frontend/RustApp/package.json").read_text(encoding="utf-8"))
+launcher_root = ROOT / "apps" / "launcher"
+package = json.loads((launcher_root / "package.json").read_text(encoding="utf-8"))
 expect("desktop package.json", package.get("version"), PRODUCT_VERSION)
 
-package_lock = json.loads((ROOT / "EngineData/Frontend/RustApp/package-lock.json").read_text(encoding="utf-8"))
+package_lock = json.loads((launcher_root / "package-lock.json").read_text(encoding="utf-8"))
 expect("desktop package-lock.json", package_lock.get("version"), PRODUCT_VERSION)
 expect("desktop package-lock root package", package_lock.get("packages", {}).get("", {}).get("version"), PRODUCT_VERSION)
 
-tauri = json.loads((ROOT / "EngineData/Frontend/RustApp/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+tauri = json.loads((launcher_root / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
 expect("tauri.conf.json", tauri.get("version"), PRODUCT_VERSION)
 
-cargo = tomllib.loads((ROOT / "EngineData/Frontend/RustApp/src-tauri/Cargo.toml").read_text(encoding="utf-8"))
+cargo = tomllib.loads((launcher_root / "src-tauri/Cargo.toml").read_text(encoding="utf-8"))
 expect("Cargo.toml", cargo.get("package", {}).get("version"), PRODUCT_VERSION)
 
-cargo_lock = tomllib.loads((ROOT / "EngineData/Frontend/RustApp/src-tauri/Cargo.lock").read_text(encoding="utf-8"))
+cargo_lock = tomllib.loads((launcher_root / "src-tauri/Cargo.lock").read_text(encoding="utf-8"))
 lazybuilder_lock = next(
     (package for package in cargo_lock.get("package", []) if package.get("name") == "lazybuilder"),
     None,
@@ -96,7 +97,7 @@ expect(
 
 # Client manager identity and isolation contract.
 for manager, contract in CLIENT_MANAGERS.items():
-    manager_root = ROOT / "client" / manager
+    manager_root = ROOT / "mods" / manager
     props_text = (manager_root / "gradle.properties").read_text(encoding="utf-8")
     expect(f"{manager} mod_version", gradle_property(props_text, "mod_version"), SNAPSHOT_VERSION)
     expect(f"{manager} artifact", gradle_property(props_text, "archives_base_name"), contract["artifact"])
@@ -121,7 +122,7 @@ for manager, contract in CLIENT_MANAGERS.items():
         if other_manager == manager:
             continue
         forbidden_tokens = (
-            f"client/{other_manager}",
+            f"mods/{other_manager}",
             f"../{other_manager}",
             other_contract["artifact"],
             other_contract["mod_id"],
@@ -140,7 +141,7 @@ for manager, contract in CLIENT_MANAGERS.items():
                     relative = java_file.relative_to(ROOT)
                     errors.append(f"{manager}: {relative} references {other_manager} implementation package")
 
-core_modules = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/core_modules.rs").read_text(encoding="utf-8")
+core_modules = (launcher_root / "src-tauri/src/engine/core_modules.rs").read_text(encoding="utf-8")
 match = re.search(r'pub const CORE_VERSION: &str = "([^"]+)";', core_modules)
 expect("Rust CORE_VERSION", match.group(1) if match else None, SNAPSHOT_VERSION)
 for label, prefix in (
@@ -151,31 +152,31 @@ for label, prefix in (
     expected_name = f"{prefix}-{SNAPSHOT_VERSION}.jar"
     expect(label, match.group(1) if match else None, expected_name)
 
-paper_provider = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/paper_provider.rs").read_text(encoding="utf-8")
+paper_provider = (launcher_root / "src-tauri/src/engine/paper_provider.rs").read_text(encoding="utf-8")
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^ (]+)', paper_provider)
 expect("Paper provider user-agent", match.group(1) if match else None, PRODUCT_VERSION)
 
-java_runtime = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/java_runtime.rs").read_text(encoding="utf-8")
+java_runtime = (launcher_root / "src-tauri/src/engine/java_runtime.rs").read_text(encoding="utf-8")
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^"]+)";', java_runtime)
 expect("Managed Java user-agent", match.group(1) if match else None, PRODUCT_VERSION)
 
-map_build = (ROOT / "client/map-manager/build.gradle").read_text(encoding="utf-8")
-if "../../modules/world-manager/src/main/java" in map_build:
+map_build = (ROOT / "mods/map-manager/build.gradle").read_text(encoding="utf-8")
+if "../../plugins/world-manager/src/main/java" in map_build or "../../modules/world-manager/src/main/java" in map_build:
     errors.append("Map Manager build still compiles source directly from World-Manager")
 if "../../shared/protocol/src/main/java" not in map_build:
     errors.append("Map Manager build is not wired to shared/protocol")
 
 for manager in ("utility-manager", "performance-manager"):
-    build = (ROOT / f"client/{manager}/build.gradle").read_text(encoding="utf-8")
+    build = (ROOT / f"mods/{manager}/build.gradle").read_text(encoding="utf-8")
     if "../../shared/protocol" in build:
         errors.append(f"{manager} has an unintended shared World-Manager protocol dependency")
 
 legacy_protocol_paths = (
-    "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
-    "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/map/MapActionWireProtocol.java",
-    "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/transfer/TransferWireProtocol.java",
-    "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/transfer/TransferDescriptor.java",
-    "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldId.java",
+    "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
+    "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/map/MapActionWireProtocol.java",
+    "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/transfer/TransferWireProtocol.java",
+    "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/transfer/TransferDescriptor.java",
+    "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldId.java",
 )
 for path in legacy_protocol_paths:
     if (ROOT / path).exists():

@@ -28,14 +28,14 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: EngineData/Frontend/RustApp
+        working-directory: apps/launcher
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: EngineData/Frontend/RustApp/package-lock.json
+          cache-dependency-path: apps/launcher/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
       - name: Typecheck Svelte frontend
@@ -59,12 +59,12 @@ jobs:
           java-version: '21'
           cache: maven
       - name: Compile and test Utilities-Manager independently
-        run: mvn --batch-mode --no-transfer-progress -pl modules/utilities-manager -am verify
+        run: mvn --batch-mode --no-transfer-progress -pl plugins/utilities-manager -am verify
       - name: Upload tested Utilities-Manager
         uses: actions/upload-artifact@v4
         with:
           name: LazyBuilder-Utilities-${{ github.sha }}
-          path: modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
+          path: plugins/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
           if-no-files-found: error
           retention-days: 7
 
@@ -77,14 +77,14 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Compile and test Paper modules
+      - name: Compile and test Paper plugins
         run: mvn --batch-mode --no-transfer-progress verify
-      - name: Stage tested core modules
+      - name: Stage tested core plugins
         run: |
           mkdir -p .artifacts/core
-          cp modules/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
-          cp modules/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
-      - name: Upload tested core modules
+          cp plugins/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
+          cp plugins/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar .artifacts/core/
+      - name: Upload tested core plugins
         uses: actions/upload-artifact@v4
         with:
           name: LazyBuilder-Core-${{ github.sha }}
@@ -104,30 +104,30 @@ jobs:
         with:
           gradle-version: '8.12'
       - name: Compile Map Manager
-        run: gradle -p client/map-manager --no-daemon build
+        run: gradle -p mods/map-manager --no-daemon build
       - name: Compile Utility Manager
-        run: gradle -p client/utility-manager --no-daemon build
+        run: gradle -p mods/utility-manager --no-daemon build
       - name: Compile Performance Manager
-        run: gradle -p client/performance-manager --no-daemon build
+        run: gradle -p mods/performance-manager --no-daemon build
 
   tauri-desktop:
     needs: paper
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: EngineData/Frontend/RustApp
+        working-directory: apps/launcher
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: EngineData/Frontend/RustApp/package-lock.json
-      - name: Download tested core modules
+          cache-dependency-path: apps/launcher/package-lock.json
+      - name: Download tested core plugins
         uses: actions/download-artifact@v4
         with:
           name: LazyBuilder-Core-${{ github.sha }}
-          path: EngineData/Frontend/RustApp/src-tauri/resources/core
+          path: apps/launcher/src-tauri/resources/core
       - name: Install frontend dependencies
         run: npm ci
       - name: Typecheck Svelte frontend
@@ -142,8 +142,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            EngineData/Frontend/RustApp/src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('EngineData/Frontend/RustApp/src-tauri/Cargo.lock') }}
+            apps/launcher/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/launcher/src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Check Rust/Tauri backend
@@ -157,7 +157,7 @@ jobs:
         with:
           name: LazyBuilder-Windows-${{ github.sha }}
           path: |
-            EngineData/Frontend/RustApp/src-tauri/target/release/lazybuilder.exe
-            EngineData/Frontend/RustApp/src-tauri/target/release/bundle/nsis/*-setup.exe
+            apps/launcher/src-tauri/target/release/lazybuilder.exe
+            apps/launcher/src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 7

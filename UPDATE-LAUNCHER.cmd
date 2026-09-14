@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0EngineData\Frontend\RustApp"
+cd /d "%~dp0apps\launcher"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\build-local.ps1" -UpdateInstalled %*
 set EXITCODE=%ERRORLEVEL%
 echo.

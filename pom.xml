@@ -68,7 +68,7 @@
 
     <modules>
         <module>shared/protocol</module>
-        <module>modules/world-manager</module>
-        <module>modules/utilities-manager</module>
+        <module>plugins/world-manager</module>
+        <module>plugins/utilities-manager</module>
     </modules>
 </project>

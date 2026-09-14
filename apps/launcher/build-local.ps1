@@ -24,12 +24,12 @@ Require-Command cargo 'Install Rust using rustup.'
 Require-Command rustc 'Install the Rust toolchain using rustup.'
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..\..')
+$RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..')
 $CoreDir = Join-Path $AppRoot 'src-tauri\resources\core'
 $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
-$WorldTargetJar = Join-Path $RepoRoot 'modules\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
-$UtilitiesTargetJar = Join-Path $RepoRoot 'modules\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
+$WorldTargetJar = Join-Path $RepoRoot 'plugins\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
+$UtilitiesTargetJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
@@ -51,7 +51,7 @@ if (-not $AllowMissingCore) {
     Require-Command java 'Install or activate Java 21.'
     Require-Command mvn 'Install Apache Maven and make mvn available on PATH.'
 
-    Write-Host '[core] Building and testing matching Paper core modules...' -ForegroundColor Cyan
+    Write-Host '[core] Building and testing matching Paper core plugins...' -ForegroundColor Cyan
     Push-Location $RepoRoot
     try {
         mvn --batch-mode --no-transfer-progress verify
@@ -98,8 +98,6 @@ if ($UpdateInstalled) {
     }
 }
 
-# Every build starts from a clean handoff/output surface. Old local installers must
-# never accumulate and be mistaken for the current test build.
 if (Test-Path $PublishDir) {
     Remove-Item $PublishDir -Recurse -Force
 }
@@ -127,9 +125,6 @@ try {
     }
 
     Write-Host '[5/5] Building Windows Launcher package...' -ForegroundColor Cyan
-    # Tauri creates an NSIS package because that is the safe owner for replacing the
-    # installed executable and bundled resources. Update mode treats it as a temporary
-    # transaction artifact and deletes it immediately after a successful in-place update.
     npx tauri build
 
     $Exe = Join-Path $AppRoot 'src-tauri\target\release\lazybuilder.exe'
@@ -154,8 +149,6 @@ try {
             throw "LazyBuilder update installer exited with code $($UpdateProcess.ExitCode)."
         }
 
-        # The update package is intentionally temporary. Keep source/build caches for
-        # fast developer iteration, but remove every user-facing installer handoff.
         if (Test-Path $PublishDir) {
             Remove-Item $PublishDir -Recurse -Force
         }
@@ -170,8 +163,6 @@ try {
         return
     }
 
-    # Normal packaging path: expose exactly one stable installer name. Rebuilding
-    # replaces this folder instead of accumulating versioned/old installer files.
     New-Item -ItemType Directory -Force -Path $PublishDir | Out-Null
     $PublishedInstaller = Join-Path $PublishDir 'LazyBuilder-Setup.exe'
     Copy-Item $FreshInstaller $PublishedInstaller -Force

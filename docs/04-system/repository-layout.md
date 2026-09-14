@@ -1,176 +1,107 @@
 # LazyBuilder Repository Layout
 
-## Product identity
+## Goal
 
-`LazyBuilder` is the umbrella product for the complete Minecraft Java 1.21.4 builder-server workspace. It is not the name of one runtime module.
+The repository is organized by runtime/product responsibility so a maintainer can immediately distinguish the desktop Launcher, Paper plugins, Fabric mods, and shared contracts.
 
-```text
-LazyBuilder
-├── Desktop Application
-│   ├── Server-Manager
-│   └── Plugin-Manager
-├── Shared Contracts
-│   └── Protocol
-├── Paper Modules
-│   ├── World-Manager
-│   └── Utilities-Manager
-└── Fabric Client Managers
-    ├── Map Manager          implemented / scope locked
-    ├── Utility Manager      implemented / scope locked
-    └── Performance Manager  implemented baseline / scope locked
-```
-
-Each Client Manager is exactly one Fabric mod and one output JAR. External build/edit tools remain external specialist products.
-
-## Desktop architecture
-
-```text
-Svelte 5 + TypeScript + Vite
-→ typed Tauri command boundary
-→ Rust desktop engine
-→ Windows process/filesystem + authenticated World-Manager loopback bridge
-```
-
-`EngineData/Frontend/RustApp` is the sole desktop source authority.
-
-`src/` owns presentation/application state. `src-tauri/src/commands/` is the thin Tauri-facing adapter layer. `src-tauri/src/engine/` owns reusable desktop-native behavior for Server-Manager, Plugin-Manager, runtime provisioning/configuration, and the World-Manager desktop control client.
-
-## Responsibility boundaries
-
-### Server-Manager
-
-Desktop Rust owns Paper process lifecycle, managed Java/runtime discovery, workspace/bootstrap paths, server health/resource settings, provisioning/update, process identity/recovery, and internal bundled core synchronization.
-
-It does not own World-Manager business behavior.
-
-### Plugin-Manager
-
-Desktop Rust owns third-party Paper plugin inventory, metadata/category presentation, install/update, dependency/compatibility checks, duplicate resolution, restart-safe enable/disable, safe removal with plugin data preserved, and minimum rollback state.
-
-It does not own plugin feature logic or Paper runtime internals.
-
-### World-Manager
-
-Paper owns managed world lifecycle and semantics:
-
-```text
-create Flat / Void
-BUILD_READY
-teleport
-automatic load + idle unload
-settings
-Duplicate
-backup
-Archive / Restore
-Delete
-Import / Export / conversion
-map/location actions
-transfer/import/export safety
-```
-
-Manual Load/Unload and per-world autoLoad are not product features. User-facing copy uses `Duplicate`, not `Clone`.
-
-### Utilities-Manager (Paper)
-
-Owns small server-side builder conveniences: World Safety, Movement, and Build Helpers. It remains independent from World-Manager and from the Fabric Utility Manager.
-
-### Map Manager (Fabric)
-
-Owns first-party world/map UI, navigation, current managed-world presentation, world settings/lifecycle presentation, Import/Export/transfer UI, map cache, Map Export Area, Copy Review Reference, and World-Manager protocol client behavior.
-
-Canonical source: `client/map-manager/`.
-
-### Utility Manager (Fabric)
-
-Owns passive non-building client convenience. It does not own build/editing tools, world lifecycle, or performance engines.
-
-Canonical source: `client/utility-manager/`.
-
-### Performance Manager (Fabric)
-
-Owns lightweight performance/resource observation and background-FPS policy. External optimization engines remain external. Dynamic FPS, when present, owns background-FPS behavior and LazyBuilder yields.
-
-Canonical source: `client/performance-manager/`.
-
-## Canonical repository layout
+## Canonical top-level layout
 
 ```text
 LazyBuilder-Plugin/
-├── EngineData/
-│   └── Frontend/
-│       └── RustApp/
-│           ├── src/
-│           └── src-tauri/
-├── shared/
-│   └── protocol/
-├── modules/
+├── apps/
+│   └── launcher/
+│       ├── src/
+│       └── src-tauri/
+├── plugins/
 │   ├── world-manager/
 │   └── utilities-manager/
-├── client/
+├── mods/
 │   ├── map-manager/
 │   ├── utility-manager/
 │   └── performance-manager/
+├── shared/
+│   └── protocol/
 ├── docs/
 ├── scripts/
+├── .agents/
 ├── .github/
+├── BUILD-LAUNCHER.cmd
+├── UPDATE-LAUNCHER.cmd
+├── pom.xml
+├── VERSION
 ├── AGENTS.md
 ├── CONTEXT.md
-├── VERSION
 └── README.md
 ```
 
-Paper modules remain Java/Maven modules. Fabric Managers remain Java/Gradle projects. Desktop remains Tauri/Svelte/Rust. Do not rewrite a component merely to match another component's implementation language.
+## Directory meanings
 
-## Shared-code rule
+### `apps/`
 
-Only stable contracts genuinely consumed across boundaries belong in `shared/`. The current neutral Paper/Fabric protocol is the shared contract owner.
+End-user applications. `apps/launcher/` is the sole Tauri/Svelte/Rust desktop source authority and contains Server-Manager and Plugin-Manager desktop behavior.
 
-Do not create a mandatory client-core/shared implementation module merely because three Fabric Managers exist. Managers remain independently maintainable and do not import one another's implementation packages.
+### `plugins/`
 
-## Runtime/deployment target
+Paper server plugins only.
 
 ```text
-Work Server - 1.21.4/
-├── LazyBuilder.exe
-├── server/
-│   ├── paper.jar
-│   └── plugins/
-├── world-system/
-│   ├── worlds/
-│   ├── imports/
-│   ├── exports/
-│   ├── backups/
-│   └── work/
-└── tools/lazybuilder/
+plugins/world-manager/      world lifecycle/import-export authority
+plugins/utilities-manager/  server-side builder conveniences
 ```
 
-Client Manager JARs are installed in the Minecraft client instance, not under Paper's `server/plugins/` directory.
+### `mods/`
 
-Archive is lifecycle metadata, not a second physical world store.
+Fabric client mods only.
+
+```text
+mods/map-manager/          world/map/transfer UI
+mods/utility-manager/      passive client convenience
+mods/performance-manager/  performance/resource coordination
+```
+
+Each Manager is one Fabric mod and one output JAR.
+
+### `shared/`
+
+Neutral contracts genuinely consumed across runtime boundaries. The current owner is `shared/protocol/`. Do not turn `shared/` into a generic implementation dump.
+
+### `docs/` and `scripts/`
+
+`docs/` owns durable product/system/operations documentation. `scripts/` owns repository-level verification/build support, not runtime business logic.
+
+## Runtime ownership
+
+| Source | Runtime | Primary owner |
+| --- | --- | --- |
+| `apps/launcher/` | Windows desktop | Server-Manager + Plugin-Manager + desktop World-Manager client |
+| `plugins/world-manager/` | Paper | world lifecycle, files, import/export/conversion, settings, transfer safety |
+| `plugins/utilities-manager/` | Paper | World Safety, Movement, Build Helpers |
+| `mods/map-manager/` | Fabric | world/map/transfer presentation |
+| `mods/utility-manager/` | Fabric | passive client QoL |
+| `mods/performance-manager/` | Fabric | lightweight performance/resource policy |
+| `shared/protocol/` | Paper + Fabric | versioned neutral request/result contracts |
+
+## Naming rule
+
+Do not reintroduce ambiguous top-level source buckets such as:
+
+```text
+EngineData/
+modules/
+client/
+```
+
+Those names hide runtime ownership. New implementation source must enter the existing semantic runtime directory unless a new substantial product/runtime owner is explicitly approved.
 
 ## Architecture rules
 
 1. One semantic owner per responsibility.
-2. Never create a second World-Manager implementation in Desktop or Fabric.
-3. Server-Manager and Plugin-Manager remain desktop domains, not Paper JARs.
-4. Tauri/Svelte/Rust is the sole desktop architecture.
-5. Keep external build/edit tools external.
-6. Keep specialist performance engines external.
-7. One Client Manager = one Fabric mod = one output JAR.
-8. No cross-Manager implementation imports.
-9. Keep Paper 1.21.4 / Java 21 as the current Minecraft baseline.
-10. Shared Paper/Fabric contracts live in `shared/protocol/`.
-11. Source/CI proof remains separate from installed Windows/live Paper/Minecraft validation.
-12. Runtime path migration must be explicit and fail-safe.
-13. Do not create runtime directories, managers, registries, workers, or compatibility layers without an active owner/consumer.
-
-## Current client state
-
-```text
-C1 Map Manager          complete / scope locked
-C2 Utility Manager      complete / scope locked
-C3 Performance Manager  complete baseline / scope locked
-C4 Cross-manager audit  complete / architecture locked
-```
-
-The next client phase is compile/runtime proof and bounded defect correction, not another manager/scaffold phase.
+2. One Manager = one deployable artifact.
+3. No cross-Manager implementation imports.
+4. Desktop remains Tauri/Svelte/Rust.
+5. Paper plugins remain Java/Maven.
+6. Fabric mods remain Java/Gradle.
+7. `shared/protocol/` remains contract-only.
+8. External build/edit/performance engines remain external specialist owners.
+9. Source/CI proof remains separate from installed Windows/live Paper/Minecraft validation.
+10. Repository layout changes must update build scripts, CI, verification guards, and canonical docs in the same coherent change.
