@@ -5,7 +5,8 @@
   "client": [
     "ChatScreenMixin",
     "ChatHudMixin",
-    "DisconnectedScreenMixin"
+    "DisconnectedScreenMixin",
+    "ScreenshotRecorderMixin"
   ],
   "injectors": {
     "defaultRequire": 1
