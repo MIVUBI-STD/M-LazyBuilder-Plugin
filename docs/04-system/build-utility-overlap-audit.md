@@ -79,26 +79,13 @@ If LazyBuilder adds anything builder-facing after this audit, it should first be
 
 That means the feature should assist the work session without performing the build operation itself.
 
-Examples of acceptable categories to investigate later:
+The non-tool review covered:
 
 ```text
 Session / project context
-├── clear current-world context
-├── safe status / warnings
-└── workflow handoff information
-
 Review / collaboration
-├── lightweight review context
-├── issue/location handoff
-└── shareable non-editing references
-
 Reliability / recovery
-├── warnings around risky workflow states
-├── clear failure context
-└── recovery-oriented information
 ```
-
-These are categories for review, not approved features.
 
 ## Session / project context decision
 
@@ -132,6 +119,29 @@ The reference is generated on demand and copied as portable text for use in exis
 
 This feature belongs to Map Manager because managed-world authority already exists there. It must not introduce a dependency on Utility Manager merely for clipboard access, and it requires no protocol change for the first implementation.
 
+## Reliability / recovery decision
+
+The reliability/recovery audit is complete in `reliability-recovery-audit.md`.
+
+Existing transfer/world-control architecture already owns the important safety behavior: bounded sessions, checksums, storage preflight, partial-file cleanup, disconnect cleanup, explicit aborts, destructive confirmations, and operation-local error state.
+
+Therefore:
+
+- do not create a Recovery Manager;
+- do not add client autosave, duplicate backup, automatic snapshot, rollback, or build-state recovery systems;
+- do not add resumable byte transfer across reconnect in the current scope;
+- do not add retry daemons, orphan scanners, or hidden healing loops.
+
+The approved reliability rule is presentation-level only:
+
+```text
+What failed
+Why it failed
+What the builder can safely do next
+```
+
+Retry may exist only as an explicit user action that restarts the canonical operation after the existing owner has cleaned its partial/session state.
+
 ## Interaction standard
 
 Any surviving feature must follow the builder's existing mental model:
@@ -157,14 +167,19 @@ building / editing                 -> external Axiom/WorldEdit ecosystem
 
 If a proposed feature does not fit one of these boundaries cleanly, that is evidence that it should remain external rather than creating another Manager.
 
-## First-pass decision
+## Final post-C4 decision
 
-The first-pass audit finds no justification for creating a new generic "Builder Utilities" tool layer.
+The audit finds no justification for creating a new generic `Builder Utilities` tool layer or another client Manager.
 
-The existing three Managers remain the complete LazyBuilder client architecture. Builder-specific work should proceed only through narrowly defined gaps that are non-overlapping and can be assigned to an existing Manager.
+```text
+Build Tool Overlap        complete
+Session / Project Context complete
+Review / Collaboration    complete
+Reliability / Recovery    complete
+```
 
-## Next review
+The existing three Managers remain the complete LazyBuilder client architecture.
 
-The next review is **Reliability / Recovery**. It should identify warnings, failure context, or recovery-oriented information that protects the builder workflow without introducing autosave, backup, snapshot, or build-state systems that belong to existing world-management or external editing owners.
+One narrow builder-facing implementation candidate remains approved from this review set: **Copy Review Reference** in Map Manager. Reliability/recovery requires no new subsystem; it is an operation-local presentation standard.
 
-Do not revisit build/editing categories unless a concrete missing workflow is demonstrated that Vanilla/Axiom/WorldEdit cannot reasonably cover.
+Any further builder-facing feature now requires a concrete workflow problem and a fresh ownership/overlap review. Do not continue expanding generic categories by default.
