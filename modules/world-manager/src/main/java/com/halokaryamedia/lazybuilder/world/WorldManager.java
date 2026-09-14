@@ -214,6 +214,15 @@ public final class WorldManager {
             for (WorldRecord world : registryPersistence.load()) {
                 worldRegistry.register(world);
             }
+
+            WorldFileRepository.DeleteRecovery deleteRecovery =
+                    worldFileRepository.recoverDeleteWorkspaces(worldRegistry.all());
+            if (deleteRecovery.restored() > 0 || deleteRecovery.discarded() > 0 || deleteRecovery.preserved() > 0) {
+                plugin.getLogger().info("Delete recovery: restored=" + deleteRecovery.restored()
+                        + ", discarded=" + deleteRecovery.discarded()
+                        + ", preserved=" + deleteRecovery.preserved() + ".");
+            }
+
             discoverExistingWorlds();
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
