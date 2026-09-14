@@ -40,6 +40,8 @@ public final class TransferSessionService {
     private final Clock clock;
     private final Map<UUID, UploadSession> uploads = new ConcurrentHashMap<>();
     private final Map<UUID, DownloadSession> downloads = new ConcurrentHashMap<>();
+    /** Completed imports stay bound to the player that uploaded them until review/import cleanup releases ownership. */
+    private final Map<String, UUID> completedUploadOwners = new ConcurrentHashMap<>();
 
     public TransferSessionService(Path importsRoot, Path exportsRoot, Path tempRoot, TransferPolicy policy) {
         this(importsRoot, exportsRoot, tempRoot, policy, Clock.systemUTC());
@@ -137,6 +139,7 @@ public final class TransferSessionService {
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
                 move(session.partial, session.target);
                 uploads.remove(sessionId, session);
+                completedUploadOwners.put(session.fileName, session.ownerId);
                 return session.target;
             } catch (IOException | RuntimeException failure) {
                 try { abortUploadInternal(sessionId, session); }
@@ -144,6 +147,20 @@ public final class TransferSessionService {
                 throw failure;
             }
         }
+    }
+
+    /** True only for a completed upload produced by this runtime for the same player. */
+    public boolean ownsCompletedUpload(UUID ownerId, String fileName) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        String safeName = validateImportFileName(fileName);
+        return ownerId.equals(completedUploadOwners.get(safeName));
+    }
+
+    /** Release the transient ownership claim after discard or successful import. */
+    public void releaseCompletedUpload(UUID ownerId, String fileName) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        String safeName = validateImportFileName(fileName);
+        completedUploadOwners.remove(safeName, ownerId);
     }
 
     public void abortUpload(UUID ownerId, UUID sessionId) throws IOException {
