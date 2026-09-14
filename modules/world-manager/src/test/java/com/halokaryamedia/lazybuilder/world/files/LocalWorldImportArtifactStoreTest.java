@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -38,6 +39,27 @@ class LocalWorldImportArtifactStoreTest {
         assertEquals("1.21.4", inspection.sourceVersion());
         assertEquals("My Build", inspection.suggestedName());
         assertEquals("My Build.zip", inspection.artifactName());
+    }
+
+    @Test
+    void committedCleanupMarkerSurvivesStoreRecreationWithoutGuessingOrdinaryUploads() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports"));
+        Files.writeString(imports.resolve("Committed.zip"), "committed");
+        Files.writeString(imports.resolve("Still Reviewing.zip"), "review");
+
+        LocalWorldImportArtifactStore first = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        first.markCommittedCleanupPending("Committed.zip");
+
+        LocalWorldImportArtifactStore restarted = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        assertEquals(List.of("Committed.zip"), restarted.pendingCommittedCleanupArtifacts());
+
+        restarted.deleteArtifact("Committed.zip");
+        restarted.clearCommittedCleanupPending("Committed.zip");
+
+        assertTrue(restarted.pendingCommittedCleanupArtifacts().isEmpty());
+        assertFalse(Files.exists(imports.resolve("Committed.zip")));
+        assertTrue(Files.exists(imports.resolve("Still Reviewing.zip")),
+                "startup cleanup must not infer ordinary inbox artifacts are stale");
     }
 
     @Test
