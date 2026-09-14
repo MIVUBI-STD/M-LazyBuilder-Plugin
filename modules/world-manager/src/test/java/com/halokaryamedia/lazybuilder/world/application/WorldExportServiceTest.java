@@ -30,6 +30,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldExportServiceTest {
@@ -37,10 +38,56 @@ class WorldExportServiceTest {
 
     @Test
     void nativeExportRestoresLoadedWorldImmediatelyAfterSnapshot() throws Exception {
+        Fixture fixture = fixture(true);
+
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(WorldOperationType.EXPORT, fixture.operations.activeOperation(fixture.world.id()));
+
+        fixture.service.captureSnapshot(task);
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(1, fixture.files.stageCopyCount);
+
+        fixture.service.resumeSourceAfterSnapshot(task);
+        assertTrue(fixture.runtime.loaded);
+        assertTrue(task.sourceRestored());
+        assertEquals(1, fixture.runtime.unloadCount);
+        assertEquals(1, fixture.runtime.loadCount);
+
+        WorldExportService.ExportResult result = fixture.service.processSnapshot(task);
+        assertTrue(fixture.runtime.loaded);
+        fixture.service.finish(task);
+
+        assertFalse(result.converted());
+        assertEquals(ExportArtifactType.JAVA_ZIP, fixture.artifacts.lastType);
+        assertTrue(task.completed());
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+        assertEquals(WorldCopyProfile.SNAPSHOT, fixture.files.lastProfile);
+    }
+
+    @Test
+    void externallyReloadedWorldIsRejectedBeforeExportSnapshotCopy() {
+        Fixture fixture = fixture(true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        fixture.runtime.loaded = true; // Simulate out-of-band Paper/plugin reload after prepare.
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.captureSnapshot(task));
+        assertEquals(0, fixture.files.stageCopyCount);
+
+        fixture.runtime.loaded = false;
+        fixture.service.finish(task);
+        assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    private Fixture fixture(boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
-        FakeRuntime runtime = new FakeRuntime(true);
+        FakeRuntime runtime = new FakeRuntime(loaded);
         WorldOperationCoordinator operations = new WorldOperationCoordinator();
         WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         FakeFiles files = new FakeFiles(tempDir);
@@ -58,31 +105,17 @@ class WorldExportServiceTest {
                 registry, runtimeService, operations, files, artifacts,
                 store, updates, converter, new ConversionJobCoordinator()
         );
-
-        WorldExportService.ExportTask task = service.prepare(
-                world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
-        assertFalse(runtime.loaded);
-
-        service.captureSnapshot(task);
-        assertFalse(runtime.loaded);
-
-        service.resumeSourceAfterSnapshot(task);
-        assertTrue(runtime.loaded);
-        assertTrue(task.sourceRestored());
-        assertEquals(1, runtime.unloadCount);
-        assertEquals(1, runtime.loadCount);
-
-        WorldExportService.ExportResult result = service.processSnapshot(task);
-        assertTrue(runtime.loaded);
-        service.finish(task);
-
-        assertFalse(result.converted());
-        assertEquals(ExportArtifactType.JAVA_ZIP, artifacts.lastType);
-        assertTrue(task.completed());
-        assertEquals(1, runtime.loadCount);
-        assertFalse(operations.isBusy(world.id()));
-        assertEquals(WorldCopyProfile.SNAPSHOT, files.lastProfile);
+        return new Fixture(world, runtime, operations, files, artifacts, service);
     }
+
+    private record Fixture(
+            WorldRecord world,
+            FakeRuntime runtime,
+            WorldOperationCoordinator operations,
+            FakeFiles files,
+            FakeArtifacts artifacts,
+            WorldExportService service
+    ) { }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
@@ -100,8 +133,10 @@ class WorldExportServiceTest {
     private static final class FakeFiles implements WorldFileRepository {
         private final Path root;
         private WorldCopyProfile lastProfile;
+        private int stageCopyCount;
         FakeFiles(Path root) { this.root = root; }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException {
+            stageCopyCount++;
             lastProfile = profile;
             Path path = root.resolve(operationId.toString());
             Files.createDirectory(path);
