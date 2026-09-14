@@ -11,6 +11,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLocationGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldOperationCoordinator;
+import com.halokaryamedia.lazybuilder.world.application.WorldProtectionPolicy;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeGateway;
 import com.halokaryamedia.lazybuilder.world.application.WorldRuntimeService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
@@ -73,6 +74,7 @@ public final class WorldManager {
     private final WorldRegistryPersistence registryPersistence;
     private final WorldRuntimeGateway runtimeGateway;
     private final WorldLocationGateway locationGateway;
+    private final WorldProtectionPolicy worldProtectionPolicy;
     private final WorldOperationCoordinator worldOperationCoordinator;
     private final WorldRuntimeService worldRuntimeService;
     private final WorldCreationService worldCreationService;
@@ -156,6 +158,12 @@ public final class WorldManager {
                 plugin.getServer(),
                 () -> plugin.getConfig().getString("world-manager.fallback-world", ""));
         this.locationGateway = new PaperWorldLocationGateway(plugin.getServer());
+        this.worldProtectionPolicy = new WorldProtectionPolicy(
+                () -> plugin.getConfig().getString("world-manager.fallback-world", ""),
+                () -> plugin.getServer().getWorlds().isEmpty()
+                        ? null
+                        : plugin.getServer().getWorlds().get(0).getName()
+        );
 
         this.worldRuntimeService = new WorldRuntimeService(
                 worldRegistry,
@@ -174,7 +182,8 @@ public final class WorldManager {
         this.worldSettingsService = new WorldSettingsService(
                 worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy);
         this.worldLifecycleService = new WorldLifecycleService(
-                worldRegistry, registryPersistence, worldRuntimeService, worldOperationCoordinator);
+                worldRegistry, registryPersistence, worldRuntimeService,
+                worldOperationCoordinator, worldProtectionPolicy);
         this.worldDuplicateService = new WorldDuplicateService(
                 worldRegistry, registryPersistence, worldRuntimeService,
                 worldOperationCoordinator, worldFileRepository);
@@ -183,15 +192,7 @@ public final class WorldManager {
                 worldFileRepository, worldBackupStore);
         this.worldDeleteService = new WorldDeleteService(
                 worldRegistry, registryPersistence, worldRuntimeService,
-                worldOperationCoordinator, worldFileRepository,
-                world -> {
-                    String configured = plugin.getConfig().getString("world-manager.fallback-world", "");
-                    if (configured != null && !configured.isBlank()) {
-                        return world.folderName().equals(configured.strip());
-                    }
-                    return !plugin.getServer().getWorlds().isEmpty()
-                            && world.folderName().equals(plugin.getServer().getWorlds().get(0).getName());
-                });
+                worldOperationCoordinator, worldFileRepository, worldProtectionPolicy);
         this.worldExportService = new WorldExportService(
                 worldRegistry, worldRuntimeService, worldOperationCoordinator,
                 worldFileRepository, worldExportArtifactStore, conversionRuntimeStore,
@@ -291,6 +292,7 @@ public final class WorldManager {
     public WorldTeleportService worldTeleportService() { return worldTeleportService; }
     public WorldLocationTeleportService worldLocationTeleportService() { return worldLocationTeleportService; }
     public WorldSettingsService worldSettingsService() { return worldSettingsService; }
+    public WorldProtectionPolicy worldProtectionPolicy() { return worldProtectionPolicy; }
     public WorldOperationCoordinator worldOperationCoordinator() { return worldOperationCoordinator; }
     public WorldFileRepository worldFileRepository() { return worldFileRepository; }
     public WorldBackupStore worldBackupStore() { return worldBackupStore; }
