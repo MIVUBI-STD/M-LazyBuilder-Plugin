@@ -3,8 +3,13 @@ use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, 
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
-pub fn server_preflight(state: State<'_, ServerManagerState>) -> ServerPreflight {
-    state.preflight()
+pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        Ok(state.preflight())
+    })
+    .await
+    .map_err(|error| format!("Server preflight task failed: {error}"))?
 }
 
 #[tauri::command]
