@@ -40,8 +40,8 @@ public final class TransferSessionService {
     private final Clock clock;
     private final Map<UUID, UploadSession> uploads = new ConcurrentHashMap<>();
     private final Map<UUID, DownloadSession> downloads = new ConcurrentHashMap<>();
-    /** Completed imports stay bound to the player that uploaded them until review/import cleanup releases ownership. */
-    private final Map<String, UUID> completedUploadOwners = new ConcurrentHashMap<>();
+    /** Completed imports remain transfer-owned until World Control claims them for review. */
+    private final Map<String, CompletedUploadOwnership> completedUploads = new ConcurrentHashMap<>();
 
     public TransferSessionService(Path importsRoot, Path exportsRoot, Path tempRoot, TransferPolicy policy) {
         this(importsRoot, exportsRoot, tempRoot, policy, Clock.systemUTC());
@@ -139,7 +139,9 @@ public final class TransferSessionService {
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
                 move(session.partial, session.target);
                 uploads.remove(sessionId, session);
-                completedUploadOwners.put(session.fileName, session.ownerId);
+                synchronized (completedUploads) {
+                    completedUploads.put(session.fileName, new CompletedUploadOwnership(session.ownerId, false));
+                }
                 return session.target;
             } catch (IOException | RuntimeException failure) {
                 try { abortUploadInternal(sessionId, session); }
@@ -153,14 +155,40 @@ public final class TransferSessionService {
     public boolean ownsCompletedUpload(UUID ownerId, String fileName) {
         Objects.requireNonNull(ownerId, "ownerId");
         String safeName = validateImportFileName(fileName);
-        return ownerId.equals(completedUploadOwners.get(safeName));
+        synchronized (completedUploads) {
+            CompletedUploadOwnership ownership = completedUploads.get(safeName);
+            return ownership != null && ownership.ownerId().equals(ownerId);
+        }
+    }
+
+    /**
+     * Atomically transfers a completed upload from transient transfer ownership into
+     * the Import review lifecycle. Once claimed, disconnect cleanup will not delete it;
+     * World Control becomes responsible for discard/import cleanup.
+     */
+    public boolean claimCompletedUpload(UUID ownerId, String fileName) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        String safeName = validateImportFileName(fileName);
+        synchronized (completedUploads) {
+            CompletedUploadOwnership ownership = completedUploads.get(safeName);
+            if (ownership == null || !ownership.ownerId().equals(ownerId) || ownership.claimedForReview()) {
+                return false;
+            }
+            completedUploads.put(safeName, new CompletedUploadOwnership(ownerId, true));
+            return true;
+        }
     }
 
     /** Release the transient ownership claim after discard or successful import. */
     public void releaseCompletedUpload(UUID ownerId, String fileName) {
         Objects.requireNonNull(ownerId, "ownerId");
         String safeName = validateImportFileName(fileName);
-        completedUploadOwners.remove(safeName, ownerId);
+        synchronized (completedUploads) {
+            CompletedUploadOwnership ownership = completedUploads.get(safeName);
+            if (ownership != null && ownership.ownerId().equals(ownerId)) {
+                completedUploads.remove(safeName);
+            }
+        }
     }
 
     public void abortUpload(UUID ownerId, UUID sessionId) throws IOException {
@@ -265,6 +293,20 @@ public final class TransferSessionService {
                 catch (IOException exception) { failure = combine(failure, exception); }
             }
         }
+
+        synchronized (completedUploads) {
+            for (Map.Entry<String, CompletedUploadOwnership> entry : Map.copyOf(completedUploads).entrySet()) {
+                CompletedUploadOwnership ownership = entry.getValue();
+                if (!ownership.ownerId().equals(ownerId) || ownership.claimedForReview()) continue;
+                try {
+                    Files.deleteIfExists(directChild(importsRoot, entry.getKey()));
+                    completedUploads.remove(entry.getKey(), ownership);
+                } catch (IOException exception) {
+                    failure = combine(failure, exception);
+                }
+            }
+        }
+
         if (failure != null) throw failure;
     }
 
@@ -439,6 +481,12 @@ public final class TransferSessionService {
             bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
         }
         @Override public byte[] bytes() { return Arrays.copyOf(bytes, bytes.length); }
+    }
+
+    private record CompletedUploadOwnership(UUID ownerId, boolean claimedForReview) {
+        private CompletedUploadOwnership {
+            Objects.requireNonNull(ownerId, "ownerId");
+        }
     }
 
     private static final class UploadSession {
