@@ -14,7 +14,8 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    public static final int VERSION = 2;
+    /** V3 adds per-player capabilities to the World List response. */
+    public static final int VERSION = 3;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
@@ -167,7 +168,7 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public record WorldList(List<WorldSummary> worlds) implements Response {
+    public record WorldList(List<WorldSummary> worlds, boolean canManage, boolean canTeleport) implements Response {
         public WorldList {
             worlds = List.copyOf(Objects.requireNonNull(worlds, "worlds"));
             if (worlds.size() > MAX_WORLDS) throw new IllegalArgumentException("Too many worlds");
@@ -273,6 +274,8 @@ public final class WorldControlWireProtocol {
         return write(opcode, out -> {
             switch (response) {
                 case WorldList list -> {
+                    out.writeBoolean(list.canManage());
+                    out.writeBoolean(list.canTeleport());
                     out.writeInt(list.worlds().size());
                     for (WorldSummary world : list.worlds()) writeWorld(out, world);
                 }
@@ -301,11 +304,13 @@ public final class WorldControlWireProtocol {
             int opcode = readHeader(in);
             Response response = switch (opcode) {
                 case WORLDS -> {
+                    boolean canManage = in.readBoolean();
+                    boolean canTeleport = in.readBoolean();
                     int count = in.readInt();
                     if (count < 0 || count > MAX_WORLDS) throw new IOException("World count is invalid");
                     List<WorldSummary> worlds = new ArrayList<>(count);
                     for (int i = 0; i < count; i++) worlds.add(readWorld(in));
-                    yield new WorldList(worlds);
+                    yield new WorldList(worlds, canManage, canTeleport);
                 }
                 case WORLD_CHANGED -> new WorldChanged(readString(in), readWorld(in));
                 case TELEPORT_OK -> new TeleportOk(readWorld(in));
