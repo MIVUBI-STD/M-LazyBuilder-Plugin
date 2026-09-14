@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "lazybuilder_client",
+  "id": "lazybuilder_map_manager",
   "version": "${version}",
-  "name": "LazyBuilder Client",
-  "description": "Native client UI, map preview, and transfer transport for LazyBuilder World Manager.",
+  "name": "LazyBuilder Map Manager",
+  "description": "World/map UI, navigation, transfer, and World-Manager transport for LazyBuilder.",
   "authors": ["halokaryamedia-source"],
   "environment": "client",
   "entrypoints": {
