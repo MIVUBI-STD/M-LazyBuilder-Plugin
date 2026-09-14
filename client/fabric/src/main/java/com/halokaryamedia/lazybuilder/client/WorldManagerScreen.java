@@ -98,8 +98,9 @@ public final class WorldManagerScreen extends Screen {
         int left = l.listLeft();
         int width = l.listPaneWidth();
         boolean busy = operationBusy();
+        int trailing = controller.canManage() ? 156 : 28;
 
-        search = new TextFieldWidget(textRenderer, left + 14, 58, Math.max(90, width - 156), 22,
+        search = new TextFieldWidget(textRenderer, left + 14, 58, Math.max(90, width - trailing), 22,
                 Text.literal("Search worlds"));
         search.setPlaceholder(Text.literal("Search worlds…"));
         search.setText(query);
@@ -116,11 +117,13 @@ public final class WorldManagerScreen extends Screen {
         addDrawableChild(search);
         if (searchEditing) setInitialFocus(search);
 
-        LbButtonWidget add = LbUi.button(left + width - 132, 58, 118, 22, "+ Add World",
-                LbButtonWidget.Style.PRIMARY,
-                () -> { if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers)); });
-        add.active = !busy;
-        addDrawableChild(add);
+        if (controller.canManage()) {
+            LbButtonWidget add = LbUi.button(left + width - 132, 58, 118, 22, "+ Add World",
+                    LbButtonWidget.Style.PRIMARY,
+                    () -> { if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers)); });
+            add.active = !busy;
+            addDrawableChild(add);
+        }
 
         int y = 96;
         int shown = 0;
@@ -134,7 +137,7 @@ public final class WorldManagerScreen extends Screen {
             y += 32;
         }
 
-        if (query.isBlank()) {
+        if (query.isBlank() && controller.canManage()) {
             int footerY = l.bottom - 28;
             LbButtonWidget archived = LbUi.button(left + 14, footerY, Math.max(110, width - 28), 20,
                     showArchived ? "Hide Archived" : "Archived Worlds  " + archivedCount(),
@@ -155,6 +158,8 @@ public final class WorldManagerScreen extends Screen {
         boolean archived = "ARCHIVED".equals(world.lifecycle());
         boolean current = isCurrentWorld(world.worldId());
         boolean pinned = NAVIGATION.isPinned(world.worldId());
+        boolean canTeleport = controller.canTeleport() && !archived;
+        boolean canManage = controller.canManage();
 
         LbButtonWidget pin = LbUi.button(left, y, 22, 26, pinned ? "★" : "☆",
                 pinned ? LbButtonWidget.Style.SECONDARY : LbButtonWidget.Style.GHOST, () -> {
@@ -165,16 +170,17 @@ public final class WorldManagerScreen extends Screen {
         pin.active = !archived && !busy;
         addDrawableChild(pin);
 
-        int rightActionWidth = archived ? 66 : 136;
+        int rightActionWidth = (canTeleport ? 70 : 0) + (canManage ? 68 : 0);
         int nameWidth = Math.max(70, width - 28 - rightActionWidth);
         LbButtonWidget name = LbUi.button(left + 28, y, nameWidth, 26,
                 world.displayName(), world.worldId().equals(selectedWorld)
                         ? LbButtonWidget.Style.SECONDARY : LbButtonWidget.Style.GHOST,
                 () -> openManage(world.worldId(), l.compact));
+        name.active = canManage && !busy;
         addDrawableChild(name);
 
         int actionX = left + 28 + nameWidth + 6;
-        if (!archived) {
+        if (canTeleport) {
             LbButtonWidget teleport = LbUi.button(actionX, y, 64, 26,
                     current ? "Here" : "Teleport",
                     current ? LbButtonWidget.Style.GHOST : LbButtonWidget.Style.SECONDARY,
@@ -184,14 +190,17 @@ public final class WorldManagerScreen extends Screen {
             actionX += 70;
         }
 
-        LbButtonWidget manage = LbUi.button(actionX, y, 62, 26,
-                archived ? "Manage" : "Manage", LbButtonWidget.Style.GHOST,
-                () -> openManage(world.worldId(), l.compact));
-        manage.active = !busy;
-        addDrawableChild(manage);
+        if (canManage) {
+            LbButtonWidget manage = LbUi.button(actionX, y, 62, 26,
+                    "Manage", LbButtonWidget.Style.GHOST,
+                    () -> openManage(world.worldId(), l.compact));
+            manage.active = !busy;
+            addDrawableChild(manage);
+        }
     }
 
     private void openManage(UUID worldId, boolean compact) {
+        if (!controller.canManage()) return;
         selectedWorld = worldId;
         searchEditing = false;
         if (compact) compactDetail = true;
@@ -203,6 +212,16 @@ public final class WorldManagerScreen extends Screen {
         int x = l.detailPaneLeft() + 24;
         int contentWidth = Math.max(1, l.detailPaneWidth() - 48);
         int y = 124;
+
+        if (!controller.canManage()) {
+            if (controller.canTeleport() && !"ARCHIVED".equals(world.lifecycle()) && !isCurrentWorld(world.worldId())) {
+                LbButtonWidget teleport = LbUi.button(x, y, contentWidth, 30, "Teleport",
+                        LbButtonWidget.Style.PRIMARY, () -> controller.teleport(world.worldId()));
+                teleport.active = !busy;
+                addDrawableChild(teleport);
+            }
+            return;
+        }
 
         if ("ARCHIVED".equals(world.lifecycle())) {
             LbButtonWidget restore = LbUi.button(x, y, contentWidth, 30, "Restore World",
@@ -218,7 +237,7 @@ public final class WorldManagerScreen extends Screen {
             return;
         }
 
-        if (!isCurrentWorld(world.worldId())) {
+        if (controller.canTeleport() && !isCurrentWorld(world.worldId())) {
             LbButtonWidget teleport = LbUi.button(x, y, contentWidth, 30, "Teleport",
                     LbButtonWidget.Style.PRIMARY, () -> controller.teleport(world.worldId()));
             teleport.active = !busy;
@@ -262,7 +281,7 @@ public final class WorldManagerScreen extends Screen {
     }
 
     private void confirmArchive(WorldControlWireProtocol.WorldSummary world) {
-        if (client == null) return;
+        if (client == null || !controller.canManage()) return;
         if (isCurrentWorld(world.worldId())) return;
         client.setScreen(new ConfirmWorldActionScreen(
                 this,
@@ -307,7 +326,7 @@ public final class WorldManagerScreen extends Screen {
                         String.CASE_INSENSITIVE_ORDER)).toList();
         appendSection(entries, "ALL WORLDS", remaining, used);
 
-        if (showArchived) {
+        if (showArchived && controller.canManage()) {
             List<WorldControlWireProtocol.WorldSummary> sortedArchived = archived.stream()
                     .sorted(java.util.Comparator.comparing(WorldControlWireProtocol.WorldSummary::displayName,
                             String.CASE_INSENSITIVE_ORDER)).toList();
@@ -388,6 +407,9 @@ public final class WorldManagerScreen extends Screen {
         int width = l.listPaneWidth();
         LbUi.panel(context, left, 34, width, l.bottom - 34);
         context.drawTextWithShadow(textRenderer, Text.literal("WORLDS"), left + 14, 42, LbUi.TEXT_PRIMARY);
+        if (!controller.canManage() && controller.canTeleport()) {
+            context.drawTextWithShadow(textRenderer, Text.literal("Navigation access"), left + 76, 42, LbUi.TEXT_MUTED);
+        }
         if (search != null) LbUi.field(context, search, false);
         LbUi.divider(context, left + 14, 88, left + width - 14);
 
@@ -410,10 +432,10 @@ public final class WorldManagerScreen extends Screen {
         if (currentEntries.isEmpty()) {
             String title = query.isBlank() ? "No worlds yet" : "No active worlds match your search";
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(title), left + width / 2, 132, LbUi.TEXT_SECONDARY);
-            if (query.isBlank()) {
+            if (query.isBlank() && controller.canManage()) {
                 context.drawCenteredTextWithShadow(textRenderer, Text.literal("Create or import a world to begin"),
                         left + width / 2, 150, LbUi.TEXT_MUTED);
-            } else if (archivedSearchMatches() > 0) {
+            } else if (controller.canManage() && archivedSearchMatches() > 0) {
                 context.drawCenteredTextWithShadow(textRenderer,
                         Text.literal(archivedSearchMatches() + " archived match(es) — clear search and open Archived Worlds"),
                         left + width / 2, 150, LbUi.TEXT_MUTED);
@@ -428,13 +450,15 @@ public final class WorldManagerScreen extends Screen {
 
         WorldControlWireProtocol.WorldSummary world = selected();
         if (world == null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Select Manage on a world"),
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal(controller.canManage() ? "Select Manage on a world" : "Select a world to navigate"),
                     left + width / 2, 112, LbUi.TEXT_MUTED);
             return;
         }
 
         int x = left + 24;
-        context.drawTextWithShadow(textRenderer, Text.literal("MANAGE WORLD"), x, 48, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer,
+                Text.literal(controller.canManage() ? "MANAGE WORLD" : "WORLD"), x, 48, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world.displayName()), x, 66, LbUi.TEXT_PRIMARY);
         String subtitle = "ARCHIVED".equals(world.lifecycle()) ? "Archived" : isCurrentWorld(world.worldId())
                 ? "You are here" : titleCase(world.kind());
