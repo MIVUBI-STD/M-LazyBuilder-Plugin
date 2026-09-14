@@ -20,6 +20,8 @@ public final class ClientWorldController {
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
     private boolean canManage;
     private boolean canTeleport;
+    private boolean worldListReady;
+    private boolean worldListPending;
     private String lastError;
     private String activityMessage;
     private long revision;
@@ -28,7 +30,13 @@ public final class ClientWorldController {
         this.completedExportHandler = Objects.requireNonNull(completedExportHandler, "completedExportHandler");
     }
 
-    public void refresh() { send(new WorldControlWireProtocol.ListWorlds()); }
+    public void refresh() {
+        worldListPending = true;
+        lastError = null;
+        revision++;
+        send(new WorldControlWireProtocol.ListWorlds());
+    }
+
     public void requestExportFormats() { send(new WorldControlWireProtocol.GetExportFormats()); }
 
     public void create(String folderName, String displayName, String kind) {
@@ -74,6 +82,8 @@ public final class ClientWorldController {
                 worlds = list.worlds();
                 canManage = list.canManage();
                 canTeleport = list.canTeleport();
+                worldListReady = true;
+                worldListPending = false;
                 lastError = null;
                 revision++;
             }
@@ -112,6 +122,7 @@ public final class ClientWorldController {
                 revision++;
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
+                if (worldListPending) worldListPending = false;
                 lastError = error.message();
                 activityMessage = null;
                 revision++;
@@ -126,6 +137,8 @@ public final class ClientWorldController {
         settings.clear();
         canManage = false;
         canTeleport = false;
+        worldListReady = false;
+        worldListPending = false;
         lastError = null;
         activityMessage = null;
         revision++;
@@ -135,6 +148,8 @@ public final class ClientWorldController {
     public List<String> exportFormats() { return exportFormats; }
     public boolean canManage() { return canManage; }
     public boolean canTeleport() { return canTeleport; }
+    public boolean worldListReady() { return worldListReady; }
+    public boolean worldListPending() { return worldListPending; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public String lastError() { return lastError; }
     public String activityMessage() { return activityMessage; }
