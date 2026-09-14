@@ -95,15 +95,25 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
 
         try {
             installFeatures(candidate);
+            if (hasFailedFeatures()) {
+                throw new IllegalStateException("One or more requested Utilities features failed to activate");
+            }
             bindHubCommand();
             reloadConfig();
             getLogger().info("Utilities-Manager configuration reloaded.");
             return true;
         } catch (RuntimeException activationFailure) {
             getLogger().log(Level.SEVERE, "Utilities candidate activation failed; restoring previous runtime.", activationFailure);
-            disableCurrentRegistry("Partially activated Utilities candidate did not disable cleanly during rollback.");
+            if (!disableCurrentRegistry("Partially activated Utilities candidate did not disable cleanly during rollback.")) {
+                getLogger().severe("Utilities rollback cannot continue safely; disabling plugin.");
+                getServer().getPluginManager().disablePlugin(this);
+                return false;
+            }
             try {
                 installFeatures(previous);
+                if (hasFailedFeatures()) {
+                    throw new IllegalStateException("Previous Utilities runtime could not be fully restored");
+                }
                 bindHubCommand();
                 getLogger().warning("Previous Utilities runtime restored after reload failure.");
             } catch (RuntimeException rollbackFailure) {
@@ -197,17 +207,23 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         }
     }
 
+    private boolean hasFailedFeatures() {
+        return !featureFailures.isEmpty();
+    }
+
     private String conciseFailure(RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
     }
 
-    private void disableCurrentRegistry(String failureMessage) {
-        if (featureRegistry == null) return;
+    private boolean disableCurrentRegistry(String failureMessage) {
+        if (featureRegistry == null) return true;
         try {
             featureRegistry.disableAll();
+            return true;
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, failureMessage, exception);
+            return false;
         }
     }
 
