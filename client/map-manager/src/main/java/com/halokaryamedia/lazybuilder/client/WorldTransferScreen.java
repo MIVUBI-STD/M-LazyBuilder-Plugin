@@ -343,6 +343,7 @@ public final class WorldTransferScreen extends Screen {
         if (busy()) return;
         importInspection = null;
         importArtifactName = null;
+        importDisplayName = "";
         validation = null;
         chooseImport();
     }
