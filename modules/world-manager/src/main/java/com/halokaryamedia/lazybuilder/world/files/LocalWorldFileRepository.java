@@ -22,6 +22,9 @@ import java.util.UUID;
  */
 public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final Set<String> DUPLICATE_EXCLUDED_DIRECTORIES = Set.of("playerdata", "advancements", "stats");
+    private static final String WORK_SUFFIX = ".work";
+    private static final String COPY_SUFFIX = ".copy";
+    private static final String DELETE_SUFFIX = ".delete";
 
     private final Path worldRoot;
     private final Path workspaceRoot;
@@ -42,7 +45,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             throw new IOException("Managed world folder is missing or unsafe: " + source.folderName());
         }
 
-        Path destination = reserveWorkspace(operationId);
+        Path destination = reserveTypedWorkspace(operationId, COPY_SUFFIX);
         try {
             copyTree(sourcePath, destination, profile);
             return destination;
@@ -64,20 +67,40 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
             throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
         }
-        Path destination = reserveWorkspace(operationId);
+        // Delete staging must remain distinguishable from disposable workspaces. If the
+        // process stops after this move, the staged directory can be the only copy left.
+        Path destination = reserveTypedWorkspace(operationId, DELETE_SUFFIX);
         moveDirectory(source, destination);
         return destination;
     }
 
     @Override
     public Path reserveWorkspace(UUID operationId) throws IOException {
-        Objects.requireNonNull(operationId, "operationId");
-        Files.createDirectories(workspaceRoot);
-        Path destination = workspacePath(operationId.toString());
-        if (Files.exists(destination)) {
-            throw new IOException("Workspace already exists: " + destination.getFileName());
+        return reserveTypedWorkspace(operationId, WORK_SUFFIX);
+    }
+
+    @Override
+    public int recoverTransientWorkspaces() throws IOException {
+        if (Files.notExists(workspaceRoot)) return 0;
+        if (!Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
+            throw new IOException("World Manager work root is unsafe");
         }
-        return destination;
+
+        int recovered = 0;
+        try (var children = Files.list(workspaceRoot)) {
+            for (Path child : children.toList()) {
+                String name = child.getFileName().toString();
+                if (!isRecoverableTransientName(name)) continue;
+                Path target = requireDirectWorkspace(child);
+                if (Files.isSymbolicLink(target)) {
+                    Files.deleteIfExists(target);
+                } else {
+                    deleteTree(target);
+                }
+                recovered++;
+            }
+        }
+        return recovered;
     }
 
     @Override
@@ -113,6 +136,33 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             return;
         }
         deleteTree(target);
+    }
+
+    private Path reserveTypedWorkspace(UUID operationId, String suffix) throws IOException {
+        Objects.requireNonNull(operationId, "operationId");
+        Files.createDirectories(workspaceRoot);
+        if (!Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
+            throw new IOException("World Manager work root is unsafe");
+        }
+        Path destination = workspacePath(operationId + suffix);
+        if (Files.exists(destination)) {
+            throw new IOException("Workspace already exists: " + destination.getFileName());
+        }
+        return destination;
+    }
+
+    private static boolean isRecoverableTransientName(String name) {
+        String suffix;
+        if (name.endsWith(WORK_SUFFIX)) suffix = WORK_SUFFIX;
+        else if (name.endsWith(COPY_SUFFIX)) suffix = COPY_SUFFIX;
+        else return false;
+        String id = name.substring(0, name.length() - suffix.length());
+        try {
+            UUID.fromString(id);
+            return true;
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     private void copyTree(Path source, Path destination, WorldCopyProfile profile) throws IOException {
