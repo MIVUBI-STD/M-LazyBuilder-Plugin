@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.files;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -10,7 +11,11 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -67,9 +72,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
             throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
         }
-        // Delete staging must remain distinguishable from disposable workspaces. If the
-        // process stops after this move, the staged directory can be the only copy left.
-        Path destination = reserveTypedWorkspace(operationId, DELETE_SUFFIX);
+        // Delete staging embeds the original safe folder name so restart recovery can
+        // reconcile it against persisted registry truth without guessing by directory contents.
+        Path destination = reserveDeleteWorkspace(operationId, world.folderName());
         moveDirectory(source, destination);
         return destination;
     }
@@ -82,9 +87,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     @Override
     public int recoverTransientWorkspaces() throws IOException {
         if (Files.notExists(workspaceRoot)) return 0;
-        if (!Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
-            throw new IOException("World Manager work root is unsafe");
-        }
+        requireSafeWorkspaceRoot();
 
         int recovered = 0;
         try (var children = Files.list(workspaceRoot)) {
@@ -101,6 +104,52 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             }
         }
         return recovered;
+    }
+
+    @Override
+    public DeleteRecovery recoverDeleteWorkspaces(Collection<WorldRecord> managedWorlds) throws IOException {
+        Objects.requireNonNull(managedWorlds, "managedWorlds");
+        if (Files.notExists(workspaceRoot)) return new DeleteRecovery(0, 0, 0);
+        requireSafeWorkspaceRoot();
+
+        Set<String> managedFolders = new HashSet<>();
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+
+        int restored = 0;
+        int discarded = 0;
+        int preserved = 0;
+        try (var children = Files.list(workspaceRoot)) {
+            for (Path child : children.toList()) {
+                String name = child.getFileName().toString();
+                if (!name.endsWith(DELETE_SUFFIX)) continue;
+
+                Optional<DeleteWorkspaceIdentity> identity = parseDeleteWorkspaceName(name);
+                Path staged = requireDirectWorkspace(child);
+                if (identity.isEmpty() || Files.isSymbolicLink(staged) || !Files.isDirectory(staged)) {
+                    preserved++;
+                    continue;
+                }
+
+                String folderName = identity.get().folderName();
+                if (managedFolders.contains(folderName)) {
+                    Path destination = worldPath(folderName);
+                    if (Files.exists(destination)) {
+                        // Registry says the delete never committed, but both copies exist.
+                        // Preserve staging rather than deciding which copy is authoritative.
+                        preserved++;
+                        continue;
+                    }
+                    moveDirectory(staged, destination);
+                    restored++;
+                } else {
+                    // Persisted registry no longer contains the world, so the destructive
+                    // operation committed before the previous process ended.
+                    deleteTree(staged);
+                    discarded++;
+                }
+            }
+        }
+        return new DeleteRecovery(restored, discarded, preserved);
     }
 
     @Override
@@ -141,14 +190,32 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private Path reserveTypedWorkspace(UUID operationId, String suffix) throws IOException {
         Objects.requireNonNull(operationId, "operationId");
         Files.createDirectories(workspaceRoot);
-        if (!Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
-            throw new IOException("World Manager work root is unsafe");
-        }
+        requireSafeWorkspaceRoot();
         Path destination = workspacePath(operationId + suffix);
         if (Files.exists(destination)) {
             throw new IOException("Workspace already exists: " + destination.getFileName());
         }
         return destination;
+    }
+
+    private Path reserveDeleteWorkspace(UUID operationId, String folderName) throws IOException {
+        Objects.requireNonNull(operationId, "operationId");
+        String safeFolder = validateSingleName(folderName, "world folder");
+        Files.createDirectories(workspaceRoot);
+        requireSafeWorkspaceRoot();
+        String encodedFolder = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8));
+        Path destination = workspacePath(operationId + "." + encodedFolder + DELETE_SUFFIX);
+        if (Files.exists(destination)) {
+            throw new IOException("Workspace already exists: " + destination.getFileName());
+        }
+        return destination;
+    }
+
+    private void requireSafeWorkspaceRoot() throws IOException {
+        if (!Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
+            throw new IOException("World Manager work root is unsafe");
+        }
     }
 
     private static boolean isRecoverableTransientName(String name) {
@@ -162,6 +229,22 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             return true;
         } catch (IllegalArgumentException ignored) {
             return false;
+        }
+    }
+
+    private static Optional<DeleteWorkspaceIdentity> parseDeleteWorkspaceName(String name) {
+        if (!name.endsWith(DELETE_SUFFIX)) return Optional.empty();
+        String stem = name.substring(0, name.length() - DELETE_SUFFIX.length());
+        int separator = stem.indexOf('.');
+        if (separator <= 0 || separator == stem.length() - 1) return Optional.empty();
+        try {
+            UUID operationId = UUID.fromString(stem.substring(0, separator));
+            String folderName = new String(
+                    Base64.getUrlDecoder().decode(stem.substring(separator + 1)), StandardCharsets.UTF_8);
+            folderName = validateSingleName(folderName, "world folder");
+            return Optional.of(new DeleteWorkspaceIdentity(operationId, folderName));
+        } catch (IllegalArgumentException invalid) {
+            return Optional.empty();
         }
     }
 
@@ -262,4 +345,6 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             }
         });
     }
+
+    private record DeleteWorkspaceIdentity(UUID operationId, String folderName) { }
 }
