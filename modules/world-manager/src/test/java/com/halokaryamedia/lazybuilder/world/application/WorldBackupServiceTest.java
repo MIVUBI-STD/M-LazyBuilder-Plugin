@@ -74,7 +74,40 @@ class WorldBackupServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
+    @Test
+    void abandonPreparedBackupRestoresOriginallyLoadedSourceAndReleasesLease() {
+        Fixture fixture = fixture(true);
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+
+        assertFalse(fixture.runtime.loaded);
+        fixture.service.abandon(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void failedBackupCanBeAbandonedWithoutLeavingSourceUnloaded() {
+        Fixture fixture = fixture(true, true);
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.executeFilePhase(task));
+        assertFalse(fixture.runtime.loaded);
+        assertTrue(fixture.operations.isBusy(fixture.world.id()));
+
+        fixture.service.abandon(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
     private Fixture fixture(boolean loaded) {
+        return fixture(loaded, false);
+    }
+
+    private Fixture fixture(boolean loaded, boolean failBackup) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
                 WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
@@ -84,6 +117,7 @@ class WorldBackupServiceTest {
         WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations, ignored -> false);
         FakeFiles files = new FakeFiles(tempDir);
         WorldBackupStore backups = (stagedWorld, backupId) -> {
+            if (failBackup) throw new IOException("backup packaging failed");
             Path artifact = tempDir.resolve(backupId + ".zip");
             Files.writeString(artifact, "backup");
             return artifact;
