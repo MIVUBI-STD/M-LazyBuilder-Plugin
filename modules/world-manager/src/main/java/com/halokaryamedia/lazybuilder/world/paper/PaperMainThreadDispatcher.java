@@ -13,8 +13,9 @@ import java.util.concurrent.TimeoutException;
 /**
  * Single boundary for invoking Paper/Bukkit mutations from non-primary threads.
  *
- * <p>The dispatcher preserves the original service exception, cancels a timed-out queued
- * future, and restores the interrupted flag when a waiting worker is interrupted.</p>
+ * <p>The normal dispatch path is interruption-sensitive. Cleanup dispatch deliberately defers
+ * interruption until the scheduled Paper cleanup either completes or reaches the same bounded
+ * timeout, so cancellation cannot strand request-bound world tasks in a prepared state.</p>
  */
 public final class PaperMainThreadDispatcher {
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
@@ -45,19 +46,63 @@ public final class PaperMainThreadDispatcher {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
             future.cancel(false);
-            throw new IllegalStateException(
-                    "Paper main-thread dispatch timed out after " + timeout.toMillis() + " ms",
-                    exception
-            );
+            throw timeoutFailure(exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for Paper main-thread dispatch", exception);
         } catch (ExecutionException exception) {
-            Throwable cause = exception.getCause();
-            if (cause instanceof Exception checked) throw checked;
-            if (cause instanceof Error error) throw error;
-            throw new IllegalStateException("Paper main-thread dispatch failed", cause);
+            return rethrowExecution(exception);
         }
+    }
+
+    /**
+     * Bounded cleanup dispatch that cannot be skipped merely because the worker was cancelled.
+     * Any interrupt observed while waiting is restored on the worker after cleanup resolves.
+     */
+    public <T> T callCleanup(Callable<T> action) throws Exception {
+        Objects.requireNonNull(action, "action");
+        if (scheduler.isPrimaryThread()) {
+            return action.call();
+        }
+
+        Future<T> future = scheduler.submit(action);
+        long deadline = System.nanoTime() + timeout.toNanos();
+        boolean interrupted = Thread.interrupted();
+        try {
+            while (true) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0L) {
+                    future.cancel(false);
+                    throw timeoutFailure(new TimeoutException("cleanup deadline reached"));
+                }
+                try {
+                    return future.get(remaining, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                } catch (TimeoutException exception) {
+                    future.cancel(false);
+                    throw timeoutFailure(exception);
+                } catch (ExecutionException exception) {
+                    return rethrowExecution(exception);
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    private IllegalStateException timeoutFailure(TimeoutException exception) {
+        return new IllegalStateException(
+                "Paper main-thread dispatch timed out after " + timeout.toMillis() + " ms",
+                exception
+        );
+    }
+
+    private static <T> T rethrowExecution(ExecutionException exception) throws Exception {
+        Throwable cause = exception.getCause();
+        if (cause instanceof Exception checked) throw checked;
+        if (cause instanceof Error error) throw error;
+        throw new IllegalStateException("Paper main-thread dispatch failed", cause);
     }
 
     interface SchedulerBridge {
