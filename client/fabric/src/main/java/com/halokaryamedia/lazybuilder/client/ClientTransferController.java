@@ -258,13 +258,18 @@ public final class ClientTransferController {
         Download state = download;
         if (state == null) return;
         try {
+            state.descriptor = descriptor;
             Files.deleteIfExists(state.partial);
             Path parent = state.partial.getParent();
             if (parent != null) Files.createDirectories(parent);
+            Path storageRoot = parent == null ? state.partial.toAbsolutePath().getParent() : parent;
+            if (storageRoot != null && Files.getFileStore(storageRoot).getUsableSpace() < descriptor.totalBytes()) {
+                abortDownload("Not enough space at the selected save location for this export");
+                return;
+            }
             state.channel = FileChannel.open(state.partial,
                     StandardOpenOption.CREATE_NEW,
                     StandardOpenOption.WRITE);
-            state.descriptor = descriptor;
             setStatus(new TransferStatus(TransferPhase.DOWNLOADING,
                     state.fileName, 0, descriptor.totalBytes(), "Downloading export"));
             requestDownloadBatch(state);
