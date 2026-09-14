@@ -53,10 +53,6 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         ZipEntry selectedLevelDat = null;
         String levelPath = null;
         long entries = 0;
-
-        // Inspection must stay cheap even for very large worlds. Read the ZIP central
-        // directory for names and inflate only the selected level.dat. The final import
-        // still performs full bounded extraction and therefore remains the trust gate.
         try (ZipFile zip = new ZipFile(artifact.toFile())) {
             var enumeration = zip.entries();
             while (enumeration.hasMoreElements()) {
@@ -71,11 +67,9 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                     selectedLevelDat = entry;
                 }
             }
-
             if (levelPath == null || selectedLevelDat == null) {
                 throw new IOException("Import archive does not contain a Minecraft level.dat");
             }
-
             byte[] levelDat = readInspectionEntry(zip, selectedLevelDat);
             String rootPrefix = levelPath.substring(0, levelPath.length() - "level.dat".length());
             boolean bedrock = entryNames.stream().anyMatch(name -> name.startsWith(rootPrefix + "db/"));
@@ -85,17 +79,11 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 OptionalInt dataVersion = JavaLevelDataVersion.read(new ByteArrayInputStream(levelDat));
                 if (dataVersion.isPresent()) {
                     version = dataVersion.getAsInt() == JavaLevelDataVersion.JAVA_1_21_4
-                            ? "1.21.4"
-                            : "DataVersion " + dataVersion.getAsInt();
+                            ? "1.21.4" : "DataVersion " + dataVersion.getAsInt();
                 }
             }
-
-            return new ImportInspection(
-                    artifact.getFileName().toString(),
-                    edition,
-                    version,
-                    suggestedName(artifact.getFileName().toString())
-            );
+            return new ImportInspection(artifact.getFileName().toString(), edition, version,
+                    suggestedName(artifact.getFileName().toString()));
         }
     }
 
@@ -107,9 +95,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             for (int read; (read = in.read(buffer)) >= 0;) {
                 if (read == 0) continue;
                 total += read;
-                if (total > MAX_INSPECT_LEVEL_DAT_BYTES) {
-                    throw new IOException("Import level.dat exceeds inspection limit");
-                }
+                if (total > MAX_INSPECT_LEVEL_DAT_BYTES) throw new IOException("Import level.dat exceeds inspection limit");
                 bytes.write(buffer, 0, read);
             }
         }
@@ -122,26 +108,16 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Path target = Objects.requireNonNull(workspace, "workspace").toAbsolutePath().normalize();
         if (Files.exists(target)) throw new IOException("Import workspace already exists: " + target.getFileName());
         Files.createDirectories(target);
-
         boolean success = false;
         try {
             extractBounded(artifact, target);
             normalizeSingleRoot(target);
             Path levelDat = target.resolve("level.dat");
-            if (!Files.isRegularFile(levelDat)) {
-                throw new IOException("Import archive does not contain a Minecraft level.dat");
-            }
-
-            DetectedEdition edition = Files.isDirectory(target.resolve("db"))
-                    ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
-
-            // Native Java fast-path authority comes from the actual level.dat
-            // DataVersion, not from a forgeable transfer-marker properties file.
+            if (!Files.isRegularFile(levelDat)) throw new IOException("Import archive does not contain a Minecraft level.dat");
+            DetectedEdition edition = Files.isDirectory(target.resolve("db")) ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
             String trustedFormat = edition == DetectedEdition.JAVA
                     && JavaLevelDataVersion.read(levelDat).orElse(-1) == JavaLevelDataVersion.JAVA_1_21_4
-                    ? JAVA_1_21_4
-                    : null;
-
+                    ? JAVA_1_21_4 : null;
             sanitizeIdentity(target);
             success = true;
             return new StagedImport(target, edition, trustedFormat);
@@ -162,7 +138,9 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     @Override
     public void deleteArtifact(String artifactName) throws IOException {
         Path artifact = resolveArtifactPath(artifactName);
-        if (Files.isSymbolicLink(artifact)) throw new IOException("Import artifact is unsafe: " + artifact.getFileName());
+        if (Files.exists(artifact) && (!Files.isRegularFile(artifact) || Files.isSymbolicLink(artifact))) {
+            throw new IOException("Import artifact is unsafe: " + artifact.getFileName());
+        }
         Files.deleteIfExists(artifact);
     }
 
@@ -171,11 +149,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         String safe = validateArtifactName(artifactName);
         Path directory = ensureCleanupMarkerDirectory();
         Path marker = cleanupMarkerPath(directory, safe);
-        try {
-            Files.createFile(marker);
-        } catch (FileAlreadyExistsException ignored) {
-            // Idempotent durable marker.
-        }
+        try { Files.createFile(marker); }
+        catch (FileAlreadyExistsException ignored) { }
     }
 
     @Override
@@ -198,14 +173,9 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 if (!markerName.endsWith(CLEANUP_MARKER_SUFFIX)) continue;
                 String encoded = markerName.substring(0, markerName.length() - CLEANUP_MARKER_SUFFIX.length());
                 try {
-                    String value = validateArtifactName(new String(
-                            Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
-                    if (cleanupMarkerPath(directory, value).equals(marker.toAbsolutePath().normalize())) {
-                        pending.add(value);
-                    }
-                } catch (IllegalArgumentException invalidMarker) {
-                    // Unknown marker names are never trusted as deletion authority.
-                }
+                    String value = validateArtifactName(new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
+                    if (cleanupMarkerPath(directory, value).equals(marker.toAbsolutePath().normalize())) pending.add(value);
+                } catch (IllegalArgumentException ignored) { }
             }
         }
         return List.copyOf(pending);
@@ -222,9 +192,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private Path resolveArtifactPath(String artifactName) {
         String safe = validateArtifactName(artifactName);
         Path path = importsRoot.resolve(safe).normalize();
-        if (!importsRoot.equals(path.getParent())) {
-            throw new IllegalArgumentException("Import artifact escaped owned root");
-        }
+        if (!importsRoot.equals(path.getParent())) throw new IllegalArgumentException("Import artifact escaped owned root");
         return path;
     }
 
@@ -235,9 +203,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private Path ensureCleanupMarkerDirectory() throws IOException {
         Path directory = cleanupMarkerDirectory();
         if (Files.exists(directory)) {
-            if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) {
-                throw new IOException("Import cleanup marker directory is unsafe");
-            }
+            if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) throw new IOException("Import cleanup marker directory is unsafe");
         } else {
             Files.createDirectories(directory);
         }
@@ -247,15 +213,12 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private Path existingCleanupMarkerDirectory() throws IOException {
         Path directory = cleanupMarkerDirectory();
         if (Files.notExists(directory)) return null;
-        if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) {
-            throw new IOException("Import cleanup marker directory is unsafe");
-        }
+        if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) throw new IOException("Import cleanup marker directory is unsafe");
         return directory;
     }
 
     private static Path cleanupMarkerPath(Path directory, String artifactName) {
-        String encoded = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(artifactName.getBytes(StandardCharsets.UTF_8));
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(artifactName.getBytes(StandardCharsets.UTF_8));
         return directory.resolve(encoded + CLEANUP_MARKER_SUFFIX).toAbsolutePath().normalize();
     }
 
@@ -272,20 +235,14 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 if (name.isBlank()) continue;
                 Path output = target.resolve(name).normalize();
                 if (!output.startsWith(target)) throw new IOException("Import archive contains path traversal");
-                if (entry.isDirectory()) {
-                    Files.createDirectories(output);
-                    continue;
-                }
+                if (entry.isDirectory()) { Files.createDirectories(output); continue; }
                 Path parent = output.getParent();
                 if (parent != null) Files.createDirectories(parent);
-                try (var fileOut = Files.newOutputStream(output);
-                     var out = new BufferedOutputStream(fileOut, IO_BUFFER_BYTES)) {
+                try (var fileOut = Files.newOutputStream(output); var out = new BufferedOutputStream(fileOut, IO_BUFFER_BYTES)) {
                     for (int read; (read = zip.read(buffer)) >= 0;) {
                         if (read == 0) continue;
                         totalBytes += read;
-                        if (totalBytes > maxUncompressedBytes) {
-                            throw new IOException("Import archive exceeds uncompressed-size limit");
-                        }
+                        if (totalBytes > maxUncompressedBytes) throw new IOException("Import archive exceeds uncompressed-size limit");
                         out.write(buffer, 0, read);
                     }
                 }
@@ -299,10 +256,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         try (var stream = Files.list(target)) {
             children = stream.filter(path -> !path.getFileName().toString().equals("__MACOSX")).toList();
         }
-        if (children.size() != 1 || !Files.isDirectory(children.getFirst())
-                || !Files.isRegularFile(children.getFirst().resolve("level.dat"))) {
-            return;
-        }
+        if (children.size() != 1 || !Files.isDirectory(children.getFirst()) || !Files.isRegularFile(children.getFirst().resolve("level.dat"))) return;
         Path nested = children.getFirst();
         Path temporary = target.resolveSibling(target.getFileName() + "-normalize");
         if (Files.exists(temporary)) throw new IOException("Import normalization workspace already exists");
@@ -312,11 +266,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     }
 
     private static void moveDirectory(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target);
-        }
+        try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
+        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
     }
 
     private static void sanitizeIdentity(Path root) throws IOException {
@@ -325,14 +276,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Files.deleteIfExists(root.resolve(TRANSFER_MARKER));
     }
 
-    private static String normalizeEntryName(String value) {
-        return value == null ? "" : value.replace('\\', '/');
-    }
-
-    private static boolean isLevelDat(String name) {
-        return name.equals("level.dat") || name.endsWith("/level.dat");
-    }
-
+    private static String normalizeEntryName(String value) { return value == null ? "" : value.replace('\\', '/'); }
+    private static boolean isLevelDat(String name) { return name.equals("level.dat") || name.endsWith("/level.dat"); }
     private static int pathDepth(String name) {
         int depth = 0;
         for (int i = 0; i < name.length(); i++) if (name.charAt(i) == '/') depth++;
@@ -351,17 +296,14 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static String validateArtifactName(String value) {
         String safe = validateSingleName(value);
         String lower = safe.toLowerCase(Locale.ROOT);
-        if (!lower.endsWith(".zip") && !lower.endsWith(".mcworld")) {
-            throw new IllegalArgumentException("Import artifact must be .zip or .mcworld");
-        }
+        if (!lower.endsWith(".zip") && !lower.endsWith(".mcworld")) throw new IllegalArgumentException("Import artifact must be .zip or .mcworld");
         return safe;
     }
 
     private static String validateSingleName(String value) {
         Objects.requireNonNull(value, "artifactName");
         if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
-                || value.chars().anyMatch(Character::isISOControl)) {
+                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("artifactName must be one safe file name");
         }
         return value;
@@ -370,17 +312,12 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static void deleteTree(Path root) throws IOException {
         if (Files.notExists(root)) return;
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.deleteIfExists(file);
-                return FileVisitResult.CONTINUE;
+            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file); return FileVisitResult.CONTINUE;
             }
-
-            @Override
-            public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
+            @Override public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
                 if (exception != null) throw exception;
-                Files.deleteIfExists(directory);
-                return FileVisitResult.CONTINUE;
+                Files.deleteIfExists(directory); return FileVisitResult.CONTINUE;
             }
         });
     }
