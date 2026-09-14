@@ -43,13 +43,11 @@ class WorldSettingsServiceTest {
     }
 
     @Test
-    void durablePreferencesPersistThroughRegistryOwner() {
+    void durableGameModePreferencePersistsThroughRegistryOwner() {
         Fixture fixture = fixture();
 
-        fixture.service().setAutoLoad(fixture.world().id(), false);
         WorldRecord updated = fixture.service().setDefaultGameMode(fixture.world().id(), WorldGameMode.ADVENTURE);
 
-        assertFalse(updated.autoLoad());
         assertEquals("ADVENTURE", updated.defaultGameMode());
         assertEquals(updated, fixture.persistence().saved.getFirst());
     }
@@ -155,21 +153,18 @@ class WorldSettingsServiceTest {
 
     private static Fixture fixture() {
         WorldRegistry registry = new WorldRegistry();
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         WorldRecord world = new WorldRecord(
                 WorldId.create(),
                 "Build",
                 "Build",
                 WorldKind.FLAT,
-                WorldLifecycle.ACTIVE,
-                true
+                WorldLifecycle.ACTIVE
         );
         registry.register(world);
-        states.initialize(world.id(), WorldRuntimeState.LOADED);
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.saved = registry.all();
         FakeRuntime runtime = new FakeRuntime();
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, states, runtime);
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime);
         WorldSettingsService service = new WorldSettingsService(
                 registry,
                 persistence,
@@ -186,17 +181,13 @@ class WorldSettingsServiceTest {
             FakeRuntime runtime,
             WorldSettingsService service,
             WorldRecord world
-    ) {
-    }
+    ) { }
 
     private static final class MemoryPersistence implements WorldRegistryPersistence {
         private List<WorldRecord> saved = List.of();
         private boolean failNextSave;
 
-        @Override
-        public List<WorldRecord> load() {
-            return saved;
-        }
+        @Override public List<WorldRecord> load() { return saved; }
 
         @Override
         public void save(List<WorldRecord> worlds) throws IOException {
@@ -221,68 +212,20 @@ class WorldSettingsServiceTest {
         private boolean buildReadyApplied;
         private boolean failBuildReady;
 
-        @Override
-        public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {
-        }
-
-        @Override
-        public void rollbackCreatedWorld(WorldRecord world) {
-        }
-
-        @Override
-        public boolean isLoaded(WorldRecord world) {
-            return true;
-        }
-
-        @Override
-        public void loadWorld(WorldRecord world) {
-        }
-
-        @Override
-        public void unloadWorld(WorldRecord world) {
-        }
-
-        @Override
-        public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {
-        }
-
-        @Override
-        public WorldRuntimeSettings readSettings(WorldRecord world) {
-            return runtimeSettings;
-        }
-
-        @Override
-        public void setDifficulty(WorldRecord world, WorldDifficulty difficulty) {
-            lastDifficulty = difficulty;
-        }
-
-        @Override
-        public void setPvp(WorldRecord world, boolean enabled) {
-            lastPvp = enabled;
-        }
-
-        @Override
-        public void setTime(WorldRecord world, long ticks) {
-            lastTime = ticks;
-        }
-
-        @Override
-        public void setWeather(WorldRecord world, WorldWeather weather) {
-            lastWeather = weather;
-        }
-
-        @Override
-        public void setGameRule(WorldRecord world, String ruleName, String value) {
-            lastRule = ruleName + "=" + value;
-        }
-
-        @Override
-        public void setSpawnToPlayer(UUID playerId, WorldRecord world) {
-            lastSpawnPlayer = playerId;
-        }
-
-        @Override
-        public void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
+        @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
+        @Override public void rollbackCreatedWorld(WorldRecord world) { }
+        @Override public boolean isLoaded(WorldRecord world) { return true; }
+        @Override public void loadWorld(WorldRecord world) { }
+        @Override public void unloadWorld(WorldRecord world) { }
+        @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
+        @Override public WorldRuntimeSettings readSettings(WorldRecord world) { return runtimeSettings; }
+        @Override public void setDifficulty(WorldRecord world, WorldDifficulty difficulty) { lastDifficulty = difficulty; }
+        @Override public void setPvp(WorldRecord world, boolean enabled) { lastPvp = enabled; }
+        @Override public void setTime(WorldRecord world, long ticks) { lastTime = ticks; }
+        @Override public void setWeather(WorldRecord world, WorldWeather weather) { lastWeather = weather; }
+        @Override public void setGameRule(WorldRecord world, String ruleName, String value) { lastRule = ruleName + "=" + value; }
+        @Override public void setSpawnToPlayer(UUID playerId, WorldRecord world) { lastSpawnPlayer = playerId; }
+        @Override public void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
             lastSpawnControl = control;
             lastSpawnEnabled = enabled;
         }
