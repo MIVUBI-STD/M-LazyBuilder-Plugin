@@ -479,6 +479,13 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private void handleImport(Player player, WorldControlWireProtocol.ImportWorld request) {
         if (!beginHeavy(player)) return;
         UUID owner = player.getUniqueId();
+        String reviewed = reviewedImportArtifacts.get(owner);
+        if (!request.artifactName().equals(reviewed)) {
+            heavyInFlight.remove(owner);
+            send(player, WorldControlWireProtocol.error(
+                    "Import requires the currently reviewed upload. Choose and review the world file again."));
+            return;
+        }
         scheduleHeavy(
                 player,
                 () -> heavyOperations.importWorld(
