@@ -55,14 +55,7 @@ public final class WorldManagerPlugin extends JavaPlugin {
                         var loaded = getServer().getWorld(world.folderName());
                         return loaded != null && !loaded.getPlayers().isEmpty();
                     },
-                    world -> {
-                        String configured = getConfig().getString("world-manager.fallback-world", "");
-                        if (configured != null && !configured.isBlank()) {
-                            return world.folderName().equals(configured.strip());
-                        }
-                        return !getServer().getWorlds().isEmpty()
-                                && world.folderName().equals(getServer().getWorlds().get(0).getName());
-                    },
+                    worldManager.worldProtectionPolicy(),
                     Duration.ofMinutes(idleMinutes)
             );
             this.idleUnloadTask = getServer().getScheduler().runTaskTimer(
