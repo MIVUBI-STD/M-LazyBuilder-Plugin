@@ -49,25 +49,6 @@ jobs:
       - name: Test Rust/Tauri backend
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
-  utilities:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Compile and test Utilities-Manager independently
-        run: mvn --batch-mode --no-transfer-progress -pl plugins/utilities-manager -am verify
-      - name: Upload tested Utilities-Manager
-        uses: actions/upload-artifact@v4
-        with:
-          name: LazyBuilder-Utilities-${{ github.sha }}
-          path: plugins/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
-          if-no-files-found: error
-          retention-days: 7
-
   paper:
     runs-on: ubuntu-latest
     steps:
@@ -107,14 +88,11 @@ jobs:
         run: gradle -p mods/map-manager --no-daemon build
       - name: Compile Utility Manager
         run: gradle -p mods/utility-manager --no-daemon build
-      - name: Compile Performance Manager
-        run: gradle -p mods/performance-manager --no-daemon build
-      - name: Stage tested client mods
+      - name: Stage required client mods
         run: |
           mkdir -p .artifacts/client-mods
           cp mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
           cp mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
-          cp mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
       - name: Upload tested client mods
         uses: actions/upload-artifact@v4
         with:
@@ -124,7 +102,7 @@ jobs:
           retention-days: 7
 
   tauri-desktop:
-    needs: [paper, fabric]
+    needs: [launcher-check, paper, fabric]
     runs-on: windows-latest
     defaults:
       run:
@@ -148,12 +126,6 @@ jobs:
           path: apps/launcher/src-tauri/resources/client-mods
       - name: Install frontend dependencies
         run: npm ci
-      - name: Typecheck Svelte frontend
-        run: npm run typecheck
-      - name: Build Svelte frontend
-        run: npm run build:frontend
-      - name: Generate Tauri icon assets
-        run: npx tauri icon src-tauri/app-icon.svg
       - name: Cache Rust dependencies and target
         uses: actions/cache@v4
         with:
@@ -164,10 +136,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('apps/launcher/src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Check Rust/Tauri backend
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
-      - name: Test Rust/Tauri backend
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build LazyBuilder and NSIS installer
         run: npm run build:app
       - name: Upload Windows application and installer
