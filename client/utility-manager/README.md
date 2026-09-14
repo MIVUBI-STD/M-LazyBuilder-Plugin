@@ -22,9 +22,12 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 
 - Extended Chat History: enabled by default and retains more vanilla chat lines/history without replacing the chat screen;
 - Keep Chat Draft: enabled by default and restores an unsent draft within the current Minecraft session;
-- Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known.
+- Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
+- Borderless Window: opt-in. When enabled, Utility Manager removes normal window decoration after client startup and expands the window across the monitor currently containing Minecraft.
 
 Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
+
+Borderless mode is a window-experience feature only. Utility Manager does not throttle FPS or CPU/GPU use when Minecraft loses focus; those policies belong to Performance Manager. Vanilla exclusive fullscreen also remains authoritative: if Minecraft starts in fullscreen, Utility Manager does not override it.
 
 ## Preferences
 
