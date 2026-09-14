@@ -28,7 +28,7 @@ public final class ClientMapController {
     public void teleportCurrent(int blockX, int blockZ) {
         MapActionWireProtocol.CurrentWorldResult current = currentWorld;
         if (current == null) {
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet. Create or load a managed world first.");
+            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet.");
             return;
         }
         WorldId worldId = current.worldId();
@@ -46,7 +46,7 @@ public final class ClientMapController {
         if (exportBusy) throw new IllegalStateException("An Export Area request is already active");
         MapActionWireProtocol.CurrentWorldResult current = currentWorld;
         if (current == null) {
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet. Create or load a managed world first.");
+            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet.");
             return;
         }
         WorldId worldId = current.worldId();
@@ -62,6 +62,11 @@ public final class ClientMapController {
         switch (response) {
             case MapActionWireProtocol.CurrentWorldResult current -> {
                 currentWorld = current;
+                lastError = null;
+                revision++;
+            }
+            case MapActionWireProtocol.CurrentWorldCleared ignored -> {
+                currentWorld = null;
                 lastError = null;
                 revision++;
             }
