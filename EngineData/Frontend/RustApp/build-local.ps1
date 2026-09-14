@@ -1,5 +1,6 @@
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$AllowMissingCore
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,10 +34,17 @@ Write-Host "Repository: $RepoRoot"
 Write-Host "Launcher:   $AppRoot"
 Write-Host ''
 
-if (-not (Test-Path $WorldJar) -or -not (Test-Path $UtilitiesJar)) {
-    Write-Warning 'Matching core JARs are not staged in src-tauri/resources/core.'
-    Write-Warning 'The Launcher can still be compiled, but Prepare Server will need matching core JARs before a full runtime test.'
-    Write-Warning 'This script intentionally does not build Paper/Fabric modules.'
+$MissingCore = @()
+if (-not (Test-Path $WorldJar)) { $MissingCore += 'World-Manager-0.1.0-SNAPSHOT.jar' }
+if (-not (Test-Path $UtilitiesJar)) { $MissingCore += 'Utilities-Manager-0.1.0-SNAPSHOT.jar' }
+
+if ($MissingCore.Count -gt 0) {
+    $MissingText = $MissingCore -join ', '
+    if (-not $AllowMissingCore) {
+        throw "Runtime-ready Launcher build blocked: matching core JARs are missing from src-tauri/resources/core ($MissingText). Stage the tested core JARs first. Use -AllowMissingCore only for an explicit compile-only Launcher check."
+    }
+    Write-Warning "Compile-only mode: core JARs are missing ($MissingText)."
+    Write-Warning 'The produced app must not be used to validate Prepare Server or a fresh server workflow.'
     Write-Host ''
 }
 
@@ -67,16 +75,26 @@ try {
 
     $Exe = Join-Path $AppRoot 'src-tauri\target\release\lazybuilder.exe'
     $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
+    if (-not (Test-Path $Exe)) {
+        throw 'Tauri reported success but lazybuilder.exe was not found in the expected release directory.'
+    }
+
+    $Installers = @()
+    if (Test-Path $NsisDir) {
+        $Installers = @(Get-ChildItem $NsisDir -Filter '*-setup.exe')
+    }
+    if ($Installers.Count -eq 0) {
+        throw 'Tauri reported success but no NSIS installer was found in the expected bundle directory.'
+    }
 
     Write-Host ''
     Write-Host 'Build complete.' -ForegroundColor Green
-    if (Test-Path $Exe) {
-        Write-Host "Executable: $Exe"
-    }
-    if (Test-Path $NsisDir) {
-        Get-ChildItem $NsisDir -Filter '*-setup.exe' | ForEach-Object {
-            Write-Host "Installer:  $($_.FullName)"
-        }
+    Write-Host "Executable: $Exe"
+    $Installers | ForEach-Object { Write-Host "Installer:  $($_.FullName)" }
+    if ($MissingCore.Count -gt 0) {
+        Write-Host 'Mode:       compile-only (core runtime components missing)' -ForegroundColor Yellow
+    } else {
+        Write-Host 'Mode:       runtime-ready Launcher package' -ForegroundColor Green
     }
     Write-Host ''
     Write-Host 'Expected runtime UX: only the LazyBuilder window is visible; Paper and Java validation run without console windows.'
