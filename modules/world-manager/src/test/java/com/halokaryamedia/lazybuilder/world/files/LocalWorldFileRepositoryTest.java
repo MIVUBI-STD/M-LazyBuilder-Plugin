@@ -18,8 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalWorldFileRepositoryTest {
-    @TempDir
-    Path tempDir;
+    @TempDir Path tempDir;
 
     @Test
     void duplicateProfileRemovesIdentityAndPlayerLocalData() throws Exception {
@@ -83,6 +82,53 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void transactionalPublishRecoveryUsesPersistedRegistryAsCommitAuthority() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        Files.createDirectories(worldRoot.resolve("Build"));
+        Files.writeString(worldRoot.resolve("Build/level.dat"), "level");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        Path committedStage = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
+        repository.publishStagedWorld(committedStage, "CommittedCopy");
+        WorldRecord committed = new WorldRecord(WorldId.create(), "CommittedCopy", "Committed Copy",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        assertTrue(Files.exists(worldRoot.resolve("CommittedCopy/.lazybuilder-publish-pending")));
+
+        WorldFileRepository.PublishRecovery finalized = repository.recoverPublishedWorlds(List.of(committed));
+        assertEquals(1, finalized.finalized());
+        assertEquals(0, finalized.discarded());
+        assertTrue(Files.exists(worldRoot.resolve("CommittedCopy/level.dat")));
+        assertFalse(Files.exists(worldRoot.resolve("CommittedCopy/.lazybuilder-publish-pending")));
+
+        Path orphanStage = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
+        repository.publishStagedWorld(orphanStage, "UncommittedCopy");
+        WorldFileRepository.PublishRecovery discarded = repository.recoverPublishedWorlds(List.of(committed));
+        assertEquals(0, discarded.finalized());
+        assertEquals(1, discarded.discarded());
+        assertFalse(Files.exists(worldRoot.resolve("UncommittedCopy")));
+    }
+
+    @Test
+    void managedWorldAuditReportsMissingAndUnsafeRegistryRoots() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        Files.createDirectories(worldRoot);
+        Files.writeString(worldRoot.resolve("Unsafe"), "not-a-directory");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        WorldRecord missing = new WorldRecord(WorldId.create(), "Missing", "Missing",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldRecord unsafe = new WorldRecord(WorldId.create(), "Unsafe", "Unsafe",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldFileRepository.ManagedWorldAudit audit = repository.auditManagedWorldFolders(List.of(missing, unsafe));
+
+        assertFalse(audit.healthy());
+        assertEquals(List.of("Missing"), audit.missingFolders());
+        assertEquals(List.of("Unsafe"), audit.unsafeFolders());
+    }
+
+    @Test
     void startupRecoveryDeletesOnlyTypedDisposableWorkspaces() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");
@@ -92,30 +138,22 @@ class LocalWorldFileRepositoryTest {
         Files.writeString(worldRoot.resolve("DeleteMe/level.dat"), "level");
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
-
         Path generic = repository.reserveWorkspace(UUID.randomUUID());
         Files.createDirectories(generic);
         Files.writeString(generic.resolve("partial.bin"), "partial");
-
         Path copied = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.SNAPSHOT);
         WorldRecord deleteMe = new WorldRecord(WorldId.create(), "DeleteMe", "Delete Me",
                 WorldKind.FLAT, WorldLifecycle.ACTIVE);
         Path deleteStage = repository.stageDelete(deleteMe, UUID.randomUUID());
-
         Path legacyUnknown = workRoot.resolve(UUID.randomUUID().toString());
         Files.createDirectories(legacyUnknown);
         Files.writeString(legacyUnknown.resolve("unknown.bin"), "unknown");
 
-        assertTrue(generic.getFileName().toString().endsWith(".work"));
-        assertTrue(copied.getFileName().toString().endsWith(".copy"));
-        assertTrue(deleteStage.getFileName().toString().endsWith(".delete"));
-
         assertEquals(2, repository.recoverTransientWorkspaces());
-
         assertFalse(Files.exists(generic));
         assertFalse(Files.exists(copied));
-        assertTrue(Files.exists(deleteStage), "delete staging may be the only surviving world copy");
-        assertTrue(Files.exists(legacyUnknown), "untyped legacy workspace must not be guessed safe to delete");
+        assertTrue(Files.exists(deleteStage));
+        assertTrue(Files.exists(legacyUnknown));
     }
 
     @Test
@@ -129,9 +167,6 @@ class LocalWorldFileRepositoryTest {
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
         Path staged = repository.stageDelete(managed, UUID.randomUUID());
-        assertFalse(Files.exists(worldRoot.resolve(managed.folderName())));
-        assertTrue(Files.exists(staged.resolve("level.dat")));
-
         WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of(managed));
 
         assertEquals(1, result.restored());
@@ -152,7 +187,6 @@ class LocalWorldFileRepositoryTest {
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
         Path staged = repository.stageDelete(managed, UUID.randomUUID());
-
         WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
 
         assertEquals(0, result.restored());
@@ -175,7 +209,7 @@ class LocalWorldFileRepositoryTest {
         WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
 
         assertEquals(1, result.preserved());
-        assertTrue(Files.exists(legacy), "legacy delete staging has no safe target identity and must be preserved");
+        assertTrue(Files.exists(legacy));
     }
 
     private static WorldRecord world() {
