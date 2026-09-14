@@ -16,10 +16,18 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 - no dependency on Map Manager implementation packages;
 - no pollers/watchers/background workers unless an active feature proves they are required.
 
-## C2 foundation
+## Implemented Utility behavior
 
-The current implementation provides only the Manager bootstrap and preference persistence foundation. Preferences are stored in Fabric's normal config directory as `lazybuilder-utility-manager.properties`.
+Current client-side behavior remains deliberately small and vanilla-shaped:
 
-All behavior-changing preferences currently default to `false`. Loading the configuration does **not** activate borderless mode, compact HUD, timestamps, auto-reconnect, screenshot organization, or any other client behavior yet. Each feature will be implemented and reviewed independently before it is wired to its preference.
+- Extended Chat History: enabled by default and retains more vanilla chat lines/history without replacing the chat screen;
+- Keep Chat Draft: enabled by default and restores an unsent draft within the current Minecraft session;
+- Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known.
 
-This keeps Utility Manager buildable and persistent without introducing hidden behavior or a new workflow during the foundation phase.
+Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
+
+## Preferences
+
+Preferences are stored in Fabric's normal config directory as `lazybuilder-utility-manager.properties`.
+
+Visual or automatic behavior remains opt-in by default, including borderless window mode, compact info, timestamps, automatic reconnect, and screenshot organization. Features are implemented independently so Utility Manager does not become a collection of unrelated replacement workflows.
