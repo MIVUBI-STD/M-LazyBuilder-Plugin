@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    /** V4 adds the server-authoritative Import Inspection review step. */
-    public static final int VERSION = 4;
+    /** V5 adds explicit cleanup for abandoned import-review artifacts. */
+    public static final int VERSION = 5;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
@@ -38,6 +38,7 @@ public final class WorldControlWireProtocol {
     private static final int IMPORT_WORLD = 18;
     private static final int GET_EXPORT_FORMATS = 19;
     private static final int INSPECT_IMPORT = 20;
+    private static final int DISCARD_IMPORT = 21;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
@@ -53,12 +54,15 @@ public final class WorldControlWireProtocol {
     public sealed interface Request permits ListWorlds, CreateWorld, TeleportWorld,
             ArchiveWorld, RestoreWorld, DuplicateWorld, DeleteWorld, GetSettings,
             SetDefaultMode, SetDifficulty, SetPvp, ResetBuildReady, SetSpawnHere,
-            ExportWorld, ImportWorld, GetExportFormats, InspectImport {}
+            ExportWorld, ImportWorld, GetExportFormats, InspectImport, DiscardImport {}
 
     public record ListWorlds() implements Request {}
     public record GetExportFormats() implements Request {}
     public record InspectImport(String artifactName) implements Request {
         public InspectImport { artifactName = requireString(artifactName, "artifactName"); }
+    }
+    public record DiscardImport(String artifactName) implements Request {
+        public DiscardImport { artifactName = requireString(artifactName, "artifactName"); }
     }
 
     public record CreateWorld(String folderName, String displayName, String kind) implements Request {
@@ -212,6 +216,7 @@ public final class WorldControlWireProtocol {
                 case ListWorlds ignored -> { }
                 case GetExportFormats ignored -> { }
                 case InspectImport inspect -> writeString(out, inspect.artifactName());
+                case DiscardImport discard -> writeString(out, discard.artifactName());
                 case CreateWorld create -> {
                     writeString(out, create.folderName());
                     writeString(out, create.displayName());
@@ -270,6 +275,7 @@ public final class WorldControlWireProtocol {
                 case IMPORT_WORLD -> new ImportWorld(readString(in), readString(in), readString(in));
                 case GET_EXPORT_FORMATS -> new GetExportFormats();
                 case INSPECT_IMPORT -> new InspectImport(readString(in));
+                case DISCARD_IMPORT -> new DiscardImport(readString(in));
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -384,6 +390,7 @@ public final class WorldControlWireProtocol {
             case ImportWorld ignored -> IMPORT_WORLD;
             case GetExportFormats ignored -> GET_EXPORT_FORMATS;
             case InspectImport ignored -> INSPECT_IMPORT;
+            case DiscardImport ignored -> DISCARD_IMPORT;
         };
     }
 
