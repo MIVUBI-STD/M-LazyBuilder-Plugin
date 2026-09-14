@@ -103,6 +103,14 @@ public final class WorldBackupService {
         if (failure != null) throw failure;
     }
 
+    /**
+     * Cancels a prepared backup while preserving the source's pre-operation runtime state.
+     * This shares the same guarded restoration path as normal completion and failure cleanup.
+     */
+    public void abandon(BackupTask task) {
+        finish(Objects.requireNonNull(task, "task"));
+    }
+
     private void requireQuiescentSnapshotSource(BackupTask task) {
         WorldId id = task.world.id();
         if (operations.activeOperation(id) != WorldOperationType.BACKUP) {
