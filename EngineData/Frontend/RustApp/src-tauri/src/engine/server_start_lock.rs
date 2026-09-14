@@ -4,6 +4,8 @@ use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 use sysinfo::{Pid, System};
 
+const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StartLockMarker {
@@ -24,18 +26,39 @@ impl ServerStartLease {
         }
 
         let marker = current_launcher_marker()?;
-        match try_create(&path, &marker) {
-            Ok(()) => Ok(Self { path, marker }),
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                if lock_owner_is_alive(&path)? {
-                    return Err("Another LazyBuilder window is currently starting a server. Wait for that start to finish before starting another server.".into());
+        for attempt in 0..MAX_ACQUIRE_ATTEMPTS {
+            match try_create(&path, &marker) {
+                Ok(()) => return Ok(Self { path, marker }),
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                    if lock_owner_is_alive(&path)? {
+                        return Err("Another LazyBuilder window is currently starting a server. Wait for that start to finish before starting another server.".into());
+                    }
+
+                    // Never delete a stale-looking lock in place. Another launcher may
+                    // have replaced it after our liveness check. Atomically renaming the
+                    // exact pathname means only one contender can retire the stale file;
+                    // everyone else retries and observes the newly created owner.
+                    let quarantine = stale_lock_path(&path, marker.launcher_pid, attempt);
+                    let _ = fs::remove_file(&quarantine);
+                    match fs::rename(&path, &quarantine) {
+                        Ok(()) => {
+                            let _ = fs::remove_file(&quarantine);
+                            continue;
+                        }
+                        Err(rename_error) if rename_error.kind() == ErrorKind::NotFound => continue,
+                        Err(rename_error) => {
+                            if lock_owner_is_alive(&path)? {
+                                return Err("Another LazyBuilder window is currently starting a server. Wait for that start to finish before starting another server.".into());
+                            }
+                            return Err(format!("Could not retire stale server-start lock: {rename_error}"));
+                        }
+                    }
                 }
-                fs::remove_file(&path).map_err(|error| format!("Could not clear stale server-start lock: {error}"))?;
-                try_create(&path, &marker).map_err(|error| format!("Could not acquire server-start lock: {error}"))?;
-                Ok(Self { path, marker })
+                Err(error) => return Err(format!("Could not acquire server-start lock: {error}")),
             }
-            Err(error) => Err(format!("Could not acquire server-start lock: {error}")),
         }
+
+        Err("Could not acquire the server-start lock after repeated concurrent changes. Try starting the server again.".into())
     }
 }
 
@@ -57,10 +80,21 @@ impl Drop for ServerStartLease {
 
 fn try_create(path: &PathBuf, marker: &StartLockMarker) -> Result<(), std::io::Error> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    let text = serde_json::to_string(marker).map_err(std::io::Error::other)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_data()?;
-    Ok(())
+    let result = (|| {
+        let text = serde_json::to_string(marker).map_err(std::io::Error::other)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_data()
+    })();
+    if result.is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+    }
+    result
+}
+
+fn stale_lock_path(path: &PathBuf, launcher_pid: u32, attempt: u8) -> PathBuf {
+    let parent = path.parent().map(PathBuf::from).unwrap_or_default();
+    parent.join(format!("server-start.stale.{launcher_pid}.{attempt}"))
 }
 
 fn current_launcher_marker() -> Result<StartLockMarker, String> {
@@ -108,7 +142,8 @@ fn lock_path() -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::StartLockMarker;
+    use super::{stale_lock_path, StartLockMarker};
+    use std::path::PathBuf;
 
     #[test]
     fn start_lock_marker_round_trips() {
@@ -120,5 +155,11 @@ mod tests {
         let decoded: StartLockMarker = serde_json::from_str(&encoded).expect("deserialize marker");
         assert_eq!(decoded.launcher_pid, 42);
         assert_eq!(decoded.process_start_time, 1234);
+    }
+
+    #[test]
+    fn stale_lock_quarantine_is_unique_per_attempt() {
+        let path = PathBuf::from("C:/Temp/LazyBuilder/server-start.lock");
+        assert_ne!(stale_lock_path(&path, 42, 0), stale_lock_path(&path, 42, 1));
     }
 }
