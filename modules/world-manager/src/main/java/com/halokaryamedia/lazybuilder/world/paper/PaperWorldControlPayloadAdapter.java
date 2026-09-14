@@ -333,7 +333,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!beginHeavy(player)) return;
         UUID owner = player.getUniqueId();
         try {
-            if (!transfers.ownsCompletedUpload(owner, request.artifactName())) {
+            if (!transfers.claimCompletedUpload(owner, request.artifactName())) {
                 heavyInFlight.remove(owner);
                 send(player, WorldControlWireProtocol.error(
                         "Import review is only available for a world file uploaded by this client."));
