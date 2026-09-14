@@ -174,7 +174,7 @@ public final class WorldManager {
                     return loaded != null && !loaded.getPlayers().isEmpty();
                 });
         this.worldCreationService = new WorldCreationService(
-                worldRegistry, registryPersistence, runtimeGateway, buildReadyPolicy);
+                worldRegistry, registryPersistence, runtimeGateway, worldFileRepository, buildReadyPolicy);
         this.worldTeleportService = new WorldTeleportService(
                 worldRegistry, worldRuntimeService, runtimeGateway);
         this.worldLocationTeleportService = new WorldLocationTeleportService(
@@ -213,6 +213,14 @@ public final class WorldManager {
             }
             for (WorldRecord world : registryPersistence.load()) {
                 worldRegistry.register(world);
+            }
+
+            WorldFileRepository.CreateRecovery createRecovery =
+                    worldFileRepository.recoverCreateTransactions(worldRegistry.all());
+            if (createRecovery.committed() > 0 || createRecovery.rolledBack() > 0 || createRecovery.preserved() > 0) {
+                plugin.getLogger().info("Create recovery: committed=" + createRecovery.committed()
+                        + ", rolledBack=" + createRecovery.rolledBack()
+                        + ", preserved=" + createRecovery.preserved() + ".");
             }
 
             WorldFileRepository.DeleteRecovery deleteRecovery =
