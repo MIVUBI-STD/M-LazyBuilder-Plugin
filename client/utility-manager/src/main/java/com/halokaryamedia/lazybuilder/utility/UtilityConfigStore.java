@@ -35,28 +35,27 @@ public final class UtilityConfigStore {
 
         return new UtilityPreferences(
                 readBoolean(properties, "window.borderless", defaults.borderlessWindow()),
-                readBoolean(properties, "interface.compact_info", defaults.compactInfo()),
                 readBoolean(properties, "chat.extended_history", defaults.extendedChatHistory()),
                 readBoolean(properties, "chat.keep_draft", defaults.keepChatDraft()),
-                readBoolean(properties, "chat.timestamps", defaults.chatTimestamps()),
                 readBoolean(properties, "connection.reconnect_button", defaults.reconnectButton()),
-                readBoolean(properties, "connection.auto_reconnect", defaults.autoReconnect()),
-                readBoolean(properties, "screenshots.organize_by_project", defaults.organizeScreenshotsByProject())
+                readBooleanWithLegacyAlias(
+                        properties,
+                        "screenshots.contextual_names",
+                        "screenshots.organize_by_project",
+                        defaults.contextualScreenshotNames()
+                )
         );
     }
 
     public void save(UtilityPreferences preferences) {
         Properties properties = new Properties();
         properties.setProperty("window.borderless", Boolean.toString(preferences.borderlessWindow()));
-        properties.setProperty("interface.compact_info", Boolean.toString(preferences.compactInfo()));
         properties.setProperty("chat.extended_history", Boolean.toString(preferences.extendedChatHistory()));
         properties.setProperty("chat.keep_draft", Boolean.toString(preferences.keepChatDraft()));
-        properties.setProperty("chat.timestamps", Boolean.toString(preferences.chatTimestamps()));
         properties.setProperty("connection.reconnect_button", Boolean.toString(preferences.reconnectButton()));
-        properties.setProperty("connection.auto_reconnect", Boolean.toString(preferences.autoReconnect()));
         properties.setProperty(
-                "screenshots.organize_by_project",
-                Boolean.toString(preferences.organizeScreenshotsByProject())
+                "screenshots.contextual_names",
+                Boolean.toString(preferences.contextualScreenshotNames())
         );
 
         Path parent = configFile.getParent();
@@ -87,6 +86,16 @@ public final class UtilityConfigStore {
 
     public Path configFile() {
         return configFile;
+    }
+
+    private static boolean readBooleanWithLegacyAlias(
+            Properties properties,
+            String key,
+            String legacyKey,
+            boolean fallback
+    ) {
+        if (properties.containsKey(key)) return readBoolean(properties, key, fallback);
+        return readBoolean(properties, legacyKey, fallback);
     }
 
     private static boolean readBoolean(Properties properties, String key, boolean fallback) {
