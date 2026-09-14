@@ -7,6 +7,14 @@ import java.nio.file.Path;
 public interface WorldImportArtifactStore {
     StagedImport stageArchive(String artifactName, Path workspace) throws IOException;
 
+    /**
+     * Reads bounded presentation metadata from an uploaded import artifact without
+     * publishing or mutating a managed world.
+     */
+    default ImportInspection inspectArtifact(String artifactName) throws IOException {
+        throw new IOException("Import inspection is not supported by this artifact store");
+    }
+
     void sanitizeConvertedWorld(Path worldDirectory) throws IOException;
 
     /**
@@ -21,6 +29,22 @@ public interface WorldImportArtifactStore {
     default void deleteArtifact(String artifactName) throws IOException { }
 
     enum DetectedEdition { JAVA, BEDROCK }
+
+    record ImportInspection(String artifactName, DetectedEdition edition, String sourceVersion, String suggestedName) {
+        public ImportInspection {
+            artifactName = requireText(artifactName, "artifactName");
+            java.util.Objects.requireNonNull(edition, "edition");
+            sourceVersion = requireText(sourceVersion, "sourceVersion");
+            suggestedName = requireText(suggestedName, "suggestedName");
+        }
+
+        private static String requireText(String value, String label) {
+            java.util.Objects.requireNonNull(value, label);
+            String normalized = value.strip();
+            if (normalized.isEmpty()) throw new IllegalArgumentException(label + " must not be blank");
+            return normalized;
+        }
+    }
 
     record StagedImport(Path worldDirectory, DetectedEdition edition, String trustedFormat) {
         public StagedImport {
