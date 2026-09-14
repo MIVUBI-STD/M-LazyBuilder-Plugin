@@ -80,6 +80,51 @@ server-side full-chunk canonicalization
 
 The area-selection surface is first-party LazyBuilder UI. Its chunk grid, region grid, selection rectangle, move/resize handles, coordinate HUD, snapping, and review flow do not depend on an external converter UI/runtime. External conversion software remains isolated behind the backend conversion adapter only when an actual format conversion is required.
 
+## Final pre-validation static audit
+
+A final source-level pass was completed before compile/runtime validation.
+
+The current Fabric target is Minecraft `1.21.4`, Yarn `1.21.4+build.8`, Fabric Loader `0.16.10`, and Fabric API `0.119.4+1.21.4`.
+
+The previously identified Fabric signature risks were checked against the pinned mapping contract and are no longer treated as speculative source blockers:
+
+```text
+MinecraftClient#getCurrentServerEntry()
+ServerInfo#address
+Screen#setInitialFocus(Element)
+Element#mouseScrolled(double,double,double,double)
+TextFieldWidget#setChangedListener(Consumer<String>)
+LbUi SUCCESS / WARNING presentation constants
+```
+
+The map/export path is also source-aligned end-to-end:
+
+```text
+WorldMapScreen
+→ ClientMapController
+→ Map Action V2
+→ PaperMapActionPayloadAdapter
+→ WorldAreaSelection
+→ WorldExportService
+→ canonical transfer download
+```
+
+Static invariants checked in this pass:
+
+- map selection remains first-party LazyBuilder presentation;
+- selection is chunk-aligned in the client and canonicalized again on the server;
+- negative block coordinates use floor chunk math;
+- the server never trusts a custom client to provide already-aligned bounds;
+- selected-area export uses the same WorldExportService path as whole-world export;
+- area completion has bounded reconnect recovery;
+- transfer sessions themselves remain fail-closed and disconnect-cleaned;
+- no manual Load/Unload or `autoLoad` product path was reintroduced;
+- no standalone Import/Export/Clone screen path was reintroduced;
+- desktop loopback protocol versioning remains separate from Minecraft World/Map protocol versions;
+- launcher UX remains outside this World Manager pass.
+
+This static audit is intentionally **not** compile proof. Source APIs can still fail because of imports, generics, dependency resolution, or build configuration. Those claims begin only at the next validation gate.
+
 ## Current proof status
 
 The branch is still **source-level implementation** until a fresh validation pass is run for the exact current `Local` HEAD.
