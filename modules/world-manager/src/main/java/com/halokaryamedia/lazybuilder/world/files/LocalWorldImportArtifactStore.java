@@ -6,14 +6,17 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -25,6 +28,8 @@ import java.util.zip.ZipInputStream;
 /** Path-safe ZIP/.mcworld staging for World Manager imports. */
 public final class LocalWorldImportArtifactStore implements WorldImportArtifactStore {
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
+    private static final String COMMITTED_CLEANUP_DIR = ".committed-cleanup";
+    private static final String CLEANUP_MARKER_SUFFIX = ".pending";
     private static final String JAVA_1_21_4 = "JAVA_1_21_4";
     private static final int IO_BUFFER_BYTES = 64 * 1024;
     private static final int MAX_INSPECT_LEVEL_DAT_BYTES = 16 * 1024 * 1024;
@@ -156,20 +161,77 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public void deleteArtifact(String artifactName) throws IOException {
-        Files.deleteIfExists(resolveArtifact(artifactName));
+        Path artifact = resolveArtifactPath(artifactName);
+        if (Files.isSymbolicLink(artifact)) throw new IOException("Import artifact is unsafe: " + artifact.getFileName());
+        Files.deleteIfExists(artifact);
+    }
+
+    @Override
+    public void markCommittedCleanupPending(String artifactName) throws IOException {
+        String safe = validateArtifactName(artifactName);
+        Path directory = cleanupMarkerDirectory();
+        Files.createDirectories(directory);
+        Path marker = cleanupMarkerPath(safe);
+        Files.writeString(marker, safe, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+    }
+
+    @Override
+    public void clearCommittedCleanupPending(String artifactName) throws IOException {
+        String safe = validateArtifactName(artifactName);
+        Files.deleteIfExists(cleanupMarkerPath(safe));
+    }
+
+    @Override
+    public List<String> pendingCommittedCleanupArtifacts() throws IOException {
+        Path directory = cleanupMarkerDirectory();
+        if (!Files.isDirectory(directory)) return List.of();
+        List<String> pending = new ArrayList<>();
+        try (var stream = Files.list(directory)) {
+            for (Path marker : stream.sorted().toList()) {
+                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)
+                        || !marker.getFileName().toString().endsWith(CLEANUP_MARKER_SUFFIX)) {
+                    continue;
+                }
+                String value;
+                try {
+                    value = validateArtifactName(Files.readString(marker, StandardCharsets.UTF_8));
+                } catch (IOException | RuntimeException invalidMarker) {
+                    continue;
+                }
+                if (cleanupMarkerPath(value).equals(marker.toAbsolutePath().normalize())) {
+                    pending.add(value);
+                }
+            }
+        }
+        return List.copyOf(pending);
     }
 
     private Path resolveArtifact(String artifactName) throws IOException {
-        String safe = validateSingleName(artifactName);
-        String lower = safe.toLowerCase(Locale.ROOT);
-        if (!lower.endsWith(".zip") && !lower.endsWith(".mcworld")) {
-            throw new IOException("Import artifact must be .zip or .mcworld");
-        }
-        Path path = importsRoot.resolve(safe).normalize();
-        if (!importsRoot.equals(path.getParent()) || !Files.isRegularFile(path) || Files.isSymbolicLink(path)) {
-            throw new IOException("Import artifact is missing or unsafe: " + safe);
+        Path path = resolveArtifactPath(artifactName);
+        if (!Files.isRegularFile(path) || Files.isSymbolicLink(path)) {
+            throw new IOException("Import artifact is missing or unsafe: " + path.getFileName());
         }
         return path;
+    }
+
+    private Path resolveArtifactPath(String artifactName) {
+        String safe = validateArtifactName(artifactName);
+        Path path = importsRoot.resolve(safe).normalize();
+        if (!importsRoot.equals(path.getParent())) {
+            throw new IllegalArgumentException("Import artifact escaped owned root");
+        }
+        return path;
+    }
+
+    private Path cleanupMarkerDirectory() {
+        return importsRoot.resolve(COMMITTED_CLEANUP_DIR).toAbsolutePath().normalize();
+    }
+
+    private Path cleanupMarkerPath(String artifactName) {
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(artifactName.getBytes(StandardCharsets.UTF_8));
+        return cleanupMarkerDirectory().resolve(encoded + CLEANUP_MARKER_SUFFIX).toAbsolutePath().normalize();
     }
 
     private void extractBounded(Path archive, Path target) throws IOException {
@@ -259,6 +321,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         else if (lower.endsWith(".zip")) value = value.substring(0, value.length() - 4);
         value = value.strip();
         return value.isEmpty() ? "Imported World" : value;
+    }
+
+    private static String validateArtifactName(String value) {
+        String safe = validateSingleName(value);
+        String lower = safe.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(".zip") && !lower.endsWith(".mcworld")) {
+            throw new IllegalArgumentException("Import artifact must be .zip or .mcworld");
+        }
+        return safe;
     }
 
     private static String validateSingleName(String value) {
