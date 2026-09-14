@@ -17,6 +17,7 @@ public final class WorldTransferScreen extends Screen {
     public enum Tab { EXPORT, IMPORT }
 
     private static final String NATIVE_FORMAT = "JAVA_1_21_4";
+    private static final int CHUNK_BLOCKS = 16;
     private static final DateTimeFormatter EXPORT_SUFFIX = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final WorldTransferPreferences PREFERENCES = new WorldTransferPreferences();
 
@@ -133,7 +134,7 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private int exportPrimaryY() {
-        return area == null ? 174 : 190;
+        return area == null ? 174 : 210;
     }
 
     private void initExport(int contentLeft, int contentWidth) {
@@ -145,14 +146,30 @@ public final class WorldTransferScreen extends Screen {
         addDrawableChild(export);
 
         y += 42;
-        addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
-                advanced ? "Advanced options  ▾" : "Advanced options  ▸",
-                LbButtonWidget.Style.GHOST, () -> {
-                    rememberFields();
-                    advanced = !advanced;
-                    validation = null;
-                    clearAndInit();
-                }));
+        if (area != null) {
+            int half = (contentWidth - 8) / 2;
+            LbButtonWidget edit = LbUi.button(contentLeft, y, half, 22,
+                    "Edit Selection", LbButtonWidget.Style.GHOST, this::editSelection);
+            edit.active = !busy();
+            addDrawableChild(edit);
+            addDrawableChild(LbUi.button(contentLeft + half + 8, y, half, 22,
+                    advanced ? "Advanced  ▾" : "Advanced  ▸",
+                    LbButtonWidget.Style.GHOST, () -> {
+                        rememberFields();
+                        advanced = !advanced;
+                        validation = null;
+                        clearAndInit();
+                    }));
+        } else {
+            addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
+                    advanced ? "Advanced options  ▾" : "Advanced options  ▸",
+                    LbButtonWidget.Style.GHOST, () -> {
+                        rememberFields();
+                        advanced = !advanced;
+                        validation = null;
+                        clearAndInit();
+                    }));
+        }
 
         if (!advanced) return;
         y += 38;
@@ -179,6 +196,11 @@ public final class WorldTransferScreen extends Screen {
                 this::saveCurrentAsDefault);
         saveDefault.active = !busy() && !isCurrentDefault();
         addDrawableChild(saveDefault);
+    }
+
+    private void editSelection() {
+        if (area == null || busy() || client == null) return;
+        client.setScreen(parent);
     }
 
     private void initImport(int contentLeft, int contentWidth) {
@@ -336,6 +358,7 @@ public final class WorldTransferScreen extends Screen {
                     && transfer.phase() == ClientTransferController.TransferPhase.IDLE) {
                 exporting = false;
                 exportTransferStarted = false;
+                finishAreaSelectionIfNeeded();
                 if (client != null && client.currentScreen == this) client.setScreen(parent);
                 return;
             }
@@ -353,6 +376,10 @@ public final class WorldTransferScreen extends Screen {
         }
     }
 
+    private void finishAreaSelectionIfNeeded() {
+        if (area != null && parent instanceof WorldMapScreen mapParent) mapParent.finishAreaExport();
+    }
+
     private void failExport(String message) {
         exporting = false;
         exportTransferStarted = false;
@@ -365,7 +392,7 @@ public final class WorldTransferScreen extends Screen {
         LbUi.background(context, width, height);
         int panelWidth = Math.max(320, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
-        int panelHeight = Math.min(height - 70, advanced ? 430 : area == null ? 292 : 310);
+        int panelHeight = Math.min(height - 70, advanced ? 450 : area == null ? 292 : 332);
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
         context.drawTextWithShadow(textRenderer, Text.literal("IMPORT / EXPORT"), left + 24, 40, LbUi.TEXT_MUTED);
@@ -382,17 +409,21 @@ public final class WorldTransferScreen extends Screen {
         int cardX = left + 22;
         int cardY = 106;
         int cardWidth = panelWidth - 44;
-        int cardHeight = area == null ? 52 : 68;
+        int cardHeight = area == null ? 52 : 88;
         LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
         context.drawTextWithShadow(textRenderer, Text.literal("USING DEFAULT SETTINGS"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(defaultFormat())), cardX + 12, cardY + 26, LbUi.TEXT_PRIMARY);
         if (area == null) {
             context.drawTextWithShadow(textRenderer, Text.literal("Entire world"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
         } else {
-            context.drawTextWithShadow(textRenderer, Text.literal("Selected map area"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("Selected area"), cardX + 12, cardY + 42, LbUi.TEXT_SECONDARY);
             context.drawTextWithShadow(textRenderer,
-                    Text.literal("X " + area.minX() + " → " + area.maxX() + "    Z " + area.minZ() + " → " + area.maxZ()),
-                    cardX + 12, cardY + 53, LbUi.TEXT_MUTED);
+                    Text.literal(area.chunkWidth() + " × " + area.chunkHeight() + " chunks   ·   "
+                            + area.blockWidth() + " × " + area.blockHeight() + " blocks"),
+                    cardX + 12, cardY + 57, LbUi.TEXT_PRIMARY);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("X " + area.minX() + " → " + area.maxX() + "   Z " + area.minZ() + " → " + area.maxZ()),
+                    cardX + 12, cardY + 72, LbUi.TEXT_MUTED);
         }
 
         if (advanced) {
@@ -558,6 +589,7 @@ public final class WorldTransferScreen extends Screen {
 
     @Override
     public void close() {
+        if (area != null && exporting) finishAreaSelectionIfNeeded();
         if (client != null) client.setScreen(parent);
     }
 
@@ -566,5 +598,9 @@ public final class WorldTransferScreen extends Screen {
         int maxX() { return Math.max(x1, x2); }
         int minZ() { return Math.min(z1, z2); }
         int maxZ() { return Math.max(z1, z2); }
+        int chunkWidth() { return Math.floorDiv(maxX(), CHUNK_BLOCKS) - Math.floorDiv(minX(), CHUNK_BLOCKS) + 1; }
+        int chunkHeight() { return Math.floorDiv(maxZ(), CHUNK_BLOCKS) - Math.floorDiv(minZ(), CHUNK_BLOCKS) + 1; }
+        int blockWidth() { return maxX() - minX() + 1; }
+        int blockHeight() { return maxZ() - minZ() + 1; }
     }
 }
