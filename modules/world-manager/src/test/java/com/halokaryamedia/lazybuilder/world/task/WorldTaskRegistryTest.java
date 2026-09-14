@@ -38,7 +38,7 @@ class WorldTaskRegistryTest {
     @Test
     void rejectsInvalidTransitionsAndBackwardProgress() {
         WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 8);
-        WorldTaskSnapshot task = registry.create(WorldTaskType.CLONE, WorldId.create(), "Queued");
+        WorldTaskSnapshot task = registry.create(WorldTaskType.DUPLICATE, WorldId.create(), "Queued");
 
         assertThrows(IllegalStateException.class, () -> registry.succeed(task.taskId(), "", "Done"));
         registry.markRunning(task.taskId(), "Running");
