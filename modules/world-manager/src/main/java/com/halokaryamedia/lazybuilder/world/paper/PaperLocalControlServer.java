@@ -366,7 +366,7 @@ public final class PaperLocalControlServer {
             failure = exception;
         }
         try {
-            mainThread.call(() -> {
+            mainThread.callCleanup(() -> {
                 backupService.finish(backupTask);
                 return null;
             });
