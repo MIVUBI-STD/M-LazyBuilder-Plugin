@@ -21,9 +21,6 @@ tauri = { version = "2", features = [] }
 ureq = { version = "2.12", features = ["json"] }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Threading"] }
-
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
