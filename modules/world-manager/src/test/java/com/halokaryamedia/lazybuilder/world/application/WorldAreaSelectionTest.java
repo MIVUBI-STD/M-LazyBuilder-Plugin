@@ -13,22 +13,42 @@ class WorldAreaSelectionTest {
     @TempDir Path tempDir;
 
     @Test
-    void cornersNormalizeAndNegativeBlockCoordinatesUseFloorChunkMath() {
+    void cornersNormalizeAndExpandToWholeChunksWithNegativeCoordinates() {
         WorldAreaSelection area = WorldAreaSelection.ofCorners(31, 48, -17, -1);
 
-        assertEquals(-17, area.minBlockX());
-        assertEquals(-1, area.minBlockZ());
+        assertEquals(-32, area.minBlockX());
+        assertEquals(-16, area.minBlockZ());
         assertEquals(31, area.maxBlockX());
-        assertEquals(48, area.maxBlockZ());
+        assertEquals(63, area.maxBlockZ());
         assertEquals(-2, area.minChunkX());
         assertEquals(-1, area.minChunkZ());
         assertEquals(1, area.maxChunkX());
         assertEquals(3, area.maxChunkZ());
+        assertEquals(4, area.chunkWidth());
+        assertEquals(5, area.chunkDepth());
+        assertEquals(64, area.blockWidth());
+        assertEquals(80, area.blockDepth());
         assertEquals(20L, area.chunkCount());
     }
 
     @Test
-    void pruningDocumentUsesIncludeBoundsForAllVanillaDimensions() throws Exception {
+    void alreadyChunkAlignedSelectionRemainsStable() {
+        WorldAreaSelection area = WorldAreaSelection.ofCorners(112, -352, 847, 239);
+
+        assertEquals(112, area.minBlockX());
+        assertEquals(-352, area.minBlockZ());
+        assertEquals(847, area.maxBlockX());
+        assertEquals(239, area.maxBlockZ());
+        assertEquals(7, area.minChunkX());
+        assertEquals(-22, area.minChunkZ());
+        assertEquals(52, area.maxChunkX());
+        assertEquals(14, area.maxChunkZ());
+        assertEquals(46, area.chunkWidth());
+        assertEquals(37, area.chunkDepth());
+    }
+
+    @Test
+    void pruningDocumentUsesChunkBoundsForAllVanillaDimensions() throws Exception {
         WorldAreaSelection area = WorldAreaSelection.ofCorners(-17, -1, 31, 48);
         Path pruning = WorldExportService.writeAreaPruning(area, tempDir);
         String json = Files.readString(pruning);
