@@ -170,7 +170,7 @@ public final class WorldImportService {
         task.close();
     }
 
-    /** Best-effort retry used on request boundaries and shutdown; never turns a committed import into failure. */
+    /** Best-effort retry used on later Import request boundaries; never turns a committed import into failure. */
     public void retryPendingCommittedArtifactCleanup() {
         for (String artifactName : Set.copyOf(pendingCommittedArtifactCleanup)) {
             retryCommittedArtifactCleanup(artifactName);
