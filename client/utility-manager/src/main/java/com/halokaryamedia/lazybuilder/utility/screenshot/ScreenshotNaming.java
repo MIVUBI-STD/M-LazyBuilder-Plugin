@@ -2,19 +2,32 @@ package com.halokaryamedia.lazybuilder.utility.screenshot;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
-import net.minecraft.util.Util;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Builds optional contextual screenshot names while leaving vanilla F2 capture intact. */
 public final class ScreenshotNaming {
+    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH.mm.ss.SSS");
+    private static final AtomicLong LAST_TIMESTAMP_MILLIS = new AtomicLong(Long.MIN_VALUE);
+
     private ScreenshotNaming() {
     }
 
     public static String contextualFileName() {
         MinecraftClient client = MinecraftClient.getInstance();
         String context = resolveContext(client);
-        return sanitize(context) + "_" + Util.getFormattedCurrentTime() + ".png";
+        long timestampMillis = uniqueTimestampMillis();
+        String timestamp = TIMESTAMP.format(Instant.ofEpochMilli(timestampMillis).atZone(ZoneId.systemDefault()));
+        return sanitize(context) + "_" + timestamp + ".png";
+    }
+
+    private static long uniqueTimestampMillis() {
+        long now = System.currentTimeMillis();
+        return LAST_TIMESTAMP_MILLIS.updateAndGet(previous -> Math.max(now, previous + 1));
     }
 
     private static String resolveContext(MinecraftClient client) {
