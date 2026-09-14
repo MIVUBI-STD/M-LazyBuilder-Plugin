@@ -37,16 +37,20 @@ pub async fn workspace_provision(
 }
 
 #[tauri::command]
-pub fn workspace_runtime_update_status() -> Result<runtime_updates::RuntimeUpdateStatus, String> {
-    runtime_updates::status()
+pub async fn workspace_runtime_update_status() -> Result<runtime_updates::RuntimeUpdateStatus, String> {
+    tauri::async_runtime::spawn_blocking(runtime_updates::status)
+        .await
+        .map_err(|error| format!("Paper update check task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn workspace_update_paper(
+pub async fn workspace_update_paper(
     state: State<'_, ServerManagerState>,
 ) -> Result<runtime_updates::RuntimeUpdateStatus, String> {
     ensure_runtime_update_allowed(&state)?;
-    runtime_updates::update_paper()
+    tauri::async_runtime::spawn_blocking(runtime_updates::update_paper)
+        .await
+        .map_err(|error| format!("Paper update task failed: {error}"))?
 }
 
 #[tauri::command]
