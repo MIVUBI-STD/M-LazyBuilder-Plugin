@@ -126,6 +126,17 @@ The implementation uses one seekable file channel per active local/server file. 
 
 The bounded window reduces round-trip sensitivity without introducing an unbounded queue or permanent worker.
 
+A completed import upload has an explicit ownership handoff rather than becoming an unowned inbox file:
+
+```text
+FinishUpload
+→ transfer-owned completed artifact
+→ InspectImport atomically claims the same artifact for World Control review
+→ review/import lifecycle owns cleanup from that point onward
+```
+
+If the player disconnects after `FinishUpload` but before `InspectImport` claims the artifact, transfer disconnect cleanup deletes that unclaimed completed upload. Once review has claimed it, transfer disconnect cleanup leaves it alone and World Control performs the review/disconnect/import cleanup. This keeps one authority transition and avoids a second orphan-file registry or polling cleanup worker.
+
 ## Transfer resilience
 
 The Minecraft connection supplies ordered/reliable transport. LazyBuilder handles failures at the application/session boundary:
@@ -139,6 +150,7 @@ player disconnect
 → abort active transfer sessions for that player
 → close file channels
 → remove partial transfer files
+→ discard completed import uploads that were never claimed for review
 
 inactive session
 → reclaim opportunistically after configured idle timeout
@@ -192,6 +204,7 @@ World idle-unload is a separate Paper runtime-maintenance concern, not network p
 - protocol version mismatch fails closed;
 - payload/chunk sizes are bounded;
 - transfer sessions bind to initiating player UUID;
+- completed import uploads remain bound to the uploader and must be explicitly claimed before review;
 - filenames cannot escape owned roots;
 - uploads publish only after declared size and SHA-256 match;
 - import inspection never publishes a world and final import revalidates the archive;
@@ -230,6 +243,7 @@ Source/static review can prove codecs, bounds, ownership, cleanup paths, and ver
 World Control V5 Paper/Fabric interoperability
 Import upload → inspection → review → explicit import
 Import review close / tab switch / choose-different cleanup
+Upload complete → disconnect before inspection cleanup
 Map Action V2 current-world push
 permission behavior
 large upload/download throughput
