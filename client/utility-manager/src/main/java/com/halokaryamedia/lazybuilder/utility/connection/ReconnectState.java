@@ -23,6 +23,10 @@ public final class ReconnectState {
         return lastServer != null && lastServer.address != null && !lastServer.address.isBlank();
     }
 
+    public static String serverAddress() {
+        return canReconnect() ? lastServer.address : "";
+    }
+
     public static void reconnect(Screen parent) {
         if (!canReconnect()) return;
 
