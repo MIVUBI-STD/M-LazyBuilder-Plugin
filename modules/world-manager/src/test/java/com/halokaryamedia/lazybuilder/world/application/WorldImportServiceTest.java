@@ -65,6 +65,30 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void failedInspectionDiscardsUnusableUploadedArtifact() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, null);
+        imports.failInspection = true;
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("inspection must not probe converter"); };
+        ConversionUpdateService updates = new ConversionUpdateService(
+                ConversionRuntimePolicy.defaults(), runtimeStore, Optional::empty,
+                (release, directory) -> { throw new AssertionError("inspection must not download runtime"); },
+                converter, tempDir.resolve("downloads"),
+                Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
+        );
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates, converter, new ConversionJobCoordinator()
+        );
+
+        assertThrows(IllegalStateException.class, () -> service.inspect("Broken.zip"));
+        assertEquals(List.of("Broken.zip"), imports.deletedArtifacts);
+    }
+
+    @Test
     void failedConversionCleansEveryOwnedWorkspace() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -156,18 +180,26 @@ class WorldImportServiceTest {
     private static final class FakeImports implements WorldImportArtifactStore {
         private final DetectedEdition edition;
         private final String trustedFormat;
+        private final List<String> deletedArtifacts = new ArrayList<>();
+        private boolean failInspection;
 
         private FakeImports(DetectedEdition edition, String trustedFormat) {
             this.edition = edition;
             this.trustedFormat = trustedFormat;
         }
 
+        @Override public ImportInspection inspectArtifact(String artifactName) throws IOException {
+            if (failInspection) throw new IOException("invalid archive");
+            String sourceVersion = trustedFormat == null ? "Unknown version" : "Java Edition 1.21.4";
+            return new ImportInspection(artifactName, edition, sourceVersion, "Imported World");
+        }
         @Override public StagedImport stageArchive(String artifactName, Path workspace) throws IOException {
             Files.createDirectory(workspace);
             Files.writeString(workspace.resolve("level.dat"), "level");
             return new StagedImport(workspace, edition, trustedFormat);
         }
         @Override public void sanitizeConvertedWorld(Path worldDirectory) { }
+        @Override public void deleteArtifact(String artifactName) { deletedArtifacts.add(artifactName); }
     }
 
     private static final class FakeStore implements ConversionRuntimeStore {
