@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -39,8 +40,9 @@ import java.util.zip.GZIPOutputStream;
  * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
  * <p>Resident region data uses lazily allocated primitive arrays plus a BitSet,
- * and pending sample coordinates stay in a primitive insertion-ordered set.
- * Disk I/O stays sparse and compatible with the existing region format.</p>
+ * pending sample coordinates stay in a primitive insertion-ordered set, and
+ * asynchronous region loads are explicitly bounded. Disk I/O remains compatible
+ * with the existing region format.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int FORMAT_VERSION = 2;
@@ -49,6 +51,7 @@ public final class ClientMapSurfaceCache {
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
     private static final int MAX_PENDING = 262_144;
+    private static final int MAX_REGION_LOADS_IN_FLIGHT = 32;
     private static final int MAX_LIVE_SAMPLES_PER_FRAME = 1024;
     private static final int MAX_COMPLETED_ENTRIES_PER_FRAME = 4096;
     private static final int LIVE_SAMPLE_WORK_COST = 4;
@@ -59,6 +62,7 @@ public final class ClientMapSurfaceCache {
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LongLinkedOpenHashSet pending = new LongLinkedOpenHashSet();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger regionLoadsInFlight = new AtomicInteger();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "LazyBuilder-Map-IO");
         thread.setDaemon(true);
@@ -209,14 +213,25 @@ public final class ClientMapSurfaceCache {
 
     private void scheduleRegionLoad(Path directory, long regionKey, RegionData region, long generation) {
         if (region.loadScheduled || ioExecutor.isShutdown()) return;
+        if (regionLoadsInFlight.incrementAndGet() > MAX_REGION_LOADS_IN_FLIGHT) {
+            regionLoadsInFlight.decrementAndGet();
+            return;
+        }
+
         region.loadScheduled = true;
         Path file = regionFile(directory, regionKey);
-        CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
-                .thenAccept(snapshot -> {
-                    if (generation == scopeGeneration) {
-                        completedLoads.add(new LoadedRegion(generation, regionKey, snapshot));
-                    }
-                });
+        try {
+            CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
+                    .whenComplete((snapshot, failure) -> {
+                        regionLoadsInFlight.decrementAndGet();
+                        if (failure == null && generation == scopeGeneration) {
+                            completedLoads.add(new LoadedRegion(generation, regionKey, snapshot));
+                        }
+                    });
+        } catch (RuntimeException rejected) {
+            region.loadScheduled = false;
+            regionLoadsInFlight.decrementAndGet();
+        }
     }
 
     private int drainCompletedLoads(int budget) {
