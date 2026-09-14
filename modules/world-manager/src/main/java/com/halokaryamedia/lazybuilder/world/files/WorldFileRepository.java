@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /** Path-safe filesystem boundary for World Manager file operations. */
@@ -37,6 +38,26 @@ public interface WorldFileRepository {
         return new DeleteRecovery(0, 0, 0);
     }
 
+    /**
+     * Reconciles worlds published by a transactional copy/import before the process ended.
+     * Persisted registry membership is the commit authority: committed worlds have their
+     * pending marker cleared, while explicitly marked uncommitted publications are discarded.
+     */
+    default PublishRecovery recoverPublishedWorlds(Collection<WorldRecord> managedWorlds) throws IOException {
+        return new PublishRecovery(0, 0);
+    }
+
+    /** Clears the pending-publication marker after registry persistence has committed. */
+    default void markPublishedWorldCommitted(String destinationFolder) throws IOException { }
+
+    /**
+     * Audits persisted managed records against the filesystem. Missing or unsafe managed roots
+     * are integrity faults and must not be silently removed from registry truth.
+     */
+    default ManagedWorldAudit auditManagedWorldFolders(Collection<WorldRecord> managedWorlds) throws IOException {
+        return new ManagedWorldAudit(List.of(), List.of());
+    }
+
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
     void deleteWorld(WorldRecord world) throws IOException;
@@ -48,6 +69,25 @@ public interface WorldFileRepository {
             if (restored < 0 || discarded < 0 || preserved < 0) {
                 throw new IllegalArgumentException("Delete recovery counts must not be negative");
             }
+        }
+    }
+
+    record PublishRecovery(int finalized, int discarded) {
+        public PublishRecovery {
+            if (finalized < 0 || discarded < 0) {
+                throw new IllegalArgumentException("Publish recovery counts must not be negative");
+            }
+        }
+    }
+
+    record ManagedWorldAudit(List<String> missingFolders, List<String> unsafeFolders) {
+        public ManagedWorldAudit {
+            missingFolders = List.copyOf(missingFolders);
+            unsafeFolders = List.copyOf(unsafeFolders);
+        }
+
+        public boolean healthy() {
+            return missingFolders.isEmpty() && unsafeFolders.isEmpty();
         }
     }
 }
