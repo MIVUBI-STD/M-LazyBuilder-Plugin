@@ -68,7 +68,7 @@ expect(
     PRODUCT_VERSION,
 )
 
-for manager in ("map-manager", "utility-manager"):
+for manager in ("map-manager", "utility-manager", "performance-manager"):
     props = (ROOT / f"client/{manager}/gradle.properties").read_text(encoding="utf-8")
     match = re.search(r"(?m)^mod_version=(.+)$", props)
     expect(f"{manager} mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
@@ -98,9 +98,10 @@ if "../../modules/world-manager/src/main/java" in map_build:
 if "../../shared/protocol/src/main/java" not in map_build:
     errors.append("Map Manager build is not wired to shared/protocol")
 
-utility_build = (ROOT / "client/utility-manager/build.gradle").read_text(encoding="utf-8")
-if "map-manager" in utility_build or "../../shared/protocol" in utility_build:
-    errors.append("Utility Manager scaffold has an unintended Map Manager/shared protocol build dependency")
+for manager in ("utility-manager", "performance-manager"):
+    build = (ROOT / f"client/{manager}/build.gradle").read_text(encoding="utf-8")
+    if "map-manager" in build or "../../shared/protocol" in build:
+        errors.append(f"{manager} has an unintended Map Manager/shared protocol build dependency")
 
 legacy_protocol_paths = (
     "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
