@@ -4,35 +4,31 @@
 
 `World-Manager` is the only authority for managed world lifecycle, persistence, file operations, conversion, and runtime state.
 
-LazyBuilder currently has two client transports that serve different frontends:
+LazyBuilder has two frontend transports that delegate to the same World-Manager application services:
 
 ```text
-LazyBuilder Desktop (Tauri/Svelte)
-    ↓ authenticated loopback HTTP/JSON
-PaperLocalControlServer
-    ↓
-World-Manager application services
+LazyBuilder Desktop
+→ authenticated loopback HTTP/JSON
+→ PaperLocalControlServer
+→ World-Manager services
 
-Minecraft Fabric client
-    ↓ Paper plugin messaging
-PaperWorldControlPayloadAdapter / PaperTransferPayloadAdapter / PaperMapActionPayloadAdapter
-    ↓
-World-Manager application services
+Minecraft Fabric Map Manager
+→ Paper plugin messaging
+→ World / Map / Transfer adapters
+→ World-Manager services
 ```
 
-The transports are not separate world-management systems. They must stay thin and delegate to the same canonical World-Manager services.
+These are transport adapters, not separate world-management systems.
 
 ## Desktop transport
 
-The desktop bridge uses HTTP/JSON bound only to the loopback interface.
+The desktop bridge is loopback-only and authenticated.
 
-- host: `127.0.0.1` / loopback only
-- default port: `17842`
-- protocol version: `1`
-- authentication: bearer token
-- token is generated and persisted by LazyBuilder Desktop under `tools/lazybuilder/world-control.json`
-- token and port are passed to the Paper child process through environment variables
-- token is not printed in normal logs
+```text
+host             127.0.0.1 / loopback
+protocol version 2
+authentication   bearer token
+```
 
 Environment variables:
 
@@ -41,132 +37,87 @@ LAZYBUILDER_WORLD_CONTROL_TOKEN
 LAZYBUILDER_WORLD_CONTROL_PORT
 ```
 
-When no token is supplied, the desktop bridge remains disabled. Manual Paper launches therefore do not expose an unauthenticated HTTP control surface.
+When no token is supplied, the desktop bridge remains disabled. Manual Paper launches therefore do not expose an unauthenticated desktop control surface.
 
-### Desktop API
+Desktop owns request presentation and local file selection only. World mutation remains in World-Manager services.
 
-```text
-GET   /v1/status
-GET   /v1/worlds
-POST  /v1/worlds
-POST  /v1/worlds/{id}/load
-POST  /v1/worlds/{id}/unload
-GET   /v1/worlds/{id}/settings
-PATCH /v1/worlds/{id}/settings
+The current product model does not expose manual world Load/Unload or per-world autoLoad controls. Desktop world operations use current lifecycle/application semantics such as create, settings, Duplicate, Archive/Restore, backup, Import/Export, and Delete.
 
-GET   /v1/tasks
-GET   /v1/tasks/{taskId}
-POST  /v1/tasks/archive
-POST  /v1/tasks/restore
-POST  /v1/tasks/clone
-POST  /v1/tasks/backup
-POST  /v1/tasks/export
-POST  /v1/tasks/import
-POST  /v1/tasks/delete
+## Fabric transport
 
-POST  /v1/imports/upload
-```
-
-Heavy operations return a task snapshot immediately and execute through the bounded `WorldTaskRunner`.
-
-### Desktop ownership rules
-
-Desktop must never implement world operations independently. It may select files and submit structured requests, but all world mutation remains in World-Manager services.
-
-Desktop must not directly implement:
-
-- create/load/unload
-- archive/restore
-- clone/delete
-- world settings
-- backup
-- import/export
-- conversion
-- world registry persistence
-
-## Fabric client transport
-
-The Fabric client integration remains a supported in-game frontend. Its Paper plugin-message adapters exist because Minecraft clients cannot use the local desktop HTTP token/loopback contract as their normal control path.
-
-Current channels:
+The Fabric Map Manager uses the existing Minecraft play connection:
 
 ```text
-lazybuilder:world     general in-game world controls
-lazybuilder:transfer  bounded import/export file transfer
-lazybuilder:map       Xaero/map-related world actions
+lazybuilder:world     → World Control V5
+lazybuilder:map       → Map Action V2
+lazybuilder:transfer  → bounded file-transfer protocol
 ```
 
-These adapters may own transport-specific concerns such as permissions, packet framing, player identity, and response delivery. They must not create alternative registry, filesystem, conversion, or lifecycle implementations.
+The adapters own transport-specific concerns such as player identity, permissions, packet framing, session routing, and response delivery. They must not create alternative registry, filesystem, conversion, lifecycle, or authorization authorities.
+
+The map surface and Export Area selection are first-party LazyBuilder UI. Xaero may be a behavioral reference only and is not part of this transport ownership.
 
 ## Threading
 
-Paper/Bukkit runtime mutations must run on the Paper primary thread.
+Paper/Bukkit runtime mutations execute on the Paper primary thread. Heavy file work, hashing, archive work, and conversion execute away from the primary thread through explicit bounded owners.
 
-Heavy file work, ZIP packaging, conversion, and hashing must run off the Paper primary thread.
-
-`PaperMainThreadDispatcher` is the canonical cross-thread dispatch boundary. It:
-
-- runs inline when already on the Paper primary thread;
-- dispatches through `callSyncMethod` otherwise;
-- preserves the original service exception rather than leaking `ExecutionException`;
-- restores the interrupted flag when a waiting worker is interrupted;
-- cancels a queued future on timeout and reports a stable timeout error.
-
-`PaperLocalControlServer` and `WorldHeavyOperationOrchestrator` both use this dispatcher rather than maintaining their own timeout/error handling.
+`PaperMainThreadDispatcher` is the canonical cross-thread boundary where synchronous Paper access is required.
 
 ## Heavy-operation coordination
 
-`WorldHeavyOperationOrchestrator` is the shared phased orchestration boundary for heavy operations used by both Desktop HTTP and the Fabric world-control transport.
+Heavy operations share canonical World-Manager application services and operation coordination rather than implementing separate Desktop and Fabric business paths.
 
-It centralizes:
+Product operations include:
 
-- Clone `prepare → file phase → finish`
-- Delete `prepare → staged delete → finish`
-- Export `prepare → snapshot → source resume → package/convert → finish`
-- Import `prepare → validate/convert/publish → finish`
-- Paper main-thread dispatch for lifecycle-sensitive phases
-- finish/error combination semantics
+```text
+Duplicate
+Delete
+Export
+Import
+Archive / Restore
+Backup where supported by the requesting frontend
+```
 
-The orchestrator does **not** own domain logic or storage implementations. Those remain inside `WorldCloneService`, `WorldDeleteService`, `WorldExportService`, and `WorldImportService`.
+Transport layers may differ in request/response presentation, but they do not own duplicate domain logic.
 
-Desktop wraps the shared orchestrator with `WorldTaskRunner`, which provides bounded worker concurrency, bounded queueing, progress snapshots, and task observation.
+`WorldHeavyOperationOrchestrator` coordinates phases that genuinely require shared ordering between runtime-sensitive and file-heavy work. Domain semantics remain in the corresponding application services such as `WorldDuplicateService`, `WorldDeleteService`, `WorldExportService`, and `WorldImportService`.
 
-Fabric keeps its existing plugin-message request/response contract and per-player in-flight guard, while delegating the same heavy operation flow to the shared orchestrator.
+Area export may have map-specific orchestration for transient spatial context, but it still delegates export semantics to the canonical `WorldExportService` path.
 
-`Backup` remains desktop-only at this stage and directly uses `WorldBackupService`; there is no duplicate Fabric backup path to consolidate.
+## Import review ownership
 
-`PaperMapActionPayloadAdapter` retains its area-export-specific orchestration because it has a distinct Xaero/map contract and intentionally restores player access immediately after area snapshot capture. It still delegates all export domain work to `WorldExportService`.
+The Fabric World Control path separates upload, inspection, review, and final Import:
 
-## Shutdown behavior
+```text
+transfer upload completes
+→ InspectImport claims the uploaded artifact for review
+→ server returns bounded metadata
+→ user explicitly imports or discards/leaves the review
+```
 
-Transport shutdown is fail-closed:
+Final Import revalidates before publication. Abandoned review cleanup is explicit/event-driven and scoped to the requesting player's tracked reviewed artifact. Do not add an orphan-scanning daemon or second inbox registry.
 
-- desktop HTTP listener stops accepting requests before task-runner shutdown;
-- Fabric world-control transport marks itself stopping before unregistering channels;
-- no new heavy Fabric operation is accepted after shutdown begins;
-- a heavy operation already executing is allowed to finish its canonical service cleanup, but its response is suppressed once the transport is stopping;
-- per-player in-flight markers are cleared when the Fabric transport stops;
-- transfer and map adapters keep their own existing request/session cleanup rules.
+## Shutdown and failure behavior
 
-This avoids sending plugin messages from stale completion callbacks while still allowing the service-level `finish` phase to release operation leases and restore runtime state where possible.
+Transports fail closed:
 
-## Bootstrap ownership
+- no new requests after shutdown begins;
+- active transfer sessions clean partial state;
+- transport callbacks must not mutate stale runtime state after shutdown;
+- application/service cleanup still runs where required to release leases and restore valid state;
+- malformed/out-of-order protocol input is rejected and affected request/session state is cleaned.
 
-`WorldManagerPlugin extends JavaPlugin` is the single canonical Paper entry point and lifecycle owner.
+## Security rules
 
-The historical `LazyBuilderPlugin` compatibility base has been removed. Paper adapters and `WorldManager` depend only on `JavaPlugin` or explicit World-Manager services.
-
-## Security and maintenance rules
-
-1. Never bind the desktop control server to `0.0.0.0`.
+1. Desktop control stays loopback-only.
 2. Every desktop request requires the local bearer token.
-3. Never accept arbitrary server filesystem paths when a world id or artifact id can be used.
-4. Keep protocol responses bounded and structured.
-5. Increment desktop protocol version only for breaking contract changes.
-6. Keep long operations asynchronous.
-7. Execute Bukkit/Paper runtime mutations on the server primary thread.
-8. Keep all world business logic inside World-Manager services, never inside UI or transport layers.
-9. Desktop HTTP and Fabric plugin messaging are client transports, not separate authorities.
-10. Keep shared heavy-operation phase sequencing in `WorldHeavyOperationOrchestrator`; transports own only transport concerns.
-11. Keep cross-thread Paper dispatch semantics in `PaperMainThreadDispatcher`.
-12. CI/source proof is not a substitute for live Paper/Fabric/Desktop runtime validation.
+3. Fabric permission presentation is never final authorization; Paper rechecks every mutation.
+4. Payloads and transfer sizes remain bounded.
+5. Arbitrary filesystem paths are not accepted when owned IDs/artifacts can be used.
+6. Protocol version mismatch fails closed.
+7. File publication occurs only after required validation/checksum checks.
+8. Transport adapters never become world/domain authorities.
+
+## Proof boundary
+
+Source/static review can prove contract shape, version alignment, ownership, and fail-closed structure. Actual desktop installation, Paper lifecycle, Fabric interoperability, Import review timing, large transfers, disconnect behavior, and gameplay interaction remain LOCAL_CODE/LIVE_SERVER proof responsibilities.
