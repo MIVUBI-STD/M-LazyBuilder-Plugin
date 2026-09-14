@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,6 +64,44 @@ class WorldImportServiceTest {
         assertEquals(1, persistence.saved.size());
         assertTrue(files.published);
         assertEquals(List.of("Build.zip"), imports.deletedArtifacts);
+    }
+
+    @Test
+    void committedImportRetriesTransientArtifactCleanupWithoutFailingWorld() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.deleteFailuresRemaining = 1;
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("native import must not probe converter"); };
+        ConversionUpdateService updates = new ConversionUpdateService(
+                ConversionRuntimePolicy.defaults(), runtimeStore, Optional::empty,
+                (release, directory) -> { throw new AssertionError("native import must not download runtime"); },
+                converter, tempDir.resolve("downloads"),
+                Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
+        );
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates, converter, new ConversionJobCoordinator()
+        );
+
+        WorldImportService.ImportTask task = service.prepare("Build.zip", "ImportedBuild", "Imported Build");
+        WorldRecord imported = service.executeFilePhase(task);
+
+        assertTrue(task.completed());
+        assertTrue(task.artifactCleanupFailure() != null);
+        assertEquals(1, service.pendingCommittedArtifactCleanupCount());
+        assertEquals("ImportedBuild", imported.folderName());
+        assertEquals(1, registry.all().size(), "cleanup failure must not roll back a committed world");
+
+        service.finish(task);
+
+        assertNull(task.artifactCleanupFailure());
+        assertEquals(0, service.pendingCommittedArtifactCleanupCount());
+        assertEquals(2, imports.deleteAttempts);
+        assertEquals(List.of("Build.zip"), imports.deletedArtifacts);
+        assertEquals(1, registry.all().size());
     }
 
     @Test
@@ -242,6 +281,8 @@ class WorldImportServiceTest {
         private final String trustedFormat;
         private final List<String> deletedArtifacts = new ArrayList<>();
         private boolean failInspection;
+        private int deleteFailuresRemaining;
+        private int deleteAttempts;
 
         private FakeImports(DetectedEdition edition, String trustedFormat) {
             this.edition = edition;
@@ -259,7 +300,14 @@ class WorldImportServiceTest {
             return new StagedImport(workspace, edition, trustedFormat);
         }
         @Override public void sanitizeConvertedWorld(Path worldDirectory) { }
-        @Override public void deleteArtifact(String artifactName) { deletedArtifacts.add(artifactName); }
+        @Override public void deleteArtifact(String artifactName) throws IOException {
+            deleteAttempts++;
+            if (deleteFailuresRemaining > 0) {
+                deleteFailuresRemaining--;
+                throw new IOException("transient delete failure");
+            }
+            deletedArtifacts.add(artifactName);
+        }
     }
 
     private static final class FakeStore implements ConversionRuntimeStore {
