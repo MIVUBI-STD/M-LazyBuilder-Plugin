@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
+import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldLifecycleService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsService;
 import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
@@ -41,6 +42,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final WorldLifecycleService lifecycle;
     private final WorldSettingsService settingsService;
     private final WorldExportService exportService;
+    private final WorldImportService importService;
     private final ConversionUpdateService conversionUpdates;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
@@ -60,6 +62,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             WorldLifecycleService lifecycle,
             WorldSettingsService settingsService,
             WorldExportService exportService,
+            WorldImportService importService,
             ConversionUpdateService conversionUpdates,
             WorldHeavyOperationOrchestrator heavyOperations
     ) {
@@ -70,6 +73,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
         this.settingsService = Objects.requireNonNull(settingsService, "settingsService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
+        this.importService = Objects.requireNonNull(importService, "importService");
         this.conversionUpdates = Objects.requireNonNull(conversionUpdates, "conversionUpdates");
         this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
     }
@@ -109,6 +113,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
         if (request instanceof WorldControlWireProtocol.GetExportFormats) {
             handleExportFormats(player);
+            return;
+        }
+        if (request instanceof WorldControlWireProtocol.InspectImport inspect) {
+            handleInspectImport(player, inspect);
             return;
         }
         if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) {
@@ -152,6 +160,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             }
             case WorldControlWireProtocol.GetExportFormats ignored ->
                     throw new IllegalStateException("Export formats must use async capability path");
+            case WorldControlWireProtocol.InspectImport ignored ->
+                    throw new IllegalStateException("Import inspection must use async path");
             case WorldControlWireProtocol.CreateWorld create -> {
                 requireManage(player);
                 WorldRecord world = creation.create(create.folderName(), create.displayName(),
@@ -216,7 +226,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
-        // Keep the UI responsive: publish the verified local catalog immediately.
         send(player, encode(new WorldControlWireProtocol.ExportFormats(exportService.supportedFormats())));
         formatWaiters.add(player.getUniqueId());
         if (!formatRefreshInFlight.compareAndSet(false, true)) return;
@@ -267,6 +276,16 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             formatWaiters.clear();
             formatRefreshInFlight.set(false);
         }
+    }
+
+    private void handleInspectImport(Player player, WorldControlWireProtocol.InspectImport request) {
+        if (!beginHeavy(player)) return;
+        scheduleHeavy(
+                player,
+                () -> importService.inspect(request.artifactName()),
+                result -> encode(new WorldControlWireProtocol.ImportInspection(
+                        result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName()))
+        );
     }
 
     private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
