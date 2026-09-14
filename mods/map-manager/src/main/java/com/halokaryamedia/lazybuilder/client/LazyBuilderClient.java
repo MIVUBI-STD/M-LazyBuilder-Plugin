@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 
 /** Fabric client entrypoint. Keeps initialization event-driven and side-local. */
 public final class LazyBuilderClient implements ClientModInitializer {
@@ -12,6 +13,7 @@ public final class LazyBuilderClient implements ClientModInitializer {
     public void onInitializeClient() {
         new LazyBuilderClientNetworking(WORLDS, MAPS, TRANSFERS).register();
         LazyBuilderClientUi.register(WORLDS, TRANSFERS, MAPS);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> TRANSFERS.reset());
     }
 
     public static ClientWorldController worlds() { return WORLDS; }
