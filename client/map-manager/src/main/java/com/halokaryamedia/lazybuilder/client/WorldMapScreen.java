@@ -110,7 +110,7 @@ public final class WorldMapScreen extends Screen {
     private void addContextButtons() {
         int menuWidth = 164;
         int itemHeight = 21;
-        int itemCount = 5;
+        int itemCount = 6;
         int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
         int panelY = Math.max(TOP_BAR + 4,
                 Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 30), contextScreenY));
@@ -149,11 +149,42 @@ public final class WorldMapScreen extends Screen {
                 }));
         y += itemHeight;
 
+        LbButtonWidget copyReviewReference = LbUi.button(panelX + 5, y, menuWidth - 10, 19,
+                "Copy Review Reference", LbButtonWidget.Style.GHOST, this::copyReviewReference);
+        copyReviewReference.active = maps.currentWorld() != null
+                && client != null
+                && client.player != null
+                && client.world != null;
+        addDrawableChild(copyReviewReference);
+        y += itemHeight;
+
         addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
                 "Cancel", LbButtonWidget.Style.GHOST, () -> {
                     contextOpen = false;
                     clearAndInit();
                 }));
+    }
+
+    private void copyReviewReference() {
+        var current = maps.currentWorld();
+        if (client == null || client.player == null || client.world == null || current == null) {
+            LazyBuilderClientNetworking.notifyPlayer(
+                    "LazyBuilder: open a managed world before copying a review reference.");
+            return;
+        }
+
+        String dimension = client.world.getRegistryKey().getValue().toString();
+        String reference = "World: " + current.displayName() + "\n"
+                + "World ID: " + current.worldId() + "\n"
+                + "Location: " + client.player.getBlockX() + " "
+                + client.player.getBlockY() + " "
+                + client.player.getBlockZ() + "\n"
+                + "Dimension: " + dimension;
+
+        client.keyboard.setClipboard(reference);
+        LazyBuilderClientNetworking.notifyPlayer("Review reference copied.");
+        contextOpen = false;
+        clearAndInit();
     }
 
     private void addSelectionActions() {
@@ -475,7 +506,7 @@ public final class WorldMapScreen extends Screen {
     private void renderContextMenuBackground(DrawContext context) {
         if (!contextOpen || areaMode) return;
         int menuWidth = 164;
-        int itemCount = 5;
+        int itemCount = 6;
         int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
         int panelY = Math.max(TOP_BAR + 4,
                 Math.min(height - BOTTOM_BAR - (itemCount * 21 + 30), contextScreenY));
