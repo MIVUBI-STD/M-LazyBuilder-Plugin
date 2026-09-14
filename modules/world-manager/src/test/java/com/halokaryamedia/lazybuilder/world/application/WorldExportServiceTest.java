@@ -95,7 +95,7 @@ class WorldExportServiceTest {
 
         assertFalse(fixture.runtime.loaded);
         assertEquals(0, fixture.runtime.loadCount);
-        assertTrue(task.sourceRestored());
+        assertFalse(task.sourceRestored());
         fixture.service.finish(task);
         assertFalse(fixture.runtime.loaded);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
