@@ -24,6 +24,31 @@ jobs:
       - name: Verify repository contracts and versions
         run: python scripts/verify_versions.py
 
+  launcher-check:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: EngineData/Frontend/RustApp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: EngineData/Frontend/RustApp/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck Svelte frontend
+        run: npm run typecheck
+      - name: Build Svelte frontend
+        run: npm run build:frontend
+      - name: Generate Tauri icon assets
+        run: npx tauri icon src-tauri/app-icon.svg
+      - name: Check Rust/Tauri backend
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Test Rust/Tauri backend
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
   paper:
     runs-on: ubuntu-latest
     steps:
