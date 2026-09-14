@@ -96,7 +96,7 @@ public final class WorldBackupService {
 
         RuntimeException failure = null;
         if (task.wasLoaded) {
-            try { runtimeService.loadDuringOperation(task.world.id()); }
+            try { restoreSourceIfStillActive(task); }
             catch (RuntimeException exception) { failure = exception; }
         }
         task.close();
@@ -121,6 +121,13 @@ public final class WorldBackupService {
             throw new IllegalStateException("Cannot snapshot " + current.displayName()
                     + " because it became loaded after backup preparation");
         }
+    }
+
+    private void restoreSourceIfStillActive(BackupTask task) {
+        WorldId id = task.world.id();
+        WorldRecord current = registry.find(id).orElse(null);
+        if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return;
+        if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
     }
 
     public record BackupResult(String backupId, String artifactName) {
