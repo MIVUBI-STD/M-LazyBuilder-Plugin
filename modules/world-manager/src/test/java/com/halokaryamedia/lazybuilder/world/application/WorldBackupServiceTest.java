@@ -49,7 +49,7 @@ class WorldBackupServiceTest {
     void externallyReloadedWorldIsRejectedBeforeBackupSnapshotCopy() {
         Fixture fixture = fixture(true);
         WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
-        fixture.runtime.loaded = true; // Simulate an out-of-band Paper/plugin reload after prepare.
+        fixture.runtime.loaded = true;
 
         assertThrows(IllegalStateException.class, () -> fixture.service.executeFilePhase(task));
         assertEquals(0, fixture.files.stageCopyCount);
@@ -57,6 +57,20 @@ class WorldBackupServiceTest {
         fixture.runtime.loaded = false;
         fixture.service.finish(task);
         assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void finishDoesNotReloadSourceAfterLifecycleStopsBeingActive() throws Exception {
+        Fixture fixture = fixture(true);
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+        fixture.service.executeFilePhase(task);
+
+        fixture.registry.updateMetadata(fixture.world.withLifecycle(WorldLifecycle.ARCHIVED));
+        fixture.service.finish(task);
+
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(0, fixture.runtime.loadCount);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
@@ -76,10 +90,11 @@ class WorldBackupServiceTest {
         };
         WorldBackupService service = new WorldBackupService(
                 registry, runtimeService, operations, files, backups);
-        return new Fixture(world, runtime, operations, files, service);
+        return new Fixture(registry, world, runtime, operations, files, service);
     }
 
     private record Fixture(
+            WorldRegistry registry,
             WorldRecord world,
             FakeRuntime runtime,
             WorldOperationCoordinator operations,
