@@ -79,6 +79,7 @@ public final class WorldImportService {
         retryPendingCommittedArtifactCleanup();
         try {
             imports.deleteArtifact(artifactName);
+            imports.clearCommittedCleanupPending(artifactName);
             pendingCommittedArtifactCleanup.remove(artifactName);
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Could not discard uploaded world", exception);
@@ -138,12 +139,19 @@ public final class WorldImportService {
             persistence.save(registry.all());
             task.completed = true;
 
+            pendingCommittedArtifactCleanup.add(task.artifactName);
             try {
-                imports.deleteArtifact(task.artifactName);
-                pendingCommittedArtifactCleanup.remove(task.artifactName);
-            } catch (IOException cleanupFailure) {
+                imports.markCommittedCleanupPending(task.artifactName);
+            } catch (IOException markerFailure) {
+                task.artifactCleanupFailure = markerFailure;
+            }
+            IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
+            if (cleanupFailure == null) {
+                task.artifactCleanupFailure = null;
+            } else if (task.artifactCleanupFailure == null) {
                 task.artifactCleanupFailure = cleanupFailure;
-                pendingCommittedArtifactCleanup.add(task.artifactName);
+            } else {
+                task.artifactCleanupFailure.addSuppressed(cleanupFailure);
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
@@ -163,14 +171,26 @@ public final class WorldImportService {
     public void finish(ImportTask task) {
         Objects.requireNonNull(task, "task");
         if (task.completed && task.artifactCleanupFailure != null) {
-            if (retryCommittedArtifactCleanup(task.artifactName)) {
-                task.artifactCleanupFailure = null;
-            }
+            IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
+            task.artifactCleanupFailure = cleanupFailure;
         }
         task.close();
     }
 
-    /** Best-effort retry used on later Import request boundaries; never turns a committed import into failure. */
+    /**
+     * Loads only explicit durable cleanup markers and retries them. Ordinary uploaded
+     * or reviewed inbox files are never inferred as stale and are therefore untouched.
+     */
+    public void recoverPendingCommittedArtifactCleanup() {
+        try {
+            pendingCommittedArtifactCleanup.addAll(imports.pendingCommittedCleanupArtifacts());
+        } catch (IOException | RuntimeException ignored) {
+            return;
+        }
+        retryPendingCommittedArtifactCleanup();
+    }
+
+    /** Best-effort retry used on later Import request boundaries and shutdown; never turns a committed import into failure. */
     public void retryPendingCommittedArtifactCleanup() {
         for (String artifactName : Set.copyOf(pendingCommittedArtifactCleanup)) {
             retryCommittedArtifactCleanup(artifactName);
@@ -181,14 +201,17 @@ public final class WorldImportService {
         return pendingCommittedArtifactCleanup.size();
     }
 
-    private boolean retryCommittedArtifactCleanup(String artifactName) {
-        if (!pendingCommittedArtifactCleanup.contains(artifactName)) return true;
+    private IOException retryCommittedArtifactCleanup(String artifactName) {
+        if (!pendingCommittedArtifactCleanup.contains(artifactName)) return null;
         try {
             imports.deleteArtifact(artifactName);
+            imports.clearCommittedCleanupPending(artifactName);
             pendingCommittedArtifactCleanup.remove(artifactName);
-            return true;
-        } catch (IOException | RuntimeException ignored) {
-            return false;
+            return null;
+        } catch (IOException | RuntimeException exception) {
+            return exception instanceof IOException io
+                    ? io
+                    : new IOException("Could not clean committed import artifact " + artifactName, exception);
         }
     }
 
