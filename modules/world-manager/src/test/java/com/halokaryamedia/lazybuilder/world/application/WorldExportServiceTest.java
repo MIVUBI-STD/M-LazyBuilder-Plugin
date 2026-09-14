@@ -72,7 +72,7 @@ class WorldExportServiceTest {
         Fixture fixture = fixture(true);
         WorldExportService.ExportTask task = fixture.service.prepare(
                 fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
-        fixture.runtime.loaded = true; // Simulate out-of-band Paper/plugin reload after prepare.
+        fixture.runtime.loaded = true;
 
         assertThrows(IllegalStateException.class, () -> fixture.service.captureSnapshot(task));
         assertEquals(0, fixture.files.stageCopyCount);
@@ -80,6 +80,39 @@ class WorldExportServiceTest {
         fixture.runtime.loaded = false;
         fixture.service.finish(task);
         assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void resumeAfterSnapshotDoesNotReloadSourceThatBecameArchived() throws Exception {
+        Fixture fixture = fixture(true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        fixture.service.captureSnapshot(task);
+
+        fixture.registry.updateMetadata(fixture.world.withLifecycle(WorldLifecycle.ARCHIVED));
+        fixture.service.resumeSourceAfterSnapshot(task);
+
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(0, fixture.runtime.loadCount);
+        assertTrue(task.sourceRestored());
+        fixture.service.finish(task);
+        assertFalse(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void finishDoesNotReloadSourceThatIsNoLongerManaged() throws Exception {
+        Fixture fixture = fixture(true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        fixture.service.captureSnapshot(task);
+
+        fixture.registry.remove(fixture.world.id());
+        fixture.service.finish(task);
+
+        assertFalse(fixture.runtime.loaded);
+        assertEquals(0, fixture.runtime.loadCount);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
@@ -105,10 +138,11 @@ class WorldExportServiceTest {
                 registry, runtimeService, operations, files, artifacts,
                 store, updates, converter, new ConversionJobCoordinator()
         );
-        return new Fixture(world, runtime, operations, files, artifacts, service);
+        return new Fixture(registry, world, runtime, operations, files, artifacts, service);
     }
 
     private record Fixture(
+            WorldRegistry registry,
             WorldRecord world,
             FakeRuntime runtime,
             WorldOperationCoordinator operations,
