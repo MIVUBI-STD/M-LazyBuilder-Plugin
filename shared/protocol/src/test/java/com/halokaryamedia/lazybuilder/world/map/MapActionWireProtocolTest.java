@@ -48,6 +48,9 @@ class MapActionWireProtocolTest {
         assertEquals(id, response.worldId());
         assertEquals("Build World", response.displayName());
         assertEquals("build-world", response.folderName());
+
+        var cleared = MapActionWireProtocol.decodeResponse(MapActionWireProtocol.currentWorldCleared());
+        assertEquals(MapActionWireProtocol.CurrentWorldCleared.class, cleared.getClass());
     }
 
     @Test
