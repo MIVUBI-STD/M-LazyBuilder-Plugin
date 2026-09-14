@@ -69,6 +69,15 @@ public final class WorldImportService {
         }
     }
 
+    /** Deletes one reviewed upload that the builder explicitly chose not to import. */
+    public void discard(String artifactName) {
+        try {
+            imports.deleteArtifact(artifactName);
+        } catch (IOException | RuntimeException exception) {
+            throw new IllegalStateException("Could not discard uploaded world", exception);
+        }
+    }
+
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
