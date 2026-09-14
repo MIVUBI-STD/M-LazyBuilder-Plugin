@@ -50,6 +50,7 @@ public final class ClientMapSurfaceCache {
     private static final int MAX_PENDING = 262_144;
     private static final int MAX_LIVE_SAMPLES_PER_FRAME = 1024;
     private static final int MAX_COMPLETED_ENTRIES_PER_FRAME = 4096;
+    private static final int LIVE_SAMPLE_WORK_COST = 4;
 
     public static final int UNEXPLORED_COLOR = 0xFF101419;
 
@@ -69,6 +70,7 @@ public final class ClientMapSurfaceCache {
     private CompletableFuture<Void> writeTail = CompletableFuture.completedFuture(null);
     private Iterator<Map.Entry<Integer, SurfaceSample>> activeCompletedEntries;
     private RegionData activeCompletedRegion;
+    private int residentSampleCount;
 
     public void useScope(String scope, Path storageRoot) {
         String normalized = Objects.requireNonNullElse(scope, "");
@@ -88,6 +90,7 @@ public final class ClientMapSurfaceCache {
         completedLoads.clear();
         activeCompletedEntries = null;
         activeCompletedRegion = null;
+        residentSampleCount = 0;
 
         if (scopeDirectory != null) {
             migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
@@ -124,12 +127,17 @@ public final class ClientMapSurfaceCache {
         return blendFive(center, nw, ne, sw, se);
     }
 
-    /** Samples bounded live terrain and also merges bounded async region loads. */
+    /**
+     * Uses one shared per-frame work budget for completed-cache merging and live terrain sampling.
+     * A live world sample is weighted above a simple cache-entry merge because it reads heightmap,
+     * block state and neighboring terrain.
+     */
     public int processPending(ClientWorld world, int budget) {
-        int mergeBudget = Math.min(Math.max(0, budget), MAX_COMPLETED_ENTRIES_PER_FRAME);
-        drainCompletedLoads(mergeBudget);
+        int remainingWork = Math.max(0, budget);
+        int merged = drainCompletedLoads(Math.min(remainingWork, MAX_COMPLETED_ENTRIES_PER_FRAME));
+        remainingWork -= merged;
 
-        int sampleBudget = Math.min(Math.max(0, budget), MAX_LIVE_SAMPLES_PER_FRAME);
+        int sampleBudget = Math.min(remainingWork / LIVE_SAMPLE_WORK_COST, MAX_LIVE_SAMPLES_PER_FRAME);
         if (sampleBudget <= 0 || pending.isEmpty()) {
             pruneRegions();
             return 0;
@@ -145,7 +153,8 @@ public final class ClientMapSurfaceCache {
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
 
             RegionData region = regionFor(x, z, true);
-            region.samples.put(localIndex(x, z), readSurface(world, x, z));
+            int index = localIndex(x, z);
+            if (region.samples.put(index, readSurface(world, x, z)) == null) residentSampleCount++;
             region.dirty = true;
             processed++;
         }
@@ -157,11 +166,9 @@ public final class ClientMapSurfaceCache {
         return pending.size();
     }
 
-    /** Number of currently resident sparse base-column samples, not total disk history. */
+    /** Number of currently resident sparse base-column samples, maintained incrementally. */
     public int size() {
-        int total = 0;
-        for (RegionData region : regions.values()) total += region.samples.size();
-        return total;
+        return residentSampleCount;
     }
 
     /** Queues snapshots of all dirty resident regions without blocking rendering. */
@@ -231,7 +238,9 @@ public final class ClientMapSurfaceCache {
 
             while (processed < budget && activeCompletedEntries.hasNext()) {
                 Map.Entry<Integer, SurfaceSample> entry = activeCompletedEntries.next();
-                activeCompletedRegion.samples.putIfAbsent(entry.getKey(), entry.getValue());
+                if (activeCompletedRegion.samples.putIfAbsent(entry.getKey(), entry.getValue()) == null) {
+                    residentSampleCount++;
+                }
                 processed++;
             }
 
@@ -258,6 +267,7 @@ public final class ClientMapSurfaceCache {
                 region.dirty = false;
                 enqueueRegionWrite(directory, eldest.getKey(), new HashMap<>(region.samples));
             }
+            residentSampleCount -= region.samples.size();
             iterator.remove();
         }
     }
