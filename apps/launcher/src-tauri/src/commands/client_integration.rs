@@ -24,6 +24,20 @@ pub async fn client_integration_select_profile(
 }
 
 #[tauri::command]
+pub fn client_integration_pick_profile(app: AppHandle) -> Result<ClientIntegrationStatus, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    let selected = rfd::FileDialog::new()
+        .set_title("Select Modrinth profile")
+        .pick_folder();
+
+    if let Some(profile_path) = selected {
+        client_integration::select_manual_profile(&profile_path)?;
+    }
+
+    client_integration::status(resource_dir.as_deref())
+}
+
+#[tauri::command]
 pub async fn client_integration_sync(app: AppHandle) -> Result<ClientIntegrationStatus, String> {
     let resource_dir = app.path().resource_dir().ok();
     run_blocking("Client sync", move || {

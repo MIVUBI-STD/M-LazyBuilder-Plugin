@@ -82,9 +82,13 @@ Modrinth App remains the Minecraft launcher and profile/modpack owner. LazyBuild
 Client Setup has one bounded responsibility:
 
 ```text
-detect Modrinth profiles
-→ user selects one profile
-→ verify Minecraft 1.21.4 + Fabric
+auto-detect known Modrinth profile roots
+→ user chooses a detected profile
+   or manually selects the exact profile folder
+→ persist the canonical absolute profile path
+→ revalidate that exact path whenever Client Setup is opened or refreshed
+→ derive <profile>/mods internally
+→ verify Minecraft 1.21.4 + Fabric from profile-local evidence
 → inspect LazyBuilder-owned client components
 → Sync Client installs/updates/repairs only:
    lazybuilder-map-manager-*.jar
@@ -92,9 +96,11 @@ detect Modrinth profiles
    lazybuilder-performance-manager-*.jar
 ```
 
-Other files in the selected profile `mods/` directory are never modified. There is no background watcher; status is refreshed when the Client Setup surface is used or Sync Client is requested.
+Custom Modrinth data directories are supported through manual profile selection. The selected folder must be the exact profile under a `profiles` directory; users never select the `mods` directory directly. LazyBuilder remembers both the canonical selected profile and its `profiles` root so sibling profiles at that custom location can be discovered later. If the selected profile is moved or renamed, LazyBuilder reports it as missing and requires an explicit new selection rather than creating or guessing a replacement path.
 
-Runtime-ready Launcher packages bundle the three tested Fabric JARs from the same source revision as the desktop package. Current Modrinth instance metadata is not treated as a LazyBuilder authority: LazyBuilder avoids coupling to Modrinth's private database schema and verifies the selected profile from profile-local runtime evidence, with legacy `profile.json` support only as a compatibility fallback.
+Other files in the selected profile `mods/` directory are never modified. Before Sync Client writes anything, the selected profile is revalidated, compatibility is rechecked, the derived mods directory must be writable, and all three bundled LazyBuilder client JARs must be available. There is no background watcher; status is refreshed when the Client Setup surface is opened/refreshed or Sync Client is requested.
+
+Runtime-ready Launcher packages bundle the three tested Fabric JARs from the same source revision as the desktop package. Current Modrinth instance metadata is not treated as a LazyBuilder authority: LazyBuilder avoids coupling to Modrinth's private database schema and verifies the selected profile from profile-local runtime evidence, with legacy `profile.json` support only as a compatibility fallback. The UI labels whether compatibility came from the last launch, legacy metadata, or remains unverified.
 
 ## Product Constraints
 
@@ -105,6 +111,7 @@ Runtime-ready Launcher packages bundle the three tested Fabric JARs from the sam
 - Third-party integrations are reused only where they clearly outperform rebuilding the same capability.
 - Modrinth remains authoritative for Minecraft profiles, loader installation, modpacks, general mods, and game launching.
 - LazyBuilder Client Setup may mutate only LazyBuilder-owned Fabric JAR prefixes inside an explicitly selected compatible profile.
+- Client Setup must never guess, recreate, or silently migrate a missing selected Modrinth profile path.
 - One user action maps to one canonical application path; do not create command/UI/file-manager duplicates for the same operation.
 - Runtime storage is intentionally minimal: create only directories with an active owner.
 - Source/CI proof is not live-server proof; new feature scope stays closed until local/live validation reveals a concrete need.

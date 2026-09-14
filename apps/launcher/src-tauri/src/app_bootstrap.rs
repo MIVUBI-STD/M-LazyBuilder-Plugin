@@ -43,6 +43,7 @@ pub fn run() {
             commands::plugin_manager::plugin_resolve_duplicates,
             commands::client_integration::client_integration_status,
             commands::client_integration::client_integration_select_profile,
+            commands::client_integration::client_integration_pick_profile,
             commands::client_integration::client_integration_sync,
             commands::world_manager::world_list,
             commands::world_manager::world_create,

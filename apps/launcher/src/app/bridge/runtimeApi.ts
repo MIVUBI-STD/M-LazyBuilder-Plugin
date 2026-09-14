@@ -15,9 +15,9 @@ export type ServerResourceProfile = { totalMemoryMb: number; reservedSystemMemor
 export type ResourceUpdateRequest = { maxMemoryMb: number; preset: string };
 export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: string; problemDetail?: string | null; candidateFiles?: string[] | null };
 export type PluginInstallResult = { success: boolean; pluginId: string; message?: string | null; restartRequired: boolean };
-export type ClientProfileSummary = { name: string; path: string; gameVersion?: string | null; loader?: string | null; compatible: boolean; selected: boolean };
+export type ClientProfileSummary = { name: string; path: string; modrinthRoot: string; modsPath: string; gameVersion?: string | null; loader?: string | null; verification: string; compatible: boolean; selected: boolean };
 export type ClientModStatus = { id: string; displayName: string; state: string; installedFiles: string[]; targetFile: string; bundled: boolean };
-export type ClientIntegrationStatus = { modrinthDetected: boolean; profiles: ClientProfileSummary[]; selectedProfile?: ClientProfileSummary | null; mods: ClientModStatus[]; ready: boolean; message: string };
+export type ClientIntegrationStatus = { modrinthDetected: boolean; profiles: ClientProfileSummary[]; selectedProfile?: ClientProfileSummary | null; selectedProfileMissing: boolean; mods: ClientModStatus[]; ready: boolean; message: string };
 export type ManagedWorldSummary = { id: string; displayName: string; kind: string; lifecycle: string; defaultGameMode: string };
 export type CreateWorldRequest = { folderName: string; displayName: string; kind: 'FLAT' | 'VOID' };
 export type DuplicateWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
@@ -67,6 +67,7 @@ export const runtimeApi = {
   client: {
     status: () => invoke<ClientIntegrationStatus>('client_integration_status'),
     selectProfile: (profilePath: string) => invoke<ClientIntegrationStatus>('client_integration_select_profile', { profilePath }),
+    pickProfile: () => invoke<ClientIntegrationStatus>('client_integration_pick_profile'),
     sync: () => invoke<ClientIntegrationStatus>('client_integration_sync')
   },
   worlds: {

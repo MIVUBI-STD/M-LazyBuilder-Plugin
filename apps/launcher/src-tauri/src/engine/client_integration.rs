@@ -3,7 +3,8 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 pub const TARGET_MINECRAFT_VERSION: &str = "1.21.4";
@@ -47,8 +48,11 @@ struct ClientModSpec {
 pub struct ClientProfileSummary {
     pub name: String,
     pub path: String,
+    pub modrinth_root: String,
+    pub mods_path: String,
     pub game_version: Option<String>,
     pub loader: Option<String>,
+    pub verification: String,
     pub compatible: bool,
     pub selected: bool,
 }
@@ -70,6 +74,7 @@ pub struct ClientIntegrationStatus {
     pub modrinth_detected: bool,
     pub profiles: Vec<ClientProfileSummary>,
     pub selected_profile: Option<ClientProfileSummary>,
+    pub selected_profile_missing: bool,
     pub mods: Vec<ClientModStatus>,
     pub ready: bool,
     pub message: String,
@@ -79,16 +84,19 @@ pub struct ClientIntegrationStatus {
 #[serde(rename_all = "camelCase")]
 struct ClientIntegrationConfig {
     selected_profile_path: Option<String>,
+    custom_profiles_root: Option<String>,
 }
 
 pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, String> {
     let config = load_config()?;
+    let roots = profile_roots(config.custom_profiles_root.as_deref());
     let selected_path = config.selected_profile_path.as_deref();
-    let mut profiles = discover_profiles(selected_path)?;
+    let mut profiles = discover_profiles(selected_path, &roots)?;
     profiles.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
 
     let selected_profile = profiles.iter().find(|profile| profile.selected).cloned();
-    let modrinth_detected = !profile_roots().is_empty();
+    let selected_profile_missing = selected_path.is_some() && selected_profile.is_none();
+    let modrinth_detected = !roots.is_empty() || selected_profile.is_some();
     let mods = match selected_profile.as_ref() {
         Some(profile) if profile.compatible => component_statuses(Path::new(&profile.path), resource_dir)?,
         _ => unchecked_component_statuses(resource_dir),
@@ -97,19 +105,21 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
     let ready = selected_profile.as_ref().is_some_and(|profile| profile.compatible)
         && mods.iter().all(|entry| entry.state == "Installed");
 
-    let message = if !modrinth_detected {
-        "Modrinth App profiles were not detected on this PC.".into()
+    let message = if selected_profile_missing {
+        "The previously selected Modrinth profile is no longer available. Select the profile again.".into()
+    } else if !modrinth_detected {
+        "Modrinth profiles were not detected automatically. Select the exact Modrinth profile you use for LazyBuilder.".into()
     } else if profiles.is_empty() {
-        "No Modrinth profiles were found.".into()
+        "No Modrinth profiles were found. Select the exact profile folder manually.".into()
     } else if selected_profile.is_none() {
-        "Choose the Modrinth profile you use for LazyBuilder.".into()
+        "Choose a detected profile or select the exact Modrinth profile folder manually.".into()
     } else if selected_profile
         .as_ref()
         .is_some_and(|profile| profile.game_version.is_none() || profile.loader.is_none())
     {
-        "Open this profile once from Modrinth so LazyBuilder can verify its Minecraft version and Fabric loader.".into()
+        "Open this profile once from Modrinth, then refresh Client Setup so LazyBuilder can verify Minecraft and Fabric from the last launch.".into()
     } else if !selected_profile.as_ref().is_some_and(|profile| profile.compatible) {
-        format!("LazyBuilder requires Minecraft {TARGET_MINECRAFT_VERSION} with Fabric.")
+        format!("This profile is not compatible. LazyBuilder requires Minecraft {TARGET_MINECRAFT_VERSION} with Fabric.")
     } else if ready {
         "LazyBuilder client is ready in the selected Modrinth profile.".into()
     } else {
@@ -120,6 +130,7 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
         modrinth_detected,
         profiles,
         selected_profile,
+        selected_profile_missing,
         mods,
         ready,
         message,
@@ -127,39 +138,53 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
 }
 
 pub fn select_profile(profile_path: &str) -> Result<(), String> {
-    let requested = canonical_profile_path(Path::new(profile_path))?;
-    let selected = inspect_profile(&requested, Some(&requested))?
-        .ok_or_else(|| "The selected folder is not a detected Modrinth profile.".to_string())?;
-    if !selected.compatible {
-        if selected.game_version.is_none() || selected.loader.is_none() {
-            return Err("Open this profile once from Modrinth, then try again so LazyBuilder can verify Minecraft 1.21.4 + Fabric.".into());
-        }
-        return Err(format!(
-            "This profile is not compatible with LazyBuilder. Required: Minecraft {TARGET_MINECRAFT_VERSION} + Fabric."
-        ));
-    }
+    let mut config = load_config()?;
+    let roots = profile_roots(config.custom_profiles_root.as_deref());
+    let requested = canonical_profile_in_roots(Path::new(profile_path), &roots)?;
+    inspect_profile(&requested, Some(&requested))?
+        .ok_or_else(|| "The selected folder is not a Modrinth profile.".to_string())?;
+    config.selected_profile_path = Some(requested.to_string_lossy().to_string());
+    save_config(&config)
+}
+
+pub fn select_manual_profile(profile_path: &Path) -> Result<(), String> {
+    let requested = canonical_manual_profile_path(profile_path)?;
+    inspect_profile(&requested, Some(&requested))?
+        .ok_or_else(|| "The selected folder is not a Modrinth profile.".to_string())?;
+
+    let profiles_root = requested
+        .parent()
+        .ok_or_else(|| "Selected Modrinth profile has no profiles directory.".to_string())?
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve Modrinth profiles directory: {error}"))?;
+
     save_config(&ClientIntegrationConfig {
         selected_profile_path: Some(requested.to_string_lossy().to_string()),
+        custom_profiles_root: Some(profiles_root.to_string_lossy().to_string()),
     })
 }
 
 pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
     let config = load_config()?;
+    let roots = profile_roots(config.custom_profiles_root.as_deref());
     let selected = config
         .selected_profile_path
         .ok_or_else(|| "Choose a Modrinth profile before syncing the client.".to_string())?;
-    let profile_path = canonical_profile_path(Path::new(&selected))?;
+    let profile_path = canonical_profile_in_roots(Path::new(&selected), &roots)
+        .map_err(|_| "The selected Modrinth profile is no longer available. Select it again.".to_string())?;
     let profile = inspect_profile(&profile_path, Some(&profile_path))?
         .ok_or_else(|| "The selected Modrinth profile is no longer available.".to_string())?;
     if !profile.compatible {
+        if profile.game_version.is_none() || profile.loader.is_none() {
+            return Err("Open this profile once from Modrinth, then refresh Client Setup before syncing.".into());
+        }
         return Err(format!(
             "This profile is not compatible with LazyBuilder. Required: Minecraft {TARGET_MINECRAFT_VERSION} + Fabric."
         ));
     }
 
     let mods_dir = profile_path.join("mods");
-    fs::create_dir_all(&mods_dir)
-        .map_err(|error| format!("Could not create the Modrinth profile mods directory: {error}"))?;
+    ensure_mods_directory_writable(&mods_dir)?;
 
     let sources: Vec<(ClientModSpec, PathBuf)> = MODS
         .iter()
@@ -241,12 +266,13 @@ fn component_statuses(profile_path: &Path, resource_dir: Option<&Path>) -> Resul
         .collect()
 }
 
-fn discover_profiles(selected_path: Option<&str>) -> Result<Vec<ClientProfileSummary>, String> {
-    let selected = selected_path.and_then(|value| canonical_profile_path(Path::new(value)).ok());
+fn discover_profiles(selected_path: Option<&str>, roots: &[PathBuf]) -> Result<Vec<ClientProfileSummary>, String> {
+    let selected = selected_path.and_then(|value| canonical_existing_directory(Path::new(value)).ok());
     let mut profiles = Vec::new();
     let mut seen = HashSet::new();
-    for root in profile_roots() {
-        let entries = match fs::read_dir(&root) {
+
+    for root in roots {
+        let entries = match fs::read_dir(root) {
             Ok(entries) => entries,
             Err(_) => continue,
         };
@@ -255,7 +281,7 @@ fn discover_profiles(selected_path: Option<&str>) -> Result<Vec<ClientProfileSum
             if !path.is_dir() {
                 continue;
             }
-            let canonical = match canonical_profile_path(&path) {
+            let canonical = match canonical_profile_in_roots(&path, roots) {
                 Ok(path) => path,
                 Err(_) => continue,
             };
@@ -267,18 +293,29 @@ fn discover_profiles(selected_path: Option<&str>) -> Result<Vec<ClientProfileSum
             }
         }
     }
+
+    // A persisted custom profile remains visible even when its root is not one of the
+    // platform defaults. This also makes rename/move failures explicit instead of silently
+    // switching to another profile with the same display name.
+    if let Some(selected) = selected {
+        if seen.insert(selected.clone()) && is_modrinth_profile_path(&selected) {
+            if let Some(profile) = inspect_profile(&selected, Some(&selected))? {
+                profiles.push(profile);
+            }
+        }
+    }
+
     Ok(profiles)
 }
 
 fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<ClientProfileSummary>, String> {
-    if !path.is_dir() {
+    if !path.is_dir() || !is_modrinth_profile_path(path) {
         return Ok(None);
     }
 
-    // Current Modrinth versions keep instance metadata in app.db. We intentionally do
-    // not couple LazyBuilder to that private database schema. A profile that has been
-    // launched exposes the authoritative runtime pair in Fabric's latest.log. Older
-    // Modrinth installations may still have profile.json, which remains a fallback.
+    // Current Modrinth versions keep instance metadata in app.db. LazyBuilder intentionally
+    // does not couple to that private schema. Runtime evidence from latest.log wins; older
+    // profile.json metadata is used only as a fallback.
     let folder_name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -287,6 +324,7 @@ fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<Client
     let mut name = folder_name;
     let mut game_version = None;
     let mut loader = None;
+    let mut verification = "Unverified".to_string();
 
     let legacy_metadata_path = path.join("profile.json");
     if legacy_metadata_path.is_file() {
@@ -301,14 +339,17 @@ fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<Client
                     &json,
                     &["loader", "loadertype", "loader_type", "modloader", "mod_loader"],
                 );
+                if game_version.is_some() || loader.is_some() {
+                    verification = "Legacy metadata".into();
+                }
             }
         }
     }
 
     if let Some((runtime_version, runtime_loader)) = runtime_identity_from_latest_log(path)? {
-        // Runtime evidence wins over potentially stale legacy metadata.
         game_version = Some(runtime_version);
         loader = Some(runtime_loader);
+        verification = "Last launch".into();
     }
 
     let compatible = game_version.as_deref() == Some(TARGET_MINECRAFT_VERSION)
@@ -316,11 +357,17 @@ fn inspect_profile(path: &Path, selected: Option<&Path>) -> Result<Option<Client
             .as_deref()
             .is_some_and(|value| value.to_ascii_lowercase().contains("fabric"));
 
+    let profiles_root = path.parent().unwrap_or(path);
+    let modrinth_root = profiles_root.parent().unwrap_or(profiles_root);
+
     Ok(Some(ClientProfileSummary {
         name,
         path: path.to_string_lossy().to_string(),
+        modrinth_root: modrinth_root.to_string_lossy().to_string(),
+        mods_path: path.join("mods").to_string_lossy().to_string(),
         game_version,
         loader,
+        verification,
         compatible,
         selected: selected.is_some_and(|selected| selected == path),
     }))
@@ -386,7 +433,7 @@ fn normalize_key(value: &str) -> String {
         .replace(' ', "_")
 }
 
-fn profile_roots() -> Vec<PathBuf> {
+fn profile_roots(custom_profiles_root: Option<&str>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(explicit) = env::var_os("MODRINTH_PROFILES_DIR") {
         push_existing_root(&mut roots, PathBuf::from(explicit));
@@ -399,6 +446,9 @@ fn profile_roots() -> Vec<PathBuf> {
     }
     if let Some(local) = env::var_os("LOCALAPPDATA") {
         push_existing_root(&mut roots, PathBuf::from(local).join("ModrinthApp").join("profiles"));
+    }
+    if let Some(custom) = custom_profiles_root {
+        push_existing_root(&mut roots, PathBuf::from(custom));
     }
     roots
 }
@@ -414,18 +464,64 @@ fn push_existing_root(roots: &mut Vec<PathBuf>, candidate: PathBuf) {
     }
 }
 
-fn canonical_profile_path(path: &Path) -> Result<PathBuf, String> {
+fn canonical_existing_directory(path: &Path) -> Result<PathBuf, String> {
     let canonical = path
         .canonicalize()
         .map_err(|error| format!("Could not resolve Modrinth profile path: {error}"))?;
     if !canonical.is_dir() {
         return Err("Modrinth profile path is not a directory.".into());
     }
-    let allowed = profile_roots().iter().any(|root| canonical.starts_with(root));
-    if !allowed {
-        return Err("Selected profile is outside the detected Modrinth profiles directory.".into());
+    Ok(canonical)
+}
+
+fn canonical_profile_in_roots(path: &Path, roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let canonical = canonical_existing_directory(path)?;
+    let allowed = roots.iter().any(|root| canonical.parent() == Some(root.as_path()));
+    if !allowed || !is_modrinth_profile_path(&canonical) {
+        return Err("Selected folder is not a profile under a detected Modrinth profiles directory.".into());
     }
     Ok(canonical)
+}
+
+fn canonical_manual_profile_path(path: &Path) -> Result<PathBuf, String> {
+    let canonical = canonical_existing_directory(path)?;
+    if !is_modrinth_profile_path(&canonical) {
+        let is_profiles_root = canonical
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("profiles"));
+        if is_profiles_root {
+            return Err("Select the exact Modrinth profile inside the profiles folder, not the profiles folder itself.".into());
+        }
+        return Err("Select an exact Modrinth profile folder whose parent folder is named 'profiles'.".into());
+    }
+    Ok(canonical)
+}
+
+fn is_modrinth_profile_path(path: &Path) -> bool {
+    path.is_dir()
+        && path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("profiles"))
+}
+
+fn ensure_mods_directory_writable(mods_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(mods_dir)
+        .map_err(|error| format!("Could not create the selected profile mods directory: {error}"))?;
+    let probe = mods_dir.join(format!(".lazybuilder-write-test-{}", std::process::id()));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .map_err(|error| format!("The selected Modrinth profile mods directory is not writable: {error}"))?;
+    file.write_all(b"lazybuilder")
+        .map_err(|error| format!("The selected Modrinth profile mods directory is not writable: {error}"))?;
+    drop(file);
+    fs::remove_file(&probe)
+        .map_err(|error| format!("Could not clean the Client Setup write test: {error}"))?;
+    Ok(())
 }
 
 fn owned_mod_files(mods_dir: &Path, spec: ClientModSpec) -> Result<Vec<String>, String> {
@@ -569,6 +665,18 @@ mod tests {
         .unwrap();
         let identity = runtime_identity_from_latest_log(&root).unwrap();
         assert_eq!(identity, Some(("1.21.4".into(), "fabric".into())));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manual_profile_must_be_inside_profiles_directory() {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("lazybuilder-manual-profile-{unique}"));
+        let profile = root.join("profiles").join("Builder 1.21.4");
+        fs::create_dir_all(&profile).unwrap();
+        assert!(canonical_manual_profile_path(&profile).is_ok());
+        assert!(canonical_manual_profile_path(&root).is_err());
+        assert!(canonical_manual_profile_path(&root.join("profiles")).is_err());
         let _ = fs::remove_dir_all(root);
     }
 
