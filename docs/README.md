@@ -7,11 +7,11 @@ Single entry point for human and AI documentation discovery.
 Resolve the task domain first, then load only the smallest canonical set.
 
 ```text
-PRODUCT / FLOW        → 01-product/
-WORLD MANAGEMENT      → 02-world-management/
-FABRIC CLIENT / XAERO → 03-client-ui/
-SYSTEM / OWNERSHIP    → 04-system/
-CURRENT OPERATIONS    → 05-operations/
+PRODUCT / FLOW          → 01-product/
+WORLD MANAGEMENT        → 02-world-management/
+FABRIC CLIENT / MAP UI  → 03-client-ui/
+SYSTEM / OWNERSHIP      → 04-system/
+CURRENT OPERATIONS      → 05-operations/
 ```
 
 Two system documents answer different questions:
@@ -29,10 +29,12 @@ Do not read every Skill or every domain by default.
 docs/
 ├── 01-product/            product identity, scope, end-to-end feature flow
 ├── 02-world-management/   world lifecycle, create, settings, transfer, safety
-├── 03-client-ui/          Fabric client UI, keybinds, Xaero integration
+├── 03-client-ui/          Fabric client UI, first-party map interaction, navigation
 ├── 04-system/             architecture, minimum-flow discipline, ownership, networking, specialist routing
 └── 05-operations/         current status, next action, proof/handoff
 ```
+
+Xaero may appear only as an interaction-quality reference where explicitly documented. It is not LazyBuilder's map authority, networking owner, or runtime dependency.
 
 ## Fast Task Routing
 
@@ -51,7 +53,7 @@ change world creation/settings/lifecycle/import/export
 change presentation/input
 → lazybuilder-ui
 → Desktop branch for Tauri/Svelte
-→ Fabric branch for client/Xaero
+→ Fabric branch for Map/Utility/Performance client presentation
 
 change workspace/server/provisioning/process/runtime/resources
 → 04-system/skill-routing.md
@@ -73,6 +75,7 @@ change architecture/module ownership
 
 continue prior work / interpret current proof
 → 05-operations/README.md
+→ 05-operations/current-verification.md
 ```
 
 ## Context Policy
