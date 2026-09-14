@@ -62,6 +62,7 @@ class WorldImportServiceTest {
         assertEquals(com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle.ACTIVE, imported.lifecycle());
         assertEquals(1, persistence.saved.size());
         assertTrue(files.published);
+        assertEquals(List.of("Build.zip"), imports.deletedArtifacts);
     }
 
     @Test
@@ -114,7 +115,7 @@ class WorldImportServiceTest {
     }
 
     @Test
-    void failedConversionCleansEveryOwnedWorkspace() throws Exception {
+    void failedConversionCleansEveryOwnedWorkspaceButKeepsArtifactForRetry() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeFiles files = new FakeFiles(tempDir);
@@ -161,15 +162,49 @@ class WorldImportServiceTest {
         service.finish(task);
 
         assertFalse(files.published);
+        assertTrue(imports.deletedArtifacts.isEmpty(), "valid source artifact must remain available for retry");
         for (Path workspace : files.reserved) {
             assertFalse(Files.exists(workspace), "workspace should be cleaned: " + workspace);
         }
     }
 
+    @Test
+    void persistenceFailureRollsBackPublishedWorldAndKeepsArtifactForRetry() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        persistence.failSave = true;
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("native import must not probe converter"); };
+        ConversionUpdateService updates = new ConversionUpdateService(
+                ConversionRuntimePolicy.defaults(), runtimeStore, Optional::empty,
+                (release, directory) -> { throw new AssertionError("native import must not download runtime"); },
+                converter, tempDir.resolve("downloads"),
+                Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC)
+        );
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates, converter, new ConversionJobCoordinator()
+        );
+
+        WorldImportService.ImportTask task = service.prepare("Build.zip", "ImportedBuild", "Imported Build");
+        assertThrows(IllegalStateException.class, () -> service.executeFilePhase(task));
+        service.finish(task);
+
+        assertTrue(registry.all().isEmpty(), "failed publish commit must not leave a managed record");
+        assertFalse(Files.exists(tempDir.resolve("ImportedBuild")), "published directory must be rolled back");
+        assertTrue(imports.deletedArtifacts.isEmpty(), "source artifact must remain available for retry");
+    }
+
     private static final class MemoryPersistence implements WorldRegistryPersistence {
         List<WorldRecord> saved = List.of();
+        boolean failSave;
         @Override public List<WorldRecord> load() { return saved; }
-        @Override public void save(List<WorldRecord> worlds) { saved = List.copyOf(worlds); }
+        @Override public void save(List<WorldRecord> worlds) {
+            if (failSave) throw new IllegalStateException("persistence failed");
+            saved = List.copyOf(worlds);
+        }
     }
 
     private static final class FakeFiles implements WorldFileRepository {
