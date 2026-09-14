@@ -11,9 +11,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Small versioned wire format shared by Paper and the Fabric/Xaero client adapter. */
+/** Small versioned wire format shared by Paper and the Fabric map client. */
 public final class MapActionWireProtocol {
-    public static final int VERSION = 1;
+    /** V2 adds an explicit unmanaged-current-world response so client state cannot remain stale. */
+    public static final int VERSION = 2;
     public static final int MAX_MESSAGE_BYTES = 4096;
     private static final int MAX_STRING_BYTES = 192;
 
@@ -24,6 +25,7 @@ public final class MapActionWireProtocol {
     private static final int EXPORT_ACCEPTED = 102;
     private static final int EXPORT_COMPLETE = 103;
     private static final int CURRENT_WORLD_RESULT = 104;
+    private static final int CURRENT_WORLD_CLEARED = 105;
     private static final int ERROR = 127;
 
     private MapActionWireProtocol() {}
@@ -53,7 +55,7 @@ public final class MapActionWireProtocol {
     public record CurrentWorldRequest() implements Request {}
 
     public sealed interface Response permits TeleportOk, ExportAccepted, ExportComplete,
-            CurrentWorldResult, ErrorResponse {}
+            CurrentWorldResult, CurrentWorldCleared, ErrorResponse {}
 
     public record TeleportOk(WorldId worldId, double x, double y, double z) implements Response {
         public TeleportOk { Objects.requireNonNull(worldId, "worldId"); }
@@ -78,6 +80,9 @@ public final class MapActionWireProtocol {
             folderName = requireString(folderName, "folderName");
         }
     }
+
+    /** Explicitly means the player is currently outside all managed worlds. */
+    public record CurrentWorldCleared() implements Response {}
 
     public record ErrorResponse(String message) implements Response {
         public ErrorResponse { message = requireString(message, "message"); }
@@ -137,6 +142,7 @@ public final class MapActionWireProtocol {
             case ExportAccepted ignored -> EXPORT_ACCEPTED;
             case ExportComplete ignored -> EXPORT_COMPLETE;
             case CurrentWorldResult ignored -> CURRENT_WORLD_RESULT;
+            case CurrentWorldCleared ignored -> CURRENT_WORLD_CLEARED;
             case ErrorResponse ignored -> ERROR;
         };
         return encode(opcode, out -> {
@@ -158,6 +164,7 @@ public final class MapActionWireProtocol {
                     writeString(out, current.displayName());
                     writeString(out, current.folderName());
                 }
+                case CurrentWorldCleared ignored -> { }
                 case ErrorResponse error -> writeString(out, error.message());
             }
         });
@@ -175,6 +182,7 @@ public final class MapActionWireProtocol {
                 case EXPORT_ACCEPTED -> new ExportAccepted(readWorldId(in));
                 case EXPORT_COMPLETE -> new ExportComplete(readWorldId(in), readString(in), readString(in));
                 case CURRENT_WORLD_RESULT -> new CurrentWorldResult(readWorldId(in), readString(in), readString(in));
+                case CURRENT_WORLD_CLEARED -> new CurrentWorldCleared();
                 case ERROR -> new ErrorResponse(readString(in));
                 default -> throw new IOException("Unknown map response opcode: " + opcode);
             };
@@ -217,6 +225,10 @@ public final class MapActionWireProtocol {
 
     public static byte[] currentWorld(WorldId worldId, String displayName, String folderName) {
         return encodeResponse(new CurrentWorldResult(worldId, displayName, folderName));
+    }
+
+    public static byte[] currentWorldCleared() {
+        return encodeResponse(new CurrentWorldCleared());
     }
 
     public static byte[] error(String message) {
