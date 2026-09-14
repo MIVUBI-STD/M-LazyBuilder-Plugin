@@ -213,6 +213,10 @@ public final class WorldManager {
             throw new IllegalStateException("Failed to initialize LazyBuilder world registry", exception);
         }
 
+        // Cleanup recovery is explicit and marker-driven. It never scans ordinary
+        // import inbox files, so valid uploads/reviews are not guessed to be stale.
+        worldImportService.recoverPendingCommittedArtifactCleanup();
+
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
                 + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
                 + " storage layout.");
@@ -274,7 +278,8 @@ public final class WorldManager {
     }
 
     public void stop() {
-        // Transfer/conversion/file workers are request-bound; there is no idle process to stop.
+        // One final event-bound retry before shutdown. No background cleanup worker exists.
+        worldImportService.retryPendingCommittedArtifactCleanup();
     }
 
     public WorldStorageLayout storageLayout() { return storageLayout; }
