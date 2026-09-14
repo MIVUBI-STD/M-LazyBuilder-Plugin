@@ -3,18 +3,27 @@ package com.halokaryamedia.lazybuilder.utility;
 /**
  * Persisted Utility Manager preferences.
  *
- * Values are intentionally conservative. Settings that visibly change Minecraft
- * behavior remain opt-in; passive convenience defaults may be enabled later only
- * when their owning feature is implemented and reviewed.
+ * Defaults preserve familiar Minecraft behavior. Passive conveniences that do not
+ * introduce a new workflow may default on; visual/connection behavior remains opt-in.
  */
 public record UtilityPreferences(
         boolean borderlessWindow,
         boolean compactInfo,
+        boolean extendedChatHistory,
+        boolean keepChatDraft,
         boolean chatTimestamps,
         boolean autoReconnect,
         boolean organizeScreenshotsByProject
 ) {
     public static UtilityPreferences defaults() {
-        return new UtilityPreferences(false, false, false, false, false);
+        return new UtilityPreferences(
+                false,
+                false,
+                true,
+                true,
+                false,
+                false,
+                false
+        );
     }
 }
