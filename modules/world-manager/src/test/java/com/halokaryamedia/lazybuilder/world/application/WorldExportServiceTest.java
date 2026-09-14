@@ -116,7 +116,45 @@ class WorldExportServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
+    @Test
+    void abandonPreparedExportRestoresOriginallyLoadedSourceAndReleasesLease() {
+        Fixture fixture = fixture(true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+
+        assertFalse(fixture.runtime.loaded);
+        fixture.service.abandon(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertTrue(task.sourceRestored());
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void failedExportCanBeAbandonedWithoutLeavingSourceUnloaded() throws Exception {
+        Fixture fixture = fixture(true, true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+        fixture.service.captureSnapshot(task);
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.processSnapshot(task));
+        assertFalse(fixture.runtime.loaded);
+        assertTrue(fixture.operations.isBusy(fixture.world.id()));
+
+        fixture.service.abandon(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertTrue(task.sourceRestored());
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
     private Fixture fixture(boolean loaded) {
+        return fixture(loaded, false);
+    }
+
+    private Fixture fixture(boolean loaded, boolean failPackage) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
@@ -124,7 +162,7 @@ class WorldExportServiceTest {
         WorldOperationCoordinator operations = new WorldOperationCoordinator();
         WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         FakeFiles files = new FakeFiles(tempDir);
-        FakeArtifacts artifacts = new FakeArtifacts(tempDir);
+        FakeArtifacts artifacts = new FakeArtifacts(tempDir, failPackage);
         FakeStore store = new FakeStore();
         ConverterAdapter converter = runtimeArtifact -> { throw new IOException("must not probe"); };
         ConversionReleaseSource source = () -> Optional.empty();
@@ -191,10 +229,15 @@ class WorldExportServiceTest {
 
     private static final class FakeArtifacts implements WorldExportArtifactStore {
         private final Path root;
+        private final boolean failPackage;
         private ExportArtifactType lastType;
-        FakeArtifacts(Path root) { this.root = root; }
+        FakeArtifacts(Path root, boolean failPackage) {
+            this.root = root;
+            this.failPackage = failPackage;
+        }
         @Override public Path packageDirectory(Path sourceDirectory, String artifactName, ExportArtifactType type) throws IOException {
             lastType = type;
+            if (failPackage) throw new IOException("export packaging failed");
             Path artifact = root.resolve(artifactName + type.extension());
             Files.writeString(artifact, "artifact");
             return artifact;
