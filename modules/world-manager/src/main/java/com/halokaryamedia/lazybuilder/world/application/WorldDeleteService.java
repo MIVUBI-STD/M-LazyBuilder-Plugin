@@ -60,6 +60,10 @@ public final class WorldDeleteService {
         if (protectedWorld.test(world)) {
             throw new IllegalStateException("The active fallback/default world cannot be deleted: " + world.displayName());
         }
+        if (runtimeService.hasPlayers(worldId)) {
+            throw new IllegalStateException("Cannot delete " + world.displayName()
+                    + " while builders are inside the world");
+        }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
         boolean wasLoaded = runtimeService.isLoaded(worldId);
@@ -97,7 +101,7 @@ public final class WorldDeleteService {
                 try { files.publishStagedWorld(staged, task.world.folderName()); }
                 catch (IOException restoreFailure) { exception.addSuppressed(restoreFailure); }
             }
-            throw new IllegalStateException("Failed to delete world: " + task.world.folderName(), exception);
+            throw new IllegalStateException("Failed to delete world: " + task.world.displayName(), exception);
         }
     }
 
