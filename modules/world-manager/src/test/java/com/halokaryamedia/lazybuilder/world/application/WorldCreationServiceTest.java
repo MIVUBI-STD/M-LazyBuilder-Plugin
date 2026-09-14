@@ -20,11 +20,10 @@ class WorldCreationServiceTest {
     @Test
     void flatAndVoidUseOneCreationPathAndPublishRegistryState() {
         WorldRegistry registry = new WorldRegistry();
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeRuntime runtime = new FakeRuntime();
         BuildReadyPolicy policy = BuildReadyPolicy.defaults();
-        WorldCreationService service = new WorldCreationService(registry, persistence, runtime, states, policy);
+        WorldCreationService service = new WorldCreationService(registry, persistence, runtime, policy);
 
         WorldRecord flat = service.create("FlatBuild", "Flat Build", WorldKind.FLAT);
         WorldRecord empty = service.create("VoidBuild", "Void Build", WorldKind.VOID);
@@ -32,10 +31,8 @@ class WorldCreationServiceTest {
         assertEquals(List.of(flat, empty), registry.all());
         assertEquals(List.of(flat, empty), persistence.saved);
         assertEquals(List.of(WorldKind.FLAT, WorldKind.VOID), runtime.createdKinds);
-        assertEquals(WorldRuntimeState.LOADED, states.get(flat.id()));
-        assertEquals(WorldRuntimeState.LOADED, states.get(empty.id()));
-        assertTrue(flat.autoLoad());
-        assertTrue(empty.autoLoad());
+        assertTrue(runtime.isLoaded(flat));
+        assertTrue(runtime.isLoaded(empty));
         assertEquals(2, runtime.policies.size());
         assertEquals(policy, runtime.policies.getFirst());
         assertEquals(policy, runtime.policies.getLast());
@@ -47,7 +44,6 @@ class WorldCreationServiceTest {
                 new WorldRegistry(),
                 new MemoryPersistence(),
                 new FakeRuntime(),
-                new WorldRuntimeStateRegistry(),
                 BuildReadyPolicy.defaults()
         );
 
@@ -56,9 +52,8 @@ class WorldCreationServiceTest {
     }
 
     @Test
-    void persistenceFailureRollsBackRuntimeRegistryAndState() {
+    void persistenceFailureRollsBackRuntimeAndRegistry() {
         WorldRegistry registry = new WorldRegistry();
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.failSave = true;
         FakeRuntime runtime = new FakeRuntime();
@@ -66,7 +61,6 @@ class WorldCreationServiceTest {
                 registry,
                 persistence,
                 runtime,
-                states,
                 BuildReadyPolicy.defaults()
         );
 
@@ -99,33 +93,20 @@ class WorldCreationServiceTest {
             return createdKinds.contains(world.kind());
         }
 
-        @Override
-        public void loadWorld(WorldRecord world) {
-        }
-
-        @Override
-        public void unloadWorld(WorldRecord world) {
-        }
-
-        @Override
-        public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {
-        }
+        @Override public void loadWorld(WorldRecord world) { }
+        @Override public void unloadWorld(WorldRecord world) { }
+        @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
     }
 
     private static final class MemoryPersistence implements WorldRegistryPersistence {
         private List<WorldRecord> saved = List.of();
         private boolean failSave;
 
-        @Override
-        public List<WorldRecord> load() {
-            return saved;
-        }
+        @Override public List<WorldRecord> load() { return saved; }
 
         @Override
         public void save(List<WorldRecord> worlds) throws IOException {
-            if (failSave) {
-                throw new IOException("test failure");
-            }
+            if (failSave) throw new IOException("test failure");
             saved = List.copyOf(worlds);
         }
     }
