@@ -101,10 +101,20 @@ public final class WorldMapScreen extends Screen {
         if (selectionReady()) {
             addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
                     "Export Selection", LbButtonWidget.Style.PRIMARY, () -> {
-                        maps.exportAreaCurrent(areaX1, areaZ1, areaX2, areaZ2,
-                                "JAVA_1_21_4", "area-" + System.currentTimeMillis());
+                        if (client == null) return;
+                        var current = maps.currentWorld();
+                        if (current == null) {
+                            LazyBuilderClientNetworking.notifyPlayer(
+                                    "LazyBuilder: current world is not managed yet.");
+                            return;
+                        }
+                        int x1 = areaX1;
+                        int z1 = areaZ1;
+                        int x2 = areaX2;
+                        int z2 = areaZ2;
                         clearAreaSelection();
-                        clearAndInit();
+                        client.setScreen(WorldTransferScreen.forArea(
+                                this, worlds, transfers, maps, current, x1, z1, x2, z2));
                     }));
             y += itemHeight;
             addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
