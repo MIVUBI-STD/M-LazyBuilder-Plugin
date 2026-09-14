@@ -41,6 +41,25 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void inspectionDoesNotInflateUnrelatedWorldPayload() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports"));
+        Path archive = imports.resolve("Large Build.zip");
+        byte[] largeRegion = new byte[2 * 1024 * 1024];
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Build/region/r.0.0.mca", largeRegion);
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+        }
+
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024);
+        var inspection = store.inspectArtifact("Large Build.zip");
+
+        assertEquals(WorldImportArtifactStore.DetectedEdition.JAVA, inspection.edition());
+        assertEquals("1.21.4", inspection.sourceVersion());
+        assertThrows(IOException.class,
+                () -> store.stageArchive("Large Build.zip", tempDir.resolve("workspace")));
+    }
+
+    @Test
     void inspectsBedrockUsingDbUnderSameArchiveRoot() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Path archive = imports.resolve("Bedrock Build.mcworld");
