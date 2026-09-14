@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldTeleportServiceTest {
@@ -21,8 +22,9 @@ class WorldTeleportServiceTest {
                 WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
 
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime);
-        WorldTeleportService teleportService = new WorldTeleportService(registry, runtimeService, runtime);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        WorldTeleportService teleportService = new WorldTeleportService(registry, runtimeService, runtime, operations);
         UUID playerId = UUID.randomUUID();
 
         assertEquals(world, teleportService.teleportToWorld(playerId, world.id()));
@@ -31,6 +33,27 @@ class WorldTeleportServiceTest {
         assertEquals(playerId, runtime.lastPlayerId);
         assertTrue(runtime.loaded);
         assertTrue(runtimeService.isLoaded(world.id()));
+    }
+
+    @Test
+    void teleportCannotInterleaveWithArchiveOperation() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        WorldRecord world = new WorldRecord(
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        registry.register(world);
+
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        WorldTeleportService teleportService = new WorldTeleportService(registry, runtimeService, runtime, operations);
+
+        try (WorldOperationCoordinator.Lease ignored = operations.acquire(world.id(), WorldOperationType.ARCHIVE)) {
+            assertThrows(IllegalStateException.class,
+                    () -> teleportService.teleportToWorld(UUID.randomUUID(), world.id()));
+        }
+
+        assertEquals(0, runtime.loadCount);
+        assertEquals(0, runtime.teleportCount);
     }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
