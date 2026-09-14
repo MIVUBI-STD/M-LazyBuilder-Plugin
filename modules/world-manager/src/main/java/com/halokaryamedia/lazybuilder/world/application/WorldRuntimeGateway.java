@@ -12,11 +12,6 @@ public interface WorldRuntimeGateway {
 
     boolean isLoaded(WorldRecord world);
 
-    /** True only when one or more players are currently inside the managed world. */
-    default boolean hasPlayers(WorldRecord world) {
-        return false;
-    }
-
     void loadWorld(WorldRecord world);
 
     void unloadWorld(WorldRecord world);
