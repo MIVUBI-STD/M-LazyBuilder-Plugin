@@ -128,8 +128,8 @@ public final class WorldTransferScreen extends Screen {
         if (tab == Tab.EXPORT && world != null) initExport(contentLeft, contentWidth);
         else initImport(contentLeft, contentWidth);
 
-        addDrawableChild(LbUi.button(width / 2 - 50, height - 34, 100, 22,
-                busy() ? "Back" : "Close", LbButtonWidget.Style.GHOST, this::close));
+        addDrawableChild(LbUi.button(width / 2 - 78, height - 34, 156, 22,
+                busy() ? "Continue in Background" : "Close", LbButtonWidget.Style.GHOST, this::close));
     }
 
     private void initExport(int contentLeft, int contentWidth) {
@@ -429,6 +429,11 @@ public final class WorldTransferScreen extends Screen {
             int y = 24 + panelHeight - 34;
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, y, LbUi.TEXT_SECONDARY);
             if (percent >= 0) LbUi.progress(context, left + 44, y + 13, panelWidth - 88, percent);
+            if (busy()) {
+                context.drawCenteredTextWithShadow(textRenderer,
+                        Text.literal("You can leave this screen. The operation will continue."),
+                        width / 2, y - 14, LbUi.TEXT_MUTED);
+            }
         } else if (validation != null) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
                     width / 2, 24 + panelHeight - 24, LbUi.DANGER_BRIGHT);
