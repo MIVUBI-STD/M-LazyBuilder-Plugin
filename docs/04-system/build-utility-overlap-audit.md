@@ -42,8 +42,8 @@ MetaBrushes / specialist builder mods
 └── advanced brush workflows and specialist editing behavior
 
 LazyBuilder
-├── Map Manager        -> world / map / transfer workflow
-├── Utility Manager    -> passive non-build client convenience
+├── Map Manager         -> world / map / transfer workflow
+├── Utility Manager     -> passive non-build client convenience
 └── Performance Manager -> performance status / resource policy
 ```
 
@@ -83,7 +83,7 @@ Examples of acceptable categories to investigate later:
 
 ```text
 Session / project context
-├── clear current-world/project context
+├── clear current-world context
 ├── safe status / warnings
 └── workflow handoff information
 
@@ -99,6 +99,19 @@ Reliability / recovery
 ```
 
 These are categories for review, not approved features.
+
+## Session / project context decision
+
+The first non-tool audit is complete in `session-project-context-audit.md`.
+
+Map Manager already has server-authoritative current managed-world state through `MapActionWireProtocol.CurrentWorldResult` / `CurrentWorldCleared`, stored by `ClientMapController`. Therefore:
+
+- do not create a separate Session Manager or Project Context subsystem;
+- do not persist or infer an active project from server/world/folder names;
+- do not add a permanent project/world HUD;
+- reuse Map Manager's existing current-world state for any future contextual handoff feature.
+
+The term `project` must not become a new Fabric identity concept unless a first-class project domain is defined separately. Current client authority is the managed world.
 
 ## Interaction standard
 
@@ -117,7 +130,7 @@ Any surviving feature must follow the builder's existing mental model:
 A candidate that survives overlap review still needs a valid owner:
 
 ```text
-world / project / map context      -> Map Manager
+world / map context                -> Map Manager
 passive client convenience         -> Utility Manager
 performance / resource policy      -> Performance Manager
 building / editing                 -> external Axiom/WorldEdit ecosystem
@@ -133,4 +146,6 @@ The existing three Managers remain the complete LazyBuilder client architecture.
 
 ## Next review
 
-The next review should focus only on **non-tool builder workflow gaps**. Do not revisit build/editing categories unless a concrete missing workflow is demonstrated that Vanilla/Axiom/WorldEdit cannot reasonably cover.
+The next review is **Review / Collaboration**. It should evaluate whether one compact handoff/reference flow provides real value using existing Map Manager current-world authority, without creating issue tracking, notes storage, camera tooling, coordinate HUDs, or another collaboration subsystem inside Minecraft.
+
+Do not revisit build/editing categories unless a concrete missing workflow is demonstrated that Vanilla/Axiom/WorldEdit cannot reasonably cover.
