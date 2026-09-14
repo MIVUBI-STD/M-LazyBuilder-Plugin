@@ -105,6 +105,8 @@ jobs:
           gradle-version: '8.12'
       - name: Compile Map Manager
         run: gradle -p client/map-manager --no-daemon build
+      - name: Compile Utility Manager
+        run: gradle -p client/utility-manager --no-daemon build
 
   tauri-desktop:
     needs: paper

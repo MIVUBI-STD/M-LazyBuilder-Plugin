@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder_utility_manager",
+  "version": "${version}",
+  "name": "LazyBuilder Utility Manager",
+  "description": "Passive non-building client convenience for the LazyBuilder workspace.",
+  "authors": ["halokaryamedia-source"],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.halokaryamedia.lazybuilder.utility.UtilityManagerClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
