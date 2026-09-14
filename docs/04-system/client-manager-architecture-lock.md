@@ -35,7 +35,11 @@ Owns world/map workflow that already exists in the current Fabric client:
 
 Map Manager does **not** own generic client conveniences, renderer optimization, chat QoL, building/editing tools, measurement, palettes, placement helpers, or Axiom functionality.
 
-The current `client/fabric` implementation is the source to be migrated/renamed into Map Manager. The current mod identity `lazybuilder_client` / `LazyBuilder Client` is therefore transitional.
+Canonical source authority:
+
+```text
+client/map-manager/
+```
 
 User-facing component:
 
@@ -49,8 +53,6 @@ Implementation metadata for this same single mod:
 Fabric mod id: lazybuilder_map_manager
 Build artifact: lazybuilder-map-manager.jar
 ```
-
-The rename must be performed as a controlled migration rather than a blind package rename because the current client also owns shared UI/bootstrap classes and World-Manager protocol integration.
 
 ### Utility Manager
 
@@ -173,13 +175,11 @@ The following categories are therefore deferred from LazyBuilder client implemen
 6. Vanilla behavior stays authoritative where it already provides a familiar workflow.
 7. Do not add a shortcut when a setting, context action, or existing vanilla interaction is sufficient.
 8. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods; link/integrate only where useful.
-9. Shared services such as notifications must have one implementation and may be consumed by multiple managers through a small stable client contract.
+9. Shared services must have one implementation and may be consumed by multiple managers only through a small stable client contract when a second real consumer exists.
 10. No manager imports another manager's implementation packages.
 11. Build-specific utilities remain parked until Map, Utility, and Performance boundaries are stable.
 
 ## Target repository shape
-
-The current `client/fabric` project is a single Fabric mod. The target is a small client suite with three independently deployable Fabric mods, one per Manager.
 
 ```text
 client/
@@ -189,22 +189,19 @@ client/
 └── README.md
 ```
 
-There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, profiles, notifications, or map subfeatures. They remain internal packages/modules inside their owning Manager.
+Map Manager is implemented. Utility Manager and Performance Manager are planned independent Fabric mods. There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, profiles, notifications, or map subfeatures.
 
 Shared protocol types that are genuinely consumed by Paper and Fabric remain in the existing versioned protocol ownership model. A new generic shared client implementation tree must not be created merely for convenience.
 
-If the three Fabric managers need a tiny shared client contract (for example notification interfaces or capability descriptors), introduce it only after two managers genuinely require the same stable contract. Do not create a master runtime mod by default.
-
 ## Migration order
 
-### Phase C1 — Map Manager identity migration
+### Phase C1 — Map Manager identity and path migration
 
-- inventory the current `client/fabric` classes by ownership
-- keep all existing world/map behavior intact
-- rename the single existing Fabric mod from generic LazyBuilder Client to Map Manager
+- preserve all existing world/map behavior
+- use `client/map-manager/` as the single source authority
 - produce one `lazybuilder-map-manager.jar`
-- move only classes that are proven to belong to another manager; do not refactor for cosmetic reasons
-- keep protocol compatibility unchanged during the rename
+- keep protocol compatibility unchanged
+- defer Java package cleanup until a separate verified mechanical change is justified
 
 ### Phase C2 — Utility Manager scaffold
 
@@ -231,12 +228,6 @@ If the three Fabric managers need a tiny shared client contract (for example not
 - verify managers work when installed independently where their feature set allows it
 - verify Map Manager does not require Utility or Performance Manager to preserve current functionality
 - verify compatibility with Axiom and the external performance stack
-
-## Current source mapping
-
-The existing Fabric source under `client/fabric/src/main/java/com/halokaryamedia/lazybuilder/client/` is predominantly Map Manager code. In particular, current world/map controllers, screens, transfer controllers, preferences, networking, and wire payload adapters belong to the Map Manager migration.
-
-Generic-looking classes such as `LazyBuilderClient`, `LazyBuilderClientUi`, `LbUi`, and `LbButtonWidget` must be reviewed before renaming. They should stay with Map Manager if they are only used by the current world/map surface; they must not become an accidental shared framework without a proven second consumer.
 
 ## Naming collision note
 
