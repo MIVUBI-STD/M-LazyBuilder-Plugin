@@ -54,7 +54,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            mainThread.call(() -> {
+            mainThread.callCleanup(() -> {
                 duplicateService.finish(task);
                 return null;
             });
@@ -85,7 +85,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            mainThread.call(() -> {
+            mainThread.callCleanup(() -> {
                 deleteService.finish(task);
                 return null;
             });
@@ -124,7 +124,7 @@ public final class WorldHeavyOperationOrchestrator {
             failure = exception;
         }
         try {
-            mainThread.call(() -> {
+            mainThread.callCleanup(() -> {
                 exportService.finish(task);
                 return null;
             });
