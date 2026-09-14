@@ -17,7 +17,7 @@ public abstract class ScreenshotRecorderMixin {
             ordinal = 0
     )
     private static String lazybuilder$contextualScreenshotName(String fileName) {
-        if (!UtilityManagerClient.preferences().organizeScreenshotsByProject()) return fileName;
+        if (!UtilityManagerClient.preferences().contextualScreenshotNames()) return fileName;
         if (fileName != null && !fileName.isBlank()) return fileName;
         return ScreenshotNaming.contextualFileName();
     }
