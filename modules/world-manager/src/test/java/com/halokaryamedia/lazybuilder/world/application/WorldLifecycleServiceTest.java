@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WorldLifecycleServiceTest {
     @Test
     void archiveUnloadsAndPersistsWithoutMovingFiles() {
-        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true);
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, false);
 
         WorldRecord archived = fixture.service.archive(fixture.world.id());
 
@@ -32,8 +32,20 @@ class WorldLifecycleServiceTest {
     }
 
     @Test
+    void archiveRejectsProtectedFallbackWorldBeforeUnload() {
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, true);
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.archive(fixture.world.id()));
+
+        assertEquals(WorldLifecycle.ACTIVE, fixture.registry.find(fixture.world.id()).orElseThrow().lifecycle());
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(0, fixture.runtime.unloadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void restoreKeepsWorldUnloaded() {
-        Fixture fixture = fixture(WorldLifecycle.ARCHIVED, false);
+        Fixture fixture = fixture(WorldLifecycle.ARCHIVED, false, false);
 
         WorldRecord restored = fixture.service.restore(fixture.world.id());
 
@@ -44,7 +56,7 @@ class WorldLifecycleServiceTest {
 
     @Test
     void archivePersistenceFailureRestoresMetadataAndPreviousLoadedState() {
-        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true);
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, false);
         fixture.persistence.failNextSave = true;
 
         assertThrows(IllegalStateException.class, () -> fixture.service.archive(fixture.world.id()));
@@ -57,7 +69,7 @@ class WorldLifecycleServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
-    private static Fixture fixture(WorldLifecycle lifecycle, boolean loaded) {
+    private static Fixture fixture(WorldLifecycle lifecycle, boolean loaded, boolean protectedWorld) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
                 WorldId.create(),
@@ -77,7 +89,8 @@ class WorldLifecycleServiceTest {
                 registry,
                 persistence,
                 runtimeService,
-                operations
+                operations,
+                ignored -> protectedWorld
         );
         return new Fixture(registry, runtime, persistence, operations, service, world);
     }
