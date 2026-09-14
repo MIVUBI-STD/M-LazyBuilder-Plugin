@@ -27,11 +27,11 @@ EngineData/Frontend/RustApp/  Canonical LazyBuilder desktop app (Tauri 2 + Svelt
 shared/protocol/               Neutral Paper/Fabric wire contracts and shared value types
 modules/world-manager/         World lifecycle, import/export, archive, settings, transfer
 modules/utilities-manager/     Small builder/server convenience features
-client/fabric/                 Current Map Manager Fabric source (transitional C1 path)
+client/map-manager/            LazyBuilder Map Manager Fabric source
 docs/                          Canonical product/system/operations docs
 ```
 
-The current Fabric mod is **LazyBuilder Map Manager**. The `client/fabric` directory name is temporarily retained while the C1 identity migration is validated; folder/package movement is a separate mechanical step.
+The current implemented Fabric mod is **LazyBuilder Map Manager**. Utility Manager and Performance Manager remain separate planned client managers; each Manager is one Fabric mod and one output JAR.
 
 The desktop has one source authority: `EngineData/Frontend/RustApp`. Svelte owns presentation/application state; Rust owns desktop-native process, filesystem, Plugin-Manager, Server-Manager, and World-Manager client behavior.
 

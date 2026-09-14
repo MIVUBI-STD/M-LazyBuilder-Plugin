@@ -48,9 +48,9 @@ for pom, artifact_id in child_poms.items():
         rf"\g<1>{SNAPSHOT_VERSION}\g<2>",
     )
 
-# Fabric version.
+# Map Manager Fabric version.
 replace_text(
-    "client/fabric/gradle.properties",
+    "client/map-manager/gradle.properties",
     r"^mod_version=[^\r\n]*$",
     f"mod_version={SNAPSHOT_VERSION}",
 )

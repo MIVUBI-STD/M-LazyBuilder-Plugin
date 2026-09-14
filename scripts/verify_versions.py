@@ -68,9 +68,9 @@ expect(
     PRODUCT_VERSION,
 )
 
-gradle_properties = (ROOT / "client/fabric/gradle.properties").read_text(encoding="utf-8")
+gradle_properties = (ROOT / "client/map-manager/gradle.properties").read_text(encoding="utf-8")
 match = re.search(r"(?m)^mod_version=(.+)$", gradle_properties)
-expect("Fabric mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
+expect("Map Manager mod_version", match.group(1).strip() if match else None, SNAPSHOT_VERSION)
 
 core_modules = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/core_modules.rs").read_text(encoding="utf-8")
 match = re.search(r'pub const CORE_VERSION: &str = "([^"]+)";', core_modules)
@@ -91,11 +91,11 @@ java_runtime = (ROOT / "EngineData/Frontend/RustApp/src-tauri/src/engine/java_ru
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^"]+)";', java_runtime)
 expect("Managed Java user-agent", match.group(1) if match else None, PRODUCT_VERSION)
 
-fabric_build = (ROOT / "client/fabric/build.gradle").read_text(encoding="utf-8")
+fabric_build = (ROOT / "client/map-manager/build.gradle").read_text(encoding="utf-8")
 if "../../modules/world-manager/src/main/java" in fabric_build:
-    errors.append("Fabric build still compiles source directly from World-Manager")
+    errors.append("Map Manager build still compiles source directly from World-Manager")
 if "../../shared/protocol/src/main/java" not in fabric_build:
-    errors.append("Fabric build is not wired to shared/protocol")
+    errors.append("Map Manager build is not wired to shared/protocol")
 
 legacy_protocol_paths = (
     "modules/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",

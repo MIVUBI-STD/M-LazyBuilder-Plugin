@@ -103,8 +103,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.12'
-      - name: Compile Fabric client
-        run: gradle -p client/fabric --no-daemon build
+      - name: Compile Map Manager
+        run: gradle -p client/map-manager --no-daemon build
 
   tauri-desktop:
     needs: paper
