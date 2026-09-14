@@ -32,4 +32,6 @@ The completed non-tool reviews are:
 - `docs/04-system/review-collaboration-audit.md` — `Copy Review Reference` is implemented in Map Manager as an on-demand world/location/dimension handoff with no protocol change or cross-Manager dependency;
 - `docs/04-system/reliability-recovery-audit.md` — no Recovery Manager, duplicate autosave/backup/snapshot/rollback, retry daemon, or resumable-transfer subsystem; keep failure context actionable and operation-local.
 
+Final source/static readiness is documented in `docs/04-system/final-client-pre-handoff-audit.md`. That audit closes further client scope for the current phase, fixes the remaining obvious screenshot/reload/background-FPS static issues, and records the exact Minecraft 1.21.4 compile/runtime checks that still belong to the later local/Codex proof stage.
+
 Any future builder-facing feature must begin from a concrete workflow problem and pass a fresh ownership/overlap review. The existing three Managers remain the complete LazyBuilder client architecture.
