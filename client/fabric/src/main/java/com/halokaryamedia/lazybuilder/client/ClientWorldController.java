@@ -18,6 +18,7 @@ public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
+    private WorldControlWireProtocol.ImportInspection importInspection;
     // Before the first authoritative WorldList arrives permission is unknown, not denied.
     // Map-first actions therefore remain discoverable; Paper still authorizes every request.
     private boolean canManage = true;
@@ -40,6 +41,12 @@ public final class ClientWorldController {
     }
 
     public void requestExportFormats() { send(new WorldControlWireProtocol.GetExportFormats()); }
+
+    public void inspectImport(String artifactName) {
+        importInspection = null;
+        beginActivity("Inspecting world…");
+        send(new WorldControlWireProtocol.InspectImport(artifactName));
+    }
 
     public void create(String folderName, String displayName, String kind) {
         beginActivity("Creating world…");
@@ -94,6 +101,7 @@ public final class ClientWorldController {
                     remove(changed.world().worldId());
                     settings.remove(changed.world().worldId());
                 } else replace(changed.world());
+                if ("IMPORT".equals(changed.action())) importInspection = null;
                 lastError = null;
                 activityMessage = null;
                 revision++;
@@ -123,6 +131,12 @@ public final class ClientWorldController {
                 lastError = null;
                 revision++;
             }
+            case WorldControlWireProtocol.ImportInspection inspection -> {
+                importInspection = inspection;
+                lastError = null;
+                activityMessage = null;
+                revision++;
+            }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 if (worldListPending) worldListPending = false;
                 lastError = error.message();
@@ -137,6 +151,7 @@ public final class ClientWorldController {
         worlds = List.of();
         exportFormats = List.of(NATIVE_EXPORT_FORMAT);
         settings.clear();
+        importInspection = null;
         canManage = true;
         canTeleport = true;
         worldListReady = false;
@@ -153,6 +168,7 @@ public final class ClientWorldController {
     public boolean worldListReady() { return worldListReady; }
     public boolean worldListPending() { return worldListPending; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
+    public WorldControlWireProtocol.ImportInspection importInspection() { return importInspection; }
     public String lastError() { return lastError; }
     public String activityMessage() { return activityMessage; }
     public long revision() { return revision; }
