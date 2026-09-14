@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.client;
 
+import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.MapColor;
@@ -19,7 +20,6 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -38,10 +38,9 @@ import java.util.zip.GZIPOutputStream;
  * partitioned into sparse 128x128-block regions so large explored worlds do not
  * disappear when a single whole-map LRU reaches its memory limit.</p>
  *
- * <p>Resident region data uses lazily allocated primitive arrays plus a BitSet
- * instead of boxed map entries. Disk I/O stays sparse and compatible with the
- * existing region format. Region files load off the render thread and dirty
- * regions are written through one ordered LazyBuilder-owned I/O lane.</p>
+ * <p>Resident region data uses lazily allocated primitive arrays plus a BitSet,
+ * and pending sample coordinates stay in a primitive insertion-ordered set.
+ * Disk I/O stays sparse and compatible with the existing region format.</p>
  */
 public final class ClientMapSurfaceCache {
     private static final int FORMAT_VERSION = 2;
@@ -58,7 +57,7 @@ public final class ClientMapSurfaceCache {
 
     /** Access-order LRU; all mutation happens on the Minecraft client thread. */
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
-    private final LinkedHashSet<Long> pending = new LinkedHashSet<>();
+    private final LongLinkedOpenHashSet pending = new LongLinkedOpenHashSet();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "LazyBuilder-Map-IO");
@@ -151,10 +150,8 @@ public final class ClientMapSurfaceCache {
         }
 
         int processed = 0;
-        Iterator<Long> iterator = pending.iterator();
-        while (iterator.hasNext() && processed < sampleBudget) {
-            long key = iterator.next();
-            iterator.remove();
+        while (!pending.isEmpty() && processed < sampleBudget) {
+            long key = pending.removeFirstLong();
             int x = unpackX(key);
             int z = unpackZ(key);
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
