@@ -21,6 +21,12 @@ public final class LazyBuilderClientUi {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMap.wasPressed()) {
                 if (client.player == null) continue;
+                // Map actions such as Export Area depend on authoritative server capabilities.
+                // Prime them on the map-first entry so users do not have to open Worlds once
+                // merely to make a permission-gated map action available.
+                if (!controller.worldListReady() && !controller.worldListPending()) {
+                    controller.refresh();
+                }
                 client.setScreen(new WorldMapScreen(controller, transfers, maps));
             }
         });
