@@ -13,200 +13,156 @@ Never infer current readiness from an older completion report, commit note, or s
 
 ## Current proof rule
 
-For any source/readiness decision, use this order:
+Use this order:
 
 ```text
 1. current Local HEAD
 2. latest Verify workflow for that exact HEAD SHA
-3. component-specific test/build output from that workflow
-4. LOCAL_CODE evidence when GitHub CI cannot prove the behavior
+3. component-specific build/test output from that workflow
+4. LOCAL_CODE evidence for target-PC behavior
 5. LIVE_SERVER evidence for real Paper/Minecraft behavior
 ```
 
-A successful workflow for an older SHA is historical evidence only. A skipped, cancelled, queued, in-progress, or failed required job is not a pass for the current HEAD.
-
-## Historical reports
-
-`remote-github-complete.md` and older completion records are immutable snapshots of the repository state they describe. They are useful for history and handoff context, but they are not current verification authority after `Local` advances.
+A successful workflow for an older SHA is historical evidence only.
 
 ## Required remote gate
 
-The current `Verify` workflow is the minimum remote gate and must pass for the exact candidate SHA:
+The current V1 `Verify` workflow requires five exact-head jobs:
 
 ```text
-consistency      canonical version + repository contract checks
-utilities        independent Utilities-Manager compile/test + tested JAR artifact
-paper            Maven compile + automated tests for the complete Paper reactor
-fabric           pinned Gradle 8.12 builds for Map, Utility, and Performance Managers
+consistency      version/repository/scope contracts
+paper            full Maven Paper/shared compile + tests + core artifacts
+fabric           Map Manager + Utility Manager builds + required client artifacts
 launcher-check   Svelte typecheck/build + Rust check/test on Windows
-tauri-desktop    tested Paper core staging + Svelte/Rust checks + Windows installer build
+tauri-desktop    package tested core/client artifacts into Windows NSIS build
 ```
 
-The independent `utilities` job is component proof only: it allows Utilities-Manager to be verified even when an unrelated Paper module fails. It does not replace the complete `paper` gate for a repository-wide release claim.
+Performance Manager is deferred research source and is not a V1 package/runtime requirement. There is no separate `utilities` job; Utilities-Manager is covered by the full Paper reactor.
 
-Only after all six required jobs succeed may the SHA be described as `REMOTE_GITHUB green`.
+Only after all five jobs succeed for the same exact HEAD may that SHA be described as `REMOTE_GITHUB green`.
+
+## V1 runtime scope
+
+```text
+Desktop
+├── Server Manager
+├── Plugin Manager
+└── global Client Setup
+
+Paper
+├── World Manager
+└── Utilities Manager
+
+Required Fabric
+├── Map Manager
+└── Utility Manager
+
+Deferred / not bundled in V1
+└── Performance Manager
+```
+
+Client Setup owns only the two required LazyBuilder client JAR prefixes. Modrinth remains owner of the Minecraft profile, Fabric loader, third-party mods/modpack, and game launching.
+
+## Launcher simplification lock
+
+The current V1 Launcher intentionally does **not** include:
+
+- background CPU-priority governor;
+- automatic Paper gameplay/performance config mutation during Start;
+- Performance Manager as a required/bundled client component;
+- legacy `profile.json` compatibility parsing as a Modrinth authority;
+- source-tree fallback JAR resolution for packaged client/core runtime components;
+- Performance/Boost RAM presets;
+- a second Minecraft launcher or general mod manager.
+
+Runtime-ready packages use bundled, tested same-revision resources as the only runtime source for LazyBuilder-owned Paper/client JARs.
 
 ## Runtime proof boundary
 
 A green GitHub workflow still does not prove:
 
-- installed Windows desktop behavior;
-- Java discovery on the target machine;
-- real Paper start/stop/restart behavior;
-- live managed-world lifecycle behavior;
-- Fabric screen/input behavior inside Minecraft;
-- fullscreen map interaction quality across GUI scales;
-- native file dialogs;
-- real large-file transfers and converter output;
-- gameplay behavior of Utilities features;
-- restart/shutdown persistence on a live server.
+- installed Windows Launcher behavior;
+- Java discovery/runtime extraction on the target PC;
+- actual Modrinth profile detection/manual selection;
+- transactional client JAR replacement on the target filesystem;
+- real Paper start/stop/restart/detached recovery;
+- Fabric screens/input inside Minecraft;
+- world lifecycle/import/export/transfer behavior;
+- Utility Manager gameplay/client behavior;
+- shutdown/restart persistence.
 
 Those remain `LOCAL_CODE` and `LIVE_SERVER` responsibilities.
 
-## Current World Manager source state
+## Static invariants before local validation
 
-The current `Local` source contract has advanced beyond the older local defect list. The following are source-implemented and require fresh proof rather than being treated as known-unfixed architecture gaps:
+Current source should continue to satisfy:
 
-```text
-managed-world adoption / current-world synchronization
-automatic runtime load + idle unload
-ACTIVE / ARCHIVED durable lifecycle only
-Duplicate terminology
-permission-aware World Manager UI
-Map Action V2 current-world push / clear
-World Control V5 capability + import-review contract
-unified Import / Export workspace
-server-authoritative Import inspection before final Import
-explicit cleanup for abandoned reviewed Import uploads
-client + server transfer storage preflight
-heavy-operation reconnect completion recovery
-editable chunk-aligned Map Export Area selection
-server-side full-chunk canonicalization
-```
-
-Import review cleanup is event-driven. Failed inspection deletes an unusable upload immediately. Closing the review, switching away from Import, or choosing another file sends an explicit discard intent; Paper only accepts it for the requesting player's currently tracked reviewed artifact. Final Import remains a separate authoritative validation/publish path.
-
-The area-selection surface is first-party LazyBuilder UI. Its chunk grid, region grid, selection rectangle, move/resize handles, coordinate HUD, snapping, and review flow do not depend on an external converter UI/runtime. External conversion software remains isolated behind the backend conversion adapter only when an actual format conversion is required.
-
-## Final pre-validation static audit
-
-A final source-level pass was completed before compile/runtime validation.
-
-The current Fabric target is Minecraft `1.21.4`, Yarn `1.21.4+build.8`, Fabric Loader `0.16.10`, and Fabric API `0.119.4+1.21.4`.
-
-The previously identified Fabric signature risks were checked against the pinned mapping contract and are no longer treated as speculative source blockers:
-
-```text
-MinecraftClient#getCurrentServerEntry()
-ServerInfo#address
-Screen#setInitialFocus(Element)
-Element#mouseScrolled(double,double,double,double)
-TextFieldWidget#setChangedListener(Consumer<String>)
-LbUi SUCCESS / WARNING presentation constants
-```
-
-The map/export path is also source-aligned end-to-end:
-
-```text
-WorldMapScreen
-→ ClientMapController
-→ Map Action V2
-→ PaperMapActionPayloadAdapter
-→ WorldAreaSelection
-→ WorldExportService
-→ canonical transfer download
-```
-
-Static invariants checked in this pass:
-
-- map selection remains first-party LazyBuilder presentation;
-- selection is chunk-aligned in the client and canonicalized again on the server;
-- negative block coordinates use floor chunk math;
-- the server never trusts a custom client to provide already-aligned bounds;
-- selected-area export uses the same WorldExportService path as whole-world export;
-- area completion has bounded reconnect recovery;
-- import inspection is metadata/review only and final Import revalidates the archive;
-- abandoned review cleanup is scoped to the requesting player's tracked reviewed artifact;
-- transfer sessions themselves remain fail-closed and disconnect-cleaned;
-- no manual Load/Unload or `autoLoad` product path was reintroduced;
-- no standalone Import/Export/Clone screen path was reintroduced;
-- desktop loopback protocol versioning remains separate from Minecraft World/Map protocol versions;
-- launcher UX remains outside this World Manager pass.
+- World Control V5 and Map Action V2 remain separate from desktop loopback protocol V2;
+- Map Manager consumes shared protocol source, not World Manager implementation source;
+- Utility Manager has no shared World Manager protocol dependency;
+- Performance Manager source remains isolated and deferred rather than becoming a hidden V1 dependency;
+- Client Setup requires exactly Map Manager + Utility Manager;
+- Client Sync mutates only LazyBuilder-owned required prefixes and preserves unrelated mods;
+- packaged core resolution has one runtime authority: bundled `resources/core`;
+- server start does not rewrite Paper performance/gameplay settings;
+- no `cpu_governor` or `paper_performance` Launcher engine owner is reintroduced;
+- missing server paths remain in the library rather than being silently deleted;
+- active workspace is runtime-memory state, not a stale persisted registry authority.
 
 ## Current proof status
 
-The source/architecture is beyond the earlier source-only implementation state: the remote workflow now covers repository consistency, Paper tests, all three Fabric Manager builds, Launcher checks, and the Windows Tauri package path.
-
-For the **current** `Local` HEAD, however, status is always resolved dynamically from the exact-head `Verify` run. Do not preserve a permanent SHA or run number in this document. Use this rule:
+Current readiness is always resolved dynamically from the exact current `Local` HEAD. Do not preserve a permanent SHA or run number in this file.
 
 ```text
-all six exact-head Verify jobs succeed
+all five exact-head Verify jobs succeed
 → REMOTE_GITHUB green
 
 any required exact-head job missing / queued / failed / cancelled
 → REMOTE_GITHUB not yet proven
 ```
 
-`REMOTE_GITHUB green` still does not promote the branch to `LOCAL_CODE` or `LIVE_SERVER` validated. Local Windows and Minecraft runtime proof remain required.
+`REMOTE_GITHUB green` does not imply `LOCAL_CODE` or `LIVE_SERVER` validation.
 
-The final validation sequence for the current World Manager pass is:
-
-```text
-1. current Local compile/test
-2. Paper + Fabric protocol compatibility (World V5 / Map V2)
-3. M → Map → Worlds navigation across GUI scales
-4. current-world push through LazyBuilder teleport, command, portal and unmanaged world
-5. Pinned / Recent / Search / Archived behavior
-6. permission-limited UI and server authorization
-7. automatic load + idle unload
-8. occupied-world safeguards
-9. Duplicate / Archive / Restore / Delete
-10. whole-world Export native fast path
-11. capability-driven conversion targets
-12. Map Export Area editable selection
-    - chunk grid visibility by zoom
-    - region grid hierarchy
-    - 8 move/resize handles
-    - drag-inside move
-    - drag-outside pan
-    - chunk snapping including negative coordinates
-    - chunk-first HUD + block-range confirmation
-    - Edit Selection round trip
-13. area export server full-chunk canonicalization
-14. Import .zip / .mcworld
-    - upload → inspection → review → explicit Import
-    - source edition/version presentation
-    - Choose Different File resets old suggestion
-    - close/tab-switch/choose-different removes abandoned reviewed upload
-    - failed final Import remains retryable without reupload when safe
-15. native file dialogs, large transfer, checksum and disk-space failures
-16. disconnect/reconnect
-    - whole-world heavy completion recovery
-    - selected-area export completion recovery
-    - transfer-session cleanup/restart behavior
-    - import-review artifact behavior when disconnecting during inspection/review
-17. shutdown/restart cleanup and persistence
-```
-
-## Local Windows handoff evidence
-
-Historical local runtime work used these paths:
+## LOCAL_CODE validation sequence
 
 ```text
-Repository: D:\Work\AI Stuff\LazyBuilder
-Modrinth App: C:\Users\Administrator\AppData\Roaming\ModrinthApp
-Minecraft profile: C:\Users\Administrator\AppData\Roaming\ModrinthApp\profiles\1.21.4 Testing
-Client mod: <profile>\mods\lazybuilder-client-0.1.0-SNAPSHOT.jar
-Paper workspace: D:\Work\Minecraft\Java-Version\Java Build Server\Test\Test
-Paper endpoint: 127.0.0.1:25565
-Managed Java: C:\Users\Administrator\AppData\Local\LazyBuilder\runtimes\java-21\bin\java.exe
-TEMP/TMP: C:\Temp\LazyBuilderGradleTemp
+1. confirm current Local HEAD
+2. verify Java 21, Maven, Gradle 8.12, Node/npm, Rust
+3. run python scripts/verify_versions.py
+4. run Maven Paper/shared verify
+5. build Map Manager
+6. build Utility Manager
+7. run BUILD-LAUNCHER.cmd
+8. install/open LazyBuilder
+9. test global Client Setup against a real Modrinth profile
+10. confirm only Map + Utility JARs are maintained and unrelated mods remain intact
+11. create/open/adopt a server workspace
+12. Prepare Server / EULA / Start / Stop / Restart / detached recovery
 ```
 
-These paths are handoff context only and must not become portable repository assumptions.
+## LIVE_SERVER / Minecraft sequence
+
+```text
+1. launch the selected profile from Modrinth
+2. confirm Map Manager + Utility Manager load
+3. verify World Control V5 / Map Action V2 interoperability
+4. verify Worlds navigation/current-world synchronization
+5. verify Duplicate / Archive / Restore / Delete
+6. verify whole-world Export and Map Export Area
+7. verify Import upload → inspection → review → explicit Import
+8. verify large transfer/checksum/storage failure handling
+9. verify disconnect/reconnect and shutdown cleanup
+10. verify Utility Manager client convenience
+11. verify Paper Utilities behavior
+12. verify Plugin Manager lifecycle
+```
+
+Performance Manager testing is independent deferred research and must not block V1 completion.
+
+## Historical reports
+
+`remote-github-complete.md` and older reports are immutable historical snapshots. Old references to three required Fabric Managers, six Verify jobs, Dynamic FPS handoff, or a monolithic `lazybuilder-client` JAR describe older repository states and are not current V1 authority.
 
 ## Update policy
 
-Do not hard-code a workflow run number or HEAD SHA in architecture documentation as the permanent current state. GitHub commit/workflow state is authoritative and changes as `Local` advances.
-
-Fix reproducible validation defects at the smallest wrong owner. Do not reopen duplicated architecture, restore legacy runtime-state product controls, or introduce a second map/export implementation merely to work around a local bug.
+Do not hard-code a workflow run number or HEAD SHA as permanent current state. Fix reproducible defects at the smallest wrong owner. Do not reopen removed automation, duplicate architecture, or optional performance systems without measured local/runtime evidence.
