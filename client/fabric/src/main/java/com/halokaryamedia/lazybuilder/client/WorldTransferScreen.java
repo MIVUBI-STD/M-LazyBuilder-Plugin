@@ -35,9 +35,12 @@ public final class WorldTransferScreen extends Screen {
     private TextFieldWidget importName;
     private String exportFileName;
     private String importDisplayName = "";
+    private String importArtifactName;
+    private WorldControlWireProtocol.ImportInspection importInspection;
     private String selectedExportFormat;
     private String validation;
     private boolean choosing;
+    private boolean inspectingImport;
     private boolean processingImport;
     private boolean exporting;
     private boolean exportTransferStarted;
@@ -154,21 +157,11 @@ public final class WorldTransferScreen extends Screen {
             addDrawableChild(edit);
             addDrawableChild(LbUi.button(contentLeft + half + 8, y, half, 22,
                     advanced ? "Advanced  ▾" : "Advanced  ▸",
-                    LbButtonWidget.Style.GHOST, () -> {
-                        rememberFields();
-                        advanced = !advanced;
-                        validation = null;
-                        clearAndInit();
-                    }));
+                    LbButtonWidget.Style.GHOST, () -> toggleAdvanced()));
         } else {
             addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
                     advanced ? "Advanced options  ▾" : "Advanced options  ▸",
-                    LbButtonWidget.Style.GHOST, () -> {
-                        rememberFields();
-                        advanced = !advanced;
-                        validation = null;
-                        clearAndInit();
-                    }));
+                    LbButtonWidget.Style.GHOST, this::toggleAdvanced));
         }
 
         if (!advanced) return;
@@ -204,34 +197,61 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private void initImport(int contentLeft, int contentWidth) {
-        int y = advanced ? 210 : 188;
-        if (advanced) {
-            importName = new TextFieldWidget(textRenderer, contentLeft, 144, contentWidth, 24, Text.literal("World Name"));
-            importName.setText(importDisplayName);
-            importName.setPlaceholder(Text.literal("Optional — uses detected file name"));
-            importName.setMaxLength(96);
-            importName.setDrawsBackground(false);
-            importName.setEditableColor(LbUi.TEXT_PRIMARY);
-            importName.setUneditableColor(LbUi.TEXT_DISABLED);
-            importName.active = !busy();
-            addDrawableChild(importName);
+        if (importInspection == null) {
+            int y = advanced ? 210 : 188;
+            if (advanced) addImportNameField(contentLeft, contentWidth, 144);
+
+            String label = processingImport ? "Finishing Import…"
+                    : inspectingImport ? "Inspecting World…"
+                    : choosing ? "Uploading World…" : "Choose World File";
+            LbButtonWidget choose = LbUi.button(contentLeft, y, contentWidth, 30,
+                    label, LbButtonWidget.Style.PRIMARY, this::chooseImport);
+            choose.active = !busy();
+            addDrawableChild(choose);
+
+            y += 42;
+            addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
+                    advanced ? "Advanced options  ▾" : "Advanced options  ▸",
+                    LbButtonWidget.Style.GHOST, this::toggleAdvanced));
+            return;
         }
 
-        String label = processingImport ? "Finishing Import…" : choosing ? "Uploading World…" : "Choose World File";
-        LbButtonWidget choose = LbUi.button(contentLeft, y, contentWidth, 30,
-                label, LbButtonWidget.Style.PRIMARY, this::chooseImport);
-        choose.active = !busy();
-        addDrawableChild(choose);
+        if (advanced) addImportNameField(contentLeft, contentWidth, 194);
+        int y = advanced ? 236 : 210;
+        LbButtonWidget importButton = LbUi.button(contentLeft, y, contentWidth, 30,
+                processingImport ? "Importing World…" : "Import World",
+                LbButtonWidget.Style.PRIMARY, this::submitImport);
+        importButton.active = !busy();
+        addDrawableChild(importButton);
 
         y += 42;
-        addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
-                advanced ? "Advanced options  ▾" : "Advanced options  ▸",
-                LbButtonWidget.Style.GHOST, () -> {
-                    rememberFields();
-                    advanced = !advanced;
-                    validation = null;
-                    clearAndInit();
-                }));
+        int half = (contentWidth - 8) / 2;
+        LbButtonWidget different = LbUi.button(contentLeft, y, half, 22,
+                "Choose Different File", LbButtonWidget.Style.GHOST, this::chooseDifferentImport);
+        different.active = !busy();
+        addDrawableChild(different);
+        addDrawableChild(LbUi.button(contentLeft + half + 8, y, half, 22,
+                advanced ? "Advanced  ▾" : "Advanced  ▸",
+                LbButtonWidget.Style.GHOST, this::toggleAdvanced));
+    }
+
+    private void addImportNameField(int contentLeft, int contentWidth, int y) {
+        importName = new TextFieldWidget(textRenderer, contentLeft, y, contentWidth, 24, Text.literal("World Name"));
+        importName.setText(importDisplayName);
+        importName.setPlaceholder(Text.literal("World name"));
+        importName.setMaxLength(96);
+        importName.setDrawsBackground(false);
+        importName.setEditableColor(LbUi.TEXT_PRIMARY);
+        importName.setUneditableColor(LbUi.TEXT_DISABLED);
+        importName.active = !busy();
+        addDrawableChild(importName);
+    }
+
+    private void toggleAdvanced() {
+        rememberFields();
+        advanced = !advanced;
+        validation = null;
+        clearAndInit();
     }
 
     private void switchTab(Tab next) {
@@ -294,19 +314,18 @@ public final class WorldTransferScreen extends Screen {
     private void chooseImport() {
         if (busy()) return;
         rememberFields();
-        String requestedDisplay = importDisplayName.strip();
         validation = null;
+        importInspection = null;
+        importArtifactName = null;
         choosing = true;
         clearAndInit();
 
         try {
             transfers.chooseAndUploadImport(artifactName -> {
-                String baseName = baseName(artifactName);
-                String folder = availableFolderName(baseName);
-                String finalDisplay = requestedDisplay.isBlank() ? baseName : requestedDisplay;
                 choosing = false;
-                processingImport = true;
-                worlds.importWorld(artifactName, folder, finalDisplay);
+                importArtifactName = artifactName;
+                inspectingImport = true;
+                worlds.inspectImport(artifactName);
                 observedWorldRevision = worlds.revision();
                 if (client != null && client.currentScreen == this) clearAndInit();
             }, () -> {
@@ -320,8 +339,55 @@ public final class WorldTransferScreen extends Screen {
         }
     }
 
+    private void chooseDifferentImport() {
+        if (busy()) return;
+        importInspection = null;
+        importArtifactName = null;
+        validation = null;
+        chooseImport();
+    }
+
+    private void submitImport() {
+        if (busy() || importInspection == null) return;
+        rememberFields();
+        String display = importDisplayName.strip();
+        if (display.isBlank()) display = importInspection.suggestedName();
+        String folder = availableFolderName(display);
+        validation = null;
+        processingImport = true;
+        try {
+            worlds.importWorld(importInspection.artifactName(), folder, display);
+            observedWorldRevision = worlds.revision();
+            clearAndInit();
+        } catch (RuntimeException exception) {
+            processingImport = false;
+            validation = friendlyFailure(exception.getMessage());
+            clearAndInit();
+        }
+    }
+
     @Override
     public void tick() {
+        if (inspectingImport && observedWorldRevision != worlds.revision()) {
+            observedWorldRevision = worlds.revision();
+            if (worlds.lastError() != null) {
+                inspectingImport = false;
+                validation = friendlyFailure(worlds.lastError());
+                clearAndInit();
+                return;
+            }
+            WorldControlWireProtocol.ImportInspection inspected = worlds.importInspection();
+            if (inspected != null && importArtifactName != null
+                    && inspected.artifactName().equals(importArtifactName)) {
+                inspectingImport = false;
+                importInspection = inspected;
+                if (importDisplayName.isBlank()) importDisplayName = inspected.suggestedName();
+                validation = null;
+                clearAndInit();
+                return;
+            }
+        }
+
         if (!busy() && observedWorldRevision != worlds.revision()) {
             observedWorldRevision = worlds.revision();
             reconcileSelectedFormat();
@@ -347,8 +413,13 @@ public final class WorldTransferScreen extends Screen {
         if (observedTransferRevision != transfers.revision()) {
             observedTransferRevision = transfers.revision();
             ClientTransferController.TransferStatus transfer = transfers.status();
-            if ((choosing || exporting) && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
+            if (choosing && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
                 choosing = false;
+                validation = friendlyFailure(transfer.message());
+                clearAndInit();
+                return;
+            }
+            if (exporting && transfer.phase() == ClientTransferController.TransferPhase.FAILED) {
                 failExport(transfer.message());
                 return;
             }
@@ -392,7 +463,7 @@ public final class WorldTransferScreen extends Screen {
         LbUi.background(context, width, height);
         int panelWidth = Math.max(320, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
-        int panelHeight = Math.min(height - 70, advanced ? 450 : area == null ? 292 : 332);
+        int panelHeight = Math.min(height - 70, panelHeight());
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
         context.drawTextWithShadow(textRenderer, Text.literal("IMPORT / EXPORT"), left + 24, 40, LbUi.TEXT_MUTED);
@@ -403,6 +474,11 @@ public final class WorldTransferScreen extends Screen {
         else renderImport(context, left, panelWidth);
         renderStatus(context, left, panelWidth, panelHeight);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    private int panelHeight() {
+        if (tab == Tab.IMPORT && importInspection != null) return advanced ? 390 : 350;
+        return advanced ? 450 : area == null ? 292 : 332;
     }
 
     private void renderExport(DrawContext context, int left, int panelWidth) {
@@ -446,6 +522,28 @@ public final class WorldTransferScreen extends Screen {
         int cardX = left + 22;
         int cardY = 106;
         int cardWidth = panelWidth - 44;
+
+        if (importInspection != null) {
+            int cardHeight = advanced ? 130 : 92;
+            LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
+            context.drawTextWithShadow(textRenderer, Text.literal("READY TO IMPORT"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal(importInspection.suggestedName()),
+                    cardX + 12, cardY + 27, LbUi.TEXT_PRIMARY);
+            String source = friendlyEdition(importInspection.edition());
+            if (!"Unknown".equalsIgnoreCase(importInspection.sourceVersion())) {
+                source += " · " + importInspection.sourceVersion();
+            }
+            context.drawTextWithShadow(textRenderer, Text.literal("Source  ·  " + source),
+                    cardX + 12, cardY + 44, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("Target  ·  Java Edition 1.21.4"),
+                    cardX + 12, cardY + 60, LbUi.TEXT_PRIMARY);
+            if (advanced) {
+                context.drawTextWithShadow(textRenderer, Text.literal("WORLD NAME"), cardX + 12, cardY + 78, LbUi.TEXT_MUTED);
+                if (importName != null) LbUi.field(context, importName, validation != null);
+            }
+            return;
+        }
+
         int cardHeight = advanced ? 92 : 70;
         LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
         context.drawTextWithShadow(textRenderer, Text.literal("IMPORT WORLD"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
@@ -472,7 +570,7 @@ public final class WorldTransferScreen extends Screen {
         if (transfer.phase() != ClientTransferController.TransferPhase.IDLE) {
             status = transfer.message();
             percent = transfer.percent();
-        } else if (processingImport && worlds.activityMessage() != null) {
+        } else if ((inspectingImport || processingImport) && worlds.activityMessage() != null) {
             status = worlds.activityMessage();
         } else if (exporting) {
             if (area != null && maps.exportBusy()) status = "Preparing selected area…";
@@ -493,7 +591,7 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private boolean busy() {
-        return choosing || processingImport || exporting || transfers.status().active();
+        return choosing || inspectingImport || processingImport || exporting || transfers.status().active();
     }
 
     private void rememberFields() {
@@ -544,6 +642,15 @@ public final class WorldTransferScreen extends Screen {
         return worlds.worlds().stream().anyMatch(value -> value.folderName().equalsIgnoreCase(candidate));
     }
 
+    private static String friendlyEdition(String edition) {
+        if (edition == null) return "Unknown Edition";
+        return switch (edition.toUpperCase(Locale.ROOT)) {
+            case "JAVA" -> "Java Edition";
+            case "BEDROCK" -> "Bedrock Edition";
+            default -> edition.replace('_', ' ');
+        };
+    }
+
     private static String friendlyFormat(String format) {
         if (format == null) return "Java Edition · 1.21.4";
         String value = format.toUpperCase(Locale.ROOT);
@@ -564,6 +671,9 @@ public final class WorldTransferScreen extends Screen {
         if (lower.contains("conversion runtime") || lower.contains("converter")) {
             return "The requested edition or version is not available right now.";
         }
+        if (lower.contains("inspect uploaded world") || lower.contains("level.dat")) {
+            return "This file does not look like a supported Minecraft world.";
+        }
         return message;
     }
 
@@ -572,15 +682,6 @@ public final class WorldTransferScreen extends Screen {
                 .replaceAll("[^a-z0-9._-]+", "-").replaceAll("-+", "-").replaceAll("^-+|-+$", "");
         if (stem.isBlank()) stem = "world";
         return stem.length() > 48 ? stem.substring(0, 48) : stem;
-    }
-
-    private static String baseName(String artifactName) {
-        String name = artifactName == null ? "Imported World" : artifactName.strip();
-        String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".mcworld")) name = name.substring(0, name.length() - 8);
-        else if (lower.endsWith(".zip")) name = name.substring(0, name.length() - 4);
-        name = name.strip();
-        return name.isEmpty() ? "Imported World" : name;
     }
 
     private static String folderName(String baseName) {
