@@ -32,6 +32,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String WORK_SUFFIX = ".work";
     private static final String COPY_SUFFIX = ".copy";
     private static final String DELETE_SUFFIX = ".delete";
+    private static final String CREATE_SUFFIX = ".create";
     private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
 
     private final Path worldRoot;
@@ -80,6 +81,79 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     @Override
     public Path reserveWorkspace(UUID operationId) throws IOException {
         return reserveTypedWorkspace(operationId, WORK_SUFFIX);
+    }
+
+    @Override
+    public void markCreatePending(UUID operationId, String folderName) throws IOException {
+        Objects.requireNonNull(operationId, "operationId");
+        String safeFolder = validateSingleName(folderName, "world folder");
+        Files.createDirectories(workspaceRoot);
+        requireSafeWorkspaceRoot();
+        Path marker = createTransactionPath(operationId, safeFolder);
+        if (Files.exists(marker)) throw new IOException("Create transaction already exists: " + marker.getFileName());
+        Files.createFile(marker);
+    }
+
+    @Override
+    public void clearCreatePending(UUID operationId, String folderName) throws IOException {
+        Objects.requireNonNull(operationId, "operationId");
+        String safeFolder = validateSingleName(folderName, "world folder");
+        if (Files.notExists(workspaceRoot)) return;
+        requireSafeWorkspaceRoot();
+        Path marker = createTransactionPath(operationId, safeFolder);
+        if (Files.exists(marker) && (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker))) {
+            throw new IOException("Create transaction marker is unsafe: " + marker.getFileName());
+        }
+        Files.deleteIfExists(marker);
+    }
+
+    @Override
+    public CreateRecovery recoverCreateTransactions(Collection<WorldRecord> managedWorlds) throws IOException {
+        Objects.requireNonNull(managedWorlds, "managedWorlds");
+        if (Files.notExists(workspaceRoot)) return new CreateRecovery(0, 0, 0);
+        requireSafeWorkspaceRoot();
+
+        Set<String> managedFolders = new HashSet<>();
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+
+        int committed = 0;
+        int rolledBack = 0;
+        int preserved = 0;
+        try (var children = Files.list(workspaceRoot)) {
+            for (Path child : children.toList()) {
+                String name = child.getFileName().toString();
+                if (!name.endsWith(CREATE_SUFFIX)) continue;
+                Optional<CreateTransactionIdentity> identity = parseCreateTransactionName(name);
+                Path marker = requireDirectWorkspace(child);
+                if (identity.isEmpty() || !Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+                    preserved++;
+                    continue;
+                }
+
+                String folderName = identity.get().folderName();
+                Path world = worldPath(folderName);
+                if (managedFolders.contains(folderName)) {
+                    Files.delete(marker);
+                    committed++;
+                    continue;
+                }
+
+                if (Files.notExists(world)) {
+                    Files.delete(marker);
+                    rolledBack++;
+                    continue;
+                }
+                if (!Files.isDirectory(world) || Files.isSymbolicLink(world)) {
+                    preserved++;
+                    continue;
+                }
+
+                deleteTree(world);
+                Files.delete(marker);
+                rolledBack++;
+            }
+        }
+        return new CreateRecovery(committed, rolledBack, preserved);
     }
 
     @Override
@@ -253,11 +327,19 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         String safeFolder = validateSingleName(folderName, "world folder");
         Files.createDirectories(workspaceRoot);
         requireSafeWorkspaceRoot();
-        String encodedFolder = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8));
+        String encodedFolder = encodeFolderName(safeFolder);
         Path destination = workspacePath(operationId + "." + encodedFolder + DELETE_SUFFIX);
         if (Files.exists(destination)) throw new IOException("Workspace already exists: " + destination.getFileName());
         return destination;
+    }
+
+    private Path createTransactionPath(UUID operationId, String folderName) {
+        return workspacePath(operationId + "." + encodeFolderName(folderName) + CREATE_SUFFIX);
+    }
+
+    private static String encodeFolderName(String folderName) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(folderName.getBytes(StandardCharsets.UTF_8));
     }
 
     private void requireSafeWorkspaceRoot() throws IOException {
@@ -276,9 +358,19 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         catch (IllegalArgumentException ignored) { return false; }
     }
 
+    private static Optional<CreateTransactionIdentity> parseCreateTransactionName(String name) {
+        return parseEncodedTransactionName(name, CREATE_SUFFIX)
+                .map(identity -> new CreateTransactionIdentity(identity.operationId(), identity.folderName()));
+    }
+
     private static Optional<DeleteWorkspaceIdentity> parseDeleteWorkspaceName(String name) {
-        if (!name.endsWith(DELETE_SUFFIX)) return Optional.empty();
-        String stem = name.substring(0, name.length() - DELETE_SUFFIX.length());
+        return parseEncodedTransactionName(name, DELETE_SUFFIX)
+                .map(identity -> new DeleteWorkspaceIdentity(identity.operationId(), identity.folderName()));
+    }
+
+    private static Optional<EncodedTransactionIdentity> parseEncodedTransactionName(String name, String suffix) {
+        if (!name.endsWith(suffix)) return Optional.empty();
+        String stem = name.substring(0, name.length() - suffix.length());
         int separator = stem.indexOf('.');
         if (separator <= 0 || separator == stem.length() - 1) return Optional.empty();
         try {
@@ -286,7 +378,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             String folderName = new String(
                     Base64.getUrlDecoder().decode(stem.substring(separator + 1)), StandardCharsets.UTF_8);
             folderName = validateSingleName(folderName, "world folder");
-            return Optional.of(new DeleteWorkspaceIdentity(operationId, folderName));
+            return Optional.of(new EncodedTransactionIdentity(operationId, folderName));
         } catch (IllegalArgumentException invalid) {
             return Optional.empty();
         }
@@ -387,5 +479,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         });
     }
 
+    private record EncodedTransactionIdentity(UUID operationId, String folderName) { }
+    private record CreateTransactionIdentity(UUID operationId, String folderName) { }
     private record DeleteWorkspaceIdentity(UUID operationId, String folderName) { }
 }
