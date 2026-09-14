@@ -17,11 +17,12 @@ public final class BackgroundFpsController {
             PerformanceCapabilities capabilities
     ) {
         if (client == null || client.getWindow() == null) return;
+        if (capabilities.hasBackgroundFpsProvider()) return;
 
         int userLimit = client.options.getMaxFps().getValue();
         int targetLimit = userLimit;
 
-        if (preferences.backgroundFpsPolicy() && !capabilities.hasBackgroundFpsProvider()) {
+        if (preferences.backgroundFpsPolicy()) {
             Window window = client.getWindow();
             long handle = window.getHandle();
             boolean minimized = GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_TRUE;
