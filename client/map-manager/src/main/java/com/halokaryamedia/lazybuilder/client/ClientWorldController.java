@@ -4,9 +4,11 @@ import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -18,6 +20,7 @@ public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
+    private final Set<String> discardWhenInspected = new HashSet<>();
     private WorldControlWireProtocol.ImportInspection importInspection;
     // Before the first authoritative WorldList arrives permission is unknown, not denied.
     // Map-first actions therefore remain discoverable; Paper still authorizes every request.
@@ -44,8 +47,27 @@ public final class ClientWorldController {
 
     public void inspectImport(String artifactName) {
         importInspection = null;
+        discardWhenInspected.remove(artifactName);
         beginActivity("Inspecting world…");
         send(new WorldControlWireProtocol.InspectImport(artifactName));
+    }
+
+    /**
+     * Best-effort cleanup for an uploaded artifact that the builder reviewed but
+     * chose not to import. If inspection is still in flight, remember the intent
+     * and issue the discard again when the authoritative inspection arrives.
+     */
+    public void discardImport(String artifactName) {
+        if (artifactName == null || artifactName.isBlank()) return;
+        String normalized = artifactName.strip();
+        boolean inspectionKnown = importInspection != null
+                && importInspection.artifactName().equals(normalized);
+        if (inspectionKnown) {
+            importInspection = null;
+        } else {
+            discardWhenInspected.add(normalized);
+        }
+        send(new WorldControlWireProtocol.DiscardImport(normalized));
     }
 
     public void create(String folderName, String displayName, String kind) {
@@ -69,6 +91,7 @@ public final class ClientWorldController {
     }
 
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
+        discardWhenInspected.remove(artifactName);
         beginActivity("Validating and importing world…");
         send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
     }
@@ -132,13 +155,19 @@ public final class ClientWorldController {
                 revision++;
             }
             case WorldControlWireProtocol.ImportInspection inspection -> {
-                importInspection = inspection;
                 lastError = null;
                 activityMessage = null;
+                if (discardWhenInspected.remove(inspection.artifactName())) {
+                    importInspection = null;
+                    send(new WorldControlWireProtocol.DiscardImport(inspection.artifactName()));
+                } else {
+                    importInspection = inspection;
+                }
                 revision++;
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 if (worldListPending) worldListPending = false;
+                discardWhenInspected.clear();
                 lastError = error.message();
                 activityMessage = null;
                 revision++;
@@ -151,6 +180,7 @@ public final class ClientWorldController {
         worlds = List.of();
         exportFormats = List.of(NATIVE_EXPORT_FORMAT);
         settings.clear();
+        discardWhenInspected.clear();
         importInspection = null;
         canManage = true;
         canTeleport = true;
