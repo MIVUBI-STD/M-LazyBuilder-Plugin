@@ -20,6 +20,21 @@ public interface WorldFileRepository {
         throw new UnsupportedOperationException("Workspace reservation is not supported by this repository");
     }
 
+    /** Records a durable Create World transaction before runtime creation begins. */
+    default void markCreatePending(UUID operationId, String folderName) throws IOException { }
+
+    /** Clears a durable Create World transaction marker after commit or rollback. */
+    default void clearCreatePending(UUID operationId, String folderName) throws IOException { }
+
+    /**
+     * Reconciles pending Create World transactions against persisted registry truth.
+     * Registered worlds keep their folder and only clear the marker; unregistered worlds
+     * created by an interrupted transaction are removed. Unsafe/unattributable state is preserved.
+     */
+    default CreateRecovery recoverCreateTransactions(Collection<WorldRecord> managedWorlds) throws IOException {
+        return new CreateRecovery(0, 0, 0);
+    }
+
     /**
      * Removes only transient workspaces that are safe to discard after a previous process ended.
      * Destructive delete staging is intentionally excluded because it may be the only surviving
@@ -63,6 +78,14 @@ public interface WorldFileRepository {
     void deleteWorld(WorldRecord world) throws IOException;
 
     void deleteWorkspace(Path workspace) throws IOException;
+
+    record CreateRecovery(int committed, int rolledBack, int preserved) {
+        public CreateRecovery {
+            if (committed < 0 || rolledBack < 0 || preserved < 0) {
+                throw new IllegalArgumentException("Create recovery counts must not be negative");
+            }
+        }
+    }
 
     record DeleteRecovery(int restored, int discarded, int preserved) {
         public DeleteRecovery {
