@@ -15,81 +15,75 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldLifecycleServiceTest {
     @Test
-    void archiveUnloadsDisablesAutoLoadAndPersistsWithoutMovingFiles() {
-        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, true);
+    void archiveUnloadsAndPersistsWithoutMovingFiles() {
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true);
 
         WorldRecord archived = fixture.service.archive(fixture.world.id());
 
         assertEquals(WorldLifecycle.ARCHIVED, archived.lifecycle());
-        assertFalse(archived.autoLoad());
-        assertEquals(WorldRuntimeState.UNLOADED, fixture.states.get(fixture.world.id()));
+        assertFalse(fixture.runtime.loaded);
         assertEquals(1, fixture.runtime.unloadCount);
         assertEquals(archived, fixture.persistence.saved.getFirst());
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
     @Test
-    void restoreKeepsWorldUnloadedAndAutoLoadOff() {
-        Fixture fixture = fixture(WorldLifecycle.ARCHIVED, false, false);
+    void restoreKeepsWorldUnloaded() {
+        Fixture fixture = fixture(WorldLifecycle.ARCHIVED, false);
 
         WorldRecord restored = fixture.service.restore(fixture.world.id());
 
         assertEquals(WorldLifecycle.ACTIVE, restored.lifecycle());
-        assertFalse(restored.autoLoad());
-        assertEquals(WorldRuntimeState.UNLOADED, fixture.states.get(fixture.world.id()));
+        assertFalse(fixture.runtime.loaded);
         assertEquals(0, fixture.runtime.loadCount);
     }
 
     @Test
     void archivePersistenceFailureRestoresMetadataAndPreviousLoadedState() {
-        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, true);
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true);
         fixture.persistence.failNextSave = true;
 
         assertThrows(IllegalStateException.class, () -> fixture.service.archive(fixture.world.id()));
 
         WorldRecord current = fixture.registry.find(fixture.world.id()).orElseThrow();
         assertEquals(WorldLifecycle.ACTIVE, current.lifecycle());
-        assertEquals(WorldRuntimeState.LOADED, fixture.states.get(fixture.world.id()));
+        assertTrue(fixture.runtime.loaded);
         assertEquals(1, fixture.runtime.unloadCount);
         assertEquals(1, fixture.runtime.loadCount);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
     }
 
-    private static Fixture fixture(WorldLifecycle lifecycle, boolean autoLoad, boolean loaded) {
+    private static Fixture fixture(WorldLifecycle lifecycle, boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
                 WorldId.create(),
                 "Build",
                 "Build",
                 WorldKind.FLAT,
-                lifecycle,
-                autoLoad
+                lifecycle
         );
         registry.register(world);
 
-        WorldRuntimeStateRegistry states = new WorldRuntimeStateRegistry();
-        states.initialize(world.id(), loaded ? WorldRuntimeState.LOADED : WorldRuntimeState.UNLOADED);
         FakeRuntime runtime = new FakeRuntime(loaded);
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, states, runtime);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.saved = registry.all();
-        WorldOperationCoordinator operations = new WorldOperationCoordinator();
         WorldLifecycleService service = new WorldLifecycleService(
                 registry,
                 persistence,
                 runtimeService,
-                states,
                 operations
         );
-        return new Fixture(registry, states, runtime, persistence, operations, service, world);
+        return new Fixture(registry, runtime, persistence, operations, service, world);
     }
 
     private record Fixture(
             WorldRegistry registry,
-            WorldRuntimeStateRegistry states,
             FakeRuntime runtime,
             MemoryPersistence persistence,
             WorldOperationCoordinator operations,
