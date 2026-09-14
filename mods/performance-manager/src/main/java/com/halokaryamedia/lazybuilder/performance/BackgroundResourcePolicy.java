@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.performance;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.Window;
-import org.lwjgl.glfw.GLFW;
 
 /** First-party LazyBuilder policy for unfocused/minimized client FPS limits. */
 public final class BackgroundResourcePolicy {
@@ -16,13 +15,9 @@ public final class BackgroundResourcePolicy {
 
         if (preferences.backgroundFpsPolicy()) {
             Window window = client.getWindow();
-            long handle = window.getHandle();
-            boolean minimized = GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_TRUE;
-            boolean focused = GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_FOCUSED) == GLFW.GLFW_TRUE;
-
-            if (minimized) {
+            if (window.isMinimized()) {
                 targetLimit = Math.min(userLimit, preferences.minimizedFpsLimit());
-            } else if (!focused) {
+            } else if (!client.isWindowFocused()) {
                 targetLimit = Math.min(userLimit, preferences.unfocusedFpsLimit());
             }
         }
