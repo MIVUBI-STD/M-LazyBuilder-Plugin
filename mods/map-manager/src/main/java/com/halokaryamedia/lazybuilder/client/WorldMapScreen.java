@@ -7,6 +7,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.RotationAxis;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -23,6 +24,7 @@ public final class WorldMapScreen extends Screen {
     private static final int BOTTOM_BAR = 26;
     private static final int SELECTION_BOTTOM_BAR = 66;
     private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
+    private static final int RASTER_REFRESH_INTERVAL_FRAMES = 10;
     private static final int CHUNK_BLOCKS = 16;
     private static final int REGION_BLOCKS = 512;
     private static final int DEFAULT_SELECTION_CHUNKS = 8;
@@ -72,6 +74,23 @@ public final class WorldMapScreen extends Screen {
     private int contextBlockZ;
     private int contextScreenX;
     private int contextScreenY;
+
+    private int[] rasterColors = new int[0];
+    private int rasterColumns;
+    private int rasterRows;
+    private int rasterHalfCellsX;
+    private int rasterHalfCellsZ;
+    private int rasterPixel = -1;
+    private int rasterSurfaceSize = -1;
+    private int rasterAgeFrames = RASTER_REFRESH_INTERVAL_FRAMES;
+    private int rasterLeft;
+    private int rasterTop;
+    private int rasterRight;
+    private int rasterBottom;
+    private double rasterCenterX = Double.NaN;
+    private double rasterCenterZ = Double.NaN;
+    private double rasterZoom = Double.NaN;
+    private String rasterScope = "";
 
     public WorldMapScreen(
             ClientWorldController worlds,
@@ -286,36 +305,100 @@ public final class WorldMapScreen extends Screen {
 
         String managedWorld = maps.currentWorld() == null ? "unmanaged" : maps.currentWorld().worldId().toString();
         String dimension = world.getRegistryKey().getValue().toString();
+        String scope = managedWorld + "|" + dimension;
         Path storage = client == null ? null : client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
-        SURFACE.useScope(managedWorld + "|" + dimension, storage);
+        SURFACE.useScope(scope, storage);
         SURFACE.processPending(world, SAMPLE_BUDGET_PER_FRAME);
 
         Bounds bounds = mapBounds();
         context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, ClientMapSurfaceCache.UNEXPLORED_COLOR);
 
         int pixel = mapPixelSize();
+        int surfaceSize = SURFACE.size();
+        if (rasterNeedsRefresh(scope, bounds, pixel, surfaceSize)) {
+            rebuildRaster(world, scope, bounds, pixel, surfaceSize);
+        } else {
+            rasterAgeFrames++;
+        }
+        drawRaster(context, bounds, pixel);
+        renderPlayerMarker(context, bounds);
+    }
+
+    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel, int surfaceSize) {
+        return rasterColors.length == 0
+                || rasterAgeFrames >= RASTER_REFRESH_INTERVAL_FRAMES
+                || rasterSurfaceSize != surfaceSize
+                || rasterPixel != pixel
+                || rasterLeft != bounds.left
+                || rasterTop != bounds.top
+                || rasterRight != bounds.right
+                || rasterBottom != bounds.bottom
+                || Double.compare(rasterCenterX, centerX) != 0
+                || Double.compare(rasterCenterZ, centerZ) != 0
+                || Double.compare(rasterZoom, zoom()) != 0
+                || !rasterScope.equals(scope);
+    }
+
+    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel, int surfaceSize) {
         double blocksPerCell = zoom() * pixel / 2.0;
         int sampleSpan = Math.max(1, (int) Math.ceil(blocksPerCell));
         int halfCellsX = Math.max(1, bounds.width() / pixel / 2);
         int halfCellsZ = Math.max(1, bounds.height() / pixel / 2);
+        int columns = halfCellsX * 2 + 5;
+        int rows = halfCellsZ * 2 + 5;
+        int required = columns * rows;
+        if (rasterColors.length != required) rasterColors = new int[required];
+        else Arrays.fill(rasterColors, ClientMapSurfaceCache.UNEXPLORED_COLOR);
+
         double originCellX = centerX / blocksPerCell;
         double originCellZ = centerZ / blocksPerCell;
-
+        int index = 0;
         for (int cz = -halfCellsZ - 2; cz <= halfCellsZ + 2; cz++) {
             int screenY = bounds.centerY() + cz * pixel;
-            if (screenY + pixel < bounds.top || screenY >= bounds.bottom) continue;
             for (int cx = -halfCellsX - 2; cx <= halfCellsX + 2; cx++) {
                 int screenX = bounds.centerX() + cx * pixel;
-                if (screenX + pixel < bounds.left || screenX >= bounds.right) continue;
-
-                int blockX = (int) Math.floor((originCellX + cx) * blocksPerCell);
-                int blockZ = (int) Math.floor((originCellZ + cz) * blocksPerCell);
-                ClientMapSurfaceCache.SurfaceSample sample = SURFACE.sampleArea(world, blockX, blockZ, sampleSpan);
-                context.fill(screenX, screenY, screenX + pixel, screenY + pixel, sample.color());
+                if (screenY + pixel >= bounds.top && screenY < bounds.bottom
+                        && screenX + pixel >= bounds.left && screenX < bounds.right) {
+                    int blockX = (int) Math.floor((originCellX + cx) * blocksPerCell);
+                    int blockZ = (int) Math.floor((originCellZ + cz) * blocksPerCell);
+                    rasterColors[index] = SURFACE.sampleArea(world, blockX, blockZ, sampleSpan).color();
+                }
+                index++;
             }
         }
 
-        renderPlayerMarker(context, bounds);
+        rasterColumns = columns;
+        rasterRows = rows;
+        rasterHalfCellsX = halfCellsX;
+        rasterHalfCellsZ = halfCellsZ;
+        rasterPixel = pixel;
+        rasterSurfaceSize = surfaceSize;
+        rasterAgeFrames = 0;
+        rasterLeft = bounds.left;
+        rasterTop = bounds.top;
+        rasterRight = bounds.right;
+        rasterBottom = bounds.bottom;
+        rasterCenterX = centerX;
+        rasterCenterZ = centerZ;
+        rasterZoom = zoom();
+        rasterScope = scope;
+    }
+
+    private void drawRaster(DrawContext context, Bounds bounds, int pixel) {
+        if (rasterColumns <= 0 || rasterRows <= 0) return;
+        int index = 0;
+        for (int row = 0; row < rasterRows; row++) {
+            int cz = row - rasterHalfCellsZ - 2;
+            int screenY = bounds.centerY() + cz * pixel;
+            for (int column = 0; column < rasterColumns; column++) {
+                int cx = column - rasterHalfCellsX - 2;
+                int screenX = bounds.centerX() + cx * pixel;
+                int color = rasterColors[index++];
+                if (screenY + pixel < bounds.top || screenY >= bounds.bottom
+                        || screenX + pixel < bounds.left || screenX >= bounds.right) continue;
+                context.fill(screenX, screenY, screenX + pixel, screenY + pixel, color);
+            }
+        }
     }
 
     private int mapPixelSize() {
