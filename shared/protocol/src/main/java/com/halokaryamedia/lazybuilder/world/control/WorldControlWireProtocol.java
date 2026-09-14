@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    /** V3 adds per-player capabilities to the World List response. */
-    public static final int VERSION = 3;
+    /** V4 adds the server-authoritative Import Inspection review step. */
+    public static final int VERSION = 4;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
@@ -37,6 +37,7 @@ public final class WorldControlWireProtocol {
     private static final int EXPORT_WORLD = 17;
     private static final int IMPORT_WORLD = 18;
     private static final int GET_EXPORT_FORMATS = 19;
+    private static final int INSPECT_IMPORT = 20;
 
     private static final int WORLDS = 101;
     private static final int WORLD_CHANGED = 102;
@@ -44,6 +45,7 @@ public final class WorldControlWireProtocol {
     private static final int SETTINGS = 104;
     private static final int EXPORT_READY = 105;
     private static final int EXPORT_FORMATS = 106;
+    private static final int IMPORT_INSPECTION = 107;
     private static final int ERROR = 127;
 
     private WorldControlWireProtocol() {}
@@ -51,10 +53,13 @@ public final class WorldControlWireProtocol {
     public sealed interface Request permits ListWorlds, CreateWorld, TeleportWorld,
             ArchiveWorld, RestoreWorld, DuplicateWorld, DeleteWorld, GetSettings,
             SetDefaultMode, SetDifficulty, SetPvp, ResetBuildReady, SetSpawnHere,
-            ExportWorld, ImportWorld, GetExportFormats {}
+            ExportWorld, ImportWorld, GetExportFormats, InspectImport {}
 
     public record ListWorlds() implements Request {}
     public record GetExportFormats() implements Request {}
+    public record InspectImport(String artifactName) implements Request {
+        public InspectImport { artifactName = requireString(artifactName, "artifactName"); }
+    }
 
     public record CreateWorld(String folderName, String displayName, String kind) implements Request {
         public CreateWorld {
@@ -111,7 +116,17 @@ public final class WorldControlWireProtocol {
     }
 
     public sealed interface Response permits WorldList, WorldChanged, TeleportOk, SettingsSnapshot,
-            ExportReady, ExportFormats, ErrorResponse {}
+            ExportReady, ExportFormats, ImportInspection, ErrorResponse {}
+
+    public record ImportInspection(String artifactName, String edition, String sourceVersion, String suggestedName)
+            implements Response {
+        public ImportInspection {
+            artifactName = requireString(artifactName, "artifactName");
+            edition = requireString(edition, "edition");
+            sourceVersion = requireString(sourceVersion, "sourceVersion");
+            suggestedName = requireString(suggestedName, "suggestedName");
+        }
+    }
 
     public record WorldSummary(
             UUID worldId,
@@ -196,6 +211,7 @@ public final class WorldControlWireProtocol {
             switch (request) {
                 case ListWorlds ignored -> { }
                 case GetExportFormats ignored -> { }
+                case InspectImport inspect -> writeString(out, inspect.artifactName());
                 case CreateWorld create -> {
                     writeString(out, create.folderName());
                     writeString(out, create.displayName());
@@ -253,6 +269,7 @@ public final class WorldControlWireProtocol {
                 case EXPORT_WORLD -> new ExportWorld(readUuid(in), readString(in), readString(in));
                 case IMPORT_WORLD -> new ImportWorld(readString(in), readString(in), readString(in));
                 case GET_EXPORT_FORMATS -> new GetExportFormats();
+                case INSPECT_IMPORT -> new InspectImport(readString(in));
                 default -> throw new IOException("Unknown world-control request opcode: " + opcode);
             };
             requireExhausted(in, "request");
@@ -269,6 +286,7 @@ public final class WorldControlWireProtocol {
             case SettingsSnapshot ignored -> SETTINGS;
             case ExportReady ignored -> EXPORT_READY;
             case ExportFormats ignored -> EXPORT_FORMATS;
+            case ImportInspection ignored -> IMPORT_INSPECTION;
             case ErrorResponse ignored -> ERROR;
         };
         return write(opcode, out -> {
@@ -293,6 +311,12 @@ public final class WorldControlWireProtocol {
                 case ExportFormats formats -> {
                     out.writeInt(formats.formats().size());
                     for (String format : formats.formats()) writeString(out, format);
+                }
+                case ImportInspection inspection -> {
+                    writeString(out, inspection.artifactName());
+                    writeString(out, inspection.edition());
+                    writeString(out, inspection.sourceVersion());
+                    writeString(out, inspection.suggestedName());
                 }
                 case ErrorResponse error -> writeString(out, error.message());
             }
@@ -323,6 +347,8 @@ public final class WorldControlWireProtocol {
                     for (int i = 0; i < count; i++) formats.add(readString(in));
                     yield new ExportFormats(formats);
                 }
+                case IMPORT_INSPECTION -> new ImportInspection(
+                        readString(in), readString(in), readString(in), readString(in));
                 case ERROR -> new ErrorResponse(readString(in));
                 default -> throw new IOException("Unknown world-control response opcode: " + opcode);
             };
@@ -357,6 +383,7 @@ public final class WorldControlWireProtocol {
             case ExportWorld ignored -> EXPORT_WORLD;
             case ImportWorld ignored -> IMPORT_WORLD;
             case GetExportFormats ignored -> GET_EXPORT_FORMATS;
+            case InspectImport ignored -> INSPECT_IMPORT;
         };
     }
 
