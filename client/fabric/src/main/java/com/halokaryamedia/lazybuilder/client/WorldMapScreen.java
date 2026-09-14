@@ -13,18 +13,23 @@ import java.util.UUID;
 /**
  * Fullscreen LazyBuilder world map.
  *
- * <p>The map owns spatial presentation and selection only. Export format,
+ * <p>The map owns spatial presentation and selection only. The chunk-grid
+ * selection interaction is first-party LazyBuilder UI; no external converter
+ * component, asset, widget, or runtime owns this surface. Export format,
  * packaging and conversion stay in the canonical Import / Export workspace.</p>
  */
 public final class WorldMapScreen extends Screen {
     private static final int TOP_BAR = 30;
     private static final int BOTTOM_BAR = 26;
-    private static final int SELECTION_BOTTOM_BAR = 58;
+    private static final int SELECTION_BOTTOM_BAR = 66;
     private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
     private static final int CHUNK_BLOCKS = 16;
     private static final int REGION_BLOCKS = 512;
     private static final int DEFAULT_SELECTION_CHUNKS = 8;
     private static final int HANDLE_RADIUS = 5;
+    private static final int CHUNK_GRID_COLOR = 0x2EFFFFFF;
+    private static final int REGION_GRID_COLOR = 0x667F8FA3;
+    private static final int OUTSIDE_SELECTION_DIM = 0x48101418;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
     private static final double PRECISE_ZOOM_FACTOR = 1.18;
@@ -152,7 +157,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void addSelectionActions() {
-        int y = height - 41;
+        int y = height - 43;
         int continueWidth = 92;
         int cancelWidth = 72;
         int gap = 8;
@@ -326,13 +331,13 @@ public final class WorldMapScreen extends Screen {
             int lastChunkX = Math.floorDiv((int) Math.ceil(worldRight), CHUNK_BLOCKS) + 1;
             for (int chunkX = firstChunkX; chunkX <= lastChunkX; chunkX++) {
                 int x = worldToScreenX(chunkX * CHUNK_BLOCKS, bounds);
-                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 1, bounds.bottom, 0x355D6B7D);
+                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 1, bounds.bottom, CHUNK_GRID_COLOR);
             }
             int firstChunkZ = Math.floorDiv((int) Math.floor(worldTop), CHUNK_BLOCKS) - 1;
             int lastChunkZ = Math.floorDiv((int) Math.ceil(worldBottom), CHUNK_BLOCKS) + 1;
             for (int chunkZ = firstChunkZ; chunkZ <= lastChunkZ; chunkZ++) {
                 int y = worldToScreenZ(chunkZ * CHUNK_BLOCKS, bounds);
-                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 1, 0x355D6B7D);
+                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 1, CHUNK_GRID_COLOR);
             }
         }
 
@@ -341,13 +346,13 @@ public final class WorldMapScreen extends Screen {
             int lastRegionX = Math.floorDiv((int) Math.ceil(worldRight), REGION_BLOCKS) + 1;
             for (int regionX = firstRegionX; regionX <= lastRegionX; regionX++) {
                 int x = worldToScreenX(regionX * REGION_BLOCKS, bounds);
-                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 2, bounds.bottom, 0x667B8DA5);
+                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 2, bounds.bottom, REGION_GRID_COLOR);
             }
             int firstRegionZ = Math.floorDiv((int) Math.floor(worldTop), REGION_BLOCKS) - 1;
             int lastRegionZ = Math.floorDiv((int) Math.ceil(worldBottom), REGION_BLOCKS) + 1;
             for (int regionZ = firstRegionZ; regionZ <= lastRegionZ; regionZ++) {
                 int y = worldToScreenZ(regionZ * REGION_BLOCKS, bounds);
-                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 2, 0x667B8DA5);
+                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 2, REGION_GRID_COLOR);
             }
         }
     }
@@ -356,13 +361,19 @@ public final class WorldMapScreen extends Screen {
         SelectionRect rect = selectionRect();
         if (rect == null) return;
 
-        int left = Math.max(mapBounds().left, rect.left);
-        int right = Math.min(mapBounds().right, rect.right);
-        int top = Math.max(mapBounds().top, rect.top);
-        int bottom = Math.min(mapBounds().bottom, rect.bottom);
+        Bounds bounds = mapBounds();
+        int left = Math.max(bounds.left, rect.left);
+        int right = Math.min(bounds.right, rect.right);
+        int top = Math.max(bounds.top, rect.top);
+        int bottom = Math.min(bounds.bottom, rect.bottom);
         if (right <= left || bottom <= top) return;
 
-        context.fill(left, top, right, bottom, 0x346C91FF);
+        // Keep the selected terrain readable and de-emphasize everything that will not be exported.
+        if (top > bounds.top) context.fill(bounds.left, bounds.top, bounds.right, top, OUTSIDE_SELECTION_DIM);
+        if (bottom < bounds.bottom) context.fill(bounds.left, bottom, bounds.right, bounds.bottom, OUTSIDE_SELECTION_DIM);
+        if (left > bounds.left) context.fill(bounds.left, top, left, bottom, OUTSIDE_SELECTION_DIM);
+        if (right < bounds.right) context.fill(right, top, bounds.right, bottom, OUTSIDE_SELECTION_DIM);
+
         context.fill(left, top, right, top + 2, LbUi.ACCENT_BRIGHT);
         context.fill(left, bottom - 2, right, bottom, LbUi.ACCENT_BRIGHT);
         context.fill(left, top, left + 2, bottom, LbUi.ACCENT_BRIGHT);
@@ -410,22 +421,33 @@ public final class WorldMapScreen extends Screen {
 
         int[] hovered = screenToWorld(mouseX, mouseY);
         String zoomText = zoomLabel();
-        String coords = hovered == null
-                ? zoomText
-                : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomText;
+        String coords;
+        if (hovered == null) {
+            coords = zoomText;
+        } else {
+            int hoverChunkX = Math.floorDiv(hovered[0], CHUNK_BLOCKS);
+            int hoverChunkZ = Math.floorDiv(hovered[1], CHUNK_BLOCKS);
+            coords = areaMode
+                    ? "Chunk " + hoverChunkX + ", " + hoverChunkZ + "   •   Block X " + hovered[0] + " Z " + hovered[1] + "   •   " + zoomText
+                    : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomText;
+        }
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2,
-                areaMode ? height - 51 : height - 17, LbUi.TEXT_SECONDARY);
+                areaMode ? height - 59 : height - 17, LbUi.TEXT_SECONDARY);
 
         if (areaMode) {
             int chunksX = maxChunkX - minChunkX + 1;
             int chunksZ = maxChunkZ - minChunkZ + 1;
-            String size = chunksX + " × " + chunksZ + " chunks   •   "
-                    + (chunksX * CHUNK_BLOCKS) + " × " + (chunksZ * CHUNK_BLOCKS) + " blocks";
-            context.drawTextWithShadow(textRenderer, Text.literal("EXPORT AREA"), 10, height - 37, LbUi.ACCENT_BRIGHT);
-            context.drawTextWithShadow(textRenderer, Text.literal(size), 82, height - 37, LbUi.TEXT_PRIMARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("EXPORT AREA"), 10, height - 43, LbUi.ACCENT_BRIGHT);
             context.drawTextWithShadow(textRenderer,
-                    Text.literal("X " + minBlockX() + " → " + maxBlockX() + "   Z " + minBlockZ() + " → " + maxBlockZ()),
-                    10, height - 21, LbUi.TEXT_SECONDARY);
+                    Text.literal("Chunks   X " + minChunkX + " → " + maxChunkX + "   Z " + minChunkZ + " → " + maxChunkZ),
+                    82, height - 43, LbUi.TEXT_PRIMARY);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(chunksX + " × " + chunksZ + " chunks   •   "
+                            + (chunksX * CHUNK_BLOCKS) + " × " + (chunksZ * CHUNK_BLOCKS) + " blocks"),
+                    10, height - 27, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal("Blocks   X " + minBlockX() + " → " + maxBlockX() + "   Z " + minBlockZ() + " → " + maxBlockZ()),
+                    10, height - 13, LbUi.TEXT_MUTED);
             return;
         }
 
