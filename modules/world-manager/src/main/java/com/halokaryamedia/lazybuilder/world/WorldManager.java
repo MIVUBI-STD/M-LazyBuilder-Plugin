@@ -176,9 +176,9 @@ public final class WorldManager {
         this.worldCreationService = new WorldCreationService(
                 worldRegistry, registryPersistence, runtimeGateway, worldFileRepository, buildReadyPolicy);
         this.worldTeleportService = new WorldTeleportService(
-                worldRegistry, worldRuntimeService, runtimeGateway);
+                worldRegistry, worldRuntimeService, runtimeGateway, worldOperationCoordinator);
         this.worldLocationTeleportService = new WorldLocationTeleportService(
-                worldRegistry, worldRuntimeService, locationGateway);
+                worldRegistry, worldRuntimeService, locationGateway, worldOperationCoordinator);
         this.worldSettingsService = new WorldSettingsService(
                 worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy);
         this.worldLifecycleService = new WorldLifecycleService(
