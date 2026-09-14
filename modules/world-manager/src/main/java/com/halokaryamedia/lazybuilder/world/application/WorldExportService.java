@@ -131,12 +131,9 @@ public final class WorldExportService {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         task.requireSnapshot();
-        if (!task.wasLoaded || task.sourceRestored) {
-            task.sourceRestored = true;
-            return;
-        }
-        runtimeService.loadDuringOperation(task.source.id());
-        task.sourceRestored = true;
+        if (task.sourceRestoreResolved) return;
+        restoreSourceIfStillActive(task);
+        task.sourceRestoreResolved = true;
     }
 
     public ExportResult processSnapshot(ExportTask task) {
@@ -199,10 +196,10 @@ public final class WorldExportService {
         Objects.requireNonNull(task, "task");
         if (task.closed) return;
         RuntimeException failure = null;
-        if (task.wasLoaded && !task.sourceRestored) {
+        if (!task.sourceRestoreResolved) {
             try {
-                runtimeService.loadDuringOperation(task.source.id());
-                task.sourceRestored = true;
+                restoreSourceIfStillActive(task);
+                task.sourceRestoreResolved = true;
             } catch (RuntimeException exception) {
                 failure = exception;
             }
@@ -236,6 +233,14 @@ public final class WorldExportService {
             throw new IllegalStateException("Cannot snapshot " + current.displayName()
                     + " because it became loaded after export preparation");
         }
+    }
+
+    private void restoreSourceIfStillActive(ExportTask task) {
+        if (!task.wasLoaded) return;
+        WorldId id = task.source.id();
+        WorldRecord current = registry.find(id).orElse(null);
+        if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return;
+        if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
     }
 
     static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
@@ -314,7 +319,7 @@ public final class WorldExportService {
         private final WorldAreaSelection area;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
-        private volatile boolean sourceRestored;
+        private volatile boolean sourceRestoreResolved;
         private volatile boolean completed;
         private volatile boolean closed;
         private Path snapshot;
@@ -335,7 +340,7 @@ public final class WorldExportService {
         public String targetFormat() { return targetFormat; }
         public WorldAreaSelection area() { return area; }
         public boolean completed() { return completed; }
-        public boolean sourceRestored() { return sourceRestored; }
+        public boolean sourceRestored() { return sourceRestoreResolved; }
 
         private synchronized void requireOpen() {
             if (closed) throw new IllegalStateException("Export task is already closed");
