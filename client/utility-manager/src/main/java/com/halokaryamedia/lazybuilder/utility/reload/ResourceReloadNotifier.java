@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.utility.reload;
 import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.resource.ResourceType;
 import net.minecraft.util.Identifier;
@@ -36,13 +35,9 @@ public final class ResourceReloadNotifier implements SimpleSynchronousResourceRe
     @Override
     public void reload(ResourceManager manager) {
         if (!clientStarted) return;
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) return;
-
-        client.execute(() -> UtilityNotifications.show(
+        UtilityNotifications.show(
                 "Resources Reloaded",
                 "Client resources are ready."
-        ));
+        );
     }
 }
