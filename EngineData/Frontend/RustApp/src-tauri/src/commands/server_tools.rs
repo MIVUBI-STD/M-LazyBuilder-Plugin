@@ -30,7 +30,8 @@ pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("log")) == Some(true);
-    if !requested.starts_with(&log_root) || !is_log {
+    let is_direct_server_log = requested.parent() == Some(log_root.as_path());
+    if !requested.starts_with(&log_root) || !is_direct_server_log || !is_log {
         return Err("Refusing to read a log outside this server's log directory.".into());
     }
     if !requested.is_file() {
