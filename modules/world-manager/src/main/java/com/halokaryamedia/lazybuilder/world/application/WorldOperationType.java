@@ -10,5 +10,6 @@ public enum WorldOperationType {
     IMPORT,
     EXPORT,
     CONVERSION,
-    TELEPORT
+    TELEPORT,
+    IDLE_UNLOAD
 }
