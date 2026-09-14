@@ -6,15 +6,17 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /** Canonical runtime load boundary. Loaded/unloaded is derived from Paper, not stored as world state. */
 public final class WorldRuntimeService {
     private final WorldRegistry registry;
     private final WorldRuntimeGateway runtime;
+    private final Predicate<WorldRecord> hasPlayers;
     private WorldOperationCoordinator operations;
 
     public WorldRuntimeService(WorldRegistry registry, WorldRuntimeGateway runtime) {
-        this(registry, runtime, null);
+        this(registry, runtime, null, ignored -> false);
     }
 
     public WorldRuntimeService(
@@ -22,9 +24,19 @@ public final class WorldRuntimeService {
             WorldRuntimeGateway runtime,
             WorldOperationCoordinator operations
     ) {
+        this(registry, runtime, operations, ignored -> false);
+    }
+
+    public WorldRuntimeService(
+            WorldRegistry registry,
+            WorldRuntimeGateway runtime,
+            WorldOperationCoordinator operations,
+            Predicate<WorldRecord> hasPlayers
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.operations = operations;
+        this.hasPlayers = Objects.requireNonNull(hasPlayers, "hasPlayers");
     }
 
     synchronized void attachOperations(WorldOperationCoordinator coordinator) {
@@ -40,6 +52,11 @@ public final class WorldRuntimeService {
 
     public boolean isLoaded(WorldId id) {
         return runtime.isLoaded(requireWorld(id));
+    }
+
+    /** Player presence is ephemeral Paper truth and never becomes world metadata. */
+    public boolean hasPlayers(WorldId id) {
+        return hasPlayers.test(requireWorld(id));
     }
 
     public WorldRecord load(WorldId id) {
