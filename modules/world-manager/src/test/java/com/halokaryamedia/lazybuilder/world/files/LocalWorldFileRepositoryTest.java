@@ -82,6 +82,52 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void createTransactionRecoveryUsesPersistedRegistryAsCommitAuthority() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        UUID committedOperation = UUID.randomUUID();
+        repository.markCreatePending(committedOperation, "CommittedCreate");
+        Files.createDirectories(worldRoot.resolve("CommittedCreate"));
+        Files.writeString(worldRoot.resolve("CommittedCreate/level.dat"), "level");
+        WorldRecord committed = new WorldRecord(WorldId.create(), "CommittedCreate", "Committed Create",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+
+        WorldFileRepository.CreateRecovery finalized = repository.recoverCreateTransactions(List.of(committed));
+        assertEquals(1, finalized.committed());
+        assertEquals(0, finalized.rolledBack());
+        assertEquals(0, finalized.preserved());
+        assertTrue(Files.exists(worldRoot.resolve("CommittedCreate/level.dat")));
+
+        UUID orphanOperation = UUID.randomUUID();
+        repository.markCreatePending(orphanOperation, "OrphanCreate");
+        Files.createDirectories(worldRoot.resolve("OrphanCreate"));
+        Files.writeString(worldRoot.resolve("OrphanCreate/level.dat"), "level");
+
+        WorldFileRepository.CreateRecovery rolledBack = repository.recoverCreateTransactions(List.of(committed));
+        assertEquals(0, rolledBack.committed());
+        assertEquals(1, rolledBack.rolledBack());
+        assertEquals(0, rolledBack.preserved());
+        assertFalse(Files.exists(worldRoot.resolve("OrphanCreate")));
+    }
+
+    @Test
+    void createRecoveryClearsMarkerWhenRuntimeNeverCreatedFolder() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds");
+        Path workRoot = tempDir.resolve("work");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        repository.markCreatePending(UUID.randomUUID(), "NeverCreated");
+        WorldFileRepository.CreateRecovery result = repository.recoverCreateTransactions(List.of());
+
+        assertEquals(0, result.committed());
+        assertEquals(1, result.rolledBack());
+        assertEquals(0, result.preserved());
+        assertFalse(Files.exists(worldRoot.resolve("NeverCreated")));
+    }
+
+    @Test
     void transactionalPublishRecoveryUsesPersistedRegistryAsCommitAuthority() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");
