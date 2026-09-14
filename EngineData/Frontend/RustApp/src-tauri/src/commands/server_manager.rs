@@ -13,28 +13,48 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 }
 
 #[tauri::command]
-pub fn server_start(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
-    let _lease = ServerStartLease::acquire()?;
-    prepare_managed_start(&app)?;
-    state.start()
+pub async fn server_start(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        let _lease = ServerStartLease::acquire()?;
+        prepare_managed_start(&app)?;
+        state.start()
+    })
+    .await
+    .map_err(|error| format!("Server start task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn server_stop(state: State<'_, ServerManagerState>) -> Result<(), String> {
-    stop_with_recovery(&state)
+pub async fn server_stop(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        stop_with_recovery(&state)
+    })
+    .await
+    .map_err(|error| format!("Server stop task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn server_restart(app: AppHandle, state: State<'_, ServerManagerState>) -> Result<(), String> {
-    stop_with_recovery(&state)?;
-    let _lease = ServerStartLease::acquire()?;
-    prepare_managed_start(&app)?;
-    state.start()
+pub async fn server_restart(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        stop_with_recovery(&state)?;
+        let _lease = ServerStartLease::acquire()?;
+        prepare_managed_start(&app)?;
+        state.start()
+    })
+    .await
+    .map_err(|error| format!("Server restart task failed: {error}"))?
 }
 
 #[tauri::command]
-pub fn server_recover_detached(state: State<'_, ServerManagerState>) -> Result<DetachedRecoveryResult, String> {
-    state.recover_detached()
+pub async fn server_recover_detached(app: AppHandle) -> Result<DetachedRecoveryResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        state.recover_detached()
+    })
+    .await
+    .map_err(|error| format!("Detached server recovery task failed: {error}"))?
 }
 
 /// One canonical preparation path for both Start and Restart.
