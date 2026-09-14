@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 /** Path-safe ZIP/.mcworld staging for World Manager imports. */
@@ -44,61 +45,70 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     public ImportInspection inspectArtifact(String artifactName) throws IOException {
         Path artifact = resolveArtifact(artifactName);
         List<String> entryNames = new ArrayList<>();
-        byte[] levelDat = null;
+        ZipEntry selectedLevelDat = null;
         String levelPath = null;
         long entries = 0;
-        byte[] buffer = new byte[IO_BUFFER_BYTES];
 
-        try (InputStream fileIn = Files.newInputStream(artifact);
-             BufferedInputStream bufferedIn = new BufferedInputStream(fileIn, IO_BUFFER_BYTES);
-             ZipInputStream zip = new ZipInputStream(bufferedIn)) {
-            for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
+        // Inspection must stay cheap even for very large worlds. Read the ZIP central
+        // directory for names and inflate only the selected level.dat. The final import
+        // still performs full bounded extraction and therefore remains the trust gate.
+        try (ZipFile zip = new ZipFile(artifact.toFile())) {
+            var enumeration = zip.entries();
+            while (enumeration.hasMoreElements()) {
+                ZipEntry entry = enumeration.nextElement();
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
                 String name = normalizeEntryName(entry.getName());
                 if (name.isBlank()) continue;
                 entryNames.add(name);
                 if (entry.isDirectory() || !isLevelDat(name)) continue;
-
-                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-                int total = 0;
-                for (int read; (read = zip.read(buffer)) >= 0;) {
-                    if (read == 0) continue;
-                    total += read;
-                    if (total > MAX_INSPECT_LEVEL_DAT_BYTES) {
-                        throw new IOException("Import level.dat exceeds inspection limit");
-                    }
-                    bytes.write(buffer, 0, read);
-                }
                 if (levelPath == null || pathDepth(name) < pathDepth(levelPath)) {
                     levelPath = name;
-                    levelDat = bytes.toByteArray();
+                    selectedLevelDat = entry;
                 }
             }
-        }
 
-        if (levelPath == null || levelDat == null) {
-            throw new IOException("Import archive does not contain a Minecraft level.dat");
-        }
+            if (levelPath == null || selectedLevelDat == null) {
+                throw new IOException("Import archive does not contain a Minecraft level.dat");
+            }
 
-        String rootPrefix = levelPath.substring(0, levelPath.length() - "level.dat".length());
-        boolean bedrock = entryNames.stream().anyMatch(name -> name.startsWith(rootPrefix + "db/"));
-        DetectedEdition edition = bedrock ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
-        String version = "Unknown";
-        if (edition == DetectedEdition.JAVA) {
-            OptionalInt dataVersion = JavaLevelDataVersion.read(new ByteArrayInputStream(levelDat));
-            if (dataVersion.isPresent()) {
-                version = dataVersion.getAsInt() == JavaLevelDataVersion.JAVA_1_21_4
-                        ? "1.21.4"
-                        : "DataVersion " + dataVersion.getAsInt();
+            byte[] levelDat = readInspectionEntry(zip, selectedLevelDat);
+            String rootPrefix = levelPath.substring(0, levelPath.length() - "level.dat".length());
+            boolean bedrock = entryNames.stream().anyMatch(name -> name.startsWith(rootPrefix + "db/"));
+            DetectedEdition edition = bedrock ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
+            String version = "Unknown";
+            if (edition == DetectedEdition.JAVA) {
+                OptionalInt dataVersion = JavaLevelDataVersion.read(new ByteArrayInputStream(levelDat));
+                if (dataVersion.isPresent()) {
+                    version = dataVersion.getAsInt() == JavaLevelDataVersion.JAVA_1_21_4
+                            ? "1.21.4"
+                            : "DataVersion " + dataVersion.getAsInt();
+                }
+            }
+
+            return new ImportInspection(
+                    artifact.getFileName().toString(),
+                    edition,
+                    version,
+                    suggestedName(artifact.getFileName().toString())
+            );
+        }
+    }
+
+    private static byte[] readInspectionEntry(ZipFile zip, ZipEntry entry) throws IOException {
+        byte[] buffer = new byte[IO_BUFFER_BYTES];
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int total = 0;
+        try (InputStream in = zip.getInputStream(entry)) {
+            for (int read; (read = in.read(buffer)) >= 0;) {
+                if (read == 0) continue;
+                total += read;
+                if (total > MAX_INSPECT_LEVEL_DAT_BYTES) {
+                    throw new IOException("Import level.dat exceeds inspection limit");
+                }
+                bytes.write(buffer, 0, read);
             }
         }
-
-        return new ImportInspection(
-                artifact.getFileName().toString(),
-                edition,
-                version,
-                suggestedName(artifact.getFileName().toString())
-        );
+        return bytes.toByteArray();
     }
 
     @Override
