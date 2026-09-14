@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /** Canonical Archive / Restore lifecycle use cases. */
 public final class WorldLifecycleService {
@@ -15,6 +16,7 @@ public final class WorldLifecycleService {
     private final WorldRegistryPersistence persistence;
     private final WorldRuntimeService runtimeService;
     private final WorldOperationCoordinator operations;
+    private final Predicate<WorldRecord> protectedWorld;
 
     public WorldLifecycleService(
             WorldRegistry registry,
@@ -22,16 +24,31 @@ public final class WorldLifecycleService {
             WorldRuntimeService runtimeService,
             WorldOperationCoordinator operations
     ) {
+        this(registry, persistence, runtimeService, operations, ignored -> false);
+    }
+
+    public WorldLifecycleService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldRuntimeService runtimeService,
+            WorldOperationCoordinator operations,
+            Predicate<WorldRecord> protectedWorld
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.runtimeService = Objects.requireNonNull(runtimeService, "runtimeService");
         this.operations = Objects.requireNonNull(operations, "operations");
+        this.protectedWorld = Objects.requireNonNull(protectedWorld, "protectedWorld");
         this.runtimeService.attachOperations(this.operations);
     }
 
     public synchronized WorldRecord archive(WorldId worldId) {
         WorldRecord current = requireWorld(worldId);
         if (current.lifecycle() == WorldLifecycle.ARCHIVED) return current;
+        if (protectedWorld.test(current)) {
+            throw new IllegalStateException("The active fallback/default world cannot be archived: "
+                    + current.displayName());
+        }
         if (runtimeService.hasPlayers(worldId)) {
             throw new IllegalStateException("Cannot archive " + current.displayName()
                     + " while builders are inside the world");
