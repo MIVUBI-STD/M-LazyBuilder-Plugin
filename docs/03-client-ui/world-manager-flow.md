@@ -174,10 +174,25 @@ Detected edition/version
 World name
 Canonical server target
 [ Import World ]
+[ Choose Different File ]
 Advanced options ▾
 ```
 
 Source edition/version is detected automatically. The server remains authoritative for validation. Import always creates a new managed world and never silently overwrites an existing one. Naming collisions are resolved before heavy processing, with an editable safe suggestion.
+
+The uploaded file belongs to the temporary Import review until the builder explicitly commits it. Review lifecycle is:
+
+```text
+upload
+→ bounded server inspection
+→ review
+   ├── Import World          → final validation/publish consumes the artifact
+   ├── Choose Different File → discard old reviewed artifact, then choose/upload again
+   ├── switch away           → discard reviewed artifact
+   └── close                 → discard reviewed artifact
+```
+
+A failed inspection deletes the unusable uploaded artifact immediately. A final Import failure intentionally keeps a valid artifact available for retry when the backend has not committed the world. Cleanup is request/event-driven; do not add an inbox polling daemon or a second transfer implementation. Changing source file also clears the prior auto-suggested name so metadata from one source cannot leak into the next review.
 
 ### Conversion presentation
 
@@ -436,4 +451,4 @@ The protocol should model product concepts, not leak stale runtime-state machine
 
 ## Proof boundary
 
-Source review can prove ownership, terminology, navigation, chunk-aligned selection math, and contracts. Final proof still requires local Fabric compilation and live Java 1.21.4 client/server validation across GUI scales, real map dragging/resizing at multiple zoom levels, negative coordinates, world changes while editing, real native dialogs, large transfers, reconnects, conversion paths, permissions, archive/delete safeguards, automatic idle unloading, and builder usability.
+Source review can prove ownership, terminology, navigation, chunk-aligned selection math, and contracts. Final proof still requires local Fabric compilation and live Java 1.21.4 client/server validation across GUI scales, real map dragging/resizing at multiple zoom levels, negative coordinates, world changes while editing, real native dialogs, large transfers, reconnects, conversion paths, permissions, archive/delete safeguards, automatic idle unloading, import review cleanup, and builder usability.
