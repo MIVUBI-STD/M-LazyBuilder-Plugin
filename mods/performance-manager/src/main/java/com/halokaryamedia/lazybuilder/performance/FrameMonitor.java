@@ -35,6 +35,14 @@ public final class FrameMonitor {
         recordFrameTimeMs(deltaNanos / 1_000_000.0D);
     }
 
+    /**
+     * Stops wall-clock gaps from background/minimized rendering being interpreted as lag.
+     * The next focused frame becomes a fresh timing baseline.
+     */
+    public void pauseFrameClock() {
+        previousFrameNanos = Long.MIN_VALUE;
+    }
+
     void recordFrameTimeMs(double frameTimeMs) {
         if (!Double.isFinite(frameTimeMs) || frameTimeMs <= 0.0D) return;
 
