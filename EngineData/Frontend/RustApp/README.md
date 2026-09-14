@@ -33,23 +33,61 @@ Minecraft world authority stays inside `modules/world-manager`. The Rust desktop
 
 ## Local Windows Build
 
-The repository includes a Launcher-only developer build entrypoint at the repository root:
+The repository includes two Launcher-only Windows entrypoints at the repository root:
 
 ```text
 BUILD-LAUNCHER.cmd
+UPDATE-LAUNCHER.cmd
 ```
 
-`BUILD-LAUNCHER.cmd` is only the build helper. The actual LazyBuilder application delivered to the user is an `.exe`, matching the familiar Windows launcher model used by apps such as Modrinth.
+### First install / package handoff
 
-Double-click the helper on Windows, or run:
+Use:
 
 ```powershell
 .\BUILD-LAUNCHER.cmd
 ```
 
-It intentionally verifies and builds only the Desktop Launcher. It does not compile Fabric or Paper modules.
+`BUILD-LAUNCHER.cmd` is only the build helper. The actual LazyBuilder application delivered to the user is an `.exe`, matching the familiar Windows launcher model used by apps such as Modrinth.
 
-The build performs:
+A successful normal build publishes exactly one clean handoff folder:
+
+```text
+dist/
+└── LazyBuilder/
+    ├── LazyBuilder-Setup.exe   ← recommended installer/update package
+    ├── LazyBuilder.exe         ← raw developer diagnostic binary
+    └── README.txt
+```
+
+Before every build, the previous `dist/LazyBuilder` handoff and old generated NSIS installer EXEs are removed. Old local installer files therefore do not accumulate between tests.
+
+### Updating an already installed local Launcher
+
+For repeated Local-PC testing after LazyBuilder is already installed, close the Launcher and run:
+
+```powershell
+.\UPDATE-LAUNCHER.cmd
+```
+
+This is the preferred local iteration flow. It:
+
+```text
+cleans old local installer handoff files
+→ verifies/typechecks/tests Launcher
+→ builds the current Tauri package
+→ uses that package as a temporary in-place update transaction
+→ updates the installed LazyBuilder
+→ deletes the temporary installer package
+```
+
+After success there is no new user-facing installer left behind. Open LazyBuilder normally from its existing Start Menu/desktop shortcut. Server workspaces and normal LazyBuilder user data are preserved; only the installed application files/resources are refreshed by the installer owner.
+
+The update flow intentionally refuses to run while `lazybuilder.exe` is open and refuses compile-only builds with missing core JARs. This avoids partial application replacement.
+
+The build/update scripts intentionally operate only on the Desktop Launcher. They do not compile Fabric or Paper modules.
+
+The verification/build performs:
 
 ```text
 npm ci
@@ -58,7 +96,7 @@ npm ci
 → Tauri icon generation
 → cargo check --locked
 → cargo test --locked
-→ Windows Tauri + NSIS build
+→ Windows Tauri + NSIS package
 ```
 
 Required local tools:
@@ -71,29 +109,9 @@ Microsoft C++ Build Tools required by Tauri
 WebView2 runtime
 ```
 
-## Final Windows output
-
-After a successful build, use the stable output folder at the repository root:
-
-```text
-dist/
-└── LazyBuilder/
-    ├── LazyBuilder-Setup.exe   ← recommended, install this like Modrinth
-    ├── LazyBuilder.exe         ← raw developer diagnostic binary
-    └── README.txt
-```
-
-For normal local testing or distribution, use:
-
-```text
-LazyBuilder-Setup.exe
-```
-
-The internal Tauri build locations still exist under `src-tauri/target/release`, but builders should not need to browse those directories.
-
 ### Core JAR requirement
 
-A Launcher build does not compile Paper modules. The normal `BUILD-LAUNCHER.cmd` path is intended to produce a runtime-ready package, so matching core JARs must already exist in:
+A Launcher build does not compile Paper modules. Runtime-ready build/update requires matching core JARs already present in:
 
 ```text
 src-tauri/resources/core/
@@ -101,9 +119,9 @@ src-tauri/resources/core/
 └── Utilities-Manager-0.1.0-SNAPSHOT.jar
 ```
 
-If either JAR is missing, the normal build stops before producing a runtime-ready installer. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
+If either JAR is missing, normal packaging and installed-app update stop before replacing the app. This prevents an apparently successful package that cannot complete `Prepare server` on a fresh workspace.
 
-For an explicit Launcher compile/typecheck check only, either run:
+For an explicit Launcher compile/typecheck check only, run:
 
 ```powershell
 .\BUILD-LAUNCHER.cmd -AllowMissingCore
@@ -116,7 +134,7 @@ cd EngineData\Frontend\RustApp
 .\build-local.ps1 -AllowMissingCore
 ```
 
-That mode is not suitable for validating fresh-server provisioning.
+Compile-only mode is not suitable for updating the installed Launcher or validating fresh-server provisioning.
 
 ### World Manager compatibility
 
