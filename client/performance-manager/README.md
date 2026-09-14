@@ -4,7 +4,7 @@ LazyBuilder Performance Manager is the Fabric client performance coordination la
 
 ## Boundary
 
-Performance Manager owns performance status, resource policy, and awareness of optional optimizer capabilities. It does not replace renderer, shader, culling, memory, or immediate-render optimization engines.
+Performance Manager owns performance status, lightweight resource policy, and awareness of optional optimizer capabilities. It does not replace renderer, shader, culling, memory, or immediate-render optimization engines.
 
 External specialist foundations remain external, including Sodium, Iris, ImmediatelyFast, FerriteCore, EntityCulling, and MoreCulling.
 
@@ -13,17 +13,19 @@ External specialist foundations remain external, including Sodium, Iris, Immedia
 - one Manager = one Fabric mod = one output JAR;
 - no dependency on Map Manager or Utility Manager implementation packages;
 - no renderer/shader/culling algorithm is copied into LazyBuilder;
-- no graphics setting is silently changed during detection or state capture;
+- no graphics-quality setting is silently changed;
 - no default keybind is required;
 - capability detection is passive;
-- performance state is captured on demand instead of through a permanent polling loop.
+- performance metrics are captured on demand and no history database is maintained;
+- native background FPS policy must automatically stand down when Dynamic FPS is installed.
 
-## C3 baseline
+## Implemented C3 layers
 
-The current implementation provides two passive layers:
+The current implementation provides three layers:
 
 1. `PerformanceManagerClient.capabilities()` — immutable optional-mod capability snapshot;
-2. `PerformanceManagerClient.currentState()` — lightweight on-demand client performance snapshot.
+2. `PerformanceManagerClient.currentState()` — lightweight on-demand performance snapshot;
+3. guarded native background FPS policy for clients without Dynamic FPS.
 
 Detected capabilities currently include:
 
@@ -54,21 +56,37 @@ Window minimized state
 Detected optimizer capabilities
 ```
 
-State capture is read-only and only runs when requested. No background sampler, tick hook, renderer hook, or permanent HUD is registered.
+State capture is read-only and only runs when requested. No performance-history sampler, renderer hook, or permanent HUD is registered.
 
-Exact Iris shader-active detection is intentionally not guessed through fragile reflection. Iris presence is exposed as a capability first; an active-shader integration may be added only if a stable public integration boundary is available.
+Exact Iris shader-active detection is intentionally not guessed through fragile reflection. Iris presence is exposed as a capability first; active-shader integration may be added only if a stable public boundary is available.
 
-## Deferred until after state-model review
+## Background FPS policy
 
-The following are intentionally not implemented yet:
+When `dynamic_fps` is installed, LazyBuilder does not apply its native background limiter.
 
-- background/unfocused/minimized FPS policy;
+When Dynamic FPS is absent, the default policy is:
+
+```properties
+background.enabled=true
+background.unfocused_fps=30
+background.minimized_fps=10
+```
+
+The policy changes only Minecraft's temporary window framerate limit. It does not rewrite the user's configured video-option FPS limit. When the window becomes focused again, the current user FPS limit becomes authoritative again.
+
+The controller uses one lightweight end-client-tick hook because focus/minimize state can change at runtime. It performs no sampling, persistence, renderer work, or external-mod calls on that tick.
+
+## Deferred
+
+The following remain out of the active product surface until independently justified:
+
 - performance HUD or permanent overlay;
 - performance profiles;
 - automatic graphics-quality changes;
 - Sodium/Iris settings cloning;
 - renderer hooks;
 - memory optimization;
-- chunk/render optimization engines.
+- chunk/render optimization engines;
+- replacement implementations for specialist optimization mods.
 
-The next architecture decision is whether native background FPS control adds enough value when Dynamic FPS is absent, while remaining completely disabled when an external background-FPS provider is present.
+The next review should decide whether any additional coordination is actually needed beyond capability awareness, state inspection, and guarded background resource policy before introducing profiles or settings surfaces.
