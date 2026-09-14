@@ -89,10 +89,10 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
 /// Validate the pieces that must already exist before start-time self-healing.
 /// Core modules are excluded here because they are owned by ensure_bundled_core().
 fn ensure_base_provisioned() -> Result<(), String> {
-    if !java_runtime::managed_java_path()?.is_file() {
+    let status = workspace_registry::provisioning_status()?;
+    if !status.java_ready || !java_runtime::managed_java_ready() {
         return Err("Managed Java 21 is not ready. Use Prepare Server first.".into());
     }
-    let status = workspace_registry::provisioning_status()?;
     if !status.workspace_created || !status.paper_ready || !status.config_ready {
         return Err(format!("Server provisioning is incomplete: {}. Use Prepare Server first.", status.next_step));
     }
@@ -103,10 +103,10 @@ fn ensure_base_provisioned() -> Result<(), String> {
 }
 
 fn ensure_provisioned() -> Result<(), String> {
-    if !java_runtime::managed_java_path()?.is_file() {
+    let status = workspace_registry::provisioning_status()?;
+    if !status.java_ready || !java_runtime::managed_java_ready() {
         return Err("Managed Java 21 is not ready. Use Prepare Server first.".into());
     }
-    let status = workspace_registry::provisioning_status()?;
     if !status.workspace_created || !status.paper_ready || !status.core_modules_ready || !status.config_ready {
         return Err(format!("Server provisioning is incomplete: {}. Use Prepare Server first.", status.next_step));
     }
