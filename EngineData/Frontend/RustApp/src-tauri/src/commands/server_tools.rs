@@ -18,8 +18,9 @@ pub struct ServerLogTail {
 #[tauri::command]
 pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
     let workspace = canonical_or_normalized(paths::workspace_root()?);
+    let log_root = canonical_or_normalized(workspace.join("server").join("logs"));
     let requested = if path.trim().is_empty() {
-        workspace.join("server").join("logs").join("latest.log")
+        log_root.join("latest.log")
     } else {
         PathBuf::from(path.trim())
     };
@@ -29,13 +30,8 @@ pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("log")) == Some(true);
-    let is_logs_child = requested
-        .parent()
-        .and_then(|parent| parent.file_name())
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case("logs")) == Some(true);
-    if !requested.starts_with(&workspace) || !is_log || !is_logs_child {
-        return Err("Refusing to read a log outside a LazyBuilder workspace server log directory.".into());
+    if !requested.starts_with(&log_root) || !is_log {
+        return Err("Refusing to read a log outside this server's log directory.".into());
     }
     if !requested.is_file() {
         return Ok(ServerLogTail {
