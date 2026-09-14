@@ -23,12 +23,15 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Extended Chat History: enabled by default and retains more vanilla chat lines/history without replacing the chat screen;
 - Keep Chat Draft: enabled by default and restores an unsent draft within the current Minecraft session;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
+- Copy Connection Details: adds one contextual disconnect-screen action that copies the remembered server address and disconnect reason through Minecraft's native clipboard path;
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone;
 - Shared Notifications: Utility features use Minecraft's native system-toast surface instead of creating separate HUD or popup systems;
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
 - Screenshot Naming: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots.
 
 Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
+
+Clipboard convenience is contextual only. Utility Manager does not keep clipboard history, register clipboard keybinds, or own block/structure/build clipboard data. Project/world copy actions should stay on the UI surface that owns that metadata rather than creating a dependency from Map Manager to Utility Manager.
 
 Borderless Window changes only window presentation. Focus-based FPS/resource throttling is explicitly owned by Performance Manager and must not be implemented here.
 
