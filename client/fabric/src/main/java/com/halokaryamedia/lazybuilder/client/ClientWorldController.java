@@ -18,6 +18,8 @@ public final class ClientWorldController {
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
+    private boolean canManage;
+    private boolean canTeleport;
     private String lastError;
     private String activityMessage;
     private long revision;
@@ -70,6 +72,8 @@ public final class ClientWorldController {
         switch (response) {
             case WorldControlWireProtocol.WorldList list -> {
                 worlds = list.worlds();
+                canManage = list.canManage();
+                canTeleport = list.canTeleport();
                 lastError = null;
                 revision++;
             }
@@ -120,6 +124,8 @@ public final class ClientWorldController {
         worlds = List.of();
         exportFormats = List.of(NATIVE_EXPORT_FORMAT);
         settings.clear();
+        canManage = false;
+        canTeleport = false;
         lastError = null;
         activityMessage = null;
         revision++;
@@ -127,6 +133,8 @@ public final class ClientWorldController {
 
     public List<WorldControlWireProtocol.WorldSummary> worlds() { return worlds; }
     public List<String> exportFormats() { return exportFormats; }
+    public boolean canManage() { return canManage; }
+    public boolean canTeleport() { return canTeleport; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public String lastError() { return lastError; }
     public String activityMessage() { return activityMessage; }
