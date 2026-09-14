@@ -32,6 +32,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     private final WorldExportService exportService;
     private final Set<UUID> exportInFlight = ConcurrentHashMap.newKeySet();
     private final Map<UUID, WorldExportService.ExportTask> activeExports = new ConcurrentHashMap<>();
+    private final Map<UUID, byte[]> pendingExportCompletion = new ConcurrentHashMap<>();
     private volatile boolean started;
     private volatile boolean stopping;
 
@@ -67,6 +68,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         activeExports.values().forEach(exportService::abandon);
         activeExports.clear();
         exportInFlight.clear();
+        pendingExportCompletion.clear();
     }
 
     @EventHandler
@@ -80,6 +82,10 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (!started || stopping || !CHANNEL.equals(channel)) return;
+
+        // Area export can finish while its owner is disconnected. The next map request
+        // after reconnect replays at most one bounded completion before the fresh response.
+        flushPendingCompletion(player);
 
         final MapActionWireProtocol.Request request;
         try {
@@ -223,22 +229,15 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 try {
                     exportService.finish(task);
-                    Player online = plugin.getServer().getPlayer(owner);
-                    if (online == null || !online.isOnline()) return;
-                    if (finalFailure != null) {
-                        send(online, MapActionWireProtocol.error(finalFailure.getMessage()));
-                    } else {
-                        send(online, MapActionWireProtocol.exportComplete(
-                                request.worldId(),
-                                finalResult.artifact().getFileName().toString(),
-                                finalResult.targetFormat()
-                        ));
-                    }
+                    byte[] completion = finalFailure != null
+                            ? MapActionWireProtocol.error(finalFailure.getMessage())
+                            : MapActionWireProtocol.exportComplete(
+                                    request.worldId(),
+                                    finalResult.artifact().getFileName().toString(),
+                                    finalResult.targetFormat());
+                    deliverOrRemember(owner, completion);
                 } catch (RuntimeException finishFailure) {
-                    Player online = plugin.getServer().getPlayer(owner);
-                    if (online != null && online.isOnline()) {
-                        send(online, MapActionWireProtocol.error(finishFailure.getMessage()));
-                    }
+                    deliverOrRemember(owner, MapActionWireProtocol.error(finishFailure.getMessage()));
                 } finally {
                     activeExports.remove(owner, task);
                     exportInFlight.remove(owner);
@@ -256,16 +255,28 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             activeExports.remove(owner, task);
             exportInFlight.remove(owner);
         }
-        Player online = plugin.getServer().getPlayer(owner);
-        if (online != null && online.isOnline()) {
-            send(online, MapActionWireProtocol.error(failure.getMessage()));
-        }
+        deliverOrRemember(owner, MapActionWireProtocol.error(failure.getMessage()));
     }
 
     private void completeAbandoned(UUID owner, WorldExportService.ExportTask task) {
         activeExports.remove(owner, task);
         exportInFlight.remove(owner);
         exportService.abandon(task);
+    }
+
+    private void deliverOrRemember(UUID owner, byte[] payload) {
+        if (stopping || !started) return;
+        Player online = plugin.getServer().getPlayer(owner);
+        if (online != null && online.isOnline()) {
+            send(online, payload);
+            return;
+        }
+        pendingExportCompletion.put(owner, payload);
+    }
+
+    private void flushPendingCompletion(Player player) {
+        byte[] payload = pendingExportCompletion.remove(player.getUniqueId());
+        if (payload != null) send(player, payload);
     }
 
     private void send(Player player, byte[] payload) {
