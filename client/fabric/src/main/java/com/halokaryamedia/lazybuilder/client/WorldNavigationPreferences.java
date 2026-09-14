@@ -47,6 +47,7 @@ public final class WorldNavigationPreferences {
     /** Recent means the player was authoritatively observed inside the managed world. */
     public synchronized void recordVisited(UUID worldId) {
         List<UUID> values = new ArrayList<>(recent());
+        if (!values.isEmpty() && values.get(0).equals(worldId)) return;
         values.remove(worldId);
         values.add(0, worldId);
         if (values.size() > MAX_RECENT) values = new ArrayList<>(values.subList(0, MAX_RECENT));
