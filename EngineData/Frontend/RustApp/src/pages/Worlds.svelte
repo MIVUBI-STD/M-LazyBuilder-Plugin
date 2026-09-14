@@ -434,29 +434,29 @@
 
 {#if createOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !busy && (createOpen = false)}>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-world-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-world-title">
       <div class="modal-head"><div><h2 id="create-world-title">Create world</h2><p>Start with a simple space made for building.</p></div><button class="icon-button" aria-label="Close" disabled={busy} onclick={() => (createOpen = false)}>×</button></div>
-      <label>World name<input bind:value={createName} placeholder="Build World" autofocus disabled={busy} /></label>
+      <label>World name<input bind:value={createName} placeholder="Build World" disabled={busy} /></label>
       <label>World type<select bind:value={createType} disabled={busy}><option value="FLAT">Flat — normal building surface</option><option value="VOID">Void — empty building space</option></select></label>
       <div class="modal-actions"><button class="secondary" disabled={busy} onclick={() => (createOpen = false)}>Cancel</button><button class="primary" disabled={busy || !createName.trim()} onclick={createWorld}>{busy ? 'Creating…' : 'Create world'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if importOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !importBusy && (importOpen = false)}>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
       <div class="modal-head"><div><h2 id="import-world-title">Import world</h2><p>Add an existing Java world to this server.</p></div><button class="icon-button" aria-label="Close" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={pickImport}>Choose file</button></div></label>
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
       <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? 'Importing…' : 'Import world'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if settings}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !settingsBusy && (settings = null)}>
-    <section class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="world-settings-title">
+    <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="world-settings-title">
       <div class="modal-head"><div><h2 id="world-settings-title">{settings.displayName}</h2><p>World settings</p></div><button class="icon-button" aria-label="Close" disabled={settingsBusy} onclick={() => (settings = null)}>×</button></div>
       <div class="settings-grid">
         <label>Game mode<select bind:value={settings.defaultGameMode} disabled={settingsBusy}><option value="CREATIVE">Creative</option><option value="SURVIVAL">Survival</option><option value="ADVENTURE">Adventure</option><option value="SPECTATOR">Spectator</option></select></label>
@@ -469,38 +469,38 @@
         <label><span><strong>Weather cycle</strong><small>Let weather change naturally.</small></span><input type="checkbox" bind:checked={settings.weatherCycle} disabled={settingsBusy} /></label>
       </div>
       <div class="modal-actions"><button class="secondary" disabled={settingsBusy} onclick={() => (settings = null)}>Cancel</button><button class="primary" disabled={settingsBusy} onclick={saveSettings}>{settingsBusy ? 'Saving…' : 'Save changes'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if duplicateSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="duplicate-world-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="duplicate-world-title">
       <div class="modal-head"><div><h2 id="duplicate-world-title">Duplicate world</h2><p>Create a separate copy of {duplicateSource.displayName}.</p></div><button class="icon-button" aria-label="Close" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <label>New world name<input bind:value={duplicateName} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="primary" disabled={operationBusyWorldId !== null || !duplicateName.trim()} onclick={runDuplicate}>{operationBusyWorldId ? 'Duplicating…' : 'Duplicate'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if exportSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="export-world-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="export-world-title">
       <div class="modal-head"><div><h2 id="export-world-title">Export world</h2><p>Save {exportSource.displayName} as a Java 1.21.4 ZIP.</p></div><button class="icon-button" aria-label="Close" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <label>Export name<input bind:value={exportName} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="primary" disabled={operationBusyWorldId !== null || !exportName.trim()} onclick={runExport}>{operationBusyWorldId ? 'Exporting…' : 'Export'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if deleteSource}
   <div class="modal-backdrop" role="presentation">
-    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-world-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-world-title">
       <div class="modal-head"><div><h2 id="delete-world-title">Delete {deleteSource.displayName}?</h2><p>This permanently removes the world from this server.</p></div><button class="icon-button" aria-label="Close" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <div class="danger-callout">This cannot be undone. Type <strong>{deleteSource.displayName}</strong> to confirm.</div>
       <label>World name<input bind:value={deleteConfirmation} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="danger-button" disabled={operationBusyWorldId !== null || deleteConfirmation.trim() !== deleteSource.displayName} onclick={runDelete}>{operationBusyWorldId ? 'Deleting…' : 'Delete permanently'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
