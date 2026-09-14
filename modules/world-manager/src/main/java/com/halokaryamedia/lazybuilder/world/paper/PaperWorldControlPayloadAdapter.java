@@ -48,6 +48,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
     /** At most one heavy result can be pending per player because heavyInFlight is single-flight. */
     private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
+    /** One inspected upload is owned by each player until import succeeds or the review is discarded. */
+    private final Map<UUID, String> reviewedImportArtifacts = new ConcurrentHashMap<>();
     /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
     private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
@@ -94,6 +96,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         started = false;
         heavyInFlight.clear();
         pendingHeavyCompletion.clear();
+        reviewedImportArtifacts.clear();
         formatWaiters.clear();
         formatRefreshInFlight.set(false);
     }
@@ -117,6 +120,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
         if (request instanceof WorldControlWireProtocol.InspectImport inspect) {
             handleInspectImport(player, inspect);
+            return;
+        }
+        if (request instanceof WorldControlWireProtocol.DiscardImport discard) {
+            handleDiscardImport(player, discard);
             return;
         }
         if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) {
@@ -162,6 +169,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                     throw new IllegalStateException("Export formats must use async capability path");
             case WorldControlWireProtocol.InspectImport ignored ->
                     throw new IllegalStateException("Import inspection must use async path");
+            case WorldControlWireProtocol.DiscardImport ignored ->
+                    throw new IllegalStateException("Import discard must use review-cleanup path");
             case WorldControlWireProtocol.CreateWorld create -> {
                 requireManage(player);
                 WorldRecord world = creation.create(create.folderName(), create.displayName(),
@@ -280,12 +289,43 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void handleInspectImport(Player player, WorldControlWireProtocol.InspectImport request) {
         if (!beginHeavy(player)) return;
+        UUID owner = player.getUniqueId();
+        String previous = reviewedImportArtifacts.get(owner);
+        if (previous != null && !previous.equals(request.artifactName())) {
+            discardReviewedArtifact(owner, previous);
+        }
         scheduleHeavy(
                 player,
                 () -> importService.inspect(request.artifactName()),
-                result -> encode(new WorldControlWireProtocol.ImportInspection(
-                        result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName()))
+                result -> {
+                    reviewedImportArtifacts.put(owner, result.artifactName());
+                    return encode(new WorldControlWireProtocol.ImportInspection(
+                            result.artifactName(), result.edition().name(), result.sourceVersion(), result.suggestedName()));
+                }
         );
+    }
+
+    private void handleDiscardImport(Player player, WorldControlWireProtocol.DiscardImport request) {
+        UUID owner = player.getUniqueId();
+        if (heavyInFlight.contains(owner)) return;
+        try {
+            requireManage(player);
+        } catch (RuntimeException ignored) {
+            return;
+        }
+        String reviewed = reviewedImportArtifacts.get(owner);
+        if (!request.artifactName().equals(reviewed)) return;
+        discardReviewedArtifact(owner, reviewed);
+    }
+
+    private void discardReviewedArtifact(UUID owner, String artifactName) {
+        if (!reviewedImportArtifacts.remove(owner, artifactName)) return;
+        try {
+            importService.discard(artifactName);
+        } catch (RuntimeException exception) {
+            plugin.getLogger().warning("Could not discard abandoned import artifact for " + owner + ": "
+                    + exception.getMessage());
+        }
     }
 
     private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
@@ -317,6 +357,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void handleImport(Player player, WorldControlWireProtocol.ImportWorld request) {
         if (!beginHeavy(player)) return;
+        UUID owner = player.getUniqueId();
         scheduleHeavy(
                 player,
                 () -> heavyOperations.importWorld(
@@ -325,7 +366,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         request.displayName(),
                         WorldHeavyOperationOrchestrator.Progress.NONE
                 ),
-                result -> encode(new WorldControlWireProtocol.WorldChanged("IMPORT", summary(result)))
+                result -> {
+                    reviewedImportArtifacts.remove(owner, request.artifactName());
+                    return encode(new WorldControlWireProtocol.WorldChanged("IMPORT", summary(result)));
+                }
         );
     }
 
