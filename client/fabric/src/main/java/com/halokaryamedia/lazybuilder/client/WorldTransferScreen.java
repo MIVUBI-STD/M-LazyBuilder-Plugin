@@ -107,19 +107,19 @@ public final class WorldTransferScreen extends Screen {
         }
         reconcileSelectedFormat();
 
-        int panelWidth = Math.max(320, Math.min(580, width - 40));
+        int panelWidth = Math.max(320, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
-        int contentLeft = left + 28;
-        int contentWidth = panelWidth - 56;
+        int contentLeft = left + 30;
+        int contentWidth = panelWidth - 60;
 
         int tabWidth = (contentWidth - 8) / 2;
-        LbButtonWidget exportTab = LbUi.button(contentLeft, 70, tabWidth, 24,
+        LbButtonWidget exportTab = LbUi.button(contentLeft, 72, tabWidth, 24,
                 "Export", tab == Tab.EXPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
                 () -> switchTab(Tab.EXPORT));
         exportTab.active = world != null && !busy();
         addDrawableChild(exportTab);
 
-        LbButtonWidget importTab = LbUi.button(contentLeft + tabWidth + 8, 70, tabWidth, 24,
+        LbButtonWidget importTab = LbUi.button(contentLeft + tabWidth + 8, 72, tabWidth, 24,
                 "Import", tab == Tab.IMPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
                 () -> switchTab(Tab.IMPORT));
         importTab.active = area == null && !busy();
@@ -132,8 +132,12 @@ public final class WorldTransferScreen extends Screen {
                 busy() ? "Continue in Background" : "Close", LbButtonWidget.Style.GHOST, this::close));
     }
 
+    private int exportPrimaryY() {
+        return area == null ? 174 : 190;
+    }
+
     private void initExport(int contentLeft, int contentWidth) {
-        int y = 158;
+        int y = exportPrimaryY();
         LbButtonWidget export = LbUi.button(contentLeft, y, contentWidth, 30,
                 exporting ? "Exporting…" : area == null ? "Export World" : "Export Area",
                 LbButtonWidget.Style.PRIMARY, this::submitExport);
@@ -151,14 +155,14 @@ public final class WorldTransferScreen extends Screen {
                 }));
 
         if (!advanced) return;
-        y += 36;
-        LbButtonWidget format = LbUi.button(contentLeft, y, contentWidth, 26,
-                "Export as   " + friendlyFormat(selectedExportFormat),
+        y += 38;
+        LbButtonWidget format = LbUi.button(contentLeft, y, contentWidth, 28,
+                "Target   " + friendlyFormat(selectedExportFormat),
                 LbButtonWidget.Style.SECONDARY, this::cycleExportFormat);
         format.active = !busy() && availableFormats().size() > 1;
         addDrawableChild(format);
 
-        y += 46;
+        y += 48;
         fileName = new TextFieldWidget(textRenderer, contentLeft, y + 18, contentWidth, 24, Text.literal("File Name"));
         fileName.setText(exportFileName == null ? "" : exportFileName);
         fileName.setMaxLength(96);
@@ -170,7 +174,7 @@ public final class WorldTransferScreen extends Screen {
 
         y += 58;
         LbButtonWidget saveDefault = LbUi.button(contentLeft, y, contentWidth, 22,
-                isCurrentDefault() ? "Default Export Settings" : "Use These as Default",
+                isCurrentDefault() ? "This is your default" : "Use These as Default",
                 isCurrentDefault() ? LbButtonWidget.Style.GHOST : LbButtonWidget.Style.SECONDARY,
                 this::saveCurrentAsDefault);
         saveDefault.active = !busy() && !isCurrentDefault();
@@ -178,9 +182,9 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private void initImport(int contentLeft, int contentWidth) {
-        int y = advanced ? 178 : 156;
+        int y = advanced ? 192 : 174;
         if (advanced) {
-            importName = new TextFieldWidget(textRenderer, contentLeft, 140, contentWidth, 24, Text.literal("World Name"));
+            importName = new TextFieldWidget(textRenderer, contentLeft, 150, contentWidth, 24, Text.literal("World Name"));
             importName.setText(importDisplayName);
             importName.setPlaceholder(Text.literal("Optional — uses detected file name"));
             importName.setMaxLength(96);
@@ -231,6 +235,7 @@ public final class WorldTransferScreen extends Screen {
         if (busy()) return;
         reconcileSelectedFormat();
         PREFERENCES.setExportFormat(selectedExportFormat);
+        validation = null;
         clearAndInit();
     }
 
@@ -239,7 +244,7 @@ public final class WorldTransferScreen extends Screen {
         rememberFields();
         String artifact = exportFileName == null ? "" : exportFileName.strip();
         if (artifact.isEmpty()) {
-            validation = "File name is required.";
+            validation = "Enter a file name before exporting.";
             advanced = true;
             clearAndInit();
             return;
@@ -259,7 +264,7 @@ public final class WorldTransferScreen extends Screen {
             clearAndInit();
         } catch (RuntimeException exception) {
             exporting = false;
-            validation = exception.getMessage();
+            validation = friendlyFailure(exception.getMessage());
             clearAndInit();
         }
     }
@@ -288,7 +293,7 @@ public final class WorldTransferScreen extends Screen {
             });
         } catch (RuntimeException exception) {
             choosing = false;
-            validation = exception.getMessage();
+            validation = friendlyFailure(exception.getMessage());
             clearAndInit();
         }
     }
@@ -340,7 +345,7 @@ public final class WorldTransferScreen extends Screen {
         observedWorldRevision = worlds.revision();
         if (worlds.lastError() != null) {
             processingImport = false;
-            validation = worlds.lastError();
+            validation = friendlyFailure(worlds.lastError());
             clearAndInit();
         } else if (worlds.activityMessage() == null) {
             processingImport = false;
@@ -351,65 +356,76 @@ public final class WorldTransferScreen extends Screen {
     private void failExport(String message) {
         exporting = false;
         exportTransferStarted = false;
-        validation = message;
+        validation = friendlyFailure(message);
         clearAndInit();
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         LbUi.background(context, width, height);
-        int panelWidth = Math.max(320, Math.min(580, width - 40));
+        int panelWidth = Math.max(320, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
-        int panelHeight = Math.min(height - 70, advanced ? 370 : 260);
+        int panelHeight = Math.min(height - 70, advanced ? 430 : area == null ? 292 : 310);
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
         context.drawTextWithShadow(textRenderer, Text.literal("IMPORT / EXPORT"), left + 24, 40, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world == null ? "Import World" : world.displayName()),
                 left + 24, 56, LbUi.TEXT_PRIMARY);
 
-        if (tab == Tab.EXPORT && world != null) renderExport(context, left);
-        else renderImport(context, left);
+        if (tab == Tab.EXPORT && world != null) renderExport(context, left, panelWidth);
+        else renderImport(context, left, panelWidth);
         renderStatus(context, left, panelWidth, panelHeight);
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderExport(DrawContext context, int left) {
-        context.drawTextWithShadow(textRenderer, Text.literal("DEFAULT EXPORT SETTINGS"), left + 28, 108, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(defaultFormat())), left + 28, 124, LbUi.TEXT_PRIMARY);
+    private void renderExport(DrawContext context, int left, int panelWidth) {
+        int cardX = left + 22;
+        int cardY = 106;
+        int cardWidth = panelWidth - 44;
+        int cardHeight = area == null ? 52 : 68;
+        LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
+        context.drawTextWithShadow(textRenderer, Text.literal("USING DEFAULT SETTINGS"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(defaultFormat())), cardX + 12, cardY + 26, LbUi.TEXT_PRIMARY);
         if (area == null) {
-            context.drawTextWithShadow(textRenderer, Text.literal("Entire world"), left + 28, 140, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("Entire world"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
         } else {
-            context.drawTextWithShadow(textRenderer, Text.literal("Selected map area"), left + 28, 140, LbUi.TEXT_SECONDARY);
+            context.drawTextWithShadow(textRenderer, Text.literal("Selected map area"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
             context.drawTextWithShadow(textRenderer,
                     Text.literal("X " + area.minX() + " → " + area.maxX() + "    Z " + area.minZ() + " → " + area.maxZ()),
-                    left + 28, 152, LbUi.TEXT_MUTED);
+                    cardX + 12, cardY + 53, LbUi.TEXT_MUTED);
         }
 
         if (advanced) {
-            context.drawTextWithShadow(textRenderer, Text.literal("Target edition / version"), left + 28, 222, LbUi.TEXT_MUTED);
-            context.drawTextWithShadow(textRenderer, Text.literal("File name"), left + 28, 268, LbUi.TEXT_MUTED);
+            int advancedY = exportPrimaryY() + 82;
+            context.drawTextWithShadow(textRenderer, Text.literal("TARGET EDITION / VERSION"),
+                    left + 30, advancedY - 16, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal("FILE NAME"), left + 30, advancedY + 32, LbUi.TEXT_MUTED);
             if (fileName != null) LbUi.field(context, fileName, validation != null);
             String capability = availableFormats().size() > 1
-                    ? "Only verified server-supported targets are listed."
-                    : "Only native Java Edition 1.21.4 is currently verified.";
-            context.drawTextWithShadow(textRenderer, Text.literal(capability), left + 28, 312, LbUi.TEXT_MUTED);
+                    ? "Only verified server-supported targets are available."
+                    : "This server currently verifies Java Edition 1.21.4 only.";
+            context.drawTextWithShadow(textRenderer, Text.literal(capability), left + 30, advancedY + 79, LbUi.TEXT_MUTED);
         }
     }
 
-    private void renderImport(DrawContext context, int left) {
-        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT WORLD"), left + 28, 108, LbUi.TEXT_MUTED);
+    private void renderImport(DrawContext context, int left, int panelWidth) {
+        int cardX = left + 22;
+        int cardY = 106;
+        int cardWidth = panelWidth - 44;
+        LbUi.panel(context, cardX, cardY, cardWidth, advanced ? 76 : 54);
+        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT WORLD"), cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
         if (advanced) {
-            context.drawTextWithShadow(textRenderer, Text.literal("World name"), left + 28, 128, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal("World name"), cardX + 12, cardY + 28, LbUi.TEXT_SECONDARY);
             if (importName != null) LbUi.field(context, importName, validation != null);
             context.drawTextWithShadow(textRenderer, Text.literal("Source edition and version are detected automatically."),
-                    left + 28, 170, LbUi.TEXT_MUTED);
+                    cardX + 12, cardY + 61, LbUi.TEXT_MUTED);
         } else {
             context.drawTextWithShadow(textRenderer,
-                    Text.literal("Choose a .zip or .mcworld. LazyBuilder handles detection automatically."),
-                    left + 28, 126, LbUi.TEXT_SECONDARY);
+                    Text.literal("Choose a .zip or .mcworld. Detection is automatic."),
+                    cardX + 12, cardY + 28, LbUi.TEXT_SECONDARY);
         }
-        context.drawTextWithShadow(textRenderer, Text.literal("Managed target  •  Java Edition 1.21.4"),
-                left + 28, advanced ? 186 : 144, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("Managed target  ·  Java Edition 1.21.4"),
+                left + 30, advanced ? 242 : 222, LbUi.TEXT_PRIMARY);
     }
 
     private void renderStatus(DrawContext context, int left, int panelWidth, int panelHeight) {
@@ -425,15 +441,14 @@ public final class WorldTransferScreen extends Screen {
             if (area != null && maps.exportBusy()) status = "Preparing selected area…";
             else if (worlds.activityMessage() != null) status = worlds.activityMessage();
         }
+
         if (status != null) {
-            int y = 24 + panelHeight - 34;
+            int y = 24 + panelHeight - 32;
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, y, LbUi.TEXT_SECONDARY);
             if (percent >= 0) LbUi.progress(context, left + 44, y + 13, panelWidth - 88, percent);
-            if (busy()) {
-                context.drawCenteredTextWithShadow(textRenderer,
-                        Text.literal("You can leave this screen. The operation will continue."),
-                        width / 2, y - 14, LbUi.TEXT_MUTED);
-            }
+            context.drawCenteredTextWithShadow(textRenderer,
+                    Text.literal("You can leave this screen; the operation will continue."),
+                    width / 2, y - 15, LbUi.TEXT_MUTED);
         } else if (validation != null) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
                     width / 2, 24 + panelHeight - 24, LbUi.DANGER_BRIGHT);
@@ -493,12 +508,26 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private static String friendlyFormat(String format) {
-        if (format == null) return "Java Edition • 1.21.4";
+        if (format == null) return "Java Edition · 1.21.4";
         String value = format.toUpperCase(Locale.ROOT);
-        if (value.equals("JAVA_1_21_4")) return "Java Edition • 1.21.4";
-        if (value.startsWith("JAVA_")) return "Java Edition • " + value.substring(5).replace('_', '.');
-        if (value.startsWith("BEDROCK_")) return "Bedrock Edition • " + value.substring(8).replace('_', '.');
+        if (value.equals("JAVA_1_21_4")) return "Java Edition · 1.21.4";
+        if (value.startsWith("JAVA_")) return "Java Edition · " + value.substring(5).replace('_', '.');
+        if (value.startsWith("BEDROCK_")) return "Bedrock Edition · " + value.substring(8).replace('_', '.');
         return value.replace('_', ' ');
+    }
+
+    private static String friendlyFailure(String message) {
+        if (message == null || message.isBlank()) return "The operation could not be completed.";
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("builders are inside")) return "Move builders out of this world, then try again.";
+        if (lower.contains("disk space") || lower.contains("save location") || lower.contains("storage")) {
+            return "There is not enough storage for this operation.";
+        }
+        if (lower.contains("permission")) return "Your server role does not allow this operation.";
+        if (lower.contains("conversion runtime") || lower.contains("converter")) {
+            return "The requested edition or version is not available right now.";
+        }
+        return message;
     }
 
     private static String fileStem(String displayName) {
