@@ -42,6 +42,7 @@ public final class WorldTransferScreen extends Screen {
     private boolean choosing;
     private boolean inspectingImport;
     private boolean processingImport;
+    private boolean abandonImportReview;
     private boolean exporting;
     private boolean exportTransferStarted;
     private long observedWorldRevision;
@@ -157,7 +158,7 @@ public final class WorldTransferScreen extends Screen {
             addDrawableChild(edit);
             addDrawableChild(LbUi.button(contentLeft + half + 8, y, half, 22,
                     advanced ? "Advanced  ▾" : "Advanced  ▸",
-                    LbButtonWidget.Style.GHOST, () -> toggleAdvanced()));
+                    LbButtonWidget.Style.GHOST, this::toggleAdvanced));
         } else {
             addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
                     advanced ? "Advanced options  ▾" : "Advanced options  ▸",
@@ -258,6 +259,7 @@ public final class WorldTransferScreen extends Screen {
         if (busy() || next == tab || (area != null && next == Tab.IMPORT)) return;
         if (next == Tab.EXPORT && world == null) return;
         rememberFields();
+        if (tab == Tab.IMPORT && next != Tab.IMPORT) discardPendingImportReview();
         tab = next;
         advanced = false;
         validation = null;
@@ -314,6 +316,7 @@ public final class WorldTransferScreen extends Screen {
     private void chooseImport() {
         if (busy()) return;
         rememberFields();
+        abandonImportReview = false;
         validation = null;
         importInspection = null;
         importArtifactName = null;
@@ -326,6 +329,7 @@ public final class WorldTransferScreen extends Screen {
                 importArtifactName = artifactName;
                 inspectingImport = true;
                 worlds.inspectImport(artifactName);
+                if (abandonImportReview) worlds.discardImport(artifactName);
                 observedWorldRevision = worlds.revision();
                 if (client != null && client.currentScreen == this) clearAndInit();
             }, () -> {
@@ -341,11 +345,19 @@ public final class WorldTransferScreen extends Screen {
 
     private void chooseDifferentImport() {
         if (busy()) return;
-        importInspection = null;
-        importArtifactName = null;
+        discardPendingImportReview();
         importDisplayName = "";
         validation = null;
         chooseImport();
+    }
+
+    private void discardPendingImportReview() {
+        if (processingImport) return;
+        String artifact = importInspection != null ? importInspection.artifactName() : importArtifactName;
+        if (artifact != null && !artifact.isBlank()) worlds.discardImport(artifact);
+        importInspection = null;
+        importArtifactName = null;
+        inspectingImport = false;
     }
 
     private void submitImport() {
@@ -355,6 +367,7 @@ public final class WorldTransferScreen extends Screen {
         if (display.isBlank()) display = importInspection.suggestedName();
         String folder = availableFolderName(display);
         validation = null;
+        abandonImportReview = false;
         processingImport = true;
         try {
             worlds.importWorld(importInspection.artifactName(), folder, display);
@@ -381,6 +394,12 @@ public final class WorldTransferScreen extends Screen {
             if (inspected != null && importArtifactName != null
                     && inspected.artifactName().equals(importArtifactName)) {
                 inspectingImport = false;
+                if (abandonImportReview) {
+                    worlds.discardImport(inspected.artifactName());
+                    importArtifactName = null;
+                    importInspection = null;
+                    return;
+                }
                 importInspection = inspected;
                 if (importDisplayName.isBlank()) importDisplayName = inspected.suggestedName();
                 validation = null;
@@ -444,6 +463,8 @@ public final class WorldTransferScreen extends Screen {
             clearAndInit();
         } else if (worlds.activityMessage() == null) {
             processingImport = false;
+            importArtifactName = null;
+            importInspection = null;
             if (client != null && client.currentScreen == this) client.setScreen(parent);
         }
     }
@@ -695,6 +716,10 @@ public final class WorldTransferScreen extends Screen {
     @Override
     public void close() {
         if (area != null && exporting) finishAreaSelectionIfNeeded();
+        if (tab == Tab.IMPORT && !processingImport) {
+            abandonImportReview = choosing || inspectingImport;
+            discardPendingImportReview();
+        }
         if (client != null) client.setScreen(parent);
     }
 
