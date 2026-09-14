@@ -23,6 +23,41 @@ class LocalWorldImportArtifactStoreTest {
     @TempDir Path tempDir;
 
     @Test
+    void inspectsNestedJavaWorldBeforePublishing() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports"));
+        Path archive = imports.resolve("My Build.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/region/r.0.0.mca", "region".getBytes(StandardCharsets.UTF_8));
+        }
+
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        var inspection = store.inspectArtifact("My Build.zip");
+
+        assertEquals(WorldImportArtifactStore.DetectedEdition.JAVA, inspection.edition());
+        assertEquals("1.21.4", inspection.sourceVersion());
+        assertEquals("My Build", inspection.suggestedName());
+        assertEquals("My Build.zip", inspection.artifactName());
+    }
+
+    @Test
+    void inspectsBedrockUsingDbUnderSameArchiveRoot() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports"));
+        Path archive = imports.resolve("Bedrock Build.mcworld");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "World/level.dat", "bedrock-level".getBytes(StandardCharsets.UTF_8));
+            put(zip, "World/db/CURRENT", "db".getBytes(StandardCharsets.UTF_8));
+        }
+
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        var inspection = store.inspectArtifact("Bedrock Build.mcworld");
+
+        assertEquals(WorldImportArtifactStore.DetectedEdition.BEDROCK, inspection.edition());
+        assertEquals("Unknown", inspection.sourceVersion());
+        assertEquals("Bedrock Build", inspection.suggestedName());
+    }
+
+    @Test
     void stagesNestedJava1214WorldAndSanitizesIdentity() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Path archive = imports.resolve("world.zip");
