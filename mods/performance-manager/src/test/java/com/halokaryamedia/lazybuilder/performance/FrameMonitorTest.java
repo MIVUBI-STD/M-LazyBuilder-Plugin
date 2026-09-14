@@ -39,4 +39,19 @@ class FrameMonitorTest {
         assertEquals(60, monitor.sampleCount());
         assertEquals(16.0D, monitor.averageFrameTimeMs(), 0.0001D);
     }
+
+    @Test
+    void pausedClockDoesNotTurnBackgroundGapIntoFrameSpike() {
+        FrameMonitor monitor = new FrameMonitor();
+
+        monitor.recordFrame(1_000_000_000L);
+        monitor.recordFrame(1_016_000_000L);
+        monitor.pauseFrameClock();
+        monitor.recordFrame(10_000_000_000L);
+        monitor.recordFrame(10_016_000_000L);
+
+        assertEquals(2, monitor.sampleCount());
+        assertEquals(16.0D, monitor.averageFrameTimeMs(), 0.0001D);
+        assertEquals(FramePressure.NORMAL, monitor.pressure());
+    }
 }
