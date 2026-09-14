@@ -1,5 +1,5 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::{adoption, provisioning, runtime_updates, workspace_registry};
+use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
@@ -108,6 +108,7 @@ pub fn workspace_close(state: State<'_, ServerManagerState>) -> Result<(), Strin
 }
 
 fn ensure_switch_allowed(state: &ServerManagerState) -> Result<(), String> {
+    server_process_guard::ensure_no_running_paper_outside_active()?;
     if workspace_registry::current()?.is_none() {
         return Ok(());
     }
