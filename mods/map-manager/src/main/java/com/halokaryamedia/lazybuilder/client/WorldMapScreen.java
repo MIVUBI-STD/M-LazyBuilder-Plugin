@@ -377,14 +377,31 @@ public final class WorldMapScreen extends Screen {
                     currentRect.top + 8, NAVIGATION.isPinned(currentId) ? LbUi.ACCENT_BRIGHT : LbUi.TEXT_MUTED);
         }
 
-        String section = showAllWorlds ? "All worlds" : "Favorites";
-        String switchLabel = showAllWorlds ? "Favorites" : "All worlds ›";
-        context.drawTextWithShadow(textRenderer, Text.literal(section), 12, 91, LbUi.TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal(switchLabel), sidebar - 12 - textRenderer.getWidth(switchLabel),
-                91, LbUi.TEXT_MUTED);
+        Rect favoritesTab = favoritesTabRect();
+        Rect allWorldsTab = allWorldsTabRect();
+        if (favoritesTab.contains(mouseX, mouseY) && showAllWorlds) {
+            context.fill(favoritesTab.left, favoritesTab.top, favoritesTab.right, favoritesTab.bottom, LbUi.SURFACE_2);
+        }
+        if (allWorldsTab.contains(mouseX, mouseY) && !showAllWorlds) {
+            context.fill(allWorldsTab.left, allWorldsTab.top, allWorldsTab.right, allWorldsTab.bottom, LbUi.SURFACE_2);
+        }
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Favorites"),
+                (favoritesTab.left + favoritesTab.right) / 2, favoritesTab.top + 5,
+                showAllWorlds ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("All worlds"),
+                (allWorldsTab.left + allWorldsTab.right) / 2, allWorldsTab.top + 5,
+                showAllWorlds ? LbUi.TEXT_PRIMARY : LbUi.TEXT_MUTED);
+        Rect activeTab = showAllWorlds ? allWorldsTab : favoritesTab;
+        context.fill(activeTab.left + 6, activeTab.bottom - 2, activeTab.right - 6, activeTab.bottom - 1, LbUi.ACCENT_BRIGHT);
 
         List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
-        int rowY = 105;
+        int rowY = 108;
+        if (!showAllWorlds && rows.isEmpty()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("No favorites yet"),
+                    sidebar / 2, rowY + 7, LbUi.TEXT_MUTED);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Pin a world with ☆"),
+                    sidebar / 2, rowY + 20, LbUi.TEXT_DISABLED);
+        }
         for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
             WorldControlWireProtocol.WorldSummary world = rows.get(i);
             Rect rect = new Rect(8, rowY, sidebar - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
@@ -453,7 +470,7 @@ public final class WorldMapScreen extends Screen {
         }
 
         int[] hovered = screenToWorld(mouseX, mouseY);
-        String coordinates = hovered == null ? "" : "X " + hovered[0] + "   Z " + hovered[1];
+        String coordinates = hovered == null ? "" : "Cursor  X " + hovered[0] + "   Z " + hovered[1];
         String status = maps.teleportPending() ? "Teleporting…"
                 : SURFACE.pendingCount() > 0 ? "Loading map…"
                 : "";
@@ -509,8 +526,10 @@ public final class WorldMapScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("X " + contextBlockX + "  Z " + contextBlockZ),
                 menu.left + 8, menu.top + 20, LbUi.TEXT_MUTED);
 
-        renderMenuRow(context, contextTeleportRect(), maps.teleportPending() ? "Teleporting…" : "Teleport here",
-                !maps.teleportPending(), mouseX, mouseY);
+        boolean teleportEnabled = worlds.canTeleport() && !maps.teleportPending();
+        String teleportLabel = maps.teleportPending() ? "Teleporting…"
+                : worlds.canTeleport() ? "Teleport here" : "Teleport unavailable";
+        renderMenuRow(context, contextTeleportRect(), teleportLabel, teleportEnabled, mouseX, mouseY);
         renderMenuRow(context, contextExportRect(), "Export area", maps.currentWorld() != null && worlds.canManage(), mouseX, mouseY);
         renderMenuRow(context, contextCopyRect(), "Copy coordinates", true, mouseX, mouseY);
     }
@@ -548,14 +567,19 @@ public final class WorldMapScreen extends Screen {
                 }
                 return true;
             }
-            if (mouseY >= 86 && mouseY < 104 && mouseX > sidebarWidth() - 72) {
-                showAllWorlds = !showAllWorlds;
+            if (favoritesTabRect().contains(mouseX, mouseY)) {
+                showAllWorlds = false;
+                worldListOffset = 0;
+                return true;
+            }
+            if (allWorldsTabRect().contains(mouseX, mouseY)) {
+                showAllWorlds = true;
                 worldListOffset = 0;
                 return true;
             }
 
             List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
-            int rowY = 105;
+            int rowY = 108;
             for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
                 Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
                 if (rect.contains(mouseX, mouseY)) {
@@ -596,7 +620,7 @@ public final class WorldMapScreen extends Screen {
 
         if (contextOpen) {
             if (button == 0 && contextTeleportRect().contains(mouseX, mouseY)) {
-                if (!maps.teleportPending()) {
+                if (worlds.canTeleport() && !maps.teleportPending()) {
                     closeAfterMapTeleport = true;
                     maps.teleportCurrent(contextBlockX, contextBlockZ);
                     contextOpen = false;
@@ -1058,6 +1082,14 @@ public final class WorldMapScreen extends Screen {
     }
 
     private Rect currentWorldRect() { return new Rect(8, 50, sidebarWidth() - 8, 82); }
+    private Rect favoritesTabRect() {
+        int middle = sidebarWidth() / 2;
+        return new Rect(8, 87, middle - 2, 104);
+    }
+    private Rect allWorldsTabRect() {
+        int middle = sidebarWidth() / 2;
+        return new Rect(middle + 2, 87, sidebarWidth() - 8, 104);
+    }
     private Rect manageWorldsRect() { return new Rect(8, height - 34, sidebarWidth() - 8, height - 7); }
     private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
     private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
@@ -1117,7 +1149,7 @@ public final class WorldMapScreen extends Screen {
 
     private int visibleSidebarRows() {
         if (sidebarCollapsed) return 0;
-        int available = height - 105 - 76;
+        int available = height - 108 - 76;
         return Math.max(0, available / SIDEBAR_ROW_HEIGHT);
     }
 
