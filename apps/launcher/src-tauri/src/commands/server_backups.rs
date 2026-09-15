@@ -98,6 +98,32 @@ pub async fn server_backup_restore(
             return Err(error);
         }
 
+        let _ = operations.set_phase(
+            &operation_id,
+            "integrity-check",
+            "Verifying restore point integrity",
+            "Validating backup identity, file inventory, sizes, and SHA-256 checksums before touching the current server.",
+            None,
+        );
+        match server_backups::verify(&workspace_id, &backup_id) {
+            Ok(report) if report.status == server_backups::BackupIntegrityStatus::LegacyUnverified => {
+                let _ = operations.add_warning(
+                    &operation_id,
+                    "This restore point uses the legacy backup format and has no per-file checksum manifest. Identity validation will still be enforced.",
+                );
+            }
+            Ok(_) => {}
+            Err(message) => {
+                let error = CommandError::recoverable(
+                    "BACKUP_INTEGRITY_FAILED",
+                    format!("Restore point integrity verification failed: {message}"),
+                    "Choose another restore point",
+                );
+                fail_operation(&operations, &operation_id, &error, true);
+                return Err(error);
+            }
+        }
+
         let result = server_restore::restore_tracked(&workspace_id, &backup_id, |phase, status, details, measured| {
             let progress = measured.map(|(current, total)| OperationProgress { current, total: Some(total), unit: "bytes".into() });
             let _ = operations.set_phase(&operation_id, phase, status, details, progress);
