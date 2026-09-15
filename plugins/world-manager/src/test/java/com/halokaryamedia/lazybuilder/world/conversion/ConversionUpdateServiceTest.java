@@ -8,6 +8,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -30,7 +31,7 @@ class ConversionUpdateServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC);
 
         ConversionUpdateService service = new ConversionUpdateService(
-                ConversionRuntimePolicy.defaults(),
+                automaticPolicy(),
                 store,
                 () -> Optional.of(release),
                 (ignored, destination) -> {
@@ -62,7 +63,7 @@ class ConversionUpdateServiceTest {
         );
         LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(tempDir.resolve("runtime"));
         ConversionUpdateService service = new ConversionUpdateService(
-                ConversionRuntimePolicy.defaults(), store, () -> Optional.of(release),
+                automaticPolicy(), store, () -> Optional.of(release),
                 (ignored, destination) -> {
                     Files.createDirectories(destination);
                     Path copy = destination.resolve("download.jar");
@@ -89,7 +90,7 @@ class ConversionUpdateServiceTest {
         AtomicInteger attempts = new AtomicInteger();
 
         ConversionUpdateService service = new ConversionUpdateService(
-                ConversionRuntimePolicy.defaults(),
+                automaticPolicy(),
                 store,
                 () -> {
                     if (attempts.incrementAndGet() == 1) throw new IOException("temporary network failure");
@@ -110,5 +111,18 @@ class ConversionUpdateServiceTest {
         assertEquals(ConversionUpdateService.UpdateResult.UPDATED, service.checkIfDue());
         assertEquals(2, attempts.get());
         assertEquals("1.0.0", store.current().orElseThrow().manifest().version());
+    }
+
+    private static ConversionRuntimePolicy automaticPolicy() {
+        return new ConversionRuntimePolicy(
+                ConversionRuntimePolicy.UpdateMode.AUTOMATIC_STABLE,
+                Duration.ofHours(24),
+                true,
+                true,
+                true,
+                true,
+                2,
+                1
+        );
     }
 }
