@@ -7,6 +7,22 @@ description: Own neutral shared Paper/Fabric contracts under shared/protocol: re
 
 Own neutral Paper/Fabric wire semantics only. Follow `docs/04-system/development-discipline.md`, `docs/04-system/networking.md`, and `CONTEXT.md`.
 
+## Entry gate
+
+Use this Skill only when the changed decision must be shared neutrally between Paper and Fabric.
+
+```text
+request/result payload shape
+identifier semantics
+wire validation/default/optional behavior
+compatibility/version semantics
+bounded shared transfer contract
+```
+
+Do not enter merely because two modules are involved. Desktop loopback HTTP is `lazybuilder-desktop-runtime`; Paper behavior is `lazybuilder-world-management`; rendering/interaction is `lazybuilder-ui`.
+
+Before mutation, identify at least one direct producer and consumer of the contract and the first evidence that shows the current shared shape is wrong.
+
 ## Owns
 
 ```text
@@ -81,16 +97,42 @@ Paper may push current-world changes when the player's actual world changes. An 
 
 File bytes stay on `lazybuilder:transfer`; do not tunnel files through World or Map payloads and do not introduce an extra HTTP/WebSocket/cloud path for in-game transfer.
 
+## Failure patterns
+
+Classify the shared-contract failure before editing:
+
+```text
+SHAPE             producer/consumer disagree on request/result structure
+VALIDATION        invalid or oversized input is accepted/rejected incorrectly
+DEFAULT_OPTIONAL  absence/default semantics diverge between ends
+IDENTIFIER        entity/world/request identifiers are unstable or ambiguous
+VERSIONING        breaking compatibility is hidden or unnecessary version churn occurs
+CAPABILITY        advertised capability differs from verified backend support
+ADAPTER_DRIFT     shared type is correct but Paper/Fabric adapter is stale
+TRANSPORT_LEAK    transport/implementation detail has entered neutral contract
+DOMAIN_LEAK       Paper/world business rule has entered shared contract
+PRESENTATION_LEAK UI-only state has entered shared contract
+TRANSFER_BOUND    shared transfer size/chunk/order/integrity rule is unsafe
+UNKNOWN           evidence cannot yet separate the above
+```
+
+Fix the neutral contract only when it is the first wrong owner. `ADAPTER_DRIFT` usually means the shared contract needs no change.
+
 ## Procedure
 
 ```text
 name exact caller-visible contract
+→ identify direct producer + consumer
+→ capture one failing/mismatched round trip or contract example
+→ classify failure
 → prove it is a shared wire concern
 → reuse existing neutral type/validation
 → change smallest payload/semantic surface
+→ bump compatibility/version only when actually required
 → update direct Paper/Fabric adapters lockstep
-→ update round-trip tests
+→ update focused round-trip/validation tests
 → targeted compile/contract proof
+→ hand domain or presentation residue to its owner
 → STOP
 ```
 
@@ -104,8 +146,51 @@ name exact caller-visible contract
 - server remains authorization/domain authority even when capability flags are sent for presentation;
 - capability catalogs contain only verified backend-supported values;
 - implementation-language/build mechanics are not protocol changes;
-- desktop loopback control and Minecraft client/server data plane remain separate boundaries.
+- desktop loopback control and Minecraft client/server data plane remain separate boundaries;
+- optional/default semantics are defined once in the shared contract and tested at both ends;
+- malformed/oversized data must fail deterministically at the wire boundary rather than becoming domain/UI state;
+- a compatibility shim exists only for a supported real consumer and has an explicit retirement condition;
+- protocol fields do not exist solely to simplify one renderer or one implementation class.
 
-## Proof boundary
+## Proof matrix
 
-Static/compile proof can establish shared ownership and adapter alignment. Real Paper/Fabric interoperability requires local/live client-server proof. Current `Local` protocol changes have not yet received that final fresh validation pass.
+```text
+shape / encode-decode / validation / defaults
+→ focused shared round-trip or contract test
+
+Paper and Fabric adapter alignment
+→ compile/build tests for both direct consumers
+
+capability catalog
+→ contract test against the authoritative backend-supported values
+
+compatibility/version migration
+→ old/new fixture or explicit supported-version contract test
+
+real client/server interoperability, ordering, disconnect/reconnect timing
+→ LIVE_SERVER + real Fabric client using exact artifacts
+```
+
+Compile success does not prove a round trip. A round-trip unit test does not prove live plugin-channel timing or reconnect behavior.
+
+## Handoff / exit contract
+
+Sequential ownership only:
+
+```text
+neutral payload/validation becomes correct
+→ lazybuilder-world-management implements Paper/domain behavior
+→ lazybuilder-ui presents returned state when needed
+```
+
+Desktop HTTP remains outside this chain and routes to `lazybuilder-desktop-runtime`.
+
+Finish when:
+
+- one neutral shared definition exists;
+- producer and consumer adapters agree with it;
+- version/default/bounds semantics are explicit;
+- matching round-trip/build proof is complete for the current context;
+- remaining domain/UI/live interoperability residue is named precisely.
+
+Do not create a second protocol namespace, generic compatibility framework, or transport solely for future possibilities.
