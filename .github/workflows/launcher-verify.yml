@@ -1,18 +1,7 @@
 name: Launcher Verify
 
 on:
-  push:
-    branches: [Local, main]
-    paths:
-      - 'apps/launcher/**'
-      - 'scripts/verify_local_launcher_contract.py'
-      - '.github/workflows/launcher-verify.yml'
-  pull_request:
-    branches: [Local, main]
-    paths:
-      - 'apps/launcher/**'
-      - 'scripts/verify_local_launcher_contract.py'
-      - '.github/workflows/launcher-verify.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
