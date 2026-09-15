@@ -9,6 +9,8 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.DirectionalLayoutWidget;
 import net.minecraft.network.DisconnectionInfo;
 import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -19,6 +21,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Adds small reconnect/copy conveniences to the existing vanilla disconnect layout. */
 @Mixin(DisconnectedScreen.class)
 public abstract class DisconnectedScreenMixin extends Screen {
+    private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Utility/DisconnectScreen");
+
     @Shadow
     @Final
     private DirectionalLayoutWidget grid;
@@ -39,13 +43,22 @@ public abstract class DisconnectedScreenMixin extends Screen {
             )
     )
     private void lazybuilder$addUtilityActions(CallbackInfo ci) {
-        if (UtilityManagerClient.preferences().reconnectButton() && ReconnectState.canReconnect()) {
+        boolean reconnectEnabled = UtilityManagerClient.preferences().reconnectButton();
+        boolean reconnectAvailable = ReconnectState.canReconnect();
+        LOGGER.info(
+                "DisconnectedScreen utility injection active; reconnectEnabled={}, reconnectAvailable={}",
+                reconnectEnabled,
+                reconnectAvailable
+        );
+
+        if (reconnectEnabled && reconnectAvailable) {
             this.grid.add(
                     ButtonWidget.builder(
                             Text.literal("Reconnect"),
                             button -> ReconnectState.reconnect((Screen) (Object) this)
                     ).width(200).build()
             );
+            LOGGER.info("Reconnect button added for {}", ReconnectState.serverAddress());
         }
 
         String details = lazybuilder$disconnectDetails();
