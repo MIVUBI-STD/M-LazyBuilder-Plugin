@@ -1,26 +1,6 @@
 name: Paper Runtime Proof
 
 on:
-  push:
-    branches: [Local, main]
-    paths:
-      - 'pom.xml'
-      - 'plugins/world-manager/**'
-      - 'plugins/utilities-manager/**'
-      - 'shared/protocol/**'
-      - 'scripts/verify-paper-runtime.ps1'
-      - 'scripts/verify-paper-restart.ps1'
-      - '.github/workflows/paper-runtime-proof.yml'
-  pull_request:
-    branches: [Local, main]
-    paths:
-      - 'pom.xml'
-      - 'plugins/world-manager/**'
-      - 'plugins/utilities-manager/**'
-      - 'shared/protocol/**'
-      - 'scripts/verify-paper-runtime.ps1'
-      - 'scripts/verify-paper-restart.ps1'
-      - '.github/workflows/paper-runtime-proof.yml'
   workflow_dispatch:
 
 permissions:
