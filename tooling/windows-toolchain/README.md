@@ -14,25 +14,41 @@ The repository-root `toolchain.json` defines the supported build baseline. Scrip
 - Gradle: repository wrapper baseline 8.12
 - Rust: exact toolchain pin via repository `rust-toolchain.toml`
 - Tauri: 2.x resolved by lockfiles
-- WebView2: Evergreen Runtime
+- WebView2: Evergreen Runtime for installed/end-user runtime
 - Native build: Visual Studio 2022 Build Tools + Desktop development with C++
 - Python: not a mandatory build dependency
 
-## Entrypoints
+## Canonical developer flow
 
-From repository root:
+From a fresh Windows clone, use one path:
 
 ```text
-CHECK-DEV.cmd
 SETUP-DEV.cmd
-BUILD-LAUNCHER.cmd
-UPDATE-LAUNCHER.cmd
+→ CHECK-DEV.cmd
+→ BUILD-LAUNCHER.cmd
 ```
 
-`CHECK-DEV.cmd` only validates. `SETUP-DEV.cmd` provides bootstrap guidance. It intentionally does not silently install or mutate global compiler toolchains.
+`SETUP-DEV.cmd` is the canonical bootstrap entrypoint. It first validates the current machine, then repairs supported missing developer foundations when possible using `winget` and `rustup`. It does not install global Maven or Gradle because repository wrappers are authoritative.
 
-## Rule
+Use:
 
-End users must never need Node, npm, Rust, Cargo, Maven, Gradle, Python, Git, or MSVC to run an installed LazyBuilder build.
+```text
+SETUP-DEV.cmd -CheckOnly
+```
+
+for a non-mutating bootstrap check. `CHECK-DEV.cmd` is always validation-only.
+
+`BUILD-LAUNCHER.cmd` performs the runtime-ready local build path: Maven verification, required Fabric builds, client-artifact verification, exact frontend dependency install, Svelte typecheck, Rust check/tests, and Tauri/NSIS packaging. Its preflight fails early when required reproducibility files, pinned versions, or the MSVC C++ workload are missing.
+
+`UPDATE-LAUNCHER.cmd` remains the installed-local-app update path and is not a replacement for developer bootstrap.
+
+## Ownership rules
+
+- JavaScript dependencies are locked by `apps/launcher/package-lock.json` and installed with `npm ci`.
+- Rust dependencies are locked by Cargo and the Rust compiler version is repository-pinned.
+- Maven and Gradle are repository-wrapper owned; global installations are not developer requirements.
+- Native C++ build support is supplied by Visual Studio 2022 Build Tools with `Microsoft.VisualStudio.Workload.VCTools`.
+- Python is not part of the canonical mandatory developer toolchain.
+- End users must never need Node, npm, Rust, Cargo, Maven, Gradle, Python, Git, or MSVC to run an installed LazyBuilder build.
 
 See `docs/INTEGRATION.md` and `docs/VALIDATION.md` before changing the production build pipeline.
