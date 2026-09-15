@@ -22,5 +22,6 @@ pub mod server_restore;
 pub mod server_start_lock;
 pub mod startup;
 pub mod startup_guard;
+pub mod support_bundle;
 pub mod workspace_registry;
 pub mod world_manager;
