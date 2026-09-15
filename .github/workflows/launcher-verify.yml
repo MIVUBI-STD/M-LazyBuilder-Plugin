@@ -45,3 +45,26 @@ jobs:
         run: python scripts/verify_local_launcher_contract.py
       - name: Verify Launcher release signing contract
         run: python scripts/verify_launcher_release_contract.py
+      - name: Verify updater tooling without signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/build_launcher_update_manifest.py \
+            scripts/verify_launcher_update_manifest.py \
+            scripts/set_launcher_version.py
+          mkdir -p .artifacts/updater-contract
+          printf '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' > .artifacts/updater-contract/example.sig
+          VERSION=$(python - <<'PY'
+          import json
+          print(json.load(open('apps/launcher/package.json', encoding='utf-8'))['version'])
+          PY
+          )
+          python scripts/build_launcher_update_manifest.py \
+            --version "$VERSION" \
+            --url "https://github.com/halokaryamedia-source/LazyBuilder-Plugin/releases/download/launcher-v$VERSION/LazyBuilder_${VERSION}_x64-setup.exe" \
+            --signature-file .artifacts/updater-contract/example.sig \
+            --output .artifacts/updater-contract/latest.json
+          python scripts/verify_launcher_update_manifest.py \
+            .artifacts/updater-contract/latest.json \
+            --version "$VERSION"
