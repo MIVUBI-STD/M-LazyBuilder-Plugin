@@ -134,7 +134,7 @@ public final class WorldTransferScreen extends Screen {
         else initImport(contentLeft, contentWidth);
 
         addDrawableChild(LbUi.button(width / 2 - 78, height - 34, 156, 22,
-                busy() ? "Continue in Background" : "Close", LbButtonWidget.Style.GHOST, this::close));
+                closeButtonLabel(), LbButtonWidget.Style.GHOST, this::close));
     }
 
     private int exportPrimaryY() {
@@ -610,6 +610,12 @@ public final class WorldTransferScreen extends Screen {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
                     width / 2, 24 + panelHeight - 24, LbUi.DANGER_BRIGHT);
         }
+    }
+
+    private String closeButtonLabel() {
+        if (choosing || inspectingImport) return "Cancel";
+        if (exporting || processingImport || transfers.status().active()) return "Continue in Background";
+        return "Close";
     }
 
     private boolean busy() {
