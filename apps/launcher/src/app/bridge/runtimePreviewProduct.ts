@@ -38,13 +38,20 @@ const activeWorkspace: WorkspaceEntry = {
   lastOpenedUnixSeconds: 1_788_400_000
 };
 
+const missingWorkspace: WorkspaceEntry = {
+  id: 'missing-preview-server',
+  name: 'Moved Build Server',
+  path: 'E:\\Old Server Drive\\Moved Build Server',
+  lastOpenedUnixSeconds: 1_788_100_000
+};
+
 const recentWorkspaces: WorkspaceEntry[] = [
   activeWorkspace,
+  missingWorkspace,
   { id: 'museum', name: 'Museum Khatulistiwa', path: 'D:\\LazyBuilder\\Museum Khatulistiwa', lastOpenedUnixSeconds: 1_788_300_000 },
   { id: 'tana', name: 'Tana Samawa', path: 'D:\\LazyBuilder\\Tana Samawa', lastOpenedUnixSeconds: 1_787_900_000 },
   { id: 'jalur', name: 'Jalur Tanam', path: 'D:\\LazyBuilder\\Jalur Tanam', lastOpenedUnixSeconds: 1_787_500_000 },
-  { id: 'arena', name: 'Rampogan Arena', path: 'D:\\LazyBuilder\\Rampogan Arena', lastOpenedUnixSeconds: 1_787_000_000 },
-  { id: 'sandbox', name: 'Sandbox Test', path: 'D:\\LazyBuilder\\Sandbox Test', lastOpenedUnixSeconds: 1_786_500_000 }
+  { id: 'arena', name: 'Rampogan Arena', path: 'D:\\LazyBuilder\\Rampogan Arena', lastOpenedUnixSeconds: 1_787_000_000 }
 ];
 
 const previewOperations: LauncherOperationSnapshot[] = [{
@@ -71,7 +78,7 @@ let previewSettings: LauncherSettings = { schemaVersion: 1, rememberLastServer: 
 function params() { return typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search); }
 function previewKind() { return params().get('preview') ?? 'active'; }
 function previewPage() { return params().get('page') ?? 'Overview'; }
-function workspaceState(): WorkspaceState { return { active: previewKind() === 'library' ? null : activeWorkspace, recent: recentWorkspaces }; }
+function workspaceState(): WorkspaceState { return { active: previewKind() === 'library' || previewKind() === 'missing-location' ? null : activeWorkspace, recent: recentWorkspaces }; }
 
 function healthSnapshot(): ServerHealthSnapshot {
   if (previewKind() === 'repair') {
@@ -193,8 +200,13 @@ export const runtimePreviewProduct = {
     pickParent: async () => 'D:\\LazyBuilder',
     create: async (_parentPath: string, name: string) => ({ ...activeWorkspace, id: `preview-${name.toLowerCase().replace(/\s+/g, '-')}`, name }),
     pickAdoption: async (): Promise<AdoptionPlan> => ({ root: 'D:\\Existing Server', name: 'Existing Server', paperJar: 'paper.jar', worlds: ['world'], serverEntries: ['paper.jar'], legacyPluginsToDisable: [], preservedEntries: ['plugins'], warnings: [] }),
-    adopt: async (_rootPath: string, name?: string | null) => ({ ...activeWorkspace, name: name || 'Existing Server' }), activate: async (id: string) => recentWorkspaces.find((item) => item.id === id) ?? activeWorkspace,
+    adopt: async (_rootPath: string, name?: string | null) => ({ ...activeWorkspace, name: name || 'Existing Server' }), activate: async (id: string) => {
+      if (previewKind() === 'missing-location' && id === missingWorkspace.id) throw new Error(`Saved server workspace is currently unavailable: ${missingWorkspace.path}`);
+      return recentWorkspaces.find((item) => item.id === id) ?? activeWorkspace;
+    },
     close: async () => undefined, openFolder: async (_id: string) => undefined,
+    pickLocation: async (_id: string) => 'D:\\Recovered Servers\\Moved Build Server',
+    reconnectLocation: async (id: string, rootPath: string) => ({ ...(recentWorkspaces.find((item) => item.id === id) ?? missingWorkspace), path: rootPath, lastOpenedUnixSeconds: 1_788_400_100 }),
     duplicateEstimate: async (_id: string, _parentPath: string): Promise<WorkspaceDuplicateEstimate> => ({ sourceBytes: 2_400_000_000, requiredBytes: 3_000_000_000, availableBytes: 120_000_000_000 }),
     duplicate: async (_id: string, parentPath: string, name: string) => ({ ...activeWorkspace, id: 'preview-copy', name, path: `${parentPath}\\${name}` }),
     removeFromLibrary: async (_id: string) => undefined, delete: async (_id: string, _typedDisplayName: string) => undefined
