@@ -30,6 +30,10 @@
     "resources": ["resources/core", "resources/client-mods"],
     "windows": {
       "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English"]
