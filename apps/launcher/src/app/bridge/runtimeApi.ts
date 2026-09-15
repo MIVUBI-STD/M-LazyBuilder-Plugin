@@ -36,6 +36,7 @@ export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: stri
 
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
 export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
+export type WorkspaceDuplicateEstimate = { sourceBytes: number; requiredBytes: number; availableBytes?: number | null };
 export type AdoptionPlan = { root: string; name: string; paperJar: string; worlds: string[]; serverEntries: string[]; legacyPluginsToDisable: string[]; preservedEntries: string[]; warnings: string[] };
 export type WorkspaceProvisioningStatus = { workspaceCreated: boolean; javaReady: boolean; paperReady: boolean; coreModulesReady: boolean; configReady: boolean; eulaAccepted: boolean; ready: boolean; nextStep: string };
 export type WorkspaceProvisionResult = { javaPath: string; paperBuild?: number | null; coreVersion: string; status: WorkspaceProvisioningStatus };
@@ -89,7 +90,12 @@ export const runtimeApi = {
     pickAdoption: () => invokeRuntime<AdoptionPlan | null>('workspace_adoption_pick'),
     adopt: (rootPath: string, name?: string | null) => invokeRuntime<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
     activate: (id: string) => invokeRuntime<WorkspaceEntry>('workspace_activate', { id }),
-    close: () => invokeRuntime<void>('workspace_close')
+    close: () => invokeRuntime<void>('workspace_close'),
+    openFolder: (id: string) => invokeRuntime<void>('workspace_open_folder', { id }),
+    duplicateEstimate: (id: string, parentPath: string) => invokeRuntime<WorkspaceDuplicateEstimate>('workspace_duplicate_estimate', { id, parentPath }),
+    duplicate: (id: string, parentPath: string, name: string) => invokeRuntime<WorkspaceEntry>('workspace_duplicate', { id, parentPath, name }),
+    removeFromLibrary: (id: string) => invokeRuntime<void>('workspace_remove_from_library', { id }),
+    delete: (id: string, typedDisplayName: string) => invokeRuntime<void>('workspace_delete', { id, typedDisplayName })
   },
   server: {
     preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
