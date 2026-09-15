@@ -22,6 +22,11 @@ public final class PerformanceSnapshotReader {
         boolean focused = client.isWindowFocused();
         boolean minimized = window != null && window.isMinimized();
 
+        int completedChunkCount = client.worldRenderer == null ? 0 : client.worldRenderer.getCompletedChunkCount();
+        String chunkDebug = client.worldRenderer == null ? "" : client.worldRenderer.getChunksDebugString();
+        String entityDebug = client.worldRenderer == null ? "" : client.worldRenderer.getEntitiesDebugString();
+        String particleDebug = client.particleManager == null ? "" : client.particleManager.getDebugString();
+
         return new PerformanceSnapshot(
                 fps,
                 frameMonitor.currentFrameTimeMs(),
@@ -33,7 +38,11 @@ public final class PerformanceSnapshotReader {
                 simulationDistance,
                 focused,
                 minimized,
-                frameMonitor.pressure()
+                frameMonitor.pressure(),
+                completedChunkCount,
+                chunkDebug,
+                entityDebug,
+                particleDebug
         );
     }
 }
