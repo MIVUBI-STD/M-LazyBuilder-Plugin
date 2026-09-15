@@ -1,4 +1,5 @@
 use crate::commands::error::{CommandError, CommandResult};
+use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceDuplicateEstimate, WorkspaceEntry};
@@ -148,13 +149,118 @@ pub async fn workspace_duplicate(
     parent_path: String,
     name: String,
 ) -> CommandResult<WorkspaceEntry> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        ensure_workspace_mutation_allowed(&state, &id)?;
-        workspace_registry::duplicate(&id, Path::new(&parent_path), &name).map_err(CommandError::from)
-    })
-    .await
-    .map_err(|error| CommandError::new("TASK_FAILED", format!("Server duplication task failed: {error}")))?
+    let resource = format!("workspace:{id}");
+    let operation = app
+        .state::<OperationRegistry>()
+        .begin_exclusive("duplicate-server", &resource, false)
+        .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let state = task_app.state::<ServerManagerState>();
+
+        operations
+            .set_phase(&operation_id, "validating", "Validating source server", "", None)
+            .map_err(CommandError::from)?;
+
+        if let Err(error) = ensure_workspace_mutation_allowed(&state, &id) {
+            let _ = operations.fail(
+                &operation_id,
+                OperationError {
+                    code: error.code.to_string(),
+                    message: error.message.clone(),
+                    details: String::new(),
+                    recoverable: true,
+                },
+            );
+            return Err(error);
+        }
+
+        operations
+            .set_phase(&operation_id, "preflight", "Checking storage", "", None)
+            .map_err(CommandError::from)?;
+
+        let estimate = match workspace_registry::duplicate_estimate(&id, Path::new(&parent_path)) {
+            Ok(estimate) => estimate,
+            Err(message) => {
+                let _ = operations.fail(
+                    &operation_id,
+                    OperationError {
+                        code: "DUPLICATE_PREFLIGHT_FAILED".into(),
+                        message: message.clone(),
+                        details: String::new(),
+                        recoverable: true,
+                    },
+                );
+                return Err(CommandError::new("DUPLICATE_PREFLIGHT_FAILED", message));
+            }
+        };
+
+        operations
+            .set_phase(
+                &operation_id,
+                "copying",
+                "Copying server files",
+                "The current duplicate implementation publishes only after the full staged copy is validated.",
+                Some(OperationProgress {
+                    current: 0,
+                    total: Some(estimate.source_bytes),
+                    unit: "bytes".into(),
+                }),
+            )
+            .map_err(CommandError::from)?;
+
+        match workspace_registry::duplicate(&id, Path::new(&parent_path), &name) {
+            Ok(entry) => {
+                let _ = operations.set_phase(
+                    &operation_id,
+                    "publishing",
+                    "Publishing duplicated server",
+                    "",
+                    Some(OperationProgress {
+                        current: estimate.source_bytes,
+                        total: Some(estimate.source_bytes),
+                        unit: "bytes".into(),
+                    }),
+                );
+                operations
+                    .succeed(&operation_id, "Server duplicated")
+                    .map_err(CommandError::from)?;
+                Ok(entry)
+            }
+            Err(message) => {
+                let _ = operations.fail(
+                    &operation_id,
+                    OperationError {
+                        code: "DUPLICATE_FAILED".into(),
+                        message: message.clone(),
+                        details: String::new(),
+                        recoverable: true,
+                    },
+                );
+                Err(CommandError::new("DUPLICATE_FAILED", message))
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(
+                &join_operation_id,
+                OperationError {
+                    code: "TASK_FAILED".into(),
+                    message: "Server duplication task ended unexpectedly".into(),
+                    details: error.to_string(),
+                    recoverable: true,
+                },
+            );
+            Err(CommandError::new("TASK_FAILED", format!("Server duplication task failed: {error}")))
+        }
+    }
 }
 
 #[tauri::command]
