@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.client.ClientTransferController;
 import com.halokaryamedia.lazybuilder.client.ClientWorldController;
 import com.halokaryamedia.lazybuilder.client.WorldMapScreen;
 import com.halokaryamedia.lazybuilder.client.WorldNavigationPreferences;
+import com.halokaryamedia.lazybuilder.client.WorldTransferScreen;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -53,6 +54,8 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                         "map-manager-narrow-620x480-gui2");
                 captureScenario(context, state, 1440, 900, 3,
                         "map-manager-wide-1440x900-gui3");
+                captureAreaExportReview(context, state, 1440, 900, 2,
+                        "map-manager-area-export-review-1440x900-gui2");
             } finally {
                 context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(previousBlur));
             }
@@ -74,6 +77,32 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         configureViewport(context, width, height, guiScale);
         openMap(context, state);
         context.waitTicks(24);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureAreaExportReview(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            WorldMapScreen parent = new WorldMapScreen(state.worlds, state.transfers, state.maps);
+            suppressInitialNetworkRefresh(parent);
+            WorldTransferScreen screen = WorldTransferScreen.forArea(
+                    parent, state.worlds, state.transfers, state.maps, state.maps.currentWorld(),
+                    -128, -64, 127, 191);
+            suppressInitialTransferFormatRefresh(screen);
+            return screen;
+        });
+        context.waitForScreen(WorldTransferScreen.class);
+        context.waitTicks(18);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
@@ -146,12 +175,26 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
      * first-open refresh from attempting a LazyBuilder payload against the integrated vanilla server.
      */
     private static void suppressInitialNetworkRefresh(WorldMapScreen screen) {
+        setBooleanField(screen, "requestedCurrentWorld", true,
+                "Map visual proof could not suppress test-only network refresh");
+    }
+
+    /**
+     * The proof uses the native default export format and does not need a live Paper capability
+     * request. Suppress that request while keeping the production WorldTransferScreen renderer.
+     */
+    private static void suppressInitialTransferFormatRefresh(WorldTransferScreen screen) {
+        setBooleanField(screen, "requestedFormats", true,
+                "Transfer visual proof could not suppress test-only format refresh");
+    }
+
+    private static void setBooleanField(Object target, String name, boolean value, String message) {
         try {
-            Field field = WorldMapScreen.class.getDeclaredField("requestedCurrentWorld");
+            Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
-            field.setBoolean(screen, true);
+            field.setBoolean(target, value);
         } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Map visual proof could not suppress test-only network refresh", exception);
+            throw new IllegalStateException(message, exception);
         }
     }
 
