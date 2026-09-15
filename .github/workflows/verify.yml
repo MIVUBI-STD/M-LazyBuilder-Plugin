@@ -2,9 +2,10 @@ name: Verify
 
 on:
   push:
-    branches: [Local, main]
+    branches: [main]
   pull_request:
     branches: [Local, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
