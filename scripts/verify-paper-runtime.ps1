@@ -22,6 +22,16 @@ function Resolve-RequiredFile([string]$PathValue, [string]$Label) {
     return $resolved.Path
 }
 
+function Read-LatestPaperLog([string]$RuntimeRoot) {
+    $logPath = Join-Path $RuntimeRoot "logs/latest.log"
+    if (-not (Test-Path -LiteralPath $logPath)) { return "" }
+    try {
+        return Get-Content -LiteralPath $logPath -Raw -ErrorAction Stop
+    } catch {
+        return ""
+    }
+}
+
 function Stop-SmokeProcess([System.Diagnostics.Process]$Process, [int]$TimeoutSeconds) {
     if ($Process.HasExited) { return }
 
@@ -114,8 +124,8 @@ try {
     $startInfo.WorkingDirectory = $runtimeRoot
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
+    $startInfo.RedirectStandardOutput = $false
+    $startInfo.RedirectStandardError = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_TOKEN"] = $controlToken
     $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_PORT"] = $ControlPort.ToString()
@@ -128,46 +138,25 @@ try {
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
 
-    $stdout = [System.Text.StringBuilder]::new()
-    $stderr = [System.Text.StringBuilder]::new()
-    $outputHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data) {
-            [void]$stdout.AppendLine($eventArgs.Data)
-            Write-Host $eventArgs.Data
-        }
-    }
-    $errorHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data) {
-            [void]$stderr.AppendLine($eventArgs.Data)
-            Write-Host $eventArgs.Data
-        }
-    }
-    $process.add_OutputDataReceived($outputHandler)
-    $process.add_ErrorDataReceived($errorHandler)
-
     if (-not $process.Start()) {
         throw "Paper process could not be started."
     }
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($StartupTimeoutSeconds)
     $ready = $false
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         if ($process.HasExited) { break }
-        $combined = $stdout.ToString() + "`n" + $stderr.ToString()
-        if ($combined -match "Done \(.+\)! For help") {
+        $log = Read-LatestPaperLog $runtimeRoot
+        if ($log -match "Done \(.+\)! For help") {
             $ready = $true
             break
         }
         Start-Sleep -Milliseconds 500
     }
 
-    $combinedOutput = $stdout.ToString() + "`n" + $stderr.ToString()
+    $combinedOutput = Read-LatestPaperLog $runtimeRoot
     if (-not $ready) {
-        throw "Paper did not reach ready state within $StartupTimeoutSeconds seconds."
+        throw "Paper did not reach ready state within $StartupTimeoutSeconds seconds. Latest log:`n$combinedOutput"
     }
 
     $requiredSignals = @(
