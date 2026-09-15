@@ -1,0 +1,54 @@
+name: Temporary Map Recenter Patch Artifact
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - '.github/workflows/_temp-map-recenter-artifact.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: Local
+      - name: Build guarded patched source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('''        renderCursor(context, mouseX, mouseY);\n        renderSidebar(context, mouseX, mouseY);''',
+               '''        renderCursor(context, mouseX, mouseY);\n        renderMapControls(context, mouseX, mouseY);\n        renderSidebar(context, mouseX, mouseY);'''),
+              ('''        WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);\n        if (selected == null) return;\n        Rect action = selectedActionRect();\n        if (action.top < 110) return;\n        boolean current = isCurrentWorld(selected.worldId());\n        boolean pending = worlds.teleportPending();\n        int color = current ? LbUi.SURFACE_2 : pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;\n        if (action.contains(mouseX, mouseY) && !pending) color = current ? LbUi.SURFACE_3 : LbUi.ACCENT_HOVER;\n        context.fill(action.left, action.top, action.right, action.bottom, color);\n        String label = current ? "Center map on player" : pending ? "Teleporting…" : "Teleport →";\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),\n                (action.left + action.right) / 2, action.top + 7,\n                pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);''',
+               '''        WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);\n        if (selected == null || isCurrentWorld(selected.worldId())) return;\n        Rect action = selectedActionRect();\n        if (action.top < 110) return;\n        boolean pending = worlds.teleportPending();\n        int color = pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;\n        if (action.contains(mouseX, mouseY) && !pending) color = LbUi.ACCENT_HOVER;\n        context.fill(action.left, action.top, action.right, action.bottom, color);\n        String label = pending ? "Teleporting…" : "Teleport →";\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),\n                (action.left + action.right) / 2, action.top + 7,\n                pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);'''),
+              ('''    private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {''',
+               '''    private void renderMapControls(DrawContext context, int mouseX, int mouseY) {\n        if (areaMode) return;\n        Rect recenter = recenterMapRect();\n        int color = recenter.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;\n        context.fill(recenter.left, recenter.top, recenter.right, recenter.bottom, color);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Recenter"),\n                (recenter.left + recenter.right) / 2, recenter.top + 6, LbUi.TEXT_PRIMARY);\n    }\n\n    private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {'''),
+              ('''                } else {\n                    selectedWorldId = currentId;\n                    centerOnPlayer();\n                }''',
+               '''                } else {\n                    selectedWorldId = currentId;\n                }'''),
+              ('''            if (selectedActionRect().contains(mouseX, mouseY)) {\n                WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);\n                if (selected != null) {\n                    if (isCurrentWorld(selected.worldId())) {\n                        centerOnPlayer();\n                    } else if (worlds.canTeleport() && !worlds.teleportPending()) {\n                        closeAfterWorldTeleport = true;\n                        worlds.teleport(selected.worldId());\n                    }\n                }\n                return true;\n            }''',
+               '''            if (selectedActionRect().contains(mouseX, mouseY)) {\n                WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);\n                if (selected != null && !isCurrentWorld(selected.worldId())\n                        && worlds.canTeleport() && !worlds.teleportPending()) {\n                    closeAfterWorldTeleport = true;\n                    worlds.teleport(selected.worldId());\n                }\n                return true;\n            }'''),
+              ('''        if (zoomMinusRect().contains(mouseX, mouseY) && button == 0) {''',
+               '''        if (!areaMode && recenterMapRect().contains(mouseX, mouseY) && button == 0) {\n            centerOnPlayer();\n            return true;\n        }\n        if (zoomMinusRect().contains(mouseX, mouseY) && button == 0) {'''),
+              ('''    private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }''',
+               '''    private Rect recenterMapRect() {\n        Bounds map = mapBounds();\n        int buttonWidth = 70;\n        return new Rect(Math.max(map.left + 8, map.right - buttonWidth - 8), map.top + 8, map.right - 8, map.top + 30);\n    }\n    private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }''')
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Guard failed: expected one match, found {count}: {old[:120]!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: map-recenter-patched-source
+          path: mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+          if-no-files-found: error
+          retention-days: 1
