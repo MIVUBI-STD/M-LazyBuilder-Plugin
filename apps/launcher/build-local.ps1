@@ -12,12 +12,12 @@ if ($env:OS -ne 'Windows_NT') { throw 'LazyBuilder local desktop build must run 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..')
 $PreflightScript = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\build\preflight.ps1'
+$FabricVerifier = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\verify\verify-fabric.ps1'
 $ClientVerifier = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1'
 $PackageLocal = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\distribution\package-local.ps1'
 $MavenWrapper = Join-Path $RepoRoot 'mvnw.cmd'
-$GradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
 
-foreach ($RequiredScript in @($PreflightScript, $ClientVerifier, $PackageLocal)) {
+foreach ($RequiredScript in @($PreflightScript, $FabricVerifier, $ClientVerifier, $PackageLocal)) {
     if (-not (Test-Path $RequiredScript -PathType Leaf)) { throw "Missing required build operation: $RequiredScript" }
 }
 if ($AllowMissingRuntime) { & $PreflightScript -RepoRoot $RepoRoot }
@@ -55,16 +55,12 @@ if (-not $AllowMissingRuntime) {
     try {
         & $MavenWrapper --batch-mode --no-transfer-progress verify
         if ($LASTEXITCODE -ne 0) { throw "Maven verification failed with exit code $LASTEXITCODE." }
-
-        Write-Host '[runtime] Building required LazyBuilder Fabric client mods...' -ForegroundColor Cyan
-        & $GradleWrapper -p mods/map-manager --no-daemon build
-        if ($LASTEXITCODE -ne 0) { throw "Map Manager build failed with exit code $LASTEXITCODE." }
-        & $GradleWrapper -p mods/utility-manager --no-daemon build
-        if ($LASTEXITCODE -ne 0) { throw "Utility Manager build failed with exit code $LASTEXITCODE." }
-        & $GradleWrapper -p mods/performance-manager --no-daemon build
-        if ($LASTEXITCODE -ne 0) { throw "Performance Manager build failed with exit code $LASTEXITCODE." }
     }
     finally { Pop-Location }
+
+    Write-Host '[runtime] Building required LazyBuilder Fabric client mods...' -ForegroundColor Cyan
+    & $FabricVerifier -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) { throw "Fabric verification failed with exit code $LASTEXITCODE." }
 
     $RequiredBuildOutputs = @(
         $WorldTargetJar,
