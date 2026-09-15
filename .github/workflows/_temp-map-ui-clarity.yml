@@ -17,10 +17,19 @@ jobs:
         with:
           ref: Local
           fetch-depth: 0
-      - name: Apply guarded copy clarity patch
+      - name: Apply and push against latest Local
         shell: bash
         run: |
-          python3 - <<'PY'
+          set -euo pipefail
+          git config user.name "halokaryamedia-source"
+          git config user.email "halokaryamedia@gmail.com"
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin Local
+            git reset --hard origin/Local
+            git clean -fd
+
+            python3 - <<'PY'
           from pathlib import Path
 
           path = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
@@ -49,27 +58,17 @@ jobs:
 
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Commit clarity patch and remove this workflow
-        shell: bash
-        run: |
-          git config user.name "halokaryamedia-source"
-          git config user.email "halokaryamedia@gmail.com"
-          git rm .github/workflows/_temp-map-ui-clarity.yml
-          git add mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
-          git commit -m "fix(map-ui): clarify player-facing map labels"
-          git reset --hard HEAD
-      - name: Rebase and push safely
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5; do
-            git fetch origin Local
-            git rebase origin/Local
+
+            git rm .github/workflows/_temp-map-ui-clarity.yml
+            git add mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+            git commit -m "fix(map-ui): clarify player-facing map labels"
+
             if git push origin HEAD:Local; then
               exit 0
             fi
-            echo "Local moved during push; retrying ($attempt/5)..."
+            echo "Local moved during push; retrying from latest head ($attempt/5)..."
             sleep 2
           done
+
           echo "Could not push clarity patch without racing Local." >&2
           exit 1
