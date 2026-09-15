@@ -41,18 +41,22 @@ pub fn coordinate() -> StartupReport {
         }
     };
 
-    match launcher_settings::initialize() {
-        Ok(settings) => steps.push(ready_step(
-            "launcher-settings",
-            "Launcher settings ready",
-            &format!("Settings schema {} loaded; update channel: {}.", settings.schema_version, settings.update_channel),
-        )),
+    let settings = match launcher_settings::initialize() {
+        Ok(settings) => {
+            steps.push(ready_step(
+                "launcher-settings",
+                "Launcher settings ready",
+                &format!("Settings schema {} loaded; update channel: {}.", settings.schema_version, settings.update_channel),
+            ));
+            Some(settings)
+        }
         Err(error) => {
             degraded = true;
             diagnostics::error(&format!("Launcher settings initialization failed: {error}"));
             steps.push(warning_step("launcher-settings", "Launcher settings need attention", &error));
+            None
         }
-    }
+    };
 
     let registry_ready = match workspace_registry::initialize() {
         Ok(()) => {
@@ -130,11 +134,26 @@ pub fn coordinate() -> StartupReport {
                 steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", &error));
             }
         }
+
+        match settings.as_ref().map(|value| value.remember_last_server) {
+            Some(true) => match reopen_most_recent_workspace() {
+                Ok(Some(name)) => steps.push(ready_step("remember-last-server", "Last server reopened", &format!("Reopened {name} without starting Paper."))),
+                Ok(None) => steps.push(ready_step("remember-last-server", "No server reopened", "No available saved server could be reopened automatically.")),
+                Err(error) => {
+                    degraded = true;
+                    diagnostics::error(&format!("Remember-last-server recovery failed: {error}"));
+                    steps.push(warning_step("remember-last-server", "Last server could not be reopened", &error));
+                }
+            },
+            Some(false) => steps.push(ready_step("remember-last-server", "Automatic server reopen disabled", "The server library will open without selecting a saved server.")),
+            None => steps.push(warning_step("remember-last-server", "Automatic server reopen unavailable", "Launcher settings were unavailable during startup.")),
+        }
     } else {
         degraded = true;
         steps.push(warning_step("server-restore-recovery", "Server restore recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted restores."));
         steps.push(warning_step("backup-recovery", "Backup staging could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted backup staging."));
         steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", "The server library was unavailable, so LazyBuilder could not safely inspect registered Paper process markers."));
+        steps.push(warning_step("remember-last-server", "Last server could not be reopened", "The server library was unavailable."));
     }
 
     let report = StartupReport {
@@ -147,6 +166,19 @@ pub fn coordinate() -> StartupReport {
     };
     diagnostics::info(if report.degraded { "LazyBuilder startup coordinator completed in degraded mode" } else { "LazyBuilder startup coordinator completed" });
     report
+}
+
+fn reopen_most_recent_workspace() -> Result<Option<String>, String> {
+    for entry in workspace_registry::list()? {
+        if !std::path::Path::new(&entry.path).is_dir() {
+            continue;
+        }
+        match workspace_registry::activate(&entry.id) {
+            Ok(active) => return Ok(Some(active.name)),
+            Err(error) => diagnostics::info(&format!("Skipping remembered server {} during startup: {error}", entry.name)),
+        }
+    }
+    Ok(None)
 }
 
 fn ready_step(key: &str, summary: &str, details: &str) -> StartupStep { StartupStep { key: key.into(), state: StartupStepState::Ready, summary: summary.into(), details: details.into() } }
