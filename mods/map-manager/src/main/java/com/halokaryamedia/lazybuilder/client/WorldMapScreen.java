@@ -420,13 +420,14 @@ public final class WorldMapScreen extends Screen {
         Rect action = selectedActionRect();
         if (action.top < 110) return;
         boolean pending = worlds.teleportPending();
-        int color = pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
-        if (action.contains(mouseX, mouseY) && !pending) color = LbUi.ACCENT_HOVER;
+        boolean enabled = worlds.canTeleport() && !pending;
+        int color = enabled ? LbUi.ACCENT_FILL : LbUi.SURFACE_1;
+        if (action.contains(mouseX, mouseY) && enabled) color = LbUi.ACCENT_HOVER;
         context.fill(action.left, action.top, action.right, action.bottom, color);
-        String label = pending ? "Teleporting…" : "Teleport →";
+        String label = pending ? "Teleporting…" : worlds.canTeleport() ? "Teleport →" : "Teleport unavailable";
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
                 (action.left + action.right) / 2, action.top + 7,
-                pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
+                enabled ? LbUi.TEXT_PRIMARY : LbUi.TEXT_MUTED);
     }
 
     private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
@@ -468,7 +469,8 @@ public final class WorldMapScreen extends Screen {
 
         if (!status.isBlank()) {
             int statusWidth = textRenderer.getWidth(status);
-            int statusX = width - statusWidth - 10;
+            int statusRight = zoomLabelRect().left - 10;
+            int statusX = statusRight - statusWidth;
             if (statusX > recenterMapRect().right + 10) {
                 context.drawTextWithShadow(textRenderer, Text.literal(status),
                         statusX, height - 16, LbUi.TEXT_MUTED);
@@ -477,8 +479,11 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
+        Rect label = zoomLabelRect();
         Rect minus = zoomMinusRect();
         Rect plus = zoomPlusRect();
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(zoomLabel()),
+                (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_MUTED);
         context.fill(minus.left, minus.top, minus.right, minus.bottom,
                 minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
         context.fill(plus.left, plus.top, plus.right, plus.bottom,
@@ -607,7 +612,10 @@ public final class WorldMapScreen extends Screen {
                 contextOpen = false;
                 return true;
             }
-            if (!contextMenuRect().contains(mouseX, mouseY)) contextOpen = false;
+            if (!contextMenuRect().contains(mouseX, mouseY)) {
+                contextOpen = false;
+                return true;
+            }
         }
 
         if (!areaMode && recenterMapRect().contains(mouseX, mouseY) && button == 0) {
@@ -1063,6 +1071,11 @@ public final class WorldMapScreen extends Screen {
     }
     private Rect zoomPlusRect() { return new Rect(width - 28, height - 22, width - 8, height - 3); }
     private Rect zoomMinusRect() { return new Rect(width - 51, height - 22, width - 31, height - 3); }
+    private Rect zoomLabelRect() {
+        int labelWidth = 58;
+        int right = zoomMinusRect().left - 6;
+        return new Rect(right - labelWidth, height - 22, right, height - 3);
+    }
 
     private Rect contextMenuRect() {
         int menuWidth = 150;
@@ -1092,7 +1105,9 @@ public final class WorldMapScreen extends Screen {
             return active.subList(from, to);
         }
         List<WorldControlWireProtocol.WorldSummary> result = new ArrayList<>();
+        UUID current = currentWorldId();
         for (UUID id : NAVIGATION.pinned()) {
+            if (current != null && current.equals(id)) continue;
             WorldControlWireProtocol.WorldSummary world = find(active, id);
             if (world != null) result.add(world);
             if (result.size() >= MAX_FAVORITES) break;
