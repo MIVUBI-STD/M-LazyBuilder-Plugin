@@ -17,6 +17,7 @@ class UtilityMixinRegistrationTest {
             String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(json.contains("ConnectScreenMixin"), "connect capture mixin must stay registered");
             assertTrue(json.contains("DisconnectedScreenMixin"), "disconnect action mixin must stay registered");
+            assertTrue(json.contains("MultiplayerScreenMixin"), "server-list reconnect fallback must stay registered");
             assertTrue(json.contains("\"required\": true"), "mixin failures must fail loudly instead of silently disabling Utility Manager behavior");
         }
     }
