@@ -34,6 +34,27 @@ async function invokeRuntime<T>(command: string, args?: Record<string, unknown>)
 
 export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
 
+export type LauncherOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLING' | 'CANCELLED' | 'RECOVERY_REQUIRED';
+export type LauncherOperationProgress = { current: number; total?: number | null; unit: string };
+export type LauncherOperationError = { code: string; message: string; details: string; recoverable: boolean };
+export type LauncherOperationSnapshot = {
+  id: string;
+  kind: string;
+  resource: string;
+  state: LauncherOperationState;
+  phase: string;
+  status: string;
+  details: string;
+  progress?: LauncherOperationProgress | null;
+  canCancel: boolean;
+  cancelRequested: boolean;
+  warnings: string[];
+  error?: LauncherOperationError | null;
+  createdAtUnixSeconds: number;
+  updatedAtUnixSeconds: number;
+  completedAtUnixSeconds?: number | null;
+};
+
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
 export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
 export type WorkspaceDuplicateEstimate = { sourceBytes: number; requiredBytes: number; availableBytes?: number | null };
@@ -77,6 +98,11 @@ export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: st
 export const runtimeApi = {
   diagnostics: {
     summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary')
+  },
+  operations: {
+    list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
+    get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
+    cancel: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation_cancel', { id })
   },
   workspace: {
     state: () => invokeRuntime<WorkspaceState>('workspace_state'),
