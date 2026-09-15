@@ -20,40 +20,23 @@ pub struct StartupProcessReconciliation {
     pub issues: Vec<String>,
 }
 
-/// Startup-only reconciliation for registered LazyBuilder workspaces.
-///
-/// This never terminates a live process. It only removes stale cache markers when
-/// the recorded PID no longer exists, has been reused, or no longer matches the
-/// LazyBuilder-managed Paper command line for that workspace.
 pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconciliation, String> {
     let servers = workspace_registry::list()?;
     let mut system = System::new_all();
-    let mut result = StartupProcessReconciliation {
-        running_servers: Vec::new(),
-        stale_markers_cleared: 0,
-        issues: Vec::new(),
-    };
+    let mut result = StartupProcessReconciliation { running_servers: Vec::new(), stale_markers_cleared: 0, issues: Vec::new() };
 
     for server in servers {
         let root = PathBuf::from(&server.path);
         let marker_path = process_marker_path(&root);
         if !marker_path.is_file() { continue; }
-
         let text = match fs::read_to_string(&marker_path) {
             Ok(text) => text,
-            Err(error) => {
-                result.issues.push(format!("Could not read process marker for {}: {error}", server.name));
-                continue;
-            }
+            Err(error) => { result.issues.push(format!("Could not read process marker for {}: {error}", server.name)); continue; }
         };
         let marker: ProcessMarker = match serde_json::from_str(&text) {
             Ok(marker) => marker,
-            Err(error) => {
-                result.issues.push(format!("Process marker for {} is malformed and was preserved for manual recovery: {error}", server.name));
-                continue;
-            }
+            Err(error) => { result.issues.push(format!("Process marker for {} is malformed and was preserved for manual recovery: {error}", server.name)); continue; }
         };
-
         let pid = Pid::from_u32(marker.pid);
         system.refresh_process(pid);
         let stale = match system.process(pid) {
@@ -62,7 +45,6 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
             Some(process) if !looks_like_workspace_paper(process, &root) => true,
             Some(_) => false,
         };
-
         if stale {
             match fs::remove_file(&marker_path) {
                 Ok(()) => result.stale_markers_cleared = result.stale_markers_cleared.saturating_add(1),
@@ -72,16 +54,26 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
             result.running_servers.push(server.name);
         }
     }
-
     Ok(result)
 }
 
-/// Read-only cross-workspace safety guard. ServerManager remains process authority.
+pub fn workspace_has_running_paper(workspace_id: &str) -> Result<bool, String> {
+    let server = workspace_registry::get(workspace_id)?;
+    let root = PathBuf::from(&server.path);
+    let marker_path = process_marker_path(&root);
+    let Some(marker) = read_marker(&marker_path) else { return Ok(false); };
+    let pid = Pid::from_u32(marker.pid);
+    let mut system = System::new_all();
+    system.refresh_process(pid);
+    let Some(process) = system.process(pid) else { return Ok(false); };
+    if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { return Ok(false); }
+    Ok(looks_like_workspace_paper(process, &root))
+}
+
 pub fn ensure_no_running_paper_except(allowed_workspace_id: Option<&str>) -> Result<(), String> {
     let active_id = workspace_registry::current()?.map(|entry| entry.id);
     let servers = workspace_registry::list()?;
     let mut system = System::new_all();
-
     for server in servers {
         if active_id.as_deref() == Some(server.id.as_str()) || allowed_workspace_id == Some(server.id.as_str()) { continue; }
         let root = PathBuf::from(&server.path);
@@ -97,36 +89,28 @@ pub fn ensure_no_running_paper_except(allowed_workspace_id: Option<&str>) -> Res
     Ok(())
 }
 
-/// Best-effort guard for a plain Paper server before adoption. A server started outside
-/// LazyBuilder has no LazyBuilder process marker, so inspect live Java process working
-/// directories and command lines before any files are moved.
 pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
     let canonical = root.canonicalize().map_err(|error| format!("Could not resolve server location for process safety check: {error}"))?;
     let canonical_text = canonical.to_string_lossy().to_ascii_lowercase().replace('/', "\\");
     let mut system = System::new_all();
     system.refresh_all();
-
     for process in system.processes().values() {
         let name = process.name().to_ascii_lowercase();
         if !name.contains("java") { continue; }
-        let cwd_match = process.cwd().is_some_and(|cwd| {
-            cwd.to_string_lossy().to_ascii_lowercase().replace('/', "\\") == canonical_text
-        });
+        let cwd_match = process.cwd().is_some_and(|cwd| cwd.to_string_lossy().to_ascii_lowercase().replace('/', "\\") == canonical_text);
         let command = process.cmd().join(" ").to_ascii_lowercase().replace('/', "\\");
-        let command_match = command.contains(&canonical_text);
-        if cwd_match || command_match {
+        if cwd_match || command.contains(&canonical_text) {
             return Err("A Java/Minecraft server process is currently using the selected server folder. Stop that server before adoption so LazyBuilder does not move live runtime files.".into());
         }
     }
     Ok(())
 }
 
-fn process_marker_path(workspace: &Path) -> PathBuf {
-    workspace.join("tools").join("lazybuilder").join("cache").join("server-process.json")
-}
+fn process_marker_path(workspace: &Path) -> PathBuf { workspace.join("tools").join("lazybuilder").join("cache").join("server-process.json") }
 fn read_marker(path: &Path) -> Option<ProcessMarker> { let text = fs::read_to_string(path).ok()?; serde_json::from_str(&text).ok() }
 fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> bool {
-    let name = process.name().to_ascii_lowercase(); if !name.contains("java") { return false; }
+    let name = process.name().to_ascii_lowercase();
+    if !name.contains("java") { return false; }
     let command = process.cmd().join(" ").to_ascii_lowercase();
     let worlds = workspace.join("world-system").join("worlds").display().to_string().to_ascii_lowercase();
     command.contains("-jar") && command.contains("--universe") && command.contains("nogui") && command.contains(&worlds)
@@ -136,7 +120,6 @@ fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> b
 mod tests {
     use super::process_marker_path;
     use std::path::Path;
-
     #[test]
     fn marker_path_stays_workspace_local() {
         assert_eq!(process_marker_path(Path::new("C:/BuildServer")), Path::new("C:/BuildServer/tools/lazybuilder/cache/server-process.json"));
