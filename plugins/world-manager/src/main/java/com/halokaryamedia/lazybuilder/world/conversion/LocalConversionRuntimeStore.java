@@ -22,6 +22,11 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
 
     public LocalConversionRuntimeStore(Path root) {
         this.root = root.toAbsolutePath().normalize();
+        try {
+            recoverInterruptedPromotion();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to recover conversion runtime state", exception);
+        }
     }
 
     @Override public Optional<InstalledRuntime> current() throws IOException { return readSlot("current"); }
@@ -76,6 +81,39 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
         Files.writeString(root.resolve(LAST_CHECK), instant.toString(), StandardCharsets.UTF_8);
     }
 
+    private void recoverInterruptedPromotion() throws IOException {
+        if (Files.notExists(root)) return;
+        if (!Files.isDirectory(root) || Files.isSymbolicLink(root)) {
+            throw new IOException("Conversion runtime root is unsafe");
+        }
+
+        Path current = slot("current");
+        Path previous = slot("previous");
+        Path candidate = slot("candidate");
+
+        if (Files.exists(current)) {
+            if (!complete(current)) {
+                throw new IOException("Incomplete conversion runtime slot: current");
+            }
+            if (Files.exists(candidate) && !complete(candidate)) {
+                deleteTree(candidate);
+            }
+            return;
+        }
+
+        if (complete(candidate)) {
+            move(candidate, current);
+            return;
+        }
+
+        if (Files.exists(candidate)) {
+            deleteTree(candidate);
+        }
+        if (complete(previous)) {
+            move(previous, current);
+        }
+    }
+
     private Optional<InstalledRuntime> readSlot(String name) throws IOException {
         Path slot = slot(name);
         if (Files.notExists(slot)) return Optional.empty();
@@ -89,8 +127,17 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
         return target;
     }
 
+    private static boolean complete(Path slot) {
+        return Files.isDirectory(slot)
+                && !Files.isSymbolicLink(slot)
+                && Files.isRegularFile(slot.resolve(ARTIFACT))
+                && !Files.isSymbolicLink(slot.resolve(ARTIFACT))
+                && Files.isRegularFile(slot.resolve(MANIFEST))
+                && !Files.isSymbolicLink(slot.resolve(MANIFEST));
+    }
+
     private static void requireComplete(Path slot) throws IOException {
-        if (!Files.isDirectory(slot) || !Files.isRegularFile(slot.resolve(ARTIFACT)) || !Files.isRegularFile(slot.resolve(MANIFEST))) {
+        if (!complete(slot)) {
             throw new IOException("Incomplete conversion runtime slot: " + slot.getFileName());
         }
     }
@@ -133,6 +180,10 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
 
     private static void deleteTree(Path root) throws IOException {
         if (Files.notExists(root)) return;
+        if (Files.isSymbolicLink(root)) {
+            Files.delete(root);
+            return;
+        }
         try (var paths = Files.walk(root)) {
             for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
         }
