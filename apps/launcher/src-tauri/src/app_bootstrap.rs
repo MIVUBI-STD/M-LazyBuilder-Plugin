@@ -1,10 +1,19 @@
 use crate::commands;
 use crate::engine::diagnostics;
 use crate::engine::plugin_manager::PluginManagerState;
+use crate::engine::runtime_environment;
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry;
 
 pub fn run() {
+    match runtime_environment::prepare() {
+        Ok(temp) => diagnostics::info(&format!("LazyBuilder runtime TEMP/TMP: {}", temp.display())),
+        Err(error) => {
+            diagnostics::error(&format!("Runtime environment preparation failed: {error}"));
+            eprintln!("LazyBuilder runtime environment preparation failed: {error}");
+        }
+    }
+
     diagnostics::info("LazyBuilder launcher starting");
     if let Err(error) = workspace_registry::initialize() {
         diagnostics::error(&format!("Workspace registry initialization failed: {error}"));
