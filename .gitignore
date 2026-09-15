@@ -3,6 +3,10 @@
 build/
 out/
 target/
+node_modules/
+dist/
+.runtime-proof/
+.artifacts/
 *.class
 *.jar
 
