@@ -1,0 +1,58 @@
+name: Launcher Verify
+
+on:
+  push:
+    branches: [Local, main]
+    paths:
+      - 'apps/launcher/**'
+      - 'scripts/verify_local_launcher_contract.py'
+      - '.github/workflows/launcher-verify.yml'
+  pull_request:
+    branches: [Local, main]
+    paths:
+      - 'apps/launcher/**'
+      - 'scripts/verify_local_launcher_contract.py'
+      - '.github/workflows/launcher-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher-check:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/launcher
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/launcher/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck Svelte frontend
+        run: npm run typecheck
+      - name: Build Svelte frontend
+        run: npm run build:frontend
+      - name: Generate Tauri icon assets
+        run: npx tauri icon src-tauri/app-icon.svg
+      - name: Check Rust/Tauri backend
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Test Rust/Tauri backend
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+  launcher-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify local Launcher packaging contract
+        run: python scripts/verify_local_launcher_contract.py
