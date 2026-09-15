@@ -38,6 +38,7 @@ FORBIDDEN_RETIRED_PATHS = [
     "tooling/windows-toolchain/docs/PACKAGE-JSON-PATCH.md",
     "tooling/windows-toolchain/docs/INTEGRATION.md",
     "apps/launcher/PRE-LOCAL-TEST.md",
+    ".github/workflows/_temp-map-bottom-center-artifact.yml",
 ]
 
 EXPECTED_SKILLS = {
@@ -122,6 +123,12 @@ def main() -> int:
         if (ROOT / relative).exists():
             fail(errors, f"retired/duplicate operational path must stay removed: {relative}")
 
+    workflows = ROOT / ".github" / "workflows"
+    if workflows.is_dir():
+        for workflow in workflows.iterdir():
+            if workflow.is_file() and workflow.name.lower().startswith(("temp", "_temp")):
+                fail(errors, f"temporary workflow must not live in the durable workflow directory: {workflow.name}")
+
     agents = read_text("AGENTS.md", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
@@ -179,10 +186,7 @@ def main() -> int:
                 fail(errors, f"skill has no frontmatter name: {skill_file.relative_to(ROOT)}")
                 continue
             if declared != child.name:
-                fail(
-                    errors,
-                    f"skill directory/name mismatch: {child.name} declares {declared}",
-                )
+                fail(errors, f"skill directory/name mismatch: {child.name} declares {declared}")
             discovered.add(declared)
 
     missing_skills = EXPECTED_SKILLS - discovered
@@ -190,11 +194,7 @@ def main() -> int:
     if missing_skills:
         fail(errors, f"missing canonical skills: {', '.join(sorted(missing_skills))}")
     if unexpected_forbidden:
-        fail(
-            errors,
-            "forbidden implementation/meta skills found: "
-            + ", ".join(sorted(unexpected_forbidden)),
-        )
+        fail(errors, "forbidden implementation/meta skills found: " + ", ".join(sorted(unexpected_forbidden)))
 
     for skill in sorted(EXPECTED_SKILLS):
         if skill not in agents:
