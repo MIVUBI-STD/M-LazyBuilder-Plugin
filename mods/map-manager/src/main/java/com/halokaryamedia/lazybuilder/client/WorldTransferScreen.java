@@ -606,18 +606,31 @@ public final class WorldTransferScreen extends Screen {
             int y = 24 + panelHeight - 32;
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(status), width / 2, y, LbUi.TEXT_SECONDARY);
             if (percent >= 0) LbUi.progress(context, left + 44, y + 13, panelWidth - 88, percent);
-            context.drawCenteredTextWithShadow(textRenderer,
-                    Text.literal("You can leave this screen; the operation will continue."),
-                    width / 2, y - 15, LbUi.TEXT_MUTED);
+            String guidance = lifecycleGuidance();
+            if (guidance != null) {
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal(guidance),
+                        width / 2, y - 15, LbUi.TEXT_MUTED);
+            }
         } else if (validation != null) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(validation),
                     width / 2, 24 + panelHeight - 24, LbUi.DANGER_BRIGHT);
         }
     }
 
+    private String lifecycleGuidance() {
+        if (choosing || inspectingImport) return "Closing this screen cancels this import review.";
+        if (continuesInBackground()) return "You can leave this screen; the operation will continue.";
+        return null;
+    }
+
+    private boolean continuesInBackground() {
+        if (choosing || inspectingImport) return false;
+        return exporting || processingImport || transfers.status().active();
+    }
+
     private String closeButtonLabel() {
         if (choosing || inspectingImport) return "Cancel";
-        if (exporting || processingImport || transfers.status().active()) return "Continue in Background";
+        if (continuesInBackground()) return "Continue in Background";
         if (area != null) return "Cancel Area Export";
         return "Close";
     }
