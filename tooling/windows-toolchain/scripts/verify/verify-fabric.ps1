@@ -1,0 +1,40 @@
+param(
+    [string]$RepoRoot
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+if ($env:OS -ne 'Windows_NT') { throw 'LazyBuilder Fabric verification must run on Windows.' }
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+    $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')
+} else {
+    $RepoRoot = (Resolve-Path $RepoRoot).Path
+}
+
+$GradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
+if (-not (Test-Path -LiteralPath $GradleWrapper -PathType Leaf)) {
+    throw "Repository Gradle wrapper is missing: $GradleWrapper"
+}
+
+$Managers = @(
+    @{ Name = 'Map Manager'; Path = 'mods/map-manager' },
+    @{ Name = 'Utility Manager'; Path = 'mods/utility-manager' },
+    @{ Name = 'Performance Manager'; Path = 'mods/performance-manager' }
+)
+
+Push-Location $RepoRoot
+try {
+    foreach ($Manager in $Managers) {
+        Write-Host "[fabric] Verifying $($Manager.Name)..." -ForegroundColor Cyan
+        & $GradleWrapper -p $Manager.Path --no-daemon build
+        if ($LASTEXITCODE -ne 0) {
+            throw "$($Manager.Name) verification failed with exit code $LASTEXITCODE."
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host 'PASS: required LazyBuilder Fabric client suite verified.' -ForegroundColor Green
