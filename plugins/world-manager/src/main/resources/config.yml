@@ -24,8 +24,9 @@ world-manager:
     #   lazybuilder_decorative  -> force No-AI even when general suppression is disabled
 
   import:
-    max-files: 200000
-    max-uncompressed-mb: 65536
+    # Conservative defaults for a local builder workflow. Increase only for known large worlds.
+    max-files: 100000
+    max-uncompressed-mb: 16384
 
   conversion:
     max-heap-mb: 3072
@@ -34,7 +35,7 @@ world-manager:
   transfer:
     # Kept below Minecraft custom-payload ceilings so protocol framing has room.
     chunk-bytes: 24576
-    # Hard cap for one uploaded .zip/.mcworld before it is accepted into world/imports.
-    max-upload-mb: 16384
+    # Conservative default for local transfers. Increase explicitly for unusually large archives.
+    max-upload-mb: 8192
     # An inactive transfer may be reclaimed on the next request/disconnect; no polling timer is used.
     session-idle-seconds: 300
