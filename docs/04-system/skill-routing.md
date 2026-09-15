@@ -27,24 +27,34 @@ lazybuilder-ui
 lazybuilder-protocol
 ```
 
+There is no separate Launcher Framework Skill. **Launcher application engineering is part of `lazybuilder-desktop-runtime`**; presentation remains `lazybuilder-ui`.
+
 There is no meta Development Brief Skill. Architecture/cross-owner ambiguity is resolved directly by `AGENTS.md` + `development-discipline.md` + this routing map, then work proceeds under one primary specialist.
 
 ## Primary-Owner Rule
 
 ```text
-workspace/process/provisioning/runtime/config decision → desktop-runtime
-third-party Paper plugin lifecycle decision           → plugin-management
-world/Paper domain/files/conversion decision          → world-management
-presentation/input/UI issue decision                  → ui
-neutral Paper/Fabric wire contract                    → protocol
+launcher architecture/Tauri core/jobs/settings/update/distribution → desktop-runtime
+workspace/process/provisioning/runtime/config decision             → desktop-runtime
+third-party Paper plugin lifecycle decision                        → plugin-management
+world/Paper domain/files/conversion decision                       → world-management
+presentation/input/UI issue decision                               → ui
+neutral Paper/Fabric wire contract                                 → protocol
 ```
 
 ### `lazybuilder-desktop-runtime`
 
-Owns:
+Owns Launcher engineering plus desktop runtime semantics:
 
 ```text
-workspace lifecycle
+Tauri/Rust application architecture and command orchestration
+launcher lifecycle/startup/shutdown/restart semantics
+long-running operation/job state semantics
+launcher settings persistence/schema migrations
+launcher self-update/update-channel semantics
+Windows app identity, bundle/NSIS/distribution semantics
+diagnostics/support-data semantics
+workspace/server-library lifecycle
 server process ownership/recovery
 managed Java
 Paper provisioning/update
@@ -53,9 +63,17 @@ resource/runtime configuration
 startup safety
 local desktop HTTP/control bootstrap
 runtime persistence/rollback
+server duplicate/remove/delete/backup/restore runtime semantics
 ```
 
-Does not own UI presentation, world rules, shared Minecraft wire contracts, or third-party plugin semantics.
+Does not own visual presentation, world rules, shared Minecraft wire contracts, or third-party plugin semantics.
+
+The key boundary is:
+
+```text
+what state/operation exists, who owns it, how it persists/recovers → desktop-runtime
+how that state/operation is rendered and interacted with          → ui
+```
 
 ### `lazybuilder-plugin-management`
 
@@ -97,6 +115,7 @@ Launcher Desktop lane
 → Server Library / Plugin Manager / Client Setup presentation
 → frontend request/result typing
 → single frontend Tauri bridge
+→ visual progress/activity/health/settings presentation from canonical backend state
 
 Fabric Mods lane
 → in-game UI/keybinds
@@ -111,7 +130,7 @@ Plugin-facing presentation lane
 → user-facing in-game plugin messages when presentation-only
 ```
 
-UI never becomes runtime, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
+UI never becomes runtime, launcher-operation, updater, settings-persistence, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
 
 `lazybuilder-ui` owns the UI quality gate for these surfaces: interaction predictability, state authority/feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, presentation-performance checks, async race prevention, destructive-flow clarity, and cross-surface regression checks.
 
@@ -132,7 +151,7 @@ shared transfer contracts
 Paper/Fabric compatibility contracts
 ```
 
-It does **not** own desktop loopback HTTP control, Paper implementation behavior, or UI presentation.
+It does **not** own desktop loopback HTTP control, Tauri IPC/application operations, Paper implementation behavior, or UI presentation.
 
 ## Conflict Resolution
 
@@ -141,6 +160,28 @@ When a task touches several files, ask which semantic rule is changing.
 Examples:
 
 ```text
+Launcher Activity page layout only
+→ ui / Launcher Desktop lane
+
+whether an operation can cancel/retry and what survives restart
+→ desktop-runtime
+→ ui displays returned operation state
+
+Launcher self-update flow/signature/restart semantics
+→ desktop-runtime
+
+Update available banner layout/copy
+→ ui / Launcher Desktop lane
+
+Settings panel arrangement
+→ ui
+
+settings schema/default/migration/persistence
+→ desktop-runtime
+
+NSIS shortcut/install/upgrade semantics
+→ desktop-runtime
+
 Plugins.svelte layout only
 → ui / Launcher Desktop lane
 
@@ -195,6 +236,10 @@ Owner A decides/changes its contract
 Typical handoffs:
 
 ```text
+launcher operation/update/settings semantic change
+→ desktop-runtime
+→ ui / Launcher Desktop lane
+
 new world action + payload + Fabric button
 → protocol
 → world-management
@@ -227,7 +272,7 @@ security-only repository policy
 → SECURITY.md / exact boundary
 ```
 
-Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, or implementation mechanics alone.
+Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, or implementation mechanics alone. Framework knowledge belongs inside the semantic Skill that owns the product behavior.
 
 ## Skill Creation Gate
 
@@ -251,6 +296,7 @@ Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership actually changed?
 Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, or compatibility layer unnecessarily?
 Can an existing path or deletion satisfy the same accepted result?
+For Launcher engineering: are durable owner, state machine, persistence, restart, retry/cancel, rollback/recovery, diagnostics, and package proof defined?
 For UI work: were flow, state authority, pending/error states, back/close behavior, responsive/GUI-scale behavior, input races, and sibling surfaces audited?
 Was a plugin/mod/runtime semantic issue accidentally patched only in presentation?
 What is the cheapest proof that can falsify the result?
