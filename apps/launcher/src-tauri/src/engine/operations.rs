@@ -72,12 +72,40 @@ pub struct OperationRegistry {
 
 impl OperationRegistry {
     pub fn begin(&self, kind: &str, resource: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
+        self.begin_internal(kind, resource, can_cancel, false)
+    }
+
+    pub fn begin_exclusive(&self, kind: &str, resource: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
+        self.begin_internal(kind, resource, can_cancel, true)
+    }
+
+    fn begin_internal(
+        &self,
+        kind: &str,
+        resource: &str,
+        can_cancel: bool,
+        exclusive: bool,
+    ) -> Result<OperationSnapshot, String> {
+        let kind = kind.trim();
+        let resource = resource.trim();
+        if kind.is_empty() {
+            return Err("Operation kind is required".into());
+        }
+        if resource.is_empty() {
+            return Err("Operation resource is required".into());
+        }
+
+        let mut entries = self.entries.write().map_err(|_| "operation registry lock poisoned".to_string())?;
+        if exclusive && entries.iter().any(|entry| entry.resource == resource && !entry.state.is_terminal()) {
+            return Err(format!("Another launcher operation is already active for {resource}"));
+        }
+
         let now = now_unix_seconds();
         let sequence = NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed);
         let snapshot = OperationSnapshot {
             id: format!("op-{now}-{sequence}"),
-            kind: kind.trim().to_string(),
-            resource: resource.trim().to_string(),
+            kind: kind.to_string(),
+            resource: resource.to_string(),
             state: OperationState::Running,
             phase: "starting".into(),
             status: "Starting".into(),
@@ -91,14 +119,6 @@ impl OperationRegistry {
             updated_at_unix_seconds: now,
             completed_at_unix_seconds: None,
         };
-        if snapshot.kind.is_empty() {
-            return Err("Operation kind is required".into());
-        }
-        if snapshot.resource.is_empty() {
-            return Err("Operation resource is required".into());
-        }
-
-        let mut entries = self.entries.write().map_err(|_| "operation registry lock poisoned".to_string())?;
         entries.push_front(snapshot.clone());
         trim_history(&mut entries);
         Ok(snapshot)
@@ -135,6 +155,17 @@ impl OperationRegistry {
             entry.status = status.trim().to_string();
             entry.details = details.trim().to_string();
             entry.progress = progress;
+            Ok(())
+        })
+    }
+
+    pub fn set_cancelable(&self, id: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
+        self.mutate(id, |entry| {
+            ensure_active(entry)?;
+            if entry.cancel_requested && can_cancel {
+                return Err("Cancellation is already pending for this launcher operation".into());
+            }
+            entry.can_cancel = can_cancel;
             Ok(())
         })
     }
@@ -198,6 +229,7 @@ impl OperationRegistry {
             entry.state = state;
             entry.status = status.trim().to_string();
             entry.error = error;
+            entry.can_cancel = false;
             entry.progress = entry.progress.take().map(|mut progress| {
                 if let Some(total) = progress.total {
                     progress.current = total;
@@ -271,6 +303,7 @@ mod tests {
 
         let finished = registry.succeed(&started.id, "Server duplicated").unwrap();
         assert_eq!(finished.state, OperationState::Succeeded);
+        assert!(!finished.can_cancel);
         assert!(finished.completed_at_unix_seconds.is_some());
         assert!(registry.succeed(&started.id, "again").is_err());
     }
@@ -285,6 +318,23 @@ mod tests {
         let requested = registry.request_cancel(&cancellable.id).unwrap();
         assert_eq!(requested.state, OperationState::Cancelling);
         assert!(registry.cancellation_requested(&cancellable.id).unwrap());
+    }
+
+    #[test]
+    fn exclusive_resource_rejects_second_active_operation() {
+        let registry = OperationRegistry::default();
+        let first = registry.begin_exclusive("duplicate-server", "workspace:test", true).unwrap();
+        assert!(registry.begin_exclusive("backup-server", "workspace:test", true).is_err());
+        registry.succeed(&first.id, "done").unwrap();
+        assert!(registry.begin_exclusive("backup-server", "workspace:test", true).is_ok());
+    }
+
+    #[test]
+    fn publish_boundary_can_disable_late_cancellation() {
+        let registry = OperationRegistry::default();
+        let operation = registry.begin_exclusive("duplicate-server", "workspace:test", true).unwrap();
+        registry.set_cancelable(&operation.id, false).unwrap();
+        assert!(registry.request_cancel(&operation.id).is_err());
     }
 
     #[test]
