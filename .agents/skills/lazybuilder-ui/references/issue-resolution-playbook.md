@@ -1,538 +1,249 @@
 # LazyBuilder UI Issue Resolution Playbook
 
-Use this reference only when diagnosing or fixing a UI/UX defect, regression, confusing flow, visual inconsistency, stale state, input race, or presentation-performance problem.
+Use this reference only for a **reported UI defect/regression** where reproduction, state authority, input timing, or cross-surface behavior needs deeper diagnosis than the main `lazybuilder-ui/SKILL.md` procedure.
 
-The goal is to find the **first wrong boundary** and fix the smallest owner that can produce a reliable user-visible result. Do not patch symptoms in presentation if the authoritative defect belongs elsewhere.
+Goal: find the **first wrong boundary** and fix the smallest owner that can produce a reliable user-visible result.
 
-## Surface map
-
-LazyBuilder UI issues normally enter through one of three lanes.
-
-### Lane 1 — Launcher Desktop
-
-Typical surfaces:
+## Triage sequence
 
 ```text
-apps/launcher/src/**
-Tauri/Svelte Server Library
-Plugin Manager presentation
-Client Setup / mod synchronization presentation
-runtime/settings/world-management presentation
-confirmation/progress/error flows
+1. reproduce shortest failing flow
+2. choose one dominant defect class
+3. trace every visible fact/action to one authority
+4. verify uncertain platform behavior only if material
+5. identify first wrong boundary
+6. make smallest complete fix
+7. inspect sibling consumers of the same canonical result
+8. choose proof level that can falsify the defect
+9. state remaining native/live boundary
 ```
 
-UI owns:
+Do not start with redesign.
 
-```text
-layout
-navigation
-labels and hierarchy
-loading/pending/error/success/empty presentation
-focus and keyboard behavior
-frontend-only selection/filter/panel state
-request dispatch through the existing bridge
-```
+## Reproduction record
 
-UI does not own:
-
-```text
-server process safety
-workspace filesystem safety
-plugin lifecycle rules
-world semantics
-installation/provisioning policy
-```
-
-If the defect persists with the UI removed and the same backend request is issued directly, route to the backend owner.
-
-### Lane 2 — Fabric Mods
-
-Typical surfaces:
-
-```text
-mods/map-manager/** client screens/keybinds/map presentation
-mods/utility-manager/** client convenience presentation
-mods/performance-manager/** passive diagnostics/policy presentation when one exists
-```
-
-UI owns:
-
-```text
-screen lifecycle
-keybind routing
-map/sidebar/context interaction
-client-only preferences
-loading/pending/error states
-GUI-scale layout
-presentation/render invalidation policy
-```
-
-UI does not own:
-
-```text
-server authority
-world mutation validation
-wire semantics
-Paper implementation
-cross-manager performance ownership
-```
-
-Do not solve a map problem by adding a dependency on Performance Manager, Utility Manager, Xaero, or a second map authority unless there is a separately proven architectural requirement.
-
-### Lane 3 — Plugin-facing UI
-
-Paper plugins normally expose user experience through Launcher surfaces, in-game text/commands, status messages, permissions, action results, and vanilla/client-rendered surfaces rather than a native desktop widget tree.
-
-UI owns:
-
-```text
-how plugin state/result is presented
-plugin inventory/list/detail layout
-warnings and compatibility presentation
-confirmation/progress/error wording
-button/action availability derived from authoritative capabilities
-in-game user-facing status/message clarity where presentation-only
-```
-
-Plugin Management owns:
-
-```text
-scan/metadata/dependency rules
-install/update/remove/enable/disable semantics
-compatibility and duplicate resolution
-rollback state
-```
-
-Do not infer plugin health, compatibility, or dependency truth from visual state. Present the canonical result returned by the plugin owner.
-
-For inventory/container, chat/component, title, bossbar, scoreboard, book, player-list/tab, or resource-pack presentation, the Minecraft client is the visual rendering authority.
-
-## Mandatory triage sequence
-
-Do not start with styling. Run this sequence:
-
-```text
-1. Reproduce
-2. Classify
-3. Trace state authority
-4. Verify uncertain platform behavior when needed
-5. Find first wrong boundary
-6. Minimize fix scope
-7. Implement
-8. Regression audit
-9. Select proof renderer/level
-10. State remaining native/live proof boundary
-```
-
-### 1. Reproduce
-
-Write the shortest reproducible user flow:
+Capture only conditions that can change behavior:
 
 ```text
 starting state
-→ user input
-→ visible intermediate state
-→ expected result
-→ actual result
+user input
+visible intermediate state
+expected result
+actual result
+window size / GUI scale when relevant
+selected entity
+connection/capability state
+pending operation state
+fresh vs returning surface
+mouse vs keyboard/keybind path
 ```
 
-Capture all conditions that could change UI behavior:
+If the issue cannot yet be reproduced or separated by evidence, narrow/instrument before rewriting UI.
+
+## Defect classes
+
+Use one primary class:
 
 ```text
-window size / GUI scale
-selected server/world/plugin
-connection state
-permissions/capabilities
-pending operations
-fresh launch vs returning screen
-first load vs cached load
-mouse vs keyboard path
-single click vs repeated input
+FLOW       navigation/back/dead-end
+STATE      stale/duplicated/misleading authority
+INPUT      double-submit, focus, key/click race, event leak
+LAYOUT     overlap/overflow/density/GUI-scale breakage
+VISUAL     hierarchy/contrast/token/icon inconsistency
+ASYNC      flicker/pending ambiguity/late response/retry
+PERF       repeated rebuild/layout/render-cache churn
+COPY       unclear consequence/recovery or internal jargon
+ACCESS     keyboard/focus/readability/non-hover alternative
+OWNERSHIP  UI workaround masking runtime/plugin/world/protocol defect
 ```
 
-If the issue cannot be reproduced in source or runtime evidence, do not invent a broad rewrite. Instrument or narrow the hypothesis first.
+Fix P0/P1 interaction/state problems before polish.
 
-### 2. Classify
+## Authority trace
 
-Use one primary defect class:
-
-```text
-FLOW        wrong screen order, dead end, broken Back/close
-STATE       stale, missing, duplicated, misleading, wrong authority
-INPUT       key/click race, double-submit, focus, drag, event leakage
-LAYOUT      overlap, overflow, density, GUI-scale/window-size breakage
-VISUAL      hierarchy, contrast, inconsistent tokens/icons/spacing
-ASYNC       flicker, pending ambiguity, premature close, retry failure
-PERF        jank, repeated rebuild, layout thrash, render/cache churn
-COPY        jargon, unclear consequence, weak recovery guidance
-ACCESS      keyboard/focus/readability/non-hover alternative
-OWNERSHIP   UI workaround masking backend/protocol/plugin/runtime defect
-```
-
-Fix the dominant class first. Do not redesign the whole surface because one local class failed.
-
-### 3. Trace state authority
-
-For each visible value/action, identify exactly one source:
+Every visible value/action should resolve to exactly one of:
 
 ```text
 local presentation state
-backend runtime state
-Paper/server state
-shared protocol response
+Desktop Runtime result/state
+Paper/domain state
+shared protocol result
 persistent client preference
+plugin-management result
 ```
 
 Red flags:
 
 ```text
-same fact stored in two UI locations
-derived backend fact persisted again in frontend
-optimistic state shown as authoritative after failure
-screen-local copy survives after canonical entity is deleted
-UI decides permissions/compatibility independently
+same fact persisted in multiple UI locations
+backend fact copied into another durable frontend store
+optimistic result remains authoritative after failure
+late response mutates a newly selected entity
+UI computes permissions/compatibility/readiness independently
+presentation state invalidates heavy renderer/domain state unnecessarily
 ```
 
-### 4. Verify uncertain platform behavior
+If the canonical result itself is wrong, stop UI editing and hand off to its semantic owner.
 
-Use external research only when the answer materially affects implementation.
-
-Read:
+## Boundary examples
 
 ```text
-.agents/skills/lazybuilder-ui/references/ui-knowledge-source-policy.md
+button enabled although returned capability denies action
+→ UI defect
+
+required capability is absent from a shared payload
+→ protocol/domain defect first
+
+plugin dependency warning factually wrong
+→ plugin-management first
+
+Map terrain resets when sidebar/favorite changes
+→ UI/render invalidation defect unless map scope actually changed
+
+Launcher confirmation is clear but deletion target/path is unsafe
+→ desktop-runtime first
 ```
 
-Typical triggers:
+Never compensate for missing/wrong backend semantics with hidden UI guesses.
+
+## Async / input audit
+
+For each user-triggered async action:
 
 ```text
-Screen/widget lifecycle unclear
-Minecraft/Fabric version/API changed
-Paper/Adventure native surface unclear
-focus/key input behavior uncertain
-new UI type has no established LazyBuilder pattern
-repeated defect suggests current pattern is wrong
-```
-
-Do not browse for ordinary spacing/copy work when repo conventions already answer the question.
-
-### 5. Find the first wrong boundary
-
-Examples:
-
-```text
-button says enabled but server capability says denied
-→ UI defect if authoritative capability was available but ignored
-→ protocol/backend defect if capability was never provided and is required
-
-Plugin dependency warning is factually wrong
-→ plugin-management owns the rule
-→ UI owns only its presentation
-
-Map flickers when favorite changes
-→ UI/render lifecycle defect if favorite state invalidates renderer
-→ map cache defect only if cache itself changes scope/content incorrectly
-
-Launcher delete confirmation is clear but deletion path is unsafe
-→ desktop-runtime defect, not UI
-```
-
-Never compensate for a wrong backend contract by adding hidden UI guesses.
-
-## Issue severity
-
-Prioritize by user harm, not visual annoyance.
-
-### P0
-
-```text
-wrong destructive target
-UI implies success when operation failed
-input race performs duplicate/destructive action
-stale state can operate on wrong server/world/plugin
-screen trap prevents safe exit
-UI exposes action that bypasses required safety contract
-```
-
-### P1
-
-```text
-broken primary flow
-repeated flicker/jank affecting normal work
-Back/close loses meaningful work state
-pending action can be resubmitted
-critical error has no recovery path
-important action unreachable at supported size/GUI scale
-```
-
-### P2
-
-```text
-secondary layout inconsistency
-minor copy/icon/spacing issue
-non-blocking polish
-rare edge state with safe fallback
-```
-
-Resolve P0/P1 before visual polish.
-
-## Cross-surface synchronization rules
-
-When one operation is visible in several surfaces, keep one semantic owner and align presentation around it.
-
-Examples:
-
-```text
-Plugin install/update
-plugin-management result
-→ Launcher list status
-→ detail action state
-→ notification/progress copy
-
-World teleport
-server/protocol result
-→ Map quick action
-→ World Manager action
-→ pending/error feedback
-
-Client mod synchronization
-Launcher runtime/Client Setup owner
-→ required-mod list
-→ install/repair status
-→ restart/relaunch guidance
-```
-
-Do not implement separate success criteria on each surface.
-
-## Async and race audit
-
-For every user-triggered async action, verify:
-
-```text
-one request in flight per logical action
-pending state starts before dispatch can be repeated
+pending starts before repeat dispatch
+one logical action cannot run twice from independent handlers
 success clears pending
 error clears pending
-reset/disconnect clears pending safely
-late response cannot mutate the wrong selected entity
-screen close does not silently cancel unless backend supports cancellation
-reopen does not replay the previous action
+reset/disconnect clears local pending safely
+late response is bound to the original target identity
+screen close does not imply cancellation unless owner supports it
+reopen does not replay the prior request
 ```
 
-Check both input paths when relevant:
+When relevant check both:
 
 ```text
 mouse click
-keyboard shortcut
-Enter/Space activation
-screen-level key handler
-global keybinding/event handler
+Enter/Space
+screen key handler
+global keybind/event handler
 ```
 
-One physical input must not be interpreted twice by independent handlers.
+One physical input must not be interpreted twice.
 
-## Navigation-state audit
+## Navigation / state preservation
 
-For parent/detail/confirmation flows, preserve where useful:
+Preserve useful local context unless canonical data invalidates it:
 
 ```text
-selected entity
-search query
-filters
-scroll position
+selection
+search/filter
+scroll
 active tab
 map center/zoom
-sidebar collapsed state
+sidebar state
 workspace/server context
 ```
 
-Reset only when canonical data invalidates the state.
-
-Back/Esc/close must answer one question consistently: **where does the user expect to return?**
+Back/Esc/close must return where the user reasonably expects. Leaving a screen is not cancellation by default.
 
 ## Destructive-flow audit
 
-Before archive/delete/remove/replace/reset-like actions:
+For delete/remove/archive/reset/replace-like actions:
 
 ```text
-target name is visible
-consequence is explicit
-routine and destructive actions are visually separated
-confirmation wording matches actual backend behavior
-action is unavailable while conflicting work is active
-success is shown only after authoritative success
-error leaves a recoverable context
+target identity visible
+consequence matches backend semantics
+routine and destructive actions separated
+conflicting work blocks the action
+success shown only after authoritative success
+failure leaves recoverable context
 ```
 
-UI confirmation is not a substitute for backend safety checks.
+UI confirmation never substitutes for backend safety.
 
-## Layout matrix
+## Layout / rendering audit
 
-Audit representative constraints that can disprove the issue, not every theoretical permutation.
+Use only representative constraints that can expose the current defect.
 
-### Launcher Desktop
+Launcher examples:
 
 ```text
 minimum supported window
 normal laptop window
-maximized desktop
-long server/plugin/world names
-empty list
-large list
-loading/pending/error states
-keyboard-only traversal
+long labels / large list
+loading/pending/error
+keyboard path
 ```
 
-### Fabric UI
+Fabric examples:
 
 ```text
-common GUI scales
-small game window
+small window / common GUI scales
 1080p-class fullscreen
-wide/ultrawide
-long labels
-empty / maximum list
+wide layout when relevant
+long labels / max list
 sidebar open/collapsed
-map with cache cold/warm
+cold/warm map state when renderer is involved
 ```
 
-Avoid screenshot-specific coordinates when adaptive layout can express the same hierarchy.
-
-## Rendering/performance audit
-
-Presentation changes must not trigger heavy work unless the visual content actually requires it.
-
-Check for:
+Performance red flags:
 
 ```text
-full screen/widget rebuild on hover/selection
-renderer invalidation from unrelated sidebar state
-cache clear on transient identity/loading state
-polling every frame/tick for state available by revision/event
-list re-sorting/re-filtering unnecessarily during render
-large allocations in hot render paths
+full rebuild on hover/selection
+renderer/cache reset from unrelated presentation state
+polling each frame/tick for event/revision-driven state
 clearing valid content before replacement is ready
+large allocations/sorting in hot render path
 ```
 
-Prefer coalesced/atomic visible updates over incremental flicker.
+## Cross-surface regression
 
-## Copy and status rules
-
-User-facing status should answer:
+After fixing one presentation of a canonical action/result, inspect sibling consumers only where the same contract is used.
 
 ```text
-What is happening?
-What object is affected?
-Can I do anything now?
-What should I do if it fails?
+teleport result → Map + World Manager
+plugin update result → list + detail + notification
+server lifecycle result → Library + confirmation/status surfaces
+client-sync result → required-mod list + repair/restart guidance
 ```
 
-Prefer:
+Do not duplicate implementation; align presentation around the same authority.
+
+## External research trigger
+
+Read `ui-knowledge-source-policy.md` only when platform/API behavior is genuinely uncertain, version-sensitive, or a new interaction type has no established LazyBuilder pattern.
+
+Do not browse for ordinary copy/spacing/state fixes that source already answers.
+
+## Proof selection
+
+Read `visual-proof-system.md` when appearance/state presentation is part of acceptance.
 
 ```text
-Updating plugin…
-Teleporting…
-Could not load worlds. Retry.
-Server must be stopped before deletion.
+L0 source inspection
+L1 typecheck/build/tests
+L2 simulated preview (explicitly simulated)
+L3 real Launcher Svelte preview
+L4 real Minecraft renderer
+L5 Local-PC native interaction
 ```
 
-over internal terms such as raw exception names, protocol IDs, job IDs, implementation class names, internal paths, or converter brands.
-
-## Minimal-fix discipline
-
-Before adding code, prefer in this order:
-
-```text
-reuse existing state/result
-→ correct lifecycle handling
-→ correct layout/hierarchy
-→ remove redundant control
-→ add tiny presentation state
-→ extend existing component/screen
-→ only then consider a new component abstraction
-```
-
-Do not add a manager, service, cache, event bus, router, persistence layer, background worker, duplicate screen, preview implementation, or screenshot service solely because the current file is large.
-
-## Required regression scan
-
-After a fix, search for sibling surfaces using the same action/state.
-
-Examples:
-
-```text
-Teleport fixed in Map
-→ inspect World Manager teleport state
-
-Plugin pending state fixed in detail
-→ inspect plugin list/status/header
-
-Server lifecycle error copy fixed
-→ inspect duplicate/remove/delete confirmation and toast/status surfaces
-```
-
-Do not duplicate the same fix blindly. Confirm whether siblings consume the same canonical state and only align presentation where needed.
-
-## Visual proof selection
-
-Read:
-
-```text
-.agents/skills/lazybuilder-ui/references/visual-proof-system.md
-```
-
-Choose proof based on the surface:
-
-```text
-Launcher visual/layout/state issue
-→ real Svelte/CSS Launcher UI Preview artifact
-
-Fabric Screen / map / GUI-scale issue
-→ real Minecraft client + production Screen when automated proof exists
-
-Paper plugin inventory/chat/title/bossbar/book/scoreboard/tab/resource-pack issue
-→ real plugin/server payload + real Minecraft client
-
-MiniMessage/component semantic iteration only
-→ SIMULATED PREVIEW, clearly labeled
-```
-
-A mock HTML reproduction of Minecraft UI is not native proof.
-
-Every visual proof should be tied to the exact commit/scenario and record viewport/GUI scale where relevant.
-
-## Proof ladder
-
-Use the cheapest proof capable of falsifying the issue:
-
-```text
-L0 static source inspection
-→ L1 unit/source-contract/typecheck/build
-→ L2 deterministic simulated preview when useful
-→ L3 real Launcher Svelte visual proof
-→ L4 real Minecraft-rendered visual proof
-→ L5 Local-PC native interaction/integration proof
-```
-
-Compilation proves syntax/contracts, not interaction quality. A simulated preview proves only what its renderer actually models.
-
-For Launcher visual/layout/state presentation, inspect Launcher UI Preview before Local-PC acceptance when practical. For Fabric or plugin-facing Minecraft surfaces, use the real Minecraft renderer when that proof path exists. Local PC remains required for environment-specific timing, GPU/driver/frame pacing, mouse feel, OS DPI/windowing, native dialogs, installed packaging, real network conditions, and other behavior not captured by deterministic proof.
-
-Never claim a higher proof level than observed.
+Choose the cheapest level that can disprove the reported issue. Never claim a higher level than observed.
 
 ## Completion report
 
-A UI issue is complete only when the report can state:
+A UI defect is complete when you can state:
 
 ```text
 reproduced cause
 primary owner
 smallest changed boundary
-platform/source research used, if any
-states/inputs audited
-sibling surfaces checked
-no duplicate source of truth introduced
-build/CI proof status
-visual proof renderer + commit/scenario, when applicable
-remaining Local-PC/native proof boundary, if any
+states/inputs checked
+sibling consumers checked when relevant
+proof level + renderer/commit when visual
+remaining native/live boundary
 ```
+
+Then STOP. Do not convert one defect into a broad UI redesign or framework project.
