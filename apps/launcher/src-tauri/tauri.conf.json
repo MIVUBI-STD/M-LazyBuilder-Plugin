@@ -36,7 +36,6 @@
     "resources": ["resources/core", "resources/client-mods"],
     "windows": {
       "allowDowngrades": false,
-      "bundleVCRuntime": false,
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
         "silent": true
