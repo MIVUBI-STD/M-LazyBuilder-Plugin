@@ -22,10 +22,10 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 Current client-side behavior remains deliberately small and vanilla-shaped:
 
 - Extended Chat History: enabled by default and retains more vanilla chat lines/history without replacing the chat screen;
-- Keep Chat Draft: enabled by default and restores an unsent draft within the current Minecraft session;
+- Keep Chat Draft: enabled by default and restores an unsent draft while the current multiplayer connection/session remains active; disconnect clears the draft so text is not carried into another server context;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
 - Copy Connection Details: contextual action on the disconnect screen for copying the known server target and disconnect reason;
-- Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone;
+- Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
 - Shared Notifications: Utility features use Minecraft's native system-toast surface instead of creating separate HUD or popup systems;
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
 - Contextual Screenshot Names: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots.
@@ -37,6 +37,12 @@ Borderless Window changes only window presentation. Focus-based FPS/resource thr
 Screenshot naming does not depend on Map Manager and does not create a replacement screenshot system. Explicit filenames supplied by Minecraft or another mod are left unchanged.
 
 Clipboard helpers are contextual actions only. World/project copy actions belong in the Map Manager UI that owns those values; block, structure, NBT, and other build-data clipboard behavior remains outside Utility Manager.
+
+## Maintenance notes
+
+Extended Chat History intentionally stays a minimal vanilla patch rather than replacing ChatHud. Its three `@ModifyConstant` hooks are mapping/version-sensitive because they target Vanilla's internal retention limits. Treat Minecraft-version upgrades as a verification point for these hooks rather than introducing a larger custom chat subsystem.
+
+Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
