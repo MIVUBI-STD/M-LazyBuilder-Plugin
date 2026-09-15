@@ -156,12 +156,17 @@ visual/list/detail/action state only
 
 ## Handoff / exit contract
 
+Handoff to presentation carries canonical plugin truth, not raw files for UI re-interpretation.
+
 ```text
-canonical plugin lifecycle result/capability
-→ lazybuilder-ui presents it
+canonical plugin result
+→ lazybuilder-ui
+handoff: canonical plugin id/name/version + lifecycle state + capabilities/actions + dependency/compatibility summary + restartRequired + stable result/error
+UI must not parse JAR metadata, resolve dependencies, select duplicate winners, or infer compatibility independently
 
 bundled LazyBuilder core compatibility/synchronization
 → lazybuilder-desktop-runtime
+handoff: exact bundled-core mismatch/result only; do not broaden third-party plugin rules into core maintenance
 ```
 
 Finish when:
@@ -170,6 +175,7 @@ Finish when:
 - destructive/replacing work has the required rollback boundary;
 - dependency/duplicate/restart semantics have one owner;
 - matching proof is complete at the available context ceiling;
+- the next owner can consume the canonical result without rescanning plugin files or recomputing lifecycle truth;
 - remaining Paper live proof or UI residue is named precisely.
 
 Do not continue into unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
