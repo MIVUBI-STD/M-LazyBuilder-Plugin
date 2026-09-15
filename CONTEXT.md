@@ -2,7 +2,7 @@
 
 ## Product
 
-LazyBuilder is a modular Minecraft Java 1.21.4 builder-server workspace. It is intentionally split by semantic ownership rather than one master runtime component.
+LazyBuilder is a modular Minecraft Java 1.21.4 builder-server workspace. It is split by semantic ownership rather than one master runtime component.
 
 ```text
 LazyBuilder
@@ -13,7 +13,7 @@ LazyBuilder
 ├── mods/                          Fabric client mods
 │   ├── map-manager/
 │   ├── utility-manager/
-│   └── performance-manager/       deferred research source
+│   └── performance-manager/
 └── shared/protocol/               Neutral Paper/Fabric contracts
 ```
 
@@ -22,7 +22,7 @@ External build/edit tools such as Vanilla Minecraft, Axiom, WorldEdit/FAWE, Fast
 ## Repository authority
 
 ```text
-Local = active development / source authority
+Local = active development / remediation / source authority
 main  = stable / release authority
 ```
 
@@ -30,31 +30,35 @@ Do not silently fall back to `main`. Do not create side development branches unl
 
 ## Current continuation phase
 
-The repository has completed the current remote hardening cycle and the next canonical phase is **Local PC validation**.
+Installed Local PC testing on 15 September 2026 exposed reproducible cross-boundary defects. The current canonical phase is therefore **source remediation and synchronization**.
 
-Canonical handoff:
-
-`docs/05-operations/local-pc-validation-plan.md`
-
-The next work is to exercise the existing product from the outside in:
+Current handoff:
 
 ```text
-installer
-→ Launcher
-→ managed Java / Paper
-→ Plugin Manager
-→ World Manager
-→ Utilities Manager
-→ Client Setup / Modrinth
-→ Map Manager
-→ Utility Manager
-→ full Paper/Fabric interoperability
-→ restart/recovery/update
-→ large-world/storage/conversion validation
-→ final repository audit
+docs/05-operations/local-pc-remediation-2026-09-15.md
 ```
 
-During this phase, do not expand architecture merely because target-machine proof is incomplete. Fix reproducible defects at the smallest owning boundary.
+Current order:
+
+```text
+Local PC findings
+→ source remediation
+→ runtime/build/product synchronization
+→ regression coverage
+→ exact-head Verify
+→ applicable Paper Runtime Proof
+→ canonical installer proof
+→ final source/repository audit
+→ explicit decision to reopen Local PC acceptance
+```
+
+Do not move directly to target-machine acceptance while source-side P0/P1 remediation or synchronization contradictions remain.
+
+The later acceptance procedure is:
+
+```text
+docs/05-operations/local-pc-validation-plan.md
+```
 
 ## Repository organization
 
@@ -82,18 +86,38 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 - source/CI proof is distinct from local/live runtime proof;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
 - no idle/background subsystem without a concrete runtime need;
-- deferred source stays isolated until explicit promotion based on measured evidence.
+- required components must match source, packaging, Client Setup, CI and documentation.
 
 Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
+Current remediation authority: `docs/05-operations/local-pc-remediation-2026-09-15.md`.
 Current proof authority: `docs/05-operations/current-verification.md`.
-Current Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
+Later Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
 
 ## Component ownership
 
 ### Launcher / Server Manager
 
 `apps/launcher/` is the canonical Tauri 2 + Svelte 5 + Rust desktop source. It owns workspace bootstrap, managed Java/Paper discovery, start/stop/restart, process identity/recovery, health/resource settings, Paper provisioning/update, and internal bundled runtime synchronization.
+
+Runtime/process invariants include:
+
+```text
+PID + process-start-time identity
+one managed Paper process
+safe detached-process validation before termination
+safe Stopping/Detached stop-restart recovery
+one server-start coordination lock
+LazyBuilder-owned process-local TEMP/TMP policy
+```
+
+Canonical runtime temp root:
+
+```text
+%LOCALAPPDATA%\LazyBuilder\temp
+```
+
+The installer must not mutate the user's global `TEMP`, `TMP`, `PATH`, `JAVA_HOME`, Maven, Gradle, Node or Rust environment.
 
 ### Plugin Manager
 
@@ -112,28 +136,27 @@ general mods and modpacks
 launching Minecraft
 ```
 
-LazyBuilder Client Setup target ownership is limited to:
+LazyBuilder Client Setup owns only:
 
 ```text
-detect Modrinth profiles
-user-selected profile persistence
-Minecraft 1.21.4 + Fabric compatibility verification
-status/install/update/repair for LazyBuilder-owned required client components
-preserve unrelated files in the selected profile mods/ directory
+detect/select Modrinth profile
+persist the selected profile
+verify Minecraft 1.21.4 + Fabric compatibility
+status/install/update/repair LazyBuilder-owned client components
+preserve all unrelated files in the selected profile mods directory
 ```
 
-The intended V1 required Fabric set is:
+Canonical V1 required Fabric set:
 
 ```text
 lazybuilder-map-manager-*.jar
 lazybuilder-utility-manager-*.jar
+lazybuilder-performance-manager-*.jar
 ```
 
-`mods/performance-manager/` is deferred research source. Current `Local` Launcher/CI source may still reference or bundle its JAR as transitional packaging. That state must not be used as justification to add new Performance Manager dependencies or expand its product scope during Local PC validation.
+The three managers are one tested/bundled/synchronized client suite. This definition must stay identical across architecture docs, artifact verification, Gradle/CI build, Launcher resources, and Client Setup transaction logic.
 
-Client Setup must never modify unrelated files in the selected profile `mods/` directory, create Minecraft instances, or become a second general mod manager. There is no background profile watcher; checks are request-bound to the Client Setup surface and `Sync Client`.
-
-Runtime-ready Launcher packages must use tested same-revision LazyBuilder client artifacts rather than fetching arbitrary LazyBuilder client builds at runtime.
+Client Setup must never become a second Minecraft launcher or general mod manager. Runtime-ready packages use tested same-revision LazyBuilder client artifacts rather than fetching arbitrary LazyBuilder builds at runtime.
 
 ### World Manager
 
@@ -147,6 +170,19 @@ ARCHIVED
 ```
 
 Manual Load/Unload and per-world `autoLoad` are not product features. Runtime loading is automatic; empty active worlds may idle-unload when safe. User-facing terminology is `Duplicate`, never `Clone`.
+
+World Manager is the single owner of cross-edition conversion runtime. Default runtime policy is `AUTOMATIC_STABLE`, while activation remains fail-closed:
+
+```text
+stable release metadata
+→ exact CLI artifact
+→ SHA-256 required
+→ download
+→ compatibility probe
+→ staged candidate
+→ atomic promotion
+→ rollback/discard on failure
+```
 
 ### Utilities Manager (Paper)
 
@@ -166,11 +202,25 @@ Build Helpers
 
 `mods/utility-manager/` owns passive non-building client convenience such as chat/session convenience, reconnect/disconnect presentation, borderless-window presentation, reload notification, screenshot naming, and local preferences.
 
+Reconnect target capture occurs before JOIN and is reconfirmed on JOIN. Reconnect presentation must cover both observed vanilla paths:
+
+```text
+DisconnectedScreen
+MultiplayerScreen/server-list fallback
+```
+
 ### Performance Manager (Fabric)
 
-`mods/performance-manager/` is an isolated deferred performance-research module. Its existing frame observation/background-FPS experiments do not make it required V1 runtime infrastructure.
+`mods/performance-manager/` is a required V1 client manager for passive performance observation/policy. Its scope remains narrow:
 
-No Paper plugin, shared protocol, Map Manager, Utility Manager, or unrelated desktop subsystem may gain a dependency on Performance Manager while it is deferred. Promotion requires a concrete client bottleneck, a measurable success criterion, representative Minecraft-client proof, and an explicit product decision.
+- frame-time pressure observation;
+- bounded background/unfocused FPS policy;
+- passive/on-demand performance diagnostics;
+- no ownership of Map Manager workloads;
+- no ownership of Utility Manager behavior;
+- no required third-party optimization mod.
+
+Required status does not permit cross-manager implementation dependencies or duplicate performance ownership.
 
 ## Shared protocol
 
@@ -184,11 +234,26 @@ lazybuilder:transfer  bounded file bytes only
 
 Desktop ↔ Paper local control is a separate authenticated loopback contract currently at protocol version 2. Client Setup is local desktop/filesystem integration and does not add another Minecraft network protocol.
 
+## Build/toolchain ownership
+
+Repository-owned wrappers are canonical:
+
+```text
+mvnw.cmd
+→ tooling/windows-toolchain/scripts/wrappers/maven.ps1
+
+gradlew.bat
+→ tooling/windows-toolchain/scripts/wrappers/gradle.ps1
+```
+
+Do not require global Maven/Gradle. The wrappers use official checksums and the LazyBuilder-owned temp policy. Gradle defaults to no-daemon unless explicitly overridden, reducing stale Loom/daemon lock risk.
+
+Developer toolchain checks use tool-specific version parsers rather than one generic first-line parser.
+
 ## Runtime workspace target
 
 ```text
 Work Server - 1.21.4/
-├── LazyBuilder.exe
 ├── server/
 │   ├── paper.jar
 │   └── plugins/
@@ -208,20 +273,19 @@ Work Server - 1.21.4/
 
 Archive is lifecycle metadata, not a second physical world store. Modrinth profiles remain external user-owned Minecraft client workspaces and are not moved into the server workspace.
 
-## Validation authority
+## Verification authority
 
 Do not hard-code a permanent current SHA or workflow run in stable context. Determine readiness from:
 
 ```text
 current Local HEAD
-→ latest relevant Verify workflow for that exact HEAD
-→ component-specific build/test evidence
-→ dedicated Paper Runtime Proof where applicable
-→ target-machine / Minecraft-client proof where CI cannot faithfully reproduce behavior
+→ current remediation state
+→ exact-head Verify
+→ component-specific tests/artifact verification
+→ applicable Paper Runtime Proof
+→ canonical installer smoke proof
+→ final source/repository audit
+→ explicit decision to reopen target-machine acceptance
 ```
 
-`REMOTE_GITHUB` can prove more than static compilation when a workflow actually boots the relevant runtime. In particular, the dedicated Paper Runtime Proof is authoritative for the Paper lifecycle cases it explicitly executes, including real Paper boot/restart and tested managed-world persistence.
-
-Remote CI still does **not** prove arbitrary target-PC Installer/Launcher behavior, real Modrinth profile discovery/sync on the user's machine, Fabric UI/input inside a real Minecraft client, representative Plugin Manager behavior on a long-lived server, real-player gameplay interaction, representative production-scale large-world throughput, full-PC reboot recovery, or representative cross-edition conversion quality.
-
-Those are now explicit Local PC acceptance tasks in `docs/05-operations/local-pc-validation-plan.md`.
+Remote CI proves only what it executes. Dedicated Paper Runtime Proof is authoritative for its real Paper boot/lifecycle/restart/persistence cases. Target-PC/real-client behavior is a later proof layer, not a substitute for unresolved source remediation.
