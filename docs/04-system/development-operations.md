@@ -199,6 +199,20 @@ CI must build from repository source/lockfiles and must not trust developer-mach
 
 The workflow may produce exact-commit artifacts and provenance. A green unrelated job is not proof for a changed behavior outside that job's boundary.
 
+### CI supply-chain discipline
+
+Verification workflows are part of the build supply chain and follow the same reproducibility standard as toolchains and lockfiles:
+
+- external GitHub Actions are referenced by immutable full commit SHA, with the intended release/major retained only as a readable comment;
+- workflow `GITHUB_TOKEN` permissions are explicit and least-privilege (`contents: read` for current verification/preview workflows);
+- read-only checkout disables persisted repository credentials;
+- every job declares an explicit timeout suited to that proof lane rather than inheriting GitHub's long default;
+- caches are acceleration only and never become artifact/proof authority;
+- focused visual workflows do not run on ordinary `Local` pushes;
+- action upgrades are deliberate dependency changes: resolve the upstream release/tag to its reviewed commit SHA, update the pin, then verify the affected workflow contract.
+
+Release-only capabilities such as OIDC credentials, signing, artifact attestations, deployment environments, or write permissions are introduced only when a real release/publish requirement exists. They do not belong in ordinary Local verification by default.
+
 ## Deployment / promotion boundary
 
 Branch semantics:
