@@ -110,8 +110,10 @@ public final class ClientMapSurfaceCache {
     /** Returns remembered terrain immediately and queues missing loaded terrain. */
     public SurfaceSample sample(ClientWorld world, int blockX, int blockZ) {
         RegionData region = regionFor(blockX, blockZ, true);
-        SurfaceSample cached = region.get(localIndex(blockX, blockZ));
-        if (cached != null) return cached;
+        int index = localIndex(blockX, blockZ);
+        if (region.contains(index)) {
+            return new SurfaceSample(region.color(index), region.height(index), true);
+        }
 
         queueIfLoaded(world, blockX, blockZ, pack(blockX, blockZ));
         return SurfaceSample.UNEXPLORED;
@@ -161,7 +163,10 @@ public final class ClientMapSurfaceCache {
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
 
             RegionData region = regionFor(x, z, true);
-            if (region.put(localIndex(x, z), readSurface(world, x, z))) residentSampleCount++;
+            long packedSample = readSurfacePacked(world, x, z);
+            if (region.put(localIndex(x, z), unpackSampleColor(packedSample), unpackSampleHeight(packedSample))) {
+                residentSampleCount++;
+            }
             region.dirty = true;
             processed++;
         }
@@ -262,12 +267,9 @@ public final class ClientMapSurfaceCache {
 
             while (processed < budget && activeCompletedIndex < activeCompletedSnapshot.size()) {
                 int index = activeCompletedSnapshot.indices[activeCompletedIndex];
-                SurfaceSample sample = new SurfaceSample(
-                        activeCompletedSnapshot.colors[activeCompletedIndex],
-                        activeCompletedSnapshot.heights[activeCompletedIndex],
-                        true
-                );
-                if (activeCompletedRegion.putIfAbsent(index, sample)) residentSampleCount++;
+                int color = activeCompletedSnapshot.colors[activeCompletedIndex];
+                int height = activeCompletedSnapshot.heights[activeCompletedIndex];
+                if (activeCompletedRegion.putIfAbsent(index, color, height)) residentSampleCount++;
                 activeCompletedIndex++;
                 processed++;
             }
@@ -347,10 +349,11 @@ public final class ClientMapSurfaceCache {
                 long packed = in.readLong();
                 int x = unpackX(packed);
                 int z = unpackZ(packed);
-                SurfaceSample sample = new SurfaceSample(in.readInt(), in.readInt(), true);
+                int color = in.readInt();
+                int height = in.readInt();
                 long regionKey = pack(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(z, REGION_SIZE));
                 result.computeIfAbsent(regionKey, ignored -> new RegionData())
-                        .put(localIndex(x, z), sample);
+                        .put(localIndex(x, z), color, height);
             }
         } catch (IOException ignored) {
             result.clear();
@@ -481,7 +484,7 @@ public final class ClientMapSurfaceCache {
         return new SurfaceSample(color, (int) (height / count), true);
     }
 
-    private static SurfaceSample readSurface(ClientWorld world, int x, int z) {
+    private static long readSurfacePacked(ClientWorld world, int x, int z) {
         int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
         int blockY = Math.max(world.getBottomY(), topY - 1);
         BlockPos pos = new BlockPos(x, blockY, z);
@@ -505,7 +508,19 @@ public final class ClientMapSurfaceCache {
             else if (relief < 0) color = shade(color, 0.92);
         }
 
-        return new SurfaceSample(color, topY, true);
+        return packSample(color, topY);
+    }
+
+    private static long packSample(int color, int height) {
+        return ((long) color << 32) | (height & 0xFFFFFFFFL);
+    }
+
+    private static int unpackSampleColor(long packedSample) {
+        return (int) (packedSample >> 32);
+    }
+
+    private static int unpackSampleHeight(long packedSample) {
+        return (int) packedSample;
     }
 
     private static int shade(int argb, double factor) {
@@ -542,17 +557,24 @@ public final class ClientMapSurfaceCache {
         private boolean loaded;
         private boolean dirty;
 
-        private SurfaceSample get(int index) {
-            if (present == null || !present.get(index)) return null;
-            return new SurfaceSample(colors[index], heights[index], true);
+        private boolean contains(int index) {
+            return present != null && present.get(index);
+        }
+
+        private int color(int index) {
+            return colors[index];
+        }
+
+        private int height(int index) {
+            return heights[index];
         }
 
         /** Returns true when this call inserted a previously absent slot. */
-        private boolean put(int index, SurfaceSample sample) {
+        private boolean put(int index, int color, int height) {
             ensureStorage();
             boolean inserted = !present.get(index);
-            colors[index] = sample.color();
-            heights[index] = sample.height();
+            colors[index] = color;
+            heights[index] = height;
             if (inserted) {
                 present.set(index);
                 size++;
@@ -561,11 +583,11 @@ public final class ClientMapSurfaceCache {
         }
 
         /** Returns true when the absent slot was inserted. */
-        private boolean putIfAbsent(int index, SurfaceSample sample) {
+        private boolean putIfAbsent(int index, int color, int height) {
             ensureStorage();
             if (present.get(index)) return false;
-            colors[index] = sample.color();
-            heights[index] = sample.height();
+            colors[index] = color;
+            heights[index] = height;
             present.set(index);
             size++;
             return true;
