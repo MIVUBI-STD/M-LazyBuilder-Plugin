@@ -89,9 +89,9 @@
 
   onMount(() => {
     void refresh(true);
-    const timer = window.setInterval(() => {
-      if (operations.some(isActive)) void refresh();
-    }, 1500);
+    // Snapshot queries remain authoritative. Poll while this surface is mounted so
+    // background operations that start after the page opens are also discovered.
+    const timer = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(timer);
   });
 
@@ -120,7 +120,7 @@
       {#if activeOperations.length === 0}
         <div class="quiet-state">No operations are currently running.</div>
       {:else}
-        <div class="operation-list">
+        <div class="operation-list" aria-live="polite">
           {#each activeOperations as operation (operation.id)}
             <article class="operation-card active-operation">
               <div class="operation-main">
