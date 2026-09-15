@@ -22,6 +22,7 @@ REQUIRED_FILES = [
     "tooling/windows-toolchain/dev.ps1",
     "tooling/windows-toolchain/scripts/distribution/package-local.ps1",
     "docs/README.md",
+    "docs/04-system/README.md",
     "docs/04-system/development-discipline.md",
     "docs/04-system/skill-routing.md",
     "docs/04-system/development-operations.md",
@@ -69,6 +70,20 @@ REQUIRED_AGENT_PHRASES = [
     "LOCAL_CODE",
     "LIVE_SERVER",
     "Failure classification",
+    "Evidence Opt-In Rule",
+    "Historical/supporting documents are **not default context**",
+]
+
+REQUIRED_DOC_ENTRY_PHRASES = [
+    "Supporting evidence is opt-in",
+    "Do not broad-scan evidence documents for reassurance",
+    "Evidence = supporting proof/history, opt-in only",
+]
+
+REQUIRED_SYSTEM_DOC_PHRASES = [
+    "Supporting evidence documents under `docs/04-system/`",
+    "opt-in context only",
+    "Do not add another architecture lock/report",
 ]
 
 REQUIRED_DISCIPLINE_PHRASES = [
@@ -130,6 +145,8 @@ def main() -> int:
                 fail(errors, f"temporary workflow must not live in the durable workflow directory: {workflow.name}")
 
     agents = read_text("AGENTS.md", errors)
+    docs_entry = read_text("docs/README.md", errors)
+    system_doc = read_text("docs/04-system/README.md", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
@@ -140,6 +157,14 @@ def main() -> int:
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
             fail(errors, f"AGENTS.md missing canonical routing marker: {phrase}")
+
+    for phrase in REQUIRED_DOC_ENTRY_PHRASES:
+        if phrase not in docs_entry:
+            fail(errors, f"docs/README.md missing context-economy marker: {phrase}")
+
+    for phrase in REQUIRED_SYSTEM_DOC_PHRASES:
+        if phrase not in system_doc:
+            fail(errors, f"system documentation missing evidence-boundary marker: {phrase}")
 
     for phrase in REQUIRED_DISCIPLINE_PHRASES:
         if phrase not in discipline:
@@ -219,6 +244,7 @@ def main() -> int:
 
     print("Repository contract verification PASS")
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
+    print("Supporting evidence context: opt-in only")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
     print("Local distribution owner: tooling/windows-toolchain/scripts/distribution/package-local.ps1")
     print("Local distribution path: dist/Local")
