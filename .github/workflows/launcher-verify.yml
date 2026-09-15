@@ -43,3 +43,5 @@ jobs:
           python-version: '3.13'
       - name: Verify local Launcher packaging contract
         run: python scripts/verify_local_launcher_contract.py
+      - name: Verify Launcher release signing contract
+        run: python scripts/verify_launcher_release_contract.py
