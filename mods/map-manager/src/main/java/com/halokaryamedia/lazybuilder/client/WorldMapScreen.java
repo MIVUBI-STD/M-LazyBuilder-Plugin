@@ -23,7 +23,7 @@ import java.util.UUID;
  * authoritative world state, and presentation changes do not reset the terrain cache.</p>
  */
 public final class WorldMapScreen extends Screen {
-    private static final int BOTTOM_BAR = 24;
+    private static final int BOTTOM_BAR = 46;
     private static final int SELECTION_BOTTOM_BAR = 64;
     private static final int COLLAPSED_SIDEBAR = 34;
     private static final int MIN_SIDEBAR = 152;
@@ -207,7 +207,6 @@ public final class WorldMapScreen extends Screen {
             renderSelection(context, mouseX, mouseY);
         }
         renderCursor(context, mouseX, mouseY);
-        renderMapControls(context, mouseX, mouseY);
         renderSidebar(context, mouseX, mouseY);
         renderBottomStatus(context, mouseX, mouseY);
         renderContextMenu(context, mouseX, mouseY);
@@ -430,15 +429,6 @@ public final class WorldMapScreen extends Screen {
                 pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
     }
 
-    private void renderMapControls(DrawContext context, int mouseX, int mouseY) {
-        if (areaMode) return;
-        Rect recenter = recenterMapRect();
-        int color = recenter.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;
-        context.fill(recenter.left, recenter.top, recenter.right, recenter.bottom, color);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Recenter"),
-                (recenter.left + recenter.right) / 2, recenter.top + 6, LbUi.TEXT_PRIMARY);
-    }
-
     private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
         int bottom = areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR;
         int left = sidebarWidth();
@@ -465,27 +455,23 @@ public final class WorldMapScreen extends Screen {
         String coordinates = hovered == null ? "" : "X " + hovered[0] + "   Z " + hovered[1];
         String status = maps.teleportPending() ? "Teleporting…"
                 : SURFACE.pendingCount() > 0 ? "Loading map…"
-                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center map on player";
+                : "";
 
         renderZoomControl(context, mouseX, mouseY);
+        renderCompactAction(context, recenterMapRect(), "Recenter", false, mouseX, mouseY);
 
         int mapCenterX = left + (width - left) / 2;
         if (!coordinates.isBlank()) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),
-                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);
+                    mapCenterX, height - 38, LbUi.TEXT_SECONDARY);
         }
 
-        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;
-        int statusLeft = zoomPlusRect().right + 10;
-        int statusRight = coordinates.isBlank()
-                ? width - 8
-                : mapCenterX - textRenderer.getWidth(coordinates) / 2 - 14;
-        int statusWidth = Math.max(0, statusRight - statusLeft);
-        if (statusWidth > 24) {
-            String visibleStatus = operationalStatus ? status : trim(status, statusWidth);
-            if (textRenderer.getWidth(visibleStatus) <= statusWidth) {
-                context.drawTextWithShadow(textRenderer, Text.literal(visibleStatus),
-                        statusLeft, height - 16, LbUi.TEXT_MUTED);
+        if (!status.isBlank()) {
+            int statusWidth = textRenderer.getWidth(status);
+            int statusX = width - statusWidth - 10;
+            if (statusX > recenterMapRect().right + 10) {
+                context.drawTextWithShadow(textRenderer, Text.literal(status),
+                        statusX, height - 16, LbUi.TEXT_MUTED);
             }
         }
     }
@@ -1073,9 +1059,9 @@ public final class WorldMapScreen extends Screen {
     private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
     private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
     private Rect recenterMapRect() {
-        Bounds map = mapBounds();
-        int buttonWidth = 70;
-        return new Rect(Math.max(map.left + 8, map.right - buttonWidth - 8), map.top + 8, map.right - 8, map.top + 30);
+        int center = sidebarWidth() + (width - sidebarWidth()) / 2;
+        int buttonWidth = 78;
+        return new Rect(center - buttonWidth / 2, height - 22, center + buttonWidth / 2, height - 3);
     }
     private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }
     private Rect zoomLabelRect() { int x = zoomMinusRect().right + 3; return new Rect(x, height - 22, x + 64, height - 3); }
