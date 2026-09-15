@@ -30,22 +30,26 @@ function Read-ZipEntryText($Zip, [string]$EntryName) {
 
 function Get-ClientEntrypoints($Metadata) {
     $values = @()
-    if ($Metadata.entrypoints -and $Metadata.entrypoints.client) {
-        foreach ($entry in @($Metadata.entrypoints.client)) {
-            if ($entry -is [string]) { $values += $entry }
-            elseif ($entry.PSObject.Properties['value'] -and $entry.value -is [string]) { $values += $entry.value }
-        }
+    $entrypointsProperty = $Metadata.PSObject.Properties['entrypoints']
+    if (-not $entrypointsProperty) { return @($values) }
+    $entrypoints = $entrypointsProperty.Value
+    if ($null -eq $entrypoints) { return @($values) }
+    $clientProperty = $entrypoints.PSObject.Properties['client']
+    if (-not $clientProperty) { return @($values) }
+    foreach ($entry in @($clientProperty.Value)) {
+        if ($entry -is [string]) { $values += $entry }
+        elseif ($entry -and $entry.PSObject.Properties['value'] -and $entry.value -is [string]) { $values += $entry.value }
     }
     return @($values)
 }
 
 function Get-MixinConfigs($Metadata) {
     $values = @()
-    if ($Metadata.mixins) {
-        foreach ($entry in @($Metadata.mixins)) {
-            if ($entry -is [string]) { $values += $entry }
-            elseif ($entry.PSObject.Properties['config'] -and $entry.config -is [string]) { $values += $entry.config }
-        }
+    $mixinsProperty = $Metadata.PSObject.Properties['mixins']
+    if (-not $mixinsProperty) { return @($values) }
+    foreach ($entry in @($mixinsProperty.Value)) {
+        if ($entry -is [string]) { $values += $entry }
+        elseif ($entry -and $entry.PSObject.Properties['config'] -and $entry.config -is [string]) { $values += $entry.config }
     }
     return @($values)
 }
