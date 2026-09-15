@@ -8,6 +8,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
+import java.util.Objects;
+
 /** Fabric client entrypoint for LazyBuilder Utility Manager. */
 public final class UtilityManagerClient implements ClientModInitializer {
     private static UtilityConfigStore configStore;
@@ -35,7 +37,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     }
 
     public static void updatePreferences(UtilityPreferences updated) {
-        preferences = updated;
+        preferences = Objects.requireNonNull(updated, "updated");
         if (configStore != null) configStore.save(updated);
     }
 
