@@ -7,8 +7,33 @@ $Toolchain = Get-Content (Join-Path $RepoRoot 'toolchain.json') -Raw | ConvertFr
 $Version = [string]$Toolchain.gradle.wrapperTarget
 if (-not $Version) { throw 'toolchain.json does not define gradle.wrapperTarget.' }
 
-$LocalBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:TEMP }
-$CacheRoot = Join-Path $LocalBase "LazyBuilder\build-tools\gradle\$Version"
+$LocalBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:APPDATA) { $env:APPDATA } else { [System.IO.Path]::GetTempPath() }
+$LazyBuilderRoot = Join-Path $LocalBase 'LazyBuilder'
+$RuntimeTemp = Join-Path $LazyBuilderRoot 'temp'
+$GradleUserHome = Join-Path $LazyBuilderRoot 'build-tools\gradle-user-home'
+New-Item -ItemType Directory -Force -Path $RuntimeTemp | Out-Null
+New-Item -ItemType Directory -Force -Path $GradleUserHome | Out-Null
+
+# Keep Java/Gradle IPC and temporary files on a LazyBuilder-owned, deterministic path.
+# This avoids the Windows loopback/pipe failure reproduced with some inherited TEMP paths.
+$env:TEMP = $RuntimeTemp
+$env:TMP = $RuntimeTemp
+$env:GRADLE_USER_HOME = $GradleUserHome
+$TmpOption = "-Djava.io.tmpdir=$RuntimeTemp"
+if ([string]::IsNullOrWhiteSpace($env:GRADLE_OPTS)) {
+    $env:GRADLE_OPTS = $TmpOption
+} elseif ($env:GRADLE_OPTS -notmatch '(?i)-Djava\.io\.tmpdir=') {
+    $env:GRADLE_OPTS = "$TmpOption $($env:GRADLE_OPTS)"
+}
+
+# A daemon left behind by an interrupted Fabric/Loom build caused file locks during Local PC validation.
+# Default repository builds to no-daemon unless the caller explicitly chooses a daemon mode.
+$HasDaemonChoice = @($PassthroughArgs | Where-Object { $_ -in @('--daemon', '--no-daemon') }).Count -gt 0
+if (-not $HasDaemonChoice) {
+    $PassthroughArgs = @('--no-daemon') + $PassthroughArgs
+}
+
+$CacheRoot = Join-Path $LazyBuilderRoot "build-tools\gradle\$Version"
 $InstallDir = Join-Path $CacheRoot "gradle-$Version"
 $Executable = Join-Path $InstallDir 'bin\gradle.bat'
 $Archive = Join-Path $CacheRoot "gradle-$Version-bin.zip"
