@@ -1,0 +1,97 @@
+name: Launcher UI Preview
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - 'apps/launcher/src/**'
+      - 'apps/launcher/ui-preview/**'
+      - 'apps/launcher/index.html'
+      - 'apps/launcher/vite.config.ts'
+      - 'apps/launcher/package.json'
+      - 'apps/launcher/package-lock.json'
+      - '.github/workflows/ui-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  visual-preview:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/launcher
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/launcher/package-lock.json
+
+      - name: Install launcher dependencies
+        run: npm ci
+
+      - name: Typecheck launcher source
+        run: npm run typecheck
+
+      - name: Install pinned Playwright Chromium
+        run: npx -y @playwright/test@1.55.0 install --with-deps chromium
+
+      - name: Start deterministic visual-preview server
+        shell: bash
+        run: |
+          npm run dev:frontend -- --mode visual-preview > ui-preview-vite.log 2>&1 &
+          echo $! > ui-preview-vite.pid
+          for attempt in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:1420/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Visual-preview Vite server did not become ready.' >&2
+          cat ui-preview-vite.log >&2
+          exit 1
+
+      - name: Capture canonical launcher states
+        env:
+          LAZYBUILDER_PREVIEW_URL: http://127.0.0.1:1420
+        run: npx -y @playwright/test@1.55.0 test ui-preview/capture.spec.mjs --workers=1 --reporter=line
+
+      - name: Write source commit into preview manifest
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'); const p='ui-preview-output/manifest.json'; const m=JSON.parse(fs.readFileSync(p,'utf8')); m.commit=process.env.GITHUB_SHA; m.branch=process.env.GITHUB_REF_NAME; fs.writeFileSync(p, JSON.stringify(m,null,2));"
+
+      - name: Upload ChatGPT-readable visual proof
+        uses: actions/upload-artifact@v6
+        with:
+          name: LazyBuilder-UI-Preview-${{ github.sha }}
+          path: apps/launcher/ui-preview-output/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload preview diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: LazyBuilder-UI-Preview-Diagnostics-${{ github.sha }}
+          path: |
+            apps/launcher/ui-preview-vite.log
+            apps/launcher/test-results/**
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop preview server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f ui-preview-vite.pid ]; then
+            kill "$(cat ui-preview-vite.pid)" 2>/dev/null || true
+          fi
