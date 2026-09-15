@@ -6,6 +6,13 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $InstallerPath = (Resolve-Path $InstallerPath).Path
 
+function Normalize-RegistryPath([object]$Value) {
+    if ($null -eq $Value) { return $null }
+    $text = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    return $text.Trim('"')
+}
+
 Write-Host "Smoke installing: $InstallerPath" -ForegroundColor Cyan
 $process = Start-Process -FilePath $InstallerPath -ArgumentList '/S' -Wait -PassThru
 if ($process.ExitCode -ne 0) {
@@ -36,16 +43,18 @@ if (-not $entry) {
 }
 
 $candidates = @()
-if ($entry.InstallLocation) {
-    $candidates += (Join-Path ([string]$entry.InstallLocation) 'LazyBuilder.exe')
-    $candidates += (Join-Path ([string]$entry.InstallLocation) 'lazybuilder.exe')
+$installLocation = Normalize-RegistryPath $entry.InstallLocation
+if ($installLocation) {
+    $candidates += (Join-Path $installLocation 'LazyBuilder.exe')
+    $candidates += (Join-Path $installLocation 'lazybuilder.exe')
 }
 if ($env:LOCALAPPDATA) {
     $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\LazyBuilder\LazyBuilder.exe')
     $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\LazyBuilder\lazybuilder.exe')
 }
-if ($entry.DisplayIcon) {
-    $iconPath = ([string]$entry.DisplayIcon).Trim('"') -replace ',\d+$',''
+$displayIcon = Normalize-RegistryPath $entry.DisplayIcon
+if ($displayIcon) {
+    $iconPath = $displayIcon -replace ',\d+$',''
     if ($iconPath) { $candidates += $iconPath }
 }
 
@@ -54,7 +63,7 @@ $installedExe = $candidates |
     Select-Object -First 1
 
 if (-not $installedExe) {
-    throw "LazyBuilder is registered as installed, but its executable was not found. InstallLocation='$($entry.InstallLocation)'"
+    throw "LazyBuilder is registered as installed, but its executable was not found. InstallLocation='$installLocation'"
 }
 
 Write-Host 'Launching installed app with a sanitized end-user PATH...' -ForegroundColor Cyan
