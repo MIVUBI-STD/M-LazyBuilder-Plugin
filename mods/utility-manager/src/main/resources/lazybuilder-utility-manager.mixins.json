@@ -7,6 +7,7 @@
     "ChatScreenMixin",
     "ChatHudMixin",
     "DisconnectedScreenMixin",
+    "MultiplayerScreenMixin",
     "ScreenshotRecorderMixin"
   ],
   "injectors": {
