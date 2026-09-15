@@ -257,6 +257,8 @@ Disconnect/reconnect or failed transfer must not leave permanent world-operation
 
 Import extraction remains bounded by configured file count and uncompressed size. Conversion and export workspaces are request-owned and cleaned on success and failure.
 
+The packaged defaults are intentionally conservative for local builder machines: 100,000 import entries, 16 GiB uncompressed data, and an 8 GiB uploaded artifact. Larger known worlds may raise these values explicitly after checking available disk capacity.
+
 User-facing errors should be actionable where possible, including:
 
 ```text
@@ -269,13 +271,14 @@ conversion support unavailable
 transfer interrupted
 ```
 
-## Automatic conversion-runtime updates
+## Conversion-runtime update policy
 
 Converter updates remain internal and fail-safe.
 
 Default policy:
 
 ```text
+mode             = notify only
 channel          = stable only
 idle polling     = none
 normal check     = at most once per 24h when a verified runtime exists
@@ -287,9 +290,11 @@ retained runtime = current + previous
 server restart   = not required
 ```
 
+`NOTIFY_ONLY` deliberately prevents an upstream stable release from being silently promoted before LazyBuilder has runtime evidence for it. Automatic promotion should be enabled only when compatibility validation proves more than metadata/version probing.
+
 Same-version Java import/export bypasses updater/network work when conversion is not required.
 
-A failed update must not disable Import / Export when a verified current runtime is already available.
+A failed update check must not disable Import / Export when a verified current runtime is already available.
 
 ### Runtime store
 
