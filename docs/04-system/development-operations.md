@@ -38,6 +38,7 @@ Supported commands:
 ```text
 setup
 check
+verify <paper|fabric|launcher>
 build
 test
 update
@@ -59,7 +60,7 @@ Domain Operations
 ├── scripts/bootstrap/       environment/bootstrap validation and repair
 ├── scripts/build/           build preflight
 ├── scripts/wrappers/        repository-owned Maven/Gradle execution
-├── scripts/verify/          local acceptance and artifact verification
+├── scripts/verify/          targeted/local acceptance and artifact verification
 ├── scripts/distribution/    installer/package verification
 ├── apps/launcher/           Launcher application build owner
 └── scripts/                 repository/runtime proof utilities
@@ -90,13 +91,40 @@ Normal development should be cheap and local:
 ```text
 edit
 → DEV.cmd check        when environment/repository readiness is material
-→ targeted module test/build during implementation
+→ DEV.cmd verify <scope> for the smallest stable source boundary
 → DEV.cmd build        when integrated packaging is material
 → DEV.cmd test         when runtime/installer behavior is material
 → commit
 ```
 
 Do not run full repository CI on every `Local` commit merely for reassurance.
+
+## Targeted verification
+
+`verify` gives developers and agents a stable bounded route without requiring them to remember Maven/Gradle/npm/Cargo command details.
+
+Supported scopes are intentionally limited:
+
+```text
+DEV.cmd verify paper
+→ repository Maven wrapper
+→ shared/protocol + Paper plugin compile/tests
+
+DEV.cmd verify fabric
+→ tooling/windows-toolchain/scripts/verify/verify-fabric.ps1
+→ Map Manager + Utility Manager + Performance Manager Gradle build/tests
+
+DEV.cmd verify launcher
+→ npm ci
+→ apps/launcher package script verify:source
+→ Svelte/Vite source verification + locked Cargo check/tests
+```
+
+These are **source verification boundaries**, not runtime acceptance and not packaging/release proof.
+
+Do not add `verify all`; integrated `build`/`finalize-local` already owns that role. Do not create a subcommand for every individual plugin/mod unless a repeated independent workflow proves that boundary is stable and useful. The targeted router must delegate to existing native owners rather than become a second build DSL.
+
+Reusable lane owners should also be consumed by CI where practical. The required three-manager Fabric sequence therefore has one reusable owner instead of separate copies in local build and CI, while Launcher source verification is owned by one package script consumed locally and remotely.
 
 ## Local finalization
 
@@ -134,9 +162,12 @@ The envelope is routing/diagnostic context only. Domain scripts remain owners of
 Canonical evidence locations include:
 
 ```text
-setup/check → toolchain.json + failed tool-check row / installer output
-build       → first failing Maven/Gradle/npm/Cargo/Tauri step; dist/ exists only after successful publication
-test        → .runtime-proof/ runtime evidence + dist/Local/ installer/package input
+setup/check      → toolchain.json + failed tool-check row / installer output
+verify paper     → first failing Maven/shared/Paper module or test
+verify fabric    → first failing required Fabric manager build/test
+verify launcher  → first failing npm/Svelte/Vite/Cargo verification step
+build            → first failing Maven/Gradle/npm/Cargo/Tauri step; dist/ exists only after successful publication
+test             → .runtime-proof/ runtime evidence + dist/Local/ installer/package input
 ```
 
 Rules:
