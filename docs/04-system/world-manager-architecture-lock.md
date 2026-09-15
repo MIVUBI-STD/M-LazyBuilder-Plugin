@@ -86,7 +86,7 @@ Do not reintroduce direct `Future#get(timeout)` logic in transport adapters or h
 
 Permanent delete requires:
 
-- exact folder-name confirmation;
+- exact display-name confirmation;
 - server-side fallback/default-world protection;
 - exclusive world-operation lease;
 - reversible staging before registry commit;
