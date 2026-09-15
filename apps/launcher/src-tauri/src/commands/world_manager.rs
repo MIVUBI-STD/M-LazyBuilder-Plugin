@@ -1,3 +1,4 @@
+use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::world_manager::{
     create_world,
     get_world_settings,
@@ -25,17 +26,17 @@ use crate::engine::world_manager::{
 };
 
 #[tauri::command]
-pub async fn world_list() -> Result<Vec<ManagedWorldSummary>, String> {
+pub async fn world_list() -> CommandResult<Vec<ManagedWorldSummary>> {
     run_blocking("World list", list_worlds).await
 }
 
 #[tauri::command]
-pub async fn world_create(request: CreateWorldRequest) -> Result<ManagedWorldSummary, String> {
+pub async fn world_create(request: CreateWorldRequest) -> CommandResult<ManagedWorldSummary> {
     run_blocking("World create", move || create_world(&request)).await
 }
 
 #[tauri::command]
-pub async fn world_settings(world_id: String) -> Result<WorldSettingsSnapshot, String> {
+pub async fn world_settings(world_id: String) -> CommandResult<WorldSettingsSnapshot> {
     run_blocking("World settings", move || get_world_settings(&world_id)).await
 }
 
@@ -43,47 +44,47 @@ pub async fn world_settings(world_id: String) -> Result<WorldSettingsSnapshot, S
 pub async fn world_update_settings(
     world_id: String,
     request: UpdateWorldSettingsRequest,
-) -> Result<WorldSettingsSnapshot, String> {
+) -> CommandResult<WorldSettingsSnapshot> {
     run_blocking("World settings update", move || update_world_settings(&world_id, &request)).await
 }
 
 #[tauri::command]
-pub async fn world_task_list() -> Result<Vec<WorldTaskSnapshot>, String> {
+pub async fn world_task_list() -> CommandResult<Vec<WorldTaskSnapshot>> {
     run_blocking("World task list", list_world_tasks).await
 }
 
 #[tauri::command]
-pub async fn world_task(task_id: String) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_task(task_id: String) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World task status", move || get_world_task(&task_id)).await
 }
 
 #[tauri::command]
-pub async fn world_archive(world_id: String) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_archive(world_id: String) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World archive", move || start_archive_world(&world_id)).await
 }
 
 #[tauri::command]
-pub async fn world_restore(world_id: String) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_restore(world_id: String) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World restore", move || start_restore_world(&world_id)).await
 }
 
 #[tauri::command]
-pub async fn world_backup(world_id: String) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_backup(world_id: String) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World backup", move || start_backup_world(&world_id)).await
 }
 
 #[tauri::command]
-pub async fn world_duplicate(request: DuplicateWorldRequest) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_duplicate(request: DuplicateWorldRequest) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World duplicate", move || start_duplicate_world(&request)).await
 }
 
 #[tauri::command]
-pub async fn world_export(request: ExportWorldRequest) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_export(request: ExportWorldRequest) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World export", move || start_export_world(&request)).await
 }
 
 #[tauri::command]
-pub async fn world_delete(request: DeleteWorldRequest) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_delete(request: DeleteWorldRequest) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World delete", move || start_delete_world(&request)).await
 }
 
@@ -96,21 +97,32 @@ pub fn world_import_pick() -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn world_import_upload(file_path: String) -> Result<String, String> {
+pub async fn world_import_upload(file_path: String) -> CommandResult<String> {
     run_blocking("World import upload", move || upload_world_import(&file_path)).await
 }
 
 #[tauri::command]
-pub async fn world_import(request: ImportWorldRequest) -> Result<WorldTaskSnapshot, String> {
+pub async fn world_import(request: ImportWorldRequest) -> CommandResult<WorldTaskSnapshot> {
     run_blocking("World import", move || start_import_world(&request)).await
 }
 
-async fn run_blocking<T, F>(label: &'static str, work: F) -> Result<T, String>
+fn classify_world_error(message: String) -> CommandError {
+    if message.contains("desktop bridge protocol mismatch") {
+        return CommandError::new("WORLD_PROTOCOL_MISMATCH", message);
+    }
+    if message.contains("desktop bridge is not ready") || message.contains("World-Manager") && message.contains("unavailable") {
+        return CommandError::new("WORLD_BRIDGE_UNAVAILABLE", message);
+    }
+    CommandError::runtime(message)
+}
+
+async fn run_blocking<T, F>(label: &'static str, work: F) -> CommandResult<T>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
     tauri::async_runtime::spawn_blocking(work)
         .await
-        .map_err(|error| format!("{label} task failed: {error}"))?
+        .map_err(|error| CommandError::new("TASK_FAILED", format!("{label} task failed: {error}")))?
+        .map_err(classify_world_error)
 }
