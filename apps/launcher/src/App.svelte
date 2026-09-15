@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import Dashboard from './pages/Dashboard.svelte';
   import Worlds from './pages/Worlds.svelte';
   import Plugins from './pages/Plugins.svelte';
   import Settings from './pages/Settings.svelte';
+  import LauncherSettingsPage from './pages/LauncherSettings.svelte';
   import Client from './pages/Client.svelte';
   import Activity from './pages/Activity.svelte';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
@@ -11,7 +13,7 @@
   import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, WorkspaceDuplicateEstimate, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
-  type GlobalPage = 'Servers' | 'Activity' | 'Client';
+  type GlobalPage = 'Servers' | 'Activity' | 'Client' | 'Settings';
   type LauncherMode = 'home' | 'create';
   type ManagementMode = 'active-actions' | 'locate' | 'duplicate' | 'remove' | 'delete-review' | 'delete-confirm' | null;
 
@@ -45,13 +47,12 @@
   let duplicateEstimate: WorkspaceDuplicateEstimate | null = null;
   let estimateLoading = false;
   let deleteTypedName = '';
+  let closeGuardUnlisten: (() => void) | null = null;
 
   const pages: Page[] = ['Overview', 'Worlds', 'Plugins', 'Settings'];
 
   function friendlyError(error: unknown) {
-    if (error instanceof RuntimeError && error.code === 'SERVER_BUSY') {
-      return 'Stop this server before changing, duplicating, removing, or deleting it.';
-    }
+    if (error instanceof RuntimeError && error.code === 'SERVER_BUSY') return 'Stop this server before changing, duplicating, removing, or deleting it.';
     if (error instanceof Error && error.message.trim()) return error.message.trim();
     const message = String(error ?? '').replace(/^Error:\s*/i, '').trim();
     return message || 'Something went wrong. Try again.';
@@ -121,29 +122,47 @@
     } catch (error) {
       workspaceError = friendlyError(error);
       provisioning = null;
-    } finally {
-      loadingWorkspace = false;
+    } finally { loadingWorkspace = false; }
+  }
+
+  async function installCloseGuard() {
+    if (import.meta.env.MODE === 'visual-preview') return;
+    try {
+      const appWindow = getCurrentWindow();
+      closeGuardUnlisten = await appWindow.onCloseRequested(async (event) => {
+        event.preventDefault();
+        try {
+          const settings = await runtimeProduct.settings.get();
+          if (!settings.confirmCloseWhileServerRunning) {
+            await appWindow.destroy();
+            return;
+          }
+          const snapshot = await runtimeProduct.server.snapshot();
+          const running = ['Online', 'Starting', 'Stopping', 'Detached'].includes(snapshot.state);
+          if (!running || window.confirm('A Minecraft server is still running. Close LazyBuilder anyway? The server process may continue outside this Launcher session.')) {
+            await appWindow.destroy();
+          }
+        } catch {
+          if (window.confirm('LazyBuilder could not verify the current server state. Close the Launcher anyway?')) await appWindow.destroy();
+        }
+      });
+    } catch {
+      closeGuardUnlisten = null;
     }
   }
 
   async function chooseCreateLocation() {
     workspaceError = '';
-    try {
-      const selected = await runtimeProduct.workspace.pickParent();
-      if (selected) createParent = selected;
-    } catch (error) { workspaceError = friendlyError(error); }
+    try { const selected = await runtimeProduct.workspace.pickParent(); if (selected) createParent = selected; }
+    catch (error) { workspaceError = friendlyError(error); }
   }
 
   async function createServer() {
     if (!createName.trim() || !createParent.trim()) return;
-    creating = true;
-    workspaceError = '';
+    creating = true; workspaceError = '';
     try {
       await runtimeProduct.workspace.create(createParent, createName.trim());
-      createName = '';
-      createParent = '';
-      page = 'Overview';
-      globalPage = 'Servers';
+      createName = ''; createParent = ''; page = 'Overview'; globalPage = 'Servers';
       await refreshWorkspaceState();
     } catch (error) { workspaceError = friendlyError(error); }
     finally { creating = false; }
@@ -157,33 +176,24 @@
 
   async function adoptServer() {
     if (!adoptionPlan) return;
-    adopting = true;
-    workspaceError = '';
+    adopting = true; workspaceError = '';
     try {
       await runtimeProduct.workspace.adopt(adoptionPlan.root, adoptionPlan.name);
-      adoptionPlan = null;
-      page = 'Overview';
-      globalPage = 'Servers';
+      adoptionPlan = null; page = 'Overview'; globalPage = 'Servers';
       await refreshWorkspaceState();
     } catch (error) { workspaceError = friendlyError(error); }
     finally { adopting = false; }
   }
 
   function beginLocate(server: WorkspaceEntry, initialError = '') {
-    menuServerId = null;
-    managementServer = server;
-    managementMode = 'locate';
-    managementError = initialError;
-    locateCandidate = '';
+    menuServerId = null; managementServer = server; managementMode = 'locate'; managementError = initialError; locateCandidate = '';
   }
 
   async function activateServer(server: WorkspaceEntry) {
-    menuServerId = null;
-    workspaceError = '';
+    menuServerId = null; workspaceError = '';
     try {
       await runtimeProduct.workspace.activate(server.id);
-      page = 'Overview';
-      globalPage = 'Servers';
+      page = 'Overview'; globalPage = 'Servers';
       await refreshWorkspaceState();
     } catch (error) {
       const message = friendlyError(error);
@@ -195,47 +205,35 @@
   async function chooseLocateCandidate() {
     if (!managementServer || managementBusy) return;
     managementError = '';
-    try {
-      const selected = await runtimeProduct.workspace.pickLocation(managementServer.id);
-      if (selected) locateCandidate = selected;
-    } catch (error) { managementError = friendlyError(error); }
+    try { const selected = await runtimeProduct.workspace.pickLocation(managementServer.id); if (selected) locateCandidate = selected; }
+    catch (error) { managementError = friendlyError(error); }
   }
 
   async function reconnectServerLocation() {
     if (!managementServer || !locateCandidate || managementBusy) return;
-    managementBusy = true;
-    managementError = '';
+    managementBusy = true; managementError = '';
     try {
       const relocated = await runtimeProduct.workspace.reconnectLocation(managementServer.id, locateCandidate);
       closeManagementAfterSuccess();
       await refreshWorkspaceState();
       workspaceError = `${relocated.name} was reconnected to ${relocated.path}.`;
-    } catch (error) {
-      managementError = friendlyError(error);
-    } finally {
-      managementBusy = false;
-    }
+    } catch (error) { managementError = friendlyError(error); }
+    finally { managementBusy = false; }
   }
 
   async function backToServers() {
     globalPage = 'Servers';
     if (!workspaceState.active) return;
     workspaceError = '';
-    try {
-      await runtimeProduct.workspace.close();
-      page = 'Overview';
-      await refreshWorkspaceState();
-    } catch (error) { workspaceError = friendlyError(error); }
+    try { await runtimeProduct.workspace.close(); page = 'Overview'; await refreshWorkspaceState(); }
+    catch (error) { workspaceError = friendlyError(error); }
   }
 
   async function prepareServer() {
-    provisioningServer = true;
-    workspaceError = '';
+    provisioningServer = true; workspaceError = '';
     try {
       const result = await runtimeProduct.workspace.provision();
-      provisioning = result.status;
-      runtimeUpdates = null;
-      void loadDiagnostics();
+      provisioning = result.status; runtimeUpdates = null; void loadDiagnostics();
       if (provisioning.ready) void loadRuntimeUpdates();
     } catch (error) {
       workspaceError = friendlyError(error);
@@ -244,18 +242,14 @@
   }
 
   async function acceptEula() {
-    acceptingEula = true;
-    workspaceError = '';
-    try {
-      provisioning = await runtimeProduct.workspace.acceptEula();
-      if (provisioning.ready) void loadRuntimeUpdates();
-    } catch (error) { workspaceError = friendlyError(error); }
+    acceptingEula = true; workspaceError = '';
+    try { provisioning = await runtimeProduct.workspace.acceptEula(); if (provisioning.ready) void loadRuntimeUpdates(); }
+    catch (error) { workspaceError = friendlyError(error); }
     finally { acceptingEula = false; }
   }
 
   async function updatePaper() {
-    updatingPaper = true;
-    workspaceError = '';
+    updatingPaper = true; workspaceError = '';
     try { runtimeUpdates = await runtimeProduct.workspace.updatePaper(); void loadDiagnostics(); }
     catch (error) { workspaceError = friendlyError(error); }
     finally { updatingPaper = false; }
@@ -263,10 +257,7 @@
 
   function formatLastOpened(seconds: number) {
     if (!seconds) return 'Not opened yet';
-    const then = new Date(seconds * 1000);
-    const now = new Date();
-    const day = 86400000;
-    const diff = now.getTime() - then.getTime();
+    const then = new Date(seconds * 1000); const now = new Date(); const day = 86400000; const diff = now.getTime() - then.getTime();
     if (diff < day && now.getDate() === then.getDate()) return 'Opened today';
     if (diff < day * 2) return 'Opened yesterday';
     return `Opened ${then.toLocaleDateString()}`;
@@ -274,123 +265,71 @@
 
   function closeManagement() {
     if (managementBusy) return;
-    managementServer = null;
-    managementMode = null;
-    managementError = '';
-    locateCandidate = '';
-    duplicateEstimate = null;
-    deleteTypedName = '';
+    managementServer = null; managementMode = null; managementError = ''; locateCandidate = ''; duplicateEstimate = null; deleteTypedName = '';
   }
 
-  function openActiveActions(server: WorkspaceEntry) {
-    managementServer = server;
-    managementMode = 'active-actions';
-    managementError = '';
-  }
+  function openActiveActions(server: WorkspaceEntry) { managementServer = server; managementMode = 'active-actions'; managementError = ''; }
 
   async function openServerFolder(server: WorkspaceEntry) {
-    menuServerId = null;
-    managementError = '';
+    menuServerId = null; managementError = '';
     try { await runtimeProduct.workspace.openFolder(server.id); }
     catch (error) {
       const message = friendlyError(error);
-      if (message.toLowerCase().includes('unavailable')) beginLocate(server, message);
-      else workspaceError = message;
+      if (message.toLowerCase().includes('unavailable')) beginLocate(server, message); else workspaceError = message;
     }
   }
 
   async function refreshDuplicateEstimate() {
     duplicateEstimate = null;
     if (!managementServer || !duplicateParent.trim()) return;
-    estimateLoading = true;
-    managementError = '';
+    estimateLoading = true; managementError = '';
     try { duplicateEstimate = await runtimeProduct.workspace.duplicateEstimate(managementServer.id, duplicateParent); }
     catch (error) { managementError = friendlyError(error); }
     finally { estimateLoading = false; }
   }
 
   function beginDuplicate(server: WorkspaceEntry) {
-    menuServerId = null;
-    managementServer = server;
-    managementMode = 'duplicate';
-    managementError = '';
-    duplicateName = `${server.name} Copy`;
-    duplicateParent = parentLocation(server.path);
-    duplicateEstimate = null;
-    void refreshDuplicateEstimate();
+    menuServerId = null; managementServer = server; managementMode = 'duplicate'; managementError = ''; duplicateName = `${server.name} Copy`; duplicateParent = parentLocation(server.path); duplicateEstimate = null; void refreshDuplicateEstimate();
   }
 
   async function chooseDuplicateLocation() {
-    try {
-      const selected = await runtimeProduct.workspace.pickParent();
-      if (selected) {
-        duplicateParent = selected;
-        await refreshDuplicateEstimate();
-      }
-    } catch (error) { managementError = friendlyError(error); }
+    try { const selected = await runtimeProduct.workspace.pickParent(); if (selected) { duplicateParent = selected; await refreshDuplicateEstimate(); } }
+    catch (error) { managementError = friendlyError(error); }
   }
 
   async function duplicateServer() {
     if (!managementServer || !duplicateName.trim() || !duplicateParent.trim()) return;
-    managementBusy = true;
-    managementError = '';
-    try {
-      await runtimeProduct.workspace.duplicate(managementServer.id, duplicateParent, duplicateName.trim());
-      closeManagementAfterSuccess();
-      await refreshWorkspaceState();
-    } catch (error) { managementError = friendlyError(error); }
+    managementBusy = true; managementError = '';
+    try { await runtimeProduct.workspace.duplicate(managementServer.id, duplicateParent, duplicateName.trim()); closeManagementAfterSuccess(); await refreshWorkspaceState(); }
+    catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
   }
 
-  function beginRemove(server: WorkspaceEntry) {
-    menuServerId = null;
-    managementServer = server;
-    managementMode = 'remove';
-    managementError = '';
-  }
-
+  function beginRemove(server: WorkspaceEntry) { menuServerId = null; managementServer = server; managementMode = 'remove'; managementError = ''; }
   async function removeServerFromLibrary() {
     if (!managementServer) return;
-    managementBusy = true;
-    managementError = '';
-    try {
-      await runtimeProduct.workspace.removeFromLibrary(managementServer.id);
-      closeManagementAfterSuccess();
-      await refreshWorkspaceState();
-    } catch (error) { managementError = friendlyError(error); }
+    managementBusy = true; managementError = '';
+    try { await runtimeProduct.workspace.removeFromLibrary(managementServer.id); closeManagementAfterSuccess(); await refreshWorkspaceState(); }
+    catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
   }
 
-  function beginDelete(server: WorkspaceEntry) {
-    menuServerId = null;
-    managementServer = server;
-    managementMode = 'delete-review';
-    managementError = '';
-    deleteTypedName = '';
-  }
-
+  function beginDelete(server: WorkspaceEntry) { menuServerId = null; managementServer = server; managementMode = 'delete-review'; managementError = ''; deleteTypedName = ''; }
   async function deleteServer() {
     if (!managementServer || deleteTypedName !== managementServer.name) return;
-    managementBusy = true;
-    managementError = '';
-    try {
-      await runtimeProduct.workspace.delete(managementServer.id, deleteTypedName);
-      closeManagementAfterSuccess();
-      await refreshWorkspaceState();
-    } catch (error) { managementError = friendlyError(error); }
+    managementBusy = true; managementError = '';
+    try { await runtimeProduct.workspace.delete(managementServer.id, deleteTypedName); closeManagementAfterSuccess(); await refreshWorkspaceState(); }
+    catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
   }
 
-  function closeManagementAfterSuccess() {
-    managementServer = null;
-    managementMode = null;
-    managementError = '';
-    locateCandidate = '';
-    duplicateEstimate = null;
-    deleteTypedName = '';
-  }
+  function closeManagementAfterSuccess() { managementServer = null; managementMode = null; managementError = ''; locateCandidate = ''; duplicateEstimate = null; deleteTypedName = ''; }
 
-  onMount(refreshWorkspaceState);
+  onMount(() => {
+    void refreshWorkspaceState();
+    void installCloseGuard();
+    return () => { closeGuardUnlisten?.(); closeGuardUnlisten = null; };
+  });
 </script>
 
 {#snippet navIcon(item: Page | GlobalPage)}
@@ -413,6 +352,7 @@
         <button class:active={globalPage === 'Servers' && !workspaceState.active} onclick={backToServers}><span class="nav-icon">{@render navIcon('Servers')}</span><span>Servers</span></button>
         <button class:active={globalPage === 'Activity'} aria-current={globalPage === 'Activity' ? 'page' : undefined} onclick={() => (globalPage = 'Activity')}><span class="nav-icon">{@render navIcon('Activity')}</span><span>Activity</span></button>
         <button class:active={globalPage === 'Client'} aria-current={globalPage === 'Client' ? 'page' : undefined} onclick={() => (globalPage = 'Client')}><span class="nav-icon">{@render navIcon('Client')}</span><span>Client</span></button>
+        <button class:active={globalPage === 'Settings'} aria-current={globalPage === 'Settings' ? 'page' : undefined} onclick={() => (globalPage = 'Settings')}><span class="nav-icon">{@render navIcon('Settings')}</span><span>Settings</span></button>
       </nav>
       {#if workspaceState.active && globalPage === 'Servers'}
         <div class="nav-divider"></div>
@@ -429,6 +369,9 @@
       {:else if globalPage === 'Client'}
         <header class="page-toolbar"><div><h1>Client</h1><p>Connect and maintain the Minecraft client used with LazyBuilder.</p></div></header>
         <main class="content"><Client /></main>
+      {:else if globalPage === 'Settings'}
+        <header class="page-toolbar"><div><h1>Settings</h1><p>Configure LazyBuilder desktop behavior and safety preferences.</p></div></header>
+        <main class="content"><LauncherSettingsPage /></main>
       {:else if !workspaceState.active}
         <header class="page-toolbar"><div><h1>Servers</h1><p>Your server library. Open, reconnect, duplicate, remove, or safely retire a server here.</p></div><div class="top-actions"><button class="secondary-button" onclick={analyzeAdoption}>Add existing</button><button class="primary-button" onclick={() => (launcherMode = 'create')}>Create server</button></div></header>
         <main class="library-content">
@@ -439,44 +382,18 @@
               <div class="server-grid">
                 {#each visibleServers() as server}
                   <div class="server-tile">
-                    <button class="server-open" onclick={() => activateServer(server)}>
-                      <div class="server-icon">{server.name.slice(0,1).toUpperCase()}</div>
-                      <div class="server-tile-copy"><strong>{server.name}</strong><span title={server.path}>{formatLastOpened(server.lastOpenedUnixSeconds)}</span></div>
-                      <span class="open-chevron">›</span>
-                    </button>
-                    <div class="server-menu-wrap">
-                      <button class="server-menu-button" aria-label={`Manage ${server.name}`} aria-expanded={menuServerId === server.id} onclick={() => (menuServerId = menuServerId === server.id ? null : server.id)}>•••</button>
-                      {#if menuServerId === server.id}
-                        <div class="server-menu" role="menu">
-                          <button onclick={() => activateServer(server)}>Open</button>
-                          <button onclick={() => openServerFolder(server)}>Open folder</button>
-                          <button onclick={() => beginLocate(server)}>Locate moved server…</button>
-                          <div class="menu-divider"></div>
-                          <button onclick={() => beginDuplicate(server)}>Duplicate server</button>
-                          <div class="menu-divider"></div>
-                          <button onclick={() => beginRemove(server)}>Remove from library</button>
-                          <button class="danger-menu-item" onclick={() => beginDelete(server)}>Delete server…</button>
-                        </div>
-                      {/if}
+                    <button class="server-open" onclick={() => activateServer(server)}><div class="server-icon">{server.name.slice(0,1).toUpperCase()}</div><div class="server-tile-copy"><strong>{server.name}</strong><span title={server.path}>{formatLastOpened(server.lastOpenedUnixSeconds)}</span></div><span class="open-chevron">›</span></button>
+                    <div class="server-menu-wrap"><button class="server-menu-button" aria-label={`Manage ${server.name}`} aria-expanded={menuServerId === server.id} onclick={() => (menuServerId = menuServerId === server.id ? null : server.id)}>•••</button>
+                      {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => activateServer(server)}>Open</button><button onclick={() => openServerFolder(server)}>Open folder</button><button onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
                     </div>
                   </div>
                 {/each}
               </div>
-            {:else}
-              <section class="search-empty"><strong>No servers found</strong><span>Try a different server name.</span><button onclick={() => (librarySearch = '')}>Clear search</button></section>
-            {/if}
-          {:else}
-            <section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={() => (launcherMode = 'create')}>Create server</button><button class="secondary-button" onclick={analyzeAdoption}>Add existing</button></div></section>
-          {/if}
+            {:else}<section class="search-empty"><strong>No servers found</strong><span>Try a different server name.</span><button onclick={() => (librarySearch = '')}>Clear search</button></section>{/if}
+          {:else}<section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={() => (launcherMode = 'create')}>Create server</button><button class="secondary-button" onclick={analyzeAdoption}>Add existing</button></div></section>{/if}
         </main>
       {:else}
-        <header class="server-toolbar">
-          <div class="server-toolbar-main"><div class="server-icon header-icon">{workspaceState.active.name.slice(0,1).toUpperCase()}</div><div><h1>{workspaceState.active.name}</h1><div class="server-context-meta"><span>{platformLabel()}</span><span>{provisioning?.ready ? 'Ready' : 'Setup required'}</span></div></div></div>
-          <div class="top-actions">
-            {#if runtimeUpdates?.paperUpdateAvailable}<button class="update-button" disabled={updatingPaper} onclick={updatePaper}>{updatingPaper ? 'Updating…' : 'Update Paper'}</button>{/if}
-            <button class="secondary-button compact-action" aria-label="Manage current server" onclick={() => openActiveActions(workspaceState.active!)}>•••</button>
-          </div>
-        </header>
+        <header class="server-toolbar"><div class="server-toolbar-main"><div class="server-icon header-icon">{workspaceState.active.name.slice(0,1).toUpperCase()}</div><div><h1>{workspaceState.active.name}</h1><div class="server-context-meta"><span>{platformLabel()}</span><span>{provisioning?.ready ? 'Ready' : 'Setup required'}</span></div></div></div><div class="top-actions">{#if runtimeUpdates?.paperUpdateAvailable}<button class="update-button" disabled={updatingPaper} onclick={updatePaper}>{updatingPaper ? 'Updating…' : 'Update Paper'}</button>{/if}<button class="secondary-button compact-action" aria-label="Manage current server" onclick={() => openActiveActions(workspaceState.active!)}>•••</button></div></header>
         <main class="content">
           {#if workspaceError}<div class="error-box workspace-error" role="alert">{workspaceError}</div>{/if}
           {#if provisioning && !provisioning.ready}<section class="setup-card"><div class="setup-main"><div class="setup-icon">{provisioningServer ? '…' : '✓'}</div><div class="setup-copy"><span class="setup-label">Server setup</span><h2>{setupHeadline()}</h2><p>{!provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady ? 'LazyBuilder can prepare everything this server needs automatically.' : 'Accept the Minecraft EULA to finish setup.'}</p></div></div><div class="setup-progress-row"><div class="setup-track"><span style={`width:${setupProgress()}%`}></span></div><strong>{setupProgress()}%</strong></div><div class="setup-footer"><details class="setup-details"><summary>Setup details</summary><div class="setup-steps"><span class:done={provisioning.workspaceCreated}>Workspace</span><span class:done={provisioning.javaReady}>Java</span><span class:done={provisioning.paperReady}>Paper</span><span class:done={provisioning.coreModulesReady}>Components</span><span class:done={provisioning.configReady}>Configuration</span><span class:done={provisioning.eulaAccepted}>EULA</span></div></details>{#if !provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady}<button class="primary-button" disabled={provisioningServer} onclick={prepareServer}>{provisioningServer ? 'Preparing…' : 'Prepare server'}</button>{:else if !provisioning.eulaAccepted}<button class="primary-button" disabled={acceptingEula} onclick={acceptEula}>{acceptingEula ? 'Saving…' : 'Accept EULA'}</button>{/if}</div></section>{/if}
@@ -486,60 +403,21 @@
     </section>
   </div>
 
-  {#if launcherMode === 'create'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (launcherMode = 'home')}>
-      <div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" disabled={creating} onclick={() => (launcherMode = 'home')}>×</button></div><label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} /></label><label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label><div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (launcherMode = 'home')}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div></div>
-    </div>
-  {/if}
+  {#if launcherMode === 'create'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (launcherMode = 'home')}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" disabled={creating} onclick={() => (launcherMode = 'home')}>×</button></div><label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} /></label><label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label><div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (launcherMode = 'home')}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div></div></div>{/if}
 
-  {#if adoptionPlan}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !adopting && (adoptionPlan = null)}>
-      <div class="dialog adoption-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>×</button></div><div class="detected-grid"><div><strong>{adoptionPlan.worlds.length}</strong><span>Worlds</span></div><div><strong>{adoptionPlan.serverEntries.length}</strong><span>Server files</span></div><div><strong>{adoptionPlan.legacyPluginsToDisable.length}</strong><span>Legacy plugins</span></div></div>{#if adoptionPlan.warnings.length > 0}<div class="warning-box"><strong>Needs your attention</strong>{#each adoptionPlan.warnings as warning}<p>{warning}</p>{/each}</div>{/if}<details><summary>Technical migration details</summary><div class="details-list"><p><strong>Location:</strong> {adoptionPlan.root}</p><p><strong>Paper:</strong> {adoptionPlan.paperJar}</p></div></details><div class="dialog-actions"><button class="ghost-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div></div>
-    </div>
-  {/if}
+  {#if adoptionPlan}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !adopting && (adoptionPlan = null)}><div class="dialog adoption-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>×</button></div><div class="detected-grid"><div><strong>{adoptionPlan.worlds.length}</strong><span>Worlds</span></div><div><strong>{adoptionPlan.serverEntries.length}</strong><span>Server files</span></div><div><strong>{adoptionPlan.legacyPluginsToDisable.length}</strong><span>Legacy plugins</span></div></div>{#if adoptionPlan.warnings.length > 0}<div class="warning-box"><strong>Needs your attention</strong>{#each adoptionPlan.warnings as warning}<p>{warning}</p>{/each}</div>{/if}<details><summary>Technical migration details</summary><div class="details-list"><p><strong>Location:</strong> {adoptionPlan.root}</p><p><strong>Paper:</strong> {adoptionPlan.paperJar}</p></div></details><div class="dialog-actions"><button class="ghost-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'active-actions'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}>
-      <div class="dialog action-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Manage {managementServer.name}</h2><p>Server-level file and lifecycle actions.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div><div class="action-list"><button onclick={() => openServerFolder(managementServer!)}>Open folder</button><button onclick={() => beginDuplicate(managementServer!)}>Duplicate server</button><button onclick={() => beginRemove(managementServer!)}>Remove from library</button><button class="danger-action" onclick={() => beginDelete(managementServer!)}>Delete server…</button></div></div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'active-actions'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}><div class="dialog action-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Manage {managementServer.name}</h2><p>Server-level file and lifecycle actions.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div><div class="action-list"><button onclick={() => openServerFolder(managementServer!)}>Open folder</button><button onclick={() => beginDuplicate(managementServer!)}>Duplicate server</button><button onclick={() => beginRemove(managementServer!)}>Remove from library</button><button class="danger-action" onclick={() => beginDelete(managementServer!)}>Delete server…</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'locate'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}>
-      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="locate-server-heading">
-        <div class="dialog-heading"><div><h2 id="locate-server-heading">Locate {managementServer.name}</h2><p>Reconnect the same LazyBuilder server after its folder or drive moved.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>
-        {#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}
-        <div class="safe-notice"><strong>Previously registered location</strong><span>{managementServer.path}</span><p>LazyBuilder will not rewrite this server's identity. The selected folder must already contain the same workspace ID.</p></div>
-        <label>New server folder<div class="location-row"><input value={locateCandidate} title={locateCandidate} readonly placeholder="Choose the moved server folder" /><button class="secondary-button" disabled={managementBusy} onclick={chooseLocateCandidate}>Browse</button></div></label>
-        <div class="identity-notice"><strong>Identity-safe reconnect</strong><span>Folders belonging to another server, plain Paper folders, symbolic links, and Windows reparse points are rejected.</span></div>
-        <div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="primary-button" disabled={managementBusy || !locateCandidate} onclick={reconnectServerLocation}>{managementBusy ? 'Reconnecting…' : 'Reconnect server'}</button></div>
-      </div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'locate'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="locate-server-heading"><div class="dialog-heading"><div><h2 id="locate-server-heading">Locate {managementServer.name}</h2><p>Reconnect the same LazyBuilder server after its folder or drive moved.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="safe-notice"><strong>Previously registered location</strong><span>{managementServer.path}</span><p>LazyBuilder will not rewrite this server's identity. The selected folder must already contain the same workspace ID.</p></div><label>New server folder<div class="location-row"><input value={locateCandidate} title={locateCandidate} readonly placeholder="Choose the moved server folder" /><button class="secondary-button" disabled={managementBusy} onclick={chooseLocateCandidate}>Browse</button></div></label><div class="identity-notice"><strong>Identity-safe reconnect</strong><span>Folders belonging to another server, plain Paper folders, symbolic links, and Windows reparse points are rejected.</span></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="primary-button" disabled={managementBusy || !locateCandidate} onclick={reconnectServerLocation}>{managementBusy ? 'Reconnecting…' : 'Reconnect server'}</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'duplicate'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}>
-      <div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Duplicate server</h2><p>Create a complete, independently usable copy of {managementServer.name}.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<label>New server name<input bind:value={duplicateName} disabled={managementBusy} /></label><label>Save in<div class="location-row"><input value={displayLocation(duplicateParent)} title={duplicateParent} readonly /><button class="secondary-button" disabled={managementBusy} onclick={chooseDuplicateLocation}>Browse</button></div></label><div class="included-box"><strong>Included in the copy</strong><span>Worlds, server configuration, plugins, plugin data, and LazyBuilder server settings.</span><small>Runtime locks, temporary work, cache, and logs are intentionally excluded.</small></div><div class="storage-row"><div><span>Server data</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.sourceBytes)}</strong></div><div><span>Required with safety margin</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.requiredBytes)}</strong></div><div><span>Available</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.availableBytes)}</strong></div></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="primary-button" disabled={managementBusy || estimateLoading || !!managementError || !duplicateName.trim() || !duplicateParent.trim()} onclick={duplicateServer}>{managementBusy ? 'Duplicating…' : 'Duplicate server'}</button></div></div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'duplicate'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Duplicate server</h2><p>Create a complete, independently usable copy of {managementServer.name}.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<label>New server name<input bind:value={duplicateName} disabled={managementBusy} /></label><label>Save in<div class="location-row"><input value={displayLocation(duplicateParent)} title={duplicateParent} readonly /><button class="secondary-button" disabled={managementBusy} onclick={chooseDuplicateLocation}>Browse</button></div></label><div class="included-box"><strong>Included in the copy</strong><span>Worlds, server configuration, plugins, plugin data, and LazyBuilder server settings.</span><small>Runtime locks, temporary work, cache, and logs are intentionally excluded.</small></div><div class="storage-row"><div><span>Server data</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.sourceBytes)}</strong></div><div><span>Required with safety margin</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.requiredBytes)}</strong></div><div><span>Available</span><strong>{estimateLoading ? 'Calculating…' : formatBytes(duplicateEstimate?.availableBytes)}</strong></div></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="primary-button" disabled={managementBusy || estimateLoading || !!managementError || !duplicateName.trim() || !duplicateParent.trim()} onclick={duplicateServer}>{managementBusy ? 'Duplicating…' : 'Duplicate server'}</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'remove'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}>
-      <div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Remove {managementServer.name} from LazyBuilder?</h2><p>This only removes the server from your LazyBuilder library.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="safe-notice"><strong>Your files will remain on this computer.</strong><span>{managementServer.path}</span><p>You can add the server again later.</p></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="secondary-button" disabled={managementBusy} onclick={removeServerFromLibrary}>{managementBusy ? 'Removing…' : 'Remove from library'}</button></div></div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'remove'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Remove {managementServer.name} from LazyBuilder?</h2><p>This only removes the server from your LazyBuilder library.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="safe-notice"><strong>Your files will remain on this computer.</strong><span>{managementServer.path}</span><p>You can add the server again later.</p></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="secondary-button" disabled={managementBusy} onclick={removeServerFromLibrary}>{managementBusy ? 'Removing…' : 'Remove from library'}</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'delete-review'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}>
-      <div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Delete {managementServer.name}?</h2><p>Review exactly what will be permanently removed.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="danger-summary"><strong>This permanently deletes:</strong><ul><li>Worlds</li><li>Server configuration</li><li>Plugins and plugin data</li><li>LazyBuilder workspace data</li></ul><span class="path-copy">{managementServer.path}</span><p>This cannot be undone.</p></div><div class="dialog-actions"><button class="ghost-button" onclick={closeManagement}>Cancel</button><button class="danger-button" onclick={() => (managementMode = 'delete-confirm')}>Continue</button></div></div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'delete-review'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Delete {managementServer.name}?</h2><p>Review exactly what will be permanently removed.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="danger-summary"><strong>This permanently deletes:</strong><ul><li>Worlds</li><li>Server configuration</li><li>Plugins and plugin data</li><li>LazyBuilder workspace data</li></ul><span class="path-copy">{managementServer.path}</span><p>This cannot be undone.</p></div><div class="dialog-actions"><button class="ghost-button" onclick={closeManagement}>Cancel</button><button class="danger-button" onclick={() => (managementMode = 'delete-confirm')}>Continue</button></div></div></div>{/if}
 
-  {#if managementServer && managementMode === 'delete-confirm'}
-    <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}>
-      <div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Confirm permanent deletion</h2><p>Type the server name exactly to continue.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="typed-confirmation"><code>{managementServer.name}</code><label>Server name<input bind:value={deleteTypedName} autocomplete="off" disabled={managementBusy} /></label></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={() => (managementMode = 'delete-review')}>Back</button><button class="danger-button" disabled={managementBusy || deleteTypedName !== managementServer.name} onclick={deleteServer}>{managementBusy ? 'Deleting…' : 'Delete permanently'}</button></div></div>
-    </div>
-  {/if}
+  {#if managementServer && managementMode === 'delete-confirm'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Confirm permanent deletion</h2><p>Type the server name exactly to continue.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="typed-confirmation"><code>{managementServer.name}</code><label>Server name<input bind:value={deleteTypedName} autocomplete="off" disabled={managementBusy} /></label></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={() => (managementMode = 'delete-review')}>Back</button><button class="danger-button" disabled={managementBusy || deleteTypedName !== managementServer.name} onclick={deleteServer}>{managementBusy ? 'Deleting…' : 'Delete permanently'}</button></div></div></div>{/if}
 {/if}
 
 <style>
