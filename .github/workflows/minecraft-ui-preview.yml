@@ -1,0 +1,114 @@
+name: Minecraft UI Preview
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - 'mods/map-manager/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/registry/**'
+      - '.github/workflows/minecraft-ui-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minecraft-ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  map-manager-visual-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Ensure XVFB is available
+        shell: bash
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+
+      - name: Run Map Manager in real Minecraft client
+        shell: bash
+        env:
+          CI: 'true'
+        run: xvfb-run -a ./gradlew -p mods/map-manager --no-daemon runClientGameTest
+
+      - name: Stage ChatGPT-readable Minecraft visual proof
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="mods/map-manager/build/run/clientGameTest/screenshots"
+          target_dir=".artifacts/minecraft-ui-preview/map-manager"
+          mkdir -p "$target_dir"
+          if [ ! -d "$source_dir" ]; then
+            echo "Expected screenshot directory not found: $source_dir" >&2
+            find mods/map-manager -maxdepth 6 -type d -name screenshots -print >&2 || true
+            exit 1
+          fi
+          find "$source_dir" -maxdepth 1 -type f -name '*.png' -print -exec cp {} "$target_dir/" \;
+          if ! find "$target_dir" -maxdepth 1 -type f -name '*.png' -print -quit | grep -q .; then
+            echo "Minecraft client test completed without producing screenshots." >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, os, struct
+          from pathlib import Path
+
+          target = Path('.artifacts/minecraft-ui-preview/map-manager')
+          shots = []
+          for image in sorted(target.glob('*.png')):
+              with image.open('rb') as fh:
+                  sig = fh.read(24)
+              width, height = struct.unpack('>II', sig[16:24])
+              shots.append({'file': image.name, 'width': width, 'height': height})
+
+          manifest = {
+              'proofLevel': 'L4_REAL_MINECRAFT_RENDERER',
+              'surface': 'Fabric Map Manager / WorldMapScreen',
+              'renderer': 'Minecraft 1.21.4 Fabric client under XVFB',
+              'branch': os.environ.get('GITHUB_REF_NAME'),
+              'commit': os.environ.get('GITHUB_SHA'),
+              'fixtureBoundary': 'Only authoritative controller responses/navigation preferences are deterministic fixtures. WorldMapScreen and Minecraft rendering are production paths.',
+              'nativeBoundary': 'Local PC remains required for GPU/driver frame pacing, mouse feel, installed modpack interactions, real Paper networking, and OS-specific behavior.',
+              'screenshots': shots,
+          }
+          (target / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Upload Minecraft UI visual proof
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: LazyBuilder-Minecraft-UI-Preview-${{ github.sha }}
+          path: .artifacts/minecraft-ui-preview/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Minecraft UI diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: LazyBuilder-Minecraft-UI-Preview-Diagnostics-${{ github.sha }}
+          path: |
+            mods/map-manager/build/run/clientGameTest/logs/**
+            mods/map-manager/build/run/clientGameTest/crash-reports/**
+            mods/map-manager/build/run/clientGameTest/screenshots/**
+            mods/map-manager/build/reports/**
+          if-no-files-found: warn
+          retention-days: 7
