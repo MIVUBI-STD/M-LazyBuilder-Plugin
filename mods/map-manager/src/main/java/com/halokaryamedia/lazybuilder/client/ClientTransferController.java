@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -29,12 +30,13 @@ import java.util.function.Consumer;
  * local state tracks one explicit transfer operation at a time.
  *
  * <p>Chunks use one seekable channel per active file and the protocol-owned
- * bounded credit window. Presentation can observe a compact immutable status;
- * it does not gain ownership of transfer ordering or validation.</p>
+ * bounded credit window. Every asynchronous continuation is tied to a local
+ * lifecycle generation so disconnect/reset/shutdown cannot resurrect stale work.</p>
  */
 public final class ClientTransferController {
     private static final Consumer<String> NO_UPLOAD_CALLBACK = ignored -> { };
     private static final Runnable NO_CANCEL_CALLBACK = () -> { };
+    private static final long SHUTDOWN_WAIT_SECONDS = 2L;
 
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "LazyBuilder-Transfer-IO");
@@ -48,6 +50,7 @@ public final class ClientTransferController {
     private Runnable uploadCancelled = NO_CANCEL_CALLBACK;
     private TransferStatus status = TransferStatus.idle();
     private long revision;
+    private long lifecycleGeneration;
 
     public void chooseAndUploadImport() {
         chooseAndUploadImport(NO_UPLOAD_CALLBACK, NO_CANCEL_CALLBACK);
@@ -59,10 +62,12 @@ public final class ClientTransferController {
 
     public void chooseAndUploadImport(Consumer<String> onUploaded, Runnable onCancelled) {
         requireIdle();
+        long generation = beginOperation();
         uploadFinished = Objects.requireNonNull(onUploaded, "onUploaded");
         uploadCancelled = Objects.requireNonNull(onCancelled, "onCancelled");
         setStatus(new TransferStatus(TransferPhase.CHOOSING_IMPORT, "", 0, 0, "Choose a world file"));
         ClientFileDialogs.chooseImport().thenAccept(optional -> clientExecute(() -> {
+            if (!isCurrent(generation)) return;
             if (optional.isEmpty()) {
                 uploadFinished = NO_UPLOAD_CALLBACK;
                 Runnable callback = uploadCancelled;
@@ -71,21 +76,23 @@ public final class ClientTransferController {
                 callback.run();
                 return;
             }
-            beginUpload(optional.get());
+            beginUpload(optional.get(), generation);
         }));
     }
 
     public void downloadExport(String fileName) {
         requireIdle();
+        long generation = beginOperation();
         String safeName = Objects.requireNonNull(fileName, "fileName");
         setStatus(new TransferStatus(TransferPhase.CHOOSING_EXPORT_DESTINATION,
                 safeName, 0, 0, "Choose where to save the export"));
         ClientFileDialogs.chooseExportDestination(safeName).thenAccept(optional -> clientExecute(() -> {
+            if (!isCurrent(generation)) return;
             if (optional.isEmpty()) {
                 setStatus(TransferStatus.idle());
                 return;
             }
-            beginDownload(safeName, optional.get());
+            beginDownload(safeName, optional.get(), generation);
         }));
     }
 
@@ -96,8 +103,9 @@ public final class ClientTransferController {
             case TransferWireProtocol.UploadProgressResponse progress -> onUploadProgress(progress);
             case TransferWireProtocol.UploadFinished finished -> {
                 Upload state = upload;
+                if (state == null || !isCurrent(state.generation)) return;
                 upload = null;
-                closeQuietly(state == null ? null : state.channel);
+                closeQuietly(state.channel);
                 Consumer<String> callback = uploadFinished;
                 uploadFinished = NO_UPLOAD_CALLBACK;
                 uploadCancelled = NO_CANCEL_CALLBACK;
@@ -109,6 +117,7 @@ public final class ClientTransferController {
             case TransferWireProtocol.DownloadChunkData chunk -> onDownloadChunk(chunk);
             case TransferWireProtocol.Ack ignored -> onAck();
             case TransferWireProtocol.ErrorResponse error -> {
+                invalidateLifecycle();
                 cleanupLocalUpload();
                 cleanupLocalDownload();
                 setStatus(new TransferStatus(TransferPhase.FAILED, "", 0, 0, error.message()));
@@ -118,15 +127,24 @@ public final class ClientTransferController {
     }
 
     public void reset() {
+        invalidateLifecycle();
         cleanupLocalUpload();
         cleanupLocalDownload();
         setStatus(TransferStatus.idle());
     }
 
-    /** Releases transfer-local resources and prevents any new transfer I/O during client shutdown. */
+    /** Releases transfer-local resources and prevents stale queued I/O from re-entering the client. */
     public void shutdownIo() {
         reset();
         ioExecutor.shutdown();
+        try {
+            if (!ioExecutor.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                ioExecutor.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            ioExecutor.shutdownNow();
+        }
     }
 
     public TransferStatus status() {
@@ -140,12 +158,26 @@ public final class ClientTransferController {
     private void requireIdle() {
         if (upload != null || download != null
                 || status.phase() == TransferPhase.CHOOSING_IMPORT
-                || status.phase() == TransferPhase.CHOOSING_EXPORT_DESTINATION) {
+                || status.phase() == TransferPhase.CHOOSING_EXPORT_DESTINATION
+                || status.phase() == TransferPhase.PREPARING_UPLOAD) {
             throw new IllegalStateException("A file transfer is already active");
         }
     }
 
-    private void beginUpload(Path source) {
+    private long beginOperation() {
+        return ++lifecycleGeneration;
+    }
+
+    private void invalidateLifecycle() {
+        lifecycleGeneration++;
+    }
+
+    private boolean isCurrent(long generation) {
+        return generation == lifecycleGeneration && !ioExecutor.isShutdown();
+    }
+
+    private void beginUpload(Path source, long generation) {
+        if (!isCurrent(generation)) return;
         Path normalized = source.toAbsolutePath().normalize();
         setStatus(new TransferStatus(TransferPhase.PREPARING_UPLOAD,
                 normalized.getFileName().toString(), 0, 0, "Preparing world file"));
@@ -159,6 +191,7 @@ public final class ClientTransferController {
                 throw new RuntimeException(exception);
             }
         }, ioExecutor).whenComplete((prepared, failure) -> clientExecute(() -> {
+            if (!isCurrent(generation)) return;
             if (failure != null) {
                 uploadFinished = NO_UPLOAD_CALLBACK;
                 uploadCancelled = NO_CANCEL_CALLBACK;
@@ -169,7 +202,7 @@ public final class ClientTransferController {
                 return;
             }
             try {
-                upload = new Upload(prepared.path());
+                upload = new Upload(prepared.path(), generation);
                 setStatus(new TransferStatus(TransferPhase.UPLOADING,
                         prepared.path().getFileName().toString(), 0, prepared.size(), "Uploading world"));
                 send(new TransferWireProtocol.BeginUpload(
@@ -186,7 +219,7 @@ public final class ClientTransferController {
 
     private void onUploadAccepted(TransferDescriptor descriptor) {
         Upload state = upload;
-        if (state == null) return;
+        if (state == null || !isCurrent(state.generation)) return;
         try {
             state.descriptor = descriptor;
             state.channel = FileChannel.open(state.source, StandardOpenOption.READ);
@@ -200,7 +233,7 @@ public final class ClientTransferController {
 
     private void onUploadProgress(TransferWireProtocol.UploadProgressResponse progress) {
         Upload state = upload;
-        if (state == null || state.descriptor == null
+        if (state == null || !isCurrent(state.generation) || state.descriptor == null
                 || !state.descriptor.sessionId().equals(progress.sessionId())) return;
         state.acknowledged = Math.max(state.acknowledged, progress.nextChunkIndex());
         long completed = Math.min(state.descriptor.totalBytes(),
@@ -220,7 +253,8 @@ public final class ClientTransferController {
     }
 
     private void pumpUploadBatch(Upload state) {
-        if (upload != state || state.descriptor == null || state.channel == null || state.batchReadInFlight) return;
+        if (upload != state || !isCurrent(state.generation)
+                || state.descriptor == null || state.channel == null || state.batchReadInFlight) return;
         int start = state.nextChunkToSend;
         if (start >= state.descriptor.totalChunks()) return;
         int end = Math.min(start + TransferWireProtocol.PIPELINE_WINDOW, state.descriptor.totalChunks());
@@ -242,7 +276,7 @@ public final class ClientTransferController {
                 throw new RuntimeException(exception);
             }
         }, ioExecutor).whenComplete((batch, failure) -> clientExecute(() -> {
-            if (upload != state) return;
+            if (upload != state || !isCurrent(state.generation)) return;
             state.batchReadInFlight = false;
             if (failure != null) {
                 abortUpload("Upload read failed: " + rootMessage(failure));
@@ -260,17 +294,18 @@ public final class ClientTransferController {
         }));
     }
 
-    private void beginDownload(String fileName, Path destination) {
+    private void beginDownload(String fileName, Path destination, long generation) {
+        if (!isCurrent(generation)) return;
         Path target = destination.toAbsolutePath().normalize();
         Path partial = target.resolveSibling(target.getFileName() + ".part");
-        download = new Download(fileName, target, partial);
+        download = new Download(fileName, target, partial, generation);
         setStatus(new TransferStatus(TransferPhase.DOWNLOADING, fileName, 0, 0, "Starting download"));
         send(new TransferWireProtocol.BeginDownload(fileName));
     }
 
     private void onDownloadAccepted(TransferDescriptor descriptor) {
         Download state = download;
-        if (state == null) return;
+        if (state == null || !isCurrent(state.generation)) return;
         try {
             state.descriptor = descriptor;
             Files.deleteIfExists(state.partial);
@@ -293,7 +328,8 @@ public final class ClientTransferController {
     }
 
     private void requestDownloadBatch(Download state) {
-        if (download != state || state.descriptor == null || state.awaitingFinishAck) return;
+        if (download != state || !isCurrent(state.generation)
+                || state.descriptor == null || state.awaitingFinishAck) return;
         int start = state.nextChunkToRequest;
         if (start >= state.descriptor.totalChunks()) return;
         int end = Math.min(start + TransferWireProtocol.PIPELINE_WINDOW, state.descriptor.totalChunks());
@@ -310,7 +346,7 @@ public final class ClientTransferController {
 
     private void onDownloadChunk(TransferWireProtocol.DownloadChunkData chunk) {
         Download state = download;
-        if (state == null || state.descriptor == null || state.channel == null
+        if (state == null || !isCurrent(state.generation) || state.descriptor == null || state.channel == null
                 || !state.descriptor.sessionId().equals(chunk.sessionId())) return;
         if (chunk.chunkIndex() < state.batchStart || chunk.chunkIndex() >= state.batchEnd) {
             abortDownload("Download response arrived outside the active pipeline window");
@@ -334,7 +370,7 @@ public final class ClientTransferController {
                 throw new RuntimeException(exception);
             }
         }, ioExecutor).whenComplete((ignored, failure) -> clientExecute(() -> {
-            if (download != state) return;
+            if (download != state || !isCurrent(state.generation)) return;
             state.pendingWrites--;
             if (failure != null) {
                 abortDownload("Download write failed: " + rootMessage(failure));
@@ -345,6 +381,7 @@ public final class ClientTransferController {
     }
 
     private void completeDownloadBatchIfReady(Download state) {
+        if (!isCurrent(state.generation)) return;
         int expected = state.batchEnd - state.batchStart;
         if (state.receivedInBatch != expected || state.pendingWrites != 0) return;
         if (state.batchSawLast || state.nextChunkToRequest >= state.descriptor.totalChunks()) {
@@ -359,7 +396,7 @@ public final class ClientTransferController {
 
     private void onAck() {
         Download state = download;
-        if (state == null || !state.awaitingFinishAck || state.descriptor == null) return;
+        if (state == null || !isCurrent(state.generation) || !state.awaitingFinishAck || state.descriptor == null) return;
         state.awaitingFinishAck = false;
         setStatus(new TransferStatus(TransferPhase.FINALIZING_DOWNLOAD,
                 state.fileName, state.descriptor.totalBytes(), state.descriptor.totalBytes(), "Verifying export"));
@@ -378,7 +415,7 @@ public final class ClientTransferController {
                 throw new RuntimeException(exception);
             }
         }, ioExecutor).whenComplete((ignored, failure) -> clientExecute(() -> {
-            if (download != state) return;
+            if (download != state || !isCurrent(state.generation)) return;
             if (failure != null) {
                 cleanupLocalDownload();
                 String message = "Could not finalize export: " + rootMessage(failure);
@@ -399,7 +436,7 @@ public final class ClientTransferController {
         uploadFinished = NO_UPLOAD_CALLBACK;
         uploadCancelled = NO_CANCEL_CALLBACK;
         closeQuietly(state == null ? null : state.channel);
-        if (state != null && state.descriptor != null) {
+        if (state != null && state.descriptor != null && isCurrent(state.generation)) {
             send(new TransferWireProtocol.AbortUpload(state.descriptor.sessionId()));
         }
         setStatus(new TransferStatus(TransferPhase.FAILED,
@@ -411,7 +448,7 @@ public final class ClientTransferController {
         Download state = download;
         download = null;
         closeQuietly(state == null ? null : state.channel);
-        if (state != null && state.descriptor != null) {
+        if (state != null && state.descriptor != null && isCurrent(state.generation)) {
             send(new TransferWireProtocol.AbortDownload(state.descriptor.sessionId()));
         }
         if (state != null) {
@@ -499,7 +536,8 @@ public final class ClientTransferController {
     }
 
     private static void clientExecute(Runnable task) {
-        MinecraftClient.getInstance().execute(task);
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) client.execute(task);
     }
 
     private static String rootMessage(Throwable throwable) {
@@ -548,10 +586,11 @@ public final class ClientTransferController {
         }
     }
 
-    private record PreparedUpload(Path path, long size, String sha256) {}
+    private record PreparedUpload(Path path, long size, String sha256) { }
 
     private static final class Upload {
         private final Path source;
+        private final long generation;
         private TransferDescriptor descriptor;
         private FileChannel channel;
         private int nextChunkToSend;
@@ -559,8 +598,9 @@ public final class ClientTransferController {
         private boolean batchReadInFlight;
         private boolean finishSent;
 
-        private Upload(Path source) {
+        private Upload(Path source, long generation) {
             this.source = source;
+            this.generation = generation;
         }
     }
 
@@ -568,6 +608,7 @@ public final class ClientTransferController {
         private final String fileName;
         private final Path target;
         private final Path partial;
+        private final long generation;
         private TransferDescriptor descriptor;
         private FileChannel channel;
         private int nextChunkToRequest;
@@ -579,10 +620,11 @@ public final class ClientTransferController {
         private boolean batchSawLast;
         private boolean awaitingFinishAck;
 
-        private Download(String fileName, Path target, Path partial) {
+        private Download(String fileName, Path target, Path partial, long generation) {
             this.fileName = fileName;
             this.target = target;
             this.partial = partial;
+            this.generation = generation;
         }
     }
 }
