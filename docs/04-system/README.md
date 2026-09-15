@@ -1,6 +1,6 @@
 # System / Ownership
 
-Canonical owner for LazyBuilder module boundaries, source ownership, and maintainability rules. Specialist/jobdesk routing lives in `skill-routing.md`; minimum-flow execution discipline lives in `development-discipline.md`.
+Canonical owner for LazyBuilder module boundaries, source ownership, and maintainability rules. Specialist/jobdesk routing lives in `skill-routing.md`; minimum-flow execution discipline lives in `development-discipline.md`; canonical developer/deployment workflow lives in `development-operations.md`.
 
 ## Target runtime
 
@@ -117,6 +117,7 @@ Transport/provider layers never become authority for worlds, permissions, lifecy
 - one config concern has one reader/writer authority;
 - one wire contract has one neutral source;
 - one user action has one primary execution path;
+- one developer operation starts from the canonical root command surface defined in `development-operations.md`;
 - compatibility fallbacks exist only to protect supported user data and must not become parallel authorities;
 - keep external implementation details behind adapter boundaries;
 - no idle polling, converter daemon, watcher, scheduler, or background worker without a concrete active responsibility;
