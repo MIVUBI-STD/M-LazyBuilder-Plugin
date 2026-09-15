@@ -96,6 +96,8 @@ jobs:
           cp mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
           cp mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
           cp mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
+      - name: Verify packaged client mod contents
+        run: python3 scripts/verify_client_artifacts.py .artifacts/client-mods
       - name: Upload tested client mods
         uses: actions/upload-artifact@v4
         with:
