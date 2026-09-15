@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ManagedWorldSummary, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
+  import { RuntimeError } from '../app/bridge/runtimeApi';
+  import type { ManagedWorldSummary, ServerState, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   const TASK_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -9,7 +10,7 @@
   let search = '';
   let error = '';
   let busy = false;
-  let serverState = 'Offline';
+  let serverState: ServerState = 'Offline';
   let serverOnline = false;
   let operationBusyWorldId: string | null = null;
   let operationTask: WorldTaskSnapshot | null = null;
@@ -31,11 +32,11 @@
   let deleteConfirmation = '';
 
   function friendlyError(value: unknown) {
-    const message = String(value).replace(/^Error:\s*/i, '').trim();
-    if (message.includes('protocol mismatch')) {
+    if (value instanceof RuntimeError && value.code === 'WORLD_PROTOCOL_MISMATCH') {
       return 'World Manager is out of sync with this Launcher build. Update the LazyBuilder core components before continuing.';
     }
-    return message || 'Something went wrong. Try again.';
+    if (value instanceof Error && value.message.trim()) return value.message.trim();
+    return String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
   }
 
   function slugify(value: string) {
@@ -320,8 +321,8 @@
       <div class="state-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5zM4 7.5l8 4.5 8-4.5M12 12v9" /></svg>
       </div>
-      <h3>{['Starting', 'Restarting'].includes(serverState) ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Server must be running to manage worlds'}</h3>
-      <p>{['Starting', 'Restarting', 'Stopping'].includes(serverState) ? 'World controls will become available when the server is ready.' : 'Start this server from Overview, then return to Worlds.'}</p>
+      <h3>{serverState === 'Starting' ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Server must be running to manage worlds'}</h3>
+      <p>{serverState === 'Starting' || serverState === 'Stopping' ? 'World controls will become available when the server is ready.' : 'Start this server from Overview, then return to Worlds.'}</p>
     </section>
   {:else}
     {#if operationTask && ['QUEUED', 'RUNNING'].includes(operationTask.state)}
@@ -457,7 +458,7 @@
 {#if exportSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="export-world-title">
-      <div class="modal-head"><div><h2 id="export-world-title">Export world</h2><p>Save {exportSource.displayName} as a Java 1.21.4 ZIP.</p></div><button class="icon-button" aria-label="Close" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
+      <div class="modal-head"><div><h2 id="export-world-title">Export world</h2><p>Save {exportSource.displayName} as a Java world ZIP.</p></div><button class="icon-button" aria-label="Close" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <label>Export name<input bind:value={exportName} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="primary" disabled={operationBusyWorldId !== null || !exportName.trim()} onclick={runExport}>{operationBusyWorldId ? 'Exporting…' : 'Export'}</button></div>
     </div>
