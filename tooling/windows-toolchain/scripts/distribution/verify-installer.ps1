@@ -57,5 +57,27 @@ if (-not $installedExe) {
     throw "LazyBuilder is registered as installed, but its executable was not found. InstallLocation='$($entry.InstallLocation)'"
 }
 
+Write-Host 'Launching installed app with a sanitized end-user PATH...' -ForegroundColor Cyan
+$originalPath = $env:Path
+$launched = $null
+try {
+    $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+    $launched = Start-Process -FilePath $installedExe -PassThru
+    Start-Sleep -Seconds 5
+    if ($launched.HasExited) {
+        if ($launched.ExitCode -ne 0) {
+            throw "Installed LazyBuilder exited during clean-PATH startup smoke with code $($launched.ExitCode)."
+        }
+        throw 'Installed LazyBuilder exited unexpectedly during clean-PATH startup smoke.'
+    }
+    Write-Host 'Clean-PATH startup PASS: app does not depend on developer tools from PATH.' -ForegroundColor Green
+}
+finally {
+    $env:Path = $originalPath
+    if ($launched -and -not $launched.HasExited) {
+        Stop-Process -Id $launched.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "Installer smoke PASS: $installedExe" -ForegroundColor Green
 Write-Host "Uninstall registration: $($entry.PSPath)"
