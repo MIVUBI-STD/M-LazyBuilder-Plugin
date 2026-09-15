@@ -8,6 +8,7 @@ pub mod paths;
 pub mod plugin_manager;
 pub mod provisioning;
 pub mod resource_settings;
+pub mod runtime_environment;
 pub mod runtime_updates;
 pub mod server_config;
 pub mod server_manager;
