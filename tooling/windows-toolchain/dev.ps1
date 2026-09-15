@@ -24,6 +24,43 @@ $Operations = @{
     test  = Join-Path $PSScriptRoot 'scripts\verify\test-local.ps1'
 }
 
+$OperationHints = @{
+    setup = @{
+        Evidence = 'toolchain.json + terminal output from the failed installer/tool check'
+        Recovery = 'DEV.cmd setup  (or DEV.cmd check after opening a fresh terminal if PATH/tool installation just changed)'
+    }
+    check = @{
+        Evidence = 'toolchain.json + failed row in the LazyBuilder Toolchain Check table'
+        Recovery = 'DEV.cmd setup'
+    }
+    build = @{
+        Evidence = 'first failing Maven/Gradle/npm/Cargo/Tauri step; package outputs are under dist/ only after successful publication'
+        Recovery = 'Fix the first failing owner, then run DEV.cmd build again'
+    }
+    test = @{
+        Evidence = '.runtime-proof/ for Paper proof state/logs; dist/Local/ for installer/package inputs'
+        Recovery = 'Fix the first failing proof lane, then run DEV.cmd test again (use DEV.cmd test -Build if build outputs are stale/missing)'
+    }
+}
+
+function Write-FailureSummary {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][int]$ExitCode
+    )
+
+    $Hint = $OperationHints[$Name]
+    Write-Host ''
+    Write-Host 'LAZYBUILDER OPERATION FAILED' -ForegroundColor Red
+    Write-Host "Operation : $Name"
+    Write-Host "Exit code : $ExitCode"
+    if ($Hint) {
+        Write-Host "Evidence  : $($Hint.Evidence)"
+        Write-Host "Recovery  : $($Hint.Recovery)"
+    }
+    Write-Host 'Rule      : fix the first actionable failure; do not add a fallback path merely to bypass it.' -ForegroundColor DarkGray
+}
+
 function Invoke-Operation {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -41,6 +78,7 @@ function Invoke-Operation {
     & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
+        Write-FailureSummary -Name $Name -ExitCode $exitCode
         throw "LazyBuilder operation '$Name' failed with exit code $exitCode."
     }
 }
@@ -61,6 +99,7 @@ function Show-Help {
     Write-Host '  help            Show this command reference'
     Write-Host ''
     Write-Host 'Arguments after the command are forwarded to that operation.'
+    Write-Host 'Failures stop at the first failed operation and print evidence/recovery guidance.'
 }
 
 switch ($Command) {
