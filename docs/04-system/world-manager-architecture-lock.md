@@ -2,11 +2,11 @@
 
 ## Status
 
-World-Manager is **structurally stable at the source/CI proof level**.
+World-Manager is **structurally stable and remotely runtime-proven for its desktop/Paper world-management path**.
 
 This lock means new work should extend the existing ownership boundaries rather than introduce parallel managers, duplicate filesystem authorities, duplicate task systems, or alternate transport-specific implementations of the same world operation.
 
-It does **not** mean live Paper/Desktop/Fabric validation is complete. Runtime proof remains a separate LOCAL_CODE / LIVE_SERVER stage.
+Remote GitHub now runs a real disposable Paper 1.21.4 server for the canonical desktop/local-control path. This does **not** mean installed Desktop, Fabric gameplay, real-player behavior, large production worlds, or representative cross-edition conversion quality are proven.
 
 ## Canonical ownership
 
@@ -51,7 +51,7 @@ transport
     ↓
 WorldHeavyOperationOrchestrator
     ↓
-WorldCloneService
+WorldDuplicateService
 WorldDeleteService
 WorldExportService
 WorldImportService
@@ -123,9 +123,9 @@ Shutdown is fail-closed:
 
 An already-running canonical operation must be allowed to execute its service `finish`/cleanup path where possible. Stale transport responses are suppressed after transport shutdown begins.
 
-## Proof at lock point
+## Current remote proof
 
-The lock was established after CI verified all three current build surfaces from `Local`:
+Repository CI covers source/build surfaces:
 
 ```text
 Paper modules/tests  ✅
@@ -133,7 +133,41 @@ Fabric client build  ✅
 Tauri/Svelte/Rust    ✅
 ```
 
-Source/CI proof covers compilation, unit tests, typecheck, frontend build, and Rust check. It does not prove live Paper world mutation, Windows packaged-app behavior, Fabric gameplay interaction, real large-world transfer throughput, or real Chunker conversion.
+The dedicated `Paper Runtime Proof` additionally boots a real stable Paper 1.21.4 runtime on Windows and verifies the desktop/local-control path:
+
+```text
+plugin enable
+→ loopback authentication/status
+→ Create World
+→ settings
+→ Archive / Restore
+→ Duplicate
+→ Backup
+→ native Java Export
+→ authenticated upload
+→ Import
+→ Delete
+→ clean shutdown
+→ restart
+→ registry/filesystem persistence
+→ post-restart settings/delete
+```
+
+This remote proof has already exposed and prevented a real Paper API compatibility defect: Bukkit exposed a `GameRule` constant that the running Paper/Minecraft version did not register. Runtime capability discovery now skips unavailable optional rules instead of failing the complete settings snapshot.
+
+## Proof boundary after remote validation
+
+Remote GitHub still does not prove:
+
+- installed Windows Launcher behavior on a target workstation;
+- actual player teleport/gameplay interaction;
+- Fabric screens/input and plugin-message behavior with a real Minecraft client;
+- Utilities movement behavior with a real player;
+- representative large-world throughput;
+- representative Java↔Bedrock Chunker conversion quality;
+- real client disconnect/reconnect behavior.
+
+Do not fill these proof gaps with speculative frameworks or duplicate implementations. Validate them later only when the relevant target environment/client is intentionally tested.
 
 ## Change rule after lock
 
