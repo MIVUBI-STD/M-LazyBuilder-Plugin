@@ -11,7 +11,6 @@
   let busy = false;
   let serverState = 'Offline';
   let serverOnline = false;
-  let startingServer = false;
   let operationBusyWorldId: string | null = null;
   let operationTask: WorldTaskSnapshot | null = null;
 
@@ -100,33 +99,6 @@
       error = friendlyError(e);
     } finally {
       busy = false;
-    }
-  }
-
-  async function startServer() {
-    if (startingServer || serverOnline || ['Starting', 'Restarting', 'Stopping'].includes(serverState)) return;
-    startingServer = true;
-    error = '';
-    try {
-      const preflight = await runtimeProduct.server.preflight();
-      if (!preflight.ready) {
-        error = preflight.issues[0] || 'This server needs attention before it can start.';
-        return;
-      }
-      await runtimeProduct.server.start();
-      serverState = 'Starting';
-      for (let i = 0; i < 120; i += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 750));
-        const snapshot = await runtimeProduct.server.snapshot();
-        serverState = snapshot.state;
-        if (snapshot.state === 'Online') break;
-        if (['Offline', 'Crashed', 'Detached'].includes(snapshot.state)) break;
-      }
-      await refresh();
-    } catch (e) {
-      error = friendlyError(e);
-    } finally {
-      startingServer = false;
     }
   }
 
@@ -348,9 +320,8 @@
       <div class="state-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5zM4 7.5l8 4.5 8-4.5M12 12v9" /></svg>
       </div>
-      <h3>{['Starting', 'Restarting'].includes(serverState) ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Start the server to manage worlds'}</h3>
-      <p>{['Starting', 'Restarting', 'Stopping'].includes(serverState) ? 'World controls will become available when the server is ready.' : 'World operations are provided by the running World Manager component.'}</p>
-      <button class="primary" disabled={startingServer || ['Starting', 'Restarting', 'Stopping'].includes(serverState)} onclick={startServer}>{startingServer || ['Starting', 'Restarting'].includes(serverState) ? 'Starting…' : serverState === 'Stopping' ? 'Stopping…' : 'Start server'}</button>
+      <h3>{['Starting', 'Restarting'].includes(serverState) ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Server must be running to manage worlds'}</h3>
+      <p>{['Starting', 'Restarting', 'Stopping'].includes(serverState) ? 'World controls will become available when the server is ready.' : 'Start this server from Overview, then return to Worlds.'}</p>
     </section>
   {:else}
     {#if operationTask && ['QUEUED', 'RUNNING'].includes(operationTask.state)}
