@@ -86,6 +86,7 @@ jobs:
               'branch': os.environ.get('GITHUB_REF_NAME'),
               'commit': os.environ.get('GITHUB_SHA'),
               'fixtureBoundary': 'Only authoritative controller responses/navigation preferences are deterministic fixtures. WorldMapScreen and Minecraft rendering are production paths.',
+              'captureOverrides': ['menuBackgroundBlurriness=0 for pixel-clear visual inspection; restored after capture'],
               'nativeBoundary': 'Local PC remains required for GPU/driver frame pacing, mouse feel, installed modpack interactions, real Paper networking, and OS-specific behavior.',
               'screenshots': shots,
           }
