@@ -4,27 +4,29 @@ Single entry point for human and AI documentation discovery.
 
 ## Current next action
 
-The current repository phase is **Local PC validation**, not architecture expansion.
+The current repository phase is **source remediation and synchronization**, not Local PC acceptance and not architecture expansion.
 
-Start here for the next execution phase:
+Start here:
 
-[`05-operations/local-pc-validation-plan.md`](05-operations/local-pc-validation-plan.md)
+[`05-operations/local-pc-remediation-2026-09-15.md`](05-operations/local-pc-remediation-2026-09-15.md)
 
-The canonical Local PC order is:
+Current order:
 
 ```text
-installer
-→ Launcher
-→ managed Java / Paper
-→ Plugin Manager
-→ Paper plugins
-→ Modrinth / Client Setup
-→ Fabric mods
-→ Paper ↔ Fabric interoperability
-→ restart/recovery/update
-→ large-world/storage/conversion testing
-→ final audit
+reproduced Local PC findings
+→ source remediation
+→ runtime/build/product synchronization
+→ regression coverage
+→ Verify
+→ applicable Paper Runtime Proof
+→ canonical installer proof
+→ final source/repository audit
+→ explicit decision to reopen Local PC acceptance
 ```
+
+Only after that gate opens, use:
+
+[`05-operations/local-pc-validation-plan.md`](05-operations/local-pc-validation-plan.md)
 
 ## Load Rule
 
@@ -36,7 +38,8 @@ WORLD MANAGEMENT        → 02-world-management/
 FABRIC CLIENT / MAP UI  → 03-client-ui/
 SYSTEM / OWNERSHIP      → 04-system/
 CURRENT OPERATIONS      → 05-operations/
-LOCAL PC VALIDATION     → 05-operations/local-pc-validation-plan.md
+CURRENT REMEDIATION     → 05-operations/local-pc-remediation-2026-09-15.md
+LATER LOCAL ACCEPTANCE  → 05-operations/local-pc-validation-plan.md
 ```
 
 Two system documents answer different questions:
@@ -56,7 +59,7 @@ docs/
 ├── 02-world-management/   world lifecycle, create, settings, transfer, safety
 ├── 03-client-ui/          Fabric client UI, first-party map interaction, navigation
 ├── 04-system/             architecture, minimum-flow discipline, ownership, networking, specialist routing
-└── 05-operations/         current status, Local PC validation, proof/handoff
+└── 05-operations/         current remediation, verification, distribution proof, later Local PC acceptance
 ```
 
 Xaero may appear only as an interaction-quality reference where explicitly documented. It is not LazyBuilder's map authority, networking owner, or runtime dependency.
@@ -71,7 +74,7 @@ optimize / simplify / reduce overdevelopment
 change product behavior / user flow
 → 01-product/README.md
 
-change world creation/settings/lifecycle/import/export
+change world creation/settings/lifecycle/import/export/conversion
 → 02-world-management/README.md
 → lazybuilder-world-management when its procedure materially helps
 
@@ -98,11 +101,11 @@ change architecture/module ownership
 → 04-system/skill-routing.md
 → resolve one primary specialist; no meta development Skill
 
-continue prior work / interpret current proof
-→ 05-operations/README.md
+continue remediation / interpret current proof
+→ 05-operations/local-pc-remediation-2026-09-15.md
 → 05-operations/current-verification.md
 
-begin target-PC validation
+begin target-PC validation (only after remediation gate opens)
 → 05-operations/local-pc-validation-plan.md
 ```
 
@@ -116,7 +119,7 @@ begin target-PC validation
 6. For `lazybuilder-ui`, select only Desktop or Fabric branch context unless the task truly spans both surfaces.
 7. Add another specialist only after semantic ownership actually changes.
 8. `05-operations/` is current-state context, not durable design authority.
-9. During Local PC validation, fix only reproducible defects; do not add speculative architecture.
+9. During remediation, fix reproduced/source-proven defects and synchronization contradictions before reopening target-machine acceptance.
 10. Git history owns superseded architecture and rationale.
 
 ## Authority Roles
@@ -125,7 +128,7 @@ begin target-PC validation
 Docs     = durable semantic policy / contracts
 Skills   = specialist execution procedure
 Source   = current implementation/runtime truth
-Ops docs = current continuation/proof and Local PC handoff
+Ops docs = current remediation/continuation/proof and later Local PC handoff
 ```
 
 One concern must have one canonical semantic owner. Link instead of duplicating rules.
