@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import BackupPanel from './BackupPanel.svelte';
+  import HealthPanel from './HealthPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { ServerLogTail, ServerPreflight, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
@@ -86,6 +87,7 @@
   {#if preflight.issues.length > 0 && ['Offline','Crashed','Detached'].includes(snapshot.state)}<details class="attention" open={!preflight.ready}><summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary><div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div></details>{/if}
   {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
 
+  <HealthPanel onRepaired={refreshAll} />
   <BackupPanel onRestored={refreshAll} />
 </section>
 
