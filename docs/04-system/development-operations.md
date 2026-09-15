@@ -118,6 +118,35 @@ Each operation executes in an isolated child process so an internal script's `ex
 
 A successful local finalization proves only what the local execution context actually exercised. It does not substitute for independent CI or release promotion proof.
 
+## Developer failure contract
+
+The root orchestrator must stop at the **first failed operation** and present a compact actionable failure envelope:
+
+```text
+Operation
+Exit code
+Evidence
+Recovery
+```
+
+The envelope is routing/diagnostic context only. Domain scripts remain owners of detailed errors and proof artifacts.
+
+Canonical evidence locations include:
+
+```text
+setup/check → toolchain.json + failed tool-check row / installer output
+build       → first failing Maven/Gradle/npm/Cargo/Tauri step; dist/ exists only after successful publication
+test        → .runtime-proof/ runtime evidence + dist/Local/ installer/package input
+```
+
+Rules:
+
+- do not hide the child process output;
+- do not replace the original non-zero exit code with a success/fallback path;
+- recovery guidance points back to the canonical `DEV.cmd` surface or the first failing semantic owner;
+- do not add a logging service, telemetry database, or second diagnostic runner merely to format failures;
+- generated diagnostic evidence stays outside source ownership.
+
 ## CI policy
 
 The full `Verify` workflow is an **independent final verification layer**, not the inner development loop.
@@ -127,9 +156,11 @@ Canonical triggers:
 ```text
 push to Local       → no automatic full CI
 workflow_dispatch   → full CI on demand
-pull request        → full CI
-push to main        → full CI
+pull request        → full CI except supporting evidence/history-only changes
+push to main        → full CI except supporting evidence/history-only changes
 ```
+
+Path scoping may exclude only supporting evidence/history documents that cannot affect source, runtime, build, packaging, canonical policy, or Skills. Source, tooling, canonical docs, versioning, workflows, and Skills must not be broadly excluded from final verification.
 
 Dedicated Launcher/Paper/visual workflows may exist for manual or pull-request evidence, but they must not become parallel repository-readiness authorities.
 
@@ -208,6 +239,7 @@ Operational scripts must:
 - fail fast on missing pinned prerequisites before expensive work;
 - propagate non-zero exit codes accurately;
 - isolate child operations when called by the root orchestrator;
+- stop at the first failed operation and show actionable evidence/recovery guidance;
 - avoid partial success messages after a failed downstream operation;
 - keep destructive installer/update actions explicit;
 - use deterministic/recoverable paths for temporary build state;
@@ -259,6 +291,7 @@ Did it preserve one tool/version authority?
 Did it reuse existing build/test owners rather than reimplementing them?
 Can automation consume it without interactive pauses?
 Are exit codes reliable?
+Does failure output identify the failed operation, useful evidence, and recovery path?
 Are generated outputs isolated from source?
 Does local proof remain separate from CI and deployment proof?
 Did it avoid adding a dependency solely to run other dependencies?
