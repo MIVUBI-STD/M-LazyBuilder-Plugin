@@ -27,10 +27,12 @@ $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapJar = Join-Path $ClientModsDir 'lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientJar = Join-Path $ClientModsDir 'lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
+$PerformanceClientJar = Join-Path $ClientModsDir 'lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
 $WorldTargetJar = Join-Path $RepoRoot 'plugins\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesTargetJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapTargetJar = Join-Path $RepoRoot 'mods\map-manager\build\libs\lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientTargetJar = Join-Path $RepoRoot 'mods\utility-manager\build\libs\lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
+$PerformanceClientTargetJar = Join-Path $RepoRoot 'mods\performance-manager\build\libs\lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
 $PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
@@ -48,6 +50,7 @@ if (-not $AllowMissingRuntime) {
     Require-Command java 'Install or activate Java 21.'
     Require-Command mvn 'Install Apache Maven and make mvn available on PATH.'
     Require-Command gradle 'Install Gradle 8.12 and make gradle available on PATH.'
+    Require-Command python 'Install Python 3.11 or newer and make python available on PATH.'
 
     Write-Host '[runtime] Building and testing matching Paper plugins...' -ForegroundColor Cyan
     Push-Location $RepoRoot
@@ -60,27 +63,55 @@ if (-not $AllowMissingRuntime) {
         if ($LASTEXITCODE -ne 0) { throw "Map Manager build failed with exit code $LASTEXITCODE." }
         gradle -p mods/utility-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Utility Manager build failed with exit code $LASTEXITCODE." }
+        gradle -p mods/performance-manager --no-daemon build
+        if ($LASTEXITCODE -ne 0) { throw "Performance Manager build failed with exit code $LASTEXITCODE." }
     }
     finally { Pop-Location }
 
-    $RequiredBuildOutputs = @($WorldTargetJar, $UtilitiesTargetJar, $MapTargetJar, $UtilityClientTargetJar)
+    $RequiredBuildOutputs = @(
+        $WorldTargetJar,
+        $UtilitiesTargetJar,
+        $MapTargetJar,
+        $UtilityClientTargetJar,
+        $PerformanceClientTargetJar
+    )
     foreach ($Output in $RequiredBuildOutputs) {
         if (-not (Test-Path $Output)) { throw "Runtime verification completed but required artifact was not found: $Output" }
     }
 
     New-Item -ItemType Directory -Force -Path $CoreDir | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientModsDir | Out-Null
+
+    # Retire every previously bundled first-party client JAR before publishing the canonical suite.
+    # This removes stale versions without treating any current Manager as optional.
+    foreach ($Prefix in @(
+        'lazybuilder-map-manager-',
+        'lazybuilder-utility-manager-',
+        'lazybuilder-performance-manager-'
+    )) {
+        Get-ChildItem $ClientModsDir -Filter "$Prefix*.jar" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    }
+
     Copy-Item $WorldTargetJar $WorldJar -Force
     Copy-Item $UtilitiesTargetJar $UtilitiesJar -Force
     Copy-Item $MapTargetJar $MapJar -Force
     Copy-Item $UtilityClientTargetJar $UtilityClientJar -Force
-    Get-ChildItem $ClientModsDir -Filter 'lazybuilder-performance-manager-*.jar' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-    Write-Host 'Matching tested server plugins and required client mods staged for the desktop package.' -ForegroundColor Green
+    Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force
+
+    Write-Host '[runtime] Verifying packaged Fabric client suite...' -ForegroundColor Cyan
+    Push-Location $RepoRoot
+    try {
+        python scripts/verify_client_artifacts.py $ClientModsDir
+        if ($LASTEXITCODE -ne 0) { throw "Client artifact verification failed with exit code $LASTEXITCODE." }
+    }
+    finally { Pop-Location }
+
+    Write-Host 'Matching tested server plugins and all three required client mods staged for the desktop package.' -ForegroundColor Green
     Write-Host ''
 }
 
 $MissingRuntime = @()
-foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar)) {
+foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceClientJar)) {
     if (-not (Test-Path $Path)) { $MissingRuntime += (Split-Path $Path -Leaf) }
 }
 if ($MissingRuntime.Count -gt 0) {
