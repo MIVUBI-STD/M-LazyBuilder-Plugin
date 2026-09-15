@@ -14,6 +14,7 @@ pub fn run() {
         .manage(startup_report)
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
+            commands::diagnostics::diagnostics_export_support_bundle,
             commands::startup::launcher_startup_status,
             commands::launcher_settings::launcher_settings_get,
             commands::launcher_settings::launcher_settings_save,
