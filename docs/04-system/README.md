@@ -136,7 +136,9 @@ docs/05-operations/       current proof/handoff only
 
 Documentation records current durable behavior, not chronological work history. Git history owns superseded designs and retired terminology.
 
-Audit/report documents under `docs/04-system/` are supporting evidence only. They must not override this README, current source, or the canonical owner documents. Do not add another architecture lock/report when an existing canonical document can be corrected directly.
+Supporting evidence documents under `docs/04-system/`—including files primarily named or scoped as audits, locks, implementation status, handoffs, or migration evidence—are **opt-in context only**. They may explain why a canonical rule exists, but they must not be preloaded for ordinary implementation or override this README, current source, or the canonical owner documents. Load them only when rationale/proof can materially change the decision.
+
+Do not add another architecture lock/report when an existing canonical document can be corrected directly. New durable behavior belongs in its canonical owner; historical evidence belongs in Git history unless an active verification/handoff need requires a current evidence document.
 
 ## Dependency policy
 
