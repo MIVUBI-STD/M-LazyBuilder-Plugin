@@ -215,13 +215,69 @@ Do not load a meta-skill for this step.
 
 ## Cross-Owner Handoff
 
-Cross-domain work is sequential, not simultaneous ownership.
+Cross-domain work is **sequential, typed, and minimal**, never simultaneous ownership.
 
 ```text
-Owner A decides/changes its contract
-→ produce smallest handoff result
-→ Owner B consumes it
+Owner A decides/changes its semantic contract
+→ prove Owner A's boundary
+→ emit the smallest typed handoff artifact/result
+→ STOP Owner A
+→ Owner B consumes that artifact without recomputing Owner A truth
 ```
+
+A handoff artifact contains only what the next owner needs. It is not permission for the next owner to reopen the previous owner's semantic decision.
+
+### Canonical handoff payloads
+
+```text
+desktop-runtime → ui
+canonical ids + runtime/readiness/operation state + capabilities + stable error/result
+UI does not re-scan filesystem/process/runtime to derive the same truth
+
+plugin-management → ui
+canonical plugin identity + lifecycle state + capabilities + restart-required + stable result/error
+UI does not parse JAR metadata/dependencies or decide compatibility independently
+
+protocol → world-management
+neutral types + version + validation/default/bounds/capability semantics
+World Management implements domain behavior without redefining the wire contract
+
+world-management → ui
+canonical world identity/lifecycle/capabilities + operation result/error
+UI does not derive lifecycle from folders, registry internals, or transient Paper load state
+
+desktop-runtime ↔ world-management
+Desktop owns authenticated loopback/process/provisioning envelope; World Management owns world semantics
+Desktop may transport a world request/result but must not reinterpret world lifecycle/filesystem rules
+```
+
+### UI-originated defect handoff
+
+When UI discovers the semantic owner is wrong, hand off only:
+
+```text
+short reproduction
+expected vs actual
+canonical input/result observed by UI
+selected entity identity
+proof that the defect survives beyond presentation
+```
+
+Then stop UI semantic patching until the owning Skill returns a corrected canonical result. UI resumes only to present that result.
+
+### Protocol-first chain
+
+For a new/changed Paper↔Fabric world capability:
+
+```text
+protocol
+→ freeze neutral contract
+→ world-management consumes/implements it
+→ freeze canonical domain result
+→ ui consumes/presents it
+```
+
+Do not keep Protocol and World Management active on the same semantic decision. Protocol owns **wire meaning**; World Management owns **domain meaning**.
 
 Typical handoffs:
 
@@ -240,7 +296,7 @@ plugin rule changes warning/action presentation
 → ui
 ```
 
-Do not keep multiple specialists active for the same decision.
+Do not keep multiple specialists active for the same decision, and do not pass full source trees/history when one typed result is sufficient.
 
 ## No-Skill Owners
 
@@ -279,6 +335,8 @@ Before finishing:
 Who is the primary semantic owner?
 Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership changed?
+Did the handoff carry only the minimum typed result needed by the next owner?
+Did the next owner avoid recomputing the previous owner's truth?
 Did the change introduce unnecessary manager/cache/registry/router/config/worker/dependency/compatibility/proof infrastructure?
 Can an existing path or deletion satisfy the same accepted result?
 What is the cheapest proof that can falsify the result?
