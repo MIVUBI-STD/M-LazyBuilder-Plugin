@@ -19,39 +19,34 @@ LazyBuilder
     └── Protocol
 ```
 
-## Current phase: Local PC validation
+## Current phase: source remediation and synchronization
 
-The current next step is **not additional architecture development**. The product should now be tested on a representative Windows PC from the installed user experience outward.
+Installed Local PC testing on 15 September 2026 exposed several cross-boundary defects. The repository is therefore back in **source remediation**. Do not start another Local PC acceptance pass until the remediation handoff has no unresolved source-side P0/P1 item and the exact current `Local` HEAD passes repository/CI verification.
 
-Start with:
-
-[`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md)
-
-For findings reproduced on 15 September 2026, use the current remediation handoff together with the validation plan:
+Current authority:
 
 [`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md)
 
-The remediation handoff is authoritative when an older Local PC observation conflicts with current source behavior.
+The older Local PC validation plan remains the acceptance procedure to use **after** source remediation is complete:
 
-Required order:
+[`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md)
+
+Required order now:
 
 ```text
-1. LazyBuilder-Setup-Local.exe
-2. Launcher first run
-3. managed Java + Paper server
-4. Plugin Manager
-5. World Manager
-6. Utilities Manager
-7. Modrinth / Client Setup
-8. Map Manager in real Minecraft
-9. Utility Manager in real Minecraft
-10. Paper ↔ Fabric interoperability
-11. restart / reconnect / update / reboot recovery
-12. large-world / storage-pressure / conversion tests
-13. final repository audit
+1. classify every reproduced Local PC defect
+2. repair the owning source/module only
+3. synchronize build/runtime/documentation contracts
+4. add regression coverage for each reproducible source defect
+5. run repository consistency checks
+6. run Paper/Fabric/frontend/Rust verification
+7. run Paper runtime smoke proof
+8. build and verify canonical installer artifact
+9. perform final source audit
+10. only then reopen Local PC acceptance testing
 ```
 
-For normal Local PC acceptance testing, use the canonical installer artifact from the successful `Verify` run for the exact `Local` revision. Do **not** use a local source build as the normal test product.
+A green compile is necessary but not sufficient. Local PC testing is blocked while the remediation handoff still marks a source-side P0/P1 as open.
 
 ## Repository layout
 
@@ -91,11 +86,11 @@ The root is intentionally reserved for repository-level entrypoints and policy f
 ## Branch authority
 
 ```text
-Local = active development / source / LocalTest authority
+Local = active development / source remediation / LocalTest authority
 main  = stable / release authority
 ```
 
-Do not promote to `main` merely because remote CI is green. Complete target-machine validation and final audit first.
+Do not promote to `main` merely because remote CI is green. Complete remediation, source audit, target-machine validation, and final audit first.
 
 ## Verification authority
 
@@ -103,16 +98,19 @@ Current readiness is determined from:
 
 ```text
 current Local revision
+→ remediation source audit
 → Verify
 → relevant Paper Runtime Proof
+→ canonical installer proof
+→ explicit decision to reopen Local PC validation
 → Local PC validation
-→ final audit
+→ final promotion audit
 → explicit promotion decision
 ```
 
 See:
 
+- [`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md) for the current remediation authority;
 - [`docs/05-operations/current-verification.md`](docs/05-operations/current-verification.md) for proof boundaries;
-- [`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md) for the exact next-to-do on the Local PC;
-- [`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md) for current remediation of reproduced Local PC findings;
+- [`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md) for the later acceptance pass after remediation;
 - [`docs/README.md`](docs/README.md) for documentation routing.
