@@ -21,9 +21,13 @@ public final class LazyBuilderClientUi {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMap.wasPressed()) {
                 if (client.player == null) continue;
-                // Map actions such as Export Area depend on authoritative server capabilities.
-                // Prime them on the map-first entry so users do not have to open Worlds once
-                // merely to make a permission-gated map action available.
+                if (client.currentScreen instanceof WorldMapScreen mapScreen) {
+                    mapScreen.closeFromToggle();
+                    continue;
+                }
+                // Do not replace another active screen. M is a map toggle from normal gameplay,
+                // not a global screen override that can discard another workflow's UI state.
+                if (client.currentScreen != null) continue;
                 if (!controller.worldListReady() && !controller.worldListPending()) {
                     controller.refresh();
                 }
