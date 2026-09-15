@@ -5,6 +5,7 @@ pub mod launcher_settings;
 pub mod operations;
 pub mod plugin_manager;
 pub mod resource_settings;
+pub mod server_health;
 pub mod server_manager;
 pub mod server_tools;
 pub mod startup;
