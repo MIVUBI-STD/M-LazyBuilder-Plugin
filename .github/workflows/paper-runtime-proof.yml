@@ -35,15 +35,15 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
 
-      - name: Compile and test Paper plugins
-        run: mvn --batch-mode --no-transfer-progress verify
+      - name: Compile and test Paper plugins through repository wrapper
+        run: .\mvnw.cmd --batch-mode --no-transfer-progress verify
 
       - name: Stage tested core plugins
         shell: pwsh
@@ -70,6 +70,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($download)) {
             throw "PaperMC stable build did not expose a server download URL."
           }
+          New-Item -ItemType Directory -Path ".artifacts" -Force | Out-Null
           Invoke-WebRequest -Headers $headers -Uri $download -OutFile ".artifacts/paper-1.21.4.jar" -TimeoutSec 120
 
       - name: Execute managed-world lifecycle proof
@@ -88,7 +89,7 @@ jobs:
 
       - name: Upload runtime proof evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: LazyBuilder-Paper-Runtime-Proof-${{ github.sha }}
           path: |
