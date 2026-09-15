@@ -1,12 +1,44 @@
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
 use crate::engine::server_manager::ServerManagerState;
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginListItem {
+    pub id: String,
+    pub display_name: String,
+    pub version: String,
+    pub category: String,
+    pub state: String,
+    pub problem_detail: Option<String>,
+    pub candidate_files: Option<Vec<String>>,
+    pub managed_by_lazybuilder: bool,
+    pub mutable: bool,
+}
+
+impl From<PluginSummary> for PluginListItem {
+    fn from(plugin: PluginSummary) -> Self {
+        let managed_by_lazybuilder = is_lazybuilder_managed(&plugin);
+        Self {
+            id: plugin.id,
+            display_name: plugin.display_name,
+            version: plugin.version,
+            category: plugin.category,
+            state: plugin.state,
+            problem_detail: plugin.problem_detail,
+            candidate_files: plugin.candidate_files,
+            managed_by_lazybuilder,
+            mutable: !managed_by_lazybuilder,
+        }
+    }
+}
+
 #[tauri::command]
-pub async fn plugin_list(app: AppHandle) -> Result<Vec<PluginSummary>, String> {
+pub async fn plugin_list(app: AppHandle) -> Result<Vec<PluginListItem>, String> {
     run_blocking("Plugin list", move || {
         let plugins = app.state::<PluginManagerState>();
-        plugins.list_plugins()
+        plugins.list_plugins().map(|items| items.into_iter().map(PluginListItem::from).collect())
     })
     .await
 }
@@ -99,6 +131,18 @@ pub async fn plugin_resolve_duplicates(
         plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name)
     })
     .await
+}
+
+fn is_lazybuilder_managed(plugin: &PluginSummary) -> bool {
+    if matches!(plugin.id.as_str(), "world-manager" | "utilities-manager") {
+        return true;
+    }
+    plugin.candidate_files.as_ref().is_some_and(|files| {
+        files.iter().any(|file| {
+            let value = file.to_ascii_lowercase();
+            value.starts_with("world-manager-") || value.starts_with("utilities-manager-")
+        })
+    })
 }
 
 fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), String> {
