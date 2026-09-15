@@ -7,7 +7,6 @@ import net.fabricmc.loader.api.FabricLoader;
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
-    private static final WorkloadBudget FALLBACK_BUDGET = new WorkloadBudget();
     private static PerformanceRuntime runtime;
 
     @Override
@@ -23,10 +22,6 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     public static FramePressure pressure() {
         return runtime == null ? FramePressure.NORMAL : runtime.pressure();
-    }
-
-    public static WorkloadBudget workloadBudget() {
-        return runtime == null ? FALLBACK_BUDGET : runtime.workloadBudget();
     }
 
     public static PerformancePreferences preferences() {
