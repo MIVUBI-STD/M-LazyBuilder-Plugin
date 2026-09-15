@@ -188,6 +188,46 @@ LazyBuilder-Plugin-UI-Preview-<sha>
 
 Artifacts are evidence, not source authority.
 
+## Chat delivery contract
+
+When the user is reviewing UI through ChatGPT and an L3/L4 visual proof exists or can be generated, the final review **must show one representative screenshot directly in chat**.
+
+Required behavior:
+
+```text
+latest exact-commit visual proof
+→ retrieve artifact privately
+→ choose one representative screenshot for the changed surface/state
+→ attach/render that screenshot in ChatGPT
+→ summarize what the screenshot proves
+```
+
+Do not finish a visual UI task with only:
+
+```text
+workflow status
+artifact name
+ZIP link
+commit SHA
+source-only description
+```
+
+unless visual proof genuinely failed or is unavailable. In that case, state the exact proof boundary and do not imply that appearance was verified.
+
+Default chat presentation:
+
+- Show **exactly one** representative screenshot unless the user asks for more.
+- Keep the full responsive/state matrix in CI artifacts for regression coverage; do not flood the chat with every capture.
+- Do **not** attach the artifact ZIP unless the user explicitly asks for it.
+- Never show a stale screenshot from an older commit as proof of a newer UI change.
+- The displayed screenshot should normally come from the latest successful proof for the exact source commit that contains the UI change.
+- If a later unrelated commit is current HEAD, it is acceptable to use a proof commit only when the UI-change commit is still an ancestor and no later commit modified that surface; say so explicitly when relevant.
+- Prefer the scenario that best demonstrates the requested change rather than always choosing the widest/default view.
+- For layout/responsive changes, choose the constrained viewport that can reveal failure when that is more informative than the wide view.
+- For Launcher, Fabric, and plugin-facing UI, the same one-screenshot chat rule applies.
+
+The purpose is review speed: the user should be able to judge the actual visual result without downloading artifacts or moving to Local PC merely to discover layout problems.
+
 ## Deterministic-state discipline
 
 A visual fixture/test hook may:
