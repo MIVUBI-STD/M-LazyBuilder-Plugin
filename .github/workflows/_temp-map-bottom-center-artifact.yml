@@ -1,0 +1,45 @@
+name: Temporary Map Bottom Center Artifact
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - '.github/workflows/_temp-map-bottom-center-artifact.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: Local
+      - name: Build guarded patched source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('private static final int BOTTOM_BAR = 24;', 'private static final int BOTTOM_BAR = 46;'),
+              ('        renderMapControls(context, mouseX, mouseY);\n', ''),
+              ('''    private void renderMapControls(DrawContext context, int mouseX, int mouseY) {\n        if (areaMode) return;\n        Rect recenter = recenterMapRect();\n        int color = recenter.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;\n        context.fill(recenter.left, recenter.top, recenter.right, recenter.bottom, color);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Recenter"),\n                (recenter.left + recenter.right) / 2, recenter.top + 6, LbUi.TEXT_PRIMARY);\n    }\n\n''', ''),
+              ('''        String status = maps.teleportPending() ? "Teleporting…"\n                : SURFACE.pendingCount() > 0 ? "Loading map…"\n                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center map on player";\n\n        renderZoomControl(context, mouseX, mouseY);\n\n        int mapCenterX = left + (width - left) / 2;\n        if (!coordinates.isBlank()) {\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),\n                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);\n        }\n\n        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;\n        int statusLeft = zoomPlusRect().right + 10;\n        int statusRight = coordinates.isBlank()\n                ? width - 8\n                : mapCenterX - textRenderer.getWidth(coordinates) / 2 - 14;\n        int statusWidth = Math.max(0, statusRight - statusLeft);\n        if (statusWidth > 24) {\n            String visibleStatus = operationalStatus ? status : trim(status, statusWidth);\n            if (textRenderer.getWidth(visibleStatus) <= statusWidth) {\n                context.drawTextWithShadow(textRenderer, Text.literal(visibleStatus),\n                        statusLeft, height - 16, LbUi.TEXT_MUTED);\n            }\n        }''', '''        String status = maps.teleportPending() ? "Teleporting…"\n                : SURFACE.pendingCount() > 0 ? "Loading map…"\n                : "";\n\n        renderZoomControl(context, mouseX, mouseY);\n        renderCompactAction(context, recenterMapRect(), "Recenter", false, mouseX, mouseY);\n\n        int mapCenterX = left + (width - left) / 2;\n        if (!coordinates.isBlank()) {\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),\n                    mapCenterX, height - 38, LbUi.TEXT_SECONDARY);\n        }\n\n        if (!status.isBlank()) {\n            int statusWidth = textRenderer.getWidth(status);\n            int statusX = width - statusWidth - 10;\n            if (statusX > recenterMapRect().right + 10) {\n                context.drawTextWithShadow(textRenderer, Text.literal(status),\n                        statusX, height - 16, LbUi.TEXT_MUTED);\n            }\n        }'''),
+              ('''    private Rect recenterMapRect() {\n        Bounds map = mapBounds();\n        int buttonWidth = 70;\n        return new Rect(Math.max(map.left + 8, map.right - buttonWidth - 8), map.top + 8, map.right - 8, map.top + 30);\n    }''', '''    private Rect recenterMapRect() {\n        int center = sidebarWidth() + (width - sidebarWidth()) / 2;\n        int buttonWidth = 78;\n        return new Rect(center - buttonWidth / 2, height - 22, center + buttonWidth / 2, height - 3);\n    }''')
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Guard failed: expected one match, found {count}: {old[:120]!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: map-bottom-center-patched-source
+          path: mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+          if-no-files-found: error
+          retention-days: 1
