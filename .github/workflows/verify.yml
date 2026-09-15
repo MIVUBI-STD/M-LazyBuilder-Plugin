@@ -198,12 +198,28 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Build LazyBuilder and NSIS installer
         run: npm run build:app
-      - name: Upload Windows application and installer
+      - name: Package canonical Local installer
+        shell: pwsh
+        working-directory: .
+        run: |
+          $installer = Get-ChildItem "apps/launcher/src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -File | Select-Object -First 1
+          if ($null -eq $installer) { throw "Tauri NSIS installer was not found." }
+          ./tooling/windows-toolchain/scripts/distribution/package-local.ps1 `
+            -RepoRoot "." `
+            -InstallerPath $installer.FullName `
+            -CommitSha "${{ github.sha }}" `
+            -RunNumber "${{ github.run_number }}"
+      - name: Upload canonical Local test package
         uses: actions/upload-artifact@v4
         with:
-          name: LazyBuilder-Windows-${{ github.sha }}
-          path: |
-            apps/launcher/src-tauri/target/release/lazybuilder.exe
-            apps/launcher/src-tauri/target/release/bundle/nsis/*-setup.exe
+          name: LazyBuilder-Local-${{ github.sha }}
+          path: dist/Local/**
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload developer diagnostic executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: LazyBuilder-Diagnostics-${{ github.sha }}
+          path: apps/launcher/src-tauri/target/release/lazybuilder.exe
           if-no-files-found: error
           retention-days: 7
