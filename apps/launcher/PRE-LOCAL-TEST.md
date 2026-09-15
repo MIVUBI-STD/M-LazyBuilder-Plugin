@@ -1,19 +1,31 @@
-# LazyBuilder Launcher — Pre-Local Test Gate
+# LazyBuilder Launcher — Pre-Local Acceptance Gate
 
-This checklist is the runtime handoff gate for the desktop Launcher, its bundled Paper core, and the LazyBuilder Fabric client components.
+This document defines the **gate that must be satisfied before** another installed Local PC acceptance pass. It is not an instruction to start Local testing immediately.
 
-## Source gate
+Current remediation authority:
 
-Before moving to the local PC, the current `Local` HEAD must pass the exact-head `Verify` workflow:
+```text
+docs/05-operations/local-pc-remediation-2026-09-15.md
+```
+
+## Gate status
+
+```text
+CLOSED while source remediation is active.
+```
+
+Before reopening target-machine acceptance, the exact current `Local` HEAD must pass:
 
 ```text
 consistency
-utilities
 paper
+paper-runtime-smoke
 fabric
 launcher-check
 tauri-desktop
 ```
+
+Applicable Paper-path revisions must also pass the dedicated `Paper Runtime Proof` workflow.
 
 Launcher checks include:
 
@@ -26,7 +38,7 @@ cargo check --locked --manifest-path src-tauri/Cargo.toml
 cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-Remote CI is source/build/package proof only. It is not proof of installed Windows, Modrinth, Paper, or Minecraft behavior.
+Remote CI is source/build/runtime-smoke/package proof. It is not a substitute for later installed-machine acceptance.
 
 ## Runtime-ready package gate
 
@@ -39,152 +51,118 @@ src-tauri/resources/core/
 
 src-tauri/resources/client-mods/
 ├── lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
-└── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+├── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+└── lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
 ```
 
-`mods/performance-manager/` remains deferred source in V1. It is not a required Launcher runtime component, is not installed by Client Setup, and is not part of the runtime-ready package gate.
-
-`BUILD-LAUNCHER.cmd` owns the complete local runtime-ready path:
+The three Fabric managers are one required Client Setup suite. This must match:
 
 ```text
-mvn verify
-→ build Map Manager with Gradle 8.12
-→ build Utility Manager with Gradle 8.12
-→ stage tested Paper + required Fabric JARs
+client-manager architecture lock
+→ Fabric build workflow
+→ artifact verifier
+→ Launcher bundled resources
+→ Client Setup sync transaction
+```
+
+`BUILD-LAUNCHER.cmd` owns the complete local developer packaging path:
+
+```text
+repository-owned Maven verify
+→ build Map Manager through repository Gradle wrapper
+→ build Utility Manager through repository Gradle wrapper
+→ build Performance Manager through repository Gradle wrapper
+→ verify all three client artifacts
+→ stage matching Paper + Fabric JARs
 → npm ci
 → Svelte typecheck/build
 → cargo check/test
 → Tauri + NSIS package
 ```
 
-The build must stop if any required V1 runtime artifact is missing. Compile-only mode must not be used for runtime validation.
+The build must stop if any required runtime artifact is missing. Compile-only mode is never acceptance proof.
 
-## First local install
+## Windows runtime gate
 
-Run:
-
-```text
-BUILD-LAUNCHER.cmd
-```
-
-Install only:
+Before acceptance can reopen, source and CI must preserve one environment policy:
 
 ```text
-dist/LazyBuilder/LazyBuilder-Setup.exe
+%LOCALAPPDATA%\LazyBuilder\temp
 ```
 
-Expected baseline:
+Launcher/Paper and repository-owned Maven/Gradle flows must not depend on arbitrary inherited Windows TEMP/TMP behavior and must not mutate global user environment variables.
 
-- one LazyBuilder window only;
-- no Launcher console window;
-- no server auto-start;
-- Java validation does not open Command Prompt;
-- starting Paper does not open Command Prompt;
-- server logs remain accessible from LazyBuilder.
+## Paper process-safety gate
 
-## Server library and process safety
+Source/remote verification must retain:
 
-Test in this order:
+- one managed Paper process per active workspace;
+- PID + process-start-time identity markers;
+- command-line/workspace verification before detached-process termination;
+- stale-marker cleanup when a process no longer exists;
+- safe stop/restart recovery for both `Stopping` and `Detached` states;
+- global server-start coordination lock;
+- live external-server adoption guard.
 
-1. Create/select Server A and prepare it.
-2. Start Paper and confirm `Running`.
-3. Stop Paper and confirm `Offline`.
-4. Start again and click Stop while state is still `Starting`; confirm it returns safely to `Offline`.
-5. Simulate an abnormal Launcher exit while Paper remains alive.
-6. Reopen LazyBuilder and confirm a second workspace cannot be opened/created/adopted while the detached Paper process remains alive.
-7. Recover/stop the detached process.
-8. Temporarily disconnect or rename the storage location of a registered inactive server, reopen LazyBuilder, and confirm the server remains in the library instead of being silently deleted.
-9. Restore that location and confirm the same library entry opens again.
+## Client Setup gate
 
-## Existing-server adoption safety
+Before later Local PC acceptance:
 
-Test with a disposable Paper server:
+- Client Setup must own only LazyBuilder client JAR prefixes;
+- all three required manager JARs must be staged before mutation;
+- sync remains transactional with rollback;
+- unrelated third-party Modrinth mods remain untouched;
+- selected profile persistence remains outside server-workspace ownership;
+- profile-in-use protection remains active.
 
-1. Start the server outside LazyBuilder and attempt adoption.
-2. Confirm LazyBuilder blocks adoption while a Java/Paper process is using the selected root.
-3. Stop the external server.
-4. Repeat adoption and confirm the review/rollback-safe migration flow proceeds.
-5. Confirm unrecognized root files remain untouched.
+## Conversion runtime gate
 
-## Modrinth Client Setup
-
-Client Setup is global, not server-scoped. Test both a default Modrinth location and a custom data location.
-
-1. Open `Client` before opening any LazyBuilder server.
-2. Confirm known Modrinth profiles are auto-detected when available.
-3. Use `Select profile…` for a custom Modrinth location.
-4. Select the exact `.../profiles/<profile>` folder; confirm LazyBuilder derives `<profile>/mods` itself.
-5. Confirm the exact canonical profile path is remembered after restarting LazyBuilder.
-6. Confirm Minecraft 1.21.4 + Fabric is shown as `Last launch`, `Legacy metadata`, or `Unverified` rather than being presented as current Modrinth database state.
-7. If unverified, launch that profile once from Modrinth, return to LazyBuilder, click Refresh, and confirm compatibility is detected.
-8. While Minecraft is actively using the selected profile, click `Sync Client`; confirm sync is blocked.
-9. Close Minecraft and run `Sync Client`.
-10. Confirm exactly these two current V1 JARs are present:
+World Manager conversion bootstrap must remain:
 
 ```text
-lazybuilder-map-manager-*.jar
-lazybuilder-utility-manager-*.jar
+stable upstream release
+→ exact CLI artifact
+→ SHA-256 required
+→ compatibility probe
+→ staged candidate
+→ atomic promotion
+→ rollback/discard on failure
 ```
 
-11. Confirm unrelated Modrinth mods are byte-for-byte untouched.
-12. Add an old/duplicate LazyBuilder V1 JAR and sync again; confirm only the two V1 LazyBuilder-owned prefixes are cleaned.
-13. Rename or move the selected profile; confirm LazyBuilder reports the saved profile as unavailable and does not recreate the old path.
-14. Re-select the new location and confirm setup recovers.
+Current default policy is `AUTOMATIC_STABLE`; capability exposure remains based on verified runtime-supported formats rather than documentation assumptions.
 
-## Client Sync rollback proof
+## Reconnect gate
 
-Use a disposable profile copy. Induce a publish failure after staging if practical (for example by restricting one LazyBuilder target during the operation). Confirm:
+Utility Manager reconnect must retain both vanilla UI paths:
 
 ```text
-sync fails
-→ previous two required LazyBuilder components are restored
-→ no partial mixed LazyBuilder version set remains
-→ third-party mods remain untouched
-→ temporary .incoming / rollback artifacts are cleaned
+DisconnectedScreen → Reconnect
+MultiplayerScreen/server list fallback → Reconnect
 ```
 
-## Plugin Manager smoke test
+The attempted server is captured before JOIN and confirmed again on JOIN. Mixin registration is required and covered by a packaging regression test.
 
-With Paper offline:
+## Final source-audit gate
 
-- install one third-party plugin;
-- update it;
-- disable/enable it;
-- exercise duplicate resolution with disposable copies;
-- remove its JAR and confirm plugin data is preserved;
-- confirm World-Manager and Utilities-Manager cannot be removed through Plugin Manager.
-
-Repeat one mutation attempt while Paper is running and confirm it is blocked.
-
-## Clean update test
-
-After the first install, close LazyBuilder and use:
+Before this document can be used as an installed test checklist, verify there is no remaining contradiction across:
 
 ```text
-UPDATE-LAUNCHER.cmd
+README / operations authority
+architecture locks
+build scripts
+GitHub workflows
+artifact verifiers
+Launcher runtime ownership
+Paper/Fabric module ownership
+conversion ownership
 ```
 
-Confirm:
+## Reopening decision
 
-- Paper core and both required V1 Fabric components are rebuilt/tested/staged before packaging;
-- update is blocked while LazyBuilder is running;
-- installed application is replaced in place;
-- server workspaces and selected Modrinth profile remain intact;
-- temporary update output does not accumulate.
-
-## Pass condition
-
-Local testing is clean only when:
+Only after all pre-local gates are green should the project explicitly move to:
 
 ```text
-exact-head Verify green
-+ runtime-ready package contains matching Paper + required V1 Fabric artifacts
-+ server library survives unavailable paths
-+ Starting server can be stopped
-+ one managed Paper instance only
-+ adoption refuses a live external server
-+ global Modrinth Client Setup works for default + custom paths
-+ Client Sync is transactional and leaves third-party mods untouched
-+ installed update preserves user data
-+ no stale temporary runtime/update artifacts remain
+docs/05-operations/local-pc-validation-plan.md
 ```
+
+Until then, do not use `BUILD-LAUNCHER.cmd`, installer deployment, or the target PC as a substitute for unresolved source-side remediation.
