@@ -7,13 +7,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -256,18 +254,29 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         try (var stream = Files.list(target)) {
             children = stream.filter(path -> !path.getFileName().toString().equals("__MACOSX")).toList();
         }
-        if (children.size() != 1 || !Files.isDirectory(children.getFirst()) || !Files.isRegularFile(children.getFirst().resolve("level.dat"))) return;
-        Path nested = children.getFirst();
-        Path temporary = target.resolveSibling(target.getFileName() + "-normalize");
-        if (Files.exists(temporary)) throw new IOException("Import normalization workspace already exists");
-        moveDirectory(nested, temporary);
-        deleteTree(target);
-        moveDirectory(temporary, target);
-    }
+        if (children.size() != 1 || !Files.isDirectory(children.getFirst())
+                || Files.isSymbolicLink(children.getFirst())
+                || !Files.isRegularFile(children.getFirst().resolve("level.dat"))) return;
 
-    private static void moveDirectory(Path source, Path target) throws IOException {
-        try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
+        Path nested = children.getFirst();
+        Path macMetadata = target.resolve("__MACOSX");
+        if (Files.exists(macMetadata)) {
+            if (Files.isSymbolicLink(macMetadata)) Files.delete(macMetadata);
+            else deleteTree(macMetadata);
+        }
+
+        List<Path> nestedChildren;
+        try (var stream = Files.list(nested)) {
+            nestedChildren = stream.toList();
+        }
+        for (Path child : nestedChildren) {
+            Path destination = target.resolve(child.getFileName()).normalize();
+            if (!target.equals(destination.getParent()) || Files.exists(destination)) {
+                throw new IOException("Import normalization destination is unsafe or already exists: " + child.getFileName());
+            }
+            Files.move(child, destination);
+        }
+        Files.delete(nested);
     }
 
     private static void sanitizeIdentity(Path root) throws IOException {
