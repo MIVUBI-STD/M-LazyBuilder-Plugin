@@ -91,6 +91,17 @@ package = json.loads((launcher_root / "package.json").read_text(encoding="utf-8"
 expect("desktop package.json", package.get("version"), PRODUCT_VERSION)
 expect("desktop Node engine", package.get("engines", {}).get("node"), f"{NODE_MAJOR}.x")
 
+launcher_verify = package.get("scripts", {}).get("verify:source", "")
+for required in (
+    "npm run typecheck",
+    "npm run build:frontend",
+    "npm run prepare:icons",
+    "cargo check --locked",
+    "cargo test --locked",
+):
+    if required not in launcher_verify:
+        errors.append(f"Launcher verify:source is missing required verification step: {required}")
+
 package_lock = json.loads((launcher_root / "package-lock.json").read_text(encoding="utf-8"))
 expect("desktop package-lock.json", package_lock.get("version"), PRODUCT_VERSION)
 expect("desktop package-lock root package", package_lock.get("packages", {}).get("", {}).get("version"), PRODUCT_VERSION)
@@ -201,20 +212,20 @@ if "modules/world-manager" in core_modules or "modules/utilities-manager" in cor
 workflow = (ROOT / ".github/workflows/verify.yml").read_text(encoding="utf-8")
 if re.search(r"(?m)^  utilities:\s*$", workflow):
     errors.append("Verify workflow restored the duplicate standalone utilities job")
-for required_build in (
-    ".\\gradlew.bat -p mods/map-manager --no-daemon build",
-    ".\\gradlew.bat -p mods/utility-manager --no-daemon build",
-    ".\\gradlew.bat -p mods/performance-manager --no-daemon build",
-):
-    if required_build not in workflow:
-        errors.append(f"Verify workflow is missing required V1 Fabric wrapper build: {required_build}")
 if ".\\mvnw.cmd --batch-mode --no-transfer-progress verify" not in workflow:
     errors.append("Verify workflow is not using the repository Maven wrapper")
+if "verify-fabric.ps1 -RepoRoot" not in workflow:
+    errors.append("Verify workflow is not using the canonical Fabric verification lane")
+if "npm run verify:source" not in workflow:
+    errors.append("Verify workflow is not using the canonical Launcher source verification command")
 for forbidden_ci in (
     "gradle-version: '8.12'",
     "run: mvn --batch-mode --no-transfer-progress verify",
     "run: gradle -p mods/",
     "python3 scripts/verify_client_artifacts.py",
+    ".\\gradlew.bat -p mods/map-manager --no-daemon build",
+    ".\\gradlew.bat -p mods/utility-manager --no-daemon build",
+    ".\\gradlew.bat -p mods/performance-manager --no-daemon build",
 ):
     if forbidden_ci in workflow:
         errors.append(f"Verify workflow restored a parallel/global build-tool path: {forbidden_ci}")
