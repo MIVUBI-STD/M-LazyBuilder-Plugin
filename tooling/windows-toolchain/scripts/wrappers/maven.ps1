@@ -7,8 +7,20 @@ $Toolchain = Get-Content (Join-Path $RepoRoot 'toolchain.json') -Raw | ConvertFr
 $Version = [string]$Toolchain.maven.wrapperTarget
 if (-not $Version) { throw 'toolchain.json does not define maven.wrapperTarget.' }
 
-$LocalBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $env:TEMP }
-$CacheRoot = Join-Path $LocalBase "LazyBuilder\build-tools\maven\$Version"
+$LocalBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:APPDATA) { $env:APPDATA } else { [System.IO.Path]::GetTempPath() }
+$LazyBuilderRoot = Join-Path $LocalBase 'LazyBuilder'
+$RuntimeTemp = Join-Path $LazyBuilderRoot 'temp'
+New-Item -ItemType Directory -Force -Path $RuntimeTemp | Out-Null
+$env:TEMP = $RuntimeTemp
+$env:TMP = $RuntimeTemp
+$TmpOption = "-Djava.io.tmpdir=$RuntimeTemp"
+if ([string]::IsNullOrWhiteSpace($env:MAVEN_OPTS)) {
+    $env:MAVEN_OPTS = $TmpOption
+} elseif ($env:MAVEN_OPTS -notmatch '(?i)-Djava\.io\.tmpdir=') {
+    $env:MAVEN_OPTS = "$TmpOption $($env:MAVEN_OPTS)"
+}
+
+$CacheRoot = Join-Path $LazyBuilderRoot "build-tools\maven\$Version"
 $InstallDir = Join-Path $CacheRoot "apache-maven-$Version"
 $Executable = Join-Path $InstallDir 'bin\mvn.cmd'
 $Archive = Join-Path $CacheRoot "apache-maven-$Version-bin.zip"
