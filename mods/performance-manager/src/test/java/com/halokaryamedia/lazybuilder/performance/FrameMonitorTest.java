@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FrameMonitorTest {
     @Test
-    void raisesPressureAfterSustainedBadFrames() {
+    void raisesPressureAfterSustainedBadFramesAtSixtyFpsTarget() {
         FrameMonitor monitor = new FrameMonitor();
 
         monitor.recordFrameTimeMs(30.0D);
@@ -15,6 +15,18 @@ class FrameMonitorTest {
         monitor.recordFrameTimeMs(30.0D);
 
         assertEquals(FramePressure.ELEVATED, monitor.pressure());
+    }
+
+    @Test
+    void intentionalThirtyFpsTargetDoesNotLookLikeLag() {
+        FrameMonitor monitor = new FrameMonitor();
+        double targetFrameMs = 1000.0D / 30.0D;
+
+        for (int index = 0; index < 120; index++) {
+            monitor.recordFrameTimeMs(targetFrameMs, targetFrameMs);
+        }
+
+        assertEquals(FramePressure.NORMAL, monitor.pressure());
     }
 
     @Test
@@ -44,11 +56,25 @@ class FrameMonitorTest {
     void pausedClockDoesNotTurnBackgroundGapIntoFrameSpike() {
         FrameMonitor monitor = new FrameMonitor();
 
-        monitor.recordFrame(1_000_000_000L);
-        monitor.recordFrame(1_016_000_000L);
+        monitor.recordFrame(1_000_000_000L, 60);
+        monitor.recordFrame(1_016_000_000L, 60);
         monitor.pauseFrameClock();
-        monitor.recordFrame(10_000_000_000L);
-        monitor.recordFrame(10_016_000_000L);
+        monitor.recordFrame(10_000_000_000L, 60);
+        monitor.recordFrame(10_016_000_000L, 60);
+
+        assertEquals(2, monitor.sampleCount());
+        assertEquals(16.0D, monitor.averageFrameTimeMs(), 0.0001D);
+        assertEquals(FramePressure.NORMAL, monitor.pressure());
+    }
+
+    @Test
+    void longRenderGapIsTreatedAsDiscontinuity() {
+        FrameMonitor monitor = new FrameMonitor();
+
+        monitor.recordFrame(1_000_000_000L, 60);
+        monitor.recordFrame(1_016_000_000L, 60);
+        monitor.recordFrame(3_000_000_000L, 60);
+        monitor.recordFrame(3_016_000_000L, 60);
 
         assertEquals(2, monitor.sampleCount());
         assertEquals(16.0D, monitor.averageFrameTimeMs(), 0.0001D);
