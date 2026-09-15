@@ -8,8 +8,9 @@ Remote GitHub work completed:
 
 - release-only Tauri overlay (`src-tauri/tauri.release.conf.json`);
 - immutable signed Launcher release workflow;
-- stable update-channel publication;
+- metadata-only stable update-channel publication;
 - updater manifest builder and validator;
+- updater tooling self-contract in `Launcher Verify` without signing secrets;
 - version synchronization verifier;
 - canonical version bump tool;
 - SHA-256 release evidence;
@@ -102,8 +103,9 @@ The workflow:
 7. creates and validates `latest.json` against the canonical repository release URL;
 8. writes SHA-256 checksums for installer/signature;
 9. publishes immutable release tag `launcher-vMAJOR.MINOR.PATCH`;
-10. publishes stable channel manifest to `launcher-update-channel/stable/latest.json`;
-11. downloads that published manifest through GitHub API and validates it again.
+10. creates/updates stable channel manifest at `launcher-update-channel/stable/latest.json`;
+11. downloads that published manifest through GitHub API and validates it again;
+12. verifies the update-channel branch has no unexpected source-tree entries.
 
 Stable updater endpoint:
 
@@ -111,7 +113,13 @@ Stable updater endpoint:
 https://raw.githubusercontent.com/halokaryamedia-source/LazyBuilder-Plugin/launcher-update-channel/stable/latest.json
 ```
 
-The channel branch contains distribution metadata only; it is not a source-development authority.
+### Metadata-only channel branch
+
+On the first release, `launcher-update-channel` is created as an **orphan Git commit** whose root contains only the `stable` distribution metadata directory. It is never branched from `main`.
+
+Later releases update only `stable/latest.json` on that branch. Source files, build scripts, private key material, and development history must never be introduced into the update channel.
+
+The channel branch is a distribution pointer, not a development or rollback authority.
 
 ## Release failure and recovery
 
