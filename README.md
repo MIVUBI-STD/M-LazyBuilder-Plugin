@@ -14,7 +14,7 @@ LazyBuilder
 ├── Fabric Mods
 │   ├── Map Manager
 │   ├── Utility Manager
-│   └── Performance Manager (deferred research source)
+│   └── Performance Manager
 └── Shared Contracts
     └── Protocol
 ```
@@ -27,7 +27,7 @@ Current authority:
 
 [`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md)
 
-The older Local PC validation plan remains the acceptance procedure to use **after** source remediation is complete:
+The Local PC validation plan remains the acceptance procedure to use **after** source remediation is complete:
 
 [`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md)
 
@@ -61,7 +61,7 @@ plugins/
 mods/
 ├── map-manager/                 Fabric world/map/transfer client
 ├── utility-manager/             Fabric passive client convenience
-└── performance-manager/         deferred performance research source
+└── performance-manager/         Fabric client performance/runtime policy
 
 shared/
 └── protocol/                    Neutral Paper/Fabric wire contracts
@@ -81,7 +81,7 @@ The root is intentionally reserved for repository-level entrypoints and policy f
 - `shared/protocol/` contains neutral Paper/Fabric contracts only.
 - External build/edit tools such as Vanilla, Axiom, and WorldEdit remain external specialist owners.
 - One Manager produces one deployable artifact and does not import another Manager's implementation packages.
-- Performance Manager remains deferred until measured evidence and an explicit product decision justify promotion.
+- V1 Client Setup owns one coherent three-manager Fabric suite: Map Manager, Utility Manager, and Performance Manager.
 
 ## Branch authority
 
