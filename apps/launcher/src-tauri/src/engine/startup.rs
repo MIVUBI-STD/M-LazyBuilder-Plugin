@@ -1,4 +1,4 @@
-use crate::engine::{diagnostics, launcher_settings, runtime_environment, server_backups, server_process_guard, server_restore, workspace_registry};
+use crate::engine::{diagnostics, launcher_settings, operations::OperationRecoveryReport, runtime_environment, server_backups, server_process_guard, server_restore, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,7 +21,10 @@ pub struct StartupReport {
     pub steps: Vec<StartupStep>,
 }
 
-pub fn coordinate() -> StartupReport {
+pub fn coordinate(
+    operation_recovery: Result<OperationRecoveryReport, String>,
+    previous_session_unclean: bool,
+) -> StartupReport {
     let started_at = now_unix_seconds();
     diagnostics::info("LazyBuilder startup coordinator beginning");
     let mut steps = Vec::new();
@@ -40,6 +43,42 @@ pub fn coordinate() -> StartupReport {
             None
         }
     };
+
+    if previous_session_unclean {
+        degraded = true;
+        diagnostics::info("Previous LazyBuilder session ended without releasing its instance marker; recovery checks will run before normal use.");
+        steps.push(warning_step(
+            "launcher-session",
+            "Previous Launcher session ended unexpectedly",
+            "LazyBuilder recovered a stale instance marker. Filesystem, operation, restore, backup, and Paper process reconciliation will run before normal use.",
+        ));
+    } else {
+        steps.push(ready_step("launcher-session", "Launcher session state clean", "No stale Launcher instance marker was found."));
+    }
+
+    match operation_recovery {
+        Ok(report) if report.interrupted == 0 => {
+            steps.push(ready_step("operation-recovery", "Launcher operations reconciled", "No interrupted Launcher operation was found in the durable operation journal."));
+        }
+        Ok(report) => {
+            degraded = true;
+            let details = format!(
+                "Reconciled {} interrupted operation(s): {} require recovery review and {} low-risk operation(s) were marked failed/interrupted.",
+                report.interrupted, report.recovery_required, report.failed
+            );
+            diagnostics::info(&format!("Launcher operation reconciliation: {details}"));
+            steps.push(warning_step("operation-recovery", "Interrupted Launcher operations recovered", &details));
+        }
+        Err(error) => {
+            degraded = true;
+            diagnostics::error(&format!("Launcher operation journal initialization failed: {error}"));
+            steps.push(warning_step(
+                "operation-recovery",
+                "Launcher operation journal needs attention",
+                &format!("{error}. Long-running Launcher mutations are disabled until the journal can be opened safely."),
+            ));
+        }
+    }
 
     let settings = match launcher_settings::initialize() {
         Ok(settings) => {
