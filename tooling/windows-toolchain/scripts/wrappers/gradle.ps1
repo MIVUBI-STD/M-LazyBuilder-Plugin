@@ -1,10 +1,6 @@
-param(
-    [Parameter(ValueFromRemainingArguments=$true)]
-    [string[]]$PassthroughArgs
-)
-
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$PassthroughArgs = @($args)
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')
 $Toolchain = Get-Content (Join-Path $RepoRoot 'toolchain.json') -Raw | ConvertFrom-Json
