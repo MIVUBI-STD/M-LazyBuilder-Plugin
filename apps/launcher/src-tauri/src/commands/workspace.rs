@@ -29,14 +29,70 @@ pub async fn workspace_provisioning_status() -> CommandResult<ProvisioningStatus
 
 #[tauri::command]
 pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::ProvisionResult> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        ensure_runtime_update_allowed(&state)?;
-        let resource_dir = app.path().resource_dir().ok();
-        provisioning::provision_active(resource_dir.as_deref()).map_err(CommandError::from)
-    })
-    .await
-    .map_err(|error| CommandError::new("TASK_FAILED", format!("Server provisioning task failed: {error}")))?
+    let active = workspace_registry::current()
+        .map_err(CommandError::from)?
+        .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before preparing it."))?;
+    let resource = format!("workspace:{}", active.id);
+    let operation = app
+        .state::<OperationRegistry>()
+        .begin_exclusive("provision-server", &resource, false)
+        .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let state = task_app.state::<ServerManagerState>();
+
+        let _ = operations.set_phase(
+            &operation_id,
+            "preflight",
+            "Checking server state",
+            "Confirming that runtime files can be changed safely.",
+            None,
+        );
+        if let Err(error) = ensure_runtime_update_allowed(&state) {
+            fail_operation(&operations, &operation_id, &error, true);
+            return Err(error);
+        }
+
+        let resource_dir = task_app.path().resource_dir().ok();
+        let result = provisioning::provision_active_tracked(
+            resource_dir.as_deref(),
+            |phase, status, details| {
+                let _ = operations.set_phase(&operation_id, phase, status, details, None);
+            },
+        );
+
+        match result {
+            Ok(result) => {
+                let _ = operations.succeed(&operation_id, "Server prepared");
+                Ok(result)
+            }
+            Err(message) => {
+                let error = CommandError::new("PROVISION_FAILED", message);
+                fail_operation(&operations, &operation_id, &error, true);
+                Err(error)
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(
+                &join_operation_id,
+                OperationError {
+                    code: "TASK_FAILED".into(),
+                    message: "Server preparation task ended unexpectedly".into(),
+                    details: error.to_string(),
+                    recoverable: true,
+                },
+            );
+            Err(CommandError::new("TASK_FAILED", format!("Server provisioning task failed: {error}")))
+        }
+    }
 }
 
 #[tauri::command]
@@ -49,13 +105,76 @@ pub async fn workspace_runtime_update_status() -> CommandResult<runtime_updates:
 
 #[tauri::command]
 pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_updates::RuntimeUpdateStatus> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        ensure_runtime_update_allowed(&state)?;
-        runtime_updates::update_paper().map_err(CommandError::from)
-    })
-    .await
-    .map_err(|error| CommandError::new("TASK_FAILED", format!("Paper update task failed: {error}")))?
+    let active = workspace_registry::current()
+        .map_err(CommandError::from)?
+        .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before updating Paper."))?;
+    let resource = format!("workspace:{}", active.id);
+    let operation = app
+        .state::<OperationRegistry>()
+        .begin_exclusive("update-paper", &resource, false)
+        .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let state = task_app.state::<ServerManagerState>();
+
+        let _ = operations.set_phase(
+            &operation_id,
+            "preflight",
+            "Checking server state",
+            "Confirming that Paper can be replaced safely while the server is offline.",
+            None,
+        );
+        if let Err(error) = ensure_runtime_update_allowed(&state) {
+            fail_operation(&operations, &operation_id, &error, true);
+            return Err(error);
+        }
+
+        let result = runtime_updates::update_paper_tracked(|phase, status, details| {
+            let _ = operations.set_phase(&operation_id, phase, status, details, None);
+        });
+
+        match result {
+            Ok(result) => {
+                let _ = operations.succeed(&operation_id, "Paper updated");
+                Ok(result)
+            }
+            Err(message) => {
+                let error = CommandError::new("PAPER_UPDATE_FAILED", message.clone());
+                let operation_error = OperationError {
+                    code: error.code.to_string(),
+                    message: error.message.clone(),
+                    details: String::new(),
+                    recoverable: true,
+                };
+                if message.contains("rollback also failed") {
+                    let _ = operations.require_recovery(&operation_id, operation_error);
+                } else {
+                    let _ = operations.fail(&operation_id, operation_error);
+                }
+                Err(error)
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(
+                &join_operation_id,
+                OperationError {
+                    code: "TASK_FAILED".into(),
+                    message: "Paper update task ended unexpectedly".into(),
+                    details: error.to_string(),
+                    recoverable: true,
+                },
+            );
+            Err(CommandError::new("TASK_FAILED", format!("Paper update task failed: {error}")))
+        }
+    }
 }
 
 #[tauri::command]
@@ -167,15 +286,7 @@ pub async fn workspace_duplicate(
             .map_err(CommandError::from)?;
 
         if let Err(error) = ensure_workspace_mutation_allowed(&state, &id) {
-            let _ = operations.fail(
-                &operation_id,
-                OperationError {
-                    code: error.code.to_string(),
-                    message: error.message.clone(),
-                    details: String::new(),
-                    recoverable: true,
-                },
-            );
+            fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
 
@@ -186,16 +297,9 @@ pub async fn workspace_duplicate(
         let estimate = match workspace_registry::duplicate_estimate(&id, Path::new(&parent_path)) {
             Ok(estimate) => estimate,
             Err(message) => {
-                let _ = operations.fail(
-                    &operation_id,
-                    OperationError {
-                        code: "DUPLICATE_PREFLIGHT_FAILED".into(),
-                        message: message.clone(),
-                        details: String::new(),
-                        recoverable: true,
-                    },
-                );
-                return Err(CommandError::new("DUPLICATE_PREFLIGHT_FAILED", message));
+                let error = CommandError::new("DUPLICATE_PREFLIGHT_FAILED", message);
+                fail_operation(&operations, &operation_id, &error, true);
+                return Err(error);
             }
         };
 
@@ -226,22 +330,13 @@ pub async fn workspace_duplicate(
                         unit: "bytes".into(),
                     }),
                 );
-                operations
-                    .succeed(&operation_id, "Server duplicated")
-                    .map_err(CommandError::from)?;
+                let _ = operations.succeed(&operation_id, "Server duplicated");
                 Ok(entry)
             }
             Err(message) => {
-                let _ = operations.fail(
-                    &operation_id,
-                    OperationError {
-                        code: "DUPLICATE_FAILED".into(),
-                        message: message.clone(),
-                        details: String::new(),
-                        recoverable: true,
-                    },
-                );
-                Err(CommandError::new("DUPLICATE_FAILED", message))
+                let error = CommandError::new("DUPLICATE_FAILED", message);
+                fail_operation(&operations, &operation_id, &error, true);
+                Err(error)
             }
         }
     });
@@ -282,6 +377,23 @@ pub async fn workspace_delete(
     })
     .await
     .map_err(|error| CommandError::new("TASK_FAILED", format!("Server deletion task failed: {error}")))?
+}
+
+fn fail_operation(
+    operations: &OperationRegistry,
+    operation_id: &str,
+    error: &CommandError,
+    recoverable: bool,
+) {
+    let _ = operations.fail(
+        operation_id,
+        OperationError {
+            code: error.code.to_string(),
+            message: error.message.clone(),
+            details: error.details.clone(),
+            recoverable,
+        },
+    );
 }
 
 fn ensure_activation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
