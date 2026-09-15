@@ -29,9 +29,17 @@ public final class WorldNavigationPreferences {
         return SHARED;
     }
 
-    private WorldNavigationPreferences() {
+    public WorldNavigationPreferences() {
         this.path = FabricLoader.getInstance().getConfigDir().resolve("lazybuilder-world-navigation.properties");
-        load();
+        reload();
+    }
+
+    /** Refreshes this in-memory view after another LazyBuilder screen changed navigation preferences. */
+    public synchronized void reload() {
+        properties.clear();
+        if (!Files.isRegularFile(path)) return;
+        try (InputStream input = Files.newInputStream(path)) { properties.load(input); }
+        catch (IOException ignored) { properties.clear(); }
     }
 
     public synchronized boolean isPinned(UUID worldId) {
@@ -97,12 +105,6 @@ public final class WorldNavigationPreferences {
             out.append(value);
         }
         return out.toString();
-    }
-
-    private void load() {
-        if (!Files.isRegularFile(path)) return;
-        try (InputStream input = Files.newInputStream(path)) { properties.load(input); }
-        catch (IOException ignored) { properties.clear(); }
     }
 
     private void save() {
