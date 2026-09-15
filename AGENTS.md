@@ -110,7 +110,9 @@ Use the canonical taxonomy in `docs/04-system/development-discipline.md`. `UNKNO
 
 ## Specialist Routing
 
-Select the specialist by the **semantic decision**, not by implementation language or edited file. Load exactly one primary specialist. Add another only after ownership actually changes.
+Select the specialist by the **semantic decision**, not by implementation language, edited file, screen/page name, or where the symptom is visible. A UI-visible problem is not automatically a UI-owned defect; a restart-related problem is not automatically Desktop Runtime; a multi-module change is not automatically Protocol.
+
+Load exactly one primary specialist. Add another only after ownership actually changes and the first owner has produced the smallest typed handoff result required by the next owner.
 
 ```text
 workspace / provisioning / Java / Paper / core / server process / recovery / resources
@@ -122,15 +124,24 @@ third-party Paper plugin lifecycle
 World Manager / Paper world behavior / import-export-conversion
 → lazybuilder-world-management
 
-presentation/input on desktop or Fabric/Xaero
+presentation/input on desktop or Fabric/Minecraft client
 → lazybuilder-ui
-→ choose Desktop or Fabric branch only
+→ choose one primary UI lane only
 
 shared Paper/Fabric request-result/wire contract
 → lazybuilder-protocol
 ```
 
-Canonical conflict/handoff rules: `docs/04-system/skill-routing.md`.
+Cross-owner rule:
+
+```text
+Owner A decides + proves its boundary
+→ emit minimum typed result
+→ STOP Owner A
+→ Owner B consumes result without recomputing Owner A truth
+```
+
+If the symptom can fit more than one specialist, gather the smallest evidence that separates canonical semantic truth from adapter/transport/presentation before loading another Skill. Canonical scenario probes and handoff payloads live in `docs/04-system/skill-routing.md`.
 
 Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, CI, testing, or implementation mechanics.
 
