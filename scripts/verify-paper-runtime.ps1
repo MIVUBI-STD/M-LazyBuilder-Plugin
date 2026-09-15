@@ -7,6 +7,7 @@ param(
     [string]$RuntimeDirectory = ".runtime-proof/paper-smoke",
     [int]$StartupTimeoutSeconds = 120,
     [int]$ShutdownTimeoutSeconds = 30,
+    [int]$ControlPort = 17842,
     [string]$JavaExecutable = "java"
 )
 
@@ -68,6 +69,8 @@ try {
         "motd=LazyBuilder runtime proof"
     ) | Set-Content -LiteralPath (Join-Path $runtimeRoot "server.properties") -Encoding ascii
 
+    $controlToken = [Guid]::NewGuid().ToString("N")
+
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $JavaExecutable
     $startInfo.WorkingDirectory = $runtimeRoot
@@ -76,6 +79,8 @@ try {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.CreateNoWindow = $true
+    $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_TOKEN"] = $controlToken
+    $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_PORT"] = $ControlPort.ToString()
     $startInfo.ArgumentList.Add("-Xms512M")
     $startInfo.ArgumentList.Add("-Xmx1024M")
     $startInfo.ArgumentList.Add("-jar")
@@ -149,8 +154,23 @@ try {
         }
     }
 
+    $headers = @{ Authorization = "Bearer $controlToken" }
+    $statusUri = "http://127.0.0.1:$ControlPort/v1/status"
+    $worldsUri = "http://127.0.0.1:$ControlPort/v1/worlds"
+
+    $status = Invoke-RestMethod -Method Get -Uri $statusUri -Headers $headers -TimeoutSec 10
+    if ($status.status -ne "ready" -or [int]$status.protocolVersion -ne 2) {
+        throw "Runtime proof failed: local control status endpoint returned an unexpected contract."
+    }
+
+    $worlds = Invoke-RestMethod -Method Get -Uri $worldsUri -Headers $headers -TimeoutSec 10
+    if ($null -eq $worlds.worlds) {
+        throw "Runtime proof failed: local control worlds endpoint did not return the expected collection contract."
+    }
+
     Write-Host ""
     Write-Host "LazyBuilder Paper runtime smoke proof passed."
+    Write-Host "Verified: Paper ready, both plugins enabled, local control status contract, world-list contract."
     Write-Host "Runtime directory: $runtimeRoot"
 }
 finally {
