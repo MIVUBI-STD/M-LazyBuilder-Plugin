@@ -101,12 +101,14 @@ public final class ClientWorldController {
     public void teleport(UUID worldId) {
         if (teleportPending) return;
         teleportPending = true;
+        activityMessage = "Teleporting…";
         lastError = null;
         revision++;
         try {
             send(new WorldControlWireProtocol.TeleportWorld(worldId));
         } catch (RuntimeException exception) {
             teleportPending = false;
+            activityMessage = null;
             lastError = "Could not send teleport request";
             revision++;
             throw exception;
@@ -148,6 +150,7 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.TeleportOk ok -> {
                 replace(ok.world());
                 teleportPending = false;
+                activityMessage = null;
                 lastError = null;
                 revision++;
             }
