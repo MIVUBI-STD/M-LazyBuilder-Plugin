@@ -95,7 +95,7 @@ expect(
     PRODUCT_VERSION,
 )
 
-# Client source identity and isolation contract. Performance Manager remains source-only/deferred in V1.
+# Client source identity and isolation contract. All three managers are active V1 client components.
 for manager, contract in CLIENT_MANAGERS.items():
     manager_root = ROOT / "mods" / manager
     props_text = (manager_root / "gradle.properties").read_text(encoding="utf-8")
@@ -152,17 +152,16 @@ for label, prefix in (
     expected_name = f"{prefix}-{SNAPSHOT_VERSION}.jar"
     expect(label, match.group(1) if match else None, expected_name)
 
-# Simplified V1 runtime scope must remain narrow.
+# V1 client setup installs exactly the three active client managers.
 client_integration = (launcher_root / "src-tauri/src/engine/client_integration.rs").read_text(encoding="utf-8")
 for required in (
     "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
     "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
-    "const MODS: [ClientModSpec; 2]",
+    "lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar",
+    "const MODS: [ClientModSpec; 3]",
 ):
     if required not in client_integration:
         errors.append(f"Client Setup V1 contract is missing required marker: {required}")
-if "lazybuilder-performance-manager-" in client_integration:
-    errors.append("Client Setup V1 must not require or install Performance Manager")
 if "profile.json" in client_integration:
     errors.append("Client Setup V1 must not restore legacy profile.json metadata authority")
 
@@ -182,11 +181,17 @@ if re.search(r"(?m)^  utilities:\s*$", workflow):
 for required_build in (
     "gradle -p mods/map-manager --no-daemon build",
     "gradle -p mods/utility-manager --no-daemon build",
+    "gradle -p mods/performance-manager --no-daemon build",
 ):
     if required_build not in workflow:
         errors.append(f"Verify workflow is missing required V1 Fabric build: {required_build}")
-if "gradle -p mods/performance-manager" in workflow:
-    errors.append("Verify workflow must not make Performance Manager a V1 package gate")
+for required_artifact in (
+    "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
+    "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
+    "lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar",
+):
+    if required_artifact not in workflow:
+        errors.append(f"Verify workflow is missing required V1 client artifact: {required_artifact}")
 
 paper_provider = (launcher_root / "src-tauri/src/engine/paper_provider.rs").read_text(encoding="utf-8")
 match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^ (]+)', paper_provider)
