@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "package": "LazyBuilder Windows Toolchain",
   "target": {
     "os": ["Windows 10 x64", "Windows 11 x64"],
@@ -34,9 +34,7 @@
     "toolchain": "1.98.1",
     "target": "x86_64-pc-windows-msvc",
     "scope": ["developer-build"],
-    "repoMinimumObserved": "1.77",
-    "pinPolicy": "exact",
-    "note": "Validate this exact pin with one clean full repository build before treating it as production-final."
+    "pinPolicy": "exact"
   },
   "maven": {
     "wrapperTarget": "3.9.16",
@@ -44,12 +42,9 @@
     "scope": ["developer-build"]
   },
   "gradle": {
-    "currentRepoBaseline": "8.12",
     "wrapperTarget": "8.12",
-    "candidateUpgrade": "8.14.4",
     "globalInstallRequired": false,
-    "scope": ["developer-build"],
-    "note": "Keep 8.12 during deployment hardening; test any upgrade separately."
+    "scope": ["developer-build"]
   },
   "tauri": {
     "major": 2,
@@ -72,7 +67,6 @@
   },
   "python": {
     "mandatory": false,
-    "replacement": "PowerShell verification script",
-    "scope": []
+    "scope": ["ci-repository-verification"]
   }
 }
