@@ -6,12 +6,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "apps" / "launcher" / "build-local.ps1"
+PUBLISHER = ROOT / "tooling" / "windows-toolchain" / "scripts" / "distribution" / "package-local.ps1"
 TAURI_CONFIG = ROOT / "apps" / "launcher" / "src-tauri" / "tauri.conf.json"
 BOOTSTRAP = ROOT / "apps" / "launcher" / "src-tauri" / "src" / "app_bootstrap.rs"
 RUNTIME_API = ROOT / "apps" / "launcher" / "src" / "app" / "bridge" / "runtimeApi.ts"
 APP = ROOT / "apps" / "launcher" / "src" / "App.svelte"
 
 text = BUILD_SCRIPT.read_text(encoding="utf-8")
+publisher = PUBLISHER.read_text(encoding="utf-8")
 config = json.loads(TAURI_CONFIG.read_text(encoding="utf-8"))
 bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
 runtime_api = RUNTIME_API.read_text(encoding="utf-8")
@@ -23,12 +25,16 @@ required_markers = (
     "$MavenWrapper",
     "$GradleWrapper",
     "$ClientVerifier",
+    "$PackageLocal",
+    "$LocalPublishDir = Join-Path $RepoRoot 'dist\\Local'",
+    "$CompileOnlyDir = Join-Path $RepoRoot 'dist\\CompileOnly'",
     "& $MavenWrapper --batch-mode --no-transfer-progress verify",
     "& $GradleWrapper -p mods/map-manager --no-daemon build",
     "& $GradleWrapper -p mods/utility-manager --no-daemon build",
     "& $GradleWrapper -p mods/performance-manager --no-daemon build",
     "Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force",
     "& $ClientVerifier -ClientModsDir $ClientModsDir -RepoRoot $RepoRoot",
+    "& $PackageLocal -RepoRoot $RepoRoot -InstallerPath $FreshInstaller",
     "@($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceClientJar)",
 )
 
@@ -50,11 +56,24 @@ for forbidden in (
     "Require-Command gradle",
     "Require-Command python",
     "python scripts/verify_client_artifacts.py",
-    "\n        mvn --batch-mode --no-transfer-progress verify",
-    "\n        gradle -p mods/",
+    "dist\\LazyBuilder",
+    "\\n        mvn --batch-mode --no-transfer-progress verify",
+    "\\n        gradle -p mods/",
 ):
     if forbidden in text:
         errors.append(f"local Launcher build restored a forbidden global/legacy tool path: {forbidden.strip()}")
+
+publisher_markers = (
+    "dist\\Local",
+    "LazyBuilder-Setup-Local.exe",
+    "LazyBuilder-Diagnostics.exe",
+    "build-info.json",
+    "SHA256SUMS.txt",
+    "schemaVersion = 2",
+)
+for marker in publisher_markers:
+    if marker not in publisher:
+        errors.append(f"canonical Local publisher is missing required package marker: {marker}")
 
 legacy_removal = (
     "Get-ChildItem $ClientModsDir -Filter 'lazybuilder-performance-manager-*.jar' "
@@ -107,4 +126,4 @@ if errors:
         print(f" - {error}")
     sys.exit(1)
 
-print("Local Launcher synchronization OK: toolchain, Windows identity, Paper/Fabric suite, and server lifecycle contracts are synchronized.")
+print("Local Launcher synchronization OK: toolchain, canonical publisher, Windows identity, Paper/Fabric suite, and server lifecycle contracts are synchronized.")
