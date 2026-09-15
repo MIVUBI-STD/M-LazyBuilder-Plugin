@@ -15,6 +15,7 @@ pub mod server_config;
 pub mod server_manager;
 pub mod server_process_guard;
 pub mod server_start_lock;
+pub mod startup;
 pub mod startup_guard;
 pub mod workspace_registry;
 pub mod world_manager;
