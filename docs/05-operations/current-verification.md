@@ -41,12 +41,18 @@ The current `Verify` workflow contains six jobs:
 consistency          version/repository/scope contracts
 paper                full Maven Paper/shared compile + tests + core artifacts
 paper-runtime-smoke  exact-head Paper boot + lifecycle harness used by packaging
-fabric               Map Manager + Utility Manager builds + client artifacts
+fabric               Fabric manager builds + client artifacts
 launcher-check       Svelte typecheck/build + Rust check/test on Windows
 tauri-desktop        package tested core/client artifacts into Windows NSIS build
 ```
 
-Performance Manager remains deferred research source unless the current product documents explicitly promote it into required runtime scope.
+### Transitional client-suite state
+
+The intended V1 product scope is **Map Manager + Utility Manager**. Performance Manager is deferred research source and must not gain new dependencies, runtime ownership, or feature scope without measured client evidence and an explicit product decision.
+
+Current `Local` source still contains Launcher/CI references that may build or bundle Performance Manager while the active Launcher/installer consolidation is in progress. That is a transitional implementation fact, not proof that Performance Manager has been promoted back into required V1 scope.
+
+Do not independently remove, rewire, or expand those Launcher/client-packaging paths while that active consolidation is being worked elsewhere. Resolve the Launcher source and packaging contract together when that work reaches its owner.
 
 ## Dedicated Paper runtime gate
 
@@ -109,6 +115,8 @@ A later commit that changes only Launcher/docs and is outside the Paper Runtime 
 
 ## V1 runtime scope
 
+Target product scope:
+
 ```text
 Desktop
 ├── Server Manager
@@ -123,25 +131,27 @@ Required Fabric
 ├── Map Manager
 └── Utility Manager
 
-Deferred / not bundled in V1
+Deferred research source
 └── Performance Manager
 ```
 
-Client Setup owns only required LazyBuilder client JAR prefixes. Modrinth remains owner of the Minecraft profile, Fabric loader, third-party mods/modpack, and game launching.
+The target scope above is product authority. During the current Launcher/installer consolidation, source inspection remains authoritative for what a particular `Local` commit actually bundles.
+
+Client Setup owns only LazyBuilder-owned client JAR prefixes. Modrinth remains owner of the Minecraft profile, Fabric loader, third-party mods/modpack, and game launching.
 
 ## Launcher simplification lock
 
-The V1 Launcher intentionally does **not** include:
+The V1 Launcher target intentionally does **not** add:
 
 - background CPU-priority governor;
 - automatic Paper gameplay/performance config mutation during Start;
-- Performance Manager as a hidden required client component;
+- Performance Manager as a new hidden cross-component dependency;
 - legacy profile compatibility parsing as an alternate Modrinth authority;
 - source-tree fallback JAR resolution for packaged client/core runtime components;
 - Performance/Boost RAM presets;
 - a second Minecraft launcher or general mod manager.
 
-Runtime-ready packages use bundled, tested same-revision resources as the runtime source for LazyBuilder-owned Paper/client JARs.
+Runtime-ready packages should use bundled, tested same-revision resources as the runtime source for LazyBuilder-owned Paper/client JARs.
 
 ## Remote proof boundary
 
@@ -169,8 +179,9 @@ Current source should continue to satisfy:
 - World Control and Map Action protocols remain separate from desktop loopback protocol;
 - Map Manager consumes shared protocol contracts, not World Manager implementation source;
 - Utility Manager has no hidden World Manager implementation dependency;
-- Performance Manager source remains isolated/deferred unless explicitly promoted;
-- Client Setup mutates only LazyBuilder-owned required prefixes and preserves unrelated mods;
+- Performance Manager remains isolated research source until explicit promotion;
+- no new component may depend on Performance Manager while it is deferred;
+- Client Setup mutates only LazyBuilder-owned prefixes and preserves unrelated mods;
 - packaged core resolution has one runtime authority: bundled tested resources;
 - server start does not rewrite unrelated Paper gameplay/performance settings;
 - no duplicate Launcher/server performance owner is reintroduced;
@@ -186,7 +197,7 @@ When local/target-machine testing is intentionally started, prioritize only beha
 1. install/open packaged LazyBuilder on the target Windows PC
 2. verify Java/runtime discovery and server process behavior on that machine
 3. verify Modrinth profile selection and client JAR replacement
-4. launch Minecraft with Map Manager + Utility Manager
+4. launch Minecraft with the required V1 Fabric managers
 5. verify Fabric UI/input/plugin-message interoperability
 6. verify real-player World teleport/navigation
 7. verify Utilities movement/gameplay interaction
@@ -199,7 +210,7 @@ Do not repeat server lifecycle cases already covered reliably by the dedicated r
 
 ## Historical reports
 
-`remote-github-complete.md` and older reports are historical snapshots. Older references to previous client-manager sets, workflow counts, or monolithic client packaging must not override this current authority.
+`remote-github-complete.md` and older reports are historical snapshots. Older references to previous client-manager sets, workflow counts, or monolithic client packaging must not override current source plus this authority.
 
 ## Update policy
 
