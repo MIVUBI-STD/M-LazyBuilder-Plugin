@@ -13,6 +13,7 @@ pub mod resource_settings;
 pub mod runtime_environment;
 pub mod runtime_updates;
 pub mod server_config;
+pub mod server_health;
 pub mod server_manager;
 pub mod server_process_guard;
 pub mod server_start_lock;
