@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { PluginInstallResult, PluginSummary } from '../app/bridge/runtimeApi';
+  import type { PluginInstallResult, PluginSummary, ServerState } from '../app/bridge/runtimeApi';
 
   let plugins: PluginSummary[] = [];
   let search = '';
   let error = '';
   let message = '';
   let busy = false;
-  let serverState = 'Offline';
+  let serverState: ServerState = 'Offline';
   let duplicateSelection: Record<string, string> = {};
 
   const isInvalid = (plugin: PluginSummary) => plugin.id.startsWith('invalid-');
@@ -23,7 +23,7 @@
   }
 
   function friendlyError(value: unknown) {
-    return String(value).replace(/^Error:\s*/i, '').trim() || 'Plugin operation failed. Try again.';
+    return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Plugin operation failed. Try again.';
   }
 
   async function refresh() {
