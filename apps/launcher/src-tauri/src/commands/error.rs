@@ -1,3 +1,4 @@
+use crate::engine::diagnostics;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -9,7 +10,9 @@ pub struct CommandError {
 
 impl CommandError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        let message = message.into();
+        diagnostics::error(&format!("{code}: {message}"));
+        Self { code, message }
     }
 
     pub fn runtime(message: impl Into<String>) -> Self {
