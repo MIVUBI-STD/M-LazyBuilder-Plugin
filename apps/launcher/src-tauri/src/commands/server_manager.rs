@@ -1,4 +1,5 @@
 use crate::engine::{java_runtime, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry};
+use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
 use tauri::{AppHandle, Manager, State};
 
@@ -68,6 +69,10 @@ pub async fn server_recover_detached(app: AppHandle) -> Result<DetachedRecoveryR
 fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
     let active = workspace_registry::current()?
         .ok_or_else(|| "No LazyBuilder server workspace is active.".to_string())?;
+    let resource = format!("workspace:{}", active.id);
+    if app.state::<OperationRegistry>().has_active_for_resource(&resource)? {
+        return Err("A Launcher operation is still changing this server. Wait for it to finish before starting Paper.".into());
+    }
     server_process_guard::ensure_no_running_paper_except(Some(&active.id))?;
     ensure_base_provisioned()?;
     ensure_bundled_core(app)?;
