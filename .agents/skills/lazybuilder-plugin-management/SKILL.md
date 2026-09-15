@@ -1,6 +1,6 @@
 ---
 name: lazybuilder-plugin-management
-description: Own LazyBuilder-managed third-party Paper plugin lifecycle: scan/metadata/dependencies, install/update, enable/disable, duplicate handling, safe JAR removal, and minimum rollback state. Do not use for bundled LazyBuilder core modules, desktop runtime, or presentation-only plugin UI.
+description: Own LazyBuilder-managed third-party Paper plugin lifecycle: discovery/identity/metadata/dependencies, install/update, enable/disable, duplicate handling, safe JAR removal, restart-required state, and minimum rollback. Do not use for bundled LazyBuilder core modules, desktop runtime, or presentation-only plugin UI.
 ---
 
 # LazyBuilder Plugin Management
@@ -9,142 +9,156 @@ Own third-party Paper plugin lifecycle semantics. Follow `docs/04-system/develop
 
 ## Entry gate
 
-Use this Skill only when the decision changes third-party Paper plugin lifecycle truth.
+Use this Skill only when the decision changes third-party plugin lifecycle truth:
 
 ```text
-plugin discovery / identity / metadata / dependency semantics
+plugin discovery / canonical identity / metadata
+required/optional dependency semantics
+compatibility state
 install / update / enable / disable / remove
-conflicting or duplicate JAR resolution
+duplicate/conflicting JAR resolution
+restart-required lifecycle state
 rollback of a plugin mutation
 ```
 
-Do not enter merely because a Launcher page displays plugins or because Java/Paper files are touched. Presentation stays with `lazybuilder-ui`; bundled LazyBuilder core remains `lazybuilder-desktop-runtime`.
+Do not enter because a Launcher page displays plugins or Java/Paper files are touched. Presentation stays with `lazybuilder-ui`; bundled LazyBuilder core stays with `lazybuilder-desktop-runtime`.
 
-Before mutation, identify the first evidence that can distinguish:
-
-```text
-bad source artifact
-bad detected identity/version
-unsatisfied dependency
-conflicting duplicate
-unsafe mutation sequencing
-restart-required state
-Paper runtime/load failure
-UI-only stale presentation
-```
+Before mutation, identify exact plugin identity plus the smallest filesystem/metadata evidence that separates source artifact, resolver, mutation sequencing, runtime, and UI failure.
 
 ## Owns
 
 ```text
-plugin discovery/metadata/dependency validation
-install/update
-enable/disable
-safe JAR removal while preserving plugin data
+plugin discovery and canonical identity
+metadata/version/dependency/compatibility interpretation
+install/update/enable/disable/remove semantics
 duplicate detection/resolution
-one previous-valid rollback snapshot per plugin mutation
+restart-required state
+safe JAR replacement/removal with plugin data preserved
+one previous-valid rollback snapshot per replacing mutation
 ```
 
-## Does Not Own
+## Does not own
 
 ```text
-bundled World/Utilities core sync → lazybuilder-desktop-runtime
-plugin presentation/UI            → lazybuilder-ui
-Paper world behavior              → lazybuilder-world-management
-shared client/server protocol     → lazybuilder-protocol
+bundled World/Utilities core synchronization → lazybuilder-desktop-runtime
+plugin presentation/UI                     → lazybuilder-ui
+Paper world behavior                       → lazybuilder-world-management
+shared Paper/Fabric protocol               → lazybuilder-protocol
 ```
 
-If lifecycle semantics change and the UI message/control follows, Plugin Management decides the result first; `lazybuilder-ui` only presents it.
+## Minimal context
 
-## Canonical Context
-
-1. `docs/04-system/development-discipline.md`
-2. `docs/04-system/skill-routing.md`
-3. exact plugin-manager source
-4. exact filesystem/metadata evidence needed to separate the failure
-5. system docs only when ownership changes
-
-Do not scan unrelated plugins, Launcher surfaces, or server history when one plugin identity/mutation path can answer the question.
-
-## Failure patterns
-
-Classify the domain failure before editing:
+Use only:
 
 ```text
-DISCOVERY          plugin JAR is missed, duplicated, or incorrectly grouped
-IDENTITY           name/version/provider/source is resolved incorrectly
+development-discipline.md
+→ skill-routing.md when ownership is unclear
+→ exact plugin-manager source
+→ exact JAR/metadata/filesystem evidence
+→ Paper live evidence only when source cannot decide load/enable behavior
+```
+
+Do not scan unrelated plugins, Launcher surfaces, or server history for reassurance.
+
+## Failure taxonomy
+
+```text
+DISCOVERY          JAR missed, duplicated, or grouped incorrectly
+IDENTITY           canonical plugin identity/version/source is wrong
 DEPENDENCY         required/optional dependency semantics are wrong
-COMPATIBILITY      supported runtime/API compatibility is represented incorrectly
-MUTATION           install/update/enable/disable/remove sequencing is wrong
-DUPLICATE          competing JARs can coexist or unsafe winner selection occurs
+COMPATIBILITY      supported runtime/API state is wrong
+MUTATION           install/update/enable/disable/remove sequencing is unsafe
+DUPLICATE          competing candidates coexist or winner selection is unsafe
 ROLLBACK           previous-valid artifact cannot be restored safely
-RESTART_STATE      UI/runtime claims active state that requires restart
+RESTART_STATE      source/UI claims an active state that requires restart
 PAPER_RUNTIME      source contract is correct but Paper rejects/fails the plugin
-PRESENTATION_ONLY  canonical lifecycle result is correct; UI is stale/misleading
-UNKNOWN            current evidence cannot separate the above
+PRESENTATION       lifecycle result is correct; UI is stale/misleading
+UNKNOWN            evidence cannot separate the above
 ```
 
-For `UNKNOWN`, gather the smallest separating evidence; do not add fallback logic.
+For `UNKNOWN`, gather the smallest separating evidence; never add fallback resolution logic just to continue.
 
-## Procedure
+## Mutation contract
+
+Replacing/destructive plugin operations follow one transaction owner:
 
 ```text
-identify requested lifecycle result
+PRECHECK
+→ resolve canonical identity, target, dependency/conflict state
+
+STAGE
+→ preserve one previous-valid JAR when replacement/removal needs rollback
+
+APPLY
+→ perform one bounded filesystem mutation path
+
+VERIFY
+→ rescan authoritative filesystem/metadata state
+
+COMMIT
+→ report canonical result + restart requirement
+
+or ROLLBACK
+→ restore previous-valid state when mutation did not commit safely
+```
+
+Do not report a committed mutation as failed only because a later optional refresh/UI update fails.
+
+## Canonical procedure
+
+```text
+name requested lifecycle result
 → capture exact plugin identity + current filesystem/metadata evidence
 → classify failure
-→ find first unsafe/duplicated semantic owner
-→ reuse one mutation gate/path
-→ validate target/dependencies/conflicts before destructive mutation
-→ stage previous-valid rollback state when mutation can replace/remove a JAR
-→ perform smallest complete mutation
-→ verify canonical post-mutation state
-→ targeted proof at the cheapest sufficient level
-→ hand presentation-only residue to lazybuilder-ui
+→ find first wrong lifecycle owner
+→ validate target/dependencies/conflicts/restart semantics
+→ stage rollback state only when replacement/removal requires it
+→ perform smallest complete mutation through one path
+→ rescan authoritative post-mutation state
+→ prove changed lifecycle claim at the cheapest sufficient level
+→ hand presentation residue to lazybuilder-ui
 → STOP
 ```
 
-## Plugin Invariants
+## Invariants
 
-- filesystem + plugin metadata remain primary truth; no plugin database without a proven need;
-- no hot reload; restart-required semantics stay explicit;
-- duplicate resolution cannot partially delete candidates without recoverability;
-- persistent rollback state is one previous-valid JAR snapshot, not historical backup retention;
-- plugin-data deletion/quarantine is outside current product flow; remove preserves plugin data;
-- categories are derived presentation metadata, never a persisted runtime authority;
-- one plugin mutation has one transaction/rollback owner;
-- plugin identity must be stable across list/detail/action paths; display filename alone is not sufficient authority when canonical metadata exists;
-- a failed refresh after a committed mutation must not relabel the mutation itself as failed;
-- capability/action availability derives from canonical lifecycle state, not UI-local assumptions.
+- filesystem + canonical plugin metadata are primary truth; no plugin database without proven need;
+- display filename alone is not identity when canonical metadata exists;
+- no hot reload; restart-required behavior stays explicit;
+- plugin data is preserved on ordinary remove/disable flows;
+- categories are presentation metadata, never lifecycle authority;
+- duplicate resolution must be recoverable and cannot partially delete competing candidates;
+- one mutation has one transaction/rollback owner;
+- rollback stores one previous-valid artifact, not unlimited history;
+- action availability derives from canonical lifecycle/capability state, not button-local assumptions;
+- late refresh failure cannot rewrite an already committed lifecycle result;
+- install/update/remove must not silently mutate unrelated plugin files;
+- plugin discovery/load success and plugin runtime correctness are distinct proof levels.
 
 ## Proof matrix
 
-Use the cheapest evidence capable of disproving the changed claim:
-
 ```text
-metadata parsing / identity / dependency rule
+identity / metadata / dependency / compatibility rule
 → focused unit/source-contract test
 
-transaction ordering / rollback selection / duplicate resolution
-→ focused filesystem fixture or integration test
+mutation ordering / rollback / duplicate resolution
+→ filesystem fixture or focused integration test
 
 compile/package compatibility
-→ repository build/CI artifact proof
+→ repository build/artifact proof
 
 Paper discovery/load/enable behavior
-→ LIVE_SERVER with the exact tested JAR/runtime
+→ LIVE_SERVER using exact tested JAR/runtime
 
-Launcher/Minecraft visual state only
-→ hand result to lazybuilder-ui for its proof lane
+visual/list/detail/action state only
+→ lazybuilder-ui proof lane
 ```
-
-A successful scan does not prove loadability. A successful compile does not prove Paper enable/runtime behavior.
 
 ## Handoff / exit contract
 
-Hand off only when semantic ownership changes:
-
 ```text
-canonical plugin result + capability/state
-→ lazybuilder-ui for presentation
+canonical plugin lifecycle result/capability
+→ lazybuilder-ui presents it
 
 bundled LazyBuilder core compatibility/synchronization
 → lazybuilder-desktop-runtime
@@ -152,10 +166,10 @@ bundled LazyBuilder core compatibility/synchronization
 
 Finish when:
 
-- canonical lifecycle result is correct;
-- destructive/replacement work has a valid rollback boundary where required;
-- duplicate/dependency behavior has one owner;
-- matching proof is complete for the available context;
-- any remaining Paper live proof or UI presentation residue is named precisely.
+- canonical plugin identity and lifecycle result are correct;
+- destructive/replacing work has the required rollback boundary;
+- dependency/duplicate/restart semantics have one owner;
+- matching proof is complete at the available context ceiling;
+- remaining Paper live proof or UI residue is named precisely.
 
-Do not continue into unrelated plugin cleanup or generic plugin-framework design.
+Do not continue into unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
