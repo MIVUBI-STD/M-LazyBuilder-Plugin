@@ -26,6 +26,8 @@ REQUIRED_FILES = [
     "docs/04-system/development-discipline.md",
     "docs/04-system/skill-routing.md",
     "docs/04-system/development-operations.md",
+    "docs/05-operations/current-verification.md",
+    ".github/workflows/verify.yml",
 ]
 
 FORBIDDEN_RETIRED_PATHS = [
@@ -102,6 +104,28 @@ REQUIRED_OPERATIONS_PHRASES = [
     "workflow_dispatch",
 ]
 
+REQUIRED_VERIFY_IGNORE_PATTERNS = [
+    "docs/04-system/*-audit.md",
+    "docs/04-system/*-lock.md",
+    "docs/04-system/*-status.md",
+    "docs/05-operations/*-testing-notes.md",
+    "docs/05-operations/*-handoff.md",
+    "docs/05-operations/remote-github-complete.md",
+]
+
+FORBIDDEN_BROAD_VERIFY_IGNORES = [
+    "apps/**",
+    "plugins/**",
+    "mods/**",
+    "shared/**",
+    "tooling/**",
+    "scripts/**",
+    ".agents/**",
+    "docs/**",
+    "*.yml",
+    "*.yaml",
+]
+
 
 def fail(errors: list[str], message: str) -> None:
     errors.append(message)
@@ -147,9 +171,11 @@ def main() -> int:
     agents = read_text("AGENTS.md", errors)
     docs_entry = read_text("docs/README.md", errors)
     system_doc = read_text("docs/04-system/README.md", errors)
+    verification_doc = read_text("docs/05-operations/current-verification.md", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
+    verify_workflow = read_text(".github/workflows/verify.yml", errors)
     build_local = read_text("apps/launcher/build-local.ps1", errors)
     test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
     publisher = read_text("tooling/windows-toolchain/scripts/distribution/package-local.ps1", errors)
@@ -173,6 +199,19 @@ def main() -> int:
     for phrase in REQUIRED_OPERATIONS_PHRASES:
         if phrase not in operations:
             fail(errors, f"development operations missing canonical marker: {phrase}")
+
+    if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
+        fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")
+
+    for pattern in REQUIRED_VERIFY_IGNORE_PATTERNS:
+        if verify_workflow.count(pattern) < 2:
+            fail(errors, f"Verify workflow must scope evidence-only path ignore for push and PR: {pattern}")
+
+    for pattern in FORBIDDEN_BROAD_VERIFY_IGNORES:
+        quoted_single = f"'{pattern}'"
+        quoted_double = f'"{pattern}"'
+        if quoted_single in verify_workflow or quoted_double in verify_workflow:
+            fail(errors, f"Verify workflow must not broadly ignore source/canonical paths: {pattern}")
 
     if "dist\\LazyBuilder" in build_local or "dist\\LazyBuilder" in test_local:
         fail(errors, "legacy dist/LazyBuilder Local output path must not return")
@@ -245,6 +284,7 @@ def main() -> int:
     print("Repository contract verification PASS")
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
+    print("Full Verify scoping: evidence-only exclusions, source/canonical paths protected")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
     print("Local distribution owner: tooling/windows-toolchain/scripts/distribution/package-local.ps1")
     print("Local distribution path: dist/Local")
