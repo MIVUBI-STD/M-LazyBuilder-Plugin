@@ -11,15 +11,11 @@
   let serverState = 'Offline';
   let duplicateSelection: Record<string, string> = {};
 
-  const isCore = (plugin: PluginSummary) => {
-    const key = `${plugin.id} ${plugin.displayName}`.toLowerCase();
-    return key.includes('world-manager') || key.includes('world manager') || key.includes('utilities-manager') || key.includes('utilities manager');
-  };
-
   const isInvalid = (plugin: PluginSummary) => plugin.id.startsWith('invalid-');
   const canMutate = () => serverState === 'Offline' || serverState === 'Crashed';
-  const hasDuplicates = (plugin: PluginSummary) => !isInvalid(plugin) && Boolean(plugin.candidateFiles && plugin.candidateFiles.length > 1);
-  const extraPlugins = () => plugins.filter((plugin) => !isCore(plugin));
+  const hasDuplicates = (plugin: PluginSummary) => plugin.mutable && !isInvalid(plugin) && Boolean(plugin.candidateFiles && plugin.candidateFiles.length > 1);
+  const extraPlugins = () => plugins.filter((plugin) => plugin.mutable);
+  const managedPlugins = () => plugins.filter((plugin) => plugin.managedByLazybuilder);
 
   function serverPlugins() {
     const query = search.trim().toLowerCase();
@@ -37,7 +33,7 @@
       serverState = snapshot.state;
       error = '';
       duplicateSelection = Object.fromEntries(
-        plugins.filter((plugin) => !isInvalid(plugin) && plugin.candidateFiles?.length).map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
+        plugins.filter((plugin) => plugin.mutable && !isInvalid(plugin) && plugin.candidateFiles?.length).map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
       );
     } catch (e) {
       plugins = [];
@@ -78,6 +74,7 @@
   }
 
   async function updatePlugin(plugin: PluginSummary) {
+    if (!plugin.mutable) return;
     await run(async () => {
       const jar = await runtimeProduct.plugins.pickJar();
       if (!jar) return;
@@ -86,6 +83,7 @@
   }
 
   async function togglePlugin(plugin: PluginSummary) {
+    if (!plugin.mutable) return;
     await run(async () => {
       await runtimeProduct.plugins.setEnabled(plugin.id, plugin.state !== 'Enabled');
       message = `Plugin ${plugin.state === 'Enabled' ? 'disabled' : 'enabled'}. Restart the server to apply it.`;
@@ -93,6 +91,7 @@
   }
 
   async function removePlugin(plugin: PluginSummary) {
+    if (!plugin.mutable) return;
     if (!window.confirm(`Remove ${plugin.displayName}? Its plugin data will be kept.`)) return;
     await run(async () => {
       await runtimeProduct.plugins.remove(plugin.id);
@@ -101,6 +100,7 @@
   }
 
   async function removeProblemPlugin(plugin: PluginSummary) {
+    if (!plugin.mutable) return;
     const jar = plugin.candidateFiles?.[0];
     if (!jar) {
       error = 'LazyBuilder could not identify the broken JAR safely.';
@@ -114,6 +114,7 @@
   }
 
   async function resolveDuplicates(plugin: PluginSummary) {
+    if (!plugin.mutable) return;
     const keep = duplicateSelection[plugin.id];
     if (!keep) return;
     await run(async () => applyResult(await runtimeProduct.plugins.resolveDuplicates(plugin.id, keep)));
@@ -193,11 +194,11 @@
     </section>
   {/if}
 
-  {#if plugins.some(isCore)}
+  {#if managedPlugins().length > 0}
     <details class="system-components">
       <summary>LazyBuilder components</summary><p>Required components are maintained automatically.</p>
       <div class="system-list">
-        {#each plugins.filter(isCore) as plugin}
+        {#each managedPlugins() as plugin}
           <div><div class="plugin-icon core">L</div><span><strong>{plugin.displayName}</strong><small>{plugin.version} · Required</small></span><span class="state-pill" class:problem={plugin.state === 'Problem'}>{plugin.state === 'Enabled' ? 'Ready' : plugin.state}</span></div>
         {/each}
       </div>
