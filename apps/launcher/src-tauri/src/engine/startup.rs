@@ -1,6 +1,5 @@
 use crate::engine::{diagnostics, runtime_environment, workspace_registry};
 use serde::Serialize;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,7 +83,7 @@ pub fn coordinate() -> StartupReport {
         degraded,
         started_at_unix_seconds: started_at,
         completed_at_unix_seconds: completed_at,
-        runtime_temp_path: runtime_temp.as_ref().map(PathBuf::display).map(|value| value.to_string()),
+        runtime_temp_path: runtime_temp.as_ref().map(|path| path.display().to_string()),
         steps,
     };
 
