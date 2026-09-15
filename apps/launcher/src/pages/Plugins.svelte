@@ -15,7 +15,7 @@
   const canMutate = () => serverState === 'Offline' || serverState === 'Crashed';
   const hasDuplicates = (plugin: PluginSummary) => plugin.mutable && !isInvalid(plugin) && Boolean(plugin.candidateFiles && plugin.candidateFiles.length > 1);
   const extraPlugins = () => plugins.filter((plugin) => plugin.mutable);
-  const managedPlugins = () => plugins.filter((plugin) => plugin.managedByLazybuilder);
+  const managedPlugins = () => plugins.filter((plugin) => plugin.managedByLazyBuilder);
 
   function serverPlugins() {
     const query = search.trim().toLowerCase();
