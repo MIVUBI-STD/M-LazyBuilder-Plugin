@@ -120,6 +120,9 @@ jobs:
             -ServerJar ".artifacts/paper-1.21.4.jar" `
             -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
             -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
+      - name: Verify Paper restart and persistence contracts
+        shell: pwsh
+        run: ./scripts/verify-paper-restart.ps1 -ServerJar ".artifacts/paper-1.21.4.jar"
       - name: Upload Paper runtime proof logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -128,6 +131,7 @@ jobs:
           path: |
             .runtime-proof/paper-smoke/logs/**
             .runtime-proof/paper-smoke/plugins/**/config.yml
+            .runtime-proof/paper-smoke/plugins/World-Manager/world/registry.yml
             .runtime-proof/paper-smoke/server.properties
           if-no-files-found: warn
           retention-days: 7
