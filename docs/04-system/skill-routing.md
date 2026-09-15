@@ -35,7 +35,7 @@ There is no meta Development Brief Skill. Architecture/cross-owner ambiguity is 
 workspace/process/provisioning/runtime/config decision → desktop-runtime
 third-party Paper plugin lifecycle decision           → plugin-management
 world/Paper domain/files/conversion decision          → world-management
-presentation/input decision                           → ui
+presentation/input/UI issue decision                  → ui
 neutral Paper/Fabric wire contract                    → protocol
 ```
 
@@ -70,7 +70,7 @@ duplicate resolution
 minimum rollback state
 ```
 
-Does not own bundled LazyBuilder core modules or generic desktop runtime configuration.
+Does not own bundled LazyBuilder core modules or generic desktop runtime configuration. It owns plugin truth; `lazybuilder-ui` owns how that truth is presented and interacted with.
 
 ### `lazybuilder-world-management`
 
@@ -89,24 +89,33 @@ world filesystem safety
 
 ### `lazybuilder-ui`
 
-Owns presentation/input only, with two explicit branches:
+Owns presentation/input and UI issue resolution across three lanes:
 
 ```text
-Desktop branch
+Launcher Desktop lane
 → Tauri/Svelte launcher/dashboard/settings/plugins/worlds presentation
+→ Server Library / Plugin Manager / Client Setup presentation
 → frontend request/result typing
 → single frontend Tauri bridge
 
-Fabric branch
+Fabric Mods lane
 → in-game UI/keybinds
 → fullscreen LazyBuilder map/world-navigation presentation
 → World Manager / Import-Export presentation
 → client-only navigation preferences and presentation state
+
+Plugin-facing presentation lane
+→ plugin inventory/list/detail/status presentation
+→ plugin warning/progress/error/confirmation UX
+→ action availability derived from canonical plugin state/capability
+→ user-facing in-game plugin messages when presentation-only
 ```
 
-Load only the branch relevant to the current task. UI never becomes runtime, plugin, world-state, protocol-contract, or security authority.
+UI never becomes runtime, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
 
-`lazybuilder-ui` also owns the UI quality gate for its surfaces: interaction predictability, state feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, and presentation-performance checks. These quality rules must not create a second semantic owner, cache, manager, workflow, or backend rule.
+`lazybuilder-ui` owns the UI quality gate for these surfaces: interaction predictability, state authority/feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, presentation-performance checks, async race prevention, destructive-flow clarity, and cross-surface regression checks.
+
+For non-trivial UI defects, use the issue-resolution playbook inside the UI skill. The UI specialist must identify the first wrong boundary and hand semantic defects back to `desktop-runtime`, `plugin-management`, `world-management`, or `protocol` rather than hiding them behind UI state.
 
 Xaero may be used only as a familiarity/behavior reference for map interaction. LazyBuilder owns its own map implementation; do not create a Xaero runtime dependency, adapter, copied asset/source path, or second map authority merely to imitate it.
 
@@ -133,18 +142,28 @@ Examples:
 
 ```text
 Plugins.svelte layout only
-→ ui / Desktop branch
+→ ui / Launcher Desktop lane
 
 plugin dependency semantics + warning text
 → plugin-management owns rule/result
-→ ui only displays returned state
+→ ui / plugin-facing lane displays returned state
+
+plugin update button submits twice
+→ ui owns input/pending race
+→ plugin-management remains owner of update semantics
+
+Client Setup required-mod list is confusing
+→ ui / Launcher Desktop lane
+
+whether a mod is actually required/compatible
+→ owning runtime/product contract, not UI
 
 world action needs a new shared payload
 → protocol owns payload
 → world-management consumes it
 
 Fabric button for an existing action
-→ ui / Fabric branch
+→ ui / Fabric Mods lane
 
 Desktop HTTP control behavior
 → desktop-runtime
@@ -179,15 +198,15 @@ Typical handoffs:
 new world action + payload + Fabric button
 → protocol
 → world-management
-→ ui / Fabric branch
+→ ui / Fabric Mods lane
 
 new desktop setting changes runtime
 → desktop-runtime
-→ ui / Desktop branch
+→ ui / Launcher Desktop lane
 
 plugin rule changes desktop warning
 → plugin-management
-→ ui / Desktop branch
+→ ui / plugin-facing lane
 ```
 
 Do not keep multiple specialists active for the same decision.
@@ -232,7 +251,8 @@ Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership actually changed?
 Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, or compatibility layer unnecessarily?
 Can an existing path or deletion satisfy the same accepted result?
-For UI work: were flow, pending/error states, back/close behavior, responsive/GUI-scale behavior, and input races audited?
+For UI work: were flow, state authority, pending/error states, back/close behavior, responsive/GUI-scale behavior, input races, and sibling surfaces audited?
+Was a plugin/mod/runtime semantic issue accidentally patched only in presentation?
 What is the cheapest proof that can falsify the result?
 ```
 
