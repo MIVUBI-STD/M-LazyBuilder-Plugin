@@ -270,7 +270,7 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
     };
     let canonical_id = workspace_id(&canonical.display().to_string());
     if let Some(mut manifest) = read_manifest(&canonical)? {
-        manifest.workspace_id = canonical_id.clone();
+        manifest.workspace_id = canonical_id;
         write_manifest(&canonical, manifest)?;
     }
 
@@ -284,20 +284,20 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
 }
 
 pub fn remove_from_library(id: &str) -> Result<(), String> {
+    let was_active = current()?.is_some_and(|entry| entry.id == id);
     let mut registry = load_registry()?;
     if !registry.servers.iter().any(|entry| entry.id == id) {
         return Err("Saved server workspace was not found".into());
     }
     registry.servers.retain(|entry| entry.id != id);
     save_registry(&registry)?;
-    if current()?.is_some_and(|entry| entry.id == id) {
-        set_active_memory(None)?;
-    }
+    if was_active { set_active_memory(None)?; }
     Ok(())
 }
 
 pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
     let entry = get(id)?;
+    let was_active = current()?.is_some_and(|candidate| candidate.id == id);
     if typed_display_name != entry.name {
         return Err("Type the server name exactly to confirm permanent deletion".into());
     }
@@ -312,7 +312,7 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
         original_path: root.display().to_string(),
         staging_path: staging.display().to_string(),
     };
-    add_pending_deletion(pending.clone())?;
+    add_pending_deletion(pending)?;
 
     if let Err(error) = fs::rename(&root, &staging) {
         let _ = clear_pending_deletion(&entry.id, &staging);
@@ -327,9 +327,7 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
         return Err(format!("Could not update server library during deletion: {error}"));
     }
 
-    if current()?.is_some_and(|candidate| candidate.id == id) {
-        set_active_memory(None)?;
-    }
+    if was_active { set_active_memory(None)?; }
 
     match fs::remove_dir_all(&staging) {
         Ok(()) => clear_pending_deletion(&entry.id, &staging),
@@ -386,8 +384,27 @@ fn validated_registered_root(entry: &WorkspaceEntry) -> Result<PathBuf, String> 
 }
 
 fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
-    let result = register_only(root, name)?;
-    set_active_memory(Some(root.canonicalize().map_err(|error| error.to_string())?))?;
+    let canonical = root.canonicalize().map_err(|error| error.to_string())?;
+    let canonical_text = canonical.display().to_string();
+    let id = workspace_id(&canonical_text);
+    let now = now_unix_seconds();
+    let mut registry = load_registry()?;
+    if let Some(existing) = registry.servers.iter_mut().find(|entry| entry.id == id) {
+        existing.name = name.to_string();
+        existing.path = canonical_text.clone();
+        existing.last_opened_unix_seconds = now;
+    } else {
+        registry.servers.push(WorkspaceEntry {
+            id: id.clone(),
+            name: name.to_string(),
+            path: canonical_text,
+            last_opened_unix_seconds: now,
+        });
+    }
+    let result = registry.servers.iter().find(|entry| entry.id == id).cloned()
+        .ok_or_else(|| "Registered server workspace could not be recovered".to_string())?;
+    save_registry(&registry)?;
+    set_active_memory(Some(canonical))?;
     Ok(result)
 }
 
