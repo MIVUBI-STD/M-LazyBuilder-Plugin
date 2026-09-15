@@ -35,7 +35,7 @@ public record ConversionRuntimePolicy(
 
     public static ConversionRuntimePolicy defaults() {
         return new ConversionRuntimePolicy(
-                UpdateMode.AUTOMATIC_STABLE,
+                UpdateMode.NOTIFY_ONLY,
                 Duration.ofHours(24),
                 true,
                 true,
