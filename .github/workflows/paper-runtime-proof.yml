@@ -1,0 +1,91 @@
+name: Paper Runtime Proof
+
+on:
+  push:
+    branches: [Local, main]
+    paths:
+      - 'pom.xml'
+      - 'plugins/world-manager/**'
+      - 'plugins/utilities-manager/**'
+      - 'shared/protocol/**'
+      - 'scripts/verify-paper-runtime.ps1'
+      - '.github/workflows/paper-runtime-proof.yml'
+  pull_request:
+    branches: [Local, main]
+    paths:
+      - 'pom.xml'
+      - 'plugins/world-manager/**'
+      - 'plugins/utilities-manager/**'
+      - 'shared/protocol/**'
+      - 'scripts/verify-paper-runtime.ps1'
+      - '.github/workflows/paper-runtime-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paper-runtime-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-proof:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compile and test Paper plugins
+        run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Stage tested core plugins
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".artifacts/core" -Force | Out-Null
+          Copy-Item "plugins/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar" ".artifacts/core/"
+          Copy-Item "plugins/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar" ".artifacts/core/"
+
+      - name: Download stable Paper 1.21.4 runtime
+        shell: pwsh
+        run: |
+          $headers = @{
+            "User-Agent" = "LazyBuilder-CI/0.1 (https://github.com/halokaryamedia-source/LazyBuilder-Plugin)"
+          }
+          $builds = Invoke-RestMethod `
+            -Headers $headers `
+            -Uri "https://fill.papermc.io/v3/projects/paper/versions/1.21.4/builds" `
+            -TimeoutSec 30
+          $stable = $builds | Where-Object { $_.channel -eq "STABLE" } | Select-Object -First 1
+          if ($null -eq $stable) {
+            throw "PaperMC did not return a stable Paper 1.21.4 build."
+          }
+          $download = $stable.downloads.'server:default'.url
+          if ([string]::IsNullOrWhiteSpace($download)) {
+            throw "PaperMC stable build did not expose a server download URL."
+          }
+          Invoke-WebRequest -Headers $headers -Uri $download -OutFile ".artifacts/paper-1.21.4.jar" -TimeoutSec 120
+
+      - name: Execute managed-world runtime proof
+        shell: pwsh
+        run: |
+          ./scripts/verify-paper-runtime.ps1 `
+            -ServerJar ".artifacts/paper-1.21.4.jar" `
+            -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
+            -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
+
+      - name: Upload runtime proof evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LazyBuilder-Paper-Runtime-Proof-${{ github.sha }}
+          path: |
+            .runtime-proof/paper-smoke/logs/**
+            .runtime-proof/paper-smoke/plugins/**/config.yml
+            .runtime-proof/paper-smoke/server.properties
+          if-no-files-found: warn
+          retention-days: 7
