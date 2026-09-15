@@ -19,7 +19,7 @@ $PaperCacheDir = Join-Path $RepoRoot '.runtime-proof\paper-cache'
 $PaperJar = Join-Path $PaperCacheDir 'paper-1.21.4.jar'
 $WorldJar = Join-Path $RepoRoot 'plugins\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
-$Installer = Join-Path $RepoRoot 'dist\LazyBuilder\LazyBuilder-Setup.exe'
+$Installer = Join-Path $RepoRoot 'dist\Local\LazyBuilder-Setup-Local.exe'
 
 function Require-File([string]$Path, [string]$Hint) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -56,8 +56,8 @@ if ($Build) {
     if ($LASTEXITCODE -ne 0) { throw "Canonical build failed with exit code $LASTEXITCODE." }
 }
 
-Require-File $WorldJar 'Run BUILD-LAUNCHER.cmd first, or rerun TEST-LOCAL.cmd with -Build.'
-Require-File $UtilitiesJar 'Run BUILD-LAUNCHER.cmd first, or rerun TEST-LOCAL.cmd with -Build.'
+Require-File $WorldJar 'Run DEV.cmd build first, or rerun DEV.cmd test -Build.'
+Require-File $UtilitiesJar 'Run DEV.cmd build first, or rerun DEV.cmd test -Build.'
 Ensure-StablePaper
 
 Write-Host '[1/3] Paper runtime behavior proof...' -ForegroundColor Cyan
@@ -75,7 +75,7 @@ if ($SkipRestart) {
 if ($PaperOnly -or $SkipInstaller) {
     Write-Host '[3/3] Installed Launcher acceptance skipped by request.' -ForegroundColor Yellow
 } else {
-    Require-File $Installer 'Run BUILD-LAUNCHER.cmd first, or rerun TEST-LOCAL.cmd with -Build.'
+    Require-File $Installer 'Run DEV.cmd build first, or rerun DEV.cmd test -Build.'
     Write-Host '[3/3] Installed Launcher clean-PATH smoke...' -ForegroundColor Cyan
     & $InstallerProof -InstallerPath $Installer
     if ($LASTEXITCODE -ne 0) { throw "Installer acceptance failed with exit code $LASTEXITCODE." }
