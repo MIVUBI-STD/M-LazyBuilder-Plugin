@@ -23,13 +23,16 @@ concurrency:
 jobs:
   visual-preview:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/launcher
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -72,7 +75,7 @@ jobs:
           node -e "const fs=require('fs'); const p='ui-preview-output/manifest.json'; const m=JSON.parse(fs.readFileSync(p,'utf8')); m.commit=process.env.GITHUB_SHA; m.branch=process.env.GITHUB_REF_NAME; fs.writeFileSync(p, JSON.stringify(m,null,2));"
 
       - name: Upload ChatGPT-readable visual proof
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: LazyBuilder-UI-Preview-${{ github.sha }}
           path: apps/launcher/ui-preview-output/**
@@ -81,7 +84,7 @@ jobs:
 
       - name: Upload preview diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: LazyBuilder-UI-Preview-Diagnostics-${{ github.sha }}
           path: |
