@@ -1,4 +1,4 @@
-use crate::engine::{diagnostics, launcher_settings, runtime_environment, server_process_guard, workspace_registry};
+use crate::engine::{diagnostics, launcher_settings, runtime_environment, server_backups, server_process_guard, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -68,6 +68,22 @@ pub fn coordinate() -> StartupReport {
     };
 
     if registry_ready {
+        match server_backups::recover_staging() {
+            Ok(removed) => {
+                let details = if removed == 0 {
+                    "No interrupted server backup staging required cleanup.".to_string()
+                } else {
+                    format!("Cleaned {removed} interrupted server backup staging director{}.", if removed == 1 { "y" } else { "ies" })
+                };
+                steps.push(ready_step("backup-recovery", "Backup staging reconciled", &details));
+            }
+            Err(error) => {
+                degraded = true;
+                diagnostics::error(&format!("Server backup staging recovery failed: {error}"));
+                steps.push(warning_step("backup-recovery", "Backup staging needs attention", &error));
+            }
+        }
+
         match server_process_guard::reconcile_registered_process_markers() {
             Ok(result) => {
                 let mut details = Vec::new();
@@ -92,6 +108,7 @@ pub fn coordinate() -> StartupReport {
         }
     } else {
         degraded = true;
+        steps.push(warning_step("backup-recovery", "Backup staging could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted backup staging."));
         steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", "The server library was unavailable, so LazyBuilder could not safely inspect registered Paper process markers."));
     }
 
