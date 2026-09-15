@@ -94,8 +94,7 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
             // Both states are safe recovery candidates because recover_detached() also
             // validates PID, process start time and the LazyBuilder Paper command line
             // before terminating anything.
-            let recoverable_state = snapshot.state == "Stopping" || snapshot.state == "Detached";
-            if !recoverable_state || snapshot.pid.is_none() {
+            if !is_recoverable_stop_snapshot(&snapshot) {
                 return Err(stop_error);
             }
 
@@ -112,6 +111,10 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
             }
         }
     }
+}
+
+fn is_recoverable_stop_snapshot(snapshot: &ServerSnapshot) -> bool {
+    matches!(snapshot.state.as_str(), "Stopping" | "Detached") && snapshot.pid.is_some()
 }
 
 /// Validate the pieces that must already exist before start-time core self-healing.
@@ -141,4 +144,38 @@ fn ensure_provisioned() -> Result<(), String> {
         return Err("Minecraft EULA has not been accepted for this server.".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_recoverable_stop_snapshot;
+    use crate::engine::server_manager::ServerSnapshot;
+
+    fn snapshot(state: &str, pid: Option<u32>) -> ServerSnapshot {
+        ServerSnapshot {
+            state: state.into(),
+            health: "Warning".into(),
+            cpu_load_percent: 0.0,
+            used_memory_bytes: 0,
+            max_memory_bytes: 0,
+            pid,
+            log_path: String::new(),
+        }
+    }
+
+    #[test]
+    fn detached_process_is_recoverable_for_stop_and_restart() {
+        assert!(is_recoverable_stop_snapshot(&snapshot("Detached", Some(42))));
+    }
+
+    #[test]
+    fn stopping_process_is_recoverable() {
+        assert!(is_recoverable_stop_snapshot(&snapshot("Stopping", Some(42))));
+    }
+
+    #[test]
+    fn non_recovery_states_or_missing_pid_are_rejected() {
+        assert!(!is_recoverable_stop_snapshot(&snapshot("Offline", Some(42))));
+        assert!(!is_recoverable_stop_snapshot(&snapshot("Detached", None)));
+    }
 }
