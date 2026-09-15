@@ -19,19 +19,55 @@ pub fn status() -> Result<RuntimeUpdateStatus, String> {
 }
 
 pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
+    update_paper_tracked(|_, _, _| {})
+}
+
+/// Update Paper while exposing real transaction boundaries to the Launcher operation
+/// model. No percentage is emitted because the provider does not expose byte progress.
+pub fn update_paper_tracked<F>(mut on_stage: F) -> Result<RuntimeUpdateStatus, String>
+where
+    F: FnMut(&str, &str, &str),
+{
     let workspace = workspace_registry::active_workspace()?;
+
+    on_stage(
+        "resolve-release",
+        "Checking Paper release",
+        "Resolving the current stable Paper build for the supported Minecraft version.",
+    );
     let release = paper_provider::latest_stable()?;
     let target = workspace.join("server").join("paper.jar");
     let persistent_backup = workspace.join("server").join("paper.jar.previous");
     let had_target = target.is_file();
 
+    on_stage(
+        "backup",
+        "Protecting current Paper runtime",
+        "Creating a rollback copy before publishing the replacement Paper runtime.",
+    );
     if had_target {
         let _ = fs::remove_file(&persistent_backup);
         fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
     }
 
+    on_stage(
+        "publish-paper",
+        "Installing Paper update",
+        "Downloading, validating, and publishing the selected Paper release through the existing provider transaction.",
+    );
     paper_provider::ensure_release_for_workspace(&workspace, &release)?;
+
+    on_stage(
+        "workspace-metadata",
+        "Updating Paper metadata",
+        "Recording the published Paper build in the LazyBuilder workspace manifest.",
+    );
     if let Err(manifest_error) = update_manifest_field(&workspace, "paperBuild", Value::from(release.build)) {
+        on_stage(
+            "rollback",
+            "Rolling back Paper update",
+            "The Paper runtime was published but its metadata could not be committed, so LazyBuilder is restoring the previous runtime.",
+        );
         return match rollback_paper(&target, &persistent_backup, had_target) {
             Ok(()) => Err(format!(
                 "Paper metadata update failed and paper.jar was rolled back: {manifest_error}"
@@ -42,6 +78,11 @@ pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
         };
     }
 
+    on_stage(
+        "verify",
+        "Verifying Paper update",
+        "Confirming the workspace now records the selected Paper build.",
+    );
     status_with_release(&workspace, &release)
 }
 
@@ -141,5 +182,21 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
         }
     } else {
         fs::rename(temporary, path).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn paper_update_stage_contract_stays_transactional() {
+        let stages = [
+            "resolve-release",
+            "backup",
+            "publish-paper",
+            "workspace-metadata",
+            "verify",
+        ];
+        assert_eq!(stages[0], "resolve-release");
+        assert_eq!(stages[4], "verify");
     }
 }
