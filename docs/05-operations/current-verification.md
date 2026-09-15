@@ -1,19 +1,29 @@
 # Current Verification Authority
 
-This file defines how to determine the current LazyBuilder repository state.
+This file defines how to determine the current LazyBuilder repository state and where each proof layer stops.
 
 ## Source authority
 
 ```text
-Local = active development authority
-main  = stable/release authority
+Local = active development / source authority
+main  = stable / release authority
 ```
 
-Never infer current readiness from an older completion report, commit note, or successful workflow attached to a superseded server/plugin revision.
+Never infer current readiness from an older completion report, commit note, or successful workflow attached to a superseded revision.
+
+## Current phase
+
+The current continuation phase is **Local PC validation**.
+
+Canonical execution plan:
+
+[`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Remote CI should now be treated as the prerequisite baseline for target-machine testing, not as a substitute for target-machine proof.
 
 ## Verification layers
 
-LazyBuilder now has two distinct remote verification authorities:
+LazyBuilder has two distinct remote verification authorities:
 
 ```text
 Verify
@@ -31,11 +41,11 @@ Paper Runtime Proof
 → clean restart + registry/filesystem persistence proof
 ```
 
-The separation is intentional. `Verify` follows every repository change. `Paper Runtime Proof` follows only changes that can affect the Paper runtime path, so unrelated Launcher development does not repeatedly invalidate or cancel expensive server proof.
+The separation is intentional. `Verify` follows every repository change. `Paper Runtime Proof` follows changes that can affect the Paper runtime path.
 
 ## Required `Verify` gate
 
-The current `Verify` workflow contains six jobs:
+The current `Verify` workflow contains these canonical gates:
 
 ```text
 consistency          version/repository/scope contracts
@@ -46,13 +56,28 @@ launcher-check       Svelte typecheck/build + Rust check/test on Windows
 tauri-desktop        package tested core/client artifacts into Windows NSIS build
 ```
 
-### Transitional client-suite state
+A Local PC candidate must use an artifact produced from a successful `Verify` run for the exact revision being tested.
 
-The intended V1 product scope is **Map Manager + Utility Manager**. Performance Manager is deferred research source and must not gain new dependencies, runtime ownership, or feature scope without measured client evidence and an explicit product decision.
+## Client-suite state
 
-Current `Local` source still contains Launcher/CI references that may build or bundle Performance Manager while the active Launcher/installer consolidation is in progress. That is a transitional implementation fact, not proof that Performance Manager has been promoted back into required V1 scope.
+Intended V1 product scope:
 
-Do not independently remove, rewire, or expand those Launcher/client-packaging paths while that active consolidation is being worked elsewhere. Resolve the Launcher source and packaging contract together when that work reaches its owner.
+```text
+Required Fabric
+├── Map Manager
+└── Utility Manager
+
+Deferred research source
+└── Performance Manager
+```
+
+Current `Local` Launcher/CI source may still contain transitional references that build or bundle Performance Manager. That is an implementation/packaging fact, not proof that Performance Manager has been promoted to required V1 scope.
+
+During Local PC validation:
+
+- do not expand Performance Manager scope;
+- do not create new dependencies on it;
+- if bundled, confirm only that it does not break startup, packaging, compatibility, or required manager behavior.
 
 ## Dedicated Paper runtime gate
 
@@ -66,7 +91,7 @@ shared/protocol/**
 Paper runtime-proof scripts/workflow
 ```
 
-A green run proves, on a real disposable Paper 1.21.4 server:
+A green run proves, on a disposable Paper 1.21.4 server:
 
 ```text
 Java 21 / Paper boot
@@ -94,9 +119,7 @@ Runtime evidence is uploaded as a short-lived workflow artifact for inspection.
 
 ## Determining `REMOTE_GITHUB` status
 
-Use the current `Local` HEAD and the latest relevant workflows.
-
-For repository-wide/package readiness:
+For repository/package readiness:
 
 ```text
 all required Verify jobs for current Local HEAD succeed
@@ -111,17 +134,15 @@ has a successful Paper Runtime Proof
 → Paper runtime REMOTE_GITHUB green
 ```
 
-A later commit that changes only Launcher/docs and is outside the Paper Runtime Proof path scope does not invalidate already-proven Paper binaries/source. Any later commit touching a scoped Paper path must produce a new successful Paper Runtime Proof before Paper runtime readiness is claimed again.
+A later commit that changes only docs/Launcher and is outside the Paper Runtime Proof path scope does not invalidate already-proven Paper behavior. Any later commit touching a scoped Paper path must produce a new successful Paper Runtime Proof before Paper runtime readiness is claimed again.
 
-## V1 runtime scope
-
-Target product scope:
+## Current target product scope
 
 ```text
 Desktop
 ├── Server Manager
 ├── Plugin Manager
-└── global Client Setup
+└── Client Setup
 
 Paper
 ├── World Manager
@@ -135,13 +156,11 @@ Deferred research source
 └── Performance Manager
 ```
 
-The target scope above is product authority. During the current Launcher/installer consolidation, source inspection remains authoritative for what a particular `Local` commit actually bundles.
-
 Client Setup owns only LazyBuilder-owned client JAR prefixes. Modrinth remains owner of the Minecraft profile, Fabric loader, third-party mods/modpack, and game launching.
 
 ## Launcher simplification lock
 
-The V1 Launcher target intentionally does **not** add:
+The V1 target intentionally does **not** add:
 
 - background CPU-priority governor;
 - automatic Paper gameplay/performance config mutation during Start;
@@ -151,26 +170,30 @@ The V1 Launcher target intentionally does **not** add:
 - Performance/Boost RAM presets;
 - a second Minecraft launcher or general mod manager.
 
-Runtime-ready packages should use bundled, tested same-revision resources as the runtime source for LazyBuilder-owned Paper/client JARs.
+Runtime-ready packages should use bundled, tested same-revision LazyBuilder resources as their runtime source.
 
 ## Remote proof boundary
 
-Remote GitHub now **does** prove real Paper start/stop/restart and the managed-world local-control lifecycle listed above. These items should no longer be described as wholly untested live-Paper behavior.
+Remote GitHub **does prove** the Paper lifecycle cases it explicitly executes, including real Paper boot/restart and managed-world lifecycle/persistence.
 
-Remote GitHub still does not prove:
+Remote GitHub still does **not** prove the following target-machine behavior:
 
-- installed Windows Launcher interaction on a target PC;
-- Java discovery/runtime extraction against arbitrary target-machine installations;
-- real Modrinth profile detection/manual selection on the user's filesystem;
-- transactional client JAR replacement on a representative target profile;
+- installer UX on the actual target Windows PC;
+- installed Launcher first-run behavior;
+- managed Java provisioning against arbitrary target-machine conditions;
+- long-lived real server workspace behavior;
+- Plugin Manager against representative third-party plugins on a persistent server;
+- real Modrinth profile detection/manual selection;
+- transactional LazyBuilder client JAR replacement on a representative user profile;
 - Fabric screens/input inside a real Minecraft client;
-- real-player teleport and Utilities movement behavior;
-- real large-world transfer throughput at production scale;
-- representative cross-edition conversion quality;
-- real client disconnect/reconnect behavior;
-- end-to-end Plugin Manager interaction against a long-lived user server.
+- real-player teleport/navigation and Utilities gameplay behavior;
+- Paper ↔ Fabric disconnect/reconnect behavior in actual use;
+- full-PC reboot recovery;
+- installer update over an existing user installation;
+- production-scale large-world throughput/storage-pressure behavior;
+- representative Java↔Bedrock conversion quality.
 
-Those remain later target-environment or Minecraft-client validation items. Do not replace them with speculative architecture solely to increase a checklist score.
+These are the reasons for the Local PC phase. Do not add speculative architecture to simulate them remotely.
 
 ## Static invariants
 
@@ -185,33 +208,56 @@ Current source should continue to satisfy:
 - packaged core resolution has one runtime authority: bundled tested resources;
 - server start does not rewrite unrelated Paper gameplay/performance settings;
 - no duplicate Launcher/server performance owner is reintroduced;
-- missing server paths remain visible rather than being silently discarded;
+- missing server paths remain visible rather than silently discarded;
 - active workspace is runtime-memory state, not stale persisted UI authority;
 - one world registry, one filesystem authority, one task system, and one conversion-runtime owner remain canonical.
 
-## Later target-environment validation
+## Local PC validation authority
 
-When local/target-machine testing is intentionally started, prioritize only behavior that remote CI cannot faithfully reproduce:
+Once remote proof is green, follow only:
+
+[`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Its required top-level order is:
 
 ```text
-1. install/open packaged LazyBuilder on the target Windows PC
-2. verify Java/runtime discovery and server process behavior on that machine
-3. verify Modrinth profile selection and client JAR replacement
-4. launch Minecraft with the required V1 Fabric managers
-5. verify Fabric UI/input/plugin-message interoperability
-6. verify real-player World teleport/navigation
-7. verify Utilities movement/gameplay interaction
-8. exercise representative large worlds and storage-pressure behavior
-9. exercise representative Java↔Bedrock conversion quality
-10. verify disconnect/reconnect against the real client
+1. installer
+2. Launcher first run
+3. managed Java + Paper server
+4. Plugin Manager
+5. World Manager
+6. Utilities Manager
+7. Modrinth / Client Setup
+8. Map Manager
+9. Utility Manager
+10. Paper ↔ Fabric interoperability
+11. restart/recovery/update matrix
+12. large-world/storage/conversion tests
 ```
 
-Do not repeat server lifecycle cases already covered reliably by the dedicated remote Paper proof unless a target-machine-specific symptom appears.
+Do not repeat remote Paper lifecycle cases merely for checklist duplication. Re-run them locally only as part of the installed product flow or when a target-machine-specific symptom appears.
+
+## Defect policy during Local PC phase
+
+Only reproducible target-machine failures reopen source work.
+
+For each failure:
+
+```text
+record exact Local revision/build-info
+→ record steps/expected/actual/error/log
+→ identify first wrong owner
+→ fix smallest owner
+→ rerun smallest failing proof
+→ rerun affected Local PC phase
+```
+
+Do not batch unrelated Local PC defects into one architectural rewrite.
 
 ## Historical reports
 
-`remote-github-complete.md` and older reports are historical snapshots. Older references to previous client-manager sets, workflow counts, or monolithic client packaging must not override current source plus this authority.
+`remote-github-complete.md` and older reports are historical snapshots. Older references to client-manager sets, workflow counts, or packaging details must not override current source plus this authority.
 
 ## Update policy
 
-Do not hard-code a workflow run number or HEAD SHA as permanent current state. Fix reproducible defects at the smallest wrong owner. Do not reopen removed automation, duplicate architecture, or optional performance systems without measured evidence.
+Do not hard-code a workflow run number or HEAD SHA as permanent current state. Keep this file semantic. The exact revision under Local PC test belongs in the Local PC test record/build-info, not as permanent architecture documentation.
