@@ -81,7 +81,7 @@ Do not solve a map problem by adding a dependency on Performance Manager, Utilit
 
 ### Lane 3 — Plugin-facing UI
 
-Paper plugins normally expose user experience through Launcher surfaces, in-game text/commands, status messages, permissions, and action results rather than a native desktop widget tree.
+Paper plugins normally expose user experience through Launcher surfaces, in-game text/commands, status messages, permissions, action results, and vanilla/client-rendered surfaces rather than a native desktop widget tree.
 
 UI owns:
 
@@ -105,6 +105,8 @@ rollback state
 
 Do not infer plugin health, compatibility, or dependency truth from visual state. Present the canonical result returned by the plugin owner.
 
+For inventory/container, chat/component, title, bossbar, scoreboard, book, player-list/tab, or resource-pack presentation, the Minecraft client is the visual rendering authority.
+
 ## Mandatory triage sequence
 
 Do not start with styling. Run this sequence:
@@ -113,11 +115,13 @@ Do not start with styling. Run this sequence:
 1. Reproduce
 2. Classify
 3. Trace state authority
-4. Find first wrong boundary
-5. Minimize fix scope
-6. Implement
-7. Regression audit
-8. Live proof boundary
+4. Verify uncertain platform behavior when needed
+5. Find first wrong boundary
+6. Minimize fix scope
+7. Implement
+8. Regression audit
+9. Select proof renderer/level
+10. State remaining native/live proof boundary
 ```
 
 ### 1. Reproduce
@@ -189,7 +193,30 @@ screen-local copy survives after canonical entity is deleted
 UI decides permissions/compatibility independently
 ```
 
-### 4. Find the first wrong boundary
+### 4. Verify uncertain platform behavior
+
+Use external research only when the answer materially affects implementation.
+
+Read:
+
+```text
+.agents/skills/lazybuilder-ui/references/ui-knowledge-source-policy.md
+```
+
+Typical triggers:
+
+```text
+Screen/widget lifecycle unclear
+Minecraft/Fabric version/API changed
+Paper/Adventure native surface unclear
+focus/key input behavior uncertain
+new UI type has no established LazyBuilder pattern
+repeated defect suggests current pattern is wrong
+```
+
+Do not browse for ordinary spacing/copy work when repo conventions already answer the question.
+
+### 5. Find the first wrong boundary
 
 Examples:
 
@@ -341,7 +368,7 @@ UI confirmation is not a substitute for backend safety checks.
 
 ## Layout matrix
 
-At minimum audit:
+Audit representative constraints that can disprove the issue, not every theoretical permutation.
 
 ### Launcher Desktop
 
@@ -425,7 +452,7 @@ reuse existing state/result
 → only then consider a new component abstraction
 ```
 
-Do not add a manager, service, cache, event bus, router, persistence layer, background worker, or duplicate screen solely because the current file is large.
+Do not add a manager, service, cache, event bus, router, persistence layer, background worker, duplicate screen, preview implementation, or screenshot service solely because the current file is large.
 
 ## Required regression scan
 
@@ -446,23 +473,52 @@ Server lifecycle error copy fixed
 
 Do not duplicate the same fix blindly. Confirm whether siblings consume the same canonical state and only align presentation where needed.
 
+## Visual proof selection
+
+Read:
+
+```text
+.agents/skills/lazybuilder-ui/references/visual-proof-system.md
+```
+
+Choose proof based on the surface:
+
+```text
+Launcher visual/layout/state issue
+→ real Svelte/CSS Launcher UI Preview artifact
+
+Fabric Screen / map / GUI-scale issue
+→ real Minecraft client + production Screen when automated proof exists
+
+Paper plugin inventory/chat/title/bossbar/book/scoreboard/tab/resource-pack issue
+→ real plugin/server payload + real Minecraft client
+
+MiniMessage/component semantic iteration only
+→ SIMULATED PREVIEW, clearly labeled
+```
+
+A mock HTML reproduction of Minecraft UI is not native proof.
+
+Every visual proof should be tied to the exact commit/scenario and record viewport/GUI scale where relevant.
+
 ## Proof ladder
 
 Use the cheapest proof capable of falsifying the issue:
 
 ```text
-static source / typecheck
-→ unit or source-contract test
-→ component/frontend build
-→ packaged artifact verification
-→ local desktop interaction
-→ Minecraft client runtime interaction
-→ cross-component integration proof
+L0 static source inspection
+→ L1 unit/source-contract/typecheck/build
+→ L2 deterministic simulated preview when useful
+→ L3 real Launcher Svelte visual proof
+→ L4 real Minecraft-rendered visual proof
+→ L5 Local-PC native interaction/integration proof
 ```
 
-Compilation proves syntax/contracts, not interaction quality.
+Compilation proves syntax/contracts, not interaction quality. A simulated preview proves only what its renderer actually models.
 
-For timing, focus, visual, GUI-scale, native-dialog, map-rendering, or animation issues, require live interaction proof before declaring the original user-visible defect fully resolved.
+For Launcher visual/layout/state presentation, inspect Launcher UI Preview before Local-PC acceptance when practical. For Fabric or plugin-facing Minecraft surfaces, use the real Minecraft renderer when that proof path exists. Local PC remains required for environment-specific timing, GPU/driver/frame pacing, mouse feel, OS DPI/windowing, native dialogs, installed packaging, real network conditions, and other behavior not captured by deterministic proof.
+
+Never claim a higher proof level than observed.
 
 ## Completion report
 
@@ -472,9 +528,11 @@ A UI issue is complete only when the report can state:
 reproduced cause
 primary owner
 smallest changed boundary
+platform/source research used, if any
 states/inputs audited
 sibling surfaces checked
 no duplicate source of truth introduced
 build/CI proof status
-remaining local/live proof boundary, if any
+visual proof renderer + commit/scenario, when applicable
+remaining Local-PC/native proof boundary, if any
 ```
