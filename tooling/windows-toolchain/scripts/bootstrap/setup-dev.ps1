@@ -12,6 +12,10 @@ $CheckScript = Join-Path $PSScriptRoot 'check-tools.ps1'
 $ToolchainPath = Join-Path $RepoRoot 'toolchain.json'
 $T = Get-Content $ToolchainPath -Raw | ConvertFrom-Json
 
+if ([int]$T.schemaVersion -ne 2) {
+    throw "Unsupported toolchain.json schemaVersion '$($T.schemaVersion)'. Expected schemaVersion 2."
+}
+
 function Has-Command([string]$Name) {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
@@ -25,6 +29,35 @@ function Invoke-WingetInstall([string]$Id, [string[]]$ExtraArgs = @()) {
     if ($LASTEXITCODE -ne 0) {
         throw "winget failed for $Id with exit code $LASTEXITCODE."
     }
+}
+
+function Get-WingetVersionForMajor([string]$Id, [int]$Major) {
+    if (-not (Has-Command 'winget')) { return $null }
+    try {
+        $lines = @(& winget show --id $Id --exact --source winget --versions --accept-source-agreements 2>$null | ForEach-Object { [string]$_ })
+        $candidates = @()
+        foreach ($line in $lines) {
+            $value = $line.Trim()
+            if ($value -match "^$Major\.(?<minor>\d+)\.(?<patch>\d+)(?:\.(?<build>\d+))?$") {
+                $parts = $value.Split('.') | ForEach-Object { [int]$_ }
+                while ($parts.Count -lt 4) { $parts += 0 }
+                $candidates += [pscustomobject]@{
+                    Version = $value
+                    SortKey = (($parts[0] * 1000000000L) + ($parts[1] * 1000000L) + ($parts[2] * 1000L) + $parts[3])
+                }
+            }
+        }
+        return ($candidates | Sort-Object SortKey -Descending | Select-Object -First 1).Version
+    }
+    catch { return $null }
+}
+
+function Invoke-WingetMajorInstall([string]$Id, [int]$Major) {
+    $version = Get-WingetVersionForMajor -Id $Id -Major $Major
+    if (-not $version) {
+        throw "winget does not expose an installable $Id version in required major $Major. Install a supported $Major.x release manually, then rerun DEV.cmd check."
+    }
+    Invoke-WingetInstall $Id @('--version', $version)
 }
 
 function Get-NodeMajor {
@@ -43,17 +76,25 @@ function Get-JavaMajor {
     return [int]$m.Groups['major'].Value
 }
 
+function Get-VsWherePath {
+    $Candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    return ($Candidates | Select-Object -First 1)
+}
+
 function Test-Msvc {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path $vswhere)) { return $false }
+    $vswhere = Get-VsWherePath
+    if (-not $vswhere) { return $false }
     $installation = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Workload.VCTools -property installationPath 2>$null | Select-Object -First 1)
     return -not [string]::IsNullOrWhiteSpace([string]$installation)
 }
 
 Write-Host ''
 Write-Host 'LazyBuilder Developer Bootstrap' -ForegroundColor Cyan
-Write-Host 'Canonical path: fresh clone -> SETUP-DEV.cmd -> CHECK-DEV.cmd -> BUILD-LAUNCHER.cmd'
-Write-Host 'Policy: pinned majors/exact toolchains; repository wrappers for Maven/Gradle; no mandatory Python.'
+Write-Host 'Canonical path: DEV.cmd setup -> DEV.cmd check -> development'
+Write-Host 'Policy: pinned majors/exact toolchains; repository wrappers for Maven/Gradle; no mandatory Python for developer builds.'
 Write-Host ''
 
 & $CheckScript
@@ -62,16 +103,19 @@ if ($checkCode -eq 0) { exit 0 }
 if ($CheckOnly -or $NoInstall) { exit $checkCode }
 
 Write-Host ''
-Write-Host 'Environment is incomplete. Attempting deterministic repair of developer foundations.' -ForegroundColor Yellow
+Write-Host 'Environment is incomplete. Attempting deterministic repair of supported developer foundations.' -ForegroundColor Yellow
 Write-Host 'Only missing or policy-mismatched foundations are touched.' -ForegroundColor DarkGray
 Write-Host ''
 
 if ((Get-JavaMajor) -ne [int]$T.java.major) {
+    if ([int]$T.java.major -ne 21) {
+        throw "Automatic Java bootstrap is not defined for policy major $($T.java.major). Update the bootstrap owner deliberately before changing the Java major."
+    }
     Invoke-WingetInstall 'EclipseAdoptium.Temurin.21.JDK'
 }
 
 if ((Get-NodeMajor) -ne [int]$T.node.major) {
-    Invoke-WingetInstall 'OpenJS.NodeJS.LTS'
+    Invoke-WingetMajorInstall 'OpenJS.NodeJS.LTS' ([int]$T.node.major)
 }
 
 if (-not (Has-Command 'git')) {
@@ -103,11 +147,11 @@ $finalCode = $LASTEXITCODE
 if ($finalCode -ne 0) {
     Write-Host ''
     Write-Host 'Bootstrap installed the supported foundations, but this shell still does not satisfy policy.' -ForegroundColor Yellow
-    Write-Host 'Close this window, open a new terminal, and run CHECK-DEV.cmd. If MSVC was just installed, Windows may also require a sign-out/restart.'
+    Write-Host 'Close this window, open a new terminal, and run DEV.cmd check. If MSVC was just installed, Windows may also require a sign-out/restart.'
     exit $finalCode
 }
 
 Write-Host ''
 Write-Host 'Developer environment is ready.' -ForegroundColor Green
-Write-Host 'Next: BUILD-LAUNCHER.cmd' -ForegroundColor Cyan
+Write-Host 'Next: DEV.cmd build when integrated package verification is needed.' -ForegroundColor Cyan
 exit 0
