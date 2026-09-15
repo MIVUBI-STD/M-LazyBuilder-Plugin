@@ -44,7 +44,7 @@ update
 finalize-local
 ```
 
-Legacy root shortcuts may remain only as thin aliases to `DEV.cmd`. They must not contain independent operational logic.
+`DEV.cmd` is the only root-level developer operation entrypoint. Historical setup/check/build/test/update aliases were removed after consolidation. New developer operations should normally become subcommands of `dev.ps1`, not new root scripts.
 
 ## Operational layers
 
@@ -131,6 +131,8 @@ pull request        → full CI
 push to main        → full CI
 ```
 
+Dedicated Launcher/Paper/visual workflows may exist for manual or pull-request evidence, but they must not become parallel repository-readiness authorities.
+
 CI must build from repository source/lockfiles and must not trust developer-machine outputs.
 
 The workflow may produce exact-commit artifacts and provenance. A green unrelated job is not proof for a changed behavior outside that job's boundary.
@@ -178,12 +180,20 @@ verification claims actually performed
 
 Do not label an artifact `verified`, `runtime-ready`, or `release` unless the matching proof has actually run.
 
+Canonical Local-channel distributables belong under:
+
+```text
+dist/Local/
+```
+
+Do not create a second Local package directory or alternate installer naming convention for the same channel. Compile-only diagnostic outputs, if retained, must be clearly separated from runtime-ready acceptance artifacts and must not masquerade as a valid Local candidate.
+
 ## Output and state locations
 
 Keep generated state out of source ownership:
 
 ```text
-dist/              distributable/build outputs
+dist/Local/        canonical Local-channel distributable output
 .runtime-proof/    disposable runtime proof state and logs
 build/target dirs  language-native intermediate outputs
 LocalAppData       reusable downloaded build-tool caches
@@ -226,7 +236,7 @@ A new operational system is justified only when the current canonical owner cann
 
 ```text
 root
-├── DEV.cmd                         canonical human/terminal entry shim
+├── DEV.cmd                         sole developer-operation entry shim
 ├── toolchain.json                  toolchain policy authority
 ├── tooling/windows-toolchain/      Windows developer/distribution control plane
 ├── scripts/                        repository/runtime proof utilities
