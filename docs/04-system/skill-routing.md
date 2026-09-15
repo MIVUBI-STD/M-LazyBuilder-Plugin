@@ -99,11 +99,16 @@ Desktop branch
 
 Fabric branch
 → in-game UI/keybinds
-→ client presentation state
-→ Xaero map/location integration
+→ fullscreen LazyBuilder map/world-navigation presentation
+→ World Manager / Import-Export presentation
+→ client-only navigation preferences and presentation state
 ```
 
 Load only the branch relevant to the current task. UI never becomes runtime, plugin, world-state, protocol-contract, or security authority.
+
+`lazybuilder-ui` also owns the UI quality gate for its surfaces: interaction predictability, state feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, and presentation-performance checks. These quality rules must not create a second semantic owner, cache, manager, workflow, or backend rule.
+
+Xaero may be used only as a familiarity/behavior reference for map interaction. LazyBuilder owns its own map implementation; do not create a Xaero runtime dependency, adapter, copied asset/source path, or second map authority merely to imitate it.
 
 ### `lazybuilder-protocol`
 
@@ -227,6 +232,7 @@ Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership actually changed?
 Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, or compatibility layer unnecessarily?
 Can an existing path or deletion satisfy the same accepted result?
+For UI work: were flow, pending/error states, back/close behavior, responsive/GUI-scale behavior, and input races audited?
 What is the cheapest proof that can falsify the result?
 ```
 
