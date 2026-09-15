@@ -88,11 +88,14 @@ jobs:
         run: gradle -p mods/map-manager --no-daemon build
       - name: Compile Utility Manager
         run: gradle -p mods/utility-manager --no-daemon build
+      - name: Compile Performance Manager
+        run: gradle -p mods/performance-manager --no-daemon build
       - name: Stage required client mods
         run: |
           mkdir -p .artifacts/client-mods
           cp mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
           cp mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
+          cp mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar .artifacts/client-mods/
       - name: Upload tested client mods
         uses: actions/upload-artifact@v4
         with:
