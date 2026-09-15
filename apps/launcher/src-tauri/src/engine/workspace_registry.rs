@@ -193,19 +193,58 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
     if !path.is_dir() {
         return Err(format!("Saved server workspace is currently unavailable: {}. Reconnect or restore that location and try again.", path.display()));
     }
+    let canonical = path.canonicalize().map_err(|error| error.to_string())?;
+    let manifest = read_manifest(&canonical)?.ok_or_else(|| "Saved server workspace has no LazyBuilder manifest".to_string())?;
+    validate_manifest(&manifest)?;
+    if manifest.workspace_id != entry.id {
+        return Err("Saved server workspace identity does not match its manifest. Use Locate only with the original workspace identity.".into());
+    }
     entry.last_opened_unix_seconds = now_unix_seconds();
     let result = entry.clone();
     save_registry(&registry)?;
-    let canonical = path.canonicalize().map_err(|error| error.to_string())?;
-    if let Some(mut manifest) = read_manifest(&canonical)? {
-        manifest.last_opened_unix_seconds = now_unix_seconds();
-        write_manifest(&canonical, manifest)?;
-    }
+    let mut updated_manifest = manifest;
+    updated_manifest.last_opened_unix_seconds = now_unix_seconds();
+    write_manifest(&canonical, updated_manifest)?;
     set_active_memory(Some(canonical))?;
     Ok(result)
 }
 
 pub fn deactivate() -> Result<(), String> { set_active_memory(None) }
+
+pub fn relocate(id: &str, selected_root: &Path) -> Result<WorkspaceEntry, String> {
+    let previous = get(id)?;
+    let selected_metadata = fs::symlink_metadata(selected_root)
+        .map_err(|error| format!("Could not inspect selected server location: {error}"))?;
+    if is_unsafe_link_or_reparse(selected_root, &selected_metadata.file_type())? {
+        return Err("LazyBuilder refused a symbolic link or Windows reparse point as a server location".into());
+    }
+    let canonical = selected_root.canonicalize()
+        .map_err(|error| format!("Could not resolve selected server location: {error}"))?;
+    if !canonical.is_dir() { return Err("Selected server location is not a directory".into()); }
+
+    let manifest = read_manifest(&canonical)?
+        .ok_or_else(|| "Selected folder is not the missing LazyBuilder server: workspace.json is missing".to_string())?;
+    validate_manifest(&manifest)?;
+    if manifest.workspace_id != id {
+        return Err("Selected folder belongs to a different LazyBuilder server. Use Add existing for that server instead.".into());
+    }
+
+    let canonical_text = canonical.display().to_string();
+    let mut registry = load_registry()?;
+    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) {
+        return Err("That folder is already registered as another LazyBuilder server".into());
+    }
+    let target = registry.servers.iter_mut().find(|entry| entry.id == id)
+        .ok_or_else(|| "Saved server workspace was not found".to_string())?;
+    let was_active = active_workspace_memory()?.is_some_and(|active| active.display().to_string().eq_ignore_ascii_case(&previous.path));
+    target.path = canonical_text;
+    target.name = manifest.name.clone();
+    target.last_opened_unix_seconds = now_unix_seconds();
+    let result = target.clone();
+    save_registry(&registry)?;
+    if was_active { set_active_memory(Some(canonical))?; }
+    Ok(result)
+}
 
 pub fn duplicate_estimate(id: &str, destination_parent: &Path) -> Result<WorkspaceDuplicateEstimate, String> {
     let entry = get(id)?;
@@ -317,12 +356,7 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
         return Err("LazyBuilder refused an unsafe deletion staging path".into());
     }
 
-    add_pending_deletion(PendingDeletion {
-        workspace_id: entry.id.clone(),
-        original_path: root.display().to_string(),
-        staging_path: staging.display().to_string(),
-    })?;
-
+    add_pending_deletion(PendingDeletion { workspace_id: entry.id.clone(), original_path: root.display().to_string(), staging_path: staging.display().to_string() })?;
     if let Err(error) = fs::rename(&root, &staging) {
         let _ = clear_pending_deletion(&entry.id, &staging);
         return Err(format!("Could not stage server for deletion: {error}"));
@@ -332,38 +366,24 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
     registry.servers.retain(|candidate| candidate.id != id);
     if let Err(error) = save_registry(&registry) {
         match fs::rename(&staging, &root) {
-            Ok(()) => {
-                let _ = clear_pending_deletion(&entry.id, &staging);
-                return Err(format!("Could not update server library during deletion: {error}"));
-            }
-            Err(rollback_error) => {
-                return Err(format!(
-                    "Could not update server library during deletion: {error}. Rollback also failed: {rollback_error}. Recovery intent was preserved for the next LazyBuilder start."
-                ));
-            }
+            Ok(()) => { let _ = clear_pending_deletion(&entry.id, &staging); return Err(format!("Could not update server library during deletion: {error}")); }
+            Err(rollback_error) => return Err(format!("Could not update server library during deletion: {error}. Rollback also failed: {rollback_error}. Recovery intent was preserved for the next LazyBuilder start.")),
         }
     }
-
     if was_active { set_active_memory(None)?; }
-
     match fs::remove_dir_all(&staging) {
         Ok(()) => clear_pending_deletion(&entry.id, &staging),
-        Err(error) => Err(format!(
-            "The server was removed from the library, but final deletion cleanup is pending and will be retried on the next LazyBuilder start: {error}"
-        )),
+        Err(error) => Err(format!("The server was removed from the library, but final deletion cleanup is pending and will be retried on the next LazyBuilder start: {error}")),
     }
 }
 
 pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
     let root = active_workspace()?;
     let workspace_created = manifest_path(&root).is_file();
-    let config_ready = root.join("tools").join("lazybuilder").join("config").is_dir()
-        && root.join("server").is_dir()
-        && root.join("server").join("plugins").is_dir();
+    let config_ready = root.join("tools").join("lazybuilder").join("config").is_dir() && root.join("server").is_dir() && root.join("server").join("plugins").is_dir();
     let paper_ready = root.join("server").join("paper.jar").is_file();
     let plugins = root.join("server").join("plugins");
-    let core_modules_ready = contains_plugin_prefix(&plugins, "World-Manager-")?
-        && contains_plugin_prefix(&plugins, "Utilities-Manager-")?;
+    let core_modules_ready = contains_plugin_prefix(&plugins, "World-Manager-")? && contains_plugin_prefix(&plugins, "Utilities-Manager-")?;
     let eula_accepted = read_eula(&root)?;
     let java_ready = java_runtime::managed_java_ready();
     let ready = workspace_created && java_ready && paper_ready && core_modules_ready && config_ready && eula_accepted;
@@ -374,62 +394,54 @@ pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
         else if !config_ready { "Prepare server configuration" }
         else if !eula_accepted { "Accept the Minecraft EULA" }
         else { "Ready" };
-    Ok(ProvisioningStatus {
-        workspace_created, java_ready, paper_ready, core_modules_ready, config_ready,
-        eula_accepted, ready, next_step: next_step.into(),
-    })
+    Ok(ProvisioningStatus { workspace_created, java_ready, paper_ready, core_modules_ready, config_ready, eula_accepted, ready, next_step: next_step.into() })
 }
 
 pub fn accept_eula() -> Result<(), String> {
     let root = active_workspace()?;
-    fs::write(root.join("server").join("eula.txt"), "# Accepted through LazyBuilder after explicit user confirmation\neula=true\n")
-        .map_err(|error| error.to_string())
+    fs::write(root.join("server").join("eula.txt"), "# Accepted through LazyBuilder after explicit user confirmation\neula=true\n").map_err(|error| error.to_string())
 }
 
 fn duplicate_destination_parent(source: &Path, destination_parent: &Path) -> Result<PathBuf, String> {
-    let parent = destination_parent.canonicalize()
-        .map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
+    let parent = destination_parent.canonicalize().map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
     if !parent.is_dir() { return Err("Duplicate destination is not a directory".into()); }
-    if parent == source || parent.starts_with(source) {
-        return Err("Choose a duplicate destination outside the source server workspace".into());
-    }
+    if parent == source || parent.starts_with(source) { return Err("Choose a duplicate destination outside the source server workspace".into()); }
     Ok(parent)
 }
 
 fn validated_registered_root(entry: &WorkspaceEntry) -> Result<PathBuf, String> {
-    let root = PathBuf::from(&entry.path)
-        .canonicalize()
-        .map_err(|error| format!("Could not resolve registered server workspace: {error}"))?;
+    let root = PathBuf::from(&entry.path).canonicalize().map_err(|error| format!("Could not resolve registered server workspace: {error}"))?;
     if !root.is_dir() { return Err("Registered server workspace is not a directory".into()); }
-    let manifest = read_manifest(&root)?
-        .ok_or_else(|| "Registered server workspace has no LazyBuilder manifest".to_string())?;
+    let manifest = read_manifest(&root)?.ok_or_else(|| "Registered server workspace has no LazyBuilder manifest".to_string())?;
     validate_manifest(&manifest)?;
-    if manifest.workspace_id != entry.id {
-        return Err("Registered server identity does not match its workspace manifest".into());
-    }
+    if manifest.workspace_id != entry.id { return Err("Registered server identity does not match its workspace manifest".into()); }
     Ok(root)
+}
+
+fn registered_manifest(root: &Path) -> Result<WorkspaceManifest, String> {
+    let manifest = read_manifest(root)?.ok_or_else(|| "LazyBuilder workspace manifest is missing".to_string())?;
+    validate_manifest(&manifest)?;
+    Ok(manifest)
 }
 
 fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     let canonical = root.canonicalize().map_err(|error| error.to_string())?;
     let canonical_text = canonical.display().to_string();
-    let id = workspace_id(&canonical_text);
+    let manifest = registered_manifest(&canonical)?;
+    let id = manifest.workspace_id;
     let now = now_unix_seconds();
     let mut registry = load_registry()?;
+    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) {
+        return Err("This workspace path is already registered as another LazyBuilder server".into());
+    }
     if let Some(existing) = registry.servers.iter_mut().find(|entry| entry.id == id) {
         existing.name = name.to_string();
         existing.path = canonical_text.clone();
         existing.last_opened_unix_seconds = now;
     } else {
-        registry.servers.push(WorkspaceEntry {
-            id: id.clone(),
-            name: name.to_string(),
-            path: canonical_text,
-            last_opened_unix_seconds: now,
-        });
+        registry.servers.push(WorkspaceEntry { id: id.clone(), name: name.to_string(), path: canonical_text, last_opened_unix_seconds: now });
     }
-    let result = registry.servers.iter().find(|entry| entry.id == id).cloned()
-        .ok_or_else(|| "Registered server workspace could not be recovered".to_string())?;
+    let result = registry.servers.iter().find(|entry| entry.id == id).cloned().ok_or_else(|| "Registered server workspace could not be recovered".to_string())?;
     save_registry(&registry)?;
     set_active_memory(Some(canonical))?;
     Ok(result)
@@ -438,7 +450,7 @@ fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, Stri
 fn register_only(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     let canonical = root.canonicalize().map_err(|error| error.to_string())?;
     let canonical_text = canonical.display().to_string();
-    let id = workspace_id(&canonical_text);
+    let id = registered_manifest(&canonical)?.workspace_id;
     let now = now_unix_seconds();
     let mut registry = load_registry()?;
     if registry.servers.iter().any(|entry| entry.id == id || entry.path.eq_ignore_ascii_case(&canonical_text)) {
@@ -451,29 +463,17 @@ fn register_only(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
 }
 
 fn active_workspace_memory() -> Result<Option<PathBuf>, String> {
-    ACTIVE_WORKSPACE
-        .get_or_init(|| RwLock::new(None))
-        .read()
-        .map_err(|_| "workspace state lock poisoned".to_string())
-        .map(|guard| guard.clone())
+    ACTIVE_WORKSPACE.get_or_init(|| RwLock::new(None)).read().map_err(|_| "workspace state lock poisoned".to_string()).map(|guard| guard.clone())
 }
 
 fn set_active_memory(value: Option<PathBuf>) -> Result<(), String> {
-    *ACTIVE_WORKSPACE
-        .get_or_init(|| RwLock::new(None))
-        .write()
-        .map_err(|_| "workspace state lock poisoned".to_string())? = value;
+    *ACTIVE_WORKSPACE.get_or_init(|| RwLock::new(None)).write().map_err(|_| "workspace state lock poisoned".to_string())? = value;
     Ok(())
 }
 
 fn app_data_root() -> Result<PathBuf, String> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("APPDATA").map(PathBuf::from))
-        .map(|path| path.join("LazyBuilder"))
-        .ok_or_else(|| "Windows application data directory is unavailable".to_string())
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).or_else(|| std::env::var_os("APPDATA").map(PathBuf::from)).map(|path| path.join("LazyBuilder")).ok_or_else(|| "Windows application data directory is unavailable".to_string())
 }
-
 fn registry_path() -> Result<PathBuf, String> { Ok(app_data_root()?.join("workspaces.json")) }
 fn pending_deletions_path() -> Result<PathBuf, String> { Ok(app_data_root()?.join("pending-deletions.json")) }
 
@@ -482,9 +482,7 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     if !path.is_file() { return Ok(WorkspaceRegistryFile::default()); }
     let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
     let mut registry: WorkspaceRegistryFile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    if registry.schema_version != REGISTRY_SCHEMA_VERSION {
-        return Err("Workspace registry schema is newer or unsupported".into());
-    }
+    if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
     registry.servers.retain(|entry| !entry.path.trim().is_empty());
     Ok(registry)
 }
@@ -507,14 +505,10 @@ fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
 
 fn save_pending_deletions(entries: &[PendingDeletion]) -> Result<(), String> {
     let path = pending_deletions_path()?;
-    if entries.is_empty() {
-        if path.exists() { fs::remove_file(path).map_err(|error| error.to_string())?; }
-        return Ok(());
-    }
+    if entries.is_empty() { if path.exists() { fs::remove_file(path).map_err(|error| error.to_string())?; } return Ok(()); }
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
     let incoming = path.with_extension("json.incoming");
-    fs::write(&incoming, serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
+    fs::write(&incoming, serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     replace_json_file(&incoming, &path)
 }
 
@@ -525,14 +519,9 @@ fn replace_json_file(source: &Path, destination: &Path) -> Result<(), String> {
         fs::rename(destination, &backup).map_err(|error| error.to_string())?;
         match fs::rename(source, destination) {
             Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
-            Err(error) => {
-                let _ = fs::rename(&backup, destination);
-                Err(error.to_string())
-            }
+            Err(error) => { let _ = fs::rename(&backup, destination); Err(error.to_string()) }
         }
-    } else {
-        fs::rename(source, destination).map_err(|error| error.to_string())
-    }
+    } else { fs::rename(source, destination).map_err(|error| error.to_string()) }
 }
 
 fn add_pending_deletion(entry: PendingDeletion) -> Result<(), String> {
@@ -541,7 +530,6 @@ fn add_pending_deletion(entry: PendingDeletion) -> Result<(), String> {
     entries.push(entry);
     save_pending_deletions(&entries)
 }
-
 fn clear_pending_deletion(workspace_id: &str, staging: &Path) -> Result<(), String> {
     let mut entries = load_pending_deletions()?;
     entries.retain(|candidate| !(candidate.workspace_id == workspace_id && Path::new(&candidate.staging_path) == staging));
@@ -554,29 +542,20 @@ fn recover_pending_deletions() -> Result<(), String> {
     let mut registry = load_registry()?;
     let mut remaining = Vec::new();
     let mut registry_changed = false;
-
     for entry in pending {
         let original = PathBuf::from(&entry.original_path);
         let staging = PathBuf::from(&entry.staging_path);
-        if !is_safe_deletion_staging(&original, &staging) {
-            remaining.push(entry);
-            continue;
-        }
+        if !is_safe_deletion_staging(&original, &staging) { remaining.push(entry); continue; }
         if staging.exists() {
-            if fs::remove_dir_all(&staging).is_err() {
-                remaining.push(entry);
-                continue;
-            }
+            if fs::remove_dir_all(&staging).is_err() { remaining.push(entry); continue; }
             registry.servers.retain(|candidate| candidate.id != entry.workspace_id);
             registry_changed = true;
         } else if original.exists() {
-            // Intent was persisted but the atomic rename never happened; preserve original.
         } else {
             registry.servers.retain(|candidate| candidate.id != entry.workspace_id);
             registry_changed = true;
         }
     }
-
     if registry_changed { save_registry(&registry)?; }
     save_pending_deletions(&remaining)
 }
@@ -592,28 +571,11 @@ fn is_safe_deletion_staging(original: &Path, staging: &Path) -> bool {
 }
 
 fn provision_layout(root: &Path) -> Result<(), String> {
-    let directories = [
-        root.join("server"),
-        root.join("server").join("plugins"),
-        root.join("world-system").join("worlds"),
-        root.join("world-system").join("imports"),
-        root.join("world-system").join("exports"),
-        root.join("world-system").join("backups"),
-        root.join("world-system").join("work"),
-        root.join("tools").join("lazybuilder").join("config"),
-        root.join("tools").join("lazybuilder").join("cache"),
-        root.join("tools").join("lazybuilder").join("logs"),
-        root.join("tools").join("lazybuilder").join("disabled-plugins"),
-        root.join("tools").join("lazybuilder").join("plugin-backups"),
-    ];
+    let directories = [root.join("server"), root.join("server").join("plugins"), root.join("world-system").join("worlds"), root.join("world-system").join("imports"), root.join("world-system").join("exports"), root.join("world-system").join("backups"), root.join("world-system").join("work"), root.join("tools").join("lazybuilder").join("config"), root.join("tools").join("lazybuilder").join("cache"), root.join("tools").join("lazybuilder").join("logs"), root.join("tools").join("lazybuilder").join("disabled-plugins"), root.join("tools").join("lazybuilder").join("plugin-backups")];
     for directory in directories { fs::create_dir_all(directory).map_err(|error| error.to_string())?; }
     Ok(())
 }
-
-fn manifest_path(root: &Path) -> PathBuf {
-    root.join("tools").join("lazybuilder").join("config").join("workspace.json")
-}
-
+fn manifest_path(root: &Path) -> PathBuf { root.join("tools").join("lazybuilder").join("config").join("workspace.json") }
 fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String> {
     let path = manifest_path(root);
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
@@ -622,33 +584,19 @@ fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
     replace_json_file(&temporary, &path)
 }
-
 fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
     let path = manifest_path(root);
     if !path.is_file() { return Ok(None); }
     let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
     Ok(Some(serde_json::from_str(&text).map_err(|error| error.to_string())?))
 }
-
 fn validate_manifest(manifest: &WorkspaceManifest) -> Result<(), String> {
-    if manifest.schema_version != WORKSPACE_SCHEMA_VERSION {
-        return Err("Workspace manifest schema is newer or unsupported".into());
-    }
-    if manifest.minecraft_version != MINECRAFT_VERSION {
-        return Err(format!("This LazyBuilder build currently supports Minecraft {MINECRAFT_VERSION}; workspace targets {}.", manifest.minecraft_version));
-    }
-    if !manifest.server_platform.eq_ignore_ascii_case(SERVER_PLATFORM) {
-        return Err("This LazyBuilder build currently supports Paper workspaces only".into());
-    }
+    if manifest.schema_version != WORKSPACE_SCHEMA_VERSION { return Err("Workspace manifest schema is newer or unsupported".into()); }
+    if manifest.minecraft_version != MINECRAFT_VERSION { return Err(format!("This LazyBuilder build currently supports Minecraft {MINECRAFT_VERSION}; workspace targets {}.", manifest.minecraft_version)); }
+    if !manifest.server_platform.eq_ignore_ascii_case(SERVER_PLATFORM) { return Err("This LazyBuilder build currently supports Paper workspaces only".into()); }
     Ok(())
 }
-
-fn looks_like_legacy_lazybuilder_workspace(root: &Path) -> bool {
-    root.join("server").is_dir()
-        && root.join("world-system").is_dir()
-        && root.join("tools").join("lazybuilder").is_dir()
-}
-
+fn looks_like_legacy_lazybuilder_workspace(root: &Path) -> bool { root.join("server").is_dir() && root.join("world-system").is_dir() && root.join("tools").join("lazybuilder").is_dir() }
 fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String> {
     if !directory.is_dir() { return Ok(false); }
     for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
@@ -659,7 +607,6 @@ fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String
     }
     Ok(false)
 }
-
 fn read_eula(root: &Path) -> Result<bool, String> {
     let path = root.join("server").join("eula.txt");
     if !path.is_file() { return Ok(false); }
@@ -674,20 +621,13 @@ fn copy_directory_filtered(source: &Path, destination: &Path, relative: &Path) -
         let name = entry.file_name();
         let rel = relative.join(&name);
         if should_skip_duplicate_path(&rel) { continue; }
-        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? {
-            return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display()));
-        }
+        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? { return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display())); }
         let target = destination.join(&name);
-        if file_type.is_dir() {
-            fs::create_dir(&target).map_err(|error| format!("Could not create {}: {error}", target.display()))?;
-            copy_directory_filtered(&entry.path(), &target, &rel)?;
-        } else if file_type.is_file() {
-            fs::copy(entry.path(), &target).map_err(|error| format!("Could not copy {}: {error}", entry.path().display()))?;
-        }
+        if file_type.is_dir() { fs::create_dir(&target).map_err(|error| format!("Could not create {}: {error}", target.display()))?; copy_directory_filtered(&entry.path(), &target, &rel)?; }
+        else if file_type.is_file() { fs::copy(entry.path(), &target).map_err(|error| format!("Could not copy {}: {error}", entry.path().display()))?; }
     }
     Ok(())
 }
-
 fn directory_size_filtered(root: &Path, relative: &Path) -> Result<u64, String> {
     let mut total = 0u64;
     for entry in fs::read_dir(root).map_err(|error| format!("Could not inspect {}: {error}", root.display()))? {
@@ -695,67 +635,37 @@ fn directory_size_filtered(root: &Path, relative: &Path) -> Result<u64, String> 
         let file_type = entry.file_type().map_err(|error| error.to_string())?;
         let rel = relative.join(entry.file_name());
         if should_skip_duplicate_path(&rel) { continue; }
-        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? {
-            return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display()));
-        }
-        if file_type.is_dir() {
-            total = total.saturating_add(directory_size_filtered(&entry.path(), &rel)?);
-        } else if file_type.is_file() {
-            total = total.saturating_add(entry.metadata().map_err(|error| error.to_string())?.len());
-        }
+        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? { return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display())); }
+        if file_type.is_dir() { total = total.saturating_add(directory_size_filtered(&entry.path(), &rel)?); }
+        else if file_type.is_file() { total = total.saturating_add(entry.metadata().map_err(|error| error.to_string())?.len()); }
     }
     Ok(total)
 }
-
 fn is_unsafe_link_or_reparse(path: &Path, file_type: &fs::FileType) -> Result<bool, String> {
     if file_type.is_symlink() { return Ok(true); }
-    #[cfg(windows)]
-    {
-        let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
-        return Ok(metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = path;
-        Ok(false)
-    }
+    #[cfg(windows)] { let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?; return Ok(metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0); }
+    #[cfg(not(windows))] { let _ = path; Ok(false) }
 }
-
 fn should_skip_duplicate_path(relative: &Path) -> bool {
     let normalized = relative.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
     if normalized == "world-system/work" || normalized.starts_with("world-system/work/") { return true; }
     if normalized == "tools/lazybuilder/cache" || normalized.starts_with("tools/lazybuilder/cache/") { return true; }
     if normalized == "tools/lazybuilder/logs" || normalized.starts_with("tools/lazybuilder/logs/") { return true; }
     let file_name = relative.file_name().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
-    file_name.ends_with(".tmp")
-        || file_name.ends_with(".incoming")
-        || file_name.ends_with(".lock")
-        || file_name == "server-process.json"
-        || file_name == "server-start.lock"
+    file_name.ends_with(".tmp") || file_name.ends_with(".incoming") || file_name.ends_with(".lock") || file_name == "server-process.json" || file_name == "server-start.lock"
 }
-
 fn available_space_for(path: &Path) -> Option<u64> {
     let disks = Disks::new_with_refreshed_list();
-    disks
-        .list()
-        .iter()
-        .filter(|disk| path.starts_with(disk.mount_point()))
-        .max_by_key(|disk| disk.mount_point().as_os_str().len())
-        .map(|disk| disk.available_space())
+    disks.list().iter().filter(|disk| path.starts_with(disk.mount_point())).max_by_key(|disk| disk.mount_point().as_os_str().len()).map(|disk| disk.available_space())
 }
-
 fn bytes_to_mb(bytes: u64) -> u64 { bytes.saturating_add(1024 * 1024 - 1) / (1024 * 1024) }
-
 fn validate_workspace_name(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() { return Err("Server name is required".into()); }
-    if trimmed.chars().any(|character| character.is_control() || "<>:\"/\\|?*".contains(character)) {
-        return Err("Server name contains characters that are not valid in a Windows folder name".into());
-    }
+    if trimmed.chars().any(|character| character.is_control() || "<>:\"/\\|?*".contains(character)) { return Err("Server name contains characters that are not valid in a Windows folder name".into()); }
     if trimmed.ends_with('.') || trimmed.ends_with(' ') { return Err("Server name may not end with a dot or space".into()); }
     Ok(trimmed.to_string())
 }
-
 fn validate_display_name(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() { return Err("Workspace display name is required".into()); }
@@ -763,24 +673,18 @@ fn validate_display_name(value: &str) -> Result<String, String> {
     if trimmed.chars().count() > 96 { return Err("Workspace display name is too long".into()); }
     Ok(trimmed.to_string())
 }
-
 fn workspace_id(path: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     digest.update(path.to_lowercase().as_bytes());
     format!("{:x}", digest.finalize())
 }
-
-fn now_unix_seconds() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_secs()).unwrap_or(0)
-}
+fn now_unix_seconds() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_secs()).unwrap_or(0) }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn duplicate_filter_excludes_transient_runtime_paths() {
+    #[test] fn duplicate_filter_excludes_transient_runtime_paths() {
         assert!(should_skip_duplicate_path(Path::new("world-system/work/job.tmp")));
         assert!(should_skip_duplicate_path(Path::new("tools/lazybuilder/logs/launcher.log")));
         assert!(should_skip_duplicate_path(Path::new("tools/lazybuilder/cache/runtime.bin")));
@@ -788,17 +692,13 @@ mod tests {
         assert!(!should_skip_duplicate_path(Path::new("server/plugins/Example/config.yml")));
         assert!(!should_skip_duplicate_path(Path::new("world-system/worlds/build/region/r.0.0.mca")));
     }
-
-    #[test]
-    fn duplicate_destination_guard_rejects_source_and_descendants() {
+    #[test] fn duplicate_destination_guard_rejects_source_and_descendants() {
         let source = Path::new("D:/Servers/Build");
         assert!(source == Path::new("D:/Servers/Build"));
         assert!(Path::new("D:/Servers/Build/Copies").starts_with(source));
         assert!(!Path::new("D:/Servers").starts_with(source));
     }
-
-    #[test]
-    fn deletion_staging_guard_requires_same_parent_and_workspace_name() {
+    #[test] fn deletion_staging_guard_requires_same_parent_and_workspace_name() {
         let original = Path::new("D:/Servers/Build");
         assert!(is_safe_deletion_staging(original, Path::new("D:/Servers/.Build.lazybuilder-deleting-1-2")));
         assert!(!is_safe_deletion_staging(original, Path::new("D:/Other/.Build.lazybuilder-deleting-1-2")));
