@@ -38,6 +38,20 @@ AGENTS.md
 
 Do not preload all docs/Skills for an audit.
 
+### Evidence Opt-In Rule
+
+Historical/supporting documents are **not default context**. Files whose primary purpose is audit evidence, migration history, implementation status, handoff history, remediation notes, or architecture locks are loaded only when they can materially change the current decision or when the user asks for that history/proof.
+
+```text
+current canonical owner/source is sufficient
+→ do not load supporting evidence
+
+owner/source is contradictory, rationale is material, or proof history is requested
+→ load the smallest directly relevant evidence document
+```
+
+Do not use broad evidence-document scans for reassurance. Git history remains the archive for superseded designs.
+
 ## Development Gate
 
 Classify work as `Bounded`, `Standard`, or `Complex`.
