@@ -26,9 +26,7 @@ impl Default for LauncherSettings {
     }
 }
 
-pub fn initialize() -> Result<LauncherSettings, String> {
-    load()
-}
+pub fn initialize() -> Result<LauncherSettings, String> { load() }
 
 pub fn load() -> Result<LauncherSettings, String> {
     let path = settings_path()?;
@@ -42,10 +40,15 @@ pub fn load() -> Result<LauncherSettings, String> {
         .map_err(|error| format!("Could not read launcher settings: {error}"))?;
     let mut value: serde_json::Value = serde_json::from_str(&text)
         .map_err(|error| format!("Could not parse launcher settings: {error}"))?;
+    let previous_schema = value.get("schemaVersion").and_then(|value| value.as_u64()).unwrap_or(0);
     migrate(&mut value)?;
-    let settings: LauncherSettings = serde_json::from_value(value)
+    let mut settings: LauncherSettings = serde_json::from_value(value)
         .map_err(|error| format!("Could not decode launcher settings: {error}"))?;
+    settings.update_channel = settings.update_channel.trim().to_ascii_lowercase();
     validate(&settings)?;
+    if previous_schema != SETTINGS_SCHEMA_VERSION as u64 {
+        return save(&settings);
+    }
     Ok(settings)
 }
 
@@ -67,13 +70,14 @@ pub fn save(settings: &LauncherSettings) -> Result<LauncherSettings, String> {
 }
 
 fn migrate(value: &mut serde_json::Value) -> Result<(), String> {
-    let schema = value.get("schemaVersion").and_then(|value| value.as_u64()).unwrap_or(1);
+    let schema = value.get("schemaVersion").and_then(|value| value.as_u64()).unwrap_or(0);
     if schema > SETTINGS_SCHEMA_VERSION as u64 {
         return Err("Launcher settings schema is newer than this LazyBuilder version".into());
     }
-    if let Some(object) = value.as_object_mut() {
-        object.insert("schemaVersion".into(), serde_json::json!(SETTINGS_SCHEMA_VERSION));
-    }
+    let Some(object) = value.as_object_mut() else {
+        return Err("Launcher settings must be a JSON object".into());
+    };
+    object.insert("schemaVersion".into(), serde_json::json!(SETTINGS_SCHEMA_VERSION));
     Ok(())
 }
 
@@ -98,14 +102,8 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
         let _ = fs::remove_file(&backup);
         fs::rename(destination, &backup).map_err(|error| error.to_string())?;
         match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = fs::rename(&backup, destination);
-                Err(error.to_string())
-            }
+            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
+            Err(error) => { let _ = fs::rename(&backup, destination); Err(error.to_string()) }
         }
     } else {
         fs::rename(source, destination).map_err(|error| error.to_string())
@@ -124,9 +122,9 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_update_channel_is_rejected() {
+    fn invalid_update_channel_is_rejected() {
         let mut settings = LauncherSettings::default();
-        settings.update_channel = "nightly".into();
+        settings.update_channel = "other".into();
         assert!(validate(&settings).is_err());
     }
 }
