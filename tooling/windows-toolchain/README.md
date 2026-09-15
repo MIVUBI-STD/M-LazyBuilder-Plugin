@@ -18,49 +18,45 @@ The repository-root `toolchain.json` defines the supported build baseline. Scrip
 - Native build: Visual Studio 2022 Build Tools + Desktop development with C++
 - Python: not a mandatory build dependency
 
-## Canonical developer flow
+## Canonical developer command surface
 
-From a fresh Windows clone, use one path:
-
-```text
-SETUP-DEV.cmd
-→ CHECK-DEV.cmd
-→ BUILD-LAUNCHER.cmd
-→ TEST-LOCAL.cmd
-```
-
-`SETUP-DEV.cmd` is the canonical bootstrap entrypoint. It first validates the current machine, then repairs supported missing developer foundations when possible using `winget` and `rustup`. It does not install global Maven or Gradle because repository wrappers are authoritative.
-
-Use:
+`tooling/windows-toolchain/dev.ps1` is the single developer orchestration authority. `DEV.cmd` is a thin Windows convenience shim so the same command surface is easy to launch from Command Prompt or Explorer.
 
 ```text
-SETUP-DEV.cmd -CheckOnly
+DEV.cmd setup
+DEV.cmd check
+DEV.cmd build
+DEV.cmd test
+DEV.cmd update
+DEV.cmd finalize-local
 ```
 
-for a non-mutating bootstrap check. `CHECK-DEV.cmd` is always validation-only.
+The command surface delegates to the existing specialist scripts; it does not duplicate build, bootstrap, runtime-proof, or installer logic.
 
-`BUILD-LAUNCHER.cmd` performs the runtime-ready local build path: Maven verification, required Fabric builds, client-artifact verification, exact frontend dependency install, Svelte typecheck, Rust check/tests, and Tauri/NSIS packaging. Its preflight fails early when required reproducibility files, pinned versions, or the MSVC C++ workload are missing.
-
-`TEST-LOCAL.cmd` is the canonical local acceptance entrypoint. By default it reuses build outputs and runs:
+Canonical lifecycle:
 
 ```text
-Paper runtime behavior proof
-→ Paper restart/persistence proof
-→ installed Launcher clean-PATH smoke
+fresh clone
+→ DEV.cmd setup
+→ DEV.cmd check
+→ normal development
+→ DEV.cmd build
+→ DEV.cmd test
+→ DEV.cmd finalize-local when the revision is ready for final remote CI
 ```
 
-The script resolves and caches the current stable Paper 1.21.4 runtime under `.runtime-proof`, then delegates to the existing canonical runtime/restart/installer verifiers. It does not duplicate their proof logic.
+`finalize-local` is intentionally local only. Remote GitHub Actions remains an independent final proof and is dispatched separately when development reaches a reviewable checkpoint.
 
-Useful variants:
+Legacy root entrypoints (`SETUP-DEV.cmd`, `CHECK-DEV.cmd`, `BUILD-LAUNCHER.cmd`, `TEST-LOCAL.cmd`, `UPDATE-LAUNCHER.cmd`) remain compatibility conveniences during migration. New documentation, automation, and agent instructions should target `DEV.cmd` / `dev.ps1` as the canonical interface.
 
-```text
-TEST-LOCAL.cmd -Build          # run BUILD-LAUNCHER first, then acceptance
-TEST-LOCAL.cmd -PaperOnly      # Paper proof lanes only
-TEST-LOCAL.cmd -SkipRestart    # skip restart persistence proof
-TEST-LOCAL.cmd -SkipInstaller  # skip installed Launcher smoke
-```
+## Command ownership
 
-`UPDATE-LAUNCHER.cmd` remains the installed-local-app update path and is not a replacement for developer bootstrap or acceptance.
+- `setup` delegates to the bootstrap owner and may repair supported missing prerequisites.
+- `check` is non-mutating environment validation.
+- `build` delegates to the runtime-ready Launcher build/package pipeline.
+- `test` delegates to local Paper/restart/installer acceptance proof.
+- `update` uses the same build owner with installed-app update semantics.
+- `finalize-local` composes `check → build → test`; it does not invent a parallel proof implementation.
 
 ## Ownership rules
 
@@ -68,7 +64,7 @@ TEST-LOCAL.cmd -SkipInstaller  # skip installed Launcher smoke
 - Rust dependencies are locked by Cargo and the Rust compiler version is repository-pinned.
 - Maven and Gradle are repository-wrapper owned; global installations are not developer requirements.
 - Native C++ build support is supplied by Visual Studio 2022 Build Tools with `Microsoft.VisualStudio.Workload.VCTools`.
-- Runtime acceptance composes existing proof owners; `TEST-LOCAL.cmd` is orchestration only.
+- Runtime acceptance composes existing proof owners; the developer CLI is orchestration only.
 - Python is not part of the canonical mandatory developer toolchain.
 - End users must never need Node, npm, Rust, Cargo, Maven, Gradle, Python, Git, or MSVC to run an installed LazyBuilder build.
 
