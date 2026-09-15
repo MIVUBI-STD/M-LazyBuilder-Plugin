@@ -88,7 +88,14 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
             let snapshot = state.snapshot().map_err(|snapshot_error| {
                 format!("{stop_error}; additionally failed to inspect stop recovery state: {snapshot_error}")
             })?;
-            if snapshot.state != "Stopping" || snapshot.pid.is_none() {
+
+            // A controller-owned process may still be winding down (Stopping), while a
+            // process surviving a launcher restart/crash is represented as Detached.
+            // Both states are safe recovery candidates because recover_detached() also
+            // validates PID, process start time and the LazyBuilder Paper command line
+            // before terminating anything.
+            let recoverable_state = snapshot.state == "Stopping" || snapshot.state == "Detached";
+            if !recoverable_state || snapshot.pid.is_none() {
                 return Err(stop_error);
             }
 
