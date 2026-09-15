@@ -1,4 +1,4 @@
-use crate::engine::{diagnostics, runtime_environment, workspace_registry};
+use crate::engine::{diagnostics, runtime_environment, server_process_guard, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -59,12 +59,15 @@ pub fn coordinate() -> StartupReport {
         }
     };
 
-    match workspace_registry::initialize() {
-        Ok(()) => steps.push(ready_step(
-            "workspace-registry",
-            "Server library ready",
-            "Workspace registry loaded and pending deletion recovery completed.",
-        )),
+    let registry_ready = match workspace_registry::initialize() {
+        Ok(()) => {
+            steps.push(ready_step(
+                "workspace-registry",
+                "Server library ready",
+                "Workspace registry loaded and pending deletion recovery completed.",
+            ));
+            true
+        }
         Err(error) => {
             degraded = true;
             diagnostics::error(&format!("Workspace registry initialization failed: {error}"));
@@ -74,7 +77,34 @@ pub fn coordinate() -> StartupReport {
                 "Server library needs attention",
                 &error,
             ));
+            false
         }
+    };
+
+    if registry_ready {
+        match server_process_guard::ensure_no_running_paper_except(None) {
+            Ok(()) => steps.push(ready_step(
+                "server-process-reconciliation",
+                "Background server state reconciled",
+                "No registered LazyBuilder Paper process requires recovery attention.",
+            )),
+            Err(message) => {
+                degraded = true;
+                diagnostics::info(&format!("Startup detected recoverable background Paper state: {message}"));
+                steps.push(warning_step(
+                    "server-process-reconciliation",
+                    "A background server needs attention",
+                    &message,
+                ));
+            }
+        }
+    } else {
+        degraded = true;
+        steps.push(warning_step(
+            "server-process-reconciliation",
+            "Background server state could not be checked",
+            "The server library was unavailable, so LazyBuilder could not safely inspect registered Paper process markers.",
+        ));
     }
 
     let completed_at = now_unix_seconds();
