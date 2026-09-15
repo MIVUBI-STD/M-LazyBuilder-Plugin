@@ -2,6 +2,14 @@ name: Minecraft UI Preview
 
 # Native visual-regression proof for Map Manager layout, responsive behavior, player-facing copy, and bottom-bar control placement.
 on:
+  push:
+    branches: [Local]
+    paths:
+      - 'mods/map-manager/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/registry/**'
+      - '.github/workflows/minecraft-ui-preview.yml'
   pull_request:
     branches: [Local, main]
     paths:
