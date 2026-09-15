@@ -1,32 +1,20 @@
 use crate::commands;
-use crate::engine::diagnostics;
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
-use crate::engine::runtime_environment;
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::workspace_registry;
+use crate::engine::startup;
 
 pub fn run() {
-    match runtime_environment::prepare() {
-        Ok(temp) => diagnostics::info(&format!("LazyBuilder runtime TEMP/TMP: {}", temp.display())),
-        Err(error) => {
-            diagnostics::error(&format!("Runtime environment preparation failed: {error}"));
-            eprintln!("LazyBuilder runtime environment preparation failed: {error}");
-        }
-    }
-
-    diagnostics::info("LazyBuilder launcher starting");
-    if let Err(error) = workspace_registry::initialize() {
-        diagnostics::error(&format!("Workspace registry initialization failed: {error}"));
-        eprintln!("LazyBuilder workspace registry initialization failed: {error}");
-    }
+    let startup_report = startup::coordinate();
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
         .manage(OperationRegistry::default())
+        .manage(startup_report)
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
+            commands::startup::launcher_startup_status,
             commands::operations::launcher_operation_list,
             commands::operations::launcher_operation,
             commands::operations::launcher_operation_cancel,
