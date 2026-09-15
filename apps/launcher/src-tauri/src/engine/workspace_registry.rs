@@ -206,8 +206,7 @@ pub fn deactivate() -> Result<(), String> { set_active_memory(None) }
 pub fn duplicate_estimate(id: &str, destination_parent: &Path) -> Result<WorkspaceDuplicateEstimate, String> {
     let entry = get(id)?;
     let source = validated_registered_root(&entry)?;
-    let parent = destination_parent.canonicalize().map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
-    if !parent.is_dir() { return Err("Duplicate destination is not a directory".into()); }
+    let parent = duplicate_destination_parent(&source, destination_parent)?;
     let source_bytes = directory_size_filtered(&source, Path::new(""))?;
     let margin = (source_bytes / 10).max(MIN_DUPLICATE_HEADROOM_BYTES);
     let required_bytes = source_bytes.saturating_add(margin);
@@ -219,8 +218,7 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
     let entry = get(id)?;
     let source = validated_registered_root(&entry)?;
     let safe_name = validate_workspace_name(name)?;
-    let parent = destination_parent.canonicalize().map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
-    if !parent.is_dir() { return Err("Duplicate destination is not a directory".into()); }
+    let parent = duplicate_destination_parent(&source, destination_parent)?;
     let final_root = parent.join(&safe_name);
     if final_root.exists() { return Err("A file or folder with the duplicate server name already exists".into()); }
 
@@ -239,8 +237,7 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
     if staging.exists() { return Err("LazyBuilder duplicate staging path already exists".into()); }
     fs::create_dir(&staging).map_err(|error| format!("Could not create duplicate staging directory: {error}"))?;
 
-    let copy_result = copy_directory_filtered(&source, &staging, Path::new(""));
-    if let Err(error) = copy_result {
+    if let Err(error) = copy_directory_filtered(&source, &staging, Path::new("")) {
         let _ = fs::remove_dir_all(&staging);
         return Err(error);
     }
@@ -306,13 +303,15 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
     let base = root.file_name().and_then(|value| value.to_str()).unwrap_or("server");
     let staging = parent.join(format!(".{base}.lazybuilder-deleting-{}-{}", std::process::id(), now_unix_seconds()));
     if staging.exists() { return Err("LazyBuilder deletion staging path already exists".into()); }
+    if !is_safe_deletion_staging(&root, &staging) {
+        return Err("LazyBuilder refused an unsafe deletion staging path".into());
+    }
 
-    let pending = PendingDeletion {
+    add_pending_deletion(PendingDeletion {
         workspace_id: entry.id.clone(),
         original_path: root.display().to_string(),
         staging_path: staging.display().to_string(),
-    };
-    add_pending_deletion(pending)?;
+    })?;
 
     if let Err(error) = fs::rename(&root, &staging) {
         let _ = clear_pending_deletion(&entry.id, &staging);
@@ -367,6 +366,16 @@ pub fn accept_eula() -> Result<(), String> {
     let root = active_workspace()?;
     fs::write(root.join("server").join("eula.txt"), "# Accepted through LazyBuilder after explicit user confirmation\neula=true\n")
         .map_err(|error| error.to_string())
+}
+
+fn duplicate_destination_parent(source: &Path, destination_parent: &Path) -> Result<PathBuf, String> {
+    let parent = destination_parent.canonicalize()
+        .map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
+    if !parent.is_dir() { return Err("Duplicate destination is not a directory".into()); }
+    if parent == source || parent.starts_with(source) {
+        return Err("Choose a duplicate destination outside the source server workspace".into());
+    }
+    Ok(parent)
 }
 
 fn validated_registered_root(entry: &WorkspaceEntry) -> Result<PathBuf, String> {
@@ -525,7 +534,7 @@ fn recover_pending_deletions() -> Result<(), String> {
     for entry in pending {
         let original = PathBuf::from(&entry.original_path);
         let staging = PathBuf::from(&entry.staging_path);
-        if !is_safe_deletion_staging(&staging) {
+        if !is_safe_deletion_staging(&original, &staging) {
             remaining.push(entry);
             continue;
         }
@@ -549,10 +558,15 @@ fn recover_pending_deletions() -> Result<(), String> {
     save_pending_deletions(&remaining)
 }
 
-fn is_safe_deletion_staging(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.contains(".lazybuilder-deleting-"))
+fn is_safe_deletion_staging(original: &Path, staging: &Path) -> bool {
+    let Some(original_parent) = original.parent() else { return false; };
+    let Some(staging_parent) = staging.parent() else { return false; };
+    if original_parent != staging_parent { return false; }
+
+    let Some(base) = original.file_name().and_then(|value| value.to_str()) else { return false; };
+    let Some(name) = staging.file_name().and_then(|value| value.to_str()) else { return false; };
+    let prefix = format!(".{base}.lazybuilder-deleting-");
+    name.strip_prefix(&prefix).is_some_and(|suffix| !suffix.is_empty())
 }
 
 fn provision_layout(root: &Path) -> Result<(), String> {
@@ -750,9 +764,20 @@ mod tests {
     }
 
     #[test]
-    fn deletion_staging_guard_rejects_unrelated_paths() {
-        assert!(is_safe_deletion_staging(Path::new("D:/Servers/.Build.lazybuilder-deleting-1-2")));
-        assert!(!is_safe_deletion_staging(Path::new("D:/Servers/Build")));
-        assert!(!is_safe_deletion_staging(Path::new("D:/")));
+    fn duplicate_destination_guard_rejects_source_and_descendants() {
+        let source = Path::new("D:/Servers/Build");
+        assert!(source == Path::new("D:/Servers/Build"));
+        assert!(Path::new("D:/Servers/Build/Copies").starts_with(source));
+        assert!(!Path::new("D:/Servers").starts_with(source));
+    }
+
+    #[test]
+    fn deletion_staging_guard_requires_same_parent_and_workspace_name() {
+        let original = Path::new("D:/Servers/Build");
+        assert!(is_safe_deletion_staging(original, Path::new("D:/Servers/.Build.lazybuilder-deleting-1-2")));
+        assert!(!is_safe_deletion_staging(original, Path::new("D:/Other/.Build.lazybuilder-deleting-1-2")));
+        assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/.Other.lazybuilder-deleting-1-2")));
+        assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/.Build.lazybuilder-deleting-")));
+        assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/Build")));
     }
 }
