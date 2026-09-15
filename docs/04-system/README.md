@@ -15,9 +15,7 @@ Paper Modules
         │ bounded first-party Minecraft protocols
 Required Fabric Client
   ├── Map Manager
-  └── Utility Manager
-
-Deferred research source
+  ├── Utility Manager
   └── Performance Manager
 ```
 
@@ -25,7 +23,7 @@ Minecraft client/server application traffic reuses the existing play connection.
 
 The fullscreen map is first-party LazyBuilder UI. Xaero may be used only as an interaction-quality reference, not as a runtime dependency or semantic owner.
 
-Performance Manager remains isolated research source until measured Minecraft-client evidence and an explicit product decision justify promotion. Existing transitional Launcher/packaging references during active consolidation do not make it a new cross-component authority.
+Performance Manager is part of the current required V1 client suite because current source, Launcher packaging, Client Setup, verification, and distribution all build and bundle it. Its responsibility remains bounded to client performance policy/diagnostics; it must not become a scheduler or workload owner for Map Manager, Utility Manager, Paper, or Launcher runtime.
 
 ## Ownership rules
 
@@ -35,7 +33,7 @@ Desktop Runtime     → workspace/process/provisioning/runtime orchestration
 Plugin Manager      → third-party Paper plugin lifecycle
 Map Manager         → world/map/transfer client presentation + World protocol client
 Utility Manager     → passive non-building client convenience
-Performance Manager → isolated deferred performance research only
+Performance Manager → bounded client performance policy/diagnostics
 Shared Protocol     → typed bounded Paper/Fabric contracts
 World Application  → world lifecycle/use-case policy
 World Registry     → durable LazyBuilder world metadata
@@ -60,7 +58,7 @@ plugins/
 mods/
 ├── map-manager/         required Fabric Map Manager
 ├── utility-manager/     required Fabric Utility Manager
-└── performance-manager/ deferred/experimental Fabric source
+└── performance-manager/ required bounded Fabric performance component
 
 shared/protocol/
 └── neutral Paper/Fabric wire contracts
@@ -124,7 +122,7 @@ Transport/provider layers never become authority for worlds, permissions, lifecy
 - expensive file/conversion work remains bounded and off Paper's primary thread;
 - destructive/file publication paths remain recoverable/fail-safe;
 - internal maintenance is automatic unless it represents a real user decision;
-- deferred source must remain isolated and must not quietly become a runtime dependency because it already exists.
+- Performance Manager must remain bounded to its named performance responsibility and may not quietly absorb other managers' execution ownership.
 
 ## Documentation contract
 
@@ -132,7 +130,7 @@ Transport/provider layers never become authority for worlds, permissions, lifecy
 docs/01-product/          product scope and user flow
 docs/02-world-management/ world behavior and feature contracts
 docs/03-client-ui/        first-party Fabric presentation/map contracts
-docs/04-system/           architecture, ownership, networking, routing
+docs/04-system/           architecture, minimum-flow discipline, ownership, networking, routing
 docs/05-operations/       current proof/handoff only
 ```
 
@@ -146,7 +144,7 @@ Audit/report documents under `docs/04-system/` are supporting evidence only. The
 - No NMS without explicit evidence and a version-bound owner.
 - No Multiverse runtime dependency in the target World Manager.
 - External build tools remain external to the shipped application unless the product explicitly owns provisioning them.
-- Do not add specialist performance engines merely because they exist; any promotion requires measured evidence and one bounded owner.
+- Performance optimization remains inside the bounded Performance Manager responsibility; do not add another performance engine, shared scheduler, or cross-manager optimization authority without measured evidence and a distinct repeated responsibility.
 - Converter implementations remain behind one World Manager adapter and run only when requested.
 - Optional deployment tunnels/VPNs do not alter LazyBuilder application protocols.
 - Modrinth remains owner of the Minecraft profile, Fabric loader, third-party mods/modpack, and game launching.
