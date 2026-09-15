@@ -1,10 +1,8 @@
 # Launcher Architecture Reference
 
-Use for changes to Tauri/Rust/Svelte boundaries, command orchestration, application services, persistent settings, or launcher-wide state ownership.
+Use for changes to Tauri/Rust/Svelte boundaries, command orchestration, persistent settings, Launcher operation state, or launcher-wide authority.
 
-## Default Process Model
-
-LazyBuilder is a Tauri desktop application:
+## Current process model
 
 ```text
 Windows process
@@ -18,242 +16,159 @@ Windows process
      Svelte/WebView presentation
 ```
 
-The frontend is not allowed to become a second runtime authority simply because it is easier to implement there.
+Svelte is presentation. Rust/Tauri owns trusted runtime, filesystem, process, persistence, and durable application semantics.
 
-## Layer Responsibilities
+## Current authority examples
+
+Current source already contains concrete owners including:
+
+```text
+launcher_settings.rs  → versioned Launcher settings
+operations.rs         → bounded Launcher operation snapshots/history/cancellation
+workspace/server owners
+provisioning.rs       → managed provisioning
+java_runtime.rs       → managed Java boundary
+paper_provider.rs     → Paper provider boundary
+diagnostics.rs        → Launcher diagnostics/log context
+client_integration.rs → selected Modrinth/LazyBuilder client integration
+core_modules.rs       → bundled LazyBuilder core synchronization
+```
+
+Do not create a `future_*` replacement for an authority that already exists. Extend or consolidate the current owner first.
+
+## Layer responsibilities
 
 ### Svelte presentation
 
-Owns:
+Owns rendering, interaction-local state, forms, navigation, focus/accessibility, pending presentation, and formatting.
 
-```text
-rendering
-interaction state
-selection
-pending visual state
-forms
-navigation
-accessibility/focus
-presentation formatting
-```
-
-May cache read models for rendering, but durable truth must be refreshable from Rust.
+It may cache read models for rendering, but durable truth must be refreshable from Rust.
 
 ### Tauri command boundary
 
-Owns:
+Owns input decoding/validation, bounded command exposure, mapping domain errors to stable command results, and delegation to one semantic owner.
 
-```text
-input decoding/validation
-permission/capability boundary
-mapping domain errors to stable command errors
-delegating to one application/domain owner
-```
+Commands should not become large second implementations of persistence, filesystem mutation, process control, or business rules.
 
-Avoid large commands containing persistence, filesystem mutation, process logic, and presentation-specific decisions in one function.
+### Application/domain owner
 
-### Application service / orchestrator
+Use one owner per durable concern. Existing examples include Launcher settings, operations, workspace/process/runtime owners, provisioning, diagnostics, and client integration.
 
-Use when one user action legitimately coordinates multiple providers/domains, for example:
-
-```text
-self update
-server duplicate
-backup restore
-server repair
-provisioning
-support package export
-```
-
-The orchestrator owns sequencing, not the internal truth of every provider.
-
-### Domain owner
-
-Examples:
-
-```text
-workspace_registry
-server_manager
-runtime_updates
-resource_settings
-future launcher_settings
-future operation_registry
-future backup service
-future launcher updater service
-```
-
-Each durable concern should have one owner.
+Introduce a new domain owner only when a distinct durable responsibility is proven and cannot fit an existing authority cleanly.
 
 ### Provider/platform adapter
 
-Examples:
+Use for a real external/platform boundary such as managed Java, Paper release/provider integration, Windows installer/update integration, filesystem/platform primitives, or network release metadata.
 
-```text
-java_runtime
-paper_provider
-filesystem helper
-Windows installer/updater adapter
-GitHub/static release metadata provider
-```
+Separate an adapter only when the external mechanism has materially different failure/recovery behavior.
 
-Separate a provider only when it talks to an external/platform mechanism with materially different failure semantics.
-
-## IPC Contract Rules
+## IPC contract rules
 
 - prefer typed request/result DTOs;
 - use camelCase serialization consistently across Rust/TypeScript;
-- stable machine-readable error codes belong at the command boundary;
-- user-facing sentences belong to UI presentation unless the text is itself a durable protocol requirement;
-- do not expose arbitrary filesystem primitives when a bounded domain command can do the work;
-- minimize Tauri permissions/capabilities to what the main window actually requires;
-- never place secrets or signing keys in frontend code.
+- stable machine-readable error codes belong at the command/runtime boundary;
+- user-facing wording belongs to UI unless it is itself part of a durable contract;
+- expose bounded domain commands rather than arbitrary filesystem/process primitives;
+- minimize Tauri capabilities to the required window/runtime surface;
+- secrets/signing keys never enter frontend code.
 
-## State Machine Rule
+## State-machine rule
 
-Use an explicit enum/state machine when state controls legal actions or recovery.
+Use an explicit finite state model when state controls legal actions, concurrency, restart, or recovery.
 
-Good candidates:
-
-```text
-server lifecycle
-launcher self-update
-backup/restore
-repair
-provisioning
-long-running file copy
-runtime migration
-```
-
-Avoid combinations such as:
-
-```text
-isLoading
-isDone
-hasFailed
-isCancelled
-isRetrying
-```
-
-when those booleans can express impossible states.
-
-Prefer:
+For the canonical Launcher operation layer, current durable execution states are:
 
 ```text
 Queued
-Preparing
 Running
-Committing
 Succeeded
 Failed
+Cancelling
 Cancelled
-NeedsRecovery
+RecoveryRequired
 ```
 
-Domain-specific states may be smaller. Do not force a universal state machine if the operation does not need it.
+Detailed work progression belongs in `phase`/status/progress rather than expanding the global enum for every feature-specific step.
 
-## Persistent Settings
+A domain-specific state machine may differ when the domain itself has distinct durable states. Do not force every concern into the generic operation enum.
 
-One settings system should eventually own Launcher preferences such as:
+Avoid scattered booleans that permit impossible combinations.
 
-```text
-last-opened behavior
-update channel/policy
-default server location
-confirmation preferences
-launcher behavior
-diagnostic preferences
-```
+## Persistent Launcher settings
+
+`launcher_settings.rs` is the current settings authority. Current settings include schema version, last-server behavior, close confirmation, automatic update checking, and update channel.
 
 Rules:
 
-1. persist a schema version;
-2. centralize defaults in the authority layer;
-3. frontend receives effective settings rather than maintaining duplicate defaults;
+1. one settings document/authority;
+2. schema version is explicit;
+3. defaults live in Rust authority, not duplicated in Svelte;
 4. migrations are deterministic and tested;
-5. migration writes use temporary/staged files and preserve a previous-valid state when risk is meaningful;
-6. unknown/newer schema must fail safely rather than silently resetting user data.
+5. risky writes preserve previous-valid state where appropriate;
+6. unknown/newer schema fails safely rather than silently resetting user data;
+7. add a setting only for a real user decision, not an internal implementation flag.
 
-## App Startup Sequence
+## Startup ordering
 
-Keep startup deterministic:
+Keep startup deterministic and recovery-first:
 
 ```text
 configure process environment
-→ initialize app-data directories
-→ load/migrate launcher settings
-→ recover interrupted launcher operations
+→ initialize application-owned directories/logging
+→ load/migrate Launcher settings
+→ reconcile persistent/recoverable runtime state
 → reconcile workspace/server process state
 → initialize bounded providers
-→ create/serve UI
+→ expose/query current authoritative state
+→ UI ready
 ```
 
-Do not perform irreversible cleanup before the metadata needed for recovery is loaded.
+Do not perform irreversible cleanup before metadata needed for recovery has been loaded.
 
-## Shutdown / Close
+## Shutdown / close
 
-Window close, application exit, and server stop are different actions.
+Window close, Launcher exit, and Paper server stop are different actions.
 
-Never assume closing the WebView means it is safe to terminate a running server. The runtime owner decides whether the app:
+Never assume closing the WebView implies permission to terminate the server. Runtime policy decides whether to block, confirm, detach/recover, or explicitly stop; UI only presents the result.
 
-```text
-blocks close
-asks for confirmation
-keeps process detached/recoverable
-or performs an explicit stop
-```
-
-UI presents that policy; it does not invent it.
-
-## Error Model
-
-Use layered errors:
+## Error model
 
 ```text
 provider/internal error
-→ domain error/context
-→ stable command error code + safe technical details
-→ UI user-facing explanation
+→ domain context
+→ stable command/runtime error code + safe details
+→ UI explanation/recovery
 ```
 
-Examples of stable categories:
+Never leak credentials, auth headers, private signing material, or unnecessary personal paths into UI/support output.
+
+## Dependency rule
+
+Prefer the current stack and standard library where they already express the feature cleanly.
+
+Do not introduce by default:
 
 ```text
-WORKSPACE_UNAVAILABLE
-SERVER_BUSY
-INSUFFICIENT_STORAGE
-UPDATE_VERIFICATION_FAILED
-RECOVERY_REQUIRED
-PERMISSION_DENIED
+frontend state framework for a small shared flag
+database for the versioned settings document
+second operation registry/queue
+second IPC facade beside the canonical bridge
+second updater/runtime authority
 ```
 
-Do not leak tokens, credentials, raw auth headers, or unnecessary personal paths into user-visible error messages or support bundles.
-
-## Dependency Rule
-
-Adding a library/plugin/framework abstraction requires a concrete reason. Prefer the current stack and standard library when the existing architecture can express the feature cleanly.
-
-Do not introduce:
-
-```text
-a frontend state framework for one global flag
-a database for a small versioned settings document
-a generic job framework before operation semantics are known
-a second IPC wrapper over the existing canonical Tauri bridge
-a second updater beside Tauri updater semantics
-```
-
-## Architecture Review Checklist
+## Review checklist
 
 Before implementation:
 
 ```text
-[ ] one durable owner identified
-[ ] frontend is not source of durable truth
-[ ] command is bounded and typed
-[ ] operation state model is explicit when needed
-[ ] persistence schema/default/migration path identified
-[ ] failure/retry/restart behavior defined
-[ ] no second registry/cache/queue/store added accidentally
-[ ] security/capability scope is minimal
-[ ] proof strategy identifies unit/static/package/live boundaries
+[ ] current semantic owner identified
+[ ] frontend is not durable authority
+[ ] command/request boundary is typed and bounded
+[ ] current operation/settings/readiness owner reused where applicable
+[ ] state machine only added where state constrains behavior
+[ ] failure/retry/restart semantics defined
+[ ] persistence/recovery path identified when durable state changes
+[ ] no duplicate registry/cache/queue/store introduced
+[ ] security/capability scope remains minimal
+[ ] proof plan distinguishes source/package/native runtime boundaries
 ```
