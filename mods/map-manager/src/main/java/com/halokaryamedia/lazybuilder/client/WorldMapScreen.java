@@ -1061,8 +1061,8 @@ public final class WorldMapScreen extends Screen {
         int bottom = map.bottom - 20;
         return new Rect(center - buttonWidth / 2, bottom - 22, center + buttonWidth / 2, bottom);
     }
-    private Rect zoomPlusRect() { return new Rect(width - 28, 8, width - 8, 28); }
-    private Rect zoomMinusRect() { return new Rect(width - 51, 8, width - 31, 28); }
+    private Rect zoomPlusRect() { return new Rect(width - 28, height - 22, width - 8, height - 3); }
+    private Rect zoomMinusRect() { return new Rect(width - 51, height - 22, width - 31, height - 3); }
 
     private Rect contextMenuRect() {
         int menuWidth = 150;
