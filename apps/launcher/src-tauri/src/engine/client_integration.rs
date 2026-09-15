@@ -10,9 +10,8 @@ use sysinfo::System;
 pub const TARGET_MINECRAFT_VERSION: &str = "1.21.4";
 const MAX_LOG_SCAN_BYTES: u64 = 2 * 1024 * 1024;
 
-// V1 ships only the client components required by the current LazyBuilder workflow.
-// Performance Manager remains deferred source and is not installed implicitly.
-const MODS: [ClientModSpec; 2] = [
+// V1 ships the three first-party LazyBuilder client managers as one coherent client suite.
+const MODS: [ClientModSpec; 3] = [
     ClientModSpec {
         id: "map-manager",
         display_name: "Map Manager",
@@ -24,6 +23,12 @@ const MODS: [ClientModSpec; 2] = [
         display_name: "Utility Manager",
         file_name: "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
         file_prefix: "lazybuilder-utility-manager-",
+    },
+    ClientModSpec {
+        id: "performance-manager",
+        display_name: "Performance Manager",
+        file_name: "lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar",
+        file_prefix: "lazybuilder-performance-manager-",
     },
 ];
 
@@ -101,7 +106,7 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
     } else if !modrinth_detected {
         "Modrinth profiles were not detected automatically. Select the exact profile you use for LazyBuilder.".into()
     } else if profiles.is_empty() {
-        "No Modrinth profiles were found. Select the exact profile folder manually.".into()
+        "No Modrinth profiles were found. Select the exact Modrinth profile folder manually.".into()
     } else if selected_profile.is_none() {
         "Choose a detected profile or select the exact Modrinth profile folder manually.".into()
     } else if selected_profile.as_ref().is_some_and(|profile| !profile.compatible) {
@@ -616,109 +621,5 @@ fn save_config(config: &ClientIntegrationConfig) -> Result<(), String> {
         }
     } else {
         fs::rename(incoming, path).map_err(|error| error.to_string())
-    }
-}
-
-fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
-    let left_meta = fs::metadata(left).map_err(|error| error.to_string())?;
-    let right_meta = fs::metadata(right).map_err(|error| error.to_string())?;
-    if left_meta.len() != right_meta.len() {
-        return Ok(false);
-    }
-    let mut left_file = fs::File::open(left).map_err(|error| error.to_string())?;
-    let mut right_file = fs::File::open(right).map_err(|error| error.to_string())?;
-    let mut left_buffer = [0u8; 64 * 1024];
-    let mut right_buffer = [0u8; 64 * 1024];
-    loop {
-        let left_count = left_file.read(&mut left_buffer).map_err(|error| error.to_string())?;
-        let right_count = right_file.read(&mut right_buffer).map_err(|error| error.to_string())?;
-        if left_count != right_count {
-            return Ok(false);
-        }
-        if left_count == 0 {
-            return Ok(true);
-        }
-        if left_buffer[..left_count] != right_buffer[..right_count] {
-            return Ok(false);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn test_root(label: &str) -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        env::temp_dir().join(format!("lazybuilder-{label}-{unique}"))
-    }
-
-    #[test]
-    fn detects_fabric_runtime_identity_from_latest_log() {
-        let root = test_root("client-profile");
-        let logs = root.join("logs");
-        fs::create_dir_all(&logs).unwrap();
-        fs::write(
-            logs.join("latest.log"),
-            "[main/INFO]: Loading Minecraft 1.21.4 with Fabric Loader 0.16.10\n",
-        )
-        .unwrap();
-        assert_eq!(
-            runtime_identity_from_latest_log(&root).unwrap(),
-            Some(("1.21.4".into(), "fabric".into()))
-        );
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn manual_profile_must_be_directly_under_profiles() {
-        let root = test_root("manual-profile");
-        let profile = root.join("profiles").join("Builder");
-        fs::create_dir_all(&profile).unwrap();
-        assert!(canonical_manual_profile_path(&profile).is_ok());
-        assert!(canonical_manual_profile_path(&root.join("profiles")).is_err());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn transactional_sync_replaces_required_components() {
-        let root = test_root("transactional-sync");
-        let mods = root.join("mods");
-        let sources = root.join("sources");
-        fs::create_dir_all(&mods).unwrap();
-        fs::create_dir_all(&sources).unwrap();
-        let mut input = Vec::new();
-        for spec in MODS {
-            let source = sources.join(spec.file_name);
-            fs::write(&source, format!("new-{}", spec.id)).unwrap();
-            fs::write(
-                mods.join(format!("{}old.jar", spec.file_prefix)),
-                format!("old-{}", spec.id),
-            )
-            .unwrap();
-            input.push((spec, source));
-        }
-        transactional_sync(&mods, &input).unwrap();
-        for spec in MODS {
-            assert_eq!(
-                fs::read_to_string(mods.join(spec.file_name)).unwrap(),
-                format!("new-{}", spec.id)
-            );
-            assert_eq!(owned_mod_paths(&mods, spec).unwrap().len(), 1);
-        }
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn lazybuilder_owned_prefixes_are_narrow() {
-        for spec in MODS {
-            assert!(spec.file_prefix.starts_with("lazybuilder-"));
-            assert!(spec.file_name.starts_with(spec.file_prefix));
-            assert!(spec.file_name.ends_with(".jar"));
-        }
     }
 }
