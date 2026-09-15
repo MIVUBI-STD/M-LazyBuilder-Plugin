@@ -1,13 +1,17 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, workspace_registry};
-use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceEntry};
-use std::path::PathBuf;
+use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceDuplicateEstimate, WorkspaceEntry};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceState { pub active: Option<WorkspaceEntry>, pub recent: Vec<WorkspaceEntry> }
+pub struct WorkspaceState {
+    pub active: Option<WorkspaceEntry>,
+    pub recent: Vec<WorkspaceEntry>,
+}
 
 #[tauri::command]
 pub fn workspace_state() -> CommandResult<WorkspaceState> {
@@ -110,6 +114,70 @@ pub fn workspace_close(state: State<'_, ServerManagerState>) -> CommandResult<()
     workspace_registry::deactivate().map_err(CommandError::from)
 }
 
+#[tauri::command]
+pub fn workspace_open_folder(id: String) -> CommandResult<()> {
+    let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
+    let path = PathBuf::from(&entry.path);
+    if !path.is_dir() {
+        return Err(CommandError::new(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", path.display()),
+        ));
+    }
+    Command::new("explorer.exe")
+        .arg(&path)
+        .spawn()
+        .map_err(|error| CommandError::new("OPEN_FOLDER_FAILED", format!("Could not open server folder: {error}")))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn workspace_duplicate_estimate(
+    state: State<'_, ServerManagerState>,
+    id: String,
+    parent_path: String,
+) -> CommandResult<WorkspaceDuplicateEstimate> {
+    ensure_workspace_mutation_allowed(&state, &id)?;
+    workspace_registry::duplicate_estimate(&id, Path::new(&parent_path)).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn workspace_duplicate(
+    app: AppHandle,
+    id: String,
+    parent_path: String,
+    name: String,
+) -> CommandResult<WorkspaceEntry> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        ensure_workspace_mutation_allowed(&state, &id)?;
+        workspace_registry::duplicate(&id, Path::new(&parent_path), &name).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::new("TASK_FAILED", format!("Server duplication task failed: {error}")))?
+}
+
+#[tauri::command]
+pub fn workspace_remove_from_library(state: State<'_, ServerManagerState>, id: String) -> CommandResult<()> {
+    ensure_remove_allowed(&state, &id)?;
+    workspace_registry::remove_from_library(&id).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub async fn workspace_delete(
+    app: AppHandle,
+    id: String,
+    typed_display_name: String,
+) -> CommandResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        ensure_workspace_mutation_allowed(&state, &id)?;
+        workspace_registry::delete(&id, &typed_display_name).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| CommandError::new("TASK_FAILED", format!("Server deletion task failed: {error}")))?
+}
+
 fn ensure_activation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
     server_process_guard::ensure_no_running_paper_except(Some(target_id)).map_err(CommandError::from)?;
     if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
@@ -120,6 +188,33 @@ fn ensure_switch_allowed(state: &ServerManagerState) -> CommandResult<()> {
     server_process_guard::ensure_no_running_paper_except(None).map_err(CommandError::from)?;
     if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
     ensure_runtime_update_allowed(state)
+}
+
+fn ensure_workspace_mutation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
+    let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
+    if workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id) {
+        return ensure_runtime_update_allowed(state);
+    }
+    let root = PathBuf::from(entry.path);
+    if !root.is_dir() {
+        return Err(CommandError::new(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", root.display()),
+        ));
+    }
+    server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)
+}
+
+fn ensure_remove_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
+    let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
+    if workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id) {
+        return ensure_runtime_update_allowed(state);
+    }
+    let root = PathBuf::from(entry.path);
+    if root.is_dir() {
+        server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)?;
+    }
+    Ok(())
 }
 
 fn ensure_runtime_update_allowed(state: &ServerManagerState) -> CommandResult<()> {
