@@ -1,8 +1,8 @@
 name: Launcher UI Preview
 
 on:
-  push:
-    branches: [Local]
+  pull_request:
+    branches: [Local, main]
     paths:
       - 'apps/launcher/src/**'
       - 'apps/launcher/ui-preview/**'
