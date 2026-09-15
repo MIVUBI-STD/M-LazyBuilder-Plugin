@@ -15,9 +15,7 @@ function Invoke-VersionCommand([string]$Command, [string[]]$Args = @('--version'
         if ($LASTEXITCODE -ne 0 -and $lines.Count -eq 0) { return $null }
         return ($lines -join "`n").Trim()
     }
-    catch {
-        return $null
-    }
+    catch { return $null }
 }
 
 function Get-SemVerMajor([string]$VersionText) {
@@ -46,58 +44,55 @@ function First-Line([string]$Text) {
     return ($Text -split "`r?`n" | Select-Object -First 1).Trim()
 }
 
+function Get-VsWherePath {
+    $Candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    return ($Candidates | Select-Object -First 1)
+}
+
+function Get-MsvcStatus {
+    $vswhere = Get-VsWherePath
+    if (-not $vswhere) { return $null }
+    try {
+        $installation = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Workload.VCTools -property installationPath 2>$null | Select-Object -First 1)
+        if ([string]::IsNullOrWhiteSpace([string]$installation)) { return $null }
+        return [string]$installation
+    }
+    catch { return $null }
+}
+
 $rows = @()
 
 $java = Invoke-VersionCommand 'java' @('-version')
 $javaMajor = Get-JavaMajor $java
-$rows += [pscustomobject]@{
-    Tool='Java'
-    Required="21.x LTS"
-    Found=(First-Line $java)
-    OK=($javaMajor -eq [int]$T.java.major)
-}
+$rows += [pscustomobject]@{ Tool='Java'; Required="21.x LTS"; Found=(First-Line $java); OK=($javaMajor -eq [int]$T.java.major) }
 
 $node = Invoke-VersionCommand 'node' @('--version')
 $nodeMajor = Get-SemVerMajor $node
-$rows += [pscustomobject]@{
-    Tool='Node.js'
-    Required="$($T.node.major).x LTS"
-    Found=(First-Line $node)
-    OK=($nodeMajor -eq [int]$T.node.major)
-}
+$rows += [pscustomobject]@{ Tool='Node.js'; Required="$($T.node.major).x LTS"; Found=(First-Line $node); OK=($nodeMajor -eq [int]$T.node.major) }
 
 $npm = Invoke-VersionCommand 'npm' @('--version')
-$rows += [pscustomobject]@{
-    Tool='npm'
-    Required='bundled with Node'
-    Found=(First-Line $npm)
-    OK=(-not [string]::IsNullOrWhiteSpace($npm) -and (Get-SemVerMajor $npm) -ne $null)
-}
+$rows += [pscustomobject]@{ Tool='npm'; Required='bundled with Node'; Found=(First-Line $npm); OK=(-not [string]::IsNullOrWhiteSpace($npm) -and (Get-SemVerMajor $npm) -ne $null) }
 
 $rustc = Invoke-VersionCommand 'rustc' @('--version')
 $rustVersion = Get-RustVersion $rustc
-$rows += [pscustomobject]@{
-    Tool='Rust'
-    Required=[string]$T.rust.toolchain
-    Found=(First-Line $rustc)
-    OK=($rustVersion -eq [string]$T.rust.toolchain)
-}
+$rows += [pscustomobject]@{ Tool='Rust'; Required=[string]$T.rust.toolchain; Found=(First-Line $rustc); OK=($rustVersion -eq [string]$T.rust.toolchain) }
 
 $cargo = Invoke-VersionCommand 'cargo' @('--version')
-$rows += [pscustomobject]@{
-    Tool='Cargo'
-    Required='from pinned Rust'
-    Found=(First-Line $cargo)
-    OK=(-not [string]::IsNullOrWhiteSpace($cargo) -and $cargo -match '(?im)^cargo\s+\d+\.\d+\.\d+')
-}
+$rows += [pscustomobject]@{ Tool='Cargo'; Required='from pinned Rust'; Found=(First-Line $cargo); OK=(-not [string]::IsNullOrWhiteSpace($cargo) -and $cargo -match '(?im)^cargo\s+\d+\.\d+\.\d+') }
 
 $git = Invoke-VersionCommand 'git' @('--version')
-$rows += [pscustomobject]@{
-    Tool='Git'
-    Required='Git for Windows'
-    Found=(First-Line $git)
-    OK=(-not [string]::IsNullOrWhiteSpace($git) -and $git -match '(?i)git version\s+\d+')
-}
+$rows += [pscustomobject]@{ Tool='Git'; Required='Git for Windows'; Found=(First-Line $git); OK=(-not [string]::IsNullOrWhiteSpace($git) -and $git -match '(?i)git version\s+\d+') }
+
+$msvc = Get-MsvcStatus
+$rows += [pscustomobject]@{ Tool='MSVC'; Required='VS 2022 Build Tools + VCTools'; Found=$(if ($msvc) { $msvc } else { 'MISSING' }); OK=(-not [string]::IsNullOrWhiteSpace($msvc)) }
+
+$mavenWrapper = Join-Path $RepoRoot 'mvnw.cmd'
+$gradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
+$rows += [pscustomobject]@{ Tool='Maven wrapper'; Required=[string]$T.maven.wrapperTarget; Found=$(if (Test-Path $mavenWrapper) { 'repository wrapper' } else { 'MISSING' }); OK=(Test-Path $mavenWrapper) }
+$rows += [pscustomobject]@{ Tool='Gradle wrapper'; Required=[string]$T.gradle.wrapperTarget; Found=$(if (Test-Path $gradleWrapper) { 'repository wrapper' } else { 'MISSING' }); OK=(Test-Path $gradleWrapper) }
 
 Write-Host ''
 Write-Host 'LazyBuilder Toolchain Check' -ForegroundColor Cyan
@@ -105,7 +100,8 @@ $rows | Format-Table -AutoSize Tool, Required, Found, OK
 $failed = @($rows | Where-Object { -not $_.OK })
 if ($failed.Count -gt 0) {
     Write-Host "FAILED: $($failed.Count) requirement(s) missing or outside policy." -ForegroundColor Red
+    Write-Host ('Failed: ' + (($failed | ForEach-Object { $_.Tool }) -join ', ')) -ForegroundColor Red
     exit 2
 }
-Write-Host 'PASS: core developer toolchain matches policy.' -ForegroundColor Green
+Write-Host 'PASS: developer toolchain and repository wrappers match policy.' -ForegroundColor Green
 exit 0
