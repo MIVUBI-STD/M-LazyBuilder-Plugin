@@ -4,10 +4,9 @@ import net.minecraft.client.MinecraftClient;
 
 import java.nio.file.Path;
 
-/** Single runtime owner for LazyBuilder Performance Manager P0 behavior. */
+/** Single runtime owner for LazyBuilder Performance Manager behavior. */
 public final class PerformanceRuntime {
     private final FrameMonitor frameMonitor = new FrameMonitor();
-    private final WorkloadBudget workloadBudget = new WorkloadBudget();
     private final BackgroundResourcePolicy backgroundPolicy = new BackgroundResourcePolicy();
     private final PerformanceConfigStore configStore;
     private PerformancePreferences preferences;
@@ -19,24 +18,25 @@ public final class PerformanceRuntime {
 
     public void recordFrame(long nowNanos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || !client.isWindowFocused() || client.getWindow() == null || client.getWindow().isMinimized()) {
+        if (client == null
+                || client.world == null
+                || client.getWindow() == null
+                || !client.isWindowFocused()
+                || client.getWindow().isMinimized()) {
             frameMonitor.pauseFrameClock();
             return;
         }
-        frameMonitor.recordFrame(nowNanos);
+
+        int targetFps = Math.max(1, client.options.getMaxFps().getValue());
+        frameMonitor.recordFrame(nowNanos, targetFps);
     }
 
     public void tick(MinecraftClient client) {
-        workloadBudget.update(frameMonitor.pressure());
         backgroundPolicy.update(client, preferences);
     }
 
     public FramePressure pressure() {
         return frameMonitor.pressure();
-    }
-
-    public WorkloadBudget workloadBudget() {
-        return workloadBudget;
     }
 
     public PerformancePreferences preferences() {
@@ -50,6 +50,7 @@ public final class PerformanceRuntime {
     }
 
     public PerformanceSnapshot snapshot() {
-        return PerformanceSnapshotReader.capture(MinecraftClient.getInstance(), frameMonitor);
+        MinecraftClient client = MinecraftClient.getInstance();
+        return client == null ? null : PerformanceSnapshotReader.capture(client, frameMonitor);
     }
 }
