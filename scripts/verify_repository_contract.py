@@ -102,6 +102,19 @@ REQUIRED_OPERATIONS_PHRASES = [
     "one developer command surface",
     "dist/Local/",
     "workflow_dispatch",
+    "Developer failure contract",
+    "Operation",
+    "Evidence",
+    "Recovery",
+]
+
+REQUIRED_DEV_FAILURE_MARKERS = [
+    "LAZYBUILDER OPERATION FAILED",
+    "Operation :",
+    "Exit code :",
+    "Evidence  :",
+    "Recovery  :",
+    "fix the first actionable failure",
 ]
 
 REQUIRED_VERIFY_IGNORE_PATTERNS = [
@@ -175,6 +188,7 @@ def main() -> int:
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
+    dev_orchestrator = read_text("tooling/windows-toolchain/dev.ps1", errors)
     verify_workflow = read_text(".github/workflows/verify.yml", errors)
     build_local = read_text("apps/launcher/build-local.ps1", errors)
     test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
@@ -199,6 +213,10 @@ def main() -> int:
     for phrase in REQUIRED_OPERATIONS_PHRASES:
         if phrase not in operations:
             fail(errors, f"development operations missing canonical marker: {phrase}")
+
+    for marker in REQUIRED_DEV_FAILURE_MARKERS:
+        if marker not in dev_orchestrator:
+            fail(errors, f"developer orchestrator missing actionable failure marker: {marker}")
 
     if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
         fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")
@@ -285,6 +303,7 @@ def main() -> int:
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
     print("Full Verify scoping: evidence-only exclusions, source/canonical paths protected")
+    print("Developer failures: operation + exit code + evidence + recovery")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
     print("Local distribution owner: tooling/windows-toolchain/scripts/distribution/package-local.ps1")
     print("Local distribution path: dist/Local")
