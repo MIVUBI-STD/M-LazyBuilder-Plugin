@@ -221,9 +221,9 @@ public final class WorldMapScreen extends Screen {
 
         var current = maps.currentWorld();
         if (current == null) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Resolving managed world…"),
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Loading current world…"),
                     bounds.centerX(), bounds.centerY() - 4, LbUi.TEXT_SECONDARY);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Map rendering starts after server identity is known"),
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Map will appear when the current world is ready"),
                     bounds.centerX(), bounds.centerY() + 12, LbUi.TEXT_MUTED);
             return;
         }
@@ -349,9 +349,6 @@ public final class WorldMapScreen extends Screen {
 
         if (sidebarCollapsed) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("›"), sidebar / 2, 13, LbUi.TEXT_PRIMARY);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("●"), sidebar / 2, 48, LbUi.SUCCESS);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("★"), sidebar / 2, 78, LbUi.ACCENT_BRIGHT);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("⚙"), sidebar / 2, height - 28, LbUi.TEXT_MUTED);
             return;
         }
 
@@ -359,12 +356,12 @@ public final class WorldMapScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("‹"), sidebar - 18, 12, LbUi.TEXT_MUTED);
         LbUi.divider(context, 10, 29, sidebar - 10);
 
-        context.drawTextWithShadow(textRenderer, Text.literal("Current"), 12, 39, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("Current world"), 12, 39, LbUi.TEXT_MUTED);
         Rect currentRect = currentWorldRect();
         boolean currentHover = currentRect.contains(mouseX, mouseY);
         if (currentHover) context.fill(currentRect.left, currentRect.top, currentRect.right, currentRect.bottom, LbUi.SURFACE_2);
         UUID currentId = currentWorldId();
-        String currentName = maps.currentWorld() == null ? "Resolving…" : maps.currentWorld().displayName();
+        String currentName = maps.currentWorld() == null ? "Loading…" : maps.currentWorld().displayName();
         context.drawTextWithShadow(textRenderer, Text.literal("●"), 12, currentRect.top + 8,
                 currentId == null ? LbUi.TEXT_MUTED : LbUi.SUCCESS);
         context.drawTextWithShadow(textRenderer, Text.literal(trim(currentName, sidebar - 54)), 27,
@@ -381,7 +378,7 @@ public final class WorldMapScreen extends Screen {
         }
 
         String section = showAllWorlds ? "All worlds" : "Favorites";
-        String switchLabel = showAllWorlds ? "Favorites" : "All ›";
+        String switchLabel = showAllWorlds ? "Favorites" : "All worlds ›";
         context.drawTextWithShadow(textRenderer, Text.literal(section), 12, 91, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(switchLabel), sidebar - 12 - textRenderer.getWidth(switchLabel),
                 91, LbUi.TEXT_MUTED);
@@ -427,7 +424,7 @@ public final class WorldMapScreen extends Screen {
         int color = current ? LbUi.SURFACE_2 : pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
         if (action.contains(mouseX, mouseY) && !pending) color = current ? LbUi.SURFACE_3 : LbUi.ACCENT_HOVER;
         context.fill(action.left, action.top, action.right, action.bottom, color);
-        String label = current ? "Center player" : pending ? "Teleporting…" : "Teleport →";
+        String label = current ? "Center on player" : pending ? "Teleporting…" : "Teleport →";
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
                 (action.left + action.right) / 2, action.top + 7,
                 pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
@@ -460,8 +457,8 @@ public final class WorldMapScreen extends Screen {
                 ? zoomLabel()
                 : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomLabel();
         String status = maps.teleportPending() ? "Teleporting…"
-                : SURFACE.pendingCount() > 0 ? "Mapping " + SURFACE.pendingCount() + " columns…"
-                : "M / Esc close  •  Drag pan  •  Scroll zoom  •  R recenter";
+                : SURFACE.pendingCount() > 0 ? "Loading map…"
+                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center player";
 
         int textLeft = left + 8;
         int textRight = zoomMinusRect().left - 8;
@@ -788,7 +785,7 @@ public final class WorldMapScreen extends Screen {
         var current = maps.currentWorld();
         if (client == null || client.player == null || client.world == null || current == null) {
             LazyBuilderClientNetworking.notifyPlayer(
-                    "LazyBuilder: open a managed world before copying a review reference.");
+                    "LazyBuilder: open a managed world before copying location details.");
             return;
         }
         String dimension = client.world.getRegistryKey().getValue().toString();
@@ -798,7 +795,7 @@ public final class WorldMapScreen extends Screen {
                 + client.player.getBlockY() + " " + client.player.getBlockZ() + "\n"
                 + "Dimension: " + dimension;
         client.keyboard.setClipboard(reference);
-        LazyBuilderClientNetworking.notifyPlayer("Review reference copied.");
+        LazyBuilderClientNetworking.notifyPlayer("Location details copied.");
     }
 
     private void renderSelectionGrid(DrawContext context) {
@@ -1040,8 +1037,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private String zoomLabel() {
-        if (zoom >= 1.0) return String.format(Locale.ROOT, "1:%.1f", zoom);
-        return String.format(Locale.ROOT, "%.2f:1", 1.0 / zoom);
+        if (Math.abs(zoom - Math.rint(zoom)) < 0.01) {
+            return "Zoom " + (int) Math.rint(zoom) + "×";
+        }
+        return String.format(Locale.ROOT, "Zoom %.1f×", zoom);
     }
 
     private boolean shouldAutoCollapseSidebar() {
