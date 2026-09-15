@@ -1,16 +1,42 @@
 use crate::commands;
+use crate::engine::app_instance;
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::startup;
+use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
 pub fn run() {
-    let startup_report = startup::coordinate();
+    let (_instance_lease, instance_state) = match app_instance::acquire() {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = MessageDialog::new()
+                .set_title("LazyBuilder")
+                .set_description(&error)
+                .set_level(MessageLevel::Info)
+                .set_buttons(MessageButtons::Ok)
+                .show();
+            return;
+        }
+    };
+
+    let (operation_registry, operation_recovery) = match OperationRegistry::initialize() {
+        Ok((registry, report)) => (registry, Ok(report)),
+        Err(error) => {
+            let disabled = OperationRegistry::disabled(error.clone());
+            (disabled, Err(error))
+        }
+    };
+
+    let startup_report = startup::coordinate(
+        operation_recovery,
+        instance_state.previous_session_unclean,
+    );
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
-        .manage(OperationRegistry::default())
+        .manage(operation_registry)
         .manage(startup_report)
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
