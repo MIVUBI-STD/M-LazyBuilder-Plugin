@@ -212,20 +212,28 @@ A green compile does not prove Windows process recovery or installer behavior.
 
 ## Handoff / exit contract
 
-Sequential ownership only:
+Handoff is sequential and carries only the typed result the next owner needs.
 
 ```text
-canonical runtime result/state
-→ lazybuilder-ui presents it
+canonical runtime/readiness/operation result
+→ lazybuilder-ui
+handoff: canonical ids + state + capabilities + progress/retry/cancel + stable result/error
+UI must not re-scan filesystem/process/runtime to derive the same truth
 
 Paper world-domain behavior
 → lazybuilder-world-management
+handoff: authenticated desktop request context + canonical workspace/server identity only
+World Management decides lifecycle/filesystem/domain semantics; Desktop transports the result without reinterpreting it
 
 third-party plugin lifecycle
 → lazybuilder-plugin-management
+handoff: canonical workspace/server context + requested plugin lifecycle intent
+Plugin Management decides identity/dependency/compatibility/restart semantics
 
 neutral Paper/Fabric payload
 → lazybuilder-protocol
+handoff only when Paper↔Fabric wire meaning changes
+Desktop loopback HTTP/Tauri IPC must never be converted into shared protocol merely for reuse
 ```
 
 Finish when:
@@ -234,6 +242,7 @@ Finish when:
 - failure/restart/retry semantics are explicit;
 - destructive work has the required recoverability boundary;
 - matching proof is complete at the available context ceiling;
+- the next owner can proceed from the handoff result without reopening Desktop Runtime truth;
 - remaining UI/live/native residue is named precisely.
 
 Do not continue into visual redesign, generic framework work, release infrastructure, or speculative future-proofing after the runtime contract is satisfied.
