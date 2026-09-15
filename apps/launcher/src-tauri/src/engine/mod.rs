@@ -1,6 +1,7 @@
 pub mod adoption;
 pub mod client_integration;
 pub mod core_modules;
+pub mod diagnostics;
 pub mod java_runtime;
 pub mod paper_provider;
 pub mod paths;
