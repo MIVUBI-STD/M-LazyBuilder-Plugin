@@ -243,10 +243,23 @@ fn rollback_intent(intent: &PendingAdoption) -> Result<(), String> {
                 }
             }
             (true, true) => errors.push(format!("Both source and destination exist for {}", source.display())),
+            (false, false) if nested_source_not_materialized(intent, movement) => {}
             (false, false) => errors.push(format!("Both source and destination are missing for {}", source.display())),
         }
     }
     if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
+}
+
+fn nested_source_not_materialized(intent: &PendingAdoption, movement: &AdoptionMove) -> bool {
+    let source = PathBuf::from(&movement.source);
+    intent.moves.iter().any(|parent_move| {
+        if std::ptr::eq(parent_move, movement) { return false; }
+        let parent_source = PathBuf::from(&parent_move.source);
+        let parent_destination = PathBuf::from(&parent_move.destination);
+        source.starts_with(&parent_destination)
+            && parent_source.exists()
+            && !parent_destination.exists()
+    })
 }
 
 fn validate_intent_paths(intent: &PendingAdoption) -> Result<(), String> {
