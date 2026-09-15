@@ -207,6 +207,7 @@ public final class WorldMapScreen extends Screen {
             renderSelection(context, mouseX, mouseY);
         }
         renderCursor(context, mouseX, mouseY);
+        renderMapControls(context, mouseX, mouseY);
         renderSidebar(context, mouseX, mouseY);
         renderBottomStatus(context, mouseX, mouseY);
         renderContextMenu(context, mouseX, mouseY);
@@ -416,18 +417,26 @@ public final class WorldMapScreen extends Screen {
     private void renderSelectedWorldAction(DrawContext context, int mouseX, int mouseY) {
         if (sidebarCollapsed || selectedWorldId == null) return;
         WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
-        if (selected == null) return;
+        if (selected == null || isCurrentWorld(selected.worldId())) return;
         Rect action = selectedActionRect();
         if (action.top < 110) return;
-        boolean current = isCurrentWorld(selected.worldId());
         boolean pending = worlds.teleportPending();
-        int color = current ? LbUi.SURFACE_2 : pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
-        if (action.contains(mouseX, mouseY) && !pending) color = current ? LbUi.SURFACE_3 : LbUi.ACCENT_HOVER;
+        int color = pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
+        if (action.contains(mouseX, mouseY) && !pending) color = LbUi.ACCENT_HOVER;
         context.fill(action.left, action.top, action.right, action.bottom, color);
-        String label = current ? "Center map on player" : pending ? "Teleporting…" : "Teleport →";
+        String label = pending ? "Teleporting…" : "Teleport →";
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
                 (action.left + action.right) / 2, action.top + 7,
                 pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
+    }
+
+    private void renderMapControls(DrawContext context, int mouseX, int mouseY) {
+        if (areaMode) return;
+        Rect recenter = recenterMapRect();
+        int color = recenter.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;
+        context.fill(recenter.left, recenter.top, recenter.right, recenter.bottom, color);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Recenter"),
+                (recenter.left + recenter.right) / 2, recenter.top + 6, LbUi.TEXT_PRIMARY);
     }
 
     private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
@@ -549,7 +558,6 @@ public final class WorldMapScreen extends Screen {
                     NAVIGATION.togglePinned(currentId);
                 } else {
                     selectedWorldId = currentId;
-                    centerOnPlayer();
                 }
                 return true;
             }
@@ -574,13 +582,10 @@ public final class WorldMapScreen extends Screen {
 
             if (selectedActionRect().contains(mouseX, mouseY)) {
                 WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
-                if (selected != null) {
-                    if (isCurrentWorld(selected.worldId())) {
-                        centerOnPlayer();
-                    } else if (worlds.canTeleport() && !worlds.teleportPending()) {
-                        closeAfterWorldTeleport = true;
-                        worlds.teleport(selected.worldId());
-                    }
+                if (selected != null && !isCurrentWorld(selected.worldId())
+                        && worlds.canTeleport() && !worlds.teleportPending()) {
+                    closeAfterWorldTeleport = true;
+                    worlds.teleport(selected.worldId());
                 }
                 return true;
             }
@@ -623,6 +628,10 @@ public final class WorldMapScreen extends Screen {
             if (!contextMenuRect().contains(mouseX, mouseY)) contextOpen = false;
         }
 
+        if (!areaMode && recenterMapRect().contains(mouseX, mouseY) && button == 0) {
+            centerOnPlayer();
+            return true;
+        }
         if (zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
             discreteZoom(1, mapBounds().centerX(), mapBounds().centerY());
             return true;
@@ -1063,6 +1072,11 @@ public final class WorldMapScreen extends Screen {
     private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
     private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
     private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
+    private Rect recenterMapRect() {
+        Bounds map = mapBounds();
+        int buttonWidth = 70;
+        return new Rect(Math.max(map.left + 8, map.right - buttonWidth - 8), map.top + 8, map.right - 8, map.top + 30);
+    }
     private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }
     private Rect zoomLabelRect() { int x = zoomMinusRect().right + 3; return new Rect(x, height - 22, x + 64, height - 3); }
     private Rect zoomPlusRect() { int x = zoomLabelRect().right + 3; return new Rect(x, height - 22, x + 19, height - 3); }
