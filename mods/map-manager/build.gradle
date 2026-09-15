@@ -33,6 +33,18 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
 
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = 'lazybuilder-map-manager-visual-proof'
+        enableGameTests = false
+        enableClientGameTests = true
+        eula = true
+        clearRunDirectory = true
+        username = 'LazyBuilderPreview'
+    }
+}
+
 sourceSets {
     main {
         java {
