@@ -50,7 +50,7 @@ pub fn coordinate(
         steps.push(warning_step(
             "launcher-session",
             "Previous Launcher session ended unexpectedly",
-            "LazyBuilder recovered a stale instance marker. Filesystem, operation, restore, backup, and Paper process reconciliation will run before normal use.",
+            "LazyBuilder recovered a stale instance marker. Filesystem, operation, restore, backup, duplicate, and Paper process reconciliation will run before normal use.",
         ));
     } else {
         steps.push(ready_step("launcher-session", "Launcher session state clean", "No stale Launcher instance marker was found."));
@@ -111,6 +111,29 @@ pub fn coordinate(
     };
 
     if registry_ready {
+        match workspace_registry::recover_pending_duplicates() {
+            Ok(report) => {
+                let mut details = Vec::new();
+                if report.completed > 0 { details.push(format!("Completed {} published duplicate(s) that had not yet been registered.", report.completed)); }
+                if report.cleaned > 0 { details.push(format!("Cleaned {} interrupted duplicate staging location(s).", report.cleaned)); }
+                if !report.issues.is_empty() { details.push(report.issues.join(" ")); }
+                if details.is_empty() { details.push("No interrupted server duplicate requires recovery.".into()); }
+                let details = details.join(" ");
+                if report.issues.is_empty() {
+                    steps.push(ready_step("duplicate-recovery", "Server duplicate state reconciled", &details));
+                } else {
+                    degraded = true;
+                    diagnostics::error(&format!("Server duplicate recovery needs attention: {details}"));
+                    steps.push(warning_step("duplicate-recovery", "Server duplicate needs attention", &details));
+                }
+            }
+            Err(error) => {
+                degraded = true;
+                diagnostics::error(&format!("Server duplicate recovery failed: {error}"));
+                steps.push(warning_step("duplicate-recovery", "Server duplicate recovery could not run", &error));
+            }
+        }
+
         match server_restore::recover_pending_restores() {
             Ok(report) => {
                 let mut details = Vec::new();
@@ -189,6 +212,7 @@ pub fn coordinate(
         }
     } else {
         degraded = true;
+        steps.push(warning_step("duplicate-recovery", "Server duplicate recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted duplicates."));
         steps.push(warning_step("server-restore-recovery", "Server restore recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted restores."));
         steps.push(warning_step("backup-recovery", "Backup staging could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted backup staging."));
         steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", "The server library was unavailable, so LazyBuilder could not safely inspect registered Paper process markers."));
@@ -209,9 +233,7 @@ pub fn coordinate(
 
 fn reopen_most_recent_workspace() -> Result<Option<String>, String> {
     for entry in workspace_registry::list()? {
-        if !std::path::Path::new(&entry.path).is_dir() {
-            continue;
-        }
+        if !std::path::Path::new(&entry.path).is_dir() { continue; }
         match workspace_registry::activate(&entry.id) {
             Ok(active) => return Ok(Some(active.name)),
             Err(error) => diagnostics::info(&format!("Skipping remembered server {} during startup: {error}", entry.name)),
