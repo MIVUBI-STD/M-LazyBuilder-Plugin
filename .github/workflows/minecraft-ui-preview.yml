@@ -32,6 +32,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '8.12'
           cache-read-only: false
 
       - name: Ensure XVFB is available
@@ -46,7 +47,7 @@ jobs:
         shell: bash
         env:
           CI: 'true'
-        run: xvfb-run -a ./gradlew -p mods/map-manager --no-daemon runClientGameTest
+        run: xvfb-run -a gradle -p mods/map-manager --no-daemon runClientGameTest
 
       - name: Stage ChatGPT-readable Minecraft visual proof
         if: success()
