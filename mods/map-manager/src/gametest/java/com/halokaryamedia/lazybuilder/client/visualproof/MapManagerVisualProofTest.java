@@ -37,7 +37,7 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             context.waitTicks(40);
 
             PreviewState state = previewState();
-            pinPreviewWorlds();
+            context.runOnClient(client -> pinPreviewWorlds());
 
             resize(context, 1440, 900);
             openMap(context, state);
