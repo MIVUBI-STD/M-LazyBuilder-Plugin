@@ -3,6 +3,7 @@
   "package": "com.halokaryamedia.lazybuilder.utility.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "ConnectScreenMixin",
     "ChatScreenMixin",
     "ChatHudMixin",
     "DisconnectedScreenMixin",
