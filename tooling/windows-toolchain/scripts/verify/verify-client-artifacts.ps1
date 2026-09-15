@@ -24,7 +24,7 @@ function Fail([string]$Message) { throw "Client artifact verification failed: $M
 function Read-ZipEntryText($Zip, [string]$EntryName) {
     $entry = $Zip.GetEntry($EntryName)
     if (-not $entry) { return $null }
-    $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
+    $reader = [System.IO.StreamReader]::new($entry.Open(), [System.Text.Encoding]::UTF8)
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 
