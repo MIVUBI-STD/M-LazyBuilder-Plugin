@@ -3,8 +3,22 @@ name: Verify
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/04-system/*-audit.md'
+      - 'docs/04-system/*-lock.md'
+      - 'docs/04-system/*-status.md'
+      - 'docs/05-operations/*-testing-notes.md'
+      - 'docs/05-operations/*-handoff.md'
+      - 'docs/05-operations/remote-github-complete.md'
   pull_request:
     branches: [Local, main]
+    paths-ignore:
+      - 'docs/04-system/*-audit.md'
+      - 'docs/04-system/*-lock.md'
+      - 'docs/04-system/*-status.md'
+      - 'docs/05-operations/*-testing-notes.md'
+      - 'docs/05-operations/*-handoff.md'
+      - 'docs/05-operations/remote-github-complete.md'
   workflow_dispatch:
 
 permissions:
