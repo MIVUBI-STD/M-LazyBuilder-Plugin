@@ -117,18 +117,20 @@ public final class WorldTransferScreen extends Screen {
         int contentLeft = left + 30;
         int contentWidth = panelWidth - 60;
 
-        int tabWidth = (contentWidth - 8) / 2;
-        LbButtonWidget exportTab = LbUi.button(contentLeft, 72, tabWidth, 24,
-                "Export", tab == Tab.EXPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
-                () -> switchTab(Tab.EXPORT));
-        exportTab.active = world != null && !busy();
-        addDrawableChild(exportTab);
+        if (area == null) {
+            int tabWidth = (contentWidth - 8) / 2;
+            LbButtonWidget exportTab = LbUi.button(contentLeft, 72, tabWidth, 24,
+                    "Export", tab == Tab.EXPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
+                    () -> switchTab(Tab.EXPORT));
+            exportTab.active = world != null && !busy();
+            addDrawableChild(exportTab);
 
-        LbButtonWidget importTab = LbUi.button(contentLeft + tabWidth + 8, 72, tabWidth, 24,
-                "Import", tab == Tab.IMPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
-                () -> switchTab(Tab.IMPORT));
-        importTab.active = area == null && !busy();
-        addDrawableChild(importTab);
+            LbButtonWidget importTab = LbUi.button(contentLeft + tabWidth + 8, 72, tabWidth, 24,
+                    "Import", tab == Tab.IMPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
+                    () -> switchTab(Tab.IMPORT));
+            importTab.active = !busy();
+            addDrawableChild(importTab);
+        }
 
         if (tab == Tab.EXPORT && world != null) initExport(contentLeft, contentWidth);
         else initImport(contentLeft, contentWidth);
@@ -488,7 +490,8 @@ public final class WorldTransferScreen extends Screen {
         int panelHeight = Math.min(height - 70, panelHeight());
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
-        context.drawTextWithShadow(textRenderer, Text.literal("IMPORT / EXPORT"), left + 24, 40, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(area == null ? "IMPORT / EXPORT" : "EXPORT AREA"),
+                left + 24, 40, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world == null ? "Import World" : world.displayName()),
                 left + 24, 56, LbUi.TEXT_PRIMARY);
 
@@ -615,6 +618,7 @@ public final class WorldTransferScreen extends Screen {
     private String closeButtonLabel() {
         if (choosing || inspectingImport) return "Cancel";
         if (exporting || processingImport || transfers.status().active()) return "Continue in Background";
+        if (area != null) return "Cancel Area Export";
         return "Close";
     }
 
@@ -721,7 +725,7 @@ public final class WorldTransferScreen extends Screen {
 
     @Override
     public void close() {
-        if (area != null && exporting) finishAreaSelectionIfNeeded();
+        if (area != null) finishAreaSelectionIfNeeded();
         if (tab == Tab.IMPORT && !processingImport) {
             abandonImportReview = choosing || inspectingImport;
             discardPendingImportReview();
