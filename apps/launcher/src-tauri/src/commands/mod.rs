@@ -1,4 +1,5 @@
 pub mod client_integration;
+pub mod error;
 pub mod plugin_manager;
 pub mod resource_settings;
 pub mod server_manager;
