@@ -48,7 +48,13 @@ pub fn inspect(workspace_id: &str) -> Result<ServerHealthSnapshot, String> {
         .ok()
         .and_then(|text| serde_json::from_str::<ManifestIdentity>(&text).ok())
         .is_some_and(|manifest| manifest.workspace_id == entry.id);
-    checks.push(check("workspace-manifest", manifest_ready, if manifest_ready { "Workspace identity valid" } else { "Workspace identity needs repair" }, &manifest_path.display().to_string(), true));
+    checks.push(check(
+        "workspace-manifest",
+        manifest_ready,
+        if manifest_ready { "Workspace identity valid" } else { "Workspace identity needs attention" },
+        &manifest_path.display().to_string(),
+        false,
+    ));
 
     let config_dir = root.join("tools").join("lazybuilder").join("config");
     let config_ready = config_dir.is_dir();
@@ -107,5 +113,7 @@ mod tests {
         let item = check("paper-runtime", false, "missing", "paper.jar", true);
         assert!(item.repairable);
         assert!(!item.ready);
+        let identity = check("workspace-manifest", false, "invalid", "workspace.json", false);
+        assert!(!identity.repairable);
     }
 }
