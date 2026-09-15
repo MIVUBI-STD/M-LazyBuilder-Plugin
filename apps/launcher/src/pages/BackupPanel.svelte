@@ -3,12 +3,15 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { ServerBackupEstimate, ServerBackupSummary, ServerSnapshot, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
+  export let onRestored: (() => Promise<void> | void) | undefined = undefined;
+
   let workspace: WorkspaceEntry | null = null;
   let backups: ServerBackupSummary[] = [];
   let estimate: ServerBackupEstimate | null = null;
   let snapshot: ServerSnapshot | null = null;
   let loading = true;
   let creating = false;
+  let restoringId = '';
   let deletingId = '';
   let error = '';
   let notice = '';
@@ -57,7 +60,7 @@
   }
 
   async function createBackup() {
-    if (!workspace || creating) return;
+    if (!workspace || creating || restoringId || deletingId) return;
     creating = true;
     error = '';
     notice = '';
@@ -72,8 +75,32 @@
     }
   }
 
+  async function restoreBackup(backup: ServerBackupSummary) {
+    if (!workspace || restoringId || creating || deletingId || !serverOffline) return;
+    const confirmed = window.confirm(
+      `Restore the full server to ${formatDate(backup.createdUnixSeconds)}?\n\nLazyBuilder will first create a safety backup of the current server. The server must remain offline during the restore.`
+    );
+    if (!confirmed) return;
+
+    restoringId = backup.id;
+    error = '';
+    notice = '';
+    try {
+      const result = await runtimeProduct.backups.restore(workspace.id, backup.id);
+      notice = result.cleanupPending
+        ? 'Server restored. Cleanup of preserved rollback staging will be retried on next startup.'
+        : `Server restored. A pre-restore safety backup was created at ${formatDate(result.safetyBackup.createdUnixSeconds)}.`;
+      await refresh();
+      await onRestored?.();
+    } catch (value) {
+      error = friendlyError(value);
+    } finally {
+      restoringId = '';
+    }
+  }
+
   async function deleteBackup(backup: ServerBackupSummary) {
-    if (!workspace || deletingId) return;
+    if (!workspace || deletingId || restoringId || creating) return;
     if (!window.confirm(`Delete this backup from ${formatDate(backup.createdUnixSeconds)}? The current server is not affected.`)) return;
     deletingId = backup.id;
     error = '';
@@ -92,15 +119,16 @@
   onMount(() => { void initialLoad(); });
 
   $: serverOffline = snapshot ? ['Offline', 'Crashed'].includes(snapshot.state) : false;
+  $: mutationBusy = creating || !!restoringId || !!deletingId;
 </script>
 
 <section class="backup-panel" aria-labelledby="backup-heading">
   <header class="backup-heading">
     <div>
       <h3 id="backup-heading">Server backups</h3>
-      <p>Restore points for the entire LazyBuilder server workspace.</p>
+      <p>Full restore points for worlds, configuration, plugins, and plugin data.</p>
     </div>
-    <button class="backup-button" disabled={loading || creating || !workspace || !serverOffline} onclick={createBackup}>
+    <button class="backup-button" disabled={loading || mutationBusy || !workspace || !serverOffline} onclick={createBackup}>
       {creating ? 'Creating backup…' : 'Create backup'}
     </button>
   </header>
@@ -120,7 +148,7 @@
     </div>
 
     {#if !serverOffline}
-      <div class="offline-note">Stop the server before creating a full backup so world and plugin data are captured consistently.</div>
+      <div class="offline-note">Stop the server before creating or restoring a full backup so world and plugin data remain consistent.</div>
     {/if}
 
     {#if backups.length === 0}
@@ -134,9 +162,14 @@
               <strong>{formatDate(backup.createdUnixSeconds)}</strong>
               <span>{formatBytes(backup.sourceBytes)} · full server restore point</span>
             </div>
-            <button class="delete-button" disabled={!!deletingId} onclick={() => deleteBackup(backup)}>
-              {deletingId === backup.id ? 'Deleting…' : 'Delete'}
-            </button>
+            <div class="backup-actions">
+              <button class="restore-button" disabled={mutationBusy || !serverOffline} onclick={() => restoreBackup(backup)}>
+                {restoringId === backup.id ? 'Restoring…' : 'Restore'}
+              </button>
+              <button class="delete-button" disabled={mutationBusy} onclick={() => deleteBackup(backup)}>
+                {deletingId === backup.id ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
           </article>
         {/each}
       </div>
@@ -147,10 +180,10 @@
 <style>
   .backup-panel{margin-top:16px;padding:16px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}
   .backup-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.backup-heading h3{margin:0;font-size:14px}.backup-heading p{margin:3px 0 0;color:var(--muted);font-size:10px}
-  .backup-button,.delete-button{min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.backup-button{padding:7px 12px;border:1px solid var(--accent-border);background:var(--accent-soft);color:#9ee8b9}.delete-button{padding:6px 10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-soft);font-size:10px}.backup-button:disabled,.delete-button:disabled{opacity:.5;cursor:default}
+  .backup-button,.restore-button,.delete-button{min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.backup-button{padding:7px 12px;border:1px solid var(--accent-border);background:var(--accent-soft);color:#9ee8b9}.restore-button,.delete-button{padding:6px 10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-soft);font-size:10px}.restore-button{border-color:var(--accent-border);color:#b7f0cb}.backup-button:disabled,.restore-button:disabled,.delete-button:disabled{opacity:.5;cursor:default}
   .backup-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.backup-summary>div{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.backup-summary span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.backup-summary strong{font-size:11px}
   .offline-note,.backup-notice{margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.offline-note{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}.backup-notice.danger{border:1px solid #62343a;background:var(--danger-bg);color:#ffd9dc}.backup-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}
-  .backup-list{display:grid;margin-top:12px}.backup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-top:1px solid var(--border-soft)}.backup-row:first-child{border-top:0}.backup-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:var(--surface-2);color:var(--muted)}.backup-copy{display:grid;gap:2px;min-width:0}.backup-copy strong{font-size:11px}.backup-copy span{color:var(--muted);font-size:9px}
+  .backup-list{display:grid;margin-top:12px}.backup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-top:1px solid var(--border-soft)}.backup-row:first-child{border-top:0}.backup-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:var(--surface-2);color:var(--muted)}.backup-copy{display:grid;gap:2px;min-width:0}.backup-copy strong{font-size:11px}.backup-copy span{color:var(--muted);font-size:9px}.backup-actions{display:flex;gap:6px}
   .backup-empty{min-height:92px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px}.backup-empty.compact{min-height:84px;flex-direction:column;gap:3px}.backup-empty.compact strong{color:var(--text-soft);font-size:11px}
-  @media(max-width:760px){.backup-heading{align-items:flex-start;flex-direction:column}.backup-summary{grid-template-columns:1fr}.backup-row{grid-template-columns:auto minmax(0,1fr)}.delete-button{grid-column:2;width:max-content}}
+  @media(max-width:760px){.backup-heading{align-items:flex-start;flex-direction:column}.backup-summary{grid-template-columns:1fr}.backup-row{grid-template-columns:auto minmax(0,1fr)}.backup-actions{grid-column:2;justify-content:flex-start}}
 </style>
