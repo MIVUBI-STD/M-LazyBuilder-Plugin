@@ -1,30 +1,36 @@
 package com.halokaryamedia.lazybuilder.client;
 
+import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.RotationAxis;
+import org.lwjgl.glfw.GLFW;
 
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Fullscreen LazyBuilder world map.
+ * Fullscreen LazyBuilder world map and lightweight managed-world navigator.
  *
- * <p>The map owns spatial presentation and selection only. The chunk-grid
- * selection interaction is first-party LazyBuilder UI; no external converter
- * component, asset, widget, or runtime owns this surface. Export format,
- * packaging and conversion stay in the canonical Import / Export workspace.</p>
+ * <p>World administration remains in {@link WorldManagerScreen}. This screen owns only
+ * spatial presentation, quick navigation, and map-local actions. UI state never becomes
+ * authoritative world state, and presentation changes do not reset the terrain cache.</p>
  */
 public final class WorldMapScreen extends Screen {
-    private static final int TOP_BAR = 30;
-    private static final int BOTTOM_BAR = 26;
-    private static final int SELECTION_BOTTOM_BAR = 66;
-    private static final int SAMPLE_BUDGET_PER_FRAME = 4096;
-    private static final int RASTER_REFRESH_INTERVAL_FRAMES = 10;
+    private static final int BOTTOM_BAR = 24;
+    private static final int SELECTION_BOTTOM_BAR = 64;
+    private static final int COLLAPSED_SIDEBAR = 34;
+    private static final int MIN_SIDEBAR = 152;
+    private static final int MAX_SIDEBAR = 176;
+    private static final int SIDEBAR_GAP = 1;
+    private static final int SAMPLE_BUDGET_PER_TICK = 4096;
+    private static final int RASTER_REFRESH_INTERVAL_FRAMES = 12;
     private static final int CHUNK_BLOCKS = 16;
     private static final int REGION_BLOCKS = 512;
     private static final int DEFAULT_SELECTION_CHUNKS = 8;
@@ -32,11 +38,14 @@ public final class WorldMapScreen extends Screen {
     private static final int CHUNK_GRID_COLOR = 0x2EFFFFFF;
     private static final int REGION_GRID_COLOR = 0x667F8FA3;
     private static final int OUTSIDE_SELECTION_DIM = 0x48101418;
+    private static final int SIDEBAR_ROW_HEIGHT = 27;
+    private static final int MAX_FAVORITES = 5;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
     private static final double PRECISE_ZOOM_FACTOR = 1.18;
     private static final double[] ZOOM_STEPS = {0.5, 1, 2, 4, 8, 16, 32, 64};
     private static final ClientMapSurfaceCache SURFACE = new ClientMapSurfaceCache();
+    private static final WorldNavigationPreferences NAVIGATION = WorldNavigationPreferences.shared();
 
     private final ClientWorldController worlds;
     private final ClientTransferController transfers;
@@ -44,16 +53,14 @@ public final class WorldMapScreen extends Screen {
 
     private double centerX;
     private double centerZ;
-    private double animatedZoom = 2.0;
-    private double targetZoom = 2.0;
+    private double zoom = 2.0;
     private boolean centeredOnce;
     private boolean draggingMap;
-
-    private boolean zoomAnchored;
-    private double zoomAnchorWorldX;
-    private double zoomAnchorWorldZ;
-    private double zoomAnchorScreenX;
-    private double zoomAnchorScreenY;
+    private boolean initialLayoutApplied;
+    private boolean sidebarCollapsed;
+    private boolean showAllWorlds;
+    private int worldListOffset;
+    private UUID selectedWorldId;
 
     private boolean areaMode;
     private UUID selectionWorldId;
@@ -81,7 +88,6 @@ public final class WorldMapScreen extends Screen {
     private int rasterHalfCellsX;
     private int rasterHalfCellsZ;
     private int rasterPixel = -1;
-    private int rasterSurfaceSize = -1;
     private int rasterAgeFrames = RASTER_REFRESH_INTERVAL_FRAMES;
     private int rasterLeft;
     private int rasterTop;
@@ -92,6 +98,13 @@ public final class WorldMapScreen extends Screen {
     private double rasterZoom = Double.NaN;
     private String rasterScope = "";
 
+    private boolean requestedCurrentWorld;
+    private long observedWorldRevision;
+    private long observedMapRevision;
+    private UUID observedCurrentWorldId;
+    private boolean closeAfterWorldTeleport;
+    private boolean closeAfterMapTeleport;
+
     public WorldMapScreen(
             ClientWorldController worlds,
             ClientTransferController transfers,
@@ -101,6 +114,8 @@ public final class WorldMapScreen extends Screen {
         this.worlds = worlds;
         this.transfers = transfers;
         this.maps = maps;
+        this.observedWorldRevision = worlds.revision();
+        this.observedMapRevision = maps.revision();
     }
 
     @Override
@@ -109,184 +124,74 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             centeredOnce = true;
         }
-        maps.refreshCurrentWorld();
-
-        addDrawableChild(LbUi.button(6, 6, 64, 18,
-                "Worlds", LbButtonWidget.Style.SECONDARY,
-                () -> { if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps)); }));
-
-        addDrawableChild(LbUi.button(width - 52, 6, 20, 18,
-                "−", LbButtonWidget.Style.GHOST,
-                () -> discreteZoom(1, width - 42, 15)));
-        addDrawableChild(LbUi.button(width - 28, 6, 20, 18,
-                "+", LbButtonWidget.Style.GHOST,
-                () -> discreteZoom(-1, width - 18, 15)));
-
-        if (areaMode) addSelectionActions();
-        else if (contextOpen) addContextButtons();
-    }
-
-    private void addContextButtons() {
-        int menuWidth = 164;
-        int itemHeight = 21;
-        int itemCount = 6;
-        int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
-        int panelY = Math.max(TOP_BAR + 4,
-                Math.min(height - BOTTOM_BAR - (itemCount * itemHeight + 30), contextScreenY));
-        int y = panelY + 25;
-
-        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Teleport Here", LbButtonWidget.Style.PRIMARY, () -> {
-                    maps.teleportCurrent(contextBlockX, contextBlockZ);
-                    contextOpen = false;
-                    clearAndInit();
-                }));
-        y += itemHeight;
-
-        LbButtonWidget exportArea = LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Export Area", LbButtonWidget.Style.SECONDARY,
-                () -> beginAreaSelection(contextBlockX, contextBlockZ));
-        exportArea.active = maps.currentWorld() != null && worlds.canManage();
-        addDrawableChild(exportArea);
-        y += itemHeight;
-
-        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Center Map Here", LbButtonWidget.Style.GHOST, () -> {
-                    centerX = contextBlockX;
-                    centerZ = contextBlockZ;
-                    contextOpen = false;
-                    zoomAnchored = false;
-                    clearAndInit();
-                }));
-        y += itemHeight;
-
-        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Copy Coordinates", LbButtonWidget.Style.GHOST, () -> {
-                    if (client != null) client.keyboard.setClipboard(contextBlockX + ", " + contextBlockZ);
-                    contextOpen = false;
-                    clearAndInit();
-                }));
-        y += itemHeight;
-
-        LbButtonWidget copyReviewReference = LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Copy Review Reference", LbButtonWidget.Style.GHOST, this::copyReviewReference);
-        copyReviewReference.active = maps.currentWorld() != null
-                && client != null
-                && client.player != null
-                && client.world != null;
-        addDrawableChild(copyReviewReference);
-        y += itemHeight;
-
-        addDrawableChild(LbUi.button(panelX + 5, y, menuWidth - 10, 19,
-                "Cancel", LbButtonWidget.Style.GHOST, () -> {
-                    contextOpen = false;
-                    clearAndInit();
-                }));
-    }
-
-    private void copyReviewReference() {
-        var current = maps.currentWorld();
-        if (client == null || client.player == null || client.world == null || current == null) {
-            LazyBuilderClientNetworking.notifyPlayer(
-                    "LazyBuilder: open a managed world before copying a review reference.");
-            return;
+        if (!initialLayoutApplied) {
+            sidebarCollapsed = width < 520;
+            initialLayoutApplied = true;
         }
-
-        String dimension = client.world.getRegistryKey().getValue().toString();
-        String reference = "World: " + current.displayName() + "\n"
-                + "World ID: " + current.worldId() + "\n"
-                + "Location: " + client.player.getBlockX() + " "
-                + client.player.getBlockY() + " "
-                + client.player.getBlockZ() + "\n"
-                + "Dimension: " + dimension;
-
-        client.keyboard.setClipboard(reference);
-        LazyBuilderClientNetworking.notifyPlayer("Review reference copied.");
-        contextOpen = false;
-        clearAndInit();
-    }
-
-    private void addSelectionActions() {
-        int y = height - 43;
-        int continueWidth = 92;
-        int cancelWidth = 72;
-        int gap = 8;
-        int right = width - 10;
-
-        addDrawableChild(LbUi.button(right - continueWidth, y, continueWidth, 24,
-                "Continue", LbButtonWidget.Style.PRIMARY, this::continueAreaExport));
-        addDrawableChild(LbUi.button(right - continueWidth - gap - cancelWidth, y, cancelWidth, 24,
-                "Cancel", LbButtonWidget.Style.GHOST, () -> {
-                    clearAreaSelection();
-                    clearAndInit();
-                }));
-    }
-
-    private void beginAreaSelection(int blockX, int blockZ) {
-        var current = maps.currentWorld();
-        if (current == null) {
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: open a managed world before selecting an export area.");
-            return;
+        NAVIGATION.reload();
+        if (!worlds.worldListReady() && !worlds.worldListPending()) worlds.refresh();
+        if (!requestedCurrentWorld) {
+            requestedCurrentWorld = true;
+            maps.refreshCurrentWorld();
         }
-        if (!worlds.canManage()) {
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: your server role does not allow area export.");
-            return;
-        }
-
-        int centerChunkX = Math.floorDiv(blockX, CHUNK_BLOCKS);
-        int centerChunkZ = Math.floorDiv(blockZ, CHUNK_BLOCKS);
-        int before = DEFAULT_SELECTION_CHUNKS / 2;
-        int after = DEFAULT_SELECTION_CHUNKS - before - 1;
-        minChunkX = centerChunkX - before;
-        maxChunkX = centerChunkX + after;
-        minChunkZ = centerChunkZ - before;
-        maxChunkZ = centerChunkZ + after;
-        selectionWorldId = current.worldId().value();
-        areaMode = true;
-        contextOpen = false;
-        selectionDrag = DragMode.NONE;
-        clearAndInit();
-    }
-
-    private void continueAreaExport() {
-        if (!areaMode || client == null) return;
-        var current = maps.currentWorld();
-        if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
-            clearAreaSelection();
-            LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: the selected area no longer belongs to the current world.");
-            clearAndInit();
-            return;
-        }
-
-        client.setScreen(WorldTransferScreen.forArea(
-                this,
-                worlds,
-                transfers,
-                maps,
-                current,
-                minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ()));
-    }
-
-    /** Called by the export workspace after a selected-area export completes. */
-    void finishAreaExport() {
-        clearAreaSelection();
+        observeCurrentWorld();
+        observedWorldRevision = worlds.revision();
+        observedMapRevision = maps.revision();
     }
 
     @Override
     public void tick() {
+        if (observedMapRevision != maps.revision()) {
+            observedMapRevision = maps.revision();
+            observeCurrentWorld();
+        }
+        if (observedWorldRevision != worlds.revision()) {
+            observedWorldRevision = worlds.revision();
+            clampSelectedWorld();
+        }
+
+        if (closeAfterMapTeleport && !maps.teleportPending()) {
+            closeAfterMapTeleport = false;
+            if (maps.lastError() == null) {
+                closeFromToggle();
+                return;
+            }
+        }
+        if (closeAfterWorldTeleport && !worlds.teleportPending()) {
+            closeAfterWorldTeleport = false;
+            if (worlds.lastError() == null) {
+                closeFromToggle();
+                return;
+            }
+        }
+
         if (areaMode) {
             var current = maps.currentWorld();
             if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
                 clearAreaSelection();
-                LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: area selection cleared because the current world changed.");
-                clearAndInit();
+                LazyBuilderClientNetworking.notifyPlayer(
+                        "LazyBuilder: area selection cleared because the current world changed.");
             }
         }
     }
 
+    private void observeCurrentWorld() {
+        UUID currentId = currentWorldId();
+        if (currentId == null || currentId.equals(observedCurrentWorldId)) return;
+        observedCurrentWorldId = currentId;
+        NAVIGATION.recordVisited(currentId);
+        if (selectedWorldId == null) selectedWorldId = currentId;
+    }
+
+    private void clampSelectedWorld() {
+        if (selectedWorldId == null) return;
+        if (findActiveWorld(selectedWorldId) == null) selectedWorldId = null;
+        int maxOffset = Math.max(0, activeWorlds().size() - visibleSidebarRows());
+        worldListOffset = Math.max(0, Math.min(worldListOffset, maxOffset));
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        updateZoomAnimation();
         context.fill(0, 0, width, height, LbUi.BACKGROUND);
         renderMap(context);
         if (areaMode) {
@@ -294,29 +199,43 @@ public final class WorldMapScreen extends Screen {
             renderSelection(context, mouseX, mouseY);
         }
         renderCursor(context, mouseX, mouseY);
-        renderHud(context, mouseX, mouseY);
-        renderContextMenuBackground(context);
+        renderSidebar(context, mouseX, mouseY);
+        renderBottomStatus(context, mouseX, mouseY);
+        renderContextMenu(context, mouseX, mouseY);
         super.render(context, mouseX, mouseY, delta);
     }
 
     private void renderMap(DrawContext context) {
         ClientWorld world = client == null ? null : client.world;
-        if (world == null) return;
-
-        String managedWorld = maps.currentWorld() == null ? "unmanaged" : maps.currentWorld().worldId().toString();
-        String dimension = world.getRegistryKey().getValue().toString();
-        String scope = managedWorld + "|" + dimension;
-        Path storage = client == null ? null : client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
-        SURFACE.useScope(scope, storage);
-        SURFACE.processPending(world, SAMPLE_BUDGET_PER_FRAME);
-
         Bounds bounds = mapBounds();
         context.fill(bounds.left, bounds.top, bounds.right, bounds.bottom, ClientMapSurfaceCache.UNEXPLORED_COLOR);
+        if (world == null) return;
+
+        var current = maps.currentWorld();
+        if (current == null) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Resolving managed world…"),
+                    bounds.centerX(), bounds.centerY() - 4, LbUi.TEXT_SECONDARY);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Map rendering starts after server identity is known"),
+                    bounds.centerX(), bounds.centerY() + 12, LbUi.TEXT_MUTED);
+            return;
+        }
+
+        String dimension = world.getRegistryKey().getValue().toString();
+        String scope = current.worldId() + "|" + dimension;
+        Path storage = client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
+
+        if (!scope.equals(rasterScope) && !rasterScope.isBlank()) {
+            // Never show a previous world/dimension raster under a newly authoritative scope.
+            rasterColors = new int[0];
+            rasterColumns = 0;
+            rasterRows = 0;
+        }
+        SURFACE.useScope(scope, storage);
+        SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK);
 
         int pixel = mapPixelSize();
-        int surfaceSize = SURFACE.size();
-        if (rasterNeedsRefresh(scope, bounds, pixel, surfaceSize)) {
-            rebuildRaster(world, scope, bounds, pixel, surfaceSize);
+        if (rasterNeedsRefresh(scope, bounds, pixel)) {
+            rebuildRaster(world, scope, bounds, pixel);
         } else {
             rasterAgeFrames++;
         }
@@ -324,10 +243,9 @@ public final class WorldMapScreen extends Screen {
         renderPlayerMarker(context, bounds);
     }
 
-    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel, int surfaceSize) {
+    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel) {
         return rasterColors.length == 0
                 || rasterAgeFrames >= RASTER_REFRESH_INTERVAL_FRAMES
-                || rasterSurfaceSize != surfaceSize
                 || rasterPixel != pixel
                 || rasterLeft != bounds.left
                 || rasterTop != bounds.top
@@ -335,20 +253,19 @@ public final class WorldMapScreen extends Screen {
                 || rasterBottom != bounds.bottom
                 || Double.compare(rasterCenterX, centerX) != 0
                 || Double.compare(rasterCenterZ, centerZ) != 0
-                || Double.compare(rasterZoom, zoom()) != 0
+                || Double.compare(rasterZoom, zoom) != 0
                 || !rasterScope.equals(scope);
     }
 
-    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel, int surfaceSize) {
-        double blocksPerCell = zoom() * pixel / 2.0;
+    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel) {
+        double blocksPerCell = zoom * pixel / 2.0;
         int sampleSpan = Math.max(1, (int) Math.ceil(blocksPerCell));
         int halfCellsX = Math.max(1, bounds.width() / pixel / 2);
         int halfCellsZ = Math.max(1, bounds.height() / pixel / 2);
         int columns = halfCellsX * 2 + 5;
         int rows = halfCellsZ * 2 + 5;
-        int required = columns * rows;
-        if (rasterColors.length != required) rasterColors = new int[required];
-        else Arrays.fill(rasterColors, ClientMapSurfaceCache.UNEXPLORED_COLOR);
+        int[] nextColors = new int[columns * rows];
+        java.util.Arrays.fill(nextColors, ClientMapSurfaceCache.UNEXPLORED_COLOR);
 
         double originCellX = centerX / blocksPerCell;
         double originCellZ = centerZ / blocksPerCell;
@@ -361,18 +278,19 @@ public final class WorldMapScreen extends Screen {
                         && screenX + pixel >= bounds.left && screenX < bounds.right) {
                     int blockX = (int) Math.floor((originCellX + cx) * blocksPerCell);
                     int blockZ = (int) Math.floor((originCellZ + cz) * blocksPerCell);
-                    rasterColors[index] = SURFACE.sampleArea(world, blockX, blockZ, sampleSpan).color();
+                    nextColors[index] = SURFACE.sampleArea(world, blockX, blockZ, sampleSpan).color();
                 }
                 index++;
             }
         }
 
+        // Publish the completed raster in one assignment so partially rebuilt frames are never visible.
+        rasterColors = nextColors;
         rasterColumns = columns;
         rasterRows = rows;
         rasterHalfCellsX = halfCellsX;
         rasterHalfCellsZ = halfCellsZ;
         rasterPixel = pixel;
-        rasterSurfaceSize = surfaceSize;
         rasterAgeFrames = 0;
         rasterLeft = bounds.left;
         rasterTop = bounds.top;
@@ -380,12 +298,12 @@ public final class WorldMapScreen extends Screen {
         rasterBottom = bounds.bottom;
         rasterCenterX = centerX;
         rasterCenterZ = centerZ;
-        rasterZoom = zoom();
+        rasterZoom = zoom;
         rasterScope = scope;
     }
 
     private void drawRaster(DrawContext context, Bounds bounds, int pixel) {
-        if (rasterColumns <= 0 || rasterRows <= 0) return;
+        if (rasterColumns <= 0 || rasterRows <= 0 || rasterColors.length == 0) return;
         int index = 0;
         for (int row = 0; row < rasterRows; row++) {
             int cz = row - rasterHalfCellsZ - 2;
@@ -399,17 +317,6 @@ public final class WorldMapScreen extends Screen {
                 context.fill(screenX, screenY, screenX + pixel, screenY + pixel, color);
             }
         }
-    }
-
-    private int mapPixelSize() {
-        double z = zoom();
-        if (z <= 2.0) return 2;
-        if (z <= 8.0) return 3;
-        return 4;
-    }
-
-    private double blocksPerPixel() {
-        return zoom() / 2.0;
     }
 
     private void renderPlayerMarker(DrawContext context, Bounds bounds) {
@@ -429,12 +336,443 @@ public final class WorldMapScreen extends Screen {
         context.getMatrices().pop();
     }
 
+    private void renderSidebar(DrawContext context, int mouseX, int mouseY) {
+        int sidebar = sidebarWidth();
+        context.fill(0, 0, sidebar, height, 0xF214181E);
+        context.fill(sidebar - 1, 0, sidebar, height, LbUi.BORDER);
+
+        if (sidebarCollapsed) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("›"), sidebar / 2, 13, LbUi.TEXT_PRIMARY);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("●"), sidebar / 2, 48, LbUi.SUCCESS);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("★"), sidebar / 2, 78, LbUi.ACCENT_BRIGHT);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("⚙"), sidebar / 2, height - 28, LbUi.TEXT_MUTED);
+            return;
+        }
+
+        context.drawTextWithShadow(textRenderer, Text.literal("Worlds"), 12, 12, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("‹"), sidebar - 18, 12, LbUi.TEXT_MUTED);
+        LbUi.divider(context, 10, 29, sidebar - 10);
+
+        context.drawTextWithShadow(textRenderer, Text.literal("Current"), 12, 39, LbUi.TEXT_MUTED);
+        Rect currentRect = currentWorldRect();
+        boolean currentHover = currentRect.contains(mouseX, mouseY);
+        if (currentHover) context.fill(currentRect.left, currentRect.top, currentRect.right, currentRect.bottom, LbUi.SURFACE_2);
+        UUID currentId = currentWorldId();
+        String currentName = maps.currentWorld() == null ? "Resolving…" : maps.currentWorld().displayName();
+        context.drawTextWithShadow(textRenderer, Text.literal("●"), 12, currentRect.top + 8,
+                currentId == null ? LbUi.TEXT_MUTED : LbUi.SUCCESS);
+        context.drawTextWithShadow(textRenderer, Text.literal(trim(currentName, sidebar - 54)), 27,
+                currentRect.top + 6, LbUi.TEXT_PRIMARY);
+        if (client != null && client.world != null) {
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(friendlyDimension(client.world.getRegistryKey().getValue().getPath())), 27,
+                    currentRect.top + 17, LbUi.TEXT_MUTED);
+        }
+        if (currentId != null) {
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(NAVIGATION.isPinned(currentId) ? "★" : "☆"), sidebar - 20,
+                    currentRect.top + 8, NAVIGATION.isPinned(currentId) ? LbUi.ACCENT_BRIGHT : LbUi.TEXT_MUTED);
+        }
+
+        String section = showAllWorlds ? "All worlds" : "Favorites";
+        String switchLabel = showAllWorlds ? "Favorites" : "All ›";
+        context.drawTextWithShadow(textRenderer, Text.literal(section), 12, 91, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(switchLabel), sidebar - 12 - textRenderer.getWidth(switchLabel),
+                91, LbUi.TEXT_MUTED);
+
+        List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
+        int rowY = 105;
+        for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
+            WorldControlWireProtocol.WorldSummary world = rows.get(i);
+            Rect rect = new Rect(8, rowY, sidebar - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
+            boolean selected = world.worldId().equals(selectedWorldId);
+            boolean hover = rect.contains(mouseX, mouseY);
+            if (selected) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.ACCENT_FILL);
+            else if (hover) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.SURFACE_2);
+
+            boolean pinned = NAVIGATION.isPinned(world.worldId());
+            context.drawTextWithShadow(textRenderer, Text.literal(pinned ? "★" : "☆"), 12, rowY + 8,
+                    pinned ? LbUi.ACCENT_BRIGHT : LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal(trim(world.displayName(), sidebar - 49)), 28,
+                    rowY + 8, LbUi.TEXT_PRIMARY);
+            if (isCurrentWorld(world.worldId())) {
+                context.drawTextWithShadow(textRenderer, Text.literal("●"), sidebar - 20, rowY + 8, LbUi.SUCCESS);
+            }
+            rowY += SIDEBAR_ROW_HEIGHT;
+        }
+
+        renderSelectedWorldAction(context, mouseX, mouseY);
+
+        Rect manage = manageWorldsRect();
+        if (manage.contains(mouseX, mouseY)) context.fill(manage.left, manage.top, manage.right, manage.bottom, LbUi.SURFACE_2);
+        context.fill(10, manage.top - 6, sidebar - 10, manage.top - 5, LbUi.BORDER);
+        context.drawTextWithShadow(textRenderer, Text.literal("Manage worlds"), 12, manage.top + 8, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("›"), sidebar - 18, manage.top + 8, LbUi.TEXT_MUTED);
+    }
+
+    private void renderSelectedWorldAction(DrawContext context, int mouseX, int mouseY) {
+        if (sidebarCollapsed || selectedWorldId == null) return;
+        WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
+        if (selected == null) return;
+        Rect action = selectedActionRect();
+        if (action.top < 110) return;
+        boolean current = isCurrentWorld(selected.worldId());
+        boolean pending = worlds.teleportPending();
+        int color = current ? LbUi.SURFACE_2 : pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
+        if (action.contains(mouseX, mouseY) && !pending) color = current ? LbUi.SURFACE_3 : LbUi.ACCENT_HOVER;
+        context.fill(action.left, action.top, action.right, action.bottom, color);
+        String label = current ? "Center player" : pending ? "Teleporting…" : "Teleport →";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
+                (action.left + action.right) / 2, action.top + 7,
+                pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
+    }
+
+    private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
+        int bottom = areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR;
+        int left = sidebarWidth();
+        context.fill(left, height - bottom, width, height, 0xE314181E);
+        context.fill(left, height - bottom, width, height - bottom + 1, LbUi.BORDER);
+
+        if (areaMode) {
+            int chunksX = maxChunkX - minChunkX + 1;
+            int chunksZ = maxChunkZ - minChunkZ + 1;
+            context.drawTextWithShadow(textRenderer, Text.literal("Export area"), left + 10, height - 49, LbUi.ACCENT_BRIGHT);
+            context.drawTextWithShadow(textRenderer,
+                    Text.literal(chunksX + " × " + chunksZ + " chunks  •  X " + minChunkX + " → " + maxChunkX
+                            + "  Z " + minChunkZ + " → " + maxChunkZ),
+                    left + 10, height - 33, LbUi.TEXT_SECONDARY);
+            renderCompactAction(context, areaCancelRect(), "Cancel", false, mouseX, mouseY);
+            renderCompactAction(context, areaContinueRect(), "Continue", true, mouseX, mouseY);
+            return;
+        }
+
+        int[] hovered = screenToWorld(mouseX, mouseY);
+        String center = hovered == null
+                ? zoomLabel()
+                : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomLabel();
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(center),
+                left + (width - left) / 2, height - 16, LbUi.TEXT_SECONDARY);
+
+        String status = maps.teleportPending() ? "Teleporting…"
+                : SURFACE.pendingCount() > 0 ? "Mapping " + SURFACE.pendingCount() + " columns…"
+                : "M / Esc close  •  Drag pan  •  Scroll zoom  •  R recenter";
+        context.drawTextWithShadow(textRenderer, Text.literal(status), left + 8, height - 16, LbUi.TEXT_MUTED);
+
+        renderZoomControl(context, mouseX, mouseY);
+    }
+
+    private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
+        Rect minus = zoomMinusRect();
+        Rect plus = zoomPlusRect();
+        context.fill(minus.left, minus.top, minus.right, minus.bottom,
+                minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
+        context.fill(plus.left, plus.top, plus.right, plus.bottom,
+                plus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("−"), (minus.left + minus.right) / 2, minus.top + 5, LbUi.TEXT_PRIMARY);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), (plus.left + plus.right) / 2, plus.top + 5, LbUi.TEXT_PRIMARY);
+    }
+
+    private void renderCompactAction(DrawContext context, Rect rect, String label, boolean primary, int mouseX, int mouseY) {
+        int base = primary ? LbUi.ACCENT_FILL : LbUi.SURFACE_2;
+        int hover = primary ? LbUi.ACCENT_HOVER : LbUi.SURFACE_3;
+        context.fill(rect.left, rect.top, rect.right, rect.bottom, rect.contains(mouseX, mouseY) ? hover : base);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
+                (rect.left + rect.right) / 2, rect.top + 6, LbUi.TEXT_PRIMARY);
+    }
+
+    private void renderContextMenu(DrawContext context, int mouseX, int mouseY) {
+        if (!contextOpen || areaMode) return;
+        Rect menu = contextMenuRect();
+        context.fill(menu.left - 2, menu.top - 2, menu.right + 2, menu.bottom + 2, 0x77000000);
+        LbUi.elevatedPanel(context, menu.left, menu.top, menu.width(), menu.height());
+        context.drawTextWithShadow(textRenderer, Text.literal("Map actions"), menu.left + 8, menu.top + 7, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("X " + contextBlockX + "  Z " + contextBlockZ),
+                menu.left + 8, menu.top + 20, LbUi.TEXT_MUTED);
+
+        renderMenuRow(context, contextTeleportRect(), maps.teleportPending() ? "Teleporting…" : "Teleport here",
+                !maps.teleportPending(), mouseX, mouseY);
+        renderMenuRow(context, contextExportRect(), "Export area", maps.currentWorld() != null && worlds.canManage(), mouseX, mouseY);
+        renderMenuRow(context, contextCopyRect(), "Copy coordinates", true, mouseX, mouseY);
+    }
+
+    private void renderMenuRow(DrawContext context, Rect rect, String label, boolean active, int mouseX, int mouseY) {
+        if (active && rect.contains(mouseX, mouseY)) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.SURFACE_3);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 6,
+                active ? LbUi.TEXT_PRIMARY : LbUi.TEXT_DISABLED);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
+            sidebarCollapsed = false;
+            invalidateRasterViewport();
+            return true;
+        }
+
+        if (!sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
+            if (mouseY < 31 && mouseX > sidebarWidth() - 32) {
+                sidebarCollapsed = true;
+                contextOpen = false;
+                invalidateRasterViewport();
+                return true;
+            }
+            if (currentWorldRect().contains(mouseX, mouseY)) {
+                UUID currentId = currentWorldId();
+                if (currentId != null && mouseX >= sidebarWidth() - 32) {
+                    NAVIGATION.togglePinned(currentId);
+                } else {
+                    selectedWorldId = currentId;
+                    centerOnPlayer();
+                }
+                return true;
+            }
+            if (mouseY >= 86 && mouseY < 104 && mouseX > sidebarWidth() - 72) {
+                showAllWorlds = !showAllWorlds;
+                worldListOffset = 0;
+                return true;
+            }
+
+            List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
+            int rowY = 105;
+            for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
+                Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
+                if (rect.contains(mouseX, mouseY)) {
+                    WorldControlWireProtocol.WorldSummary world = rows.get(i);
+                    if (mouseX < 27) NAVIGATION.togglePinned(world.worldId());
+                    else selectedWorldId = world.worldId();
+                    return true;
+                }
+                rowY += SIDEBAR_ROW_HEIGHT;
+            }
+
+            if (selectedActionRect().contains(mouseX, mouseY)) {
+                WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
+                if (selected != null) {
+                    if (isCurrentWorld(selected.worldId())) {
+                        centerOnPlayer();
+                    } else if (worlds.canTeleport() && !worlds.teleportPending()) {
+                        closeAfterWorldTeleport = true;
+                        worlds.teleport(selected.worldId());
+                    }
+                }
+                return true;
+            }
+            if (manageWorldsRect().contains(mouseX, mouseY)) {
+                if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
+                return true;
+            }
+            return true;
+        }
+
+        if (areaMode) {
+            if (button == 0 && areaContinueRect().contains(mouseX, mouseY)) {
+                continueAreaExport();
+                return true;
+            }
+            if (button == 0 && areaCancelRect().contains(mouseX, mouseY)) {
+                clearAreaSelection();
+                return true;
+            }
+        }
+
+        if (contextOpen) {
+            if (button == 0 && contextTeleportRect().contains(mouseX, mouseY)) {
+                if (!maps.teleportPending()) {
+                    closeAfterMapTeleport = true;
+                    maps.teleportCurrent(contextBlockX, contextBlockZ);
+                    contextOpen = false;
+                }
+                return true;
+            }
+            if (button == 0 && contextExportRect().contains(mouseX, mouseY)) {
+                if (maps.currentWorld() != null && worlds.canManage()) beginAreaSelection(contextBlockX, contextBlockZ);
+                return true;
+            }
+            if (button == 0 && contextCopyRect().contains(mouseX, mouseY)) {
+                if (client != null) client.keyboard.setClipboard(contextBlockX + ", " + contextBlockZ);
+                contextOpen = false;
+                return true;
+            }
+            if (!contextMenuRect().contains(mouseX, mouseY)) contextOpen = false;
+        }
+
+        if (zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
+            discreteZoom(1, mapBounds().centerX(), mapBounds().centerY());
+            return true;
+        }
+        if (zoomPlusRect().contains(mouseX, mouseY) && button == 0) {
+            discreteZoom(-1, mapBounds().centerX(), mapBounds().centerY());
+            return true;
+        }
+
+        if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
+
+        if (button == 2) {
+            centerOnPlayer();
+            return true;
+        }
+        if (areaMode) {
+            if (button == 1) return true;
+            if (button == 0) {
+                DragMode hit = hitSelection(mouseX, mouseY);
+                int[] chunk = screenToChunk(mouseX, mouseY);
+                if (chunk == null) return true;
+                if (hit != DragMode.NONE) beginSelectionDrag(hit, chunk[0], chunk[1]);
+                else draggingMap = true;
+                return true;
+            }
+            return true;
+        }
+        if (button == 1) {
+            int[] world = screenToWorld(mouseX, mouseY);
+            if (world == null) return true;
+            contextBlockX = world[0];
+            contextBlockZ = world[1];
+            contextScreenX = (int) mouseX;
+            contextScreenY = (int) mouseY;
+            contextOpen = true;
+            return true;
+        }
+        if (button == 0) {
+            draggingMap = true;
+            contextOpen = false;
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (button != 0) return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        if (areaMode && selectionDrag != DragMode.NONE) {
+            int[] chunk = screenToChunk(mouseX, mouseY);
+            if (chunk != null) updateSelectionDrag(chunk[0], chunk[1]);
+            return true;
+        }
+        if (draggingMap) {
+            centerX -= deltaX * blocksPerPixel();
+            centerZ -= deltaY * blocksPerPixel();
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            boolean handled = draggingMap || selectionDrag != DragMode.NONE;
+            draggingMap = false;
+            selectionDrag = DragMode.NONE;
+            if (handled) return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (!sidebarCollapsed && mouseX < sidebarWidth() && showAllWorlds && verticalAmount != 0) {
+            int maxOffset = Math.max(0, activeWorlds().size() - visibleSidebarRows());
+            worldListOffset = Math.max(0, Math.min(maxOffset,
+                    worldListOffset - (int) Math.signum(verticalAmount)));
+            return true;
+        }
+        if (!mapBounds().contains(mouseX, mouseY) || verticalAmount == 0) {
+            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        }
+        if (hasControlDown()) preciseZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
+        else discreteZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
+        return true;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_M || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            closeFromToggle();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_R) {
+            centerOnPlayer();
+            return true;
+        }
+        if (areaMode && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+            continueAreaExport();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_C && hasShiftDown()) {
+            copyReviewReference();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void beginAreaSelection(int blockX, int blockZ) {
+        var current = maps.currentWorld();
+        if (current == null || !worlds.canManage()) return;
+        int centerChunkX = Math.floorDiv(blockX, CHUNK_BLOCKS);
+        int centerChunkZ = Math.floorDiv(blockZ, CHUNK_BLOCKS);
+        int before = DEFAULT_SELECTION_CHUNKS / 2;
+        int after = DEFAULT_SELECTION_CHUNKS - before - 1;
+        minChunkX = centerChunkX - before;
+        maxChunkX = centerChunkX + after;
+        minChunkZ = centerChunkZ - before;
+        maxChunkZ = centerChunkZ + after;
+        selectionWorldId = current.worldId().value();
+        areaMode = true;
+        contextOpen = false;
+        selectionDrag = DragMode.NONE;
+        invalidateRasterViewport();
+    }
+
+    private void continueAreaExport() {
+        if (!areaMode || client == null) return;
+        var current = maps.currentWorld();
+        if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
+            clearAreaSelection();
+            LazyBuilderClientNetworking.notifyPlayer(
+                    "LazyBuilder: the selected area no longer belongs to the current world.");
+            return;
+        }
+        client.setScreen(WorldTransferScreen.forArea(
+                this, worlds, transfers, maps, current,
+                minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ()));
+    }
+
+    /** Called by the export workspace after a selected-area export completes. */
+    void finishAreaExport() {
+        clearAreaSelection();
+    }
+
+    private void clearAreaSelection() {
+        areaMode = false;
+        selectionWorldId = null;
+        selectionDrag = DragMode.NONE;
+        draggingMap = false;
+        contextOpen = false;
+        invalidateRasterViewport();
+    }
+
+    private void copyReviewReference() {
+        var current = maps.currentWorld();
+        if (client == null || client.player == null || client.world == null || current == null) {
+            LazyBuilderClientNetworking.notifyPlayer(
+                    "LazyBuilder: open a managed world before copying a review reference.");
+            return;
+        }
+        String dimension = client.world.getRegistryKey().getValue().toString();
+        String reference = "World: " + current.displayName() + "\n"
+                + "World ID: " + current.worldId() + "\n"
+                + "Location: " + client.player.getBlockX() + " "
+                + client.player.getBlockY() + " " + client.player.getBlockZ() + "\n"
+                + "Dimension: " + dimension;
+        client.keyboard.setClipboard(reference);
+        LazyBuilderClientNetworking.notifyPlayer("Review reference copied.");
+    }
+
     private void renderSelectionGrid(DrawContext context) {
         Bounds bounds = mapBounds();
         double bpp = blocksPerPixel();
         double chunkPixels = CHUNK_BLOCKS / bpp;
         double regionPixels = REGION_BLOCKS / bpp;
-
         double worldLeft = centerX + (bounds.left - bounds.centerX()) * bpp;
         double worldRight = centerX + (bounds.right - bounds.centerX()) * bpp;
         double worldTop = centerZ + (bounds.top - bounds.centerY()) * bpp;
@@ -454,7 +792,6 @@ public final class WorldMapScreen extends Screen {
                 if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 1, CHUNK_GRID_COLOR);
             }
         }
-
         if (regionPixels >= 8.0) {
             int firstRegionX = Math.floorDiv((int) Math.floor(worldLeft), REGION_BLOCKS) - 1;
             int lastRegionX = Math.floorDiv((int) Math.ceil(worldRight), REGION_BLOCKS) + 1;
@@ -474,7 +811,6 @@ public final class WorldMapScreen extends Screen {
     private void renderSelection(DrawContext context, int mouseX, int mouseY) {
         SelectionRect rect = selectionRect();
         if (rect == null) return;
-
         Bounds bounds = mapBounds();
         int left = Math.max(bounds.left, rect.left);
         int right = Math.min(bounds.right, rect.right);
@@ -482,7 +818,6 @@ public final class WorldMapScreen extends Screen {
         int bottom = Math.min(bounds.bottom, rect.bottom);
         if (right <= left || bottom <= top) return;
 
-        // Keep the selected terrain readable and de-emphasize everything that will not be exported.
         if (top > bounds.top) context.fill(bounds.left, bounds.top, bounds.right, top, OUTSIDE_SELECTION_DIM);
         if (bottom < bounds.bottom) context.fill(bounds.left, bottom, bounds.right, bounds.bottom, OUTSIDE_SELECTION_DIM);
         if (left > bounds.left) context.fill(bounds.left, top, left, bottom, OUTSIDE_SELECTION_DIM);
@@ -505,189 +840,9 @@ public final class WorldMapScreen extends Screen {
 
     private void renderCursor(DrawContext context, int mouseX, int mouseY) {
         if (contextOpen || !mapBounds().contains(mouseX, mouseY)) return;
-        if (areaMode) {
-            DragMode hover = hitSelection(mouseX, mouseY);
-            String hint = switch (hover) {
-                case MOVE -> "Move selection";
-                case N, S, E, W, NE, NW, SE, SW -> "Resize selection";
-                default -> "Drag map";
-            };
-            context.drawTextWithShadow(textRenderer, Text.literal(hint), mouseX + 9, mouseY + 9, LbUi.TEXT_SECONDARY);
-        }
         int color = areaMode ? 0xBB8AA8FF : 0x667F8A98;
         context.fill(mouseX - 5, mouseY, mouseX + 6, mouseY + 1, color);
         context.fill(mouseX, mouseY - 5, mouseX + 1, mouseY + 6, color);
-    }
-
-    private void renderHud(DrawContext context, int mouseX, int mouseY) {
-        int bottomBar = areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR;
-        context.fill(0, 0, width, TOP_BAR, 0xE314181E);
-        context.fill(0, TOP_BAR - 1, width, TOP_BAR, LbUi.BORDER);
-        context.fill(0, height - bottomBar, width, height, 0xE314181E);
-        context.fill(0, height - bottomBar, width, height - bottomBar + 1, LbUi.BORDER);
-
-        String worldName = maps.currentWorld() == null ? "World Map" : maps.currentWorld().displayName();
-        String dimension = client == null || client.world == null
-                ? ""
-                : friendlyDimension(client.world.getRegistryKey().getValue().getPath());
-        String title = dimension.isBlank() ? worldName : worldName + "  •  " + dimension;
-        context.drawTextWithShadow(textRenderer, Text.literal(title), 78, 11, LbUi.TEXT_PRIMARY);
-
-        int[] hovered = screenToWorld(mouseX, mouseY);
-        String zoomText = zoomLabel();
-        String coords;
-        if (hovered == null) {
-            coords = zoomText;
-        } else {
-            int hoverChunkX = Math.floorDiv(hovered[0], CHUNK_BLOCKS);
-            int hoverChunkZ = Math.floorDiv(hovered[1], CHUNK_BLOCKS);
-            coords = areaMode
-                    ? "Chunk " + hoverChunkX + ", " + hoverChunkZ + "   •   Block X " + hovered[0] + " Z " + hovered[1] + "   •   " + zoomText
-                    : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomText;
-        }
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(coords), width / 2,
-                areaMode ? height - 59 : height - 17, LbUi.TEXT_SECONDARY);
-
-        if (areaMode) {
-            int chunksX = maxChunkX - minChunkX + 1;
-            int chunksZ = maxChunkZ - minChunkZ + 1;
-            context.drawTextWithShadow(textRenderer, Text.literal("EXPORT AREA"), 10, height - 43, LbUi.ACCENT_BRIGHT);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("Chunks   X " + minChunkX + " → " + maxChunkX + "   Z " + minChunkZ + " → " + maxChunkZ),
-                    82, height - 43, LbUi.TEXT_PRIMARY);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(chunksX + " × " + chunksZ + " chunks   •   "
-                            + (chunksX * CHUNK_BLOCKS) + " × " + (chunksZ * CHUNK_BLOCKS) + " blocks"),
-                    10, height - 27, LbUi.TEXT_SECONDARY);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("Blocks   X " + minBlockX() + " → " + maxBlockX() + "   Z " + minBlockZ() + " → " + maxBlockZ()),
-                    10, height - 13, LbUi.TEXT_MUTED);
-            return;
-        }
-
-        String leftStatus;
-        int leftColor;
-        if (SURFACE.pendingCount() > 0) {
-            leftStatus = "Mapping " + SURFACE.pendingCount() + " columns…";
-            leftColor = LbUi.TEXT_MUTED;
-        } else {
-            leftStatus = "Drag pan  •  Scroll zoom  •  Right-click actions  •  Middle-click recenter";
-            leftColor = LbUi.TEXT_MUTED;
-        }
-        context.drawTextWithShadow(textRenderer, Text.literal(leftStatus), 8, height - 17, leftColor);
-    }
-
-    private static String friendlyDimension(String raw) {
-        return switch (raw) {
-            case "overworld" -> "Overworld";
-            case "the_nether" -> "Nether";
-            case "the_end" -> "The End";
-            default -> raw.replace('_', ' ');
-        };
-    }
-
-    private void renderContextMenuBackground(DrawContext context) {
-        if (!contextOpen || areaMode) return;
-        int menuWidth = 164;
-        int itemCount = 6;
-        int panelX = Math.max(5, Math.min(width - menuWidth - 5, contextScreenX));
-        int panelY = Math.max(TOP_BAR + 4,
-                Math.min(height - BOTTOM_BAR - (itemCount * 21 + 30), contextScreenY));
-        int panelBottom = panelY + 30 + itemCount * 21;
-
-        context.fill(panelX - 2, panelY - 2, panelX + menuWidth + 2, panelBottom + 2, 0x77000000);
-        LbUi.elevatedPanel(context, panelX, panelY, menuWidth, panelBottom - panelY);
-        context.fill(panelX + 1, panelY + 1, panelX + menuWidth - 1, panelY + 23, LbUi.SURFACE_3);
-        context.drawTextWithShadow(textRenderer, Text.literal("Map Actions"),
-                panelX + 7, panelY + 8, LbUi.TEXT_PRIMARY);
-        String coordinate = "X " + contextBlockX + "   Z " + contextBlockZ;
-        context.drawTextWithShadow(textRenderer, Text.literal(coordinate),
-                panelX + 7, panelBottom - 13, LbUi.TEXT_MUTED);
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
-
-        if (button == 2) {
-            centerOnPlayer();
-            return true;
-        }
-
-        if (areaMode) {
-            if (button == 1) return true;
-            if (button == 0) {
-                DragMode hit = hitSelection(mouseX, mouseY);
-                int[] chunk = screenToChunk(mouseX, mouseY);
-                if (chunk == null) return true;
-                if (hit != DragMode.NONE) {
-                    beginSelectionDrag(hit, chunk[0], chunk[1]);
-                } else {
-                    draggingMap = true;
-                }
-                return true;
-            }
-            return true;
-        }
-
-        if (button == 1) {
-            int[] world = screenToWorld(mouseX, mouseY);
-            if (world == null) return true;
-            contextBlockX = world[0];
-            contextBlockZ = world[1];
-            contextScreenX = (int) mouseX;
-            contextScreenY = (int) mouseY;
-            contextOpen = true;
-            clearAndInit();
-            return true;
-        }
-
-        if (button == 0) {
-            draggingMap = true;
-            contextOpen = false;
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (button != 0) return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-
-        if (areaMode && selectionDrag != DragMode.NONE) {
-            int[] chunk = screenToChunk(mouseX, mouseY);
-            if (chunk != null) updateSelectionDrag(chunk[0], chunk[1]);
-            return true;
-        }
-
-        if (draggingMap) {
-            centerX -= deltaX * blocksPerPixel();
-            centerZ -= deltaY * blocksPerPixel();
-            zoomAnchored = false;
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            boolean handled = draggingMap || selectionDrag != DragMode.NONE;
-            draggingMap = false;
-            selectionDrag = DragMode.NONE;
-            if (handled) return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (!mapBounds().contains(mouseX, mouseY) || verticalAmount == 0) {
-            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-        }
-        if (hasControlDown()) preciseZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
-        else discreteZoom(verticalAmount < 0 ? 1 : -1, mouseX, mouseY);
-        return true;
     }
 
     private void beginSelectionDrag(DragMode mode, int chunkX, int chunkZ) {
@@ -710,7 +865,6 @@ public final class WorldMapScreen extends Screen {
             maxChunkZ = dragMaxChunkZ + dz;
             return;
         }
-
         int x1 = dragMinChunkX;
         int x2 = dragMaxChunkX;
         int z1 = dragMinChunkZ;
@@ -736,15 +890,12 @@ public final class WorldMapScreen extends Screen {
         if (!areaMode) return DragMode.NONE;
         SelectionRect rect = selectionRect();
         if (rect == null) return DragMode.NONE;
-
         for (Handle handle : handles(rect)) {
             if (Math.abs(mouseX - handle.x) <= HANDLE_RADIUS + 3
                     && Math.abs(mouseY - handle.y) <= HANDLE_RADIUS + 3) return handle.mode;
         }
         if (mouseX > rect.left + HANDLE_RADIUS && mouseX < rect.right - HANDLE_RADIUS
-                && mouseY > rect.top + HANDLE_RADIUS && mouseY < rect.bottom - HANDLE_RADIUS) {
-            return DragMode.MOVE;
-        }
+                && mouseY > rect.top + HANDLE_RADIUS && mouseY < rect.bottom - HANDLE_RADIUS) return DragMode.MOVE;
         return DragMode.NONE;
     }
 
@@ -752,14 +903,10 @@ public final class WorldMapScreen extends Screen {
         int midX = rect.left + (rect.right - rect.left) / 2;
         int midY = rect.top + (rect.bottom - rect.top) / 2;
         return new Handle[]{
-                new Handle(rect.left, rect.top, DragMode.NW),
-                new Handle(midX, rect.top, DragMode.N),
-                new Handle(rect.right, rect.top, DragMode.NE),
-                new Handle(rect.right, midY, DragMode.E),
-                new Handle(rect.right, rect.bottom, DragMode.SE),
-                new Handle(midX, rect.bottom, DragMode.S),
-                new Handle(rect.left, rect.bottom, DragMode.SW),
-                new Handle(rect.left, midY, DragMode.W)
+                new Handle(rect.left, rect.top, DragMode.NW), new Handle(midX, rect.top, DragMode.N),
+                new Handle(rect.right, rect.top, DragMode.NE), new Handle(rect.right, midY, DragMode.E),
+                new Handle(rect.right, rect.bottom, DragMode.SE), new Handle(midX, rect.bottom, DragMode.S),
+                new Handle(rect.left, rect.bottom, DragMode.SW), new Handle(rect.left, midY, DragMode.W)
         };
     }
 
@@ -779,27 +926,26 @@ public final class WorldMapScreen extends Screen {
     private int maxBlockZ() { return maxChunkZ * CHUNK_BLOCKS + CHUNK_BLOCKS - 1; }
 
     private void discreteZoom(int direction, double screenX, double screenY) {
-        int current = nearestZoomIndex(targetZoom);
+        int current = nearestZoomIndex(zoom);
         int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, current + direction));
-        setZoomTarget(ZOOM_STEPS[next], screenX, screenY);
+        setZoom(ZOOM_STEPS[next], screenX, screenY);
     }
 
     private void preciseZoom(int direction, double screenX, double screenY) {
-        double next = direction > 0 ? targetZoom * PRECISE_ZOOM_FACTOR : targetZoom / PRECISE_ZOOM_FACTOR;
-        setZoomTarget(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)), screenX, screenY);
+        double next = direction > 0 ? zoom * PRECISE_ZOOM_FACTOR : zoom / PRECISE_ZOOM_FACTOR;
+        setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)), screenX, screenY);
     }
 
-    private void setZoomTarget(double next, double screenX, double screenY) {
-        if (Math.abs(next - targetZoom) < 0.0001) return;
+    private void setZoom(double next, double screenX, double screenY) {
+        if (Math.abs(next - zoom) < 0.0001) return;
         double[] anchor = screenToWorldExact(screenX, screenY);
+        zoom = next;
         if (anchor != null) {
-            zoomAnchorWorldX = anchor[0];
-            zoomAnchorWorldZ = anchor[1];
-            zoomAnchorScreenX = screenX;
-            zoomAnchorScreenY = screenY;
-            zoomAnchored = true;
+            Bounds bounds = mapBounds();
+            double bpp = blocksPerPixel();
+            centerX = anchor[0] - (screenX - bounds.centerX()) * bpp;
+            centerZ = anchor[1] - (screenY - bounds.centerY()) * bpp;
         }
-        targetZoom = next;
     }
 
     private int nearestZoomIndex(double value) {
@@ -815,66 +961,28 @@ public final class WorldMapScreen extends Screen {
         return best;
     }
 
-    private void updateZoomAnimation() {
-        double difference = targetZoom - animatedZoom;
-        if (Math.abs(difference) < 0.005) {
-            animatedZoom = targetZoom;
-            zoomAnchored = false;
-            return;
-        }
-        animatedZoom += difference * 0.22;
-        if (zoomAnchored) {
-            Bounds bounds = mapBounds();
-            double blocksPerPixel = blocksPerPixel();
-            centerX = zoomAnchorWorldX - (zoomAnchorScreenX - bounds.centerX()) * blocksPerPixel;
-            centerZ = zoomAnchorWorldZ - (zoomAnchorScreenY - bounds.centerY()) * blocksPerPixel;
-        }
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (areaMode && (keyCode == 257 || keyCode == 335)) {
-            continueAreaExport();
-            return true;
-        }
-        if (keyCode == 256) {
-            if (contextOpen) {
-                contextOpen = false;
-                clearAndInit();
-                return true;
-            }
-            if (areaMode) {
-                clearAreaSelection();
-                clearAndInit();
-                return true;
-            }
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
-    private void clearAreaSelection() {
-        areaMode = false;
-        selectionWorldId = null;
-        selectionDrag = DragMode.NONE;
-        draggingMap = false;
-        contextOpen = false;
-    }
-
     private void centerOnPlayer() {
         if (client != null && client.player != null) {
             centerX = client.player.getX();
             centerZ = client.player.getZ();
-            zoomAnchored = false;
         }
     }
+
+    private int mapPixelSize() {
+        if (zoom <= 2.0) return 2;
+        if (zoom <= 8.0) return 3;
+        return 4;
+    }
+
+    private double blocksPerPixel() { return zoom / 2.0; }
 
     private double[] screenToWorldExact(double mouseX, double mouseY) {
         Bounds bounds = mapBounds();
         if (!bounds.contains(mouseX, mouseY)) return null;
-        double blocksPerPixel = blocksPerPixel();
+        double bpp = blocksPerPixel();
         return new double[]{
-                centerX + (mouseX - bounds.centerX()) * blocksPerPixel,
-                centerZ + (mouseY - bounds.centerY()) * blocksPerPixel
+                centerX + (mouseX - bounds.centerX()) * bpp,
+                centerZ + (mouseY - bounds.centerY()) * bpp
         };
     }
 
@@ -898,15 +1006,115 @@ public final class WorldMapScreen extends Screen {
         return bounds.centerY() + (int) Math.round((blockZ - centerZ) / blocksPerPixel());
     }
 
-    private double zoom() { return animatedZoom; }
-
     private String zoomLabel() {
-        if (zoom() >= 1.0) return String.format(Locale.ROOT, "Zoom 1:%.1f", zoom());
-        return String.format(Locale.ROOT, "Zoom %.2f:1", 1.0 / zoom());
+        if (zoom >= 1.0) return String.format(Locale.ROOT, "1:%.1f", zoom);
+        return String.format(Locale.ROOT, "%.2f:1", 1.0 / zoom);
+    }
+
+    private int sidebarWidth() {
+        if (sidebarCollapsed) return COLLAPSED_SIDEBAR;
+        if (width < 620) return MIN_SIDEBAR;
+        return Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, width / 6));
     }
 
     private Bounds mapBounds() {
-        return new Bounds(0, TOP_BAR, width, height - (areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR));
+        return new Bounds(sidebarWidth() + SIDEBAR_GAP, 0, width,
+                height - (areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR));
+    }
+
+    private Rect currentWorldRect() { return new Rect(8, 50, sidebarWidth() - 8, 82); }
+    private Rect manageWorldsRect() { return new Rect(8, height - 34, sidebarWidth() - 8, height - 7); }
+    private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
+    private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
+    private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
+    private Rect zoomMinusRect() { return new Rect(width - 48, height - 22, width - 29, height - 3); }
+    private Rect zoomPlusRect() { return new Rect(width - 26, height - 22, width - 7, height - 3); }
+
+    private Rect contextMenuRect() {
+        int menuWidth = 150;
+        int menuHeight = 102;
+        Bounds bounds = mapBounds();
+        int x = Math.max(bounds.left + 4, Math.min(width - menuWidth - 5, contextScreenX));
+        int y = Math.max(5, Math.min(bounds.bottom - menuHeight - 5, contextScreenY));
+        return new Rect(x, y, x + menuWidth, y + menuHeight);
+    }
+
+    private Rect contextTeleportRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 34, m.right - 5, m.top + 56); }
+    private Rect contextExportRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 57, m.right - 5, m.top + 79); }
+    private Rect contextCopyRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 80, m.right - 5, m.top + 101); }
+
+    private List<WorldControlWireProtocol.WorldSummary> activeWorlds() {
+        return worlds.worlds().stream()
+                .filter(world -> "ACTIVE".equals(world.lifecycle()))
+                .sorted(Comparator.comparing(WorldControlWireProtocol.WorldSummary::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    private List<WorldControlWireProtocol.WorldSummary> sidebarWorlds() {
+        List<WorldControlWireProtocol.WorldSummary> active = activeWorlds();
+        if (showAllWorlds) {
+            int from = Math.max(0, Math.min(worldListOffset, active.size()));
+            int to = Math.min(active.size(), from + visibleSidebarRows());
+            return active.subList(from, to);
+        }
+        List<WorldControlWireProtocol.WorldSummary> result = new ArrayList<>();
+        for (UUID id : NAVIGATION.pinned()) {
+            WorldControlWireProtocol.WorldSummary world = find(active, id);
+            if (world != null) result.add(world);
+            if (result.size() >= MAX_FAVORITES) break;
+        }
+        return result;
+    }
+
+    private int visibleSidebarRows() {
+        if (sidebarCollapsed) return 0;
+        int available = height - 105 - 76;
+        return Math.max(2, available / SIDEBAR_ROW_HEIGHT);
+    }
+
+    private WorldControlWireProtocol.WorldSummary findActiveWorld(UUID id) {
+        if (id == null) return null;
+        return find(activeWorlds(), id);
+    }
+
+    private static WorldControlWireProtocol.WorldSummary find(
+            List<WorldControlWireProtocol.WorldSummary> source, UUID id) {
+        return source.stream().filter(world -> world.worldId().equals(id)).findFirst().orElse(null);
+    }
+
+    private UUID currentWorldId() {
+        return maps.currentWorld() == null ? null : maps.currentWorld().worldId().value();
+    }
+
+    private boolean isCurrentWorld(UUID id) {
+        UUID current = currentWorldId();
+        return current != null && current.equals(id);
+    }
+
+    private String trim(String value, int maxWidth) {
+        if (value == null) return "";
+        if (textRenderer.getWidth(value) <= maxWidth) return value;
+        String base = value;
+        while (base.length() > 1 && textRenderer.getWidth(base + "…") > maxWidth) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "…";
+    }
+
+    private static String friendlyDimension(String raw) {
+        return switch (raw) {
+            case "overworld" -> "Overworld";
+            case "the_nether" -> "Nether";
+            case "the_end" -> "The End";
+            default -> raw.replace('_', ' ');
+        };
+    }
+
+    private void invalidateRasterViewport() {
+        rasterLeft = Integer.MIN_VALUE;
+        rasterRight = Integer.MIN_VALUE;
+        rasterTop = Integer.MIN_VALUE;
+        rasterBottom = Integer.MIN_VALUE;
     }
 
     @Override
@@ -914,11 +1122,11 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public void close() {
-        if (areaMode) {
-            clearAreaSelection();
-            clearAndInit();
-            return;
-        }
+        closeFromToggle();
+    }
+
+    void closeFromToggle() {
+        clearAreaSelection();
         SURFACE.flushAsync();
         if (client != null) client.setScreen(null);
     }
@@ -926,7 +1134,11 @@ public final class WorldMapScreen extends Screen {
     private enum DragMode { NONE, MOVE, N, NE, E, SE, S, SW, W, NW }
     private record Handle(int x, int y, DragMode mode) {}
     private record SelectionRect(int left, int top, int right, int bottom) {}
-
+    private record Rect(int left, int top, int right, int bottom) {
+        boolean contains(double x, double y) { return x >= left && x < right && y >= top && y < bottom; }
+        int width() { return right - left; }
+        int height() { return bottom - top; }
+    }
     private record Bounds(int left, int top, int right, int bottom) {
         int width() { return right - left; }
         int height() { return bottom - top; }
