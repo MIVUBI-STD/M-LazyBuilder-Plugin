@@ -6,26 +6,38 @@ export type AdoptionPlan = { root: string; name: string; paperJar: string; world
 export type WorkspaceProvisioningStatus = { workspaceCreated: boolean; javaReady: boolean; paperReady: boolean; coreModulesReady: boolean; configReady: boolean; eulaAccepted: boolean; ready: boolean; nextStep: string };
 export type WorkspaceProvisionResult = { javaPath: string; paperBuild?: number | null; coreVersion: string; status: WorkspaceProvisioningStatus };
 export type RuntimeUpdateStatus = { currentPaperBuild?: number | null; latestPaperBuild: number; paperUpdateAvailable: boolean };
-export type ServerSnapshot = { state: string; health: string; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
+
+export type ServerState = 'Offline' | 'Starting' | 'Online' | 'Stopping' | 'Detached' | 'Crashed';
+export type ServerHealth = 'Offline' | 'Good' | 'Warning' | 'Critical';
+export type ServerSnapshot = { state: ServerState; health: ServerHealth; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
 export type ServerPreflight = { ready: boolean; workspace: string; serverDirectory: string; paperJar: string; worldsDirectory: string; javaPath: string; javaVersion: string; logDirectory: string; issues: string[] };
 export type DetachedRecoveryResult = { pid: number; stopped: boolean; message: string };
 export type ServerLogTail = { path: string; content: string; truncated: boolean };
 export type ServerResourceProfile = { totalMemoryMb: number; safeMaxMemoryMb: number; currentMaxMemoryMb: number; currentMinMemoryMb: number; recommendedMaxMemoryMb: number; warning: string };
 export type ResourceUpdateRequest = { maxMemoryMb: number };
-export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: string; problemDetail?: string | null; candidateFiles?: string[] | null; managedByLazyBuilder: boolean; mutable: boolean };
+
+export type PluginState = 'Enabled' | 'Disabled' | 'Problem';
+export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: PluginState; problemDetail?: string | null; candidateFiles?: string[] | null; managedByLazyBuilder: boolean; mutable: boolean };
 export type PluginInstallResult = { success: boolean; pluginId: string; message?: string | null; restartRequired: boolean };
+
 export type ClientProfileSummary = { name: string; path: string; modrinthRoot: string; modsPath: string; gameVersion?: string | null; loader?: string | null; verification: string; compatible: boolean; selected: boolean };
 export type ClientModStatus = { id: string; displayName: string; state: string; installedFiles: string[]; targetFile: string; bundled: boolean };
 export type ClientIntegrationStatus = { modrinthDetected: boolean; profiles: ClientProfileSummary[]; selectedProfile?: ClientProfileSummary | null; selectedProfileMissing: boolean; mods: ClientModStatus[]; ready: boolean; message: string };
-export type ManagedWorldSummary = { id: string; displayName: string; kind: string; lifecycle: string; defaultGameMode: string };
-export type CreateWorldRequest = { folderName: string; displayName: string; kind: 'FLAT' | 'VOID' };
+
+export type WorldKind = 'FLAT' | 'VOID' | 'IMPORTED';
+export type WorldLifecycle = 'ACTIVE' | 'ARCHIVED';
+export type GameMode = 'CREATIVE' | 'SURVIVAL' | 'ADVENTURE' | 'SPECTATOR';
+export type Weather = 'CLEAR' | 'RAIN' | 'THUNDER';
+export type WorldTaskState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type ManagedWorldSummary = { id: string; displayName: string; kind: WorldKind; lifecycle: WorldLifecycle; defaultGameMode: GameMode };
+export type CreateWorldRequest = { folderName: string; displayName: string; kind: Extract<WorldKind, 'FLAT' | 'VOID'> };
 export type DuplicateWorldRequest = { worldId: string; destinationFolder: string; displayName: string };
 export type ExportWorldRequest = { worldId: string; targetFormat: string; artifactName: string };
 export type ImportWorldRequest = { artifactName: string; destinationFolder: string; displayName: string };
 export type DeleteWorldRequest = { worldId: string; typedDisplayName: string };
-export type WorldSettingsSnapshot = { id: string; displayName: string; defaultGameMode: string; timeOfDayTicks: number; weather: string; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean };
-export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: string; timeOfDayTicks: number; weather: string; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean }>;
-export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
+export type WorldSettingsSnapshot = { id: string; displayName: string; defaultGameMode: GameMode; timeOfDayTicks: number; weather: Weather; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean };
+export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: GameMode; timeOfDayTicks: number; weather: Weather; naturalSpawning: boolean; daylightCycle: boolean; weatherCycle: boolean }>;
+export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: WorldTaskState; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
 
 export const runtimeApi = {
   workspace: {
