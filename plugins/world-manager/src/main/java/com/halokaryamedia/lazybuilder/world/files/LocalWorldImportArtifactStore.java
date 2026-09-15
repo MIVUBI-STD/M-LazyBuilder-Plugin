@@ -31,6 +31,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static final String JAVA_1_21_4 = "JAVA_1_21_4";
     private static final int IO_BUFFER_BYTES = 64 * 1024;
     private static final int MAX_INSPECT_LEVEL_DAT_BYTES = 16 * 1024 * 1024;
+    private static final long IMPORT_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
+    private static final long IMPORT_ENTRY_OVERHEAD_BYTES = 256L;
 
     private final Path importsRoot;
     private final long maxEntries;
@@ -105,6 +107,19 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Path artifact = resolveArtifact(artifactName);
         Path target = Objects.requireNonNull(workspace, "workspace").toAbsolutePath().normalize();
         if (Files.exists(target)) throw new IOException("Import workspace already exists: " + target.getFileName());
+
+        Path workspaceRoot = target.getParent();
+        if (workspaceRoot == null || !Files.isDirectory(workspaceRoot) || Files.isSymbolicLink(workspaceRoot)) {
+            throw new IOException("Import workspace root is missing or unsafe");
+        }
+        ArchiveEstimate estimate = estimateArchive(artifact);
+        long requiredFreeBytes = requiredFreeBytes(estimate.uncompressedBytes(), estimate.entries());
+        long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
+        if (usableBytes < requiredFreeBytes) {
+            throw new IOException("Insufficient disk space to extract import: required at least "
+                    + requiredFreeBytes + " bytes, available " + usableBytes + " bytes");
+        }
+
         Files.createDirectories(target);
         boolean success = false;
         try {
@@ -220,6 +235,40 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         return directory.resolve(encoded + CLEANUP_MARKER_SUFFIX).toAbsolutePath().normalize();
     }
 
+    private ArchiveEstimate estimateArchive(Path archive) throws IOException {
+        long entries = 0;
+        long totalBytes = 0;
+        try (ZipFile zip = new ZipFile(archive.toFile())) {
+            var enumeration = zip.entries();
+            while (enumeration.hasMoreElements()) {
+                ZipEntry entry = enumeration.nextElement();
+                if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
+                if (entry.isDirectory()) continue;
+                long size = entry.getSize();
+                if (size < 0) throw new IOException("Import archive contains an entry with unknown uncompressed size");
+                try {
+                    totalBytes = Math.addExact(totalBytes, size);
+                } catch (ArithmeticException overflow) {
+                    throw new IOException("Import archive is too large to estimate safely", overflow);
+                }
+                if (totalBytes > maxUncompressedBytes) {
+                    throw new IOException("Import archive exceeds uncompressed-size limit");
+                }
+            }
+        }
+        return new ArchiveEstimate(totalBytes, entries);
+    }
+
+    static long requiredFreeBytes(long uncompressedBytes, long entries) throws IOException {
+        if (uncompressedBytes < 0 || entries < 0) throw new IllegalArgumentException("Import size estimate must be non-negative");
+        try {
+            long entryOverhead = Math.multiplyExact(entries, IMPORT_ENTRY_OVERHEAD_BYTES);
+            return Math.addExact(Math.addExact(uncompressedBytes, entryOverhead), IMPORT_SPACE_RESERVE_BYTES);
+        } catch (ArithmeticException overflow) {
+            throw new IOException("Import archive is too large to estimate safely", overflow);
+        }
+    }
+
     private void extractBounded(Path archive, Path target) throws IOException {
         long entries = 0;
         long totalBytes = 0;
@@ -330,4 +379,6 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             }
         });
     }
+
+    private record ArchiveEstimate(long uncompressedBytes, long entries) {}
 }
