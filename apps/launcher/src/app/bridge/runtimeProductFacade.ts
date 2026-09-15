@@ -48,6 +48,7 @@ const previewRuntimeProduct = {
       previewBackups = [created, ...previewBackups];
       return created;
     },
+    restore: async (workspaceId: string, backupId: string) => runtimePreviewProduct.backups.restore(workspaceId, backupId),
     delete: async (_workspaceId: string, backupId: string) => {
       previewBackups = previewBackups.filter((item) => item.id !== backupId);
     }
