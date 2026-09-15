@@ -20,11 +20,16 @@ import java.util.UUID;
 /** Client-owned per-server navigation preferences. Never persisted as world metadata. */
 public final class WorldNavigationPreferences {
     private static final int MAX_RECENT = 5;
+    private static final WorldNavigationPreferences SHARED = new WorldNavigationPreferences();
 
     private final Path path;
     private final Properties properties = new Properties();
 
-    public WorldNavigationPreferences() {
+    public static WorldNavigationPreferences shared() {
+        return SHARED;
+    }
+
+    private WorldNavigationPreferences() {
         this.path = FabricLoader.getInstance().getConfigDir().resolve("lazybuilder-world-navigation.properties");
         load();
     }
