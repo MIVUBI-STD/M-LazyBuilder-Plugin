@@ -13,6 +13,7 @@ pub struct PluginListItem {
     pub state: String,
     pub problem_detail: Option<String>,
     pub candidate_files: Option<Vec<String>>,
+    #[serde(rename = "managedByLazyBuilder")]
     pub managed_by_lazybuilder: bool,
     pub mutable: bool,
 }
