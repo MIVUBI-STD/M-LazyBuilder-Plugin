@@ -112,8 +112,8 @@ public final class WorldManager {
         this.worldBackupStore = new LocalWorldBackupStore(storageLayout.backupsRoot());
         this.worldExportArtifactStore = new LocalWorldExportArtifactStore(storageLayout.exportsRoot());
 
-        long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 200_000L));
-        long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 65_536L));
+        long maxImportFiles = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-files", 100_000L));
+        long maxImportMb = Math.max(1L, plugin.getConfig().getLong("world-manager.import.max-uncompressed-mb", 16_384L));
         this.worldImportArtifactStore = new LocalWorldImportArtifactStore(
                 storageLayout.importsRoot(), maxImportFiles, Math.multiplyExact(maxImportMb, 1024L * 1024L));
 
@@ -123,7 +123,7 @@ public final class WorldManager {
                 TransferWireProtocol.MAX_CHUNK_BYTES,
                 Math.max(1024, configuredTransferChunkBytes));
         long maxUploadMb = Math.max(1L,
-                plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 16_384L));
+                plugin.getConfig().getLong("world-manager.transfer.max-upload-mb", 8_192L));
         long transferIdleSeconds = Math.max(30L,
                 plugin.getConfig().getLong("world-manager.transfer.session-idle-seconds", 300L));
         this.transferPolicy = new TransferPolicy(
