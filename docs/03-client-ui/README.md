@@ -54,6 +54,8 @@ The map must not grow waypoint/radar/claim/cave-map ecosystems merely because ot
 
 ## Client ownership
 
+Required V1 client owners:
+
 ```text
 Map Manager
 → world/map UI, navigation, transfer UI, current managed-world presentation,
@@ -62,12 +64,19 @@ Map Manager
 
 Utility Manager
 → passive non-building client convenience
-
-Performance Manager
-→ performance/resource observation and background-FPS policy
 ```
 
-No Fabric Manager imports another Manager's implementation packages.
+Deferred source:
+
+```text
+Performance Manager
+→ isolated performance/resource research only
+→ not a required V1 client owner unless explicitly promoted from measured evidence
+```
+
+No Fabric Manager imports another Manager's implementation packages. Required managers must not depend on Performance Manager while it is deferred.
+
+Current `Local` Launcher/client-packaging source may still reference Performance Manager while active Launcher/installer consolidation is in progress. That transitional packaging state does not change the client ownership model in this document.
 
 ## World Manager surface
 
@@ -167,7 +176,7 @@ Required properties:
 - storage preflight;
 - partial-file cleanup;
 - disconnect cleanup;
-- no custom HTTP/WebSocket/cloud transfer path;
+- no custom HTTP/WebSocket/cloud transfer path for the in-game transfer protocol;
 - no second Import/Export byte-transfer implementation.
 
 ## Failure presentation
