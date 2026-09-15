@@ -1,6 +1,7 @@
 pub mod client_integration;
 pub mod diagnostics;
 pub mod error;
+pub mod launcher_settings;
 pub mod operations;
 pub mod plugin_manager;
 pub mod resource_settings;
