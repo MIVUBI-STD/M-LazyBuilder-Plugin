@@ -1,258 +1,230 @@
 # Operations and Recovery Reference
 
-Use for any Launcher action that is long-running, destructive, restart-sensitive, retryable, cancellable, or capable of partial completion.
+Use for Launcher actions that are long-running, destructive, restart-sensitive, retryable, cancellable, or capable of partial completion.
 
-Examples:
+Examples include server duplicate, backup/restore, repair, provisioning/update, large Launcher-owned copy/export, and support-data export.
 
-```text
-server duplicate
-server backup/restore
-server repair
-runtime provisioning/update
-launcher self-update preparation
-large import/export/copy controlled by Launcher
-support package export
-```
+## Current operation contract
 
-## Operation Contract
+The shared Launcher operation layer already exists. Reuse it rather than inventing a feature-specific queue/history model.
 
-Every non-trivial operation should answer:
+Current operation snapshots expose:
 
 ```text
-operation id
-operation kind
-target identity
-current state/current phase
-progress if measurable
-start time
-safe cancel boundary
-retry semantics
-result or stable error
-recovery metadata if interrupted
+id
+correlationId
+kind
+resource
+state
+phase
+status
+details
+progress { current, total?, unit } when measurable
+canCancel
+cancelRequested
+warnings
+error { code, message, details, recoverable }
+created / updated / completed timestamps
 ```
 
-Do not create separate operation systems per feature. A future shared operation registry may coordinate presentation/history, but domain services remain authorities for domain state.
-
-## Recommended State Shape
-
-Use the smallest valid state machine. A general pattern is:
+Current global operation states are:
 
 ```text
 Queued
-→ Preparing
-→ Running
-→ Committing
-→ Succeeded
+Running
+Succeeded
+Failed
+Cancelling
+Cancelled
+RecoveryRequired
 ```
 
-Failure exits:
+Feature-specific progression belongs in `phase` and status text, for example:
 
 ```text
-Preparing/Running/Committing
-→ Failed(retryability)
-→ NeedsRecovery when durable state is ambiguous
+phase = validating
+phase = copying
+phase = verifying
+phase = publishing
 ```
 
-Cancellation:
+Do not expand the global state enum merely to encode every workflow step.
+
+## Ownership and exclusivity
+
+One operation identity tracks execution; domain services remain authorities for domain truth.
+
+Use exclusive operation ownership when two operations on the same resource would conflict. A second caller consumes busy/current state instead of starting duplicate work.
+
+Operation history is bounded diagnostics/execution history, not a second domain database.
+
+## Cancellation
+
+Advertise cancellation only while the underlying workflow has a real safe boundary.
 
 ```text
-Preparing/Running
-→ Cancelling
-→ Cancelled
+safe cancellable phase
+→ canCancel = true
+→ request sets Cancelling/cancelRequested
+→ worker observes cancellation
+→ Cancelled after safe cleanup
 ```
 
-Never advertise Cancel when the operation cannot stop without corrupting/ambiguating state.
+Before an irreversible publish/commit boundary, disable cancellation if stopping would create ambiguous durable state.
+
+Never expose Cancel merely because the UI wants one.
 
 ## Progress
 
 Prefer semantic progress:
 
 ```text
-phase: Copying server files
-bytesCurrent
-bytesTotal
-itemsCurrent/itemsTotal when meaningful
+phase
+current
+total when measurable
+unit
 ```
 
-Progress can be indeterminate when work cannot be measured. Do not manufacture percentages.
+Indeterminate work may omit total. Do not manufacture percentages.
 
-A later refresh failure must not convert an already committed operation into a false failure.
+A refresh/query failure after a durable operation already committed must not relabel the committed mutation itself as failed.
 
-## Failure-Atomic Filesystem Pattern
+## Failure-atomic filesystem pattern
 
-Default pattern for copy/replace/publish work:
+For Launcher-owned copy/replace/publish work:
 
 ```text
-validate authority/source/destination
-→ capacity/permission preflight where useful
+validate source/target authority
+→ preflight capacity/permissions where useful
 → create uniquely owned staging path
 → perform work in staging
 → validate staged result
-→ persist recovery intent when needed
-→ atomic rename/publish
-→ update registry/metadata authority
-→ cleanup old/staging state
+→ persist recovery intent when interruption could become ambiguous
+→ publish/rename atomically where practical
+→ update authoritative registry/metadata at the defined commit boundary
+→ cleanup stale staging/previous state only after stable success
 ```
 
-Ordering may differ when the registry is the source of truth, but interruption behavior must be explicit.
+Ordering can vary by domain, but the commit boundary and interruption behavior must be explicit.
 
-## Filesystem Safety
+## Filesystem safety
 
 Before destructive mutation:
 
-- resolve registered object identity first;
-- canonicalize paths where the target exists;
-- derive mutation path from trusted registry/manifest data, not arbitrary UI input;
-- validate target-specific manifest/identity where available;
-- reject symlink/reparse surprises when recursive traversal cannot safely reason about them;
-- reject destination-inside-source for recursive copy;
-- restrict recovery staging to the exact original parent/name/intent;
-- never delete parent/root paths based only on filename patterns.
+- resolve canonical object identity first;
+- derive target paths from trusted registry/manifest state, not arbitrary UI strings;
+- canonicalize/validate existing paths as needed;
+- reject unsafe recursive relationships such as destination-inside-source;
+- handle symlink/reparse surprises when traversal cannot prove safety;
+- restrict staging/recovery paths to the exact operation intent;
+- never delete parent/root paths based only on display names or filename patterns.
 
-## Disk Space
+## Disk space
 
-Large operations should preflight capacity when practical.
+Large operations should preflight measurable capacity when useful, but must still handle ENOSPC during execution because free space can change.
 
-Estimate:
+Failure should leave source intact, avoid registering half-created output, and either clean staging or leave an explicitly owned recovery artifact.
 
-```text
-required = measurable payload + safety headroom
-```
-
-Still handle ENOSPC during execution because available space can change after preflight.
-
-Failure must:
-
-```text
-leave source untouched
-remove or retain clearly identified recovery staging
-avoid registering a half-created result
-return a stable actionable error
-```
-
-## Retry Semantics
-
-Classify failures:
+## Retry classes
 
 ### Safe retry
 
-No durable side effect committed, or staging identity can be reused safely.
+No durable side effect committed, or owned staging can be safely restarted/reused.
 
-### Resume/reconcile
+### Reconcile then continue
 
-Some durable work completed and authoritative recovery metadata exists.
+Some durable work completed and authoritative recovery metadata can determine the actual state.
 
-### Manual recovery required
+### Recovery required
 
-State cannot be safely inferred automatically.
+The system cannot safely infer completion/rollback automatically. Mark the operation `RecoveryRequired` and preserve enough evidence for explicit recovery.
 
-Do not blindly replay effects after a timeout/error. Check the authoritative state first.
+Never blindly replay destructive effects after timeout/error. Inspect authoritative state first.
 
-## Startup Recovery
+## Startup recovery
 
-Persistent operations that can survive process termination need startup reconciliation.
-
-Pattern:
+Persistent operations that can outlive process termination require idempotent reconciliation:
 
 ```text
-load durable operation intent
-→ validate ownership/signature/path identity
-→ inspect staged/final/original state
-→ choose finish / rollback / preserve original / require repair
-→ update authoritative registry
-→ remove recovery record only after stable completion
+load recovery intent
+→ validate identity/path ownership
+→ inspect source/staging/final state
+→ choose finish / rollback / preserve / RecoveryRequired
+→ reconcile authoritative registry/domain state
+→ remove recovery intent only after stable completion
 ```
 
-Recovery should be idempotent. Running it twice must not delete or duplicate unrelated data.
+Running reconciliation twice must not duplicate or delete unrelated data.
 
-## Process-Aware Mutations
+## Process-aware workspace mutation
 
 Before mutating a server workspace:
 
 ```text
-launcher state allows mutation
+Launcher/domain state permits mutation
 AND
-process authority confirms no Paper process owns target
+process authority confirms no live Paper process still owns the target
 ```
 
-State labels alone are insufficient because Java can linger after crash/transition.
+A UI/status label alone is not sufficient because Java may linger after crash or transition.
 
-## Backup and Restore
-
-Backup and duplicate are different semantics.
-
-### Duplicate
-
-Creates a new independently registered server with a new identity.
-
-### Backup
-
-Creates a restore point for the same server identity.
-
-### Restore
-
-Preferred pattern:
+## Backup / duplicate / restore distinction
 
 ```text
-verify server offline/process-free
-→ validate backup integrity/compatibility
-→ create pre-restore safety snapshot when feasible
-→ stage restored workspace/data
-→ validate
-→ atomic publish/swap
-→ retain recovery metadata until post-restore verification succeeds
+Duplicate → new independently registered server identity
+Backup    → restore point for the same server identity
+Restore   → replaces current state from a selected restore point
 ```
 
-Never overwrite the current server in place file-by-file when an atomic/staged replacement can provide safer semantics.
+Restore should prefer staged validation and safe publication over in-place file-by-file replacement.
 
 ## Repair
 
-Repair must be diagnosis-driven, not a collection of destructive guesses.
+Repair is diagnosis-driven:
 
 ```text
-inspect canonical health checks
-→ classify known recoverable problem
-→ show planned repairs to UI
-→ mutate only owned recoverable state
-→ verify health again
+canonical health evidence
+→ classify known recoverable defect
+→ bounded planned mutation
+→ verify authority again
 ```
 
-Repair must not silently reset worlds/configuration or replace user data unless explicitly part of a confirmed recovery flow.
+Do not turn Repair into a generic reset button or silent user-data replacement path.
 
-## Diagnostics / Support Data
+## Diagnostics
 
-For each failed operation capture enough structured evidence to answer:
+A failed operation should retain bounded, sanitized context sufficient to correlate the failure:
 
 ```text
-launcher version/build
-operation kind/id
-safe phase/state
-stable error code
-provider/context chain
-relevant runtime versions
-sanitized target identity
-latest bounded logs
+Launcher build/version
+operation id + correlation id
+kind/resource
+state + phase
+stable error code/details
+relevant runtime/provider versions
+bounded logs
 ```
 
-Never include secrets, tokens, auth material, private signing keys, or unnecessary personal content.
+Never include tokens, credentials, private signing keys, or unnecessary personal content.
 
-## Test Matrix
+## Test matrix
 
-For long-running/destructive work, cover as applicable:
+Cover only cases applicable to the changed operation, especially:
 
 ```text
-[ ] normal success
-[ ] destination already exists
-[ ] invalid target identity
-[ ] target process still running
-[ ] permission denied
-[ ] insufficient disk space
-[ ] partial staging failure
-[ ] failure after durable intent but before publish
-[ ] failure after publish but before registry update
-[ ] restart recovery
-[ ] retry after failure
-[ ] cancellation at each declared safe boundary
-[ ] repeated recovery is idempotent
-[ ] source remains intact on failure
+success
+conflicting active operation
+invalid target identity
+process still running
+permission denied
+insufficient disk
+partial staging failure
+failure around publish/registry commit boundary
+restart recovery
+safe retry
+cancellation before/after allowed boundary
+repeated recovery idempotence
+source preserved on failure
 ```
+
+Use the smallest fixture capable of falsifying the changed recovery claim.
