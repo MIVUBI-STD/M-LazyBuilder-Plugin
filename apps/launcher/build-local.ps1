@@ -13,10 +13,13 @@ $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..')
 $PreflightScript = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\build\preflight.ps1'
 $ClientVerifier = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1'
+$PackageLocal = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\distribution\package-local.ps1'
 $MavenWrapper = Join-Path $RepoRoot 'mvnw.cmd'
 $GradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
 
-if (-not (Test-Path $PreflightScript)) { throw "Missing build preflight: $PreflightScript" }
+foreach ($RequiredScript in @($PreflightScript, $ClientVerifier, $PackageLocal)) {
+    if (-not (Test-Path $RequiredScript -PathType Leaf)) { throw "Missing required build operation: $RequiredScript" }
+}
 if ($AllowMissingRuntime) { & $PreflightScript -RepoRoot $RepoRoot }
 else { & $PreflightScript -RepoRoot $RepoRoot -RequireJava }
 
@@ -32,7 +35,8 @@ $UtilitiesTargetJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Util
 $MapTargetJar = Join-Path $RepoRoot 'mods\map-manager\build\libs\lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientTargetJar = Join-Path $RepoRoot 'mods\utility-manager\build\libs\lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
 $PerformanceClientTargetJar = Join-Path $RepoRoot 'mods\performance-manager\build\libs\lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
-$PublishDir = Join-Path $RepoRoot 'dist\LazyBuilder'
+$LocalPublishDir = Join-Path $RepoRoot 'dist\Local'
+$CompileOnlyDir = Join-Path $RepoRoot 'dist\CompileOnly'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
 
 Write-Host ''
@@ -105,16 +109,15 @@ if ($MissingRuntime.Count -gt 0) {
     $MissingText = $MissingRuntime -join ', '
     if (-not $AllowMissingRuntime) { throw "Runtime-ready Launcher build blocked: bundled runtime components are missing ($MissingText)." }
     Write-Warning "Compile-only mode: runtime components are missing ($MissingText)."
-    Write-Warning 'The produced app must not be used for fresh server or Client Setup runtime validation.'
+    Write-Warning 'The produced app must not be used for runtime or installer acceptance.'
     Write-Host ''
 }
 
 if ($UpdateInstalled) {
     $Running = @(Get-Process -Name 'lazybuilder' -ErrorAction SilentlyContinue)
-    if ($Running.Count -gt 0) { throw 'LazyBuilder is currently running. Close the Launcher first, then run UPDATE-LAUNCHER.cmd again.' }
+    if ($Running.Count -gt 0) { throw 'LazyBuilder is currently running. Close the Launcher first, then run DEV.cmd update again.' }
 }
 
-if (Test-Path $PublishDir) { Remove-Item $PublishDir -Recurse -Force }
 if (Test-Path $NsisDir) { Get-ChildItem $NsisDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force }
 
 Push-Location $AppRoot
@@ -158,7 +161,6 @@ try {
         Write-Host 'Updating the installed LazyBuilder in place...' -ForegroundColor Cyan
         $UpdateProcess = Start-Process -FilePath $FreshInstaller -ArgumentList '/S' -Wait -PassThru
         if ($UpdateProcess.ExitCode -ne 0) { throw "LazyBuilder update installer exited with code $($UpdateProcess.ExitCode)." }
-        if (Test-Path $PublishDir) { Remove-Item $PublishDir -Recurse -Force }
         Get-ChildItem $NsisDir -Filter '*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
         Write-Host ''
         Write-Host 'Installed Launcher updated successfully.' -ForegroundColor Green
@@ -167,25 +169,40 @@ try {
         return
     }
 
-    New-Item -ItemType Directory -Force -Path $PublishDir | Out-Null
-    $PublishedInstaller = Join-Path $PublishDir 'LazyBuilder-Setup.exe'
-    $PublishedExe = Join-Path $PublishDir 'LazyBuilder.exe'
-    Copy-Item $FreshInstaller $PublishedInstaller -Force
-    Copy-Item $Exe $PublishedExe -Force
+    if ($MissingRuntime.Count -gt 0) {
+        if (Test-Path $CompileOnlyDir) { Remove-Item $CompileOnlyDir -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $CompileOnlyDir | Out-Null
+        $DiagnosticExe = Join-Path $CompileOnlyDir 'LazyBuilder-Diagnostics.exe'
+        Copy-Item $Exe $DiagnosticExe -Force
+        Set-Content -Path (Join-Path $CompileOnlyDir 'README.txt') -Encoding UTF8 -Value @(
+            'LazyBuilder Compile-Only Diagnostic Build',
+            '',
+            'This output is not a runtime-ready candidate and must not be used for installer/runtime acceptance.',
+            '',
+            'Run:',
+            '  LazyBuilder-Diagnostics.exe'
+        )
+        Write-Host ''
+        Write-Host 'Compile-only build complete.' -ForegroundColor Yellow
+        Write-Host "Diagnostic binary: $DiagnosticExe"
+        return
+    }
 
-    $BuildInfo = @(
-        'LazyBuilder Windows build', '',
-        'Recommended:', '  LazyBuilder-Setup.exe  - install/update and run LazyBuilder normally', '',
-        'Developer diagnostic binary:', '  LazyBuilder.exe        - raw Tauri executable', '',
-        "Built: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-        "Mode: $(if ($MissingRuntime.Count -gt 0) { 'compile-only' } else { 'runtime-ready (server + Modrinth Client Setup)' })"
-    ) -join [Environment]::NewLine
-    Set-Content -Path (Join-Path $PublishDir 'README.txt') -Value $BuildInfo -Encoding UTF8
+    $CommitSha = 'local'
+    try {
+        $CandidateSha = (& git -C $RepoRoot rev-parse HEAD 2>$null).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($CandidateSha)) { $CommitSha = $CandidateSha }
+    } catch {}
+
+    & $PackageLocal -RepoRoot $RepoRoot -InstallerPath $FreshInstaller -CommitSha $CommitSha -RunNumber 'local'
+    if ($LASTEXITCODE -ne 0) { throw "Local distribution packaging failed with exit code $LASTEXITCODE." }
+
+    $DiagnosticExe = Join-Path $LocalPublishDir 'LazyBuilder-Diagnostics.exe'
+    Copy-Item $Exe $DiagnosticExe -Force
 
     Write-Host ''
-    Write-Host 'Build complete.' -ForegroundColor Green
-    Write-Host "Installer: $PublishedInstaller" -ForegroundColor Green
-    Write-Host "Developer binary: $PublishedExe"
-    Write-Host $(if ($MissingRuntime.Count -gt 0) { 'Mode: compile-only' } else { 'Mode: runtime-ready Launcher package' }) -ForegroundColor $(if ($MissingRuntime.Count -gt 0) { 'Yellow' } else { 'Green' })
+    Write-Host 'Runtime-ready Local build complete.' -ForegroundColor Green
+    Write-Host "Installer: $(Join-Path $LocalPublishDir 'LazyBuilder-Setup-Local.exe')" -ForegroundColor Green
+    Write-Host "Developer diagnostic binary: $DiagnosticExe"
 }
 finally { Pop-Location }
