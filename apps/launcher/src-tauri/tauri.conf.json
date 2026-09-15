@@ -9,9 +9,6 @@
     "beforeBuildCommand": "npm run build:frontend",
     "frontendDist": "../dist"
   },
-  "windows": {
-    "staticVCRuntime": true
-  },
   "app": {
     "windows": [{
       "label": "main",
