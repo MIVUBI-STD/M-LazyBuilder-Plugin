@@ -55,18 +55,10 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/launcher/package-lock.json
-      - name: Install frontend dependencies
+      - name: Install exact Launcher dependencies
         run: npm ci
-      - name: Typecheck Svelte frontend
-        run: npm run typecheck
-      - name: Build Svelte frontend
-        run: npm run build:frontend
-      - name: Generate Tauri icon assets
-        run: npx tauri icon src-tauri/app-icon.svg
-      - name: Check Rust/Tauri backend
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
-      - name: Test Rust/Tauri backend
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Verify Launcher source boundary
+        run: npm run verify:source
 
   paper:
     runs-on: windows-latest
@@ -158,12 +150,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Compile Map Manager through repository wrapper
-        run: .\gradlew.bat -p mods/map-manager --no-daemon build
-      - name: Compile Utility Manager through repository wrapper
-        run: .\gradlew.bat -p mods/utility-manager --no-daemon build
-      - name: Compile Performance Manager through repository wrapper
-        run: .\gradlew.bat -p mods/performance-manager --no-daemon build
+      - name: Verify required Fabric client suite
+        shell: pwsh
+        run: .\tooling\windows-toolchain\scripts\verify\verify-fabric.ps1 -RepoRoot "."
       - name: Stage required client mods
         shell: pwsh
         run: |
