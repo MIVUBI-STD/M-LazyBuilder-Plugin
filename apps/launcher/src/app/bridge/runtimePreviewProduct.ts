@@ -2,6 +2,7 @@ import type {
   AdoptionPlan,
   ClientIntegrationStatus,
   DiagnosticSummary,
+  LauncherOperationSnapshot,
   ManagedWorldSummary,
   PluginInstallResult,
   PluginSummary,
@@ -41,6 +42,26 @@ const recentWorkspaces: WorkspaceEntry[] = [
   { id: 'jalur', name: 'Jalur Tanam', path: 'D:\\LazyBuilder\\Jalur Tanam', lastOpenedUnixSeconds: 1_787_500_000 },
   { id: 'arena', name: 'Rampogan Arena', path: 'D:\\LazyBuilder\\Rampogan Arena', lastOpenedUnixSeconds: 1_787_000_000 },
   { id: 'sandbox', name: 'Sandbox Test', path: 'D:\\LazyBuilder\\Sandbox Test', lastOpenedUnixSeconds: 1_786_500_000 }
+];
+
+const previewOperations: LauncherOperationSnapshot[] = [
+  {
+    id: 'preview-operation-duplicate',
+    kind: 'duplicate-server',
+    resource: `workspace:${activeWorkspace.id}`,
+    state: 'SUCCEEDED',
+    phase: 'publishing',
+    status: 'Server duplicated',
+    details: '',
+    progress: { current: 2_400_000_000, total: 2_400_000_000, unit: 'bytes' },
+    canCancel: false,
+    cancelRequested: false,
+    warnings: [],
+    error: null,
+    createdAtUnixSeconds: 1_788_400_000,
+    updatedAtUnixSeconds: 1_788_400_030,
+    completedAtUnixSeconds: 1_788_400_030
+  }
 ];
 
 function params() {
@@ -200,6 +221,11 @@ const resourceProfile: ServerResourceProfile = {
 export const runtimePreviewProduct = {
   diagnostics: {
     summary: async () => diagnostics
+  },
+  operations: {
+    list: async () => previewOperations,
+    get: async (id: string) => previewOperations.find((operation) => operation.id === id) ?? previewOperations[0],
+    cancel: async (id: string) => previewOperations.find((operation) => operation.id === id) ?? previewOperations[0]
   },
   workspace: {
     state: async () => workspaceState(),
