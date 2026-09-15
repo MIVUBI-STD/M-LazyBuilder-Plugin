@@ -37,6 +37,10 @@ async function open(page, query) {
   await expect(page.getByText('LazyBuilder', { exact: true }).first()).toBeVisible();
 }
 
+function heading(page, name) {
+  return page.getByRole('heading', { name, exact: true });
+}
+
 test.use({
   viewport: { width: 1440, height: 900 },
   colorScheme: 'dark'
@@ -46,36 +50,36 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
   await fs.mkdir(outputDir, { recursive: true });
 
   await open(page, '?preview=library');
-  await expect(page.getByRole('heading', { name: 'Servers' })).toBeVisible();
-  await expect(page.getByText('Museum Khatulistiwa')).toBeVisible();
+  await expect(heading(page, 'Servers')).toBeVisible();
+  await expect(page.getByText('Museum Khatulistiwa', { exact: true })).toBeVisible();
   await capture(page, '01-server-library.png');
 
   await open(page, '?preview=active');
-  await expect(page.getByRole('heading', { name: 'MIVUBI Build Server' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(heading(page, 'MIVUBI Build Server')).toBeVisible();
+  await expect(heading(page, 'Overview')).toBeVisible();
   await capture(page, '02-overview-ready.png');
 
   await page.getByRole('button', { name: 'Worlds', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Worlds' })).toBeVisible();
+  await expect(heading(page, 'Worlds')).toBeVisible();
   await capture(page, '03-worlds.png');
 
   await page.evaluate(() => history.replaceState(null, '', '/?preview=active&page=Plugins'));
   await page.getByRole('button', { name: 'Plugins', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Plugins' })).toBeVisible();
-  await expect(page.getByText('FastAsyncWorldEdit')).toBeVisible();
+  await expect(heading(page, 'Plugins')).toBeVisible();
+  await expect(page.getByText('FastAsyncWorldEdit', { exact: true })).toBeVisible();
   await capture(page, '04-plugins.png');
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(heading(page, 'Settings')).toBeVisible();
   await capture(page, '05-settings.png');
 
   await page.getByRole('button', { name: 'Client', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Client' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Minecraft Client' })).toBeVisible();
+  await expect(heading(page, 'Client')).toBeVisible();
+  await expect(heading(page, 'Minecraft Client')).toBeVisible();
   await capture(page, '06-client-setup.png');
 
   await open(page, '?preview=setup');
-  await expect(page.getByText('Accept the Minecraft EULA')).toBeVisible();
+  await expect(page.getByText('Accept the Minecraft EULA', { exact: true })).toBeVisible();
   await capture(page, '07-server-setup-required.png');
 
   const manifest = {
