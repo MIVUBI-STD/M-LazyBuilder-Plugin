@@ -18,6 +18,16 @@ pub fn launcher_log_path() -> Result<PathBuf, String> {
     Ok(base.join("LazyBuilder").join("logs").join("launcher.log"))
 }
 
+pub fn launcher_log_paths() -> Vec<PathBuf> {
+    let Ok(primary) = launcher_log_path() else { return Vec::new(); };
+    let mut paths = Vec::with_capacity(LOG_HISTORY_COUNT + 1);
+    paths.push(primary.clone());
+    for index in 1..=LOG_HISTORY_COUNT {
+        paths.push(rotated_path(&primary, index));
+    }
+    paths
+}
+
 pub fn new_correlation_id(scope: &str) -> String {
     let sequence = NEXT_CORRELATION_ID.fetch_add(1, Ordering::Relaxed);
     let millis = SystemTime::now()
@@ -67,4 +77,5 @@ mod tests {
     use super::*;
     #[test] fn correlation_ids_are_non_empty_and_scoped() { let id = new_correlation_id("operation"); assert!(id.starts_with("operation-")); }
     #[test] fn rotated_names_are_bounded() { assert_eq!(rotated_path(Path::new("C:/logs/launcher.log"), 4).file_name().unwrap(), "launcher.4.log"); }
+    #[test] fn launcher_log_set_is_bounded() { assert!(launcher_log_paths().len() <= LOG_HISTORY_COUNT + 1); }
 }
