@@ -69,7 +69,17 @@ pub async fn diagnostics_export_support_bundle(app: AppHandle) -> CommandResult<
         let summary = collect_summary(&task_app);
         let operation_snapshots = operations.list().map_err(CommandError::from)?;
         let startup = task_app.state::<StartupReport>().inner().clone();
-        let sensitive_paths: Vec<String> = summary.workspace_path.clone().into_iter().collect();
+        let mut sensitive_paths: Vec<String> = workspace_registry::list()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| entry.path)
+            .filter(|path| !path.trim().is_empty())
+            .collect();
+        if let Some(active_path) = summary.workspace_path.clone() {
+            if !sensitive_paths.iter().any(|path| path.eq_ignore_ascii_case(&active_path)) {
+                sensitive_paths.push(active_path);
+            }
+        }
 
         let _ = operations.set_phase(
             &operation_id,
