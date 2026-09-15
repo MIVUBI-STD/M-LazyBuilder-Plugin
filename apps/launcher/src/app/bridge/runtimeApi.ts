@@ -1,44 +1,78 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export type RuntimeCommandError = { code: string; message: string };
+export type RuntimeCommandError = {
+  code: string;
+  message: string;
+  details?: string;
+  recoverable?: boolean;
+  action?: string | null;
+  correlationId?: string;
+};
 
 export class RuntimeError extends Error {
   readonly code: string;
+  readonly details: string;
+  readonly recoverable: boolean;
+  readonly action?: string | null;
+  readonly correlationId: string;
 
-  constructor(code: string, message: string) {
-    super(message);
+  constructor(error: RuntimeCommandError) {
+    super(error.message);
     this.name = 'RuntimeError';
-    this.code = code;
+    this.code = error.code;
+    this.details = error.details ?? '';
+    this.recoverable = error.recoverable ?? false;
+    this.action = error.action ?? null;
+    this.correlationId = error.correlationId ?? '';
   }
 }
 
 export function runtimeError(value: unknown): RuntimeCommandError {
   if (value && typeof value === 'object') {
-    const candidate = value as { code?: unknown; message?: unknown };
+    const candidate = value as Record<string, unknown>;
     if (typeof candidate.code === 'string' && typeof candidate.message === 'string') {
-      return { code: candidate.code, message: candidate.message };
+      return {
+        code: candidate.code,
+        message: candidate.message,
+        details: typeof candidate.details === 'string' ? candidate.details : '',
+        recoverable: candidate.recoverable === true,
+        action: typeof candidate.action === 'string' ? candidate.action : null,
+        correlationId: typeof candidate.correlationId === 'string' ? candidate.correlationId : ''
+      };
     }
   }
   const message = String(value ?? '').replace(/^Error:\s*/i, '').trim();
-  return { code: 'RUNTIME_ERROR', message: message || 'Something went wrong. Try again.' };
+  return { code: 'RUNTIME_ERROR', message: message || 'Something went wrong. Try again.', details: '', recoverable: false, action: null, correlationId: '' };
 }
 
 async function invokeRuntime<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(command, args);
   } catch (value) {
-    const error = runtimeError(value);
-    throw new RuntimeError(error.code, error.message);
+    throw new RuntimeError(runtimeError(value));
   }
 }
 
 export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
+
+export type StartupStepState = 'READY' | 'WARNING';
+export type StartupStep = { key: string; state: StartupStepState; summary: string; details: string };
+export type StartupReport = { ready: boolean; degraded: boolean; startedAtUnixSeconds: number; completedAtUnixSeconds: number; runtimeTempPath?: string | null; steps: StartupStep[] };
+
+export type LauncherSettings = {
+  schemaVersion: number;
+  rememberLastServer: boolean;
+  confirmCloseWhileServerRunning: boolean;
+  autoCheckUpdates: boolean;
+  updateChannel: 'stable' | 'preview';
+};
 
 export type LauncherOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLING' | 'CANCELLED' | 'RECOVERY_REQUIRED';
 export type LauncherOperationProgress = { current: number; total?: number | null; unit: string };
 export type LauncherOperationError = { code: string; message: string; details: string; recoverable: boolean };
 export type LauncherOperationSnapshot = {
   id: string;
+  correlationId: string;
   kind: string;
   resource: string;
   state: LauncherOperationState;
@@ -63,6 +97,9 @@ export type WorkspaceProvisioningStatus = { workspaceCreated: boolean; javaReady
 export type WorkspaceProvisionResult = { javaPath: string; paperBuild?: number | null; coreVersion: string; status: WorkspaceProvisioningStatus };
 export type RuntimeUpdateStatus = { currentPaperBuild?: number | null; latestPaperBuild: number; paperUpdateAvailable: boolean };
 
+export type ServerHealthState = 'READY' | 'NEEDS_ATTENTION' | 'UNAVAILABLE' | 'BUSY';
+export type ServerHealthCheck = { key: string; ready: boolean; summary: string; details: string; repairable: boolean };
+export type ServerHealthSnapshot = { workspaceId: string; workspaceName: string; state: ServerHealthState; ready: boolean; running: boolean; checks: ServerHealthCheck[] };
 export type ServerState = 'Offline' | 'Starting' | 'Online' | 'Stopping' | 'Detached' | 'Crashed';
 export type ServerHealth = 'Offline' | 'Good' | 'Warning' | 'Critical';
 export type ServerSnapshot = { state: ServerState; health: ServerHealth; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
@@ -98,6 +135,16 @@ export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: st
 export const runtimeApi = {
   diagnostics: {
     summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary')
+  },
+  startup: {
+    status: () => invokeRuntime<StartupReport>('launcher_startup_status')
+  },
+  settings: {
+    get: () => invokeRuntime<LauncherSettings>('launcher_settings_get'),
+    save: (settings: LauncherSettings) => invokeRuntime<LauncherSettings>('launcher_settings_save', { settings })
+  },
+  health: {
+    server: (id: string) => invokeRuntime<ServerHealthSnapshot>('launcher_server_health', { id })
   },
   operations: {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
