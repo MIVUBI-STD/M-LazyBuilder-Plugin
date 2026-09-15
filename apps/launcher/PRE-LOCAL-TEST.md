@@ -30,7 +30,7 @@ Remote CI is source/build/package proof only. It is not proof of installed Windo
 
 ## Runtime-ready package gate
 
-A normal runtime-ready package must contain matching tested artifacts from the same source revision:
+A normal V1 runtime-ready package must contain matching tested artifacts from the same source revision:
 
 ```text
 src-tauri/resources/core/
@@ -39,9 +39,10 @@ src-tauri/resources/core/
 
 src-tauri/resources/client-mods/
 ├── lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
-├── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
-└── lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
+└── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
 ```
+
+`mods/performance-manager/` remains deferred source in V1. It is not a required Launcher runtime component, is not installed by Client Setup, and is not part of the runtime-ready package gate.
 
 `BUILD-LAUNCHER.cmd` owns the complete local runtime-ready path:
 
@@ -49,15 +50,14 @@ src-tauri/resources/client-mods/
 mvn verify
 → build Map Manager with Gradle 8.12
 → build Utility Manager with Gradle 8.12
-→ build Performance Manager with Gradle 8.12
-→ stage tested Paper + Fabric JARs
+→ stage tested Paper + required Fabric JARs
 → npm ci
 → Svelte typecheck/build
 → cargo check/test
 → Tauri + NSIS package
 ```
 
-The build must stop if any required runtime artifact is missing. Compile-only mode must not be used for runtime validation.
+The build must stop if any required V1 runtime artifact is missing. Compile-only mode must not be used for runtime validation.
 
 ## First local install
 
@@ -119,16 +119,15 @@ Client Setup is global, not server-scoped. Test both a default Modrinth location
 7. If unverified, launch that profile once from Modrinth, return to LazyBuilder, click Refresh, and confirm compatibility is detected.
 8. While Minecraft is actively using the selected profile, click `Sync Client`; confirm sync is blocked.
 9. Close Minecraft and run `Sync Client`.
-10. Confirm exactly these three current JARs are present:
+10. Confirm exactly these two current V1 JARs are present:
 
 ```text
 lazybuilder-map-manager-*.jar
 lazybuilder-utility-manager-*.jar
-lazybuilder-performance-manager-*.jar
 ```
 
 11. Confirm unrelated Modrinth mods are byte-for-byte untouched.
-12. Add an old/duplicate LazyBuilder JAR and sync again; confirm only LazyBuilder-owned prefixes are cleaned.
+12. Add an old/duplicate LazyBuilder V1 JAR and sync again; confirm only the two V1 LazyBuilder-owned prefixes are cleaned.
 13. Rename or move the selected profile; confirm LazyBuilder reports the saved profile as unavailable and does not recreate the old path.
 14. Re-select the new location and confirm setup recovers.
 
@@ -138,7 +137,7 @@ Use a disposable profile copy. Induce a publish failure after staging if practic
 
 ```text
 sync fails
-→ previous three LazyBuilder components are restored
+→ previous two required LazyBuilder components are restored
 → no partial mixed LazyBuilder version set remains
 → third-party mods remain untouched
 → temporary .incoming / rollback artifacts are cleaned
@@ -167,7 +166,7 @@ UPDATE-LAUNCHER.cmd
 
 Confirm:
 
-- Paper core and all three Fabric components are rebuilt/tested/staged before packaging;
+- Paper core and both required V1 Fabric components are rebuilt/tested/staged before packaging;
 - update is blocked while LazyBuilder is running;
 - installed application is replaced in place;
 - server workspaces and selected Modrinth profile remain intact;
@@ -179,7 +178,7 @@ Local testing is clean only when:
 
 ```text
 exact-head Verify green
-+ runtime-ready package contains matching Paper + Fabric artifacts
++ runtime-ready package contains matching Paper + required V1 Fabric artifacts
 + server library survives unavailable paths
 + Starting server can be stopped
 + one managed Paper instance only
