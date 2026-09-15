@@ -58,6 +58,7 @@ public final class WorldMapScreen extends Screen {
     private boolean draggingMap;
     private boolean initialLayoutApplied;
     private boolean sidebarCollapsed;
+    private boolean sidebarManuallyToggled;
     private boolean showAllWorlds;
     private int worldListOffset;
     private UUID selectedWorldId;
@@ -124,9 +125,16 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             centeredOnce = true;
         }
+        boolean autoCollapsed = shouldAutoCollapseSidebar();
         if (!initialLayoutApplied) {
-            sidebarCollapsed = width < 520;
+            sidebarCollapsed = autoCollapsed;
             initialLayoutApplied = true;
+        } else if (!sidebarManuallyToggled || mustCollapseSidebar()) {
+            if (sidebarCollapsed != autoCollapsed) {
+                sidebarCollapsed = autoCollapsed;
+                contextOpen = false;
+                invalidateRasterViewport();
+            }
         }
         NAVIGATION.reload();
         if (!worlds.worldListReady() && !worlds.worldListPending()) worlds.refresh();
@@ -225,7 +233,6 @@ public final class WorldMapScreen extends Screen {
         Path storage = client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
 
         if (!scope.equals(rasterScope) && !rasterScope.isBlank()) {
-            // Never show a previous world/dimension raster under a newly authoritative scope.
             rasterColors = new int[0];
             rasterColumns = 0;
             rasterRows = 0;
@@ -284,7 +291,6 @@ public final class WorldMapScreen extends Screen {
             }
         }
 
-        // Publish the completed raster in one assignment so partially rebuilt frames are never visible.
         rasterColors = nextColors;
         rasterColumns = columns;
         rasterRows = rows;
@@ -437,10 +443,13 @@ public final class WorldMapScreen extends Screen {
             int chunksX = maxChunkX - minChunkX + 1;
             int chunksZ = maxChunkZ - minChunkZ + 1;
             context.drawTextWithShadow(textRenderer, Text.literal("Export area"), left + 10, height - 49, LbUi.ACCENT_BRIGHT);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(chunksX + " × " + chunksZ + " chunks  •  X " + minChunkX + " → " + maxChunkX
-                            + "  Z " + minChunkZ + " → " + maxChunkZ),
-                    left + 10, height - 33, LbUi.TEXT_SECONDARY);
+            String detail = chunksX + " × " + chunksZ + " chunks  •  X " + minChunkX + " → " + maxChunkX
+                    + "  Z " + minChunkZ + " → " + maxChunkZ;
+            int detailWidth = Math.max(0, areaCancelRect().left - left - 24);
+            if (detailWidth > 24) {
+                context.drawTextWithShadow(textRenderer, Text.literal(trim(detail, detailWidth)),
+                        left + 10, height - 33, LbUi.TEXT_SECONDARY);
+            }
             renderCompactAction(context, areaCancelRect(), "Cancel", false, mouseX, mouseY);
             renderCompactAction(context, areaContinueRect(), "Continue", true, mouseX, mouseY);
             return;
@@ -450,13 +459,35 @@ public final class WorldMapScreen extends Screen {
         String center = hovered == null
                 ? zoomLabel()
                 : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomLabel();
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(center),
-                left + (width - left) / 2, height - 16, LbUi.TEXT_SECONDARY);
-
         String status = maps.teleportPending() ? "Teleporting…"
                 : SURFACE.pendingCount() > 0 ? "Mapping " + SURFACE.pendingCount() + " columns…"
                 : "M / Esc close  •  Drag pan  •  Scroll zoom  •  R recenter";
-        context.drawTextWithShadow(textRenderer, Text.literal(status), left + 8, height - 16, LbUi.TEXT_MUTED);
+
+        int textLeft = left + 8;
+        int textRight = zoomMinusRect().left - 8;
+        int availableWidth = Math.max(0, textRight - textLeft);
+        int centerWidth = textRenderer.getWidth(center);
+        int statusWidth = textRenderer.getWidth(status);
+        int preferredCenterX = left + (width - left) / 2;
+        int preferredCenterLeft = preferredCenterX - centerWidth / 2;
+        int preferredCenterRight = preferredCenterLeft + centerWidth;
+        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;
+
+        if (availableWidth > 0) {
+            if (statusWidth + 16 <= availableWidth
+                    && preferredCenterLeft >= textLeft + statusWidth + 12
+                    && preferredCenterRight <= textRight) {
+                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal(center),
+                        preferredCenterX, height - 16, LbUi.TEXT_SECONDARY);
+            } else if (operationalStatus && statusWidth <= availableWidth) {
+                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);
+            } else {
+                String compactCenter = trim(center, availableWidth);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal(compactCenter),
+                        textLeft + availableWidth / 2, height - 16, LbUi.TEXT_SECONDARY);
+            }
+        }
 
         renderZoomControl(context, mouseX, mouseY);
     }
@@ -504,7 +535,9 @@ public final class WorldMapScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
+            if (mustCollapseSidebar()) return true;
             sidebarCollapsed = false;
+            sidebarManuallyToggled = true;
             invalidateRasterViewport();
             return true;
         }
@@ -512,6 +545,7 @@ public final class WorldMapScreen extends Screen {
         if (!sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
             if (mouseY < 31 && mouseX > sidebarWidth() - 32) {
                 sidebarCollapsed = true;
+                sidebarManuallyToggled = true;
                 contextOpen = false;
                 invalidateRasterViewport();
                 return true;
@@ -737,7 +771,6 @@ public final class WorldMapScreen extends Screen {
                 minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ()));
     }
 
-    /** Called by the export workspace after a selected-area export completes. */
     void finishAreaExport() {
         clearAreaSelection();
     }
@@ -1011,6 +1044,14 @@ public final class WorldMapScreen extends Screen {
         return String.format(Locale.ROOT, "%.2f:1", 1.0 / zoom);
     }
 
+    private boolean shouldAutoCollapseSidebar() {
+        return width < 520 || height < 260;
+    }
+
+    private boolean mustCollapseSidebar() {
+        return width < 400 || height < 220;
+    }
+
     private int sidebarWidth() {
         if (sidebarCollapsed) return COLLAPSED_SIDEBAR;
         if (width < 620) return MIN_SIDEBAR;
@@ -1069,7 +1110,7 @@ public final class WorldMapScreen extends Screen {
     private int visibleSidebarRows() {
         if (sidebarCollapsed) return 0;
         int available = height - 105 - 76;
-        return Math.max(2, available / SIDEBAR_ROW_HEIGHT);
+        return Math.max(0, available / SIDEBAR_ROW_HEIGHT);
     }
 
     private WorldControlWireProtocol.WorldSummary findActiveWorld(UUID id) {
@@ -1092,13 +1133,13 @@ public final class WorldMapScreen extends Screen {
     }
 
     private String trim(String value, int maxWidth) {
-        if (value == null) return "";
+        if (value == null || maxWidth <= 0) return "";
         if (textRenderer.getWidth(value) <= maxWidth) return value;
         String base = value;
         while (base.length() > 1 && textRenderer.getWidth(base + "…") > maxWidth) {
             base = base.substring(0, base.length() - 1);
         }
-        return base + "…";
+        return textRenderer.getWidth(base + "…") <= maxWidth ? base + "…" : "";
     }
 
     private static String friendlyDimension(String raw) {
