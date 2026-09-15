@@ -7,6 +7,7 @@
   let draft: LauncherSettings | null = null;
   let loading = true;
   let saving = false;
+  let exportingSupport = false;
   let error = '';
   let message = '';
 
@@ -53,6 +54,21 @@
     }
   }
 
+  async function exportSupportBundle() {
+    if (exportingSupport) return;
+    exportingSupport = true;
+    error = '';
+    message = '';
+    try {
+      const path = await runtimeProduct.diagnostics.exportSupportBundle();
+      if (path) message = `Support bundle exported to ${path}`;
+    } catch (value) {
+      error = friendlyError(value);
+    } finally {
+      exportingSupport = false;
+    }
+  }
+
   function reset() {
     if (!saved || saving) return;
     draft = { ...saved };
@@ -90,9 +106,17 @@
       </label>
     </section>
 
+    <section class="settings-group">
+      <div class="group-copy"><h3>Support</h3><p>Create a local troubleshooting archive when you need to inspect or share Launcher diagnostics.</p></div>
+      <div class="support-card">
+        <div><strong>Export support bundle</strong><span>Includes bounded Launcher metadata, operation/startup state, and Launcher logs. Worlds, plugin data, server configuration, authentication material, and signing keys are excluded.</span><small>Known workspace and user-data paths are redacted. Nothing is uploaded automatically.</small></div>
+        <button class="secondary" disabled={exportingSupport} onclick={exportSupportBundle}>{exportingSupport ? 'Exporting…' : 'Export ZIP'}</button>
+      </div>
+    </section>
+
     <section class="future-group" aria-label="Update preferences status">
-      <div><strong>Update preferences</strong><span>Automatic update checks and update channels will appear here when Launcher Self Update is implemented.</span></div>
-      <span class="planned-badge">Planned</span>
+      <div><strong>Update preferences</strong><span>Signed release infrastructure is prepared. Automatic update checks and channels will appear here after the canonical updater public key is provisioned.</span></div>
+      <span class="planned-badge">Key setup required</span>
     </section>
 
     <footer class="settings-footer">
@@ -106,8 +130,8 @@
   .launcher-settings{width:min(860px,100%)}.page-head{margin-bottom:18px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
   .notice,.loading-card{margin-bottom:12px;padding:11px 13px;border:1px solid var(--border-soft);border-radius:9px;background:var(--surface);font-size:11px}.notice.error{border-color:#713940;background:var(--danger-bg);color:#ffdadd}.notice.success{border-color:var(--accent-border);background:var(--accent-soft);color:#a8e5b8}.loading-card{color:var(--muted)}
   .settings-group{display:grid;grid-template-columns:190px minmax(0,1fr);gap:28px;padding:20px 0;border-top:1px solid var(--border-soft)}.settings-group:first-of-type{border-top:0}.group-copy h3{margin:0;font-size:12px}.group-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
-  .setting-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface);cursor:pointer}.setting-row>div{display:grid;gap:3px}.setting-row strong{font-size:11px}.setting-row span{color:var(--muted);font-size:10px;line-height:1.4}.setting-row input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
+  .setting-row,.support-card{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.setting-row{cursor:pointer}.setting-row>div,.support-card>div{display:grid;gap:3px}.setting-row strong,.support-card strong{font-size:11px}.setting-row span,.support-card span{color:var(--muted);font-size:10px;line-height:1.4}.support-card small{color:var(--muted-2);font-size:9px;line-height:1.4}.setting-row input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
   .future-group{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:12px;padding:13px 14px;border:1px dashed var(--border);border-radius:10px;background:var(--bg-elevated)}.future-group>div{display:grid;gap:3px}.future-group strong{font-size:11px}.future-group span{color:var(--muted);font-size:10px}.planned-badge{padding:4px 8px;border:1px solid var(--border);border-radius:999px;white-space:nowrap}
   .settings-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--border-soft)}.primary,.secondary{min-height:36px;padding:8px 13px;border-radius:8px;font-weight:650;cursor:pointer}.primary{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}button:disabled{opacity:.5;cursor:default}
-  @media(max-width:760px){.settings-group{grid-template-columns:1fr;gap:10px}.setting-row{align-items:flex-start}.future-group{align-items:flex-start;flex-direction:column}.settings-footer{align-items:stretch;flex-direction:column-reverse}}
+  @media(max-width:760px){.settings-group{grid-template-columns:1fr;gap:10px}.setting-row,.support-card{align-items:flex-start;flex-direction:column}.future-group{align-items:flex-start;flex-direction:column}.settings-footer{align-items:stretch;flex-direction:column-reverse}}
 </style>
