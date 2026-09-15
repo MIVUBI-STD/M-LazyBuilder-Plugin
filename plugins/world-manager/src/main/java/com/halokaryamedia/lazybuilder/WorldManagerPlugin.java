@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder;
 
 import com.halokaryamedia.lazybuilder.world.WorldManager;
 import com.halokaryamedia.lazybuilder.world.application.WorldIdleUnloadService;
+import com.halokaryamedia.lazybuilder.world.files.ArtifactTempRecovery;
 import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceCommand;
 import com.halokaryamedia.lazybuilder.world.paper.BuildPerformanceController;
 import com.halokaryamedia.lazybuilder.world.paper.ChunkPregenerationController;
@@ -45,8 +46,18 @@ public final class WorldManagerPlugin extends JavaPlugin {
                         + " interrupted transfer upload"
                         + (recoveredTransferPartials == 1 ? "" : "s") + ".");
             }
+
+            int recoveredArtifactTemps = ArtifactTempRecovery.recover(
+                    worldManager.storageLayout().exportsRoot(),
+                    worldManager.storageLayout().backupsRoot()
+            );
+            if (recoveredArtifactTemps > 0) {
+                getLogger().info("Recovered " + recoveredArtifactTemps
+                        + " interrupted export/backup temporary artifact"
+                        + (recoveredArtifactTemps == 1 ? "" : "s") + ".");
+            }
         } catch (IOException exception) {
-            throw new IllegalStateException("Failed to recover interrupted transfer uploads", exception);
+            throw new IllegalStateException("Failed to recover interrupted World-Manager temporary files", exception);
         }
         this.worldTaskRegistry = new WorldTaskRegistry();
         this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
