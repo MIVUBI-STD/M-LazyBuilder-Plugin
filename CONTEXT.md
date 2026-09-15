@@ -45,12 +45,14 @@ Local PC findings
 → source remediation
 → runtime/build/product synchronization
 → regression coverage
-→ exact-head Verify
-→ applicable Paper Runtime Proof
-→ canonical installer proof
+→ local finalization when applicable
+→ integrated exact-head Verify
+→ canonical installer/provenance proof
 → final source/repository audit
 → explicit decision to reopen Local PC acceptance
 ```
+
+Focused Launcher/Paper/visual workflows may provide additional evidence when requested, but they are not parallel readiness authorities.
 
 Do not move directly to target-machine acceptance while source-side P0/P1 remediation or synchronization contradictions remain.
 
@@ -65,13 +67,14 @@ docs/05-operations/local-pc-validation-plan.md
 The root is reserved for repository-level entrypoints, policy, versioning, docs, and CI support.
 
 ```text
+DEV.cmd    canonical developer entry shim
 apps/       end-user applications
 plugins/    Paper server plugins
 mods/       Fabric client mods
 shared/     neutral cross-runtime contracts only
 docs/       canonical product/system/operations docs
-scripts/    repository verification/build support
-tooling/    repository-owned build/bootstrap/distribution tooling
+scripts/    repository verification/runtime proof utilities
+tooling/    repository-owned build/bootstrap/distribution control plane
 ```
 
 Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. New source belongs to the semantic runtime owner above.
@@ -81,7 +84,9 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 - one semantic owner per responsibility;
 - one primary execution path per behavior;
 - one persisted fact has one authority;
-- no duplicate managers, registries, schedulers, config systems, process markers, transfer systems, or filesystem authorities;
+- one developer command surface (`DEV.cmd` → `tooling/windows-toolchain/dev.ps1`);
+- one runtime-ready Local package publisher (`package-local.ps1` → `dist/Local/`);
+- no duplicate managers, registries, schedulers, config systems, process markers, transfer systems, filesystem authorities, build publishers, or verification authorities;
 - prefer deletion/consolidation before introducing a new abstraction;
 - source/CI proof is distinct from local/live runtime proof;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
@@ -90,6 +95,7 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 
 Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
+Canonical developer/deployment operations: `docs/04-system/development-operations.md`.
 Current remediation authority: `docs/05-operations/local-pc-remediation-2026-09-15.md`.
 Current proof authority: `docs/05-operations/current-verification.md`.
 Later Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
@@ -234,9 +240,22 @@ lazybuilder:transfer  bounded file bytes only
 
 Desktop ↔ Paper local control is a separate authenticated loopback contract currently at protocol version 2. Client Setup is local desktop/filesystem integration and does not add another Minecraft network protocol.
 
-## Build/toolchain ownership
+## Development / build ownership
 
-Repository-owned wrappers are canonical:
+Canonical developer surface:
+
+```text
+DEV.cmd setup
+DEV.cmd check
+DEV.cmd build
+DEV.cmd test
+DEV.cmd update
+DEV.cmd finalize-local
+```
+
+`DEV.cmd` is only the root Windows shim. `tooling/windows-toolchain/dev.ps1` owns routing and delegates to the exact operation owner.
+
+Repository-owned Java build wrappers are canonical:
 
 ```text
 mvnw.cmd
@@ -248,7 +267,16 @@ gradlew.bat
 
 Do not require global Maven/Gradle. The wrappers use official checksums and the LazyBuilder-owned temp policy. Gradle defaults to no-daemon unless explicitly overridden, reducing stale Loom/daemon lock risk.
 
-Developer toolchain checks use tool-specific version parsers rather than one generic first-line parser.
+`toolchain.json` is the supported toolchain-policy authority. Temporary upgrade candidates or migration notes do not belong in that manifest.
+
+Runtime-ready Local publishing has one owner:
+
+```text
+tooling/windows-toolchain/scripts/distribution/package-local.ps1
+→ dist/Local/
+```
+
+Compile-only diagnostics remain isolated under `dist/CompileOnly/` and are never acceptance candidates.
 
 ## Runtime workspace target
 
@@ -275,17 +303,22 @@ Archive is lifecycle metadata, not a second physical world store. Modrinth profi
 
 ## Verification authority
 
-Do not hard-code a permanent current SHA or workflow run in stable context. Determine readiness from:
+Do not hard-code a permanent current SHA or workflow run in stable context.
+
+Normal final remote readiness is determined from the integrated `Verify` workflow for the exact revision under review:
 
 ```text
 current Local HEAD
 → current remediation state
-→ exact-head Verify
-→ component-specific tests/artifact verification
-→ applicable Paper Runtime Proof
-→ canonical installer smoke proof
+→ local finalization where applicable
+→ integrated exact-head Verify
+→ canonical installer + package/provenance evidence
 → final source/repository audit
 → explicit decision to reopen target-machine acceptance
 ```
 
-Remote CI proves only what it executes. Dedicated Paper Runtime Proof is authoritative for its real Paper boot/lifecycle/restart/persistence cases. Target-PC/real-client behavior is a later proof layer, not a substitute for unresolved source remediation.
+`Verify` includes the relevant repository/version contracts, Paper build/tests, Paper runtime lifecycle + restart persistence, Fabric build/artifact verification, Launcher frontend/Rust proof, Windows package build, installer smoke, and exact-commit provenance.
+
+Focused Launcher/Paper runtime/visual workflows are supplementary manual or review evidence. They do not create a second repository-readiness authority.
+
+Remote CI proves only what it executes. Target-PC/real-client behavior is a later proof layer, not a substitute for unresolved source remediation.
