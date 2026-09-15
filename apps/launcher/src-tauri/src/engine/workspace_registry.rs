@@ -5,12 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::Disks;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 
 const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 const MINECRAFT_VERSION: &str = "1.21.4";
 const SERVER_PLATFORM: &str = "paper";
 const MIN_DUPLICATE_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 static ACTIVE_WORKSPACE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -237,21 +241,23 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
     if staging.exists() { return Err("LazyBuilder duplicate staging path already exists".into()); }
     fs::create_dir(&staging).map_err(|error| format!("Could not create duplicate staging directory: {error}"))?;
 
-    if let Err(error) = copy_directory_filtered(&source, &staging, Path::new("")) {
+    let prepare_result = (|| -> Result<(), String> {
+        copy_directory_filtered(&source, &staging, Path::new(""))?;
+        let now = now_unix_seconds();
+        let new_id = workspace_id(&final_root.display().to_string());
+        let mut manifest = read_manifest(&staging)?
+            .ok_or_else(|| "Duplicate staging copy is missing its LazyBuilder workspace manifest".to_string())?;
+        validate_manifest(&manifest)?;
+        manifest.workspace_id = new_id;
+        manifest.name = safe_name.clone();
+        manifest.created_unix_seconds = now;
+        manifest.last_opened_unix_seconds = now;
+        write_manifest(&staging, manifest)
+    })();
+    if let Err(error) = prepare_result {
         let _ = fs::remove_dir_all(&staging);
         return Err(error);
     }
-
-    let now = now_unix_seconds();
-    let new_id = workspace_id(&final_root.display().to_string());
-    let mut manifest = read_manifest(&staging)?
-        .ok_or_else(|| "Duplicate staging copy is missing its LazyBuilder workspace manifest".to_string())?;
-    validate_manifest(&manifest)?;
-    manifest.workspace_id = new_id;
-    manifest.name = safe_name.clone();
-    manifest.created_unix_seconds = now;
-    manifest.last_opened_unix_seconds = now;
-    write_manifest(&staging, manifest)?;
 
     if let Err(error) = fs::rename(&staging, &final_root) {
         let _ = fs::remove_dir_all(&staging);
@@ -265,13 +271,17 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
             return Err(format!("Could not validate duplicated server path: {error}"));
         }
     };
-    let canonical_id = workspace_id(&canonical.display().to_string());
-    if let Some(mut manifest) = read_manifest(&canonical)? {
+
+    let finalize_result = (|| -> Result<WorkspaceEntry, String> {
+        let canonical_id = workspace_id(&canonical.display().to_string());
+        let mut manifest = read_manifest(&canonical)?
+            .ok_or_else(|| "Published duplicate is missing its LazyBuilder workspace manifest".to_string())?;
         manifest.workspace_id = canonical_id;
         write_manifest(&canonical, manifest)?;
-    }
+        register_only(&canonical, &safe_name)
+    })();
 
-    match register_only(&canonical, &safe_name) {
+    match finalize_result {
         Ok(result) => Ok(result),
         Err(error) => {
             let _ = fs::remove_dir_all(&canonical);
@@ -321,9 +331,17 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
     let mut registry = load_registry()?;
     registry.servers.retain(|candidate| candidate.id != id);
     if let Err(error) = save_registry(&registry) {
-        let _ = fs::rename(&staging, &root);
-        let _ = clear_pending_deletion(&entry.id, &staging);
-        return Err(format!("Could not update server library during deletion: {error}"));
+        match fs::rename(&staging, &root) {
+            Ok(()) => {
+                let _ = clear_pending_deletion(&entry.id, &staging);
+                return Err(format!("Could not update server library during deletion: {error}"));
+            }
+            Err(rollback_error) => {
+                return Err(format!(
+                    "Could not update server library during deletion: {error}. Rollback also failed: {rollback_error}. Recovery intent was preserved for the next LazyBuilder start."
+                ));
+            }
+        }
     }
 
     if was_active { set_active_memory(None)?; }
@@ -477,17 +495,7 @@ fn save_registry(registry: &WorkspaceRegistryFile) -> Result<(), String> {
     let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(registry).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    if path.exists() {
-        let backup = path.with_extension("json.previous");
-        let _ = fs::remove_file(&backup);
-        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(&temporary, &path) {
-            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
-            Err(error) => { let _ = fs::rename(&backup, &path); Err(error.to_string()) }
-        }
-    } else {
-        fs::rename(temporary, path).map_err(|error| error.to_string())
-    }
+    replace_json_file(&temporary, &path)
 }
 
 fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
@@ -500,15 +508,31 @@ fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
 fn save_pending_deletions(entries: &[PendingDeletion]) -> Result<(), String> {
     let path = pending_deletions_path()?;
     if entries.is_empty() {
-        let _ = fs::remove_file(path);
+        if path.exists() { fs::remove_file(path).map_err(|error| error.to_string())?; }
         return Ok(());
     }
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
     let incoming = path.with_extension("json.incoming");
     fs::write(&incoming, serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?;
-    if path.exists() { fs::remove_file(&path).map_err(|error| error.to_string())?; }
-    fs::rename(incoming, path).map_err(|error| error.to_string())
+    replace_json_file(&incoming, &path)
+}
+
+fn replace_json_file(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        let backup = destination.with_extension("json.previous");
+        let _ = fs::remove_file(&backup);
+        fs::rename(destination, &backup).map_err(|error| error.to_string())?;
+        match fs::rename(source, destination) {
+            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
+            Err(error) => {
+                let _ = fs::rename(&backup, destination);
+                Err(error.to_string())
+            }
+        }
+    } else {
+        fs::rename(source, destination).map_err(|error| error.to_string())
+    }
 }
 
 fn add_pending_deletion(entry: PendingDeletion) -> Result<(), String> {
@@ -546,8 +570,7 @@ fn recover_pending_deletions() -> Result<(), String> {
             registry.servers.retain(|candidate| candidate.id != entry.workspace_id);
             registry_changed = true;
         } else if original.exists() {
-            // The deletion intent was persisted but the atomic rename never happened.
-            // Preserve the original server and simply discard the stale intent.
+            // Intent was persisted but the atomic rename never happened; preserve original.
         } else {
             registry.servers.retain(|candidate| candidate.id != entry.workspace_id);
             registry_changed = true;
@@ -562,7 +585,6 @@ fn is_safe_deletion_staging(original: &Path, staging: &Path) -> bool {
     let Some(original_parent) = original.parent() else { return false; };
     let Some(staging_parent) = staging.parent() else { return false; };
     if original_parent != staging_parent { return false; }
-
     let Some(base) = original.file_name().and_then(|value| value.to_str()) else { return false; };
     let Some(name) = staging.file_name().and_then(|value| value.to_str()) else { return false; };
     let prefix = format!(".{base}.lazybuilder-deleting-");
@@ -598,17 +620,7 @@ fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String
     let temporary = path.with_extension("json.tmp");
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    if path.exists() {
-        let backup = path.with_extension("json.previous");
-        let _ = fs::remove_file(&backup);
-        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(&temporary, &path) {
-            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
-            Err(error) => { let _ = fs::rename(&backup, &path); Err(error.to_string()) }
-        }
-    } else {
-        fs::rename(temporary, path).map_err(|error| error.to_string())
-    }
+    replace_json_file(&temporary, &path)
 }
 
 fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
@@ -662,8 +674,8 @@ fn copy_directory_filtered(source: &Path, destination: &Path, relative: &Path) -
         let name = entry.file_name();
         let rel = relative.join(&name);
         if should_skip_duplicate_path(&rel) { continue; }
-        if file_type.is_symlink() {
-            return Err(format!("Cannot safely duplicate a server containing symbolic link: {}", entry.path().display()));
+        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? {
+            return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display()));
         }
         let target = destination.join(&name);
         if file_type.is_dir() {
@@ -683,8 +695,8 @@ fn directory_size_filtered(root: &Path, relative: &Path) -> Result<u64, String> 
         let file_type = entry.file_type().map_err(|error| error.to_string())?;
         let rel = relative.join(entry.file_name());
         if should_skip_duplicate_path(&rel) { continue; }
-        if file_type.is_symlink() {
-            return Err(format!("Cannot safely duplicate a server containing symbolic link: {}", entry.path().display()));
+        if is_unsafe_link_or_reparse(&entry.path(), &file_type)? {
+            return Err(format!("Cannot safely duplicate a server containing a symbolic link or Windows reparse point: {}", entry.path().display()));
         }
         if file_type.is_dir() {
             total = total.saturating_add(directory_size_filtered(&entry.path(), &rel)?);
@@ -693,6 +705,20 @@ fn directory_size_filtered(root: &Path, relative: &Path) -> Result<u64, String> 
         }
     }
     Ok(total)
+}
+
+fn is_unsafe_link_or_reparse(path: &Path, file_type: &fs::FileType) -> Result<bool, String> {
+    if file_type.is_symlink() { return Ok(true); }
+    #[cfg(windows)]
+    {
+        let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+        return Ok(metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Ok(false)
+    }
 }
 
 fn should_skip_duplicate_path(relative: &Path) -> bool {
