@@ -21,6 +21,9 @@ import java.util.UUID;
  *
  * <p>The Minecraft client is the renderer. Only controller responses are deterministic fixtures;
  * the screen, font, widgets, terrain rendering, GUI scaling and framebuffer are production paths.</p>
+ *
+ * <p>Menu-background blur is disabled only while proof screenshots are captured. This keeps text,
+ * spacing and hard UI edges inspectable without changing production Map Manager behavior.</p>
  */
 @SuppressWarnings("UnstableApiUsage")
 public final class MapManagerVisualProofTest implements FabricClientGameTest {
@@ -39,14 +42,20 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             PreviewState state = previewState();
             context.runOnClient(client -> pinPreviewWorlds());
 
-            captureScenario(context, state, 1440, 900, 2,
-                    "map-manager-wide-1440x900-gui2");
-            captureScenario(context, state, 900, 600, 2,
-                    "map-manager-compact-900x600-gui2");
-            captureScenario(context, state, 620, 480, 2,
-                    "map-manager-narrow-620x480-gui2");
-            captureScenario(context, state, 1440, 900, 3,
-                    "map-manager-wide-1440x900-gui3");
+            int previousBlur = context.computeOnClient(client -> client.options.getMenuBackgroundBlurriness().getValue());
+            context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(0));
+            try {
+                captureScenario(context, state, 1440, 900, 2,
+                        "map-manager-wide-1440x900-gui2");
+                captureScenario(context, state, 900, 600, 2,
+                        "map-manager-compact-900x600-gui2");
+                captureScenario(context, state, 620, 480, 2,
+                        "map-manager-narrow-620x480-gui2");
+                captureScenario(context, state, 1440, 900, 3,
+                        "map-manager-wide-1440x900-gui3");
+            } finally {
+                context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(previousBlur));
+            }
 
             context.setScreen(() -> null);
             state.transfers.shutdownIo();
