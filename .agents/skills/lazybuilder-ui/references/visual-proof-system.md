@@ -1,184 +1,126 @@
 # LazyBuilder Visual Proof System
 
-Use this reference whenever the accepted result depends on what a user actually sees, not only on source correctness.
+Use this reference when acceptance depends on **what the user actually sees**, not only source correctness.
 
-The Visual Proof System is one proof architecture with multiple renderers. It is **not** a second Launcher, second Minecraft UI, second plugin layer, or screenshot product.
+This is one proof architecture with multiple real renderers. It is not a second UI implementation, screenshot product, or semantic owner.
 
-```text
-LazyBuilder source
-       ↓
-select cheapest renderer that can prove the issue
-       ↓
-render deterministic representative state
-       ↓
-capture artifact tied to exact commit
-       ↓
-ChatGPT/human visual audit
-       ↓
-native Local-PC acceptance only where still required
-```
+## Proof ladder
 
-## Proof lanes
+Choose the cheapest level that can genuinely falsify the claim.
 
-### 1. Launcher Proof
+| Level | Evidence | Proves | Does not prove |
+|---|---|---|---|
+| L0 | source inspection | ownership / intended flow | appearance |
+| L1 | typecheck/build/tests | source/API/contracts | visual correctness |
+| L2 | deterministic simulated preview | early composition/state ideation | native renderer behavior |
+| L3 | real Launcher Svelte/CSS preview | Launcher layout/state presentation | native Windows/Tauri behavior |
+| L4 | real Minecraft client rendering | Fabric/plugin-facing Minecraft appearance | local GPU/input/network feel |
+| L5 | Local-PC native acceptance | installed native interaction/runtime boundary | — |
 
-Renderer:
+Never report a higher proof level than observed.
+
+## Renderer selection
+
+### Launcher Desktop
+
+Use:
 
 ```text
 real Svelte components + real CSS
-+ deterministic browser-only runtime fixture
-+ Chromium / Playwright
++ deterministic preview runtime fixture
++ browser capture
 ```
 
-Canonical reference:
+Read `launcher-visual-preview.md` for the concrete artifact/review flow.
+
+Suitable for:
 
 ```text
-.agents/skills/lazybuilder-ui/references/launcher-visual-preview.md
+hierarchy
+layout/density
+wrapping/overflow
+responsive behavior
+loading/ready/problem/empty state presentation
+browser-level UI lifecycle
 ```
 
-Use for Launcher hierarchy, layout, state presentation, density, overflow, responsive behavior, and browser-level lifecycle proof.
+### Fabric UI
 
-### 2. Fabric Mod UI Proof
-
-Target renderer:
+Target:
 
 ```text
 real Minecraft Java client
-+ exact LazyBuilder Fabric mod artifact
-+ controlled client/world/server state
-+ actual Minecraft Screen/widget/font/texture rendering
++ exact LazyBuilder Fabric artifact
++ production Screen/rendering path
++ deterministic representative state
 ```
 
-Use for:
+Suitable for:
 
 ```text
 WorldMapScreen
-WorldManagerScreen
-WorldTransferScreen
-mod settings/diagnostic screens
-keybind-opened screens
+WorldManager/Transfer screens
 context menus/tooltips
-GUI-scale regressions
-Minecraft-specific text/layout/rendering
+GUI-scale behavior
+Minecraft font/widget/texture rendering
 ```
 
-Do **not** rebuild a Fabric screen as HTML for canonical proof. A lightweight mock may be used only for rough ideation and must be labeled SIMULATED.
+HTML recreation is never canonical Fabric proof.
 
-Target capture flow:
+### Plugin-facing Minecraft UI
+
+For chat/components, bossbar, title, book, scoreboard, tab list, inventory/container or resource-pack-backed presentation:
 
 ```text
-build exact Fabric artifact
-→ launch controlled Minecraft client
-→ enter deterministic state/test world when required
-→ open canonical production Screen
-→ set representative viewport + GUI scale
-→ capture PNG
-→ publish commit-addressed artifact
-→ ChatGPT/human review
+real Paper/plugin payload
++ real Minecraft client renderer
 ```
 
-Preferred representative matrix, only where materially relevant:
+If a LazyBuilder Fabric screen presents the state, use the Fabric lane. A MiniMessage/component preview may be used for iteration only when labeled `SIMULATED PREVIEW`.
+
+## Deterministic fixture rule
+
+A fixture/test hook may:
 
 ```text
-1920×1080  GUI scale 2
-1600×900   GUI scale 2 or 3
-1366×768   GUI scale 2
+select representative state
+return deterministic data
+open a production screen/component
+set viewport / GUI scale
+suppress nondeterministic animation where safe
 ```
 
-Do not run every permutation by default. Add a matrix row only when the issue depends on available space, scaling, or density.
-
-For Map Manager, capture at minimum when visual behavior changes:
+It must not:
 
 ```text
-map ready/current world
-sidebar expanded
-sidebar collapsed when changed
-favorites/all-worlds state when changed
-context menu when changed
-loading/resolving state when changed
-error/pending teleport state when changed
+implement product semantics again
+replace production components/screens
+invent unsupported capabilities
+become runtime authority
+hide a real lifecycle/rendering defect
+make production depend on proof-only parameters
 ```
-
-The screenshot must come from the production screen class and production rendering path. Fixture/test hooks may provide deterministic data/state but must not become runtime authority.
-
-### 3. Plugin-facing In-Game Proof
-
-Paper plugins do not own an arbitrary client `Screen` unless a client mod participates. Select proof based on the actual surface.
-
-#### Vanilla/client-rendered surfaces
-
-Examples:
-
-```text
-inventory/container GUI
-book
-chat/component
-bossbar
-title/subtitle/action bar
-scoreboard/sidebar
-player/tab list
-resource-pack-backed presentation
-```
-
-Target renderer:
-
-```text
-real Paper server/plugin artifact
-+ real Minecraft client
-+ deterministic test player/state
-```
-
-The server/plugin emits the real production payload/action and the Minecraft client renders it.
-
-#### Plugin + LazyBuilder client-mod surface
-
-If plugin/server state is presented by a LazyBuilder Fabric screen, proof belongs primarily to **Fabric Mod UI Proof**, while server mutation/validation remains plugin/protocol authority.
-
-#### Semantic fast preview
-
-A MiniMessage/Adventure/component preview may be generated without Minecraft for quick iteration, but label it:
-
-```text
-SIMULATED PREVIEW — not native Minecraft rendering proof
-```
-
-Do not use simulated glyph widths, colors, item rendering, container geometry, or resource-pack presentation as final acceptance evidence.
-
-## Proof-level ladder
-
-Choose the cheapest level that can actually disprove the bug.
-
-| Level | Evidence | Suitable for | Not enough for |
-|---|---|---|---|
-| L0 | source inspection | ownership, intended flow, obvious contract defects | actual appearance |
-| L1 | typecheck/build/tests | compile/API/contracts | visual correctness |
-| L2 | deterministic simulated preview | early composition/copy/state ideation | native renderer claims |
-| L3 | real Launcher Svelte preview | Launcher visual/layout/state presentation | native Tauri/Windows behavior |
-| L4 | real Minecraft-rendered proof | Fabric screens and client-rendered plugin surfaces | GPU/driver/local interaction feel |
-| L5 | Local-PC native acceptance | installed Windows/Tauri/Minecraft/runtime behavior | — |
-
-Never report a higher proof level than was actually observed.
 
 ## Artifact contract
 
-Every visual-proof artifact should identify:
+Visual evidence should identify:
 
 ```text
-source branch
-source commit SHA
+branch
+commit SHA
 surface/lane
 renderer
-Minecraft/Launcher version when relevant
+scenario
 viewport/resolution
 GUI scale when relevant
-fixture/scenario name
+product/Minecraft version when relevant
 proof boundary
 screenshots
 ```
 
-Prefer one artifact per commit/proof lane rather than committed PNG baselines.
+Artifacts are evidence, not source authority. Prefer commit-addressed CI artifacts over committed golden PNG repositories.
 
-Suggested names:
+Canonical naming:
 
 ```text
 LazyBuilder-UI-Preview-<sha>
@@ -186,165 +128,112 @@ LazyBuilder-Minecraft-UI-Preview-<sha>
 LazyBuilder-Plugin-UI-Preview-<sha>
 ```
 
-Artifacts are evidence, not source authority.
+## Scenario selection
 
-## Chat delivery contract
-
-When the user is reviewing UI through ChatGPT and an L3/L4 visual proof exists or can be generated, the final review **must show one representative screenshot directly in chat**.
-
-Required behavior:
-
-```text
-latest exact-commit visual proof
-→ retrieve artifact privately
-→ choose one representative screenshot for the changed surface/state
-→ attach/render that screenshot in ChatGPT
-→ summarize what the screenshot proves
-```
-
-Do not finish a visual UI task with only:
-
-```text
-workflow status
-artifact name
-ZIP link
-commit SHA
-source-only description
-```
-
-unless visual proof genuinely failed or is unavailable. In that case, state the exact proof boundary and do not imply that appearance was verified.
-
-Default chat presentation:
-
-- Show **exactly one** representative screenshot unless the user asks for more.
-- Keep the full responsive/state matrix in CI artifacts for regression coverage; do not flood the chat with every capture.
-- Do **not** attach the artifact ZIP unless the user explicitly asks for it.
-- Never show a stale screenshot from an older commit as proof of a newer UI change.
-- The displayed screenshot should normally come from the latest successful proof for the exact source commit that contains the UI change.
-- If a later unrelated commit is current HEAD, it is acceptable to use a proof commit only when the UI-change commit is still an ancestor and no later commit modified that surface; say so explicitly when relevant.
-- Prefer the scenario that best demonstrates the requested change rather than always choosing the widest/default view.
-- For layout/responsive changes, choose the constrained viewport that can reveal failure when that is more informative than the wide view.
-- For Launcher, Fabric, and plugin-facing UI, the same one-screenshot chat rule applies.
-
-The purpose is review speed: the user should be able to judge the actual visual result without downloading artifacts or moving to Local PC merely to discover layout problems.
-
-## Deterministic-state discipline
-
-A visual fixture/test hook may:
-
-```text
-select representative workspace/world/plugin state
-return deterministic server/client data
-open a production screen
-position a test player/camera
-set GUI scale/resolution
-suppress nondeterministic animation/caret/time where safe
-```
-
-It must **not**:
-
-```text
-implement product semantics a second time
-replace production screen/component code
-invent capabilities not supported by runtime
-change production state ownership
-make production depend on test query parameters
-hide an actual lifecycle/rendering bug to satisfy capture
-```
-
-If visual proof exposes a real UI defect, fix the production UI boundary first. Keep the assertion unless it was factually wrong.
-
-## Screenshot scenarios
-
-Capture scenarios, not decorative galleries. A scenario exists only if it proves a user decision or regression class.
-
-Useful scenario classes:
+Capture only scenarios that prove a user decision or regression class:
 
 ```text
 READY
 LOADING / RESOLVING
 EMPTY
-PENDING ACTION
+PENDING
 RECOVERABLE ERROR
 DISABLED / PERMISSION-LIMITED
-PROBLEM / CONFLICT
+CONFLICT / PROBLEM
 SMALL VIEWPORT / HIGH GUI SCALE
-RETURNED STATE / PRESERVED CONTEXT
+RETURNED / PRESERVED CONTEXT
 ```
 
-Avoid combinatorial state explosion. Prefer one representative scenario per meaningful UX contract.
+Avoid combinatorial screenshot matrices. Add another viewport/state only when the issue depends on it.
+
+For Map changes, inspect only affected representative states such as ready/current-world, sidebar open/collapsed, context menu, pending/error, or constrained GUI scale.
 
 ## Review checklist
 
-For every visual artifact, inspect:
+For applicable visual artifacts, check:
 
 ```text
-primary task obvious within first view
-current/selected/pending/error states truthful
-no overlap/clipping/unintended scroll
-long labels bounded
-primary and destructive actions visually separated
-important action not hover-only
-focus/keyboard target visible where applicable
-back/close context understandable
-empty/loading state not confused with failure
+primary task/action is obvious
+current/selected/pending/error states are truthful
+no overlap/clipping/unintended horizontal overflow
+long labels are bounded
+primary and destructive actions are distinct
+important action is not hover-only
+back/close context is understandable
+loading is not confused with empty/failure
 no stale/duplicate widgets
-no flash/blank replacement when prior valid content exists
-consistent tokens/spacing/type/icon language
-screen still usable at captured constrained size/GUI scale
+valid previous content does not flicker away unnecessarily
+spacing/type/icon/color semantics are coherent
+constrained size/GUI scale remains usable
 ```
 
-For map/renderer surfaces additionally inspect:
+For map/renderer surfaces additionally check:
 
 ```text
-terrain does not disappear because sidebar/context state changed
-scope/current-world identity is stable
-sidebar does not dominate map
-player/current-world marker is legible
-zoom/context overlays do not collide
-loading state does not masquerade as empty map
+terrain scope remains stable
+sidebar/context state does not reset map cache
+current world/player marker stays legible
+overlays do not collide
+loading does not masquerade as empty map
 ```
 
-## Automation policy
+## Chat/review delivery
 
-Automate only what repeatedly saves review time.
+When the user is reviewing a visual change and exact-commit L3/L4 evidence exists, show a representative screenshot directly when the interaction surface supports it. One image is normally enough unless more are requested.
+
+Do not present:
+
+```text
+workflow green status
+artifact name
+ZIP link
+source description
+```
+
+as a substitute for actual visual evidence. If visual proof is unavailable, state that boundary explicitly.
+
+Never use a stale screenshot from an older changed surface as proof of a newer revision.
+
+## Automation boundary
 
 Allowed by default:
 
 ```text
-commit-addressed screenshot artifacts
 small deterministic scenario set
-manifest generation
+commit-addressed screenshots
+manifest metadata
 failure diagnostics
-ChatGPT-readable artifact retrieval
+artifact retrieval for review
 ```
 
-Do not add by default:
+Do not add without repeated evidence:
 
 ```text
 pixel-diff approval database
-large golden-image repository
+golden-image repository
 third-party visual SaaS
 parallel UI implementation
-full cross-product resolution matrix
-video capture for static-layout issues
-complex screenshot orchestration service
+full resolution/state cross-product
+video capture for static layout defects
+separate screenshot orchestration service
 ```
 
-Add stronger automation only after repeated evidence proves current proof cannot catch the defect efficiently.
+## Native boundary
 
-## Native acceptance boundary
-
-Even L4 Minecraft screenshots do not fully prove:
+Even L4 screenshots do not prove:
 
 ```text
 FPS/frame pacing
-mouse feel/drag feel
-GPU/driver-specific rendering
-real network latency/races
+mouse/drag feel
+GPU/driver differences
+real network races
 OS DPI/window activation
-installed modpack/resource-pack differences
-native file dialogs/process/filesystem behavior
+native dialogs
+installed modpack/resource-pack interactions
 ```
 
-Use Local PC for those final boundaries, not for first discovery of obvious visual/layout problems.
+Use Local-PC proof for those boundaries, not as the first place to discover obvious layout defects.
+
+## Stop rule
+
+Once the selected renderer has falsified or confirmed the requested visual claim at the necessary level, stop. Do not expand the proof matrix merely because more states can be captured.
