@@ -2,6 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 
 export type RuntimeCommandError = { code: string; message: string };
 
+export class RuntimeError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'RuntimeError';
+    this.code = code;
+  }
+}
+
 export function runtimeError(value: unknown): RuntimeCommandError {
   if (value && typeof value === 'object') {
     const candidate = value as { code?: unknown; message?: unknown };
@@ -11,6 +21,15 @@ export function runtimeError(value: unknown): RuntimeCommandError {
   }
   const message = String(value ?? '').replace(/^Error:\s*/i, '').trim();
   return { code: 'RUNTIME_ERROR', message: message || 'Something went wrong. Try again.' };
+}
+
+async function invokeRuntime<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (value) {
+    const error = runtimeError(value);
+    throw new RuntimeError(error.code, error.message);
+  }
 }
 
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
@@ -54,61 +73,61 @@ export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: st
 
 export const runtimeApi = {
   workspace: {
-    state: () => invoke<WorkspaceState>('workspace_state'),
-    provisioningStatus: () => invoke<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
-    provision: () => invoke<WorkspaceProvisionResult>('workspace_provision'),
-    runtimeUpdateStatus: () => invoke<RuntimeUpdateStatus>('workspace_runtime_update_status'),
-    updatePaper: () => invoke<RuntimeUpdateStatus>('workspace_update_paper'),
-    acceptEula: () => invoke<WorkspaceProvisioningStatus>('workspace_accept_eula'),
-    pickParent: () => invoke<string | null>('workspace_pick_parent'),
-    create: (parentPath: string, name: string) => invoke<WorkspaceEntry>('workspace_create', { parentPath, name }),
-    pickAdoption: () => invoke<AdoptionPlan | null>('workspace_adoption_pick'),
-    adopt: (rootPath: string, name?: string | null) => invoke<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
-    activate: (id: string) => invoke<WorkspaceEntry>('workspace_activate', { id }),
-    close: () => invoke<void>('workspace_close')
+    state: () => invokeRuntime<WorkspaceState>('workspace_state'),
+    provisioningStatus: () => invokeRuntime<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
+    provision: () => invokeRuntime<WorkspaceProvisionResult>('workspace_provision'),
+    runtimeUpdateStatus: () => invokeRuntime<RuntimeUpdateStatus>('workspace_runtime_update_status'),
+    updatePaper: () => invokeRuntime<RuntimeUpdateStatus>('workspace_update_paper'),
+    acceptEula: () => invokeRuntime<WorkspaceProvisioningStatus>('workspace_accept_eula'),
+    pickParent: () => invokeRuntime<string | null>('workspace_pick_parent'),
+    create: (parentPath: string, name: string) => invokeRuntime<WorkspaceEntry>('workspace_create', { parentPath, name }),
+    pickAdoption: () => invokeRuntime<AdoptionPlan | null>('workspace_adoption_pick'),
+    adopt: (rootPath: string, name?: string | null) => invokeRuntime<WorkspaceEntry>('workspace_adopt', { rootPath, name: name ?? null }),
+    activate: (id: string) => invokeRuntime<WorkspaceEntry>('workspace_activate', { id }),
+    close: () => invokeRuntime<void>('workspace_close')
   },
   server: {
-    preflight: () => invoke<ServerPreflight>('server_preflight'),
-    snapshot: () => invoke<ServerSnapshot>('server_snapshot'),
-    start: () => invoke<void>('server_start'),
-    stop: () => invoke<void>('server_stop'),
-    restart: () => invoke<void>('server_restart'),
-    recoverDetached: () => invoke<DetachedRecoveryResult>('server_recover_detached'),
-    logTail: (path: string) => invoke<ServerLogTail>('server_log_tail', { path }),
-    resources: () => invoke<ServerResourceProfile>('server_resource_profile'),
-    saveResources: (request: ResourceUpdateRequest) => invoke<ServerResourceProfile>('server_resource_save', { request })
+    preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
+    snapshot: () => invokeRuntime<ServerSnapshot>('server_snapshot'),
+    start: () => invokeRuntime<void>('server_start'),
+    stop: () => invokeRuntime<void>('server_stop'),
+    restart: () => invokeRuntime<void>('server_restart'),
+    recoverDetached: () => invokeRuntime<DetachedRecoveryResult>('server_recover_detached'),
+    logTail: (path: string) => invokeRuntime<ServerLogTail>('server_log_tail', { path }),
+    resources: () => invokeRuntime<ServerResourceProfile>('server_resource_profile'),
+    saveResources: (request: ResourceUpdateRequest) => invokeRuntime<ServerResourceProfile>('server_resource_save', { request })
   },
   plugins: {
-    list: () => invoke<PluginSummary[]>('plugin_list'),
-    pickJar: () => invoke<string | null>('plugin_pick_jar'),
-    install: (jarPath: string) => invoke<PluginInstallResult>('plugin_install', { jarPath }),
-    update: (pluginId: string, jarPath: string) => invoke<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
-    setEnabled: (pluginId: string, enabled: boolean) => invoke<void>('plugin_set_enabled', { pluginId, enabled }),
-    remove: (pluginId: string) => invoke<void>('plugin_remove', { pluginId }),
-    removeProblem: (pluginId: string, jarFileName: string) => invoke<void>('plugin_remove_problem', { pluginId, jarFileName }),
-    resolveDuplicates: (pluginId: string, keepJarFileName: string) => invoke<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName })
+    list: () => invokeRuntime<PluginSummary[]>('plugin_list'),
+    pickJar: () => invokeRuntime<string | null>('plugin_pick_jar'),
+    install: (jarPath: string) => invokeRuntime<PluginInstallResult>('plugin_install', { jarPath }),
+    update: (pluginId: string, jarPath: string) => invokeRuntime<PluginInstallResult>('plugin_update', { pluginId, jarPath }),
+    setEnabled: (pluginId: string, enabled: boolean) => invokeRuntime<void>('plugin_set_enabled', { pluginId, enabled }),
+    remove: (pluginId: string) => invokeRuntime<void>('plugin_remove', { pluginId }),
+    removeProblem: (pluginId: string, jarFileName: string) => invokeRuntime<void>('plugin_remove_problem', { pluginId, jarFileName }),
+    resolveDuplicates: (pluginId: string, keepJarFileName: string) => invokeRuntime<PluginInstallResult>('plugin_resolve_duplicates', { pluginId, keepJarFileName })
   },
   client: {
-    status: () => invoke<ClientIntegrationStatus>('client_integration_status'),
-    selectProfile: (profilePath: string) => invoke<ClientIntegrationStatus>('client_integration_select_profile', { profilePath }),
-    pickProfile: () => invoke<ClientIntegrationStatus>('client_integration_pick_profile'),
-    sync: () => invoke<ClientIntegrationStatus>('client_integration_sync')
+    status: () => invokeRuntime<ClientIntegrationStatus>('client_integration_status'),
+    selectProfile: (profilePath: string) => invokeRuntime<ClientIntegrationStatus>('client_integration_select_profile', { profilePath }),
+    pickProfile: () => invokeRuntime<ClientIntegrationStatus>('client_integration_pick_profile'),
+    sync: () => invokeRuntime<ClientIntegrationStatus>('client_integration_sync')
   },
   worlds: {
-    list: () => invoke<ManagedWorldSummary[]>('world_list'),
-    create: (request: CreateWorldRequest) => invoke<ManagedWorldSummary>('world_create', { request }),
-    settings: (worldId: string) => invoke<WorldSettingsSnapshot>('world_settings', { worldId }),
-    updateSettings: (worldId: string, request: UpdateWorldSettingsRequest) => invoke<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
-    tasks: () => invoke<WorldTaskSnapshot[]>('world_task_list'),
-    task: (taskId: string) => invoke<WorldTaskSnapshot>('world_task', { taskId }),
-    archive: (worldId: string) => invoke<WorldTaskSnapshot>('world_archive', { worldId }),
-    restore: (worldId: string) => invoke<WorldTaskSnapshot>('world_restore', { worldId }),
-    backup: (worldId: string) => invoke<WorldTaskSnapshot>('world_backup', { worldId }),
-    duplicate: (request: DuplicateWorldRequest) => invoke<WorldTaskSnapshot>('world_duplicate', { request }),
-    export: (request: ExportWorldRequest) => invoke<WorldTaskSnapshot>('world_export', { request }),
-    delete: (request: DeleteWorldRequest) => invoke<WorldTaskSnapshot>('world_delete', { request }),
-    pickImport: () => invoke<string | null>('world_import_pick'),
-    uploadImport: (filePath: string) => invoke<string>('world_import_upload', { filePath }),
-    import: (request: ImportWorldRequest) => invoke<WorldTaskSnapshot>('world_import', { request })
+    list: () => invokeRuntime<ManagedWorldSummary[]>('world_list'),
+    create: (request: CreateWorldRequest) => invokeRuntime<ManagedWorldSummary>('world_create', { request }),
+    settings: (worldId: string) => invokeRuntime<WorldSettingsSnapshot>('world_settings', { worldId }),
+    updateSettings: (worldId: string, request: UpdateWorldSettingsRequest) => invokeRuntime<WorldSettingsSnapshot>('world_update_settings', { worldId, request }),
+    tasks: () => invokeRuntime<WorldTaskSnapshot[]>('world_task_list'),
+    task: (taskId: string) => invokeRuntime<WorldTaskSnapshot>('world_task', { taskId }),
+    archive: (worldId: string) => invokeRuntime<WorldTaskSnapshot>('world_archive', { worldId }),
+    restore: (worldId: string) => invokeRuntime<WorldTaskSnapshot>('world_restore', { worldId }),
+    backup: (worldId: string) => invokeRuntime<WorldTaskSnapshot>('world_backup', { worldId }),
+    duplicate: (request: DuplicateWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_duplicate', { request }),
+    export: (request: ExportWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_export', { request }),
+    delete: (request: DeleteWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_delete', { request }),
+    pickImport: () => invokeRuntime<string | null>('world_import_pick'),
+    uploadImport: (filePath: string) => invokeRuntime<string>('world_import_upload', { filePath }),
+    import: (request: ImportWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_import', { request })
   }
 };
