@@ -15,6 +15,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
             commands::startup::launcher_startup_status,
+            commands::launcher_settings::launcher_settings_get,
+            commands::launcher_settings::launcher_settings_save,
+            commands::server_health::launcher_server_health,
             commands::operations::launcher_operation_list,
             commands::operations::launcher_operation,
             commands::operations::launcher_operation_cancel,
