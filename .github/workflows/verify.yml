@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Verify repository routing and ownership contracts
+        run: python scripts/verify_repository_contract.py
       - name: Verify repository contracts and versions
         run: python scripts/verify_versions.py
       - name: Verify local Launcher packaging contract
@@ -162,7 +164,7 @@ jobs:
           retention-days: 7
 
   tauri-desktop:
-    needs: [launcher-check, paper, paper-runtime-smoke, fabric]
+    needs: [consistency, launcher-check, paper, paper-runtime-smoke, fabric]
     runs-on: windows-latest
     defaults:
       run:
@@ -174,6 +176,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/launcher/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Download tested core plugins
         uses: actions/download-artifact@v7
         with:
@@ -213,6 +218,16 @@ jobs:
         shell: pwsh
         working-directory: .
         run: ./tooling/windows-toolchain/scripts/distribution/verify-installer.ps1 -InstallerPath "dist/Local/LazyBuilder-Setup-Local.exe"
+      - name: Write exact-commit build provenance
+        working-directory: .
+        run: >-
+          python scripts/write_build_provenance.py
+          --output dist/Local/build-provenance.json
+          --repository "${{ github.repository }}"
+          --ref "${{ github.ref }}"
+          --commit "${{ github.sha }}"
+          --run-number "${{ github.run_number }}"
+          --run-id "${{ github.run_id }}"
       - name: Upload canonical Local test package
         uses: actions/upload-artifact@v6
         with:
