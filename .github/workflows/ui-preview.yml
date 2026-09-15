@@ -41,8 +41,10 @@ jobs:
       - name: Typecheck launcher source
         run: npm run typecheck
 
-      - name: Install pinned Playwright Chromium
-        run: npx -y @playwright/test@1.55.0 install --with-deps chromium
+      - name: Install pinned visual-proof runner
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
 
       - name: Start deterministic visual-preview server
         shell: bash
@@ -62,7 +64,7 @@ jobs:
       - name: Capture canonical launcher states
         env:
           LAZYBUILDER_PREVIEW_URL: http://127.0.0.1:1420
-        run: npx -y @playwright/test@1.55.0 test ui-preview/capture.spec.mjs --workers=1 --reporter=line
+        run: npx playwright test ui-preview/capture.spec.mjs --workers=1 --reporter=line
 
       - name: Write source commit into preview manifest
         shell: bash
