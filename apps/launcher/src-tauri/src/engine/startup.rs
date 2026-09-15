@@ -136,7 +136,10 @@ pub fn coordinate() -> StartupReport {
 
     let completed_at = now_unix_seconds();
     let report = StartupReport {
-        ready: !degraded,
+        // The coordinator only records recoverable startup warnings today. Reaching
+        // this report means the desktop shell may open; degraded reports tell the UI
+        // that recovery/attention should be surfaced without blocking startup.
+        ready: true,
         degraded,
         started_at_unix_seconds: started_at,
         completed_at_unix_seconds: completed_at,
