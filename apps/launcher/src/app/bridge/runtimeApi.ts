@@ -32,6 +32,8 @@ async function invokeRuntime<T>(command: string, args?: Record<string, unknown>)
   }
 }
 
+export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
+
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
 export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
 export type AdoptionPlan = { root: string; name: string; paperJar: string; worlds: string[]; serverEntries: string[]; legacyPluginsToDisable: string[]; preservedEntries: string[]; warnings: string[] };
@@ -72,6 +74,9 @@ export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: GameMode; ti
 export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: WorldTaskState; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
 
 export const runtimeApi = {
+  diagnostics: {
+    summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary')
+  },
   workspace: {
     state: () => invokeRuntime<WorkspaceState>('workspace_state'),
     provisioningStatus: () => invokeRuntime<WorkspaceProvisioningStatus>('workspace_provisioning_status'),
