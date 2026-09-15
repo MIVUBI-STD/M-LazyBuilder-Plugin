@@ -1,26 +1,25 @@
 # LazyBuilder Windows Toolchain
 
-Canonical toolchain/bootstrap package for the LazyBuilder Windows build and deployment flow.
+Canonical Windows bootstrap/build/verification/distribution control plane for LazyBuilder.
 
-## Source of truth
+## Authority
 
-The repository-root `toolchain.json` defines the supported build baseline. Scripts in this package must read that manifest instead of duplicating version numbers.
+```text
+toolchain.json                       supported toolchain/version policy
+DEV.cmd                              root compatibility/convenience shim
+dev.ps1                              canonical developer command router
+scripts/bootstrap/                   environment validation/repair
+scripts/build/                       build preflight
+scripts/wrappers/                    repository-owned Maven/Gradle execution
+scripts/verify/                      local acceptance/artifact verification
+scripts/distribution/                package/installer verification
+```
 
-## Baseline
+Do not create another task runner or root-level developer workflow when a subcommand can extend the existing command surface.
 
-- Java: Eclipse Temurin 21 LTS
-- Node.js: 24.x LTS
-- Maven: repository wrapper target 3.9.16
-- Gradle: repository wrapper baseline 8.12
-- Rust: exact toolchain pin via repository `rust-toolchain.toml`
-- Tauri: 2.x resolved by lockfiles
-- WebView2: Evergreen Runtime for installed/end-user runtime
-- Native build: Visual Studio 2022 Build Tools + Desktop development with C++
-- Python: not a mandatory build dependency
+## Canonical usage
 
-## Canonical developer command surface
-
-`tooling/windows-toolchain/dev.ps1` is the single developer orchestration authority. `DEV.cmd` is a thin Windows convenience shim so the same command surface is easy to launch from Command Prompt or Explorer.
+From repository root:
 
 ```text
 DEV.cmd setup
@@ -31,41 +30,84 @@ DEV.cmd update
 DEV.cmd finalize-local
 ```
 
-The command surface delegates to the existing specialist scripts; it does not duplicate build, bootstrap, runtime-proof, or installer logic.
+`DEV.cmd` contains no development semantics. It exists so Windows users and automation have a predictable entry shim that can invoke the canonical PowerShell orchestrator without requiring a machine-wide execution-policy change.
 
-Canonical lifecycle:
+`dev.ps1` delegates to the existing operation owners and runs them in isolated child PowerShell processes so their exit behavior and exit codes remain bounded and composable.
+
+Arguments after `setup`, `check`, `build`, `test`, or `update` are forwarded to the owning operation. `finalize-local` intentionally has no passthrough flags because it is the canonical integrated local gate.
+
+## Fresh clone
 
 ```text
-fresh clone
-→ DEV.cmd setup
+DEV.cmd setup
 → DEV.cmd check
-→ normal development
-→ DEV.cmd build
-→ DEV.cmd test
-→ DEV.cmd finalize-local when the revision is ready for final remote CI
+→ development
 ```
 
-`finalize-local` is intentionally local only. Remote GitHub Actions remains an independent final proof and is dispatched separately when development reaches a reviewable checkpoint.
+Use `DEV.cmd build` when integrated package correctness matters and `DEV.cmd test` when runtime/installer behavior matters.
 
-Legacy root entrypoints (`SETUP-DEV.cmd`, `CHECK-DEV.cmd`, `BUILD-LAUNCHER.cmd`, `TEST-LOCAL.cmd`, `UPDATE-LAUNCHER.cmd`) remain compatibility conveniences during migration. New documentation, automation, and agent instructions should target `DEV.cmd` / `dev.ps1` as the canonical interface.
+Before requesting the final CI pass for a coherent development phase:
 
-## Command ownership
+```text
+DEV.cmd finalize-local
+```
 
-- `setup` delegates to the bootstrap owner and may repair supported missing prerequisites.
-- `check` is non-mutating environment validation.
-- `build` delegates to the runtime-ready Launcher build/package pipeline.
-- `test` delegates to local Paper/restart/installer acceptance proof.
-- `update` uses the same build owner with installed-app update semantics.
-- `finalize-local` composes `check → build → test`; it does not invent a parallel proof implementation.
+which performs:
 
-## Ownership rules
+```text
+check
+→ build
+→ local acceptance
+```
 
-- JavaScript dependencies are locked by `apps/launcher/package-lock.json` and installed with `npm ci`.
-- Rust dependencies are locked by Cargo and the Rust compiler version is repository-pinned.
-- Maven and Gradle are repository-wrapper owned; global installations are not developer requirements.
-- Native C++ build support is supplied by Visual Studio 2022 Build Tools with `Microsoft.VisualStudio.Workload.VCTools`.
-- Runtime acceptance composes existing proof owners; the developer CLI is orchestration only.
-- Python is not part of the canonical mandatory developer toolchain.
-- End users must never need Node, npm, Rust, Cargo, Maven, Gradle, Python, Git, or MSVC to run an installed LazyBuilder build.
+## Compatibility aliases
 
-See `docs/INTEGRATION.md` and `docs/VALIDATION.md` before changing the production build pipeline.
+These historical root scripts may remain temporarily for muscle memory or existing automation:
+
+```text
+SETUP-DEV.cmd
+CHECK-DEV.cmd
+BUILD-LAUNCHER.cmd
+TEST-LOCAL.cmd
+UPDATE-LAUNCHER.cmd
+```
+
+They are aliases only and must route to `DEV.cmd`. They must never regain independent logic. New documentation and automation should use `DEV.cmd` directly.
+
+## Baseline
+
+- Java: Eclipse Temurin 21 LTS
+- Node.js: 24.x LTS
+- Maven: repository wrapper target 3.9.16
+- Gradle: repository wrapper baseline 8.12
+- Rust: exact toolchain pin from repository configuration
+- Tauri: 2.x resolved through lockfiles
+- WebView2: Evergreen Runtime for installed/end-user runtime
+- Native build: Visual Studio Build Tools + Desktop development with C++
+- Python: not a mandatory developer build dependency
+
+## Reproducibility rules
+
+- `toolchain.json` owns supported tool policy; scripts read it rather than maintaining shadow version lists.
+- Java build tools are wrapper-owned; global Maven/Gradle installations are not required.
+- wrapper downloads are checksum verified and cached below LazyBuilder-owned LocalAppData paths.
+- frontend dependencies use `npm ci` and the committed lockfile.
+- Rust uses the committed dependency lock plus repository-pinned compiler.
+- expensive build work starts only after prerequisite validation.
+- generated artifacts, runtime proofs, and caches remain outside source authority.
+- installed/end-user LazyBuilder must not depend on Node, Rust, Maven, Gradle, Git, Python, or MSVC.
+
+## CI and deployment boundary
+
+Local development and CI are deliberately separate:
+
+```text
+Local commits       → no automatic full CI
+workflow dispatch   → full final CI on demand
+pull request        → full CI
+push to main        → full CI
+```
+
+Local proof does not replace CI; CI does not replace target-machine/runtime acceptance. Promotion and release side effects remain explicit operations, never hidden inside ordinary build/test commands.
+
+See `docs/04-system/development-operations.md` for the durable architecture contract and `docs/05-operations/` for current validation state.
