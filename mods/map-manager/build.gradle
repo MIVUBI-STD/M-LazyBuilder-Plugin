@@ -66,10 +66,11 @@ loom {
             name = 'LazyBuilder Map Manager Visual Proof'
             source sourceSets.gametest
             vmArg '-Dfabric.client.gametest'
+            vmArg '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
             vmArg "-Dfabric.client.gametest.testModResourcesPath=${file('src/gametest/resources').absolutePath}"
             runDir 'build/run/clientGameTest'
             programArg '--username'
-            programArg 'LazyBuilderPreview'
+            programArg 'LBPreview'
         }
     }
 }
