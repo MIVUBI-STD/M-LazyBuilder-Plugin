@@ -90,6 +90,16 @@ Do not create checkpoint/retry commits or temporary files solely to transfer wor
 - Main-thread vs asynchronous work must be explicit. Bukkit/Paper state must not be accessed asynchronously unless the API contract permits it.
 - Persistent data/schema changes require backward/forward compatibility reasoning before release.
 
+### GitHub Actions supply-chain contract
+
+- External `uses:` actions are pinned to a full 40-character commit SHA. Keep the human-readable major/release as an inline comment when useful; do not execute movable tags or branches.
+- Workflow token permissions stay explicit and least-privilege. Current verification/preview workflows require only `contents: read` unless a new capability proves otherwise.
+- Read-only checkouts use `persist-credentials: false`; workflow steps must not inherit repository write credentials unnecessarily.
+- Every job has an explicit `timeout-minutes` appropriate to its proof boundary; do not rely on GitHub's multi-hour default.
+- Normal `Local` pushes do not trigger full or visual CI merely for reassurance. Manual/review checkpoints own those costs.
+- Caches accelerate deterministic builds; they are never authority for source, artifacts, or verification state.
+- Adding OIDC, artifact attestations, signing, deployment credentials, or write permissions belongs to an explicit release/deployment requirement, not ordinary verification hardening.
+
 ## 7. Verification
 
 Use the cheapest relevant check during development:
