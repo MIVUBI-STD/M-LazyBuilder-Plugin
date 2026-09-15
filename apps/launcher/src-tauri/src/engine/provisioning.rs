@@ -13,26 +13,86 @@ pub struct ProvisionResult {
 }
 
 pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, String> {
+    provision_active_tracked(resource_dir, |_, _, _| {})
+}
+
+/// Provision the active workspace while exposing semantic stage boundaries to the
+/// desktop operation layer. The observer is presentation/diagnostic plumbing only;
+/// provisioning owners remain authoritative and the observer cannot alter results.
+pub fn provision_active_tracked<F>(
+    resource_dir: Option<&Path>,
+    mut on_stage: F,
+) -> Result<ProvisionResult, String>
+where
+    F: FnMut(&str, &str, &str),
+{
     let workspace = workspace_registry::active_workspace()?;
+
+    on_stage(
+        "runtime-layout",
+        "Preparing runtime directories",
+        "Ensuring LazyBuilder runtime directories are available.",
+    );
     crate::engine::paths::ensure_runtime_layout()?;
 
     // Prepare Server is intentionally idempotent. Each owner either verifies an
     // existing valid asset or repairs only the asset it owns.
+    on_stage(
+        "java-runtime",
+        "Preparing Java 21",
+        "Verifying or installing the LazyBuilder-managed Java runtime.",
+    );
     let java = java_runtime::ensure_managed_java()?;
+
+    on_stage(
+        "server-config",
+        "Preparing server configuration",
+        "Aligning the active server configuration with the managed Java runtime.",
+    );
     server_config::ensure_java_path(&java)?;
+
+    on_stage(
+        "paper-runtime",
+        "Preparing Paper",
+        "Preserving an existing Paper runtime or provisioning the supported Paper release when missing.",
+    );
     let paper_build = resolve_or_provision_paper(&workspace)?;
+
+    on_stage(
+        "server-properties",
+        "Preparing Paper settings",
+        "Creating the LazyBuilder server.properties baseline only when it is missing.",
+    );
     ensure_server_properties(&workspace)?;
 
     // Core publication has one authority. Runtime maintenance and initial
     // provisioning both use the same transactional sync/metadata path.
+    on_stage(
+        "core-modules",
+        "Synchronizing core components",
+        "Publishing the LazyBuilder World Manager and Utilities Manager transactionally.",
+    );
     runtime_updates::ensure_core_current(resource_dir)?;
+
+    on_stage(
+        "workspace-metadata",
+        "Updating workspace metadata",
+        "Recording the authoritative Paper build when LazyBuilder knows it.",
+    );
     update_paper_manifest_if_known(&workspace, paper_build)?;
+
+    on_stage(
+        "readiness",
+        "Checking server readiness",
+        "Verifying the prepared workspace before returning control to the Launcher.",
+    );
+    let status = workspace_registry::provisioning_status()?;
 
     Ok(ProvisionResult {
         java_path: java.display().to_string(),
         paper_build,
         core_version: core_modules::CORE_VERSION.into(),
-        status: workspace_registry::provisioning_status()?,
+        status,
     })
 }
 
@@ -156,5 +216,21 @@ mod tests {
         assert_eq!(first, second);
 
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn provisioning_stage_contract_stays_semantic() {
+        let stages = [
+            "runtime-layout",
+            "java-runtime",
+            "server-config",
+            "paper-runtime",
+            "server-properties",
+            "core-modules",
+            "workspace-metadata",
+            "readiness",
+        ];
+        assert_eq!(stages.first().copied(), Some("runtime-layout"));
+        assert_eq!(stages.last().copied(), Some("readiness"));
     }
 }
