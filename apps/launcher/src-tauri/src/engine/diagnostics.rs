@@ -2,11 +2,13 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 const LOG_HISTORY_COUNT: usize = 4;
 static NEXT_CORRELATION_ID: AtomicU64 = AtomicU64::new(1);
+static LOG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub fn launcher_log_path() -> Result<PathBuf, String> {
     let base = std::env::var_os("LOCALAPPDATA")
@@ -29,6 +31,7 @@ pub fn new_correlation_id(scope: &str) -> String {
 pub fn log(level: &str, message: &str) { log_with_context(level, "-", message); }
 
 pub fn log_with_context(level: &str, correlation_id: &str, message: &str) {
+    let Ok(_guard) = LOG_WRITE_LOCK.get_or_init(|| Mutex::new(())).lock() else { return; };
     let Ok(path) = launcher_log_path() else { return; };
     let Some(parent) = path.parent() else { return; };
     if fs::create_dir_all(parent).is_err() { return; }
