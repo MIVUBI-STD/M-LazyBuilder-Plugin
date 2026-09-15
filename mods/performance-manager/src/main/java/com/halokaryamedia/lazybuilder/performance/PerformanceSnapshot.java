@@ -12,8 +12,18 @@ public record PerformanceSnapshot(
         int simulationDistance,
         boolean windowFocused,
         boolean windowMinimized,
-        FramePressure pressure
+        FramePressure pressure,
+        int completedChunkCount,
+        String chunkDebug,
+        String entityDebug,
+        String particleDebug
 ) {
+    public PerformanceSnapshot {
+        chunkDebug = chunkDebug == null ? "" : chunkDebug;
+        entityDebug = entityDebug == null ? "" : entityDebug;
+        particleDebug = particleDebug == null ? "" : particleDebug;
+    }
+
     public double usedMemoryRatio() {
         if (maxMemoryBytes <= 0L) return 0.0D;
         return Math.min(1.0D, (double) usedMemoryBytes / (double) maxMemoryBytes);
