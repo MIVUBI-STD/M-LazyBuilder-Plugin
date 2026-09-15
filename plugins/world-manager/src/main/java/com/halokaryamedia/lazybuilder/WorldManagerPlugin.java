@@ -14,10 +14,12 @@ import com.halokaryamedia.lazybuilder.world.paper.PaperWorldControlPayloadAdapte
 import com.halokaryamedia.lazybuilder.world.paper.WorldHeavyOperationOrchestrator;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
+import com.halokaryamedia.lazybuilder.world.transfer.TransferCrashRecovery;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.IOException;
 import java.time.Duration;
 
 /** Canonical Paper entry point and lifecycle owner for the World-Manager module. */
@@ -36,6 +38,16 @@ public final class WorldManagerPlugin extends JavaPlugin {
     public void onEnable() {
         saveDefaultConfig();
         this.worldManager = new WorldManager(this);
+        try {
+            int recoveredTransferPartials = TransferCrashRecovery.recover(worldManager.storageLayout().transferRoot());
+            if (recoveredTransferPartials > 0) {
+                getLogger().info("Recovered " + recoveredTransferPartials
+                        + " interrupted transfer upload"
+                        + (recoveredTransferPartials == 1 ? "" : "s") + ".");
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to recover interrupted transfer uploads", exception);
+        }
         this.worldTaskRegistry = new WorldTaskRegistry();
         this.worldTaskRunner = new WorldTaskRunner(worldTaskRegistry);
         this.worldManager.start();
