@@ -69,22 +69,29 @@ Server start does not rewrite Paper gameplay/performance configuration and the L
 Repository-root entrypoints:
 
 ```text
+SETUP-DEV.cmd
+CHECK-DEV.cmd
 BUILD-LAUNCHER.cmd
 UPDATE-LAUNCHER.cmd
 ```
+
+`toolchain.json` is the canonical build-tool policy. Do not duplicate or float tool versions in local scripts or CI.
 
 Normal runtime-ready build:
 
 ```text
 BUILD-LAUNCHER.cmd
-→ mvn verify
-→ Gradle 8.12 build for Map Manager + Utility Manager
-→ stage matching Paper core + required LazyBuilder client JARs
+→ toolchain preflight
+→ mvnw.cmd verify (repo-managed Maven 3.9.16)
+→ gradlew.bat build (repo-managed Gradle 8.12)
+→ stage and verify matching Paper/client artifacts
 → npm ci
 → Svelte typecheck/build
-→ cargo check/test
+→ cargo check/test --locked
 → Tauri + NSIS package
 ```
+
+The repository wrappers download Maven/Gradle only when their pinned version is not already cached under `%LOCALAPPDATA%\LazyBuilder\build-tools`. Downloaded distributions are checked against their official SHA-512/SHA-256 checksum before extraction.
 
 Output:
 
@@ -97,17 +104,25 @@ dist/LazyBuilder/
 
 For repeated installed-app testing, close LazyBuilder and use `UPDATE-LAUNCHER.cmd`. Server workspaces, selected Modrinth profile, and normal LazyBuilder user data are preserved.
 
-Required local tools:
+Required developer tools:
 
 ```text
-Windows 10/11
-Java 21
-Apache Maven
-Gradle 8.12
-Node.js 24+
-Rust stable toolchain
-Microsoft C++ Build Tools
+Windows 10/11 x64
+Eclipse Temurin / OpenJDK 21 (runtime-ready server builds)
+Node.js 24.x LTS + npm
+Rust toolchain selected by repository rust-toolchain.toml
+Microsoft Visual Studio 2022 Build Tools (Desktop development with C++)
 WebView2 runtime
+Git for Windows (source workflow)
+```
+
+Not required as global installs:
+
+```text
+Apache Maven   -> repo wrapper
+Gradle         -> repo wrapper
+Python         -> no longer part of Launcher build verification
+Tauri CLI      -> npm development dependency
 ```
 
 ## Bundled runtime resources

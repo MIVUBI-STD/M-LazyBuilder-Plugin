@@ -7,20 +7,19 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Require-Command {
-    param([string]$Name, [string]$Hint)
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) { throw "Missing required tool '$Name'. $Hint" }
-}
-
 if ($env:OS -ne 'Windows_NT') { throw 'LazyBuilder local desktop build must run on Windows.' }
-
-Require-Command node 'Install Node.js 24 LTS or newer.'
-Require-Command npm 'Install Node.js with npm.'
-Require-Command cargo 'Install Rust using rustup.'
-Require-Command rustc 'Install the Rust toolchain using rustup.'
 
 $AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $AppRoot '..\..')
+$PreflightScript = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\build\preflight.ps1'
+$ClientVerifier = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1'
+$MavenWrapper = Join-Path $RepoRoot 'mvnw.cmd'
+$GradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
+
+if (-not (Test-Path $PreflightScript)) { throw "Missing build preflight: $PreflightScript" }
+if ($AllowMissingRuntime) { & $PreflightScript -RepoRoot $RepoRoot }
+else { & $PreflightScript -RepoRoot $RepoRoot -RequireJava }
+
 $CoreDir = Join-Path $AppRoot 'src-tauri\resources\core'
 $ClientModsDir = Join-Path $AppRoot 'src-tauri\resources\client-mods'
 $WorldJar = Join-Path $CoreDir 'World-Manager-0.1.0-SNAPSHOT.jar'
@@ -47,23 +46,18 @@ if ($UpdateInstalled -and $AllowMissingRuntime) {
 }
 
 if (-not $AllowMissingRuntime) {
-    Require-Command java 'Install or activate Java 21.'
-    Require-Command mvn 'Install Apache Maven and make mvn available on PATH.'
-    Require-Command gradle 'Install Gradle 8.12 and make gradle available on PATH.'
-    Require-Command python 'Install Python 3.11 or newer and make python available on PATH.'
-
     Write-Host '[runtime] Building and testing matching Paper plugins...' -ForegroundColor Cyan
     Push-Location $RepoRoot
     try {
-        mvn --batch-mode --no-transfer-progress verify
+        & $MavenWrapper --batch-mode --no-transfer-progress verify
         if ($LASTEXITCODE -ne 0) { throw "Maven verification failed with exit code $LASTEXITCODE." }
 
         Write-Host '[runtime] Building required LazyBuilder Fabric client mods...' -ForegroundColor Cyan
-        gradle -p mods/map-manager --no-daemon build
+        & $GradleWrapper -p mods/map-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Map Manager build failed with exit code $LASTEXITCODE." }
-        gradle -p mods/utility-manager --no-daemon build
+        & $GradleWrapper -p mods/utility-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Utility Manager build failed with exit code $LASTEXITCODE." }
-        gradle -p mods/performance-manager --no-daemon build
+        & $GradleWrapper -p mods/performance-manager --no-daemon build
         if ($LASTEXITCODE -ne 0) { throw "Performance Manager build failed with exit code $LASTEXITCODE." }
     }
     finally { Pop-Location }
@@ -82,8 +76,6 @@ if (-not $AllowMissingRuntime) {
     New-Item -ItemType Directory -Force -Path $CoreDir | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientModsDir | Out-Null
 
-    # Retire every previously bundled first-party client JAR before publishing the canonical suite.
-    # This removes stale versions without treating any current Manager as optional.
     foreach ($Prefix in @(
         'lazybuilder-map-manager-',
         'lazybuilder-utility-manager-',
@@ -99,12 +91,7 @@ if (-not $AllowMissingRuntime) {
     Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force
 
     Write-Host '[runtime] Verifying packaged Fabric client suite...' -ForegroundColor Cyan
-    Push-Location $RepoRoot
-    try {
-        python scripts/verify_client_artifacts.py $ClientModsDir
-        if ($LASTEXITCODE -ne 0) { throw "Client artifact verification failed with exit code $LASTEXITCODE." }
-    }
-    finally { Pop-Location }
+    & $ClientVerifier -ClientModsDir $ClientModsDir -RepoRoot $RepoRoot
 
     Write-Host 'Matching tested server plugins and all three required client mods staged for the desktop package.' -ForegroundColor Green
     Write-Host ''
@@ -134,21 +121,29 @@ Push-Location $AppRoot
 try {
     Write-Host '[1/5] Installing exact frontend dependencies...' -ForegroundColor Cyan
     npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE." }
+
     Write-Host '[2/5] Typechecking Svelte...' -ForegroundColor Cyan
     npm run typecheck
+    if ($LASTEXITCODE -ne 0) { throw "Svelte typecheck failed with exit code $LASTEXITCODE." }
+
     Write-Host '[3/5] Checking Rust/Tauri backend...' -ForegroundColor Cyan
     npm run prepare:icons
+    if ($LASTEXITCODE -ne 0) { throw "Icon preparation failed with exit code $LASTEXITCODE." }
     cargo check --locked --manifest-path src-tauri/Cargo.toml
+    if ($LASTEXITCODE -ne 0) { throw "cargo check failed with exit code $LASTEXITCODE." }
 
     if (-not $SkipTests) {
         Write-Host '[4/5] Running Rust/Tauri tests...' -ForegroundColor Cyan
         cargo test --locked --manifest-path src-tauri/Cargo.toml
+        if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit code $LASTEXITCODE." }
     } else {
         Write-Host '[4/5] Rust/Tauri tests skipped by request.' -ForegroundColor Yellow
     }
 
     Write-Host '[5/5] Building Windows Launcher package...' -ForegroundColor Cyan
     npx tauri build
+    if ($LASTEXITCODE -ne 0) { throw "Tauri build failed with exit code $LASTEXITCODE." }
 
     $Exe = Join-Path $AppRoot 'src-tauri\target\release\lazybuilder.exe'
     if (-not (Test-Path $Exe)) { throw 'Tauri reported success but lazybuilder.exe was not found in the expected release directory.' }

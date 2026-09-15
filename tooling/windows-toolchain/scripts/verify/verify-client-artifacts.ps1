@@ -1,23 +1,97 @@
-param([Parameter(Mandatory=$true)][string]$ClientModsDir)
+param(
+    [Parameter(Mandatory=$true)][string]$ClientModsDir,
+    [string]$RepoRoot
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if (-not (Test-Path $ClientModsDir)) { throw "Client mod directory does not exist: $ClientModsDir" }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$requiredPrefixes = @(
-    'lazybuilder-map-manager-',
-    'lazybuilder-utility-manager-',
-    'lazybuilder-performance-manager-'
+if (-not $RepoRoot) { $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..') }
+$RepoRoot = Resolve-Path $RepoRoot
+$ClientModsDir = Resolve-Path $ClientModsDir
+$ProductVersion = (Get-Content (Join-Path $RepoRoot 'VERSION') -Raw).Trim()
+$SnapshotVersion = "$ProductVersion-SNAPSHOT"
+
+$Expected = @(
+    [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
+    [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
+    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' }
 )
-$failures = @()
-foreach ($prefix in $requiredPrefixes) {
-    $matches = @(Get-ChildItem $ClientModsDir -Filter "$prefix*.jar" -File -ErrorAction SilentlyContinue)
-    if ($matches.Count -ne 1) { $failures += "$prefix expected exactly one JAR, found $($matches.Count)"; continue }
-    if ($matches[0].Length -le 0) { $failures += "$($matches[0].Name) is empty" }
+
+function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
+
+function Read-ZipEntryText($Zip, [string]$EntryName) {
+    $entry = $Zip.GetEntry($EntryName)
+    if (-not $entry) { return $null }
+    $reader = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
+    try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
-if ($failures.Count -gt 0) {
-    Write-Host 'Client artifact verification FAILED:' -ForegroundColor Red
-    $failures | ForEach-Object { Write-Host "  - $_" }
-    exit 4
+
+function Get-ClientEntrypoints($Metadata) {
+    $values = @()
+    if ($Metadata.entrypoints -and $Metadata.entrypoints.client) {
+        foreach ($entry in @($Metadata.entrypoints.client)) {
+            if ($entry -is [string]) { $values += $entry }
+            elseif ($entry.PSObject.Properties['value'] -and $entry.value -is [string]) { $values += $entry.value }
+        }
+    }
+    return @($values)
 }
-Write-Host 'Client artifact verification PASS.' -ForegroundColor Green
-exit 0
+
+function Get-MixinConfigs($Metadata) {
+    $values = @()
+    if ($Metadata.mixins) {
+        foreach ($entry in @($Metadata.mixins)) {
+            if ($entry -is [string]) { $values += $entry }
+            elseif ($entry.PSObject.Properties['config'] -and $entry.config -is [string]) { $values += $entry.config }
+        }
+    }
+    return @($values)
+}
+
+function Verify-Jar($Spec) {
+    $path = Join-Path $ClientModsDir $Spec.File
+    if (-not (Test-Path $path)) { Fail "missing required JAR: $($Spec.File)" }
+
+    $zip = $null
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+        $metadataText = Read-ZipEntryText $zip 'fabric.mod.json'
+        if (-not $metadataText) { Fail "$($Spec.File) has no fabric.mod.json" }
+        $metadata = $metadataText | ConvertFrom-Json
+
+        if ([string]$metadata.id -ne $Spec.Id) { Fail "$($Spec.File) id is '$($metadata.id)', expected '$($Spec.Id)'" }
+        if ([string]$metadata.name -ne $Spec.Name) { Fail "$($Spec.File) name is '$($metadata.name)', expected '$($Spec.Name)'" }
+        if ([string]$metadata.version -ne $SnapshotVersion) { Fail "$($Spec.File) version is '$($metadata.version)', expected '$SnapshotVersion'" }
+        if ([string]$metadata.environment -ne 'client') { Fail "$($Spec.File) must remain client-only" }
+
+        $entrypoints = @(Get-ClientEntrypoints $metadata)
+        if ($entrypoints.Count -eq 0) { Fail "$($Spec.File) has no client entrypoint" }
+        foreach ($value in $entrypoints) {
+            $className = ([string]$value -split '::', 2)[0]
+            $classPath = ($className -replace '\.', '/') + '.class'
+            if (-not $zip.GetEntry($classPath)) { Fail "$($Spec.File) entrypoint class is missing: $classPath" }
+        }
+
+        foreach ($config in @(Get-MixinConfigs $metadata)) {
+            if (-not $zip.GetEntry([string]$config)) { Fail "$($Spec.File) mixin config is missing: $config" }
+        }
+    }
+    catch [System.IO.InvalidDataException] {
+        Fail "$($Spec.File) is not a valid JAR/ZIP: $($_.Exception.Message)"
+    }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+
+$actual = @(Get-ChildItem $ClientModsDir -Filter '*.jar' -File | ForEach-Object Name | Sort-Object)
+$expectedNames = @($Expected | ForEach-Object File | Sort-Object)
+$missing = @($expectedNames | Where-Object { $_ -notin $actual })
+$unexpected = @($actual | Where-Object { $_ -notin $expectedNames })
+if ($missing.Count -gt 0) { Fail "missing required JARs: $($missing -join ', ')" }
+if ($unexpected.Count -gt 0) { Fail "unexpected client JARs: $($unexpected -join ', ')" }
+
+foreach ($spec in $Expected) { Verify-Jar $spec }
+Write-Host "Client artifacts OK: $($Expected.Count) Fabric managers for LazyBuilder $ProductVersion" -ForegroundColor Green

@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev:frontend": "vite --host 127.0.0.1 --port 1420 --strictPort",
     "prepare:icons": "tauri icon src-tauri/app-icon.svg",
