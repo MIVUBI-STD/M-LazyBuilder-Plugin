@@ -5,9 +5,12 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.network.ServerAddress;
 import net.minecraft.client.network.ServerInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Session-only reconnect target. No server address is persisted to disk. */
 public final class ReconnectState {
+    private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Utility/Reconnect");
     private static ServerInfo lastServer;
 
     private ReconnectState() {
@@ -16,6 +19,9 @@ public final class ReconnectState {
     public static void capture(ServerInfo serverInfo) {
         if (serverInfo != null && serverInfo.address != null && !serverInfo.address.isBlank()) {
             lastServer = serverInfo;
+            LOGGER.info("Captured reconnect target {}", serverInfo.address);
+        } else {
+            LOGGER.debug("Reconnect target capture skipped because ServerInfo/address was unavailable");
         }
     }
 
@@ -28,9 +34,13 @@ public final class ReconnectState {
     }
 
     public static void reconnect(Screen parent) {
-        if (!canReconnect()) return;
+        if (!canReconnect()) {
+            LOGGER.warn("Reconnect requested without a captured server target");
+            return;
+        }
 
         MinecraftClient client = MinecraftClient.getInstance();
+        LOGGER.info("Reconnect requested for {}", lastServer.address);
         ConnectScreen.connect(
                 parent,
                 client,
