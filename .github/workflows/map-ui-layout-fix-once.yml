@@ -1,5 +1,6 @@
 name: Map UI Layout Fix Once
 
+# Re-run against the latest Local head; this workflow only prepares a detached commit object.
 on:
   push:
     branches: [Local]
