@@ -82,19 +82,46 @@ pub fn coordinate() -> StartupReport {
     };
 
     if registry_ready {
-        match server_process_guard::ensure_no_running_paper_except(None) {
-            Ok(()) => steps.push(ready_step(
-                "server-process-reconciliation",
-                "Background server state reconciled",
-                "No registered LazyBuilder Paper process requires recovery attention.",
-            )),
-            Err(message) => {
+        match server_process_guard::reconcile_registered_process_markers() {
+            Ok(result) => {
+                let mut detail_parts = Vec::new();
+                if result.stale_markers_cleared > 0 {
+                    detail_parts.push(format!("Cleared {} stale process marker(s).", result.stale_markers_cleared));
+                }
+                if !result.running_servers.is_empty() {
+                    detail_parts.push(format!("Running in background: {}.", result.running_servers.join(", ")));
+                }
+                if !result.issues.is_empty() {
+                    detail_parts.push(result.issues.join(" "));
+                }
+                if detail_parts.is_empty() {
+                    detail_parts.push("No registered LazyBuilder Paper process requires recovery attention.".into());
+                }
+                let details = detail_parts.join(" ");
+
+                if result.running_servers.is_empty() && result.issues.is_empty() {
+                    steps.push(ready_step(
+                        "server-process-reconciliation",
+                        "Background server state reconciled",
+                        &details,
+                    ));
+                } else {
+                    degraded = true;
+                    diagnostics::info(&format!("Startup process reconciliation needs attention: {details}"));
+                    steps.push(warning_step(
+                        "server-process-reconciliation",
+                        "Background server state needs attention",
+                        &details,
+                    ));
+                }
+            }
+            Err(error) => {
                 degraded = true;
-                diagnostics::info(&format!("Startup detected recoverable background Paper state: {message}"));
+                diagnostics::error(&format!("Server process reconciliation failed: {error}"));
                 steps.push(warning_step(
                     "server-process-reconciliation",
-                    "A background server needs attention",
-                    &message,
+                    "Background server state could not be checked",
+                    &error,
                 ));
             }
         }
