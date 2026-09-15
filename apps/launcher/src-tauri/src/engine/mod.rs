@@ -1,4 +1,5 @@
 pub mod adoption;
+pub mod app_instance;
 pub mod client_integration;
 pub mod core_modules;
 pub mod diagnostics;
