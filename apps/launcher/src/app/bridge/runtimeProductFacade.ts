@@ -1,4 +1,5 @@
-import { runtimeApi } from './runtimeApi';
+import { invoke } from '@tauri-apps/api/core';
+import { RuntimeError, runtimeApi, runtimeError } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
 import type { ServerBackupEstimate, ServerBackupSummary } from './runtimeApi';
 
@@ -13,8 +14,28 @@ const previewBackup: ServerBackupSummary = {
 
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
+async function exportSupportBundle() {
+  try {
+    return await invoke<string | null>('diagnostics_export_support_bundle');
+  } catch (value) {
+    throw new RuntimeError(runtimeError(value));
+  }
+}
+
+const productionRuntimeProduct = {
+  ...runtimeApi,
+  diagnostics: {
+    ...runtimeApi.diagnostics,
+    exportSupportBundle
+  }
+};
+
 const previewRuntimeProduct = {
   ...runtimePreviewProduct,
+  diagnostics: {
+    ...runtimePreviewProduct.diagnostics,
+    exportSupportBundle: async () => 'C:\\Users\\Builder\\Desktop\\LazyBuilder-Support.zip'
+  },
   backups: {
     list: async (_workspaceId: string) => previewBackups,
     estimate: async (_workspaceId: string): Promise<ServerBackupEstimate> => ({
@@ -40,4 +61,4 @@ const previewRuntimeProduct = {
  */
 export const runtimeProduct = import.meta.env.MODE === 'visual-preview'
   ? previewRuntimeProduct
-  : runtimeApi;
+  : productionRuntimeProduct;
