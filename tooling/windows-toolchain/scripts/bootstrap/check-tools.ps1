@@ -7,6 +7,18 @@ $ConfigPath = Join-Path $RepoRoot 'toolchain.json'
 if (-not (Test-Path $ConfigPath)) { throw "Missing toolchain manifest: $ConfigPath" }
 $T = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 
+if ([int]$T.schemaVersion -ne 2) {
+    throw "Unsupported toolchain.json schemaVersion '$($T.schemaVersion)'. Expected schemaVersion 2."
+}
+foreach ($Required in @('java','node','rust','maven','gradle','msvc','git','python')) {
+    if (-not ($T.PSObject.Properties.Name -contains $Required)) {
+        throw "toolchain.json is missing required policy section '$Required'."
+    }
+}
+if (-not $T.maven.wrapperTarget -or -not $T.gradle.wrapperTarget -or -not $T.rust.toolchain) {
+    throw 'toolchain.json is missing a canonical wrapper/toolchain target.'
+}
+
 function Invoke-VersionCommand([string]$Command, [string[]]$Args = @('--version')) {
     $cmd = Get-Command $Command -ErrorAction SilentlyContinue
     if (-not $cmd) { return $null }
@@ -67,11 +79,11 @@ $rows = @()
 
 $java = Invoke-VersionCommand 'java' @('-version')
 $javaMajor = Get-JavaMajor $java
-$rows += [pscustomobject]@{ Tool='Java'; Required="21.x LTS"; Found=(First-Line $java); OK=($javaMajor -eq [int]$T.java.major) }
+$rows += [pscustomobject]@{ Tool='Java'; Required="$($T.java.major).x $($T.java.channel)"; Found=(First-Line $java); OK=($javaMajor -eq [int]$T.java.major) }
 
 $node = Invoke-VersionCommand 'node' @('--version')
 $nodeMajor = Get-SemVerMajor $node
-$rows += [pscustomobject]@{ Tool='Node.js'; Required="$($T.node.major).x LTS"; Found=(First-Line $node); OK=($nodeMajor -eq [int]$T.node.major) }
+$rows += [pscustomobject]@{ Tool='Node.js'; Required="$($T.node.major).x $($T.node.channel)"; Found=(First-Line $node); OK=($nodeMajor -eq [int]$T.node.major) }
 
 $npm = Invoke-VersionCommand 'npm' @('--version')
 $rows += [pscustomobject]@{ Tool='npm'; Required='bundled with Node'; Found=(First-Line $npm); OK=(-not [string]::IsNullOrWhiteSpace($npm) -and (Get-SemVerMajor $npm) -ne $null) }
@@ -84,10 +96,10 @@ $cargo = Invoke-VersionCommand 'cargo' @('--version')
 $rows += [pscustomobject]@{ Tool='Cargo'; Required='from pinned Rust'; Found=(First-Line $cargo); OK=(-not [string]::IsNullOrWhiteSpace($cargo) -and $cargo -match '(?im)^cargo\s+\d+\.\d+\.\d+') }
 
 $git = Invoke-VersionCommand 'git' @('--version')
-$rows += [pscustomobject]@{ Tool='Git'; Required='Git for Windows'; Found=(First-Line $git); OK=(-not [string]::IsNullOrWhiteSpace($git) -and $git -match '(?i)git version\s+\d+') }
+$rows += [pscustomobject]@{ Tool='Git'; Required=[string]$T.git.product; Found=(First-Line $git); OK=(-not [string]::IsNullOrWhiteSpace($git) -and $git -match '(?i)git version\s+\d+') }
 
 $msvc = Get-MsvcStatus
-$rows += [pscustomobject]@{ Tool='MSVC'; Required='VS 2022 Build Tools + VCTools'; Found=$(if ($msvc) { $msvc } else { 'MISSING' }); OK=(-not [string]::IsNullOrWhiteSpace($msvc)) }
+$rows += [pscustomobject]@{ Tool='MSVC'; Required="$($T.msvc.product) + VCTools"; Found=$(if ($msvc) { $msvc } else { 'MISSING' }); OK=(-not [string]::IsNullOrWhiteSpace($msvc)) }
 
 $mavenWrapper = Join-Path $RepoRoot 'mvnw.cmd'
 $gradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
