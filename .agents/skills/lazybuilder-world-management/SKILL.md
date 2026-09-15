@@ -40,7 +40,7 @@ neutral shared wire contract        → lazybuilder-protocol
 third-party plugin lifecycle        → lazybuilder-plugin-management
 ```
 
-When a new/changed world feature requires a neutral Paper↔Fabric payload, `lazybuilder-protocol` defines that payload first.
+When a new/changed world feature requires a neutral Paper↔Fabric payload, `lazybuilder-protocol` defines and freezes that payload first. World Management then consumes it; it does not co-own wire meaning.
 
 ## Canonical lifecycle
 
@@ -117,7 +117,7 @@ ENVIRONMENT     Paper/filesystem/runtime environment blocks correct behavior
 UNKNOWN         evidence cannot separate the above
 ```
 
-For `PROTOCOL`, stop domain editing until `lazybuilder-protocol` owns the neutral fix. For `PRESENTATION`, hand only canonical result/state to `lazybuilder-ui`.
+For `PROTOCOL`, stop domain editing until `lazybuilder-protocol` owns and freezes the neutral fix. For `PRESENTATION`, hand only canonical result/state to `lazybuilder-ui`.
 
 ## Operation contract
 
@@ -172,13 +172,14 @@ name exact world behavior
 → classify failure
 → find smallest domain/application owner
 → separate ACTIVE/ARCHIVED from transient runtime/operation facts
-→ resolve neutral protocol first when it is the wrong owner
+→ resolve and freeze neutral protocol first when it is the wrong owner
+→ consume the frozen protocol contract without redefining it
 → touch Paper adapter only for Paper translation
 → touch persistence/filesystem only when behavior requires it
 → preserve one transaction/lease/execution path
 → make smallest complete recoverable change
 → prove the changed policy/filesystem/runtime claim at matching level
-→ hand presentation residue to lazybuilder-ui
+→ hand canonical result to presentation/runtime owner only when ownership changes
 → STOP
 ```
 
@@ -208,16 +209,30 @@ A filesystem fixture does not prove Bukkit/Paper lifecycle behavior. A Paper boo
 
 ## Handoff / exit contract
 
+Handoffs expose canonical world results; downstream owners do not infer world truth from registry/filesystem details.
+
 ```text
-new/changed neutral Paper↔Fabric payload
-→ lazybuilder-protocol
-→ world-management consumes it
+lazybuilder-protocol → world-management
+consume: frozen request/result types + identifiers + validation/default/bounds/capability semantics
+World Management owns authorization, lifecycle, filesystem, conversion, and Paper behavior after that boundary
 
-canonical world result/state
-→ lazybuilder-ui presents it
+world-management → lazybuilder-ui
+handoff: canonical world id + ACTIVE/ARCHIVED lifecycle + capabilities + relevant presentation metadata + operation result/error
+UI must not derive lifecycle from folders, registry internals, transient Paper load state, or converter implementation details
 
-desktop Paper process/provisioning issue
-→ lazybuilder-desktop-runtime
+world-management → lazybuilder-desktop-runtime
+handoff only when the remaining problem is server process/provisioning/desktop loopback/runtime environment
+Desktop receives canonical world result or exact runtime prerequisite; it must not become a second world lifecycle/filesystem owner
+```
+
+For a new Paper↔Fabric world capability, the sequence is:
+
+```text
+protocol contract complete
+→ STOP protocol ownership
+→ world-management implements domain behavior
+→ STOP world semantic ownership once canonical result is proven
+→ ui presents result
 ```
 
 Finish when:
@@ -226,6 +241,7 @@ Finish when:
 - registry/filesystem/runtime/task ownership remains singular;
 - destructive/import/conversion work has bounded recoverability;
 - matching proof is complete at the available context ceiling;
+- downstream owners can consume the canonical result without reopening world-domain truth;
 - remaining live-server/presentation residue is named precisely.
 
 Do not preserve stale continuity claims against current source/proof, and do not continue into UI, generic framework, or unrelated world cleanup after the domain contract is satisfied.
