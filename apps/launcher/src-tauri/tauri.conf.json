@@ -30,6 +30,12 @@
     "publisher": "Halo Karya Media",
     "shortDescription": "LazyBuilder desktop manager for Minecraft Java 1.21.4 server and client workflows.",
     "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
     "resources": ["resources/core", "resources/client-mods"],
     "windows": {
       "allowDowngrades": false,
@@ -39,7 +45,9 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English"]
+        "languages": ["English"],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
       }
     }
   }
