@@ -6,16 +6,16 @@ LazyBuilder Performance Manager is the first-party Fabric client performance run
 
 Keep the Minecraft client smooth, stable, and responsive without lowering visual quality by default. LazyBuilder owns the performance behavior it requires; third-party optimization mods are not mandatory runtime owners.
 
-## P0 scope
+## Current scope
 
-The current baseline provides:
+The current runtime provides:
 
 - allocation-free rolling frame timing over a bounded 60-frame window;
-- internal frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
-- a workload budget for LazyBuilder-owned work classes (`CRITICAL`, `NORMAL`, `DEFERRED`);
+- target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
+- render-gap protection so world loading, disconnects, and other render discontinuities are not counted as frame spikes;
 - first-party unfocused/minimized FPS policy;
-- on-demand performance snapshots;
-- no permanent HUD, metrics history database, background worker, or graphics auto-tuning.
+- on-demand performance snapshots, including Minecraft chunk/entity/particle debug state;
+- no permanent HUD, metrics history database, background worker, graphics auto-tuning, or speculative workload scheduler.
 
 ## Runtime model
 
@@ -23,29 +23,19 @@ The current baseline provides:
 PerformanceManagerClient
 └── PerformanceRuntime
     ├── FrameMonitor
-    ├── WorkloadBudget
     ├── BackgroundResourcePolicy
     └── PerformanceSnapshotReader
 ```
 
-One client render callback records frame timing. One end-client-tick hook updates the workload budget and background FPS policy. No dedicated thread or polling worker is created.
+One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy. No dedicated thread or polling worker is created.
 
 ## Frame pressure
 
-Frame pressure is an internal scheduling signal, not a graphics-quality controller.
+Frame pressure is diagnostic state. It is intentionally not a graphics-quality controller and currently does not own scheduling in other LazyBuilder managers.
 
-```text
-NORMAL
-→ CRITICAL + NORMAL + DEFERRED LazyBuilder work allowed
+Thresholds are derived from the user's configured foreground FPS target with conservative absolute floors. This avoids treating an intentional 30 FPS target as a performance fault while still detecting sustained slow frames and severe spikes.
 
-ELEVATED
-→ CRITICAL + NORMAL allowed
-
-HEAVY
-→ CRITICAL only
-```
-
-Critical correctness work such as input, network handling, and authoritative session state must never be suppressed merely to improve FPS.
+When world rendering stops, the window loses focus, or the client is minimized, the timing clock is reset. Long render gaps are treated as discontinuities instead of fake lag spikes.
 
 ## Background resource policy
 
@@ -59,7 +49,7 @@ background.minimized_fps=10
 
 The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured video-option FPS limit. When focus returns, the current user limit is authoritative again.
 
-This behavior is owned by LazyBuilder. It no longer yields ownership to Dynamic FPS or another optional provider.
+This behavior is owned by LazyBuilder. It does not yield ownership to Dynamic FPS or another optional provider.
 
 ## Diagnostics
 
@@ -67,7 +57,7 @@ This behavior is owned by LazyBuilder. It no longer yields ownership to Dynamic 
 
 ```text
 FPS
-Approximate current frame time
+Current frame time
 Rolling average frame time
 Worst recent frame time
 JVM used / max memory
@@ -75,15 +65,19 @@ Render distance
 Simulation distance
 Window focused / minimized state
 Current frame pressure
+Completed chunk count
+Minecraft chunk debug string
+Minecraft entity render debug string
+Minecraft particle debug string
 ```
 
-Memory and option reads are not sampled continuously.
+Memory, option, entity, chunk, and particle diagnostics are not sampled continuously.
 
 ## Ownership rule
 
 Performance capabilities required by LazyBuilder must have first-party implementations maintained and versioned with LazyBuilder. External projects may inform problem analysis, but LazyBuilder must not require them for its core performance behavior.
 
-Deeper rendering, chunk, culling, memory, and batching optimizations are intentionally outside P0. They require separate measurable-benefit and regression-risk review before implementation.
+Generic renderer replacement, culling engines, shader systems, and other broad optimization engines are not added merely because they exist elsewhere. They require runtime evidence of a specific bottleneck and a bounded first-party scope before implementation.
 
 ## Configuration
 
