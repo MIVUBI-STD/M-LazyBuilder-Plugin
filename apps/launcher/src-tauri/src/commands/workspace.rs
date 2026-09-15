@@ -71,7 +71,7 @@ pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::
                 Ok(result)
             }
             Err(message) => {
-                let error = CommandError::new("PROVISION_FAILED", message);
+                let error = CommandError::recoverable("PROVISION_FAILED", message, "Retry server preparation");
                 fail_operation(&operations, &operation_id, &error, true);
                 Err(error)
             }
@@ -143,14 +143,20 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
                 Ok(result)
             }
             Err(message) => {
-                let error = CommandError::new("PAPER_UPDATE_FAILED", message.clone());
+                let rollback_failed = message.contains("rollback also failed");
+                let error = if rollback_failed {
+                    CommandError::new("PAPER_UPDATE_FAILED", message.clone())
+                        .with_details("Paper rollback could not be completed automatically. Inspect the server before retrying.")
+                } else {
+                    CommandError::recoverable("PAPER_UPDATE_FAILED", message.clone(), "Retry Paper update")
+                };
                 let operation_error = OperationError {
                     code: error.code.to_string(),
                     message: error.message.clone(),
-                    details: String::new(),
-                    recoverable: true,
+                    details: error.details.clone(),
+                    recoverable: !rollback_failed,
                 };
-                if message.contains("rollback also failed") {
+                if rollback_failed {
                     let _ = operations.require_recovery(&operation_id, operation_error);
                 } else {
                     let _ = operations.fail(&operation_id, operation_error);
@@ -178,7 +184,8 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
 }
 
 #[tauri::command]
-pub async fn workspace_accept_eula() -> CommandResult<ProvisioningStatus> {
+pub async fn workspace_accept_eula(operations: State<'_, OperationRegistry>) -> CommandResult<ProvisioningStatus> {
+    ensure_current_workspace_operation_idle(&operations)?;
     tauri::async_runtime::spawn_blocking(|| {
         workspace_registry::accept_eula().map_err(CommandError::from)?;
         workspace_registry::provisioning_status().map_err(CommandError::from)
@@ -196,14 +203,22 @@ pub fn workspace_pick_parent() -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
-pub fn workspace_create(state: State<'_, ServerManagerState>, parent_path: String, name: String) -> CommandResult<WorkspaceEntry> {
-    ensure_switch_allowed(&state)?;
+pub fn workspace_create(
+    state: State<'_, ServerManagerState>,
+    operations: State<'_, OperationRegistry>,
+    parent_path: String,
+    name: String,
+) -> CommandResult<WorkspaceEntry> {
+    ensure_switch_allowed(&state, &operations)?;
     workspace_registry::create(&PathBuf::from(parent_path), &name).map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub fn workspace_adoption_pick(state: State<'_, ServerManagerState>) -> CommandResult<Option<adoption::AdoptionPlan>> {
-    ensure_switch_allowed(&state)?;
+pub fn workspace_adoption_pick(
+    state: State<'_, ServerManagerState>,
+    operations: State<'_, OperationRegistry>,
+) -> CommandResult<Option<adoption::AdoptionPlan>> {
+    ensure_switch_allowed(&state, &operations)?;
     let Some(path) = rfd::FileDialog::new().set_title("Choose existing Paper server to adopt").pick_folder() else { return Ok(None); };
     server_process_guard::ensure_root_not_running(&path).map_err(CommandError::from)?;
     adoption::analyze(&path).map(Some).map_err(CommandError::from)
@@ -213,7 +228,8 @@ pub fn workspace_adoption_pick(state: State<'_, ServerManagerState>) -> CommandR
 pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<String>) -> CommandResult<WorkspaceEntry> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<ServerManagerState>();
-        ensure_switch_allowed(&state)?;
+        let operations = app.state::<OperationRegistry>();
+        ensure_switch_allowed(&state, &operations)?;
         let root = PathBuf::from(root_path);
         server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)?;
         adoption::execute(&root, name.as_deref()).map_err(CommandError::from)
@@ -223,14 +239,21 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
 }
 
 #[tauri::command]
-pub fn workspace_activate(state: State<'_, ServerManagerState>, id: String) -> CommandResult<WorkspaceEntry> {
-    ensure_activation_allowed(&state, &id)?;
+pub fn workspace_activate(
+    state: State<'_, ServerManagerState>,
+    operations: State<'_, OperationRegistry>,
+    id: String,
+) -> CommandResult<WorkspaceEntry> {
+    ensure_activation_allowed(&state, &operations, &id)?;
     workspace_registry::activate(&id).map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub fn workspace_close(state: State<'_, ServerManagerState>) -> CommandResult<()> {
-    ensure_switch_allowed(&state)?;
+pub fn workspace_close(
+    state: State<'_, ServerManagerState>,
+    operations: State<'_, OperationRegistry>,
+) -> CommandResult<()> {
+    ensure_switch_allowed(&state, &operations)?;
     workspace_registry::deactivate().map_err(CommandError::from)
 }
 
@@ -359,7 +382,12 @@ pub async fn workspace_duplicate(
 }
 
 #[tauri::command]
-pub fn workspace_remove_from_library(state: State<'_, ServerManagerState>, id: String) -> CommandResult<()> {
+pub fn workspace_remove_from_library(
+    state: State<'_, ServerManagerState>,
+    operations: State<'_, OperationRegistry>,
+    id: String,
+) -> CommandResult<()> {
+    ensure_workspace_operation_idle(&operations, &id)?;
     ensure_remove_allowed(&state, &id)?;
     workspace_registry::remove_from_library(&id).map_err(CommandError::from)
 }
@@ -372,6 +400,8 @@ pub async fn workspace_delete(
 ) -> CommandResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<ServerManagerState>();
+        let operations = app.state::<OperationRegistry>();
+        ensure_workspace_operation_idle(&operations, &id)?;
         ensure_workspace_mutation_allowed(&state, &id)?;
         workspace_registry::delete(&id, &typed_display_name).map_err(CommandError::from)
     })
@@ -396,13 +426,45 @@ fn fail_operation(
     );
 }
 
-fn ensure_activation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
+fn ensure_workspace_operation_idle(
+    operations: &OperationRegistry,
+    workspace_id: &str,
+) -> CommandResult<()> {
+    let resource = format!("workspace:{workspace_id}");
+    if operations.has_active_for_resource(&resource).map_err(CommandError::from)? {
+        return Err(CommandError::recoverable(
+            "OPERATION_BUSY",
+            "A Launcher operation is still changing this server. Wait for it to finish before switching or modifying the workspace.",
+            "Open Activity",
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_current_workspace_operation_idle(operations: &OperationRegistry) -> CommandResult<()> {
+    if let Some(active) = workspace_registry::current().map_err(CommandError::from)? {
+        ensure_workspace_operation_idle(operations, &active.id)?;
+    }
+    Ok(())
+}
+
+fn ensure_activation_allowed(
+    state: &ServerManagerState,
+    operations: &OperationRegistry,
+    target_id: &str,
+) -> CommandResult<()> {
+    ensure_current_workspace_operation_idle(operations)?;
+    ensure_workspace_operation_idle(operations, target_id)?;
     server_process_guard::ensure_no_running_paper_except(Some(target_id)).map_err(CommandError::from)?;
     if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
     ensure_runtime_update_allowed(state)
 }
 
-fn ensure_switch_allowed(state: &ServerManagerState) -> CommandResult<()> {
+fn ensure_switch_allowed(
+    state: &ServerManagerState,
+    operations: &OperationRegistry,
+) -> CommandResult<()> {
+    ensure_current_workspace_operation_idle(operations)?;
     server_process_guard::ensure_no_running_paper_except(None).map_err(CommandError::from)?;
     if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
     ensure_runtime_update_allowed(state)
