@@ -6,7 +6,8 @@
   import Settings from './pages/Settings.svelte';
   import Client from './pages/Client.svelte';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
-  import type { AdoptionPlan, RuntimeUpdateStatus, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
+  import { RuntimeError } from './app/bridge/runtimeApi';
+  import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
   type GlobalPage = 'Servers' | 'Client';
@@ -18,6 +19,7 @@
   let workspaceState: WorkspaceState = { active: null, recent: [] };
   let provisioning: WorkspaceProvisioningStatus | null = null;
   let runtimeUpdates: RuntimeUpdateStatus | null = null;
+  let diagnostics: DiagnosticSummary | null = null;
   let adoptionPlan: AdoptionPlan | null = null;
   let loadingWorkspace = true;
   let workspaceError = '';
@@ -32,23 +34,38 @@
   const pages: Page[] = ['Overview', 'Worlds', 'Plugins', 'Settings'];
 
   function friendlyError(error: unknown) {
+    if (error instanceof RuntimeError && error.code === 'SERVER_BUSY') {
+      return 'Stop this server before returning to the server library or changing runtime files.';
+    }
+    if (error instanceof Error && error.message.trim()) return error.message.trim();
     const message = String(error ?? '').replace(/^Error:\s*/i, '').trim();
-    if (message.includes('Stop the active server before changing workspace runtime files')) return 'Stop this server before returning to the server library.';
-    if (message.includes('Current server state:')) return 'This action is unavailable while the server is changing state. Wait a moment, then try again.';
     return message || 'Something went wrong. Try again.';
   }
   function visibleServers() { const query = librarySearch.trim().toLowerCase(); return query ? workspaceState.recent.filter((server) => server.name.toLowerCase().includes(query)) : workspaceState.recent; }
   function displayLocation(path: string) { if (!path) return ''; const normalized = path.replace(/[\\/]+$/, ''); return normalized.split(/[\\/]/).pop() || normalized; }
   function setupProgress() { if (!provisioning) return 0; const steps = [provisioning.workspaceCreated, provisioning.javaReady, provisioning.paperReady, provisioning.coreModulesReady, provisioning.configReady, provisioning.eulaAccepted]; return Math.round((steps.filter(Boolean).length / steps.length) * 100); }
   function setupHeadline() { if (!provisioning) return 'Preparing server'; if (!provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady) return 'Finish preparing this server'; if (!provisioning.eulaAccepted) return 'Accept the Minecraft EULA'; return 'Server setup complete'; }
+  function platformLabel() {
+    const platform = diagnostics?.serverPlatform;
+    const minecraft = diagnostics?.minecraftVersion;
+    if (!platform && !minecraft) return 'Server';
+    const platformName = platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : 'Server';
+    return minecraft ? `${platformName} ${minecraft}` : platformName;
+  }
 
   async function loadRuntimeUpdates() { try { runtimeUpdates = await runtimeProduct.workspace.runtimeUpdateStatus(); } catch { runtimeUpdates = null; } }
+  async function loadDiagnostics() { try { diagnostics = await runtimeProduct.diagnostics.summary(); } catch { diagnostics = null; } }
   async function refreshWorkspaceState() {
-    loadingWorkspace = true; workspaceError = ''; runtimeUpdates = null;
+    loadingWorkspace = true; workspaceError = ''; runtimeUpdates = null; diagnostics = null;
     try {
       workspaceState = await runtimeProduct.workspace.state();
       provisioning = workspaceState.active ? await runtimeProduct.workspace.provisioningStatus() : null;
-      if (workspaceState.active) { adoptionPlan = null; launcherMode = 'home'; if (provisioning?.ready) void loadRuntimeUpdates(); }
+      if (workspaceState.active) {
+        adoptionPlan = null;
+        launcherMode = 'home';
+        void loadDiagnostics();
+        if (provisioning?.ready) void loadRuntimeUpdates();
+      }
     } catch (error) { workspaceError = friendlyError(error); provisioning = null; }
     finally { loadingWorkspace = false; }
   }
@@ -58,9 +75,9 @@
   async function adoptServer() { if (!adoptionPlan) return; adopting = true; workspaceError = ''; try { await runtimeProduct.workspace.adopt(adoptionPlan.root, adoptionPlan.name); adoptionPlan = null; page = 'Overview'; globalPage = 'Servers'; await refreshWorkspaceState(); } catch (error) { workspaceError = friendlyError(error); } finally { adopting = false; } }
   async function activateServer(server: WorkspaceEntry) { workspaceError = ''; try { await runtimeProduct.workspace.activate(server.id); page = 'Overview'; globalPage = 'Servers'; await refreshWorkspaceState(); } catch (error) { workspaceError = friendlyError(error); } }
   async function backToServers() { globalPage = 'Servers'; if (!workspaceState.active) return; workspaceError = ''; try { await runtimeProduct.workspace.close(); page = 'Overview'; await refreshWorkspaceState(); } catch (error) { workspaceError = friendlyError(error); } }
-  async function prepareServer() { provisioningServer = true; workspaceError = ''; try { const result = await runtimeProduct.workspace.provision(); provisioning = result.status; runtimeUpdates = null; if (provisioning.ready) void loadRuntimeUpdates(); } catch (error) { workspaceError = friendlyError(error); try { provisioning = await runtimeProduct.workspace.provisioningStatus(); } catch {} } finally { provisioningServer = false; } }
+  async function prepareServer() { provisioningServer = true; workspaceError = ''; try { const result = await runtimeProduct.workspace.provision(); provisioning = result.status; runtimeUpdates = null; void loadDiagnostics(); if (provisioning.ready) void loadRuntimeUpdates(); } catch (error) { workspaceError = friendlyError(error); try { provisioning = await runtimeProduct.workspace.provisioningStatus(); } catch {} } finally { provisioningServer = false; } }
   async function acceptEula() { acceptingEula = true; workspaceError = ''; try { provisioning = await runtimeProduct.workspace.acceptEula(); if (provisioning.ready) void loadRuntimeUpdates(); } catch (error) { workspaceError = friendlyError(error); } finally { acceptingEula = false; } }
-  async function updatePaper() { updatingPaper = true; workspaceError = ''; try { runtimeUpdates = await runtimeProduct.workspace.updatePaper(); } catch (error) { workspaceError = friendlyError(error); } finally { updatingPaper = false; } }
+  async function updatePaper() { updatingPaper = true; workspaceError = ''; try { runtimeUpdates = await runtimeProduct.workspace.updatePaper(); void loadDiagnostics(); } catch (error) { workspaceError = friendlyError(error); } finally { updatingPaper = false; } }
   function formatLastOpened(seconds: number) { if (!seconds) return 'Not opened yet'; const then = new Date(seconds * 1000); const now = new Date(); const day = 86400000; const diff = now.getTime() - then.getTime(); if (diff < day && now.getDate() === then.getDate()) return 'Opened today'; if (diff < day * 2) return 'Opened yesterday'; return `Opened ${then.toLocaleDateString()}`; }
   onMount(refreshWorkspaceState);
 </script>
@@ -107,7 +124,7 @@
           {:else}<section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={() => (launcherMode = 'create')}>Create server</button><button class="secondary-button" onclick={analyzeAdoption}>Add existing</button></div></section>{/if}
         </main>
       {:else}
-        <header class="server-toolbar"><div class="server-toolbar-main"><div class="server-icon header-icon">{workspaceState.active.name.slice(0,1).toUpperCase()}</div><div><h1>{workspaceState.active.name}</h1><div class="server-context-meta"><span>Paper 1.21.4</span><span>{provisioning?.ready ? 'Ready' : 'Setup required'}</span></div></div></div>{#if runtimeUpdates?.paperUpdateAvailable}<button class="update-button" disabled={updatingPaper} onclick={updatePaper}>{updatingPaper ? 'Updating…' : 'Update Paper'}</button>{/if}</header>
+        <header class="server-toolbar"><div class="server-toolbar-main"><div class="server-icon header-icon">{workspaceState.active.name.slice(0,1).toUpperCase()}</div><div><h1>{workspaceState.active.name}</h1><div class="server-context-meta"><span>{platformLabel()}</span><span>{provisioning?.ready ? 'Ready' : 'Setup required'}</span></div></div></div>{#if runtimeUpdates?.paperUpdateAvailable}<button class="update-button" disabled={updatingPaper} onclick={updatePaper}>{updatingPaper ? 'Updating…' : 'Update Paper'}</button>{/if}</header>
         <main class="content">
           {#if workspaceError}<div class="error-box workspace-error" role="alert">{workspaceError}</div>{/if}
           {#if provisioning && !provisioning.ready}<section class="setup-card"><div class="setup-main"><div class="setup-icon">{provisioningServer ? '…' : '✓'}</div><div class="setup-copy"><span class="setup-label">Server setup</span><h2>{setupHeadline()}</h2><p>{!provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady ? 'LazyBuilder can prepare everything this server needs automatically.' : 'Accept the Minecraft EULA to finish setup.'}</p></div></div><div class="setup-progress-row"><div class="setup-track"><span style={`width:${setupProgress()}%`}></span></div><strong>{setupProgress()}%</strong></div><div class="setup-footer"><details class="setup-details"><summary>Setup details</summary><div class="setup-steps"><span class:done={provisioning.workspaceCreated}>Workspace</span><span class:done={provisioning.javaReady}>Java</span><span class:done={provisioning.paperReady}>Paper</span><span class:done={provisioning.coreModulesReady}>Components</span><span class:done={provisioning.configReady}>Configuration</span><span class:done={provisioning.eulaAccepted}>EULA</span></div></details>{#if !provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady}<button class="primary-button" disabled={provisioningServer} onclick={prepareServer}>{provisioningServer ? 'Preparing…' : 'Prepare server'}</button>{:else if !provisioning.eulaAccepted}<button class="primary-button" disabled={acceptingEula} onclick={acceptEula}>{acceptingEula ? 'Saving…' : 'Accept EULA'}</button>{/if}</div></section>{/if}
