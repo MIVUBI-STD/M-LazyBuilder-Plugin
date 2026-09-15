@@ -27,6 +27,12 @@ Start with:
 
 [`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md)
 
+For findings reproduced on 15 September 2026, use the current remediation handoff together with the validation plan:
+
+[`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md)
+
+The remediation handoff is authoritative when an older Local PC observation conflicts with current source behavior.
+
 Required order:
 
 ```text
@@ -108,4 +114,5 @@ See:
 
 - [`docs/05-operations/current-verification.md`](docs/05-operations/current-verification.md) for proof boundaries;
 - [`docs/05-operations/local-pc-validation-plan.md`](docs/05-operations/local-pc-validation-plan.md) for the exact next-to-do on the Local PC;
+- [`docs/05-operations/local-pc-remediation-2026-09-15.md`](docs/05-operations/local-pc-remediation-2026-09-15.md) for current remediation of reproduced Local PC findings;
 - [`docs/README.md`](docs/README.md) for documentation routing.
