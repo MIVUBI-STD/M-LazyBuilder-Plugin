@@ -1,5 +1,6 @@
 use crate::commands;
 use crate::engine::diagnostics;
+use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::runtime_environment;
 use crate::engine::server_manager::ServerManagerState;
@@ -23,8 +24,12 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
+        .manage(OperationRegistry::default())
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
+            commands::operations::launcher_operation_list,
+            commands::operations::launcher_operation,
+            commands::operations::launcher_operation_cancel,
             commands::workspace::workspace_state,
             commands::workspace::workspace_provisioning_status,
             commands::workspace::workspace_provision,
