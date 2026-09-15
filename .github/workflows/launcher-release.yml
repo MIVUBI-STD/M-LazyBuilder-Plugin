@@ -1,0 +1,147 @@
+name: Launcher Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Launcher version from source (MAJOR.MINOR.PATCH)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: launcher-release-stable
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/launcher
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/launcher/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Select pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          rustc --version
+
+      - name: Require signing secrets
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY secret is not configured.'
+          }
+          if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is not configured.'
+          }
+
+      - name: Verify release contract
+        working-directory: ${{ github.workspace }}
+        run: python scripts/verify_launcher_release_contract.py --version "${{ inputs.version }}"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify Launcher source before packaging
+        run: npm run verify:source
+
+      - name: Reject duplicate version release
+        shell: pwsh
+        run: |
+          gh release view "launcher-v${{ inputs.version }}" --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'A Launcher release for this version already exists.' }
+          $global:LASTEXITCODE = 0
+
+      - name: Build signed NSIS updater artifact
+        run: npx tauri build --config src-tauri/tauri.release.conf.json
+
+      - name: Resolve signed updater files
+        id: updater_files
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'src-tauri\target\release\bundle\nsis'
+          $installers = @(Get-ChildItem $bundle -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($installers.Count)." }
+          $installer = $installers[0]
+          $signature = Get-Item "$($installer.FullName).sig" -ErrorAction Stop
+          "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          "signature_path=$($signature.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Build stable updater manifest
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/launcher-v${{ inputs.version }}/${{ steps.updater_files.outputs.installer_name }}"
+          python scripts/build_launcher_update_manifest.py `
+            --version "${{ inputs.version }}" `
+            --url $url `
+            --signature-file "${{ steps.updater_files.outputs.signature_path }}" `
+            --output update-channel/stable/latest.json
+
+      - name: Publish immutable version release
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          gh release create "launcher-v${{ inputs.version }}" `
+            "${{ steps.updater_files.outputs.installer_path }}" `
+            "${{ steps.updater_files.outputs.signature_path }}" `
+            "update-channel/stable/latest.json#latest.json" `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "LazyBuilder Launcher v${{ inputs.version }}" `
+            --notes "Signed LazyBuilder Launcher release v${{ inputs.version }}."
+
+      - name: Publish stable channel manifest
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/launcher-update-channel" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            $global:LASTEXITCODE = 0
+            gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/refs" `
+              -f ref='refs/heads/launcher-update-channel' `
+              -f sha="$env:GITHUB_SHA" *> $null
+          }
+
+          $manifest = Get-Content 'update-channel/stable/latest.json' -Raw
+          $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($manifest))
+          $existing = gh api "repos/$env:GITHUB_REPOSITORY/contents/stable/latest.json?ref=launcher-update-channel" --jq '.sha' 2>$null
+          $global:LASTEXITCODE = 0
+          $args = @(
+            '--method','PUT',"repos/$env:GITHUB_REPOSITORY/contents/stable/latest.json",
+            '-f',"message=release(launcher): stable ${{ inputs.version }}",
+            '-f',"content=$content",
+            '-f','branch=launcher-update-channel'
+          )
+          if (-not [string]::IsNullOrWhiteSpace($existing)) { $args += @('-f',"sha=$existing") }
+          gh api @args *> $null
+
+      - name: Release summary
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          "### LazyBuilder Launcher v${{ inputs.version }}" >> $env:GITHUB_STEP_SUMMARY
+          "Signed NSIS installer and signature published to the immutable version release." >> $env:GITHUB_STEP_SUMMARY
+          "Stable manifest: https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/launcher-update-channel/stable/latest.json" >> $env:GITHUB_STEP_SUMMARY
