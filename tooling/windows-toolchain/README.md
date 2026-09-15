@@ -60,19 +60,9 @@ check
 → local acceptance
 ```
 
-## Compatibility aliases
+## Root-entrypoint rule
 
-These historical root scripts may remain temporarily for muscle memory or existing automation:
-
-```text
-SETUP-DEV.cmd
-CHECK-DEV.cmd
-BUILD-LAUNCHER.cmd
-TEST-LOCAL.cmd
-UPDATE-LAUNCHER.cmd
-```
-
-They are aliases only and must route to `DEV.cmd`. They must never regain independent logic. New documentation and automation should use `DEV.cmd` directly.
+`DEV.cmd` is the only developer-operation entrypoint kept at repository root. Historical command aliases were removed after consolidation. New commands must normally be added as `dev.ps1` subcommands rather than new root scripts.
 
 ## Baseline
 
