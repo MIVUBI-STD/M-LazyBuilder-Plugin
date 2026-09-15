@@ -20,6 +20,7 @@ REQUIRED_FILES = [
     "DEV.cmd",
     "toolchain.json",
     "tooling/windows-toolchain/dev.ps1",
+    "tooling/windows-toolchain/scripts/verify/verify-fabric.ps1",
     "tooling/windows-toolchain/scripts/distribution/package-local.ps1",
     "docs/README.md",
     "docs/04-system/README.md",
@@ -100,6 +101,11 @@ REQUIRED_OPERATIONS_PHRASES = [
     "DEV.cmd",
     "tooling/windows-toolchain/dev.ps1",
     "one developer command surface",
+    "verify <paper|fabric|launcher>",
+    "DEV.cmd verify paper",
+    "DEV.cmd verify fabric",
+    "DEV.cmd verify launcher",
+    "Do not add `verify all`",
     "dist/Local/",
     "workflow_dispatch",
     "Developer failure contract",
@@ -115,6 +121,21 @@ REQUIRED_DEV_FAILURE_MARKERS = [
     "Evidence  :",
     "Recovery  :",
     "fix the first actionable failure",
+]
+
+REQUIRED_DEV_VERIFY_MARKERS = [
+    "'verify'",
+    "verify requires exactly one scope: paper, fabric, or launcher",
+    "Invoke-TargetedVerification",
+    "verify-paper",
+    "verify-fabric",
+    "verify-launcher",
+    "npm run verify:source",
+]
+
+FORBIDDEN_DEV_VERIFY_MARKERS = [
+    "verify all",
+    "verify-all",
 ]
 
 REQUIRED_VERIFY_IGNORE_PATTERNS = [
@@ -189,6 +210,7 @@ def main() -> int:
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
     dev_orchestrator = read_text("tooling/windows-toolchain/dev.ps1", errors)
+    fabric_verifier = read_text("tooling/windows-toolchain/scripts/verify/verify-fabric.ps1", errors)
     verify_workflow = read_text(".github/workflows/verify.yml", errors)
     build_local = read_text("apps/launcher/build-local.ps1", errors)
     test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
@@ -218,6 +240,18 @@ def main() -> int:
         if marker not in dev_orchestrator:
             fail(errors, f"developer orchestrator missing actionable failure marker: {marker}")
 
+    for marker in REQUIRED_DEV_VERIFY_MARKERS:
+        if marker not in dev_orchestrator:
+            fail(errors, f"developer orchestrator missing bounded verify marker: {marker}")
+
+    for marker in FORBIDDEN_DEV_VERIFY_MARKERS:
+        if marker in dev_orchestrator.lower():
+            fail(errors, f"developer orchestrator must not add an overlapping integrated verify command: {marker}")
+
+    for manager in ("mods/map-manager", "mods/utility-manager", "mods/performance-manager"):
+        if manager not in fabric_verifier or "--no-daemon build" not in fabric_verifier:
+            fail(errors, f"canonical Fabric verification lane missing manager: {manager}")
+
     if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
         fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")
 
@@ -231,10 +265,18 @@ def main() -> int:
         if quoted_single in verify_workflow or quoted_double in verify_workflow:
             fail(errors, f"Verify workflow must not broadly ignore source/canonical paths: {pattern}")
 
+    if "verify-fabric.ps1 -RepoRoot" not in verify_workflow:
+        fail(errors, "Verify workflow must reuse the canonical Fabric verification lane")
+    if "npm run verify:source" not in verify_workflow:
+        fail(errors, "Verify workflow must reuse the canonical Launcher source verification lane")
+
     if "dist\\LazyBuilder" in build_local or "dist\\LazyBuilder" in test_local:
         fail(errors, "legacy dist/LazyBuilder Local output path must not return")
     if "dist\\Local" not in build_local or "dist\\Local" not in test_local:
         fail(errors, "canonical Local build/test paths must resolve through dist/Local")
+
+    if "& $FabricVerifier -RepoRoot $RepoRoot" not in build_local:
+        fail(errors, "Launcher local build must delegate Fabric verification to verify-fabric.ps1")
 
     publisher_markers = [
         "dist\\Local",
@@ -302,6 +344,7 @@ def main() -> int:
     print("Repository contract verification PASS")
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
+    print("Targeted verify scopes: paper, fabric, launcher")
     print("Full Verify scoping: evidence-only exclusions, source/canonical paths protected")
     print("Developer failures: operation + exit code + evidence + recovery")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
