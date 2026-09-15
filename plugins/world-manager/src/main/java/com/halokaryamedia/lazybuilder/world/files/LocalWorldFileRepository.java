@@ -34,6 +34,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String DELETE_SUFFIX = ".delete";
     private static final String CREATE_SUFFIX = ".create";
     private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
+    private static final long COPY_ENTRY_OVERHEAD_BYTES = 4L * 1024L;
+    private static final long COPY_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
 
     private final Path worldRoot;
     private final Path workspaceRoot;
@@ -52,6 +54,15 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         Path sourcePath = worldPath(source.folderName());
         if (!Files.isDirectory(sourcePath) || Files.isSymbolicLink(sourcePath)) {
             throw new IOException("Managed world folder is missing or unsafe: " + source.folderName());
+        }
+
+        Files.createDirectories(workspaceRoot);
+        requireSafeWorkspaceRoot();
+        long requiredBytes = estimateCopyBytes(sourcePath, profile);
+        long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
+        if (usableBytes < requiredBytes) {
+            throw new IOException("Insufficient disk space for managed world copy; required="
+                    + requiredBytes + ", usable=" + usableBytes);
         }
 
         Path destination = reserveTypedWorkspace(operationId, COPY_SUFFIX);
@@ -363,6 +374,11 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 .map(identity -> new CreateTransactionIdentity(identity.operationId(), identity.folderName()));
     }
 
+    private static Optional<DeleteWorkspaceIdentity> parseDeleteTransactionName(String name) {
+        return parseEncodedTransactionName(name, DELETE_SUFFIX)
+                .map(identity -> new DeleteWorkspaceIdentity(identity.operationId(), identity.folderName()));
+    }
+
     private static Optional<DeleteWorkspaceIdentity> parseDeleteWorkspaceName(String name) {
         return parseEncodedTransactionName(name, DELETE_SUFFIX)
                 .map(identity -> new DeleteWorkspaceIdentity(identity.operationId(), identity.folderName()));
@@ -381,6 +397,46 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             return Optional.of(new EncodedTransactionIdentity(operationId, folderName));
         } catch (IllegalArgumentException invalid) {
             return Optional.empty();
+        }
+    }
+
+    private long estimateCopyBytes(Path source, WorldCopyProfile profile) throws IOException {
+        long[] total = {COPY_SPACE_RESERVE_BYTES};
+        Files.walkFileTree(source, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
+                if (Files.isSymbolicLink(directory)) {
+                    throw new IOException("Symbolic links are not supported in managed world copies: " + directory);
+                }
+                Path relative = source.relativize(directory);
+                if (profile == WorldCopyProfile.DUPLICATE && relative.getNameCount() == 1
+                        && DUPLICATE_EXCLUDED_DIRECTORIES.contains(relative.getFileName().toString())) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
+                total[0] = addCopyBytes(total[0], COPY_ENTRY_OVERHEAD_BYTES);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (Files.isSymbolicLink(file)) {
+                    throw new IOException("Symbolic links are not supported in managed world copies: " + file);
+                }
+                Path relative = source.relativize(file);
+                if (shouldSkipFile(relative, profile)) return FileVisitResult.CONTINUE;
+                total[0] = addCopyBytes(total[0], COPY_ENTRY_OVERHEAD_BYTES);
+                total[0] = addCopyBytes(total[0], attrs.size());
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return total[0];
+    }
+
+    private static long addCopyBytes(long current, long increment) throws IOException {
+        try {
+            return Math.addExact(current, increment);
+        } catch (ArithmeticException overflow) {
+            throw new IOException("Managed world copy size exceeds supported range", overflow);
         }
     }
 
