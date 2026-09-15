@@ -1,27 +1,28 @@
 ---
 name: lazybuilder-protocol
-description: Own neutral shared Paper/Fabric contracts under shared/protocol: request/result payloads, identifiers, wire validation/defaults, compatibility semantics, and current World/Map/Transfer protocol shapes. Do not use for desktop loopback HTTP, Paper implementation logic, or UI presentation.
+description: Own neutral shared Paper/Fabric contracts under shared/protocol: request/result payloads, identifiers, wire validation/defaults, compatibility/version semantics, and current World/Map/Transfer protocol shapes. Do not use for desktop loopback HTTP, Paper implementation logic, or UI presentation.
 ---
 
 # LazyBuilder Shared Protocol
 
-Own neutral Paper/Fabric wire semantics only. Follow `docs/04-system/development-discipline.md`, `docs/04-system/networking.md`, and `CONTEXT.md`.
+Own neutral Paper/Fabric wire semantics only. Follow `docs/04-system/development-discipline.md` and `docs/04-system/networking.md`.
 
 ## Entry gate
 
-Use this Skill only when the changed decision must be shared neutrally between Paper and Fabric.
+Use this Skill only when a decision must be shared neutrally between Paper and Fabric:
 
 ```text
 request/result payload shape
 identifier semantics
 wire validation/default/optional behavior
 compatibility/version semantics
+capability advertisement
 bounded shared transfer contract
 ```
 
-Do not enter merely because two modules are involved. Desktop loopback HTTP is `lazybuilder-desktop-runtime`; Paper behavior is `lazybuilder-world-management`; rendering/interaction is `lazybuilder-ui`.
+Do not enter merely because two modules are involved. Desktop loopback HTTP belongs to `lazybuilder-desktop-runtime`; Paper domain behavior belongs to `lazybuilder-world-management`; presentation belongs to `lazybuilder-ui`.
 
-Before mutation, identify at least one direct producer and consumer of the contract and the first evidence that shows the current shared shape is wrong.
+Before mutation, identify at least one direct producer and one direct consumer plus one concrete failing/mismatched round trip or contract example.
 
 ## Owns
 
@@ -29,28 +30,42 @@ Before mutation, identify at least one direct producer and consumer of the contr
 shared request/result payloads
 shared identifiers
 wire validation/default/optional semantics
-map-action contracts
-world-control contracts
-shared transfer contracts
-Paper/Fabric compatibility semantics
-source ownership under shared/protocol
+World Control contract
+Map Action contract
+shared transfer framing/bounds
+Paper/Fabric compatibility/version semantics
+neutral source ownership under shared/protocol
 ```
 
-## Does Not Own
+## Does not own
 
 ```text
-Paper implementation behavior → lazybuilder-world-management
-Desktop or Fabric UI          → lazybuilder-ui
-desktop loopback HTTP/control → lazybuilder-desktop-runtime
+Paper implementation/domain behavior → lazybuilder-world-management
+Desktop/Fabric presentation          → lazybuilder-ui
+desktop loopback HTTP/control        → lazybuilder-desktop-runtime
 ```
-
-A `WorldControl*` type located in `shared/protocol` is owned here only for neutral shared wire semantics. Desktop HTTP request routing/authentication/session behavior remains Desktop Runtime.
 
 ## Current canonical contracts
 
-### World Control V3
+### World Control V5
 
-Product-facing world control intentionally excludes stale runtime-state machinery.
+Current general managed-world contract includes:
+
+```text
+ListWorlds + canManage/canTeleport
+CreateWorld
+TeleportWorld
+ArchiveWorld / RestoreWorld
+DuplicateWorld
+DeleteWorld
+world settings
+ExportWorld / ImportWorld
+GetExportFormats / ExportFormats
+InspectImport
+DiscardImport
+```
+
+`WorldSummary` carries durable/presentation metadata only.
 
 Do not reintroduce:
 
@@ -63,25 +78,9 @@ autoLoad in WorldSummary
 CloneWorld
 ```
 
-Current concepts include:
-
-```text
-ListWorlds + canManage/canTeleport
-CreateWorld
-TeleportWorld
-ArchiveWorld / RestoreWorld
-DuplicateWorld
-DeleteWorld
-settings requests
-ExportWorld / ImportWorld
-GetExportFormats / ExportFormats
-```
-
-`WorldSummary` carries durable/presentation world metadata only.
+Import inspection is a read-only review step after upload completion. Final Import is a separate explicit mutation and must re-run authoritative validation. `DiscardImport` cleans only the requesting player's currently owned reviewed artifact.
 
 ### Map Action V2
-
-Owns spatial map intents plus authoritative current-world presentation state:
 
 ```text
 TeleportLocation
@@ -91,94 +90,107 @@ CurrentWorldResult
 CurrentWorldCleared
 ```
 
-Paper may push current-world changes when the player's actual world changes. An unmanaged world must explicitly clear previous managed-world state.
+Entering an unmanaged world explicitly clears previous managed-world presentation state.
 
 ### Transfer
 
-File bytes stay on `lazybuilder:transfer`; do not tunnel files through World or Map payloads and do not introduce an extra HTTP/WebSocket/cloud path for in-game transfer.
-
-## Failure patterns
-
-Classify the shared-contract failure before editing:
+`lazybuilder:transfer` owns file bytes only.
 
 ```text
-SHAPE             producer/consumer disagree on request/result structure
-VALIDATION        invalid or oversized input is accepted/rejected incorrectly
-DEFAULT_OPTIONAL  absence/default semantics diverge between ends
-IDENTIFIER        entity/world/request identifiers are unstable or ambiguous
-VERSIONING        breaking compatibility is hidden or unnecessary version churn occurs
-CAPABILITY        advertised capability differs from verified backend support
-ADAPTER_DRIFT     shared type is correct but Paper/Fabric adapter is stale
-TRANSPORT_LEAK    transport/implementation detail has entered neutral contract
-DOMAIN_LEAK       Paper/world business rule has entered shared contract
-PRESENTATION_LEAK UI-only state has entered shared contract
-TRANSFER_BOUND    shared transfer size/chunk/order/integrity rule is unsafe
-UNKNOWN           evidence cannot yet separate the above
+BEGIN
+→ bounded session/chunks/window
+→ ordered transfer
+→ size + SHA-256 validation
+→ FINISH / ABORT
 ```
 
-Fix the neutral contract only when it is the first wrong owner. `ADAPTER_DRIFT` usually means the shared contract needs no change.
+Do not tunnel files through World/Map payloads and do not create a second HTTP/WebSocket/cloud transfer plane for in-game world transfer.
 
-## Procedure
+## Failure taxonomy
+
+```text
+SHAPE             producer/consumer disagree on payload structure
+VALIDATION        malformed/oversized input rules are wrong
+DEFAULT_OPTIONAL  absence/default semantics diverge
+IDENTIFIER        world/request/entity identifiers are unstable/ambiguous
+VERSIONING        breaking compatibility is hidden or version churn is unnecessary
+CAPABILITY        advertised capability differs from verified backend support
+ADAPTER_DRIFT     neutral contract is correct; Paper/Fabric adapter is stale
+TRANSPORT_LEAK    implementation/transport detail entered neutral contract
+DOMAIN_LEAK       Paper/world business rule entered neutral contract
+PRESENTATION_LEAK UI-only state entered neutral contract
+TRANSFER_BOUND    chunk/window/order/integrity/session rule is unsafe
+UNKNOWN           evidence cannot separate the above
+```
+
+`ADAPTER_DRIFT` usually means the shared contract should not change.
+
+## Versioning rules
+
+- bump protocol compatibility only for an actual incompatible wire contract;
+- additive optional data does not automatically justify a version bump when old/new peers can still interoperate safely;
+- removed/renamed required fields or changed semantics require explicit compatibility reasoning;
+- compatibility shims exist only for a supported real consumer and must have a retirement condition;
+- do not maintain parallel active protocol versions for hypothetical future compatibility.
+
+## Canonical procedure
 
 ```text
 name exact caller-visible contract
 → identify direct producer + consumer
-→ capture one failing/mismatched round trip or contract example
+→ capture one failing/mismatched round trip
 → classify failure
-→ prove it is a shared wire concern
+→ prove shared protocol is the first wrong owner
 → reuse existing neutral type/validation
 → change smallest payload/semantic surface
-→ bump compatibility/version only when actually required
+→ change version only when compatibility requires it
 → update direct Paper/Fabric adapters lockstep
 → update focused round-trip/validation tests
-→ targeted compile/contract proof
-→ hand domain or presentation residue to its owner
+→ targeted build/contract proof
+→ hand domain/presentation residue to its owner
 → STOP
 ```
 
-## Protocol invariants
+## Invariants
 
 - neutral contracts never depend on Paper implementation classes;
-- shared types are not duplicated in World Manager or Fabric;
-- requests/results stay small, typed, bounded, and transport-neutral;
-- version bumps are intentional when compatibility is broken;
-- no fallback formats, parallel active protocol paths, or command-string tunneling without a supported compatibility requirement;
-- server remains authorization/domain authority even when capability flags are sent for presentation;
+- shared types are not duplicated inside World Manager or Fabric;
+- payloads stay small, typed, bounded, and transport-neutral;
+- Paper remains authorization/domain authority even when capability flags are sent for presentation;
 - capability catalogs contain only verified backend-supported values;
+- optional/default semantics are defined once and tested at both ends;
+- malformed/oversized data fails deterministically at the wire boundary;
+- desktop loopback and Minecraft client/server data planes remain separate;
 - implementation-language/build mechanics are not protocol changes;
-- desktop loopback control and Minecraft client/server data plane remain separate boundaries;
-- optional/default semantics are defined once in the shared contract and tested at both ends;
-- malformed/oversized data must fail deterministically at the wire boundary rather than becoming domain/UI state;
-- a compatibility shim exists only for a supported real consumer and has an explicit retirement condition;
-- protocol fields do not exist solely to simplify one renderer or one implementation class.
+- file transfer ownership handoff is explicit; completed bytes never become an unowned inbox;
+- no fallback formats, command-string tunneling, second transport, or generic compatibility framework without a supported requirement;
+- protocol fields do not exist solely to simplify one renderer or implementation class.
 
 ## Proof matrix
 
 ```text
 shape / encode-decode / validation / defaults
-→ focused shared round-trip or contract test
+→ focused shared round-trip/contract test
 
-Paper and Fabric adapter alignment
-→ compile/build tests for both direct consumers
+Paper + Fabric adapter alignment
+→ build tests for both direct consumers
 
 capability catalog
-→ contract test against the authoritative backend-supported values
+→ contract test against authoritative backend-supported values
 
-compatibility/version migration
-→ old/new fixture or explicit supported-version contract test
+compatibility migration
+→ old/new fixture or explicit supported-version test
 
-real client/server interoperability, ordering, disconnect/reconnect timing
+real ordering/disconnect/reconnect/plugin-channel behavior
 → LIVE_SERVER + real Fabric client using exact artifacts
 ```
 
-Compile success does not prove a round trip. A round-trip unit test does not prove live plugin-channel timing or reconnect behavior.
+Compile success does not prove a round trip. Unit round trip does not prove live plugin-channel timing.
 
 ## Handoff / exit contract
 
-Sequential ownership only:
-
 ```text
-neutral payload/validation becomes correct
+neutral payload/validation correct
 → lazybuilder-world-management implements Paper/domain behavior
 → lazybuilder-ui presents returned state when needed
 ```
@@ -188,9 +200,9 @@ Desktop HTTP remains outside this chain and routes to `lazybuilder-desktop-runti
 Finish when:
 
 - one neutral shared definition exists;
-- producer and consumer adapters agree with it;
-- version/default/bounds semantics are explicit;
-- matching round-trip/build proof is complete for the current context;
+- direct producer and consumer agree with it;
+- version/default/bounds/capability semantics are explicit;
+- matching round-trip/build proof is complete for the available context;
 - remaining domain/UI/live interoperability residue is named precisely.
 
-Do not create a second protocol namespace, generic compatibility framework, or transport solely for future possibilities.
+Do not create a second protocol namespace, transport, compatibility framework, or speculative payload surface.
