@@ -8,23 +8,33 @@ public final class BackgroundResourcePolicy {
     private int lastAppliedLimit = Integer.MIN_VALUE;
 
     public void update(MinecraftClient client, PerformancePreferences preferences) {
-        if (client == null || client.getWindow() == null) return;
+        if (client == null || client.getWindow() == null || preferences == null) return;
 
         int userLimit = client.options.getMaxFps().getValue();
-        int targetLimit = userLimit;
-
-        if (preferences.backgroundFpsPolicy()) {
-            Window window = client.getWindow();
-            if (window.isMinimized()) {
-                targetLimit = Math.min(userLimit, preferences.minimizedFpsLimit());
-            } else if (!client.isWindowFocused()) {
-                targetLimit = Math.min(userLimit, preferences.unfocusedFpsLimit());
-            }
-        }
+        Window window = client.getWindow();
+        int targetLimit = targetLimit(
+                userLimit,
+                preferences,
+                client.isWindowFocused(),
+                window.isMinimized()
+        );
 
         if (targetLimit != lastAppliedLimit) {
             client.getInactivityFpsLimiter().setMaxFps(targetLimit);
             lastAppliedLimit = targetLimit;
         }
+    }
+
+    static int targetLimit(
+            int userLimit,
+            PerformancePreferences preferences,
+            boolean focused,
+            boolean minimized
+    ) {
+        int safeUserLimit = Math.max(1, userLimit);
+        if (preferences == null || !preferences.backgroundFpsPolicy()) return safeUserLimit;
+        if (minimized) return Math.min(safeUserLimit, preferences.minimizedFpsLimit());
+        if (!focused) return Math.min(safeUserLimit, preferences.unfocusedFpsLimit());
+        return safeUserLimit;
     }
 }
