@@ -20,6 +20,7 @@
       'backup-server': 'Backup server',
       'restore-server': 'Restore server',
       'repair-server': 'Repair server',
+      'export-support-bundle': 'Export support bundle',
       'launcher-update': 'Launcher update',
       'download-runtime': 'Runtime download'
     };
@@ -89,8 +90,6 @@
 
   onMount(() => {
     void refresh(true);
-    // Snapshot queries remain authoritative. Poll while this surface is mounted so
-    // background operations that start after the page opens are also discovered.
     const timer = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(timer);
   });
