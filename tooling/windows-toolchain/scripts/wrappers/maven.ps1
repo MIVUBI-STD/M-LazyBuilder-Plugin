@@ -23,6 +23,24 @@ function Invoke-Download([string]$Uri, [string]$OutFile) {
     Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile
 }
 
+function Get-FileDigest([string]$Path, [string]$Algorithm) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $hasher = $null
+    try {
+        switch ($Algorithm) {
+            'SHA512' { $hasher = [System.Security.Cryptography.SHA512]::Create() }
+            'SHA256' { $hasher = [System.Security.Cryptography.SHA256]::Create() }
+            default { throw "Unsupported hash algorithm: $Algorithm" }
+        }
+        $bytes = $hasher.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        if ($hasher) { $hasher.Dispose() }
+        $stream.Dispose()
+    }
+}
+
 function Ensure-Maven {
     if (Test-Path $Executable) { return }
     New-Item -ItemType Directory -Force -Path $CacheRoot | Out-Null
@@ -35,7 +53,7 @@ function Ensure-Maven {
         Invoke-Download $ArchiveUrl $Archive
         Invoke-Download $ChecksumUrl $ChecksumFile
         $Expected = ((Get-Content $ChecksumFile -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-        $Actual = (Get-FileHash -Algorithm SHA512 -Path $Archive).Hash.ToLowerInvariant()
+        $Actual = Get-FileDigest $Archive 'SHA512'
         if ($Actual -ne $Expected) {
             Remove-Item $Archive -Force -ErrorAction SilentlyContinue
             throw "Maven $Version checksum verification failed. Expected $Expected, got $Actual."
