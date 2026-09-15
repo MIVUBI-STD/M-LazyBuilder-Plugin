@@ -1,12 +1,19 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::OperationRegistry;
-use crate::engine::{server_process_guard, workspace_registry};
+use crate::engine::workspace_registry;
 use std::path::PathBuf;
 use tauri::State;
 
 #[tauri::command]
 pub fn workspace_location_pick(id: String) -> CommandResult<Option<String>> {
     let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
+    let current = PathBuf::from(&entry.path);
+    if current.is_dir() {
+        return Err(CommandError::new(
+            "WORKSPACE_LOCATION_AVAILABLE",
+            "This server location is still available. Locate is only for reconnecting a missing or moved server.",
+        ));
+    }
     Ok(rfd::FileDialog::new()
         .set_title(format!("Locate {}", entry.name))
         .pick_folder()
@@ -29,9 +36,11 @@ pub fn workspace_location_reconnect(
     }
 
     let previous = workspace_registry::get(&id).map_err(CommandError::from)?;
-    let previous_root = PathBuf::from(&previous.path);
-    if previous_root.is_dir() {
-        server_process_guard::ensure_root_not_running(&previous_root).map_err(CommandError::from)?;
+    if PathBuf::from(&previous.path).is_dir() {
+        return Err(CommandError::new(
+            "WORKSPACE_LOCATION_AVAILABLE",
+            "This server location is still available. LazyBuilder will not repoint an existing server to a second copy.",
+        ));
     }
 
     workspace_registry::relocate(&id, &PathBuf::from(root_path))
