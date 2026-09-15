@@ -18,6 +18,8 @@ pub fn run() {
             commands::launcher_settings::launcher_settings_get,
             commands::launcher_settings::launcher_settings_save,
             commands::server_health::launcher_server_health,
+            commands::server_health::launcher_server_repair_plan,
+            commands::server_health::launcher_server_repair,
             commands::operations::launcher_operation_list,
             commands::operations::launcher_operation,
             commands::operations::launcher_operation_cancel,
