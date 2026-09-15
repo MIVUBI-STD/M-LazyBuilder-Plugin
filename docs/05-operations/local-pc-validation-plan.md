@@ -1,21 +1,37 @@
 # Local PC Validation Plan
 
-This is the canonical handoff for the next LazyBuilder phase after `REMOTE_GITHUB` is green.
+This is the canonical **later** target-machine acceptance plan. It is not active while source remediation is open.
 
-The purpose of this phase is **not** to add features or redesign architecture. The purpose is to install and use the current `Local` product on a representative Windows PC, starting from the installer and continuing through Launcher, Paper plugins, Fabric mods, and real Minecraft workflows.
+## Entry gate
+
+Do not begin this plan until all of the following are true for the exact candidate `Local` revision:
+
+```text
+source remediation complete
+→ remediation authority has no unresolved source-side P0/P1 item
+→ Verify green
+→ applicable Paper Runtime Proof green
+→ canonical NSIS artifact produced and smoke-verified
+→ final source/repository audit clean
+→ explicit decision to reopen Local PC acceptance
+```
+
+Current remediation authority:
+
+[`local-pc-remediation-2026-09-15.md`](local-pc-remediation-2026-09-15.md)
 
 ## Test authority
 
 ```text
 Repository/source authority : Local
-Remote proof                : latest successful Verify + Paper Runtime Proof
+Remote proof                : exact successful Verify + applicable Paper Runtime Proof
 Target-machine proof        : this Local PC validation plan
 Stable/release authority    : main, only after explicit promotion
 ```
 
-Do not build from source on the Local PC for normal acceptance testing. Test the canonical installer artifact produced by the successful `Verify` run for the exact `Local` commit under test.
+Do not build from source on the Local PC for normal acceptance testing. Test the canonical installer artifact produced by the successful `Verify` run for the exact candidate revision.
 
-Record the exact build before testing:
+Record:
 
 ```text
 Local commit SHA :
@@ -27,201 +43,144 @@ PC / disk notes  :
 Test date        :
 ```
 
-Use `build-info.json` and `SHA256SUMS.txt` from the canonical Local package as provenance.
+Use `build-info.json` and `SHA256SUMS.txt` as provenance.
 
----
+## Canonical product under acceptance
+
+```text
+Desktop
+├── Server Manager
+├── Plugin Manager
+└── Client Setup
+
+Paper
+├── World Manager
+└── Utilities Manager
+
+Fabric client suite
+├── Map Manager
+├── Utility Manager
+└── Performance Manager
+```
+
+All three Fabric managers are required members of one Client Setup transaction. Third-party Modrinth mods remain outside LazyBuilder ownership.
 
 # Acceptance sequence
 
-Run the phases in order. Do not skip ahead when an earlier foundation is broken.
+Run phases in order:
 
 ```text
-1. INSTALLER
-   ↓
-2. LAUNCHER FIRST RUN
-   ↓
-3. MANAGED JAVA + PAPER SERVER
-   ↓
-4. PLUGIN MANAGER
-   ↓
-5. WORLD MANAGER PAPER FUNCTIONS
-   ↓
-6. UTILITIES MANAGER PAPER FUNCTIONS
-   ↓
-7. MODRINTH / CLIENT SETUP
-   ↓
-8. MAP MANAGER FABRIC FUNCTIONS
-   ↓
-9. UTILITY MANAGER FABRIC FUNCTIONS
-   ↓
-10. PAPER ↔ FABRIC INTEROPERABILITY
-   ↓
-11. RESTART / RECOVERY / UPDATE
-   ↓
-12. LARGE-WORLD / STORAGE / CONVERSION TESTS
+0. clean-machine preparation
+1. installer
+2. Launcher first run
+3. managed Java + Paper server
+4. Plugin Manager
+5. World Manager Paper functions
+6. Utilities Manager Paper functions
+7. Modrinth / Client Setup
+8. Map Manager Fabric functions
+9. Utility + Performance Manager Fabric functions
+10. Paper ↔ Fabric interoperability
+11. restart / recovery / update
+12. large-world / storage / conversion
 ```
-
-Performance Manager is deferred research source. If the current installer still bundles it because of transitional packaging, confirm only that it does not break startup or introduce a hidden dependency. Do not expand its feature scope during this Local PC phase.
-
----
 
 ## Phase 0 — clean-machine preparation
 
-Preferred first test environment:
+Preferred environment:
 
 - Windows 10/11 x64;
-- no requirement for Node.js, Rust, Maven, Gradle, Python, Git, or Visual Studio Build Tools;
 - normal user account;
-- enough free disk space for Minecraft, server workspace, backups, imports/exports, and test worlds;
-- Modrinth App installed only when Client Setup testing begins;
-- Minecraft Java Edition 1.21.4 available for real client testing.
+- no requirement for Node.js, Rust, Maven, Gradle, Python, Git, or Visual Studio Build Tools;
+- enough free space for Minecraft, server workspace, backups, transfers and conversion;
+- Modrinth App introduced only when Client Setup testing begins;
+- Minecraft Java Edition 1.21.4 available for client testing.
 
-Before installation, confirm LazyBuilder is not relying on a developer shell, source checkout, global Maven/Gradle, or manually prepared JARs.
-
-**PASS:** the test PC can begin with the installer package only.
-
----
+**PASS:** acceptance can start from the installer package only.
 
 ## Phase 1 — installer
 
-Test the canonical file:
+Test `LazyBuilder-Setup-Local.exe`.
 
-```text
-LazyBuilder-Setup-Local.exe
-```
+Verify:
 
-Check:
+- clean install and update-over-existing-install;
+- current-user installation/uninstall registration;
+- app launches without developer tooling;
+- no global `TEMP`, `TMP`, `PATH`, `JAVA_HOME`, Node, Rust, Maven, Gradle or Python mutation;
+- normal LazyBuilder user/workspace data remains outside the app install directory;
+- reinstall/repair/update does not destroy workspace or profile state.
 
-- installer opens normally;
-- installation works without developer tools;
-- install location is appropriate for a current-user app;
-- Windows uninstall registration exists;
-- app launches after install;
-- no global `PATH`, `JAVA_HOME`, Node, Rust, Maven, Gradle, or Python configuration is changed;
-- normal LazyBuilder user data is outside the application installation directory;
-- reinstall/repair does not destroy existing workspace data;
-- uninstall behavior is understandable and does not unexpectedly delete server worlds/user data.
-
-Also test one update-over-existing-install case after the first clean-install pass succeeds.
-
-**PASS:** a normal user can install/open/update LazyBuilder without a terminal or source code.
-
----
+**PASS:** normal user install/update works without terminal/source setup.
 
 ## Phase 2 — Launcher first run
 
-Open LazyBuilder normally from the installed application.
+Verify:
 
-Check:
-
-- Launcher opens without requiring Java to be globally installed;
-- main surfaces render correctly;
+- Launcher opens without global Java;
 - no blank/frozen window;
-- paths shown to the user are valid;
-- missing prerequisites are reported clearly;
-- closing and reopening preserves only the state intended to persist;
-- no stale workspace is silently treated as current authority;
-- errors remain visible and actionable.
+- errors/prerequisites are actionable;
+- Server Manager, Plugin Manager and Client Setup open normally;
+- intended persisted state survives restart while transient authority does not;
+- Launcher log records the LazyBuilder-owned runtime temp path.
 
-Exercise the primary Launcher areas:
+Expected runtime temp:
 
 ```text
-Server Manager
-Plugin Manager
-Client Setup
+%LOCALAPPDATA%\LazyBuilder\temp
 ```
 
-**PASS:** Launcher is usable as the normal entrypoint and does not require developer intervention.
-
----
+**PASS:** Launcher is the normal entrypoint with no developer intervention.
 
 ## Phase 3 — managed Java and Paper server
 
-From Launcher, exercise the server path rather than manually installing Java for LazyBuilder.
+Verify:
 
-Check:
+- managed Java 21 provisioning;
+- Paper 1.21.4 provisioning;
+- create/open/adopt workspace;
+- start → ready → stop → start/restart;
+- no loopback/`Invalid argument: connect` failure;
+- duplicate start blocked safely;
+- unexpected exit surfaced;
+- detached process reconciled/recovered safely;
+- restart can recover both `Stopping` and `Detached` states without killing unrelated Java processes;
+- workspace/process state survives Launcher restart correctly.
 
-- Java 21 is provisioned when server functionality needs it;
-- managed runtime is placed under LazyBuilder-owned application data;
-- Java validation succeeds;
-- Paper 1.21.4 can be provisioned;
-- server workspace can be created/opened/adopted according to current UI;
-- server starts;
-- server reaches ready state;
-- stop works cleanly;
-- restart works;
-- Launcher state matches actual process state;
-- duplicate start attempts are handled safely;
-- abnormal process exit is surfaced correctly;
-- after Launcher restart, process/workspace state is reconciled correctly.
-
-**PASS:** a user can reach a healthy Paper 1.21.4 server entirely through LazyBuilder.
-
----
+**PASS:** healthy Paper can be operated entirely through LazyBuilder.
 
 ## Phase 4 — Plugin Manager
 
-Use a real test server workspace.
+With Paper offline, exercise representative third-party plugins:
 
-Verify inventory and lifecycle behavior for representative third-party Paper plugins:
-
-- installed plugin detection;
-- install flow;
-- update flow where supported;
-- compatibility/dependency reporting;
+- detection/install/update;
 - duplicate handling;
-- disable/enable behavior;
-- safe JAR removal;
-- plugin data preservation;
-- restart-required behavior;
-- rollback/recovery behavior where implemented;
-- Launcher restart does not lose authoritative plugin state.
+- enable/disable;
+- safe JAR removal while preserving plugin data;
+- restart-required reporting;
+- rollback/recovery where implemented;
+- mutations blocked while runtime state makes them unsafe;
+- protected LazyBuilder core plugins cannot be removed as normal third-party plugins.
 
-Do not treat GitHub CI packaging as proof of this long-lived user-server behavior.
-
-**PASS:** Plugin Manager can manage representative plugins without corrupting server/plugin data.
-
----
+**PASS:** plugin lifecycle works without corrupting server/plugin data.
 
 ## Phase 5 — World Manager Paper functions
 
-Use the installed World Manager plugin through the normal product surfaces.
+Verify installed-product behavior for:
 
-Verify at minimum:
-
-- managed world list;
-- create world;
-- world settings read/write;
-- teleport into a managed world;
-- archive;
-- restore;
-- duplicate;
-- backup;
+- world list/create/settings/teleport;
+- archive/restore/duplicate/backup;
 - native Java export;
-- upload/import;
+- authenticated upload/import;
 - delete;
-- persistence after Paper restart;
-- persistence after Launcher restart;
-- world IDs and settings still resolve after restart.
+- world ID/settings persistence across Paper/Launcher restart;
+- interrupted operation cleanup/recovery.
 
-Then exercise failure/recovery cases:
-
-- cancel/interrupt a large copy where practical;
-- restart after a staged workspace exists;
-- interrupted transfer partial cleanup;
-- completed-upload ownership after restart;
-- interrupted export/backup temporary cleanup;
-- converter runtime recovery where practical.
-
-Remote Paper Runtime Proof already covers the basic lifecycle mechanically. Local PC testing is for installed-machine behavior, real disk/filesystem behavior, real user interaction, and defects that CI cannot reproduce faithfully.
-
-**PASS:** all accepted world operations work through the installed product and survive restart/recovery correctly.
-
----
+**PASS:** accepted world operations survive persistence and recovery correctly.
 
 ## Phase 6 — Utilities Manager Paper functions
 
-With a real player connected, test the actual implemented Utilities Manager features under its current categories:
+With a real player, verify implemented server utility categories:
 
 ```text
 World Safety
@@ -229,118 +188,100 @@ Movement
 Build Helpers
 ```
 
-Verify behavior in gameplay, permissions where applicable, server restart persistence where applicable, and absence of unwanted interaction with World Manager.
+Check permissions, restart persistence where applicable, and absence of ownership overlap with World Manager.
 
-**PASS:** server utilities behave correctly with a real player and do not create hidden dependencies between managers.
-
----
+**PASS:** utilities work with a real player without hidden cross-manager dependency.
 
 ## Phase 7 — Modrinth / Client Setup
 
-Install/use Modrinth App as the external Minecraft profile authority.
+Use a representative Minecraft 1.21.4 Fabric profile.
 
-Create or use a representative Minecraft 1.21.4 Fabric profile and launch it at least once before compatibility verification when required by current detection logic.
+Verify:
 
-Test:
-
-- Modrinth profile discovery;
-- manual profile selection if automatic discovery is insufficient;
-- Minecraft 1.21.4 validation;
-- Fabric validation;
+- profile discovery/manual selection;
+- compatibility reporting;
 - selected profile persistence;
-- LazyBuilder client status;
-- Sync Client;
-- install/update/repair of LazyBuilder-owned client JARs;
-- unrelated mods remain untouched;
-- repeated Sync Client is idempotent;
-- profile path errors are visible;
-- profile switching behaves correctly.
-
-Intended V1 required Fabric product scope:
+- sync blocked while profile is in use;
+- transactional `Sync Client`;
+- exactly one current JAR for each required manager:
 
 ```text
-Map Manager
-Utility Manager
+lazybuilder-map-manager-*.jar
+lazybuilder-utility-manager-*.jar
+lazybuilder-performance-manager-*.jar
 ```
 
-Performance Manager remains deferred even if transitional packaging currently includes its JAR.
+- old/duplicate LazyBuilder-owned versions cleaned;
+- unrelated third-party mods byte-for-byte untouched;
+- repeated sync is idempotent;
+- rollback restores the previous complete three-manager set if publishing fails;
+- moved/missing profiles remain visible as unavailable rather than silently recreated.
 
-**PASS:** LazyBuilder can safely synchronize its own client components into a real Modrinth profile without becoming a second Minecraft launcher or general mod manager.
-
----
+**PASS:** Client Setup safely owns only the three LazyBuilder client components.
 
 ## Phase 8 — Map Manager Fabric functions
 
-Launch Minecraft through Modrinth using the synchronized profile.
+In real Minecraft, verify:
 
-Check the actual in-client Map Manager surface and input behavior:
+- UI/input behavior;
+- managed-world/current-world presentation;
+- settings/lifecycle presentation;
+- map surface/navigation/teleport;
+- import/export transfer UI;
+- progress/error/cancel behavior;
+- reconnect does not leave stale map/transfer state.
 
-- UI opens/closes correctly;
-- input does not conflict unexpectedly with Minecraft;
-- managed-world list appears from the server;
-- current world presentation is correct;
-- lifecycle/settings presentation is correct;
-- navigation/teleport actions work with a real player;
-- Import/Export UI works;
-- transfer progress/error states are understandable;
-- Map Export Area behavior works where implemented;
-- reconnect does not leave stale client state.
+**PASS:** Map Manager works against the real Paper World Manager.
 
-**PASS:** Map Manager works inside a real Minecraft client against the real Paper server.
+## Phase 9 — Utility + Performance Manager Fabric functions
 
----
+### Utility Manager
 
-## Phase 9 — Utility Manager Fabric functions
+Verify:
 
-Exercise the currently implemented passive client conveniences, including where applicable:
+- extended chat history;
+- unsent chat draft behavior;
+- disconnect details copy action;
+- Reconnect on `DisconnectedScreen`;
+- Reconnect fallback when flow returns directly to `MultiplayerScreen`/server list;
+- resource reload completion notice;
+- contextual screenshot naming when enabled;
+- borderless-window behavior when enabled;
+- preference persistence.
 
-- chat/session convenience;
-- disconnect/reconnect presentation;
-- borderless-window presentation;
-- reload notification;
-- screenshot naming;
-- local preferences.
+### Performance Manager
 
-Verify settings persistence and confirm it has no hidden implementation dependency on Map Manager or Performance Manager.
+Verify:
 
-**PASS:** Utility Manager works independently and remains non-destructive to unrelated client state.
+- mod loads independently;
+- frame-time pressure diagnostics remain bounded/passive;
+- unfocused/minimized FPS policy behaves as documented;
+- on-demand performance/window/workload status works;
+- no required external optimization mod;
+- no hidden control over Map Manager or Utility Manager implementation internals.
 
----
+**PASS:** both managers function inside real Minecraft within their architecture boundaries.
 
 ## Phase 10 — Paper ↔ Fabric interoperability
 
-Test the full installed stack together:
+Test the full installed stack:
 
 ```text
 Launcher
 → Paper 1.21.4
 → World Manager / Utilities Manager
 → Modrinth Fabric 1.21.4
-→ Map Manager / Utility Manager
+→ Map / Utility / Performance Managers
 → real player
 ```
 
-Check:
+Verify protocol connection, permissions, world synchronization, teleport/navigation, transfers, disconnect/reconnect, Paper restart while client is present, client restart while server remains running, and cleanup of stale pending UI/task state.
 
-- protocol connection after joining server;
-- permissions;
-- world list synchronization;
-- settings actions;
-- teleport/navigation;
-- import/export transfer;
-- disconnect;
-- reconnect;
-- server restart while client is present;
-- client restart while server stays running;
-- no stale pending UI/task state after recovery.
-
-**PASS:** components operate as one product while retaining their documented ownership boundaries.
-
----
+**PASS:** all components operate as one product while retaining documented ownership.
 
 ## Phase 11 — restart, recovery, update
 
-Run a deliberate restart matrix:
+Run:
 
 ```text
 A. Launcher restart only
@@ -348,74 +289,34 @@ B. Paper restart only
 C. Minecraft client restart only
 D. Launcher + Paper restart
 E. full PC reboot
+F. installer update over existing installation
 ```
 
-After each case verify:
+After each case verify workspace/world/plugin/profile/client-JAR integrity, no false process conflict, no stale temporary ownership, and no manual filesystem repair requirement.
 
-- workspace remains intact;
-- worlds remain intact;
-- registry/settings remain intact;
-- plugin state remains understandable;
-- selected client profile remains correct;
-- LazyBuilder-owned client JAR state remains correct;
-- no transient work/temp ownership state causes a false conflict;
-- app/server/client can continue without manual filesystem repair.
+**PASS:** normal restart/update paths preserve user state and recover transient state safely.
 
-Then test one normal LazyBuilder installer update over the existing installation and repeat the essential smoke path.
+## Phase 12 — large-world, storage and conversion
 
-**PASS:** normal restart/update paths preserve user state and recover transient runtime state safely.
+Only after Phases 1–11 pass, use representative worlds (~100–500 MB, ~2 GB, ~10 GB where safe).
 
----
+Exercise duplicate, backup, export, import, transfer and safe interruption/recovery. Record free disk, elapsed time, temporary disk growth, result and cleanup.
 
-## Phase 12 — large-world, disk-pressure and conversion tests
+For Java↔Bedrock conversion verify:
 
-Do this only after Phases 1–11 are stable.
+- automatic stable conversion runtime bootstrap;
+- checksum/compatibility gate behavior;
+- supported targets surfaced from runtime capability;
+- representative Java→Bedrock and Bedrock→Java quality;
+- rollback/retry behavior after a controlled bootstrap or conversion failure.
 
-Use representative worlds rather than synthetic architecture changes.
+Never intentionally exhaust the OS drive.
 
-Suggested progression:
-
-```text
-~100–500 MB
-~2 GB
-~10 GB if the test PC has enough safe free space
-larger only when there is a concrete production need
-```
-
-For each representative size exercise the relevant operations:
-
-- Duplicate;
-- Backup;
-- Export;
-- Import;
-- transfer where applicable;
-- restart/recovery after a deliberately interrupted operation where safe.
-
-Record:
-
-```text
-world size
-operation
-elapsed time
-free disk before
-affected storage root
-peak/observed disk growth
-result
-cleanup result after failure/restart
-error text if any
-```
-
-Also test storage-pressure behavior on a controlled test volume or otherwise safe environment. Do not intentionally fill the OS drive to a dangerous level.
-
-For conversion, use representative Java↔Bedrock worlds and evaluate output quality, not only process exit code.
-
-**PASS:** large-world operations fail early when capacity is insufficient, complete without orphaned transactional data when capacity is sufficient, and produce acceptable conversion results for representative content.
-
----
+**PASS:** large operations fail early when unsafe, clean transactional state correctly, and produce acceptable representative conversion output.
 
 # Defect recording
 
-For every failure, record this minimum block before changing source:
+For every failure record:
 
 ```text
 TEST ID / PHASE:
@@ -433,38 +334,17 @@ relevant log path/file:
 first suspected owner:
 ```
 
-Capture screenshots/logs only when they add evidence. Do not fix multiple unrelated owners in one change.
-
-Priority classification:
+Priority:
 
 ```text
 P0  data loss / destructive corruption / unsafe install
 P1  installer, Launcher, server, plugin or required client path unusable
 P2  accepted feature broken but workaround exists
-P3  polish / non-blocking UX issue
+P3  polish / non-blocking UX
 ```
 
----
-
-# Local PC STOP rule
+# STOP rule
 
 Do not promote `Local` to `main` merely because remote CI is green.
 
-The Local PC phase is ready for final audit/promotion discussion only when:
-
-```text
-installer clean install/update works
-AND Launcher first-run works
-AND managed Java/Paper works
-AND Plugin Manager representative flow works
-AND World Manager accepted flow works
-AND Utilities Manager real-player flow works
-AND Client Setup works against real Modrinth profile
-AND Map Manager works in real Minecraft
-AND Utility Manager works in real Minecraft
-AND disconnect/reconnect/restart matrix is acceptable
-AND representative large-world/storage/conversion tests are acceptable
-AND no unresolved P0/P1 defect remains
-```
-
-After that, perform one final repository audit/cleanup. Only then decide explicitly whether the validated `Local` revision should be promoted to `main`.
+Promotion discussion begins only when all installed-product phases pass and no unresolved P0/P1 remains. Then perform one final repository audit and make an explicit promotion decision.
