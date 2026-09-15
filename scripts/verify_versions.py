@@ -14,6 +14,17 @@ NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 errors: list[str] = []
 
+toolchain = json.loads((ROOT / "toolchain.json").read_text(encoding="utf-8"))
+if toolchain.get("schemaVersion") != 2:
+    errors.append(
+        f"toolchain.json schemaVersion: expected 2, found {toolchain.get('schemaVersion')!r}"
+    )
+
+NODE_MAJOR = str(toolchain.get("node", {}).get("major"))
+RUST_TOOLCHAIN = toolchain.get("rust", {}).get("toolchain")
+if NODE_MAJOR in {"", "None"} or not RUST_TOOLCHAIN:
+    errors.append("toolchain.json is missing canonical Node/Rust version targets")
+
 CLIENT_MANAGERS = {
     "map-manager": {
         "mod_id": "lazybuilder_map_manager",
@@ -33,6 +44,11 @@ CLIENT_MANAGERS = {
         "artifact": "lazybuilder-performance-manager",
         "package": "com.halokaryamedia.lazybuilder.performance.",
     },
+}
+
+EXPECTED_CLIENT_JARS = {
+    manager: f"{contract['artifact']}-{SNAPSHOT_VERSION}.jar"
+    for manager, contract in CLIENT_MANAGERS.items()
 }
 
 
@@ -73,24 +89,23 @@ for pom in (
 launcher_root = ROOT / "apps" / "launcher"
 package = json.loads((launcher_root / "package.json").read_text(encoding="utf-8"))
 expect("desktop package.json", package.get("version"), PRODUCT_VERSION)
-expect("desktop Node engine", package.get("engines", {}).get("node"), "24.x")
+expect("desktop Node engine", package.get("engines", {}).get("node"), f"{NODE_MAJOR}.x")
 
 package_lock = json.loads((launcher_root / "package-lock.json").read_text(encoding="utf-8"))
 expect("desktop package-lock.json", package_lock.get("version"), PRODUCT_VERSION)
 expect("desktop package-lock root package", package_lock.get("packages", {}).get("", {}).get("version"), PRODUCT_VERSION)
-
-toolchain = json.loads((ROOT / "toolchain.json").read_text(encoding="utf-8"))
-expect("toolchain Java major", str(toolchain.get("java", {}).get("major")), "21")
-expect("toolchain Node major", str(toolchain.get("node", {}).get("major")), "24")
-expect("toolchain Maven wrapper", toolchain.get("maven", {}).get("wrapperTarget"), "3.9.16")
-expect("toolchain Gradle wrapper", toolchain.get("gradle", {}).get("wrapperTarget"), "8.12")
+expect(
+    "desktop package-lock Node engine",
+    package_lock.get("packages", {}).get("", {}).get("engines", {}).get("node"),
+    f"{NODE_MAJOR}.x",
+)
 
 for wrapper_path in ("mvnw.cmd", "gradlew.bat"):
     if not (ROOT / wrapper_path).is_file():
         errors.append(f"repository toolchain wrapper is missing: {wrapper_path}")
 
 rust_toolchain_text = (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")
-if f'channel = "{toolchain.get("rust", {}).get("toolchain")}"' not in rust_toolchain_text:
+if f'channel = "{RUST_TOOLCHAIN}"' not in rust_toolchain_text:
     errors.append("rust-toolchain.toml does not match toolchain.json")
 
 tauri = json.loads((launcher_root / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
@@ -167,12 +182,7 @@ for label, prefix in (
     expect(label, match.group(1) if match else None, expected_name)
 
 client_integration = (launcher_root / "src-tauri/src/engine/client_integration.rs").read_text(encoding="utf-8")
-for required in (
-    "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
-    "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
-    "lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar",
-    "const MODS: [ClientModSpec; 3]",
-):
+for required in (*EXPECTED_CLIENT_JARS.values(), "const MODS: [ClientModSpec; 3]"):
     if required not in client_integration:
         errors.append(f"Client Setup V1 contract is missing required marker: {required}")
 if "profile.json" in client_integration:
@@ -208,11 +218,7 @@ for forbidden_ci in (
 ):
     if forbidden_ci in workflow:
         errors.append(f"Verify workflow restored a parallel/global build-tool path: {forbidden_ci}")
-for required_artifact in (
-    "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
-    "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
-    "lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar",
-):
+for required_artifact in EXPECTED_CLIENT_JARS.values():
     if required_artifact not in workflow:
         errors.append(f"Verify workflow is missing required V1 client artifact: {required_artifact}")
 
