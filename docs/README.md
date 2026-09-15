@@ -129,7 +129,9 @@ begin target-PC validation (only after remediation gate opens)
 7. Add another specialist only after semantic ownership actually changes.
 8. `05-operations/` is current-state context, not durable design authority.
 9. During remediation, fix reproduced/source-proven defects and synchronization contradictions before reopening target-machine acceptance.
-10. Git history owns superseded architecture and rationale.
+10. Supporting evidence is opt-in: audit, lock, status, handoff, migration, and historical remediation documents are loaded only when they can materially change the current decision or when historical proof/rationale is requested.
+11. Do not broad-scan evidence documents for reassurance after the canonical owner/source already answers the task.
+12. Git history owns superseded architecture and rationale.
 
 ## Authority Roles
 
@@ -138,6 +140,7 @@ Docs     = durable semantic policy / contracts
 Skills   = specialist execution procedure
 Source   = current implementation/runtime truth
 Ops docs = current remediation/continuation/proof and later Local PC handoff
+Evidence = supporting proof/history, opt-in only
 ```
 
 One concern must have one canonical semantic owner. Link instead of duplicating rules.
