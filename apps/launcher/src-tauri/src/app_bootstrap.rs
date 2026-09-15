@@ -4,7 +4,9 @@ use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry;
 
 pub fn run() {
-    let _ = workspace_registry::initialize();
+    if let Err(error) = workspace_registry::initialize() {
+        eprintln!("LazyBuilder workspace registry initialization failed: {error}");
+    }
 
     tauri::Builder::default()
         .manage(ServerManagerState::default())
