@@ -209,7 +209,15 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         Location spawn = world.getSpawnLocation();
         List<GameRuleSetting> rules = new ArrayList<>();
         for (GameRule<?> rule : GameRule.values()) {
-            Object value = world.getGameRuleValue(rule);
+            Object value;
+            try {
+                value = world.getGameRuleValue(rule);
+            } catch (IllegalArgumentException unavailableRule) {
+                // Bukkit may expose API constants for gamerules that are not registered by
+                // the running Paper/Minecraft version. Capability discovery must skip those
+                // optional rules instead of making the entire settings snapshot fail.
+                continue;
+            }
             if (value == null) continue;
             GameRuleValueType type;
             if (rule.getType().equals(Boolean.class)) type = GameRuleValueType.BOOLEAN;
