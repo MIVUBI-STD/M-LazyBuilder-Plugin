@@ -5,12 +5,13 @@
   import Plugins from './pages/Plugins.svelte';
   import Settings from './pages/Settings.svelte';
   import Client from './pages/Client.svelte';
+  import Activity from './pages/Activity.svelte';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, WorkspaceDuplicateEstimate, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
-  type GlobalPage = 'Servers' | 'Client';
+  type GlobalPage = 'Servers' | 'Activity' | 'Client';
   type LauncherMode = 'home' | 'create';
   type ManagementMode = 'active-actions' | 'duplicate' | 'remove' | 'delete-review' | 'delete-confirm' | null;
 
@@ -350,6 +351,7 @@
 
 {#snippet navIcon(item: Page | GlobalPage)}
   {#if item === 'Servers'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v5H4zM4 13.5h16v5H4z"/><path d="M7 8h.01M7 16h.01"/></svg>
+  {:else if item === 'Activity'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h3l2-5 4 10 2-5h5"/></svg>
   {:else if item === 'Client'}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="12" rx="2"/><path d="M9 20h6M12 17v3"/></svg>
   {:else if item === 'Overview'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11 8-7 8 7"/><path d="M6.5 10v9h11v-9M10 19v-5h4v5"/></svg>
   {:else if item === 'Worlds'}<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.8 12h16.4M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5S14.3 18.1 12 20.5M12 3.5C9.7 5.9 8.6 8.7 8.6 12s1.1 6.1 3.4 8.5"/></svg>
@@ -365,7 +367,8 @@
       <div class="brand-lockup navigation-brand"><div class="brand-mark">L</div><strong>LazyBuilder</strong></div>
       <nav class="global-nav" aria-label="Launcher navigation">
         <button class:active={globalPage === 'Servers' && !workspaceState.active} onclick={backToServers}><span class="nav-icon">{@render navIcon('Servers')}</span><span>Servers</span></button>
-        <button class:active={globalPage === 'Client'} onclick={() => (globalPage = 'Client')}><span class="nav-icon">{@render navIcon('Client')}</span><span>Client</span></button>
+        <button class:active={globalPage === 'Activity'} aria-current={globalPage === 'Activity' ? 'page' : undefined} onclick={() => (globalPage = 'Activity')}><span class="nav-icon">{@render navIcon('Activity')}</span><span>Activity</span></button>
+        <button class:active={globalPage === 'Client'} aria-current={globalPage === 'Client' ? 'page' : undefined} onclick={() => (globalPage = 'Client')}><span class="nav-icon">{@render navIcon('Client')}</span><span>Client</span></button>
       </nav>
       {#if workspaceState.active && globalPage === 'Servers'}
         <div class="nav-divider"></div>
@@ -376,7 +379,10 @@
     </aside>
 
     <section class="main-view">
-      {#if globalPage === 'Client'}
+      {#if globalPage === 'Activity'}
+        <header class="page-toolbar"><div><h1>Activity</h1><p>Track long-running Launcher work, progress, failures, and recovery state.</p></div></header>
+        <main class="content"><Activity /></main>
+      {:else if globalPage === 'Client'}
         <header class="page-toolbar"><div><h1>Client</h1><p>Connect and maintain the Minecraft client used with LazyBuilder.</p></div></header>
         <main class="content"><Client /></main>
       {:else if !workspaceState.active}
