@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import BackupPanel from './BackupPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { ServerLogTail, ServerPreflight, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
@@ -84,6 +85,8 @@
   {#if notice}<section class="notice success" aria-live="polite"><strong>Server control</strong><p>{notice}</p></section>{/if}
   {#if preflight.issues.length > 0 && ['Offline','Crashed','Detached'].includes(snapshot.state)}<details class="attention" open={!preflight.ready}><summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary><div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div></details>{/if}
   {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
+
+  <BackupPanel />
 </section>
 
 {#if logOpen}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && (logOpen = false)}><div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="server-log-title"><header><div><h2 id="server-log-title">Server log</h2><p>{logTail.path ? logTail.path.split(/[\\/]/).pop() : 'latest.log'}{logTail.truncated ? ' · showing recent lines' : ''}</p></div><button class="icon-button" aria-label="Close server log" onclick={() => (logOpen = false)}>×</button></header><pre>{logTail.content || 'No server log output is available yet.'}</pre><footer><button class="secondary" disabled={logBusy} onclick={loadLog}>{logBusy ? 'Refreshing…' : 'Refresh'}</button><button class="primary" onclick={() => (logOpen = false)}>Done</button></footer></div></div>{/if}
