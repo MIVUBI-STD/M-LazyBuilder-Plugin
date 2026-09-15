@@ -2,11 +2,13 @@ use crate::engine::workspace_registry;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::Disks;
 
 const BACKUP_SCHEMA_VERSION: u32 = 1;
 const MIN_BACKUP_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
+static NEXT_BACKUP_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,16 +44,19 @@ pub fn list(workspace_id: &str) -> Result<Vec<ServerBackupSummary>, String> {
     let entry = workspace_registry::get(workspace_id)?;
     let root = validated_workspace_root(&entry)?;
     let backup_root = backup_root_for(&root, workspace_id)?;
-    cleanup_stale_staging(&backup_root)?;
-    if !backup_root.is_dir() {
+    if !backup_root.exists() {
         return Ok(Vec::new());
+    }
+    reject_reparse_point(&backup_root)?;
+    if !backup_root.is_dir() {
+        return Err("Server backup location is not a directory".into());
     }
 
     let mut backups = Vec::new();
     for item in fs::read_dir(&backup_root).map_err(|error| format!("Could not read server backups: {error}"))? {
         let item = item.map_err(|error| error.to_string())?;
-        let file_type = item.file_type().map_err(|error| error.to_string())?;
-        if !file_type.is_dir() || is_reparse_point(&item.metadata().map_err(|error| error.to_string())?) {
+        let metadata = fs::symlink_metadata(item.path()).map_err(|error| error.to_string())?;
+        if !metadata.file_type().is_dir() || is_reparse_point(&metadata) {
             continue;
         }
         let backup_path = item.path();
@@ -76,10 +81,8 @@ pub fn estimate(workspace_id: &str) -> Result<ServerBackupEstimate, String> {
     let entry = workspace_registry::get(workspace_id)?;
     let source = validated_workspace_root(&entry)?;
     let destination = backup_root_for(&source, workspace_id)?;
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
     fs::create_dir_all(&destination).map_err(|error| format!("Could not prepare backup storage: {error}"))?;
+    reject_reparse_point(&destination)?;
     let source_bytes = directory_size_filtered(&source, Path::new(""))?;
     let margin = (source_bytes / 10).max(MIN_BACKUP_HEADROOM_BYTES);
     let required_bytes = source_bytes.saturating_add(margin);
@@ -95,7 +98,7 @@ where
     let source = validated_workspace_root(&entry)?;
     let backup_root = backup_root_for(&source, workspace_id)?;
     fs::create_dir_all(&backup_root).map_err(|error| format!("Could not create backup storage: {error}"))?;
-    cleanup_stale_staging(&backup_root)?;
+    reject_reparse_point(&backup_root)?;
 
     progress("preflight", "Checking backup storage", "Calculating server size and available disk space.", None);
     let source_bytes = directory_size_filtered(&source, Path::new(""))?;
@@ -112,7 +115,8 @@ where
     }
 
     let created = now_unix_seconds();
-    let id = format!("backup-{}-{}", now_unix_millis(), std::process::id());
+    let sequence = NEXT_BACKUP_ID.fetch_add(1, Ordering::Relaxed);
+    let id = format!("backup-{}-{}-{sequence}", now_unix_millis(), std::process::id());
     let staging = backup_root.join(format!(".creating-{id}"));
     let final_root = backup_root.join(&id);
     if staging.exists() || final_root.exists() {
@@ -121,27 +125,33 @@ where
     let snapshot = staging.join("workspace");
     fs::create_dir_all(&snapshot).map_err(|error| format!("Could not create backup staging directory: {error}"))?;
 
-    let copy_result = copy_directory_filtered(&source, &snapshot, Path::new(""), source_bytes, &mut progress);
-    if let Err(error) = copy_result {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
+    let staged_result = (|| -> Result<BackupManifest, String> {
+        copy_directory_filtered(&source, &snapshot, Path::new(""), source_bytes, &mut progress)?;
 
-    progress("validating", "Validating backup", "Verifying the staged workspace identity before publishing the restore point.", None);
-    if !backup_snapshot_identity_matches(&snapshot, workspace_id)? {
-        let _ = fs::remove_dir_all(&staging);
-        return Err("Backup validation failed because the staged workspace identity does not match the source server".into());
-    }
+        progress("validating", "Validating backup", "Verifying the staged workspace identity before publishing the restore point.", None);
+        if !backup_snapshot_identity_matches(&snapshot, workspace_id)? {
+            return Err("Backup validation failed because the staged workspace identity does not match the source server".into());
+        }
 
-    let manifest = BackupManifest {
-        schema_version: BACKUP_SCHEMA_VERSION,
-        id: id.clone(),
-        workspace_id: workspace_id.to_string(),
-        workspace_name: entry.name.clone(),
-        created_unix_seconds: created,
-        source_bytes,
+        let manifest = BackupManifest {
+            schema_version: BACKUP_SCHEMA_VERSION,
+            id: id.clone(),
+            workspace_id: workspace_id.to_string(),
+            workspace_name: entry.name.clone(),
+            created_unix_seconds: created,
+            source_bytes,
+        };
+        write_backup_manifest(&staging, &manifest)?;
+        Ok(manifest)
+    })();
+
+    let manifest = match staged_result {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
+        }
     };
-    write_backup_manifest(&staging, &manifest)?;
 
     progress("publishing", "Publishing backup", "Publishing the validated restore point atomically.", Some((source_bytes, source_bytes)));
     if let Err(error) = fs::rename(&staging, &final_root) {
@@ -157,9 +167,17 @@ pub fn delete(workspace_id: &str, backup_id: &str) -> Result<(), String> {
     let entry = workspace_registry::get(workspace_id)?;
     let root = validated_workspace_root(&entry)?;
     let backup_root = backup_root_for(&root, workspace_id)?;
-    let target = backup_root.join(backup_id);
-    if !target.is_dir() {
+    if !backup_root.exists() {
         return Err("Server backup was not found".into());
+    }
+    reject_reparse_point(&backup_root)?;
+    let target = backup_root.join(backup_id);
+    if !target.exists() {
+        return Err("Server backup was not found".into());
+    }
+    reject_reparse_point(&target)?;
+    if !target.is_dir() {
+        return Err("Server backup is not a directory".into());
     }
     let manifest = read_backup_manifest(&target)?;
     if manifest.schema_version != BACKUP_SCHEMA_VERSION || manifest.workspace_id != workspace_id || manifest.id != backup_id {
@@ -170,8 +188,38 @@ pub fn delete(workspace_id: &str, backup_id: &str) -> Result<(), String> {
     if canonical_target.parent() != Some(canonical_root.as_path()) {
         return Err("LazyBuilder refused an unsafe backup deletion path".into());
     }
-    reject_reparse_point(&canonical_target)?;
     fs::remove_dir_all(canonical_target).map_err(|error| format!("Could not delete server backup: {error}"))
+}
+
+/// Startup-only recovery for unpublished backup staging left by an interrupted Launcher.
+/// No backup operation is active when startup reconciliation runs, so matching staging
+/// directories can be removed without racing a live copy.
+pub fn recover_staging() -> Result<u32, String> {
+    let mut removed = 0u32;
+    for entry in workspace_registry::list()? {
+        let Ok(root) = validated_workspace_root(&entry) else { continue; };
+        let backup_root = backup_root_for(&root, &entry.id)?;
+        if !backup_root.exists() {
+            continue;
+        }
+        reject_reparse_point(&backup_root)?;
+        for item in fs::read_dir(&backup_root).map_err(|error| error.to_string())? {
+            let item = item.map_err(|error| error.to_string())?;
+            let name = item.file_name().to_string_lossy().to_string();
+            if !name.starts_with(".creating-backup-") {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(item.path()).map_err(|error| error.to_string())?;
+            if is_reparse_point(&metadata) {
+                return Err(format!("Unsafe reparse point found in backup staging: {}", item.path().display()));
+            }
+            if metadata.file_type().is_dir() {
+                fs::remove_dir_all(item.path()).map_err(|error| format!("Could not clean interrupted backup staging: {error}"))?;
+                removed = removed.saturating_add(1);
+            }
+        }
+    }
+    Ok(removed)
 }
 
 fn backup_root_for(workspace: &Path, workspace_id: &str) -> Result<PathBuf, String> {
@@ -186,7 +234,6 @@ fn validated_workspace_root(entry: &workspace_registry::WorkspaceEntry) -> Resul
     if !root.is_dir() {
         return Err("Registered server workspace is not a directory".into());
     }
-    reject_reparse_point(&root)?;
     if !backup_snapshot_identity_matches(&root, &entry.id)? {
         return Err("Registered server identity does not match its workspace manifest".into());
     }
@@ -237,20 +284,19 @@ where
 {
     for item in fs::read_dir(source).map_err(|error| format!("Could not read {}: {error}", source.display()))? {
         let item = item.map_err(|error| error.to_string())?;
-        let metadata = item.metadata().map_err(|error| error.to_string())?;
-        let file_type = item.file_type().map_err(|error| error.to_string())?;
+        let metadata = fs::symlink_metadata(item.path()).map_err(|error| error.to_string())?;
         let rel = relative.join(item.file_name());
         if should_skip_backup_path(&rel) {
             continue;
         }
-        if file_type.is_symlink() || is_reparse_point(&metadata) {
+        if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
             return Err(format!("Cannot safely back up a server containing a symbolic link or Windows reparse point: {}", item.path().display()));
         }
         let target = destination.join(item.file_name());
-        if file_type.is_dir() {
+        if metadata.file_type().is_dir() {
             fs::create_dir(&target).map_err(|error| format!("Could not create {}: {error}", target.display()))?;
             copied = copy_directory_filtered_inner(&item.path(), &target, &rel, total, copied, progress)?;
-        } else if file_type.is_file() {
+        } else if metadata.file_type().is_file() {
             let size = metadata.len();
             fs::copy(item.path(), &target).map_err(|error| format!("Could not copy {}: {error}", item.path().display()))?;
             copied = copied.saturating_add(size);
@@ -264,18 +310,17 @@ fn directory_size_filtered(root: &Path, relative: &Path) -> Result<u64, String> 
     let mut total = 0u64;
     for item in fs::read_dir(root).map_err(|error| format!("Could not inspect {}: {error}", root.display()))? {
         let item = item.map_err(|error| error.to_string())?;
-        let metadata = item.metadata().map_err(|error| error.to_string())?;
-        let file_type = item.file_type().map_err(|error| error.to_string())?;
+        let metadata = fs::symlink_metadata(item.path()).map_err(|error| error.to_string())?;
         let rel = relative.join(item.file_name());
         if should_skip_backup_path(&rel) {
             continue;
         }
-        if file_type.is_symlink() || is_reparse_point(&metadata) {
+        if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
             return Err(format!("Cannot safely back up a server containing a symbolic link or Windows reparse point: {}", item.path().display()));
         }
-        if file_type.is_dir() {
+        if metadata.file_type().is_dir() {
             total = total.saturating_add(directory_size_filtered(&item.path(), &rel)?);
-        } else if file_type.is_file() {
+        } else if metadata.file_type().is_file() {
             total = total.saturating_add(metadata.len());
         }
     }
@@ -293,24 +338,6 @@ fn should_skip_backup_path(relative: &Path) -> bool {
         || file_name.ends_with(".lock")
         || file_name == "server-process.json"
         || file_name == "server-start.lock"
-}
-
-fn cleanup_stale_staging(root: &Path) -> Result<(), String> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for item in fs::read_dir(root).map_err(|error| error.to_string())? {
-        let item = item.map_err(|error| error.to_string())?;
-        let name = item.file_name().to_string_lossy().to_string();
-        if !name.starts_with(".creating-backup-") {
-            continue;
-        }
-        let metadata = item.metadata().map_err(|error| error.to_string())?;
-        if item.file_type().map_err(|error| error.to_string())?.is_dir() && !is_reparse_point(&metadata) {
-            fs::remove_dir_all(item.path()).map_err(|error| format!("Could not clean interrupted backup staging: {error}"))?;
-        }
-    }
-    Ok(())
 }
 
 fn validate_backup_id(value: &str) -> Result<(), String> {
@@ -341,9 +368,9 @@ fn is_reparse_point(metadata: &fs::Metadata) -> bool {
 fn is_reparse_point(_metadata: &fs::Metadata) -> bool { false }
 
 fn reject_reparse_point(path: &Path) -> Result<(), String> {
-    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
-    if is_reparse_point(&metadata) {
-        Err(format!("LazyBuilder refused a Windows reparse point for backup safety: {}", path.display()))
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+        Err(format!("LazyBuilder refused a symbolic link or Windows reparse point for backup safety: {}", path.display()))
     } else {
         Ok(())
     }
@@ -364,7 +391,7 @@ mod tests {
 
     #[test]
     fn backup_id_validation_is_strict() {
-        assert!(validate_backup_id("backup-123-4").is_ok());
+        assert!(validate_backup_id("backup-123-4-1").is_ok());
         assert!(validate_backup_id("../backup-123").is_err());
         assert!(validate_backup_id("backup_123").is_err());
     }
