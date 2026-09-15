@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility;
 
+import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
@@ -29,6 +30,9 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 ReconnectState.capture(client.getCurrentServerEntry())
+        );
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                ChatDraftState.clear()
         );
     }
 
