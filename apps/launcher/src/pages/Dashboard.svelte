@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerLogTail, ServerPreflight, ServerSnapshot } from '../app/bridge/runtimeApi';
+  import type { ServerLogTail, ServerPreflight, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
   export let serverName = 'Server';
 
@@ -14,7 +14,7 @@
   let notice = '';
   let busy = false;
 
-  function friendlyError(value: unknown) { return String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.'; }
+  function friendlyError(value: unknown) { return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.'; }
   function category(message: string) {
     const value = message.toLowerCase();
     if (value.includes('java')) return 'Java'; if (value.includes('paper') || value.includes('jar')) return 'Paper';
@@ -24,12 +24,12 @@
     if (value.includes('permission') || value.includes('denied') || value.includes('filesystem')) return 'Files';
     return 'Server';
   }
-  function stateLabel(state: string) { if (state === 'Online') return 'Running'; if (state === 'Detached') return 'Running externally'; return state; }
-  function stateTone(state: string) { if (state === 'Online') return 'running'; if (['Starting','Restarting','Stopping'].includes(state)) return 'transition'; if (state === 'Detached') return 'warning'; if (state === 'Crashed') return 'danger'; return 'offline'; }
-  function stateDescription(state: string) {
+  function stateLabel(state: ServerState) { if (state === 'Online') return 'Running'; if (state === 'Detached') return 'Running externally'; return state; }
+  function stateTone(state: ServerState) { if (state === 'Online') return 'running'; if (state === 'Starting' || state === 'Stopping') return 'transition'; if (state === 'Detached') return 'warning'; if (state === 'Crashed') return 'danger'; return 'offline'; }
+  function stateDescription(state: ServerState) {
     if (state === 'Online') return 'Ready for builders to join.';
     if (state === 'Starting') return 'Starting the server. You can stop it if startup stalls.';
-    if (state === 'Stopping') return 'Stopping safely…'; if (state === 'Restarting') return 'Restarting the server…';
+    if (state === 'Stopping') return 'Stopping safely…';
     if (state === 'Detached') return 'The server is running outside this launcher session.';
     if (state === 'Crashed') return 'The server stopped unexpectedly.';
     return 'Start the server when your team is ready to build.';
