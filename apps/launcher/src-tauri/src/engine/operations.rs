@@ -94,6 +94,16 @@ impl OperationRegistry {
         self.entries.read().map_err(|_| "operation registry lock poisoned".to_string())?.iter().find(|entry| entry.id == id).cloned().ok_or_else(|| "Launcher operation was not found".to_string())
     }
 
+    pub fn has_active_for_resource(&self, resource: &str) -> Result<bool, String> {
+        let resource = resource.trim();
+        if resource.is_empty() { return Err("Operation resource is required".into()); }
+        Ok(self.entries
+            .read()
+            .map_err(|_| "operation registry lock poisoned".to_string())?
+            .iter()
+            .any(|entry| entry.resource == resource && !entry.state.is_terminal()))
+    }
+
     pub fn set_phase(&self, id: &str, phase: &str, status: &str, details: &str, progress: Option<OperationProgress>) -> Result<OperationSnapshot, String> {
         let result = self.mutate(id, |entry| { ensure_active(entry)?; entry.phase = phase.trim().to_string(); entry.status = status.trim().to_string(); entry.details = details.trim().to_string(); entry.progress = progress; Ok(()) })?;
         diagnostics::info_with_context(&result.correlation_id, &format!("operation phase id={} phase={} status={}", result.id, result.phase, result.status));
@@ -183,8 +193,10 @@ mod tests {
     fn exclusive_resource_rejects_second_active_operation() {
         let registry = OperationRegistry::default();
         let first = registry.begin_exclusive("duplicate-server", "workspace:test", true).unwrap();
+        assert!(registry.has_active_for_resource("workspace:test").unwrap());
         assert!(registry.begin_exclusive("backup-server", "workspace:test", true).is_err());
         registry.succeed(&first.id, "done").unwrap();
+        assert!(!registry.has_active_for_resource("workspace:test").unwrap());
         assert!(registry.begin_exclusive("backup-server", "workspace:test", true).is_ok());
     }
     #[test]
