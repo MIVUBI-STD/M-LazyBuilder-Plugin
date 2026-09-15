@@ -424,7 +424,7 @@ public final class WorldMapScreen extends Screen {
         int color = current ? LbUi.SURFACE_2 : pending ? LbUi.SURFACE_1 : LbUi.ACCENT_FILL;
         if (action.contains(mouseX, mouseY) && !pending) color = current ? LbUi.SURFACE_3 : LbUi.ACCENT_HOVER;
         context.fill(action.left, action.top, action.right, action.bottom, color);
-        String label = current ? "Center on player" : pending ? "Teleporting…" : "Teleport →";
+        String label = current ? "Center map on player" : pending ? "Teleporting…" : "Teleport →";
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
                 (action.left + action.right) / 2, action.top + 7,
                 pending ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
@@ -453,50 +453,46 @@ public final class WorldMapScreen extends Screen {
         }
 
         int[] hovered = screenToWorld(mouseX, mouseY);
-        String center = hovered == null
-                ? zoomLabel()
-                : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomLabel();
+        String coordinates = hovered == null ? "" : "X " + hovered[0] + "   Z " + hovered[1];
         String status = maps.teleportPending() ? "Teleporting…"
                 : SURFACE.pendingCount() > 0 ? "Loading map…"
-                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center player";
-
-        int textLeft = left + 8;
-        int textRight = zoomMinusRect().left - 8;
-        int availableWidth = Math.max(0, textRight - textLeft);
-        int centerWidth = textRenderer.getWidth(center);
-        int statusWidth = textRenderer.getWidth(status);
-        int preferredCenterX = left + (width - left) / 2;
-        int preferredCenterLeft = preferredCenterX - centerWidth / 2;
-        int preferredCenterRight = preferredCenterLeft + centerWidth;
-        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;
-
-        if (availableWidth > 0) {
-            if (statusWidth + 16 <= availableWidth
-                    && preferredCenterLeft >= textLeft + statusWidth + 12
-                    && preferredCenterRight <= textRight) {
-                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal(center),
-                        preferredCenterX, height - 16, LbUi.TEXT_SECONDARY);
-            } else if (operationalStatus && statusWidth <= availableWidth) {
-                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);
-            } else {
-                String compactCenter = trim(center, availableWidth);
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal(compactCenter),
-                        textLeft + availableWidth / 2, height - 16, LbUi.TEXT_SECONDARY);
-            }
-        }
+                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center map on player";
 
         renderZoomControl(context, mouseX, mouseY);
+
+        int mapCenterX = left + (width - left) / 2;
+        if (!coordinates.isBlank()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),
+                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);
+        }
+
+        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;
+        int statusLeft = zoomPlusRect().right + 10;
+        int statusRight = coordinates.isBlank()
+                ? width - 8
+                : mapCenterX - textRenderer.getWidth(coordinates) / 2 - 14;
+        int statusWidth = Math.max(0, statusRight - statusLeft);
+        if (statusWidth > 24) {
+            String visibleStatus = operationalStatus ? status : trim(status, statusWidth);
+            if (textRenderer.getWidth(visibleStatus) <= statusWidth) {
+                context.drawTextWithShadow(textRenderer, Text.literal(visibleStatus),
+                        statusLeft, height - 16, LbUi.TEXT_MUTED);
+            }
+        }
     }
 
     private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
         Rect minus = zoomMinusRect();
         Rect plus = zoomPlusRect();
+        Rect label = zoomLabelRect();
         context.fill(minus.left, minus.top, minus.right, minus.bottom,
                 minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
+        context.fill(label.left, label.top, label.right, label.bottom, LbUi.SURFACE_1);
         context.fill(plus.left, plus.top, plus.right, plus.bottom,
                 plus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("−"), (minus.left + minus.right) / 2, minus.top + 5, LbUi.TEXT_PRIMARY);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(zoomLabel()),
+                (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_SECONDARY);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), (plus.left + plus.right) / 2, plus.top + 5, LbUi.TEXT_PRIMARY);
     }
 
@@ -1067,8 +1063,9 @@ public final class WorldMapScreen extends Screen {
     private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
     private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
     private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
-    private Rect zoomMinusRect() { return new Rect(width - 48, height - 22, width - 29, height - 3); }
-    private Rect zoomPlusRect() { return new Rect(width - 26, height - 22, width - 7, height - 3); }
+    private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }
+    private Rect zoomLabelRect() { int x = zoomMinusRect().right + 3; return new Rect(x, height - 22, x + 64, height - 3); }
+    private Rect zoomPlusRect() { int x = zoomLabelRect().right + 3; return new Rect(x, height - 22, x + 19, height - 3); }
 
     private Rect contextMenuRect() {
         int menuWidth = 150;
