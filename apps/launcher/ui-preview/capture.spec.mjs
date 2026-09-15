@@ -45,6 +45,21 @@ async function openServerPage(page, pageName, queryPage = pageName) {
   await expect(heading(page, pageName)).toBeVisible();
 }
 
+async function instrumentPluginRuntime(page) {
+  const direct = await page.evaluate(async () => {
+    const module = await import('/src/app/bridge/runtimeProductFacade.ts');
+    const plugins = await module.runtimeProduct.plugins.list();
+    const original = module.runtimeProduct.plugins.list;
+    window.__lazyBuilderPreviewPluginListCalls = 0;
+    module.runtimeProduct.plugins.list = async (...args) => {
+      window.__lazyBuilderPreviewPluginListCalls += 1;
+      return original(...args);
+    };
+    return plugins.map((plugin) => ({ id: plugin.id, name: plugin.displayName, mutable: plugin.mutable }));
+  });
+  expect(direct.some((plugin) => plugin.name === 'FastAsyncWorldEdit' && plugin.mutable)).toBeTruthy();
+}
+
 function heading(page, name) {
   return page.getByRole('heading', { name, exact: true });
 }
@@ -69,7 +84,14 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
   await openServerPage(page, 'Worlds');
   await capture(page, '03-worlds.png');
 
-  await openServerPage(page, 'Plugins');
+  await open(page, '?preview=active&page=Plugins');
+  await instrumentPluginRuntime(page);
+  await page.getByRole('button', { name: 'Plugins', exact: true }).click();
+  await expect(heading(page, 'Plugins')).toBeVisible();
+  await expect.poll(
+    () => page.evaluate(() => window.__lazyBuilderPreviewPluginListCalls ?? 0),
+    { message: 'Plugins page should request the preview plugin inventory' }
+  ).toBeGreaterThan(0);
   await expect(page.getByText('FastAsyncWorldEdit', { exact: true })).toBeVisible();
   await capture(page, '04-plugins.png');
 
