@@ -37,6 +37,14 @@ async function open(page, query) {
   await expect(page.getByText('LazyBuilder', { exact: true }).first()).toBeVisible();
 }
 
+async function openServerPage(page, pageName, queryPage = pageName) {
+  await open(page, `?preview=active&page=${encodeURIComponent(queryPage)}`);
+  if (pageName !== 'Overview') {
+    await page.getByRole('button', { name: pageName, exact: true }).click();
+  }
+  await expect(heading(page, pageName)).toBeVisible();
+}
+
 function heading(page, name) {
   return page.getByRole('heading', { name, exact: true });
 }
@@ -54,25 +62,21 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
   await expect(page.getByText('Museum Khatulistiwa', { exact: true })).toBeVisible();
   await capture(page, '01-server-library.png');
 
-  await open(page, '?preview=active');
+  await openServerPage(page, 'Overview');
   await expect(heading(page, 'MIVUBI Build Server')).toBeVisible();
-  await expect(heading(page, 'Overview')).toBeVisible();
   await capture(page, '02-overview-ready.png');
 
-  await page.getByRole('button', { name: 'Worlds', exact: true }).click();
-  await expect(heading(page, 'Worlds')).toBeVisible();
+  await openServerPage(page, 'Worlds');
   await capture(page, '03-worlds.png');
 
-  await page.evaluate(() => history.replaceState(null, '', '/?preview=active&page=Plugins'));
-  await page.getByRole('button', { name: 'Plugins', exact: true }).click();
-  await expect(heading(page, 'Plugins')).toBeVisible();
+  await openServerPage(page, 'Plugins');
   await expect(page.getByText('FastAsyncWorldEdit', { exact: true })).toBeVisible();
   await capture(page, '04-plugins.png');
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(heading(page, 'Settings')).toBeVisible();
+  await openServerPage(page, 'Settings');
   await capture(page, '05-settings.png');
 
+  await open(page, '?preview=active&page=Client');
   await page.getByRole('button', { name: 'Client', exact: true }).click();
   await expect(heading(page, 'Client')).toBeVisible();
   await expect(heading(page, 'Minecraft Client')).toBeVisible();
