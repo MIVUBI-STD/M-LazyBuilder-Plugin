@@ -60,7 +60,7 @@ class LocalConversionRuntimeStoreTest {
 
     @Test
     void restoresPreviousWhenInterruptedCandidateIsIncomplete() throws Exception {
-        Path root = tempDir.resolve("runtime"));
+        Path root = tempDir.resolve("runtime");
         LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(root);
         Path first = tempDir.resolve("first.jar");
         Files.writeString(first, "one");
