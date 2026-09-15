@@ -10,6 +10,16 @@ LazyBuilder-Setup-Local.exe
 
 The raw `lazybuilder.exe` is a diagnostics/developer artifact and is not the supported installation path.
 
+## Current Local PC validation
+
+The next target-machine proof is defined in:
+
+[`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Windows testing must begin from the installer and continue through Launcher, managed Java/Paper, plugins, Modrinth Client Setup, Fabric mods, real Minecraft interoperability, restart/recovery, and only then large-world/storage/conversion testing.
+
+Do not replace installed-product testing with a local source build.
+
 ## Supported baseline
 
 Primary target:
@@ -56,9 +66,9 @@ Managed Java provisioning must remain transactional:
 download -> SHA-256 verify -> staging -> Java 21 validation -> atomic publish -> rollback on failure
 ```
 
-## Windows release gates
+## Windows remote release gates
 
-A Local installer is considered test-ready only if the exact artifact:
+A Local installer is considered ready for target-PC testing only if the exact artifact:
 
 1. builds from the exact `Local` commit;
 2. passes source/contract checks;
@@ -72,6 +82,28 @@ A Local installer is considered test-ready only if the exact artifact:
 10. publishes SHA-256 and build provenance with the installer.
 
 The clean-PATH startup gate specifically prevents accidental runtime reliance on developer tools installed on a build machine.
+
+These gates prove **test readiness**, not full end-user readiness.
+
+## Windows Local PC release gates
+
+Before discussing `Local` → `main` promotion, a representative Windows PC must additionally prove:
+
+```text
+clean install
+→ Launcher first run
+→ managed Java provisioning
+→ Paper start/stop/restart
+→ Plugin Manager representative flow
+→ World Manager + Utilities Manager
+→ real Modrinth profile sync
+→ real Map Manager + Utility Manager inside Minecraft
+→ Paper/Fabric reconnect + restart behavior
+→ installer update over existing installation
+→ representative large-world/storage/conversion behavior
+```
+
+The detailed acceptance criteria and defect-recording format are owned only by `local-pc-validation-plan.md`.
 
 ## Production signing
 
