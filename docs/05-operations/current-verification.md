@@ -23,27 +23,29 @@ Local PC acceptance is currently closed. It reopens only after the exact current
 
 ## Verification layers
 
-LazyBuilder has two distinct remote verification authorities:
+LazyBuilder separates fast development from independent final verification.
 
 ```text
+Local development
+→ targeted module proof as needed
+→ DEV.cmd finalize-local for integrated local proof
+
 Verify
+→ canonical integrated remote/final CI
 → repository consistency
 → Paper/shared unit/build verification
 → Fabric build/artifact verification
 → Launcher frontend/Rust verification
-→ exact-head Paper runtime smoke used by packaging
+→ exact-head Paper runtime + restart persistence proof
 → Windows/Tauri/NSIS packaging
 → installer smoke verification
 
-Paper Runtime Proof
-→ path-scoped server/plugin/protocol authority
-→ repository-owned Maven wrapper
-→ real stable Paper 1.21.4 on Windows
-→ full managed-world lifecycle proof
-→ clean restart + registry/filesystem persistence proof
+Dedicated workflows
+→ manual or review-specific evidence only
+→ not parallel readiness authorities
 ```
 
-The separation is intentional. `Verify` follows every repository change. `Paper Runtime Proof` follows changes that can affect the Paper runtime path.
+Normal pushes to `Local` intentionally do not run full CI. Full `Verify` runs on explicit `workflow_dispatch`, pull requests to `Local`/`main`, and pushes to `main`.
 
 ## Required `Verify` gate
 
@@ -52,7 +54,7 @@ The canonical `Verify` workflow contains:
 ```text
 consistency          version/repository/scope contracts
 paper                full Maven Paper/shared compile + tests + core artifacts
-paper-runtime-smoke  exact-head Paper boot + lifecycle harness used by packaging
+paper-runtime-smoke  exact-head Paper boot + managed-world lifecycle + restart persistence
 fabric               three Fabric manager builds + client artifact verification
 launcher-check       Svelte typecheck/build + Rust check/test on Windows
 tauri-desktop        package exact tested core/client artifacts into Windows NSIS build
@@ -71,25 +73,31 @@ Required Fabric
 └── Performance Manager
 ```
 
-All three are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. This matches the client-manager architecture lock and current launcher/CI implementation.
+All three are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager remains bounded to client performance policy/diagnostics; it does not become a cross-manager scheduler or workload authority.
 
-Do not maintain a second documentation boundary that calls Performance Manager deferred while the runtime product requires it.
+## Dedicated workflows
 
-## Dedicated Paper runtime gate
-
-`.github/workflows/paper-runtime-proof.yml` is the deeper Paper-side runtime authority. It is triggered by changes to:
+Dedicated workflows exist for focused proof/debugging but do not replace integrated `Verify`.
 
 ```text
-root Maven ownership
-plugins/world-manager/**
-plugins/utilities-manager/**
-shared/protocol/**
-Paper runtime-proof scripts/workflow
+Paper Runtime Proof
+→ manual focused Paper lifecycle/restart evidence
+
+Launcher Verify
+→ manual focused Launcher source/contract evidence
+
+Launcher UI Preview
+→ manual or pull-request visual evidence
+
+Minecraft UI Preview
+→ manual or pull-request real-renderer visual evidence
 ```
 
-It must compile/test through the repository-owned Maven wrapper, not a global Maven installation.
+These workflows may provide faster specialist evidence during review or debugging. Repository/package readiness is still determined from the integrated `Verify` workflow for the exact candidate revision.
 
-A green run proves, on a disposable Paper 1.21.4 server:
+## Paper runtime proof contract
+
+The Paper runtime proof executes against a disposable stable Paper 1.21.4 server and covers:
 
 ```text
 Java 21 / Paper boot
@@ -113,26 +121,19 @@ Java 21 / Paper boot
 → post-restart deletion
 ```
 
-Runtime evidence is uploaded as a short-lived workflow artifact for inspection.
+Runtime evidence may be uploaded as a short-lived workflow artifact for inspection.
 
 ## Determining `REMOTE_GITHUB` status
 
 Repository/package readiness:
 
 ```text
-all required Verify jobs for exact current Local HEAD succeed
+successful integrated Verify
+for the exact candidate revision
 → repository/package REMOTE_GITHUB green
 ```
 
-Paper runtime readiness:
-
-```text
-latest Paper/plugin/protocol/runtime-proof revision in current Local history
-has successful Paper Runtime Proof
-→ Paper runtime REMOTE_GITHUB green
-```
-
-A later commit outside Paper Runtime Proof path scope does not invalidate already-proven Paper behavior. Any later commit touching a scoped Paper path must produce a new successful Paper Runtime Proof.
+A successful focused workflow proves only its named boundary. It does not make the whole repository/package candidate green.
 
 ## Current target product scope
 
@@ -182,7 +183,7 @@ Remote GitHub still does **not** prove:
 - long-lived persistent server workspace behavior;
 - representative third-party plugin compatibility;
 - real Modrinth profile behavior under the user's installation;
-- Fabric screens/input inside a real Minecraft client;
+- Fabric screens/input inside a real Minecraft client unless the dedicated real-renderer proof explicitly ran;
 - real-player teleport/navigation and Utilities gameplay behavior;
 - full-PC reboot recovery;
 - production-scale large-world/storage-pressure behavior;
@@ -197,7 +198,7 @@ Current source must continue to satisfy:
 - World Control and Map Action protocols remain separate from desktop loopback protocol;
 - Map Manager consumes shared protocol contracts, not World Manager implementation source;
 - Utility Manager has no hidden World Manager implementation dependency;
-- Performance Manager remains isolated to performance policy/diagnostics and does not own other managers' workloads;
+- Performance Manager remains bounded to performance policy/diagnostics and does not own other managers' workloads;
 - Client Setup mutates only LazyBuilder-owned prefixes and preserves unrelated mods;
 - packaged core/client resolution has one runtime authority: bundled tested resources;
 - server start does not rewrite unrelated Paper gameplay/performance settings;
@@ -206,7 +207,9 @@ Current source must continue to satisfy:
 - active workspace is runtime-memory state, not stale persisted UI authority;
 - one world registry, one filesystem authority, one task system, and one conversion-runtime owner remain canonical;
 - Maven and Gradle build paths remain repository-owned;
-- installed runtime and developer Java build paths use the LazyBuilder-owned Windows temp policy where relevant.
+- installed runtime and developer Java build paths use the LazyBuilder-owned Windows temp policy where relevant;
+- developer commands route through the canonical `DEV.cmd` / `dev.ps1` control plane;
+- Local distributables use one canonical `dist/Local` layout.
 
 ## Reopening Local PC validation
 
@@ -214,8 +217,8 @@ Local PC acceptance may reopen only after:
 
 ```text
 remediation source items resolved
-→ exact Local HEAD Verify green
-→ applicable Paper Runtime Proof green
+→ exact Local candidate DEV.cmd finalize-local passes where applicable
+→ exact candidate integrated Verify green
 → canonical installer artifact produced
 → final source/repository audit clean
 → explicit decision to reopen target-machine acceptance
@@ -227,7 +230,7 @@ Then follow only:
 
 ## Historical reports
 
-`remote-github-complete.md`, `local-pc-testing-notes.md`, and older reports are evidence snapshots. Older phase labels, client-manager sets, workflow counts, or packaging details must not override current source plus the remediation and verification authorities.
+`remote-github-complete.md`, `local-pc-testing-notes.md`, and older reports are evidence snapshots. Older phase labels, client-manager sets, workflow counts, trigger rules, or packaging details must not override current source plus the remediation and verification authorities.
 
 ## Update policy
 
