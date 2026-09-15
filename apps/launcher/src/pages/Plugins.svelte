@@ -10,16 +10,20 @@
   let busy = false;
   let serverState: ServerState = 'Offline';
   let duplicateSelection: Record<string, string> = {};
+  let extraPluginList: PluginSummary[] = [];
+  let managedPluginList: PluginSummary[] = [];
+  let visiblePluginList: PluginSummary[] = [];
+  let canMutatePlugins = true;
 
   const isInvalid = (plugin: PluginSummary) => plugin.id.startsWith('invalid-');
-  const canMutate = () => serverState === 'Offline' || serverState === 'Crashed';
   const hasDuplicates = (plugin: PluginSummary) => plugin.mutable && !isInvalid(plugin) && Boolean(plugin.candidateFiles && plugin.candidateFiles.length > 1);
-  const extraPlugins = () => plugins.filter((plugin) => plugin.mutable);
-  const managedPlugins = () => plugins.filter((plugin) => plugin.managedByLazyBuilder);
 
-  function serverPlugins() {
+  $: canMutatePlugins = serverState === 'Offline' || serverState === 'Crashed';
+  $: extraPluginList = plugins.filter((plugin) => plugin.mutable);
+  $: managedPluginList = plugins.filter((plugin) => plugin.managedByLazyBuilder);
+  $: {
     const query = search.trim().toLowerCase();
-    return extraPlugins().filter((plugin) => !query || `${plugin.displayName} ${plugin.version}`.toLowerCase().includes(query));
+    visiblePluginList = extraPluginList.filter((plugin) => !query || `${plugin.displayName} ${plugin.version}`.toLowerCase().includes(query));
   }
 
   function friendlyError(value: unknown) {
@@ -33,7 +37,7 @@
       serverState = snapshot.state;
       error = '';
       duplicateSelection = Object.fromEntries(
-        plugins.filter((plugin) => plugin.mutable && !isInvalid(plugin) && plugin.candidateFiles?.length).map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
+        nextPlugins.filter((plugin) => plugin.mutable && !isInvalid(plugin) && plugin.candidateFiles?.length).map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
       );
     } catch (e) {
       plugins = [];
@@ -43,7 +47,7 @@
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
-    if (!canMutate()) {
+    if (!canMutatePlugins) {
       error = serverState === 'Detached' ? 'The server is running externally. Stop it before changing plugins.' : 'Stop the server before changing plugins.';
       return;
     }
@@ -126,22 +130,22 @@
 <section class="plugins-page">
   <header class="page-header">
     <div><h2>Plugins</h2><p>Add only what this build server needs.</p></div>
-    <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>+ Add plugin</button>
+    <button class="primary" disabled={busy || !canMutatePlugins} onclick={addPlugin}>+ Add plugin</button>
   </header>
 
-  {#if !canMutate()}
+  {#if !canMutatePlugins}
     <div class="notice warning"><strong>Stop the server to edit plugins</strong><span>{serverState === 'Detached' ? 'The server is currently running outside LazyBuilder.' : 'Installed plugins stay visible while the server is running.'}</span></div>
   {/if}
   {#if message}<div class="notice success">{message}</div>{/if}
   {#if error}<div class="notice error" role="alert">{error}</div>{/if}
 
-  {#if extraPlugins().length > 4}
+  {#if extraPluginList.length > 4}
     <label class="search-field" aria-label="Search plugins"><span aria-hidden="true">⌕</span><input bind:value={search} placeholder="Search plugins" /></label>
   {/if}
 
-  {#if serverPlugins().length > 0}
+  {#if visiblePluginList.length > 0}
     <div class="plugin-list">
-      {#each serverPlugins() as plugin}
+      {#each visiblePluginList as plugin}
         <article class="plugin-row" class:has-problem={plugin.state === 'Problem' || isInvalid(plugin)}>
           <div class="plugin-icon">{plugin.displayName.slice(0, 1).toUpperCase()}</div>
           <div class="plugin-main">
@@ -152,10 +156,10 @@
               <div class="problem-card">
                 <strong>Multiple plugin files found</strong><span>Choose which JAR LazyBuilder should keep.</span>
                 <div class="problem-actions">
-                  <select disabled={busy || !canMutate()} value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]} onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}>
+                  <select disabled={busy || !canMutatePlugins} value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]} onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}>
                     {#each plugin.candidateFiles ?? [] as candidate}<option value={candidate}>{candidate}</option>{/each}
                   </select>
-                  <button disabled={busy || !canMutate()} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
+                  <button disabled={busy || !canMutatePlugins} onclick={() => resolveDuplicates(plugin)}>Keep selected</button>
                 </div>
               </div>
             {:else if isInvalid(plugin)}
@@ -172,12 +176,12 @@
               <div class="menu-popover">
                 {#if !isInvalid(plugin)}
                   {#if plugin.state !== 'Problem'}
-                    <button disabled={busy || !canMutate()} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable' : 'Enable'}</button>
-                    <button disabled={busy || !canMutate()} onclick={() => updatePlugin(plugin)}>Replace plugin file…</button>
+                    <button disabled={busy || !canMutatePlugins} onclick={() => togglePlugin(plugin)}>{plugin.state === 'Enabled' ? 'Disable' : 'Enable'}</button>
+                    <button disabled={busy || !canMutatePlugins} onclick={() => updatePlugin(plugin)}>Replace plugin file…</button>
                   {/if}
-                  <button class="danger" disabled={busy || !canMutate() || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove plugin</button>
+                  <button class="danger" disabled={busy || !canMutatePlugins || hasDuplicates(plugin)} onclick={() => removePlugin(plugin)}>Remove plugin</button>
                 {:else}
-                  <button class="danger" disabled={busy || !canMutate() || !plugin.candidateFiles?.[0]} onclick={() => removeProblemPlugin(plugin)}>Remove broken file</button>
+                  <button class="danger" disabled={busy || !canMutatePlugins || !plugin.candidateFiles?.[0]} onclick={() => removeProblemPlugin(plugin)}>Remove broken file</button>
                 {/if}
               </div>
             </details>
@@ -185,20 +189,20 @@
         </article>
       {/each}
     </div>
-  {:else if extraPlugins().length > 0 && search.trim()}
+  {:else if extraPluginList.length > 0 && search.trim()}
     <section class="search-empty"><strong>No matching plugins</strong><span>Try another name.</span><button onclick={() => (search = '')}>Clear search</button></section>
   {:else if !error}
     <section class="empty-state">
       <div class="empty-icon">+</div><h3>No extra plugins</h3><p>This server can stay simple. Add a plugin only when your builders need one.</p>
-      <button class="primary" disabled={busy || !canMutate()} onclick={addPlugin}>Add plugin</button>
+      <button class="primary" disabled={busy || !canMutatePlugins} onclick={addPlugin}>Add plugin</button>
     </section>
   {/if}
 
-  {#if managedPlugins().length > 0}
+  {#if managedPluginList.length > 0}
     <details class="system-components">
       <summary>LazyBuilder components</summary><p>Required components are maintained automatically.</p>
       <div class="system-list">
-        {#each managedPlugins() as plugin}
+        {#each managedPluginList as plugin}
           <div><div class="plugin-icon core">L</div><span><strong>{plugin.displayName}</strong><small>{plugin.version} · Required</small></span><span class="state-pill" class:problem={plugin.state === 'Problem'}>{plugin.state === 'Enabled' ? 'Ready' : plugin.state}</span></div>
         {/each}
       </div>
