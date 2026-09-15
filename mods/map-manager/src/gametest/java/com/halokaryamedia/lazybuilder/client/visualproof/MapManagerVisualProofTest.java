@@ -39,23 +39,35 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             PreviewState state = previewState();
             context.runOnClient(client -> pinPreviewWorlds());
 
-            resize(context, 1440, 900);
-            openMap(context, state);
-            context.waitTicks(24);
-            context.takeScreenshot("map-manager-wide-managed-worlds");
-
-            resize(context, 900, 600);
-            context.waitTicks(12);
-            context.takeScreenshot("map-manager-compact-managed-worlds");
-
-            resize(context, 620, 480);
-            openMap(context, state);
-            context.waitTicks(12);
-            context.takeScreenshot("map-manager-narrow-collapsed-sidebar");
+            captureScenario(context, state, 1440, 900, 2,
+                    "map-manager-wide-1440x900-gui2");
+            captureScenario(context, state, 900, 600, 2,
+                    "map-manager-compact-900x600-gui2");
+            captureScenario(context, state, 620, 480, 2,
+                    "map-manager-narrow-620x480-gui2");
+            captureScenario(context, state, 1440, 900, 3,
+                    "map-manager-wide-1440x900-gui3");
 
             context.setScreen(() -> null);
             state.transfers.shutdownIo();
         }
+    }
+
+    private static void captureScenario(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        openMap(context, state);
+        context.waitTicks(24);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static PreviewState previewState() {
@@ -106,9 +118,18 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         context.waitForScreen(WorldMapScreen.class);
     }
 
-    private static void resize(ClientGameTestContext context, int width, int height) {
-        context.runOnClient(client -> client.getWindow().setWindowedSize(width, height));
-        context.waitTicks(8);
+    private static void configureViewport(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale
+    ) {
+        context.runOnClient(client -> {
+            client.options.getGuiScale().setValue(guiScale);
+            client.getWindow().setWindowedSize(width, height);
+            client.onResolutionChanged();
+        });
+        context.waitTicks(10);
     }
 
     /**
