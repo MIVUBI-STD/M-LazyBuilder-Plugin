@@ -147,7 +147,8 @@ name exact caller-visible contract
 → update direct Paper/Fabric adapters lockstep
 → update focused round-trip/validation tests
 → targeted build/contract proof
-→ hand domain/presentation residue to its owner
+→ freeze the neutral contract
+→ hand only the typed contract to the next semantic owner
 → STOP
 ```
 
@@ -189,13 +190,31 @@ Compile success does not prove a round trip. Unit round trip does not prove live
 
 ## Handoff / exit contract
 
+Protocol handoff is a **frozen neutral contract**, not a partially designed domain feature.
+
 ```text
-neutral payload/validation correct
-→ lazybuilder-world-management implements Paper/domain behavior
-→ lazybuilder-ui presents returned state when needed
+protocol → lazybuilder-world-management
+handoff: request/result types + identifiers + version + validation/default/bounds + capability semantics
+World Management implements authorization/domain/filesystem behavior without redefining wire meaning
+
+protocol → lazybuilder-ui
+only when the returned state is already presentation-ready
+handoff: typed neutral result/capability only
+UI must not invent server/domain meaning for an underspecified wire field
+
+protocol ↛ lazybuilder-desktop-runtime
+Desktop loopback HTTP/Tauri IPC is a separate transport/contract boundary; shared protocol is not a generic DTO library for desktop reuse
 ```
 
-Desktop HTTP remains outside this chain and routes to `lazybuilder-desktop-runtime`.
+For a new world capability the normal chain is strictly:
+
+```text
+protocol contract complete
+→ STOP protocol ownership
+→ world-management implements domain behavior
+→ world-management returns canonical domain result
+→ ui presents it
+```
 
 Finish when:
 
@@ -203,6 +222,7 @@ Finish when:
 - direct producer and consumer agree with it;
 - version/default/bounds/capability semantics are explicit;
 - matching round-trip/build proof is complete for the available context;
+- downstream owners can consume the frozen contract without reopening protocol semantics;
 - remaining domain/UI/live interoperability residue is named precisely.
 
 Do not create a second protocol namespace, transport, compatibility framework, or speculative payload surface.
