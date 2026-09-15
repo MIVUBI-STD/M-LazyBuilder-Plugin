@@ -77,6 +77,14 @@ REQUIRED_AGENT_PHRASES = [
     "Historical/supporting documents are **not default context**",
 ]
 
+REQUIRED_GITHUB_RULE_PHRASES = [
+    "GitHub Actions supply-chain contract",
+    "full 40-character commit SHA",
+    "persist-credentials: false",
+    "timeout-minutes",
+    "contents: read",
+]
+
 REQUIRED_DOC_ENTRY_PHRASES = [
     "Supporting evidence is opt-in",
     "Do not broad-scan evidence documents for reassurance",
@@ -160,6 +168,8 @@ FORBIDDEN_BROAD_VERIFY_IGNORES = [
     "*.yaml",
 ]
 
+ACTION_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
 
 def fail(errors: list[str], message: str) -> None:
     errors.append(message)
@@ -186,6 +196,41 @@ def skill_name(skill_file: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def verify_workflow_security(workflow: Path, errors: list[str]) -> None:
+    text = workflow.read_text(encoding="utf-8")
+    relative = workflow.relative_to(ROOT)
+
+    if not re.search(r"(?m)^permissions:\s*\n\s{2}contents:\s*read\s*$", text):
+        fail(errors, f"workflow must declare least-privilege contents: read: {relative}")
+
+    runs_on_count = len(re.findall(r"(?m)^\s{4}runs-on:\s*", text))
+    timeout_count = len(re.findall(r"(?m)^\s{4}timeout-minutes:\s*\d+\s*$", text))
+    if runs_on_count == 0 or timeout_count < runs_on_count:
+        fail(errors, f"every workflow job must declare timeout-minutes: {relative}")
+
+    checkout_count = 0
+    for match in re.finditer(r"(?m)^\s*-\s*uses:\s*([^\s#]+)", text):
+        target = match.group(1)
+        if target.startswith("./"):
+            continue
+        if "@" not in target:
+            fail(errors, f"external action reference has no immutable ref: {relative}: {target}")
+            continue
+        action, ref = target.rsplit("@", 1)
+        if not ACTION_SHA_RE.fullmatch(ref):
+            fail(errors, f"external action must be pinned to a full commit SHA: {relative}: {target}")
+        if action == "actions/checkout":
+            checkout_count += 1
+
+    if checkout_count and text.count("persist-credentials: false") < checkout_count:
+        fail(errors, f"every checkout must disable persisted credentials: {relative}")
+
+    if re.search(r"(?ms)^\s{2}push:\s*\n\s{4}branches:\s*\[Local\]", text):
+        fail(errors, f"ordinary Local push must not trigger durable CI workflow: {relative}")
+    if re.search(r"(?ms)^\s{2}push:\s*\n\s{4}branches:\s*\n\s{6}-\s*Local\s*$", text):
+        fail(errors, f"ordinary Local push must not trigger durable CI workflow: {relative}")
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -198,11 +243,17 @@ def main() -> int:
 
     workflows = ROOT / ".github" / "workflows"
     if workflows.is_dir():
-        for workflow in workflows.iterdir():
-            if workflow.is_file() and workflow.name.lower().startswith(("temp", "_temp")):
+        for workflow in sorted(workflows.iterdir()):
+            if not workflow.is_file():
+                continue
+            if workflow.name.lower().startswith(("temp", "_temp")):
                 fail(errors, f"temporary workflow must not live in the durable workflow directory: {workflow.name}")
+                continue
+            if workflow.suffix in {".yml", ".yaml"}:
+                verify_workflow_security(workflow, errors)
 
     agents = read_text("AGENTS.md", errors)
+    github_rules = read_text("GITHUB_RULES.md", errors)
     docs_entry = read_text("docs/README.md", errors)
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
@@ -219,6 +270,10 @@ def main() -> int:
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
             fail(errors, f"AGENTS.md missing canonical routing marker: {phrase}")
+
+    for phrase in REQUIRED_GITHUB_RULE_PHRASES:
+        if phrase not in github_rules:
+            fail(errors, f"GITHUB_RULES.md missing Actions supply-chain marker: {phrase}")
 
     for phrase in REQUIRED_DOC_ENTRY_PHRASES:
         if phrase not in docs_entry:
@@ -345,6 +400,7 @@ def main() -> int:
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
     print("Targeted verify scopes: paper, fabric, launcher")
+    print("GitHub Actions: full-SHA pins + read-only token + bounded job timeouts")
     print("Full Verify scoping: evidence-only exclusions, source/canonical paths protected")
     print("Developer failures: operation + exit code + evidence + recovery")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
