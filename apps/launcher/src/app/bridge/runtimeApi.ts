@@ -54,7 +54,6 @@ async function invokeRuntime<T>(command: string, args?: Record<string, unknown>)
 }
 
 export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
-
 export type StartupStepState = 'READY' | 'WARNING';
 export type StartupStep = { key: string; state: StartupStepState; summary: string; details: string };
 export type StartupReport = { ready: boolean; degraded: boolean; startedAtUnixSeconds: number; completedAtUnixSeconds: number; runtimeTempPath?: string | null; steps: StartupStep[] };
@@ -100,6 +99,9 @@ export type RuntimeUpdateStatus = { currentPaperBuild?: number | null; latestPap
 export type ServerHealthState = 'READY' | 'NEEDS_ATTENTION' | 'UNAVAILABLE' | 'BUSY';
 export type ServerHealthCheck = { key: string; ready: boolean; summary: string; details: string; repairable: boolean };
 export type ServerHealthSnapshot = { workspaceId: string; workspaceName: string; state: ServerHealthState; ready: boolean; running: boolean; checks: ServerHealthCheck[] };
+export type ServerRepairItem = { checkKey: string; title: string; details: string };
+export type ServerRepairPlan = { workspaceId: string; workspaceName: string; canRepair: boolean; blockedReason: string; repairs: ServerRepairItem[]; manualActions: ServerRepairItem[] };
+export type ServerRepairResult = { repairedChecks: string[]; health: ServerHealthSnapshot };
 export type ServerState = 'Offline' | 'Starting' | 'Online' | 'Stopping' | 'Detached' | 'Crashed';
 export type ServerHealth = 'Offline' | 'Good' | 'Warning' | 'Critical';
 export type ServerSnapshot = { state: ServerState; health: ServerHealth; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
@@ -115,7 +117,6 @@ export type ServerRestoreResult = { restoredBackupId: string; safetyBackup: Serv
 export type PluginState = 'Enabled' | 'Disabled' | 'Problem';
 export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: PluginState; problemDetail?: string | null; candidateFiles?: string[] | null; managedByLazyBuilder: boolean; mutable: boolean };
 export type PluginInstallResult = { success: boolean; pluginId: string; message?: string | null; restartRequired: boolean };
-
 export type ClientProfileSummary = { name: string; path: string; modrinthRoot: string; modsPath: string; gameVersion?: string | null; loader?: string | null; verification: string; compatible: boolean; selected: boolean };
 export type ClientModStatus = { id: string; displayName: string; state: string; installedFiles: string[]; targetFile: string; bundled: boolean };
 export type ClientIntegrationStatus = { modrinthDetected: boolean; profiles: ClientProfileSummary[]; selectedProfile?: ClientProfileSummary | null; selectedProfileMissing: boolean; mods: ClientModStatus[]; ready: boolean; message: string };
@@ -142,7 +143,11 @@ export const runtimeApi = {
     get: () => invokeRuntime<LauncherSettings>('launcher_settings_get'),
     save: (settings: LauncherSettings) => invokeRuntime<LauncherSettings>('launcher_settings_save', { settings })
   },
-  health: { server: (id: string) => invokeRuntime<ServerHealthSnapshot>('launcher_server_health', { id }) },
+  health: {
+    server: (id: string) => invokeRuntime<ServerHealthSnapshot>('launcher_server_health', { id }),
+    repairPlan: (id: string) => invokeRuntime<ServerRepairPlan>('launcher_server_repair_plan', { id }),
+    repair: (id: string) => invokeRuntime<ServerRepairResult>('launcher_server_repair', { id })
+  },
   operations: {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
     get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
