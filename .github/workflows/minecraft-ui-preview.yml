@@ -1,5 +1,6 @@
 name: Minecraft UI Preview
 
+# Native visual-regression proof for Map Manager layout, responsive behavior, and player-facing copy.
 on:
   push:
     branches: [Local]
