@@ -1,10 +1,13 @@
 use crate::commands;
+use crate::engine::diagnostics;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry;
 
 pub fn run() {
+    diagnostics::info("LazyBuilder launcher starting");
     if let Err(error) = workspace_registry::initialize() {
+        diagnostics::error(&format!("Workspace registry initialization failed: {error}"));
         eprintln!("LazyBuilder workspace registry initialization failed: {error}");
     }
 
@@ -12,6 +15,7 @@ pub fn run() {
         .manage(ServerManagerState::default())
         .manage(PluginManagerState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::diagnostics::diagnostics_summary,
             commands::workspace::workspace_state,
             commands::workspace::workspace_provisioning_status,
             commands::workspace::workspace_provision,
