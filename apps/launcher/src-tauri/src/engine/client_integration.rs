@@ -558,6 +558,39 @@ fn resolve_source(resource_dir: Option<&Path>, spec: ClientModSpec) -> Result<Pa
     ))
 }
 
+fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    let left_meta = fs::metadata(left)
+        .map_err(|error| format!("Could not inspect {}: {error}", left.display()))?;
+    let right_meta = fs::metadata(right)
+        .map_err(|error| format!("Could not inspect {}: {error}", right.display()))?;
+    if left_meta.len() != right_meta.len() {
+        return Ok(false);
+    }
+
+    let mut left_file = fs::File::open(left)
+        .map_err(|error| format!("Could not read {}: {error}", left.display()))?;
+    let mut right_file = fs::File::open(right)
+        .map_err(|error| format!("Could not read {}: {error}", right.display()))?;
+    let mut left_buffer = [0u8; 8192];
+    let mut right_buffer = [0u8; 8192];
+
+    loop {
+        let left_read = left_file.read(&mut left_buffer)
+            .map_err(|error| format!("Could not read {}: {error}", left.display()))?;
+        let right_read = right_file.read(&mut right_buffer)
+            .map_err(|error| format!("Could not read {}: {error}", right.display()))?;
+        if left_read != right_read {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+        if left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+    }
+}
+
 fn app_data_root() -> Result<PathBuf, String> {
     env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
