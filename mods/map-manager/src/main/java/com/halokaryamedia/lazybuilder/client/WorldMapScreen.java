@@ -23,7 +23,7 @@ import java.util.UUID;
  * authoritative world state, and presentation changes do not reset the terrain cache.</p>
  */
 public final class WorldMapScreen extends Screen {
-    private static final int BOTTOM_BAR = 46;
+    private static final int BOTTOM_BAR = 24;
     private static final int SELECTION_BOTTOM_BAR = 64;
     private static final int COLLAPSED_SIDEBAR = 34;
     private static final int MIN_SIDEBAR = 152;
@@ -463,7 +463,7 @@ public final class WorldMapScreen extends Screen {
         int mapCenterX = left + (width - left) / 2;
         if (!coordinates.isBlank()) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),
-                    mapCenterX, height - 38, LbUi.TEXT_SECONDARY);
+                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);
         }
 
         if (!status.isBlank()) {
@@ -479,15 +479,11 @@ public final class WorldMapScreen extends Screen {
     private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
         Rect minus = zoomMinusRect();
         Rect plus = zoomPlusRect();
-        Rect label = zoomLabelRect();
         context.fill(minus.left, minus.top, minus.right, minus.bottom,
                 minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
-        context.fill(label.left, label.top, label.right, label.bottom, LbUi.SURFACE_1);
         context.fill(plus.left, plus.top, plus.right, plus.bottom,
                 plus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("−"), (minus.left + minus.right) / 2, minus.top + 5, LbUi.TEXT_PRIMARY);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(zoomLabel()),
-                (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_SECONDARY);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), (plus.left + plus.right) / 2, plus.top + 5, LbUi.TEXT_PRIMARY);
     }
 
@@ -1059,13 +1055,14 @@ public final class WorldMapScreen extends Screen {
     private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
     private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
     private Rect recenterMapRect() {
-        int center = sidebarWidth() + (width - sidebarWidth()) / 2;
-        int buttonWidth = 78;
-        return new Rect(center - buttonWidth / 2, height - 22, center + buttonWidth / 2, height - 3);
+        Bounds map = mapBounds();
+        int center = map.centerX();
+        int buttonWidth = 116;
+        int bottom = map.bottom - 20;
+        return new Rect(center - buttonWidth / 2, bottom - 22, center + buttonWidth / 2, bottom);
     }
-    private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }
-    private Rect zoomLabelRect() { int x = zoomMinusRect().right + 3; return new Rect(x, height - 22, x + 64, height - 3); }
-    private Rect zoomPlusRect() { int x = zoomLabelRect().right + 3; return new Rect(x, height - 22, x + 19, height - 3); }
+    private Rect zoomPlusRect() { return new Rect(width - 28, 8, width - 8, 28); }
+    private Rect zoomMinusRect() { return new Rect(width - 51, 8, width - 31, 28); }
 
     private Rect contextMenuRect() {
         int menuWidth = 150;
