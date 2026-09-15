@@ -11,6 +11,11 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = (Resolve-Path $RepoRoot).Path
 $InstallerPath = (Resolve-Path $InstallerPath).Path
+
+if (-not $DiagnosticExecutablePath) {
+    $DefaultDiagnostic = Join-Path $RepoRoot 'apps\launcher\src-tauri\target\release\lazybuilder.exe'
+    if (Test-Path $DefaultDiagnostic -PathType Leaf) { $DiagnosticExecutablePath = $DefaultDiagnostic }
+}
 if ($DiagnosticExecutablePath) {
     $DiagnosticExecutablePath = (Resolve-Path $DiagnosticExecutablePath).Path
 }
