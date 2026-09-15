@@ -8,7 +8,7 @@ User-authorized work proceeds through verified checkpoints; never claim proof ab
 - Material GitHub work follows `GITHUB_RULES.md`.
 - Canonical documentation starts at `docs/README.md`; resolve one domain before loading deeper context.
 - Canonical specialist/jobdesk routing is `docs/04-system/skill-routing.md`.
-- Canonical minimum-flow discipline is `docs/04-system/development-discipline.md`.
+- Canonical minimum-flow and diagnosis discipline is `docs/04-system/development-discipline.md`.
 - Current readiness is resolved from current `Local` source plus `docs/05-operations/` only when continuation/proof is material.
 
 ## Execution Context Gate
@@ -20,6 +20,8 @@ LIVE_SERVER   = LOCAL_CODE + running Minecraft 1.21.4 Paper server with current 
 ```
 
 Use the lowest sufficient provable context. `LIVE_SERVER` is never assumed.
+
+A request that contains a live-runtime residue does not automatically move the whole task to `LIVE_SERVER`. Exhaust source/static/CI-verifiable work first, prepare independent proof/harnesses, then hand off only the minimum residue that genuinely needs higher context.
 
 ## Observe / Audit
 
@@ -43,7 +45,8 @@ Classify work as `Bounded`, `Standard`, or `Complex`.
 **Bounded**
 ```text
 Goal
-First wrong owner
+First evidence
+Failure classification / first wrong owner
 Acceptance
 Proof required
 STOP condition
@@ -55,8 +58,9 @@ Goal
 Success metric
 Non-goal / forbidden proxy
 First evidence / first wrong owner
+Failure classification
 In scope / out of scope
-Execution partition
+Execution partition / higher-context residue
 Proof required
 STOP condition
 ```
@@ -66,12 +70,29 @@ STOP condition
 ```text
 state competing semantic owners / unknowns
 → gather only separating evidence
+→ classify the first material failure
 → resolve the smallest contract boundary
 → choose one primary specialist
 → continue implementation
 ```
 
 Clear optimization/audit work does not become Complex merely because several files are involved.
+
+## Evidence Gate
+
+For non-trivial mutation, obtain the cheapest evidence capable of falsifying the current diagnosis before editing.
+
+```text
+symptom / requested outcome
+→ current evidence
+→ failure classification
+→ first wrong owner
+→ smallest complete change
+→ matching proof
+→ STOP
+```
+
+Use the canonical taxonomy in `docs/04-system/development-discipline.md`. `UNKNOWN` is allowed only with the next separating evidence named. Do not turn uncertainty into fallback code, compatibility layers, retries, or a second owner.
 
 ## Specialist Routing
 
@@ -97,7 +118,7 @@ shared Paper/Fabric request-result/wire contract
 
 Canonical conflict/handoff rules: `docs/04-system/skill-routing.md`.
 
-Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, or implementation mechanics.
+Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, CI, testing, or implementation mechanics.
 
 ## Development Discipline
 
@@ -144,11 +165,13 @@ Source is implementation truth; docs/Skills must not preserve a stale model agai
 
 ```text
 REMOTE_GITHUB → source/static/CI claims
-LOCAL_CODE    → compile/unit/integration/build claims
+LOCAL_CODE    → compile/unit/integration/build/package claims
 LIVE_SERVER   → enable/disable, world lifecycle, teleport, persistence, gameplay/runtime claims
 ```
 
-Use the cheapest proof capable of falsifying the changed claim. A green unrelated check is not acceptance evidence.
+Use the cheapest proof capable of falsifying the changed claim. A green unrelated check is not acceptance evidence. A packaged artifact is not live runtime proof.
+
+Reusable CI artifacts should be traceable to the exact producing commit when provenance is material. Provenance records evidence; it does not raise the proof ceiling.
 
 ## Work Discipline
 
@@ -165,7 +188,7 @@ Use the cheapest proof capable of falsifying the changed claim. A green unrelate
 
 ```text
 repository routing       → AGENTS.md
-minimum-flow discipline  → docs/04-system/development-discipline.md
+minimum-flow + diagnosis → docs/04-system/development-discipline.md
 specialist/jobdesk map   → docs/04-system/skill-routing.md
 GitHub execution         → GITHUB_RULES.md
 stable project facts     → CONTEXT.md
