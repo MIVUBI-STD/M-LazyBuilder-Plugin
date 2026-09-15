@@ -1,224 +1,230 @@
 # Windows Distribution and Update Reference
 
-Use for LazyBuilder executable identity, NSIS installer behavior, desktop/start-menu shortcuts, app signing, self-update, updater artifacts, release CI, and Windows-specific packaged behavior.
+Use for LazyBuilder executable identity, NSIS installer behavior, release artifacts, signing, update-channel publication, and any future in-app self-update runtime.
 
-## Product Identity
+## Current implementation boundary
 
-One canonical product identity must flow through:
+Current repository behavior already includes:
+
+```text
+Tauri + NSIS Windows packaging
+currentUser install mode
+WebView2 download-bootstrapper strategy
+canonical product identity/icons
+manual stable Launcher release workflow on main
+signed NSIS updater artifact generation
+stable update manifest publication
+release SHA-256 checksums
+versioned immutable GitHub release assets
+```
+
+Current source does **not** yet include `tauri-plugin-updater` in the Launcher Rust dependencies. Therefore:
+
+```text
+release/update-channel publication = implemented
+in-app self-update runtime          = not current implementation unless source later adds it
+```
+
+Do not describe the Launcher as having working automatic self-update merely because signed update artifacts/channel metadata are published.
+
+## Product identity
+
+One canonical identity must remain aligned across:
 
 ```text
 Tauri productName
 bundle identifier
-executable metadata
+publisher/executable metadata
 installer metadata
-icon.ico and generated icon assets
-Start Menu shortcut
-optional Desktop shortcut
-taskbar / Alt+Tab identity
-Installed Apps / uninstall entry
-updater target identity
+canonical icon source/generated assets
+Start Menu / taskbar / Alt+Tab identity
+Installed Apps / uninstall identity
+future updater target identity
 ```
 
-Do not maintain separate manually edited icons/names when generation from one source can prevent drift.
+Current Tauri identity is LazyBuilder / `com.halokaryamedia.lazybuilder` with NSIS as the Windows bundle target.
 
-## Installer Policy
+## Installer policy
 
-LazyBuilder uses Tauri + NSIS for the canonical Windows installer.
+Current packaged policy is source-authoritative. Do not invent installer options that are not present in Tauri/NSIS config.
 
-Professional default:
+Current key facts include:
 
 ```text
-Start Menu shortcut        always
-Desktop shortcut           optional, default selected
-Launch after install       optional finish-page action
-Auto-start with Windows    OFF unless explicitly added as a product requirement
-Permanent system tray      NO unless background residency becomes a real requirement
+NSIS target
+currentUser install mode
+English installer language
+WebView2 download bootstrapper, silent
+no automatic Windows auto-start requirement
 ```
 
-Avoid unnecessary installer choices that expose implementation details or developer tools.
+Desktop shortcut, finish-page launch behavior, tray residency, or other installer UX belongs here only if source/product requirements actually introduce it.
 
-## App Data vs Server Data
+## App data vs server data
 
-Keep distinct:
+Keep these separate:
 
 ```text
 APPLICATION DATA
 %LOCALAPPDATA%\LazyBuilder\
-settings / registry / updater metadata / diagnostics metadata / temp
+settings / registry / diagnostics / temp / update metadata
 
 SERVER WORKSPACES
 user-selected locations
 worlds / plugins / Paper runtime / server configuration
 ```
 
-Uninstalling Launcher must not silently delete user server workspaces.
+Launcher uninstall/update must not silently delete user server workspaces.
 
-## Self-Update Architecture
+## Current release publication flow
 
-Launcher self-update is not Paper/runtime update.
-
-Recommended flow:
+The current stable release workflow is explicit and manual on `main`:
 
 ```text
-check release metadata
-→ verify channel/compatibility
-→ download signed update artifact
-→ verify updater signature/integrity
-→ snapshot/migrate app metadata when schema risk requires it
+verify requested version against source
+→ require signing secrets
+→ verify Launcher source
+→ reject duplicate version release
+→ build signed NSIS updater artifact
+→ resolve installer + .sig
+→ build/verify stable latest.json
+→ write SHA-256 checksums
+→ publish immutable versioned GitHub release
+→ publish stable channel manifest
+→ verify published channel
+```
+
+The stable update channel is distribution metadata, not source authority.
+
+Private signing material stays in GitHub secrets/secure infrastructure; never commit it.
+
+## Update channels
+
+Current Launcher settings accept:
+
+```text
+stable
+preview
+```
+
+But a channel is only operational when matching publication/runtime support actually exists. Do not infer a maintained Preview feed merely because the settings schema accepts `preview`.
+
+Keep channel semantics explicit and fail closed when the selected feed/runtime path is unsupported.
+
+## Future in-app updater runtime
+
+If/when in-app self-update is implemented, it must consume the existing signed release/channel boundary rather than create a second publication system.
+
+Required shape:
+
+```text
+query selected channel metadata
+→ validate compatibility/version
+→ download signed artifact
+→ verify authenticity/integrity
 → stage update
-→ request explicit restart/install
-→ installer/updater applies replacement
-→ restart Launcher
-→ run post-update migration/reconciliation
-→ mark update healthy
+→ explicit restart/install boundary
+→ post-update migration/reconciliation
+→ report healthy/failure state
 ```
 
-Use Tauri updater semantics rather than creating a second custom executable-replacement system unless an unavoidable requirement is proven.
+Use one updater state authority. Current release publication does not by itself satisfy this runtime contract.
 
-## Update Channels
+## Signature and key safety
 
-Keep channels minimal:
+- private updater/signing keys stay outside repository/source/artifacts/logs;
+- public verification material may ship where required;
+- missing/invalid signatures fail closed;
+- never add a production UI switch that disables authenticity verification;
+- diagnostics may expose safe failure classification, never secret material.
 
-```text
-Stable   default for users
-Preview  optional only when we actually maintain and test it
-```
-
-Do not expose nightly/dev channels to normal users merely because CI builds exist.
-
-Channel selection belongs to persistent Launcher settings and must affect both release lookup and user-facing version information.
-
-## Signature / Key Safety
-
-Updater artifacts require authenticity verification.
-
-Rules:
-
-- private signing/updater keys live in CI secrets or secure signing infrastructure, never repository files;
-- public verification material may ship in the application;
-- installer/update verification failure blocks activation;
-- never offer a UI switch to disable authenticity verification;
-- record safe diagnostic reason without leaking secret material.
-
-## Windows Code Signing
-
-Unsigned builds are acceptable for internal/local development proof but not an ideal public release posture.
-
-Before public distribution, define a Windows Authenticode strategy and timestamping policy. Signing identity must match product/release ownership and CI should verify the produced installer/executable signature.
-
-Do not confuse Tauri updater signature verification with Windows Authenticode: they protect different boundaries and a mature public release may use both.
-
-## NSIS Customization
-
-Prefer Tauri's canonical NSIS path and bounded hooks/templates when needed.
-
-Typical reasons to customize:
-
-```text
-Desktop shortcut option
-finish-page launch behavior
-upgrade migration behavior
-installer branding
-pre/post install checks that Tauri config cannot express
-```
-
-Do not replace the entire installer pipeline for cosmetic control.
+Tauri updater signatures and Windows Authenticode protect different boundaries. Do not claim Windows code signing merely because a Tauri updater `.sig` exists.
 
 ## WebView2
 
-LazyBuilder depends on Windows WebView2 through Tauri.
+Current package uses the Tauri Windows WebView2 download bootstrapper in silent mode.
 
-Installer/package policy must explicitly define the minimum supported Windows versions and WebView2 installation strategy. Treat missing/corrupt WebView2 as an actionable Launcher prerequisite problem, not a generic blank-window failure.
+Missing/corrupt WebView2 should surface as an actionable packaged-runtime prerequisite problem, not a generic blank-window failure.
 
-## Release Artifacts
+## Release artifact contract
 
-A canonical release build should be able to prove provenance:
+A release candidate should identify at minimum:
 
 ```text
+source version
 commit SHA
-product version
 channel
-installer artifact
-artifact digest
-updater artifact/signature when enabled
-diagnostic executable only when intentionally distributed
+installer filename
+artifact SHA-256
+updater signature when produced
+manifest/version release identity
 ```
 
-Avoid multiple differently-built installers for the same version/channel.
+Avoid multiple differently built installers claiming the same version/channel.
 
-## CI Gates
+## Proof boundaries
 
-For Launcher-changing commits, use layered gates:
-
-```text
-frontend typecheck/build
-→ icon/resource generation
-→ cargo check
-→ cargo test
-→ Tauri production build
-→ NSIS installer build
-→ canonical package assembly
-→ installer smoke test
-→ artifact upload/digest
-```
-
-Signing/updater publication is a release gate, not necessarily required for every development commit.
-
-## Installer Smoke Test
-
-Automated smoke should verify what is practical without pretending to prove human-visible Windows behavior.
+### Source/static proof
 
 Can prove:
 
 ```text
-installer exists/non-empty
-expected naming/version
-unattended install can complete when supported
-expected executable/resources installed
-basic executable startup contract
-uninstall metadata/command presence when inspectable
+version/config consistency
+release workflow contract
+manifest/signature/checksum generation logic
+secret references are external
+bundle identity/config
 ```
 
-Requires real Windows acceptance proof:
+### Packaged Windows proof
+
+Needed for:
 
 ```text
-Desktop shortcut checkbox UX
-Start Menu discoverability
-taskbar/Alt+Tab icon rendering
-Windows Search identity
-upgrade from prior installed version
-SmartScreen/signing reputation behavior
-finish-page launch experience
-uninstall user-data behavior
+installer execution
+installed executable/resources
+upgrade behavior
+WebView2 bootstrap behavior
+shortcut/Installed Apps identity
+uninstall behavior
 ```
 
-## Update Failure / Rollback
+### Future in-app updater proof
 
-Design before enabling automatic update:
+Only applicable after updater runtime exists:
 
 ```text
-download failure            → current app untouched
-signature failure           → current app untouched, surface actionable error
-install interrupted         → installer/updater recovery path documented
-settings migration fails    → preserve previous-valid app metadata and enter repair/recovery
-new build unhealthy         → enough prior metadata/version evidence exists to diagnose/roll back according to release policy
+channel query
+signature rejection
+successful staged update
+restart/install handoff
+post-update migration/reconciliation
+failure leaves current app usable
 ```
 
-Do not claim rollback exists unless an actual previous-version restoration path is implemented and tested.
+Do not report this proof lane before the runtime exists.
 
-## Release Checklist
+## Failure / rollback rule
 
 ```text
-[ ] product version consistent across package/Rust/Tauri metadata
-[ ] bundle identifier stable
-[ ] canonical icon generated and bundled
-[ ] Start Menu identity correct
-[ ] Desktop shortcut policy correct
-[ ] updater channel/endpoint/signature configuration valid when enabled
-[ ] private keys absent from repository/artifacts/logs
-[ ] installer artifact has digest/provenance
-[ ] clean install smoke passes
-[ ] upgrade scenario tested before release
-[ ] uninstall preserves server workspaces
-[ ] real Windows visual/interaction acceptance scheduled for release candidate
+download/build/publication failure → existing installed app unaffected
+signature/manifest failure         → activation/publication blocked
+settings migration failure         → preserve previous-valid metadata and surface recovery
+interrupted future in-app update   → require an implemented/tested recovery path before claiming rollback
+```
+
+Do not claim previous-version rollback unless an actual restoration mechanism exists and has been tested.
+
+## Review checklist
+
+```text
+[ ] product/version/bundle identity align
+[ ] installer policy matches current Tauri config
+[ ] release workflow is explicit and main-only
+[ ] signing secrets are external
+[ ] signed artifact/manifest/checksum claims match produced files
+[ ] stable vs preview capability is not overstated
+[ ] publication is not confused with in-app updater implementation
+[ ] server workspaces remain outside Launcher uninstall/update ownership
+[ ] packaged Windows behavior is proven at the correct boundary
 ```
