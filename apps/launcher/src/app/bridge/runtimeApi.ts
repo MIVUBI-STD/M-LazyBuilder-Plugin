@@ -72,7 +72,7 @@ export type LauncherOperationProgress = { current: number; total?: number | null
 export type LauncherOperationError = { code: string; message: string; details: string; recoverable: boolean };
 export type LauncherOperationSnapshot = {
   id: string;
-  correlationId: string;
+  correlationId?: string;
   kind: string;
   resource: string;
   state: LauncherOperationState;
@@ -133,19 +133,13 @@ export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: GameMode; ti
 export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: WorldTaskState; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
 
 export const runtimeApi = {
-  diagnostics: {
-    summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary')
-  },
-  startup: {
-    status: () => invokeRuntime<StartupReport>('launcher_startup_status')
-  },
+  diagnostics: { summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary') },
+  startup: { status: () => invokeRuntime<StartupReport>('launcher_startup_status') },
   settings: {
     get: () => invokeRuntime<LauncherSettings>('launcher_settings_get'),
     save: (settings: LauncherSettings) => invokeRuntime<LauncherSettings>('launcher_settings_save', { settings })
   },
-  health: {
-    server: (id: string) => invokeRuntime<ServerHealthSnapshot>('launcher_server_health', { id })
-  },
+  health: { server: (id: string) => invokeRuntime<ServerHealthSnapshot>('launcher_server_health', { id }) },
   operations: {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
     get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
