@@ -12,6 +12,7 @@ pub mod provisioning;
 pub mod resource_settings;
 pub mod runtime_environment;
 pub mod runtime_updates;
+pub mod server_backups;
 pub mod server_config;
 pub mod server_health;
 pub mod server_manager;
