@@ -83,15 +83,135 @@ Linux package formats
 sidecar guidance unrelated to current LazyBuilder needs
 ```
 
-## 4. Skill composition principle
+## 4. Production launcher source references
 
-Research across public skills showed a recurring useful shape:
+Generic framework skills are useful, but production launcher behavior is better grounded by real launchers. The following repositories were selected because each contributes a different mature pattern.
+
+### PrismLauncher
+
+Source:
+
+`https://github.com/PrismLauncher/PrismLauncher`
+
+Useful source areas:
+
+```text
+launcher/tasks/Task.h
+launcher/Application.cpp
+launcher/settings/*
+launcher/InstanceList.*
+launcher/updater/*
+```
+
+Patterns adopted conceptually:
+
+```text
+one reusable task lifecycle for long-running work
+explicit status/details/current/total/warnings/abortability
+multi-step progress
+centralized application startup/lifecycle
+bounded launcher log rotation
+central settings authority
+single-instance application behavior
+```
+
+LazyBuilder does not adopt Qt classes or Prism's instance/game architecture. The value is the semantic separation between application lifecycle, reusable task execution, settings, and UI.
+
+### GDLauncher Carbon
+
+Source:
+
+`https://github.com/gorilla-devs/GDLauncher-Carbon`
+
+Useful source areas:
+
+```text
+apps/desktop/packages/main/autoUpdater.ts
+apps/desktop/packages/preload/autoupdate.ts
+apps/desktop/packages/mainWindow/src/utils/updater.tsx
+```
+
+Patterns adopted conceptually:
+
+```text
+updater represented as explicit finite state
+single updater lock
+release-channel policy
+current updater state is queryable
+state changes are broadcast to presentation
+progress and structured errors are first-class
+E2E can use a controlled test update feed
+```
+
+LazyBuilder will implement equivalent semantics in Rust/Tauri rather than Electron IPC.
+
+### DropOut
+
+Source:
+
+`https://github.com/HydroRoll-Team/DropOut`
+
+This is especially relevant because it is a Minecraft launcher using Tauri 2 with a Rust core and web UI.
+
+Useful source areas:
+
+```text
+src-tauri/src/core/downloader.rs
+src-tauri/src/main.rs
+packages/ui/src/lib/launch-readiness.ts
+packages/ui/src/client.ts
+packages/ui/src/pages/instances/*
+packages/docs/content/en/development/*
+```
+
+Patterns adopted conceptually:
+
+```text
+Rust owns side effects and launcher truth
+backend-authoritative launch/readiness checks
+same readiness contract reused by multiple UI surfaces
+progressive/bounded checks for large instance libraries
+resumable managed downloads
+progress events with bytes/speed/ETA where meaningful
+safe cancellation
+checksum verification before promotion
+```
+
+LazyBuilder should apply these patterns to server readiness, managed runtime/update downloads, and Server Library health without copying DropOut's game/account feature set.
+
+### ATLauncher
+
+Source:
+
+`https://github.com/ATLauncher/ATLauncher`
+
+Useful source:
+
+`TESTING.md`
+
+Pattern adopted conceptually:
+
+```text
+changed behavior gets a regression test
+filesystem tests use isolated temporary storage
+```
+
+LazyBuilder does not adopt ATLauncher's older Java architecture. The useful contribution is simple repeatable testing discipline for file-based launcher behavior.
+
+Detailed synthesis and adoption rules live in:
+
+`references/real-launcher-patterns.md`
+
+## 5. Skill composition principle
+
+Research across public skills and launcher repositories showed a recurring useful shape:
 
 ```text
 thin semantic owner in SKILL.md
 + task-specific references/
 + explicit when-to-read routing
 + quality/proof gates
++ real production source patterns
 ```
 
 LazyBuilder uses this pattern to avoid both extremes:
@@ -106,7 +226,7 @@ The chosen design is one existing semantic owner:
 
 `lazybuilder-desktop-runtime`
 
-with launcher-specific references for architecture, operations/recovery, Windows distribution/update, and quality gates.
+with launcher-specific references for architecture, operations/recovery, Windows distribution/update, quality gates, and production launcher patterns.
 
 ## LazyBuilder-Specific Synthesis
 
@@ -120,16 +240,51 @@ Svelte presentation
 → platform/provider adapter
 ```
 
-and:
+Long-running work should follow:
 
 ```text
-persistent/destructive operation
-→ explicit ownership/state
+one operation authority
+→ explicit lifecycle
+→ queryable snapshot
+→ typed progress events
+→ safe cancel/retry rules
+→ restart reconciliation
+```
+
+Readiness should follow:
+
+```text
+one Rust health/readiness authority
+→ Server Library
+→ Overview
+→ Start/Repair eligibility
+→ future launcher surfaces
+```
+
+Persistent/destructive work should follow:
+
+```text
+explicit ownership/state
 → staged mutation
 → verification
 → atomic publish when practical
 → restart reconciliation
 → bounded diagnostics
+```
+
+Application startup should converge toward:
+
+```text
+runtime environment
+→ logging
+→ settings migration
+→ filesystem transaction recovery
+→ process reconciliation
+→ operation reconciliation
+→ updater initialization
+→ server registry
+→ bounded health refresh
+→ UI ready
 ```
 
 This synthesis is intentionally narrower than the external source material and aligned to LazyBuilder's actual stack, existing owners, Windows-first packaging, and local Minecraft server-manager product scope.
