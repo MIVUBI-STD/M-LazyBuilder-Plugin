@@ -20,10 +20,11 @@ import java.util.UUID;
 /** Client-owned per-server navigation preferences. Never persisted as world metadata. */
 public final class WorldNavigationPreferences {
     private static final int MAX_RECENT = 5;
+    private static final Properties SHARED_PROPERTIES = new Properties();
     private static final WorldNavigationPreferences SHARED = new WorldNavigationPreferences();
 
     private final Path path;
-    private final Properties properties = new Properties();
+    private final Properties properties = SHARED_PROPERTIES;
 
     public static WorldNavigationPreferences shared() {
         return SHARED;
@@ -34,7 +35,7 @@ public final class WorldNavigationPreferences {
         reload();
     }
 
-    /** Refreshes this in-memory view after another LazyBuilder screen changed navigation preferences. */
+    /** Refreshes the shared in-memory view after another LazyBuilder surface changed navigation preferences. */
     public synchronized void reload() {
         properties.clear();
         if (!Files.isRegularFile(path)) return;
