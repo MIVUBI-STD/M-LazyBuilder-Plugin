@@ -1,0 +1,62 @@
+name: Temporary Map UI Copy Patch
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - '.github/workflows/_temp-map-ui-copy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: Local
+          fetch-depth: 0
+      - name: Rebase on latest Local
+        run: git pull --rebase origin Local
+      - name: Apply guarded copy clarity patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              ('Text.literal("Resolving managed world…")', 'Text.literal("Loading current world…")'),
+              ('Text.literal("Map rendering starts after server identity is known")', 'Text.literal("Map will appear when the current world is ready")'),
+              ('''        if (sidebarCollapsed) {\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal("›"), sidebar / 2, 13, LbUi.TEXT_PRIMARY);\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal("●"), sidebar / 2, 48, LbUi.SUCCESS);\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal("★"), sidebar / 2, 78, LbUi.ACCENT_BRIGHT);\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal("⚙"), sidebar / 2, height - 28, LbUi.TEXT_MUTED);\n            return;\n        }''', '''        if (sidebarCollapsed) {\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal("›"), sidebar / 2, 13, LbUi.TEXT_PRIMARY);\n            return;\n        }'''),
+              ('Text.literal("Current")', 'Text.literal("Current world")'),
+              ('maps.currentWorld() == null ? "Resolving…" : maps.currentWorld().displayName()', 'maps.currentWorld() == null ? "Loading…" : maps.currentWorld().displayName()'),
+              ('String switchLabel = showAllWorlds ? "Favorites" : "All ›";', 'String switchLabel = showAllWorlds ? "Favorites" : "All worlds ›";'),
+              ('String label = current ? "Center player" : pending ? "Teleporting…" : "Teleport →";', 'String label = current ? "Center on player" : pending ? "Teleporting…" : "Teleport →";'),
+              ('SURFACE.pendingCount() > 0 ? "Mapping " + SURFACE.pendingCount() + " columns…"', 'SURFACE.pendingCount() > 0 ? "Loading map…"'),
+              ('"M / Esc close  •  Drag pan  •  Scroll zoom  •  R recenter"', '"M / Esc close  •  Drag move map  •  Scroll zoom  •  R center player"'),
+              ('"LazyBuilder: open a managed world before copying a review reference."', '"LazyBuilder: open a managed world before copying location details."'),
+              ('"Review reference copied."', '"Location details copied."'),
+              ('''    private String zoomLabel() {\n        if (zoom >= 1.0) return String.format(Locale.ROOT, "1:%.1f", zoom);\n        return String.format(Locale.ROOT, "%.2f:1", 1.0 / zoom);\n    }''', '''    private String zoomLabel() {\n        if (Math.abs(zoom - Math.rint(zoom)) < 0.01) {\n            return "Zoom " + (int) Math.rint(zoom) + "×";\n        }\n        return String.format(Locale.ROOT, "Zoom %.1f×", zoom);\n    }'''),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Guard failed: expected exactly one match, found {count}: {old[:100]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "halokaryamedia-source"
+          git config user.email "halokaryamedia@gmail.com"
+          git rm .github/workflows/_temp-map-ui-copy.yml
+          git add mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+          git commit -m "fix(map-ui): clarify player-facing map labels"
+          git push origin HEAD:Local
