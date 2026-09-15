@@ -28,6 +28,7 @@ public final class ClientWorldController {
     private boolean canTeleport = true;
     private boolean worldListReady;
     private boolean worldListPending;
+    private boolean teleportPending;
     private String lastError;
     private String activityMessage;
     private long revision;
@@ -97,7 +98,20 @@ public final class ClientWorldController {
     }
 
     /** Teleport owns any required world load; manual load/unload is intentionally not a client action. */
-    public void teleport(UUID worldId) { send(new WorldControlWireProtocol.TeleportWorld(worldId)); }
+    public void teleport(UUID worldId) {
+        if (teleportPending) return;
+        teleportPending = true;
+        lastError = null;
+        revision++;
+        try {
+            send(new WorldControlWireProtocol.TeleportWorld(worldId));
+        } catch (RuntimeException exception) {
+            teleportPending = false;
+            lastError = "Could not send teleport request";
+            revision++;
+            throw exception;
+        }
+    }
     public void archive(UUID worldId) { send(new WorldControlWireProtocol.ArchiveWorld(worldId)); }
     public void restore(UUID worldId) { send(new WorldControlWireProtocol.RestoreWorld(worldId)); }
     public void requestSettings(UUID worldId) { send(new WorldControlWireProtocol.GetSettings(worldId)); }
@@ -133,6 +147,7 @@ public final class ClientWorldController {
             }
             case WorldControlWireProtocol.TeleportOk ok -> {
                 replace(ok.world());
+                teleportPending = false;
                 lastError = null;
                 revision++;
             }
@@ -167,6 +182,7 @@ public final class ClientWorldController {
             }
             case WorldControlWireProtocol.ErrorResponse error -> {
                 if (worldListPending) worldListPending = false;
+                teleportPending = false;
                 discardWhenInspected.clear();
                 lastError = error.message();
                 activityMessage = null;
@@ -186,6 +202,7 @@ public final class ClientWorldController {
         canTeleport = true;
         worldListReady = false;
         worldListPending = false;
+        teleportPending = false;
         lastError = null;
         activityMessage = null;
         revision++;
@@ -197,6 +214,7 @@ public final class ClientWorldController {
     public boolean canTeleport() { return canTeleport; }
     public boolean worldListReady() { return worldListReady; }
     public boolean worldListPending() { return worldListPending; }
+    public boolean teleportPending() { return teleportPending; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public WorldControlWireProtocol.ImportInspection importInspection() { return importInspection; }
     public String lastError() { return lastError; }
