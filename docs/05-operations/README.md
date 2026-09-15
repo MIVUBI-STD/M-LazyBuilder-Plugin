@@ -12,6 +12,31 @@ All current implementation work stays on `Local`. Do not create a parallel build
 
 Read current readiness from the latest `Verify` workflow for the exact current `Local` HEAD. Never reuse an old green workflow as proof for a newer commit.
 
+## Current phase
+
+Remote repository/runtime hardening has reached the point where the next phase is **installed Local PC validation**.
+
+Canonical next-to-do:
+
+[`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Do not use this phase to add speculative architecture. Start from the installer and exercise what already exists:
+
+```text
+installer
+→ Launcher
+→ Server Manager
+→ Plugin Manager
+→ World Manager
+→ Utilities Manager
+→ Client Setup / Modrinth
+→ Map Manager
+→ Utility Manager
+→ full Paper/Fabric interoperability
+→ restart/recovery/update
+→ large-world/storage/conversion validation
+```
+
 ## Canonical product boundary
 
 ```text
@@ -24,11 +49,15 @@ Paper
 ├── World Manager
 └── Utilities Manager
 
-Required Fabric client suite
+Intended V1 Fabric client suite
 ├── Map Manager
-├── Utility Manager
+└── Utility Manager
+
+Deferred research source
 └── Performance Manager
 ```
+
+Current Launcher/CI packaging may still contain transitional references to Performance Manager. That does not promote it back into required V1 scope. During Local PC validation, confirm only that transitional packaging does not break the product or create a hidden dependency.
 
 The Launcher package must be built from matching tested artifacts from the same source revision.
 
@@ -92,7 +121,7 @@ Every accepted Local candidate follows one pipeline:
 Local commit
 → repository consistency checks
 → Maven wrapper: Paper/shared compile + tests
-→ Gradle wrapper: all required Fabric managers
+→ Gradle wrapper: Fabric manager builds
 → verify client JAR contents
 → Paper runtime smoke proof
 → Svelte checks/build
@@ -102,6 +131,7 @@ Local commit
 → canonical Local package
 → silent installer smoke test
 → GitHub Actions artifact
+→ Local PC validation
 ```
 
 The distributed Local package is staged as:
@@ -161,22 +191,28 @@ A missing Java runtime must not prevent the desktop Launcher from opening. It is
 REMOTE_GITHUB
 → repository consistency
 → Paper compile/tests
-→ all required Fabric builds
+→ Fabric builds
 → Launcher frontend/Rust checks/tests
 → Paper runtime smoke
+→ Paper Runtime Proof
 → Tauri/NSIS package
 → installer smoke test
 → canonical Local artifact
 
 LOCAL_TEST_PC
-→ installer launch/install/update behavior
+→ clean installer launch/install/update
 → Launcher first run
 → managed Java provisioning
+→ real Paper process behavior
+→ Plugin Manager on a real workspace
 → real Modrinth integration
-→ real server/client workflows
+→ real Fabric client UI/input
+→ real player/plugin/mod workflows
+→ restart/reconnect/recovery
+→ large-world/storage/conversion behavior
 
-LIVE_SERVER
-→ real Paper/Minecraft/Fabric/gameplay behavior
+LIVE_SERVER / REAL CLIENT
+→ gameplay and long-lived behavior under representative use
 ```
 
 A green lower layer is not proof of a higher layer.
@@ -186,6 +222,8 @@ A green lower layer is not proof of a higher layer.
 For normal testing, do not clone/build the source on the test machine. Use the latest successful `Verify` workflow for current `Local` HEAD and retrieve the `LazyBuilder-Local-<commit>` artifact. The package contains `LazyBuilder-Setup-Local.exe` plus provenance/checksum metadata.
 
 If the repository is also present on the machine for inspection, that does not change runtime behavior: run the prebuilt installer artifact, not a locally compiled binary.
+
+Then follow [`local-pc-validation-plan.md`](local-pc-validation-plan.md) from Phase 0 through Phase 12.
 
 ## Build provenance
 
@@ -212,27 +250,45 @@ Install/update/repair work must preserve normal LazyBuilder user data, selected 
 
 Do not change global Java, Maven, Gradle, Node, Rust or Python configuration on an end-user machine.
 
-## LOCAL_TEST proof order
+## Immediate LOCAL_TEST proof order
 
 ```text
-1. confirm latest Verify workflow is green for exact Local HEAD
-2. obtain LazyBuilder-Local-<commit> artifact
-3. verify SHA256SUMS.txt when needed
-4. run LazyBuilder-Setup-Local.exe
-5. verify Windows installation/uninstall registration
-6. open LazyBuilder
-7. verify application data and first-run state
-8. exercise managed Java provisioning through server functionality
+1. confirm latest Verify and relevant Paper Runtime Proof are green
+2. obtain the canonical Local artifact for that exact revision
+3. record build-info.json + SHA256SUMS.txt
+4. run LazyBuilder-Setup-Local.exe on the Local PC
+5. test clean install + Launcher first run
+6. test managed Java + Paper start/stop/restart
+7. test Plugin Manager
+8. test World Manager and Utilities Manager
 9. select/sync a real Modrinth 1.21.4 Fabric profile
-10. create/open/adopt a server workspace
-11. start Paper 1.21.4
-12. exercise client/server managers and persistence
+10. launch Minecraft and test Map Manager + Utility Manager
+11. test full Paper/Fabric reconnect/restart matrix
+12. only after core flow is stable, test large worlds/storage pressure/conversion
 ```
+
+The detailed acceptance criteria are in `local-pc-validation-plan.md` and should not be duplicated into another checklist.
 
 ## Defect handling
 
 Only reproducible failures reopen source work. Record component, expected result, actual result, exact error, source commit/build-info, first wrong owner and smallest proposed fix. Fix only that owner first and rerun the smallest failing gate before the entire workflow.
 
+Do not fix multiple unrelated Local PC findings in one broad architectural change.
+
 ## STOP condition
 
-The Local distribution path is ready only when a clean Windows test machine without developer tools can install `LazyBuilder-Setup-Local.exe`, open LazyBuilder, provision required application runtime when needed, and perform accepted LocalTest workflows without invoking a terminal or building source.
+The Local distribution path is ready for final audit/promotion discussion only when a representative clean Windows test machine can:
+
+```text
+install/update LazyBuilder
+→ open Launcher
+→ provision runtime and operate Paper
+→ manage representative plugins
+→ use accepted Paper manager functions
+→ sync a real Modrinth Fabric profile
+→ use required Fabric managers in Minecraft
+→ survive restart/reconnect/update
+→ complete representative large-world/storage/conversion tests
+```
+
+without invoking a developer build flow, and with no unresolved P0/P1 defect.
