@@ -143,6 +143,7 @@ public final class WorldMapScreen extends Screen {
             maps.refreshCurrentWorld();
         }
         observeCurrentWorld();
+        normalizeSelectionForSection();
         observedWorldRevision = worlds.revision();
         observedMapRevision = maps.revision();
     }
@@ -568,13 +569,18 @@ public final class WorldMapScreen extends Screen {
                 return true;
             }
             if (favoritesTabRect().contains(mouseX, mouseY)) {
-                showAllWorlds = false;
-                worldListOffset = 0;
+                if (showAllWorlds) {
+                    showAllWorlds = false;
+                    worldListOffset = 0;
+                    normalizeSelectionForSection();
+                }
                 return true;
             }
             if (allWorldsTabRect().contains(mouseX, mouseY)) {
-                showAllWorlds = true;
-                worldListOffset = 0;
+                if (!showAllWorlds) {
+                    showAllWorlds = true;
+                    worldListOffset = 0;
+                }
                 return true;
             }
 
@@ -584,8 +590,12 @@ public final class WorldMapScreen extends Screen {
                 Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
                 if (rect.contains(mouseX, mouseY)) {
                     WorldControlWireProtocol.WorldSummary world = rows.get(i);
-                    if (mouseX < 27) NAVIGATION.togglePinned(world.worldId());
-                    else selectedWorldId = world.worldId();
+                    if (mouseX < 27) {
+                        NAVIGATION.togglePinned(world.worldId());
+                        if (!showAllWorlds) normalizeSelectionForSection();
+                    } else {
+                        selectedWorldId = world.worldId();
+                    }
                     return true;
                 }
                 rowY += SIDEBAR_ROW_HEIGHT;
@@ -1145,6 +1155,13 @@ public final class WorldMapScreen extends Screen {
             if (result.size() >= MAX_FAVORITES) break;
         }
         return result;
+    }
+
+    private void normalizeSelectionForSection() {
+        if (selectedWorldId == null || isCurrentWorld(selectedWorldId) || showAllWorlds) return;
+        boolean available = sidebarWorlds().stream()
+                .anyMatch(world -> world.worldId().equals(selectedWorldId));
+        if (!available) selectedWorldId = currentWorldId();
     }
 
     private int visibleSidebarRows() {
