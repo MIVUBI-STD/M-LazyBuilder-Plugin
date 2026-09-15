@@ -36,7 +36,7 @@ pub fn log_with_context(level: &str, correlation_id: &str, message: &str) {
     let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else { return; };
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or_default();
     let sanitized = message.replace('\r', " ").replace('\n', " ");
-    let correlation = correlation_id.replace(['\r', '\n', ' '], "");
+    let correlation = correlation_id.replace('\r', "").replace('\n', "").replace(' ', "");
     let _ = writeln!(file, "[{timestamp}] {} [{}] {sanitized}", level.to_ascii_uppercase(), if correlation.is_empty() { "-" } else { &correlation });
 }
 
