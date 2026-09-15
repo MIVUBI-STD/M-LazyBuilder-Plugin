@@ -1,14 +1,18 @@
 # LazyBuilder Performance Manager
 
-LazyBuilder Performance Manager is the first-party Fabric client performance runtime for Minecraft Java 1.21.4.
+> **Status: deferred / experimental for V1.** Performance Manager remains in the repository as isolated research source. It is not a product requirement unless measured client evidence justifies promotion.
+>
+> The current `Local` Launcher/client-packaging path may still reference or bundle this module while the active Launcher/installer consolidation is in progress. Treat that as transitional implementation state, not permission to expand Performance Manager or make other systems depend on it. Do not remove or rewire those active Launcher paths in parallel unless that work is explicitly coordinated.
 
 ## Goal
 
-Keep the Minecraft client smooth, stable, and responsive without lowering visual quality by default. LazyBuilder owns the performance behavior it requires; third-party optimization mods are not mandatory runtime owners.
+Keep a bounded first-party performance experiment available for Minecraft Java 1.21.4 without turning performance tuning into a second product architecture.
 
-## Current scope
+The module may be used to measure specific client bottlenecks. It must not become a hidden runtime dependency, graphics-quality controller, general optimization framework, or reason to duplicate behavior already owned by Minecraft, Fabric, Modrinth, or another LazyBuilder manager.
 
-The current runtime provides:
+## Current research scope
+
+The existing source provides:
 
 - allocation-free rolling frame timing over a bounded 60-frame window;
 - target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
@@ -16,6 +20,8 @@ The current runtime provides:
 - first-party unfocused/minimized FPS policy;
 - on-demand performance snapshots, including Minecraft chunk/entity/particle debug state;
 - no permanent HUD, metrics history database, background worker, graphics auto-tuning, or speculative workload scheduler.
+
+No additional capability should be added until a reproducible client-side performance problem demonstrates that this module is the correct owner.
 
 ## Runtime model
 
@@ -31,7 +37,7 @@ One world-render callback records focused world frame timing. One end-client-tic
 
 ## Frame pressure
 
-Frame pressure is diagnostic state. It is intentionally not a graphics-quality controller and currently does not own scheduling in other LazyBuilder managers.
+Frame pressure is diagnostic state. It is intentionally not a graphics-quality controller and does not own scheduling in other LazyBuilder managers.
 
 Thresholds are derived from the user's configured foreground FPS target with conservative absolute floors. This avoids treating an intentional 30 FPS target as a performance fault while still detecting sustained slow frames and severe spikes.
 
@@ -39,7 +45,7 @@ When world rendering stops, the window loses focus, or the client is minimized, 
 
 ## Background resource policy
 
-Default policy:
+Existing experimental defaults:
 
 ```properties
 background.enabled=true
@@ -49,7 +55,7 @@ background.minimized_fps=10
 
 The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured video-option FPS limit. When focus returns, the current user limit is authoritative again.
 
-This behavior is owned by LazyBuilder. It does not yield ownership to Dynamic FPS or another optional provider.
+This behavior must remain isolated inside Performance Manager while the module is deferred. Other LazyBuilder components must not depend on it.
 
 ## Diagnostics
 
@@ -75,13 +81,21 @@ Memory, option, entity, chunk, and particle diagnostics are not sampled continuo
 
 ## Ownership rule
 
-Performance capabilities required by LazyBuilder must have first-party implementations maintained and versioned with LazyBuilder. External projects may inform problem analysis, but LazyBuilder must not require them for its core performance behavior.
+Performance Manager is currently an isolated research owner, not a shared infrastructure layer.
 
-Generic renderer replacement, culling engines, shader systems, and other broad optimization engines are not added merely because they exist elsewhere. They require runtime evidence of a specific bottleneck and a bounded first-party scope before implementation.
+Do not:
+
+- introduce dependencies from Map Manager, Utility Manager, Paper plugins, or shared protocol into Performance Manager;
+- introduce dependencies from Performance Manager into unrelated LazyBuilder managers;
+- add a second performance/config authority in the Launcher or Paper runtime;
+- add renderer replacement, culling engines, shader systems, background schedulers, compatibility matrices, or broad optimization frameworks without measured evidence;
+- promote this module to required V1 runtime solely because the source already exists.
+
+Promotion requires a concrete bottleneck, a success metric, representative Minecraft-client proof, and an explicit product decision.
 
 ## Configuration
 
-Only real user decisions are configurable:
+Only the existing bounded experimental decisions are represented:
 
 ```properties
 background.enabled=true
@@ -89,4 +103,4 @@ background.unfocused_fps=30
 background.minimized_fps=10
 ```
 
-Frame-pressure thresholds remain internal until runtime profiling proves a user-facing setting is necessary.
+Frame-pressure thresholds remain internal. Do not add more knobs unless profiling proves that a real user decision is required.
