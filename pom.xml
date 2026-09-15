@@ -51,6 +51,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
+                    <configuration>
+                        <!-- LazyBuilder does not use source-generating annotation processors. -->
+                        <!-- Make this explicit so future javac defaults cannot change the build. -->
+                        <proc>none</proc>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
