@@ -1,5 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export type RuntimeCommandError = { code: string; message: string };
+
+export function runtimeError(value: unknown): RuntimeCommandError {
+  if (value && typeof value === 'object') {
+    const candidate = value as { code?: unknown; message?: unknown };
+    if (typeof candidate.code === 'string' && typeof candidate.message === 'string') {
+      return { code: candidate.code, message: candidate.message };
+    }
+  }
+  const message = String(value ?? '').replace(/^Error:\s*/i, '').trim();
+  return { code: 'RUNTIME_ERROR', message: message || 'Something went wrong. Try again.' };
+}
+
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
 export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
 export type AdoptionPlan = { root: string; name: string; paperJar: string; worlds: string[]; serverEntries: string[]; legacyPluginsToDisable: string[]; preservedEntries: string[]; warnings: string[] };
