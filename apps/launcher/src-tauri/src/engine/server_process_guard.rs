@@ -1,5 +1,5 @@
 use crate::engine::workspace_registry;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
@@ -10,6 +10,70 @@ struct ProcessMarker {
     pid: u32,
     #[serde(default)]
     process_start_time: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupProcessReconciliation {
+    pub running_servers: Vec<String>,
+    pub stale_markers_cleared: u32,
+    pub issues: Vec<String>,
+}
+
+/// Startup-only reconciliation for registered LazyBuilder workspaces.
+///
+/// This never terminates a live process. It only removes stale cache markers when
+/// the recorded PID no longer exists, has been reused, or no longer matches the
+/// LazyBuilder-managed Paper command line for that workspace.
+pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconciliation, String> {
+    let servers = workspace_registry::list()?;
+    let mut system = System::new_all();
+    let mut result = StartupProcessReconciliation {
+        running_servers: Vec::new(),
+        stale_markers_cleared: 0,
+        issues: Vec::new(),
+    };
+
+    for server in servers {
+        let root = PathBuf::from(&server.path);
+        let marker_path = process_marker_path(&root);
+        if !marker_path.is_file() { continue; }
+
+        let text = match fs::read_to_string(&marker_path) {
+            Ok(text) => text,
+            Err(error) => {
+                result.issues.push(format!("Could not read process marker for {}: {error}", server.name));
+                continue;
+            }
+        };
+        let marker: ProcessMarker = match serde_json::from_str(&text) {
+            Ok(marker) => marker,
+            Err(error) => {
+                result.issues.push(format!("Process marker for {} is malformed and was preserved for manual recovery: {error}", server.name));
+                continue;
+            }
+        };
+
+        let pid = Pid::from_u32(marker.pid);
+        system.refresh_process(pid);
+        let stale = match system.process(pid) {
+            None => true,
+            Some(process) if marker.process_start_time != 0 && process.start_time() != marker.process_start_time => true,
+            Some(process) if !looks_like_workspace_paper(process, &root) => true,
+            Some(_) => false,
+        };
+
+        if stale {
+            match fs::remove_file(&marker_path) {
+                Ok(()) => result.stale_markers_cleared = result.stale_markers_cleared.saturating_add(1),
+                Err(error) => result.issues.push(format!("Could not clear stale process marker for {}: {error}", server.name)),
+            }
+        } else {
+            result.running_servers.push(server.name);
+        }
+    }
+
+    Ok(result)
 }
 
 /// Read-only cross-workspace safety guard. ServerManager remains process authority.
@@ -72,6 +136,7 @@ fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> b
 mod tests {
     use super::process_marker_path;
     use std::path::Path;
+
     #[test]
     fn marker_path_stays_workspace_local() {
         assert_eq!(process_marker_path(Path::new("C:/BuildServer")), Path::new("C:/BuildServer/tools/lazybuilder/cache/server-process.json"));
