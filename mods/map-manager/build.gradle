@@ -33,18 +33,6 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
 
-fabricApi {
-    configureTests {
-        createSourceSet = true
-        modId = 'lazybuilder-map-manager-visual-proof'
-        enableGameTests = false
-        enableClientGameTests = true
-        eula = true
-        clearRunDirectory = true
-        username = 'LazyBuilderPreview'
-    }
-}
-
 sourceSets {
     main {
         java {
@@ -55,6 +43,33 @@ sourceSets {
             include 'com/halokaryamedia/lazybuilder/world/map/MapActionWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/world/registry/WorldId.java'
+        }
+    }
+    gametest {
+        compileClasspath += main.output
+        compileClasspath += main.compileClasspath
+        runtimeClasspath += main.output
+        runtimeClasspath += main.runtimeClasspath
+    }
+}
+
+// Loom 1.9.2 predates fabricApi.configureTests. Mirror the manual client-gametest
+// setup used by Fabric API 0.119.4 itself so the production toolchain stays unchanged.
+loom.mods.register('lazybuilder-map-manager-visual-proof') {
+    sourceSet sourceSets.gametest
+}
+
+loom {
+    runs {
+        clientGameTest {
+            client()
+            name = 'LazyBuilder Map Manager Visual Proof'
+            source sourceSets.gametest
+            vmArg '-Dfabric.client.gametest'
+            vmArg "-Dfabric.client.gametest.testModResourcesPath=${file('src/gametest/resources').absolutePath}"
+            runDir 'build/run/clientGameTest'
+            programArg '--username'
+            programArg 'LazyBuilderPreview'
         }
     }
 }
