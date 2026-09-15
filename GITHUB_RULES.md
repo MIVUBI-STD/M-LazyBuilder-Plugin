@@ -83,7 +83,7 @@ Do not create checkpoint/retry commits or temporary files solely to transfer wor
 ## 6. Integrity rules
 
 - Never commit secrets, credentials, private keys, server tokens, `.env` values, or production data.
-- Do not commit IDE state, local server worlds, logs, crash reports, caches, compiled jars, or build directories.
+- Do not commit IDE state, local server worlds, logs, crash reports, caches, compiled jars, build directories, `dist/`, `.runtime-proof/`, or temporary workflow artifacts.
 - Pin runtime/build assumptions deliberately; do not perform unrelated dependency upgrades.
 - Preserve existing public behavior during refactors unless behavior change is explicitly in scope.
 - Do not silently introduce NMS/version-coupled internals. Any NMS use must have an explicit owner, justification, and supported-version boundary.
@@ -92,7 +92,7 @@ Do not create checkpoint/retry commits or temporary files solely to transfer wor
 
 ## 7. Verification
 
-Use the cheapest relevant check:
+Use the cheapest relevant check during development:
 
 ```text
 docs/policy only       -> structural review/static validation
@@ -102,7 +102,18 @@ Paper API integration  -> integration test where feasible
 server lifecycle       -> LIVE_SERVER smoke/runtime test
 ```
 
-A green unrelated workflow is not proof. A skipped required check is not PASS.
+Repository-wide final verification is intentionally outside the inner `Local` commit loop:
+
+```text
+ordinary push to Local -> no automatic full Verify
+workflow_dispatch      -> integrated final Verify on demand
+pull request checkpoint-> integrated Verify
+push to main           -> integrated Verify
+```
+
+The durable developer/CI/promotion contract is `docs/04-system/development-operations.md`.
+
+A green unrelated workflow is not proof. A skipped required check is not PASS. Focused Launcher, Paper, or visual workflows are supplementary evidence and do not become parallel repository-readiness authorities.
 
 ## 8. Failure policy
 
@@ -115,6 +126,20 @@ A green unrelated workflow is not proof. A skipped required check is not PASS.
 ## 9. Release boundary
 
 `main` is stable. Promotion from `Local` should contain a coherent verified state and must be explicitly requested by the maintainer. Do not use `main` as an ordinary work branch.
+
+Normal promotion path:
+
+```text
+Local source
+→ local finalization where applicable
+→ integrated exact-head Verify
+→ required target-machine/native acceptance
+→ final proof/source audit
+→ explicit promotion decision
+→ main
+```
+
+Release publication/signing/update-channel changes are separate explicit operations and must not be hidden inside ordinary build/test commands.
 
 ## 10. STOP
 
