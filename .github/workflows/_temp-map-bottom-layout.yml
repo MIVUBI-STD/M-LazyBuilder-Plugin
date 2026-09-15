@@ -1,0 +1,70 @@
+name: Temporary Map Bottom Layout Patch
+
+on:
+  push:
+    branches: [Local]
+    paths:
+      - '.github/workflows/_temp-map-bottom-layout.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: Local
+          fetch-depth: 0
+      - name: Apply and push against latest Local
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "halokaryamedia-source"
+          git config user.email "halokaryamedia@gmail.com"
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin Local
+            git reset --hard origin/Local
+            git clean -fd
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              ('String label = current ? "Center on player" : pending ? "Teleporting…" : "Teleport →";',
+               'String label = current ? "Center map on player" : pending ? "Teleporting…" : "Teleport →";'),
+              ('''        int[] hovered = screenToWorld(mouseX, mouseY);\n        String center = hovered == null\n                ? zoomLabel()\n                : "X " + hovered[0] + "   Z " + hovered[1] + "   •   " + zoomLabel();\n        String status = maps.teleportPending() ? "Teleporting…"\n                : SURFACE.pendingCount() > 0 ? "Loading map…"\n                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center player";\n\n        int textLeft = left + 8;\n        int textRight = zoomMinusRect().left - 8;\n        int availableWidth = Math.max(0, textRight - textLeft);\n        int centerWidth = textRenderer.getWidth(center);\n        int statusWidth = textRenderer.getWidth(status);\n        int preferredCenterX = left + (width - left) / 2;\n        int preferredCenterLeft = preferredCenterX - centerWidth / 2;\n        int preferredCenterRight = preferredCenterLeft + centerWidth;\n        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;\n\n        if (availableWidth > 0) {\n            if (statusWidth + 16 <= availableWidth\n                    && preferredCenterLeft >= textLeft + statusWidth + 12\n                    && preferredCenterRight <= textRight) {\n                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);\n                context.drawCenteredTextWithShadow(textRenderer, Text.literal(center),\n                        preferredCenterX, height - 16, LbUi.TEXT_SECONDARY);\n            } else if (operationalStatus && statusWidth <= availableWidth) {\n                context.drawTextWithShadow(textRenderer, Text.literal(status), textLeft, height - 16, LbUi.TEXT_MUTED);\n            } else {\n                String compactCenter = trim(center, availableWidth);\n                context.drawCenteredTextWithShadow(textRenderer, Text.literal(compactCenter),\n                        textLeft + availableWidth / 2, height - 16, LbUi.TEXT_SECONDARY);\n            }\n        }\n\n        renderZoomControl(context, mouseX, mouseY);''',
+               '''        int[] hovered = screenToWorld(mouseX, mouseY);\n        String coordinates = hovered == null ? "" : "X " + hovered[0] + "   Z " + hovered[1];\n        String status = maps.teleportPending() ? "Teleporting…"\n                : SURFACE.pendingCount() > 0 ? "Loading map…"\n                : "M / Esc close  •  Drag move map  •  Scroll zoom  •  R center map on player";\n\n        renderZoomControl(context, mouseX, mouseY);\n\n        int mapCenterX = left + (width - left) / 2;\n        if (!coordinates.isBlank()) {\n            context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),\n                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);\n        }\n\n        boolean operationalStatus = maps.teleportPending() || SURFACE.pendingCount() > 0;\n        int statusLeft = zoomPlusRect().right + 10;\n        int statusRight = coordinates.isBlank()\n                ? width - 8\n                : mapCenterX - textRenderer.getWidth(coordinates) / 2 - 14;\n        int statusWidth = Math.max(0, statusRight - statusLeft);\n        if (statusWidth > 24) {\n            String visibleStatus = operationalStatus ? status : trim(status, statusWidth);\n            if (textRenderer.getWidth(visibleStatus) <= statusWidth) {\n                context.drawTextWithShadow(textRenderer, Text.literal(visibleStatus),\n                        statusLeft, height - 16, LbUi.TEXT_MUTED);\n            }\n        }'''),
+              ('''    private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {\n        Rect minus = zoomMinusRect();\n        Rect plus = zoomPlusRect();\n        context.fill(minus.left, minus.top, minus.right, minus.bottom,\n                minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);\n        context.fill(plus.left, plus.top, plus.right, plus.bottom,\n                plus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("−"), (minus.left + minus.right) / 2, minus.top + 5, LbUi.TEXT_PRIMARY);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), (plus.left + plus.right) / 2, plus.top + 5, LbUi.TEXT_PRIMARY);\n    }''',
+               '''    private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {\n        Rect minus = zoomMinusRect();\n        Rect plus = zoomPlusRect();\n        Rect label = zoomLabelRect();\n        context.fill(minus.left, minus.top, minus.right, minus.bottom,\n                minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);\n        context.fill(label.left, label.top, label.right, label.bottom, LbUi.SURFACE_1);\n        context.fill(plus.left, plus.top, plus.right, plus.bottom,\n                plus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("−"), (minus.left + minus.right) / 2, minus.top + 5, LbUi.TEXT_PRIMARY);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal(zoomLabel()),\n                (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_SECONDARY);\n        context.drawCenteredTextWithShadow(textRenderer, Text.literal("+"), (plus.left + plus.right) / 2, plus.top + 5, LbUi.TEXT_PRIMARY);\n    }'''),
+              ('private Rect zoomMinusRect() { return new Rect(width - 48, height - 22, width - 29, height - 3); }\n    private Rect zoomPlusRect() { return new Rect(width - 26, height - 22, width - 7, height - 3); }',
+               'private Rect zoomMinusRect() { int x = sidebarWidth() + 8; return new Rect(x, height - 22, x + 19, height - 3); }\n    private Rect zoomLabelRect() { int x = zoomMinusRect().right + 3; return new Rect(x, height - 22, x + 64, height - 3); }\n    private Rect zoomPlusRect() { int x = zoomLabelRect().right + 3; return new Rect(x, height - 22, x + 19, height - 3); }')
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Guard failed: expected exactly one match, found {count}: {old[:120]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+            git rm .github/workflows/_temp-map-bottom-layout.yml
+            git add mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+            git commit -m "fix(map-ui): center coordinates and group zoom controls"
+
+            if git push origin HEAD:Local; then
+              exit 0
+            fi
+            echo "Local moved during push; retrying from latest head ($attempt/5)..."
+            sleep 2
+          done
+
+          echo "Could not push map bottom-bar patch without racing Local." >&2
+          exit 1
