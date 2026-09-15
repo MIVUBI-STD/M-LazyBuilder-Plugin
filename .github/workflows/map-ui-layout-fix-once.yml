@@ -7,7 +7,7 @@ on:
       - '.github/workflows/map-ui-layout-fix-once.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   patch:
@@ -16,9 +16,17 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: Local
-      - name: Build corrected WorldMapScreen source
+          fetch-depth: 0
+      - name: Build corrected source and detached commit object
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          git fetch origin Local
+          latest="$(git rev-parse origin/Local)"
+          git checkout --detach "$latest"
+
           python3 - <<'PY'
           from pathlib import Path
           p = Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
@@ -36,9 +44,32 @@ jobs:
               s = s.replace(old, new, 1)
           p.write_text(s, encoding='utf-8')
           PY
+
+          path='mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java'
+          parent="$latest"
+          base_tree="$(gh api repos/${GITHUB_REPOSITORY}/git/commits/$parent --jq .tree.sha)"
+          blob_json="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java')
+          print(json.dumps({'content':p.read_text(encoding='utf-8'),'encoding':'utf-8'}))
+          PY
+          )"
+          blob="$(printf '%s' "$blob_json" | gh api repos/${GITHUB_REPOSITORY}/git/blobs --method POST --input - --jq .sha)"
+          python3 - <<PY > /tmp/tree.json
+          import json
+          print(json.dumps({'base_tree':'$base_tree','tree':[{'path':'$path','mode':'100644','type':'blob','sha':'$blob'}]}))
+          PY
+          tree="$(gh api repos/${GITHUB_REPOSITORY}/git/trees --method POST --input /tmp/tree.json --jq .sha)"
+          python3 - <<PY > /tmp/commit.json
+          import json
+          print(json.dumps({'message':'fix(map-ui): restore coherent map controls','tree':'$tree','parents':['$parent']}))
+          PY
+          commit="$(gh api repos/${GITHUB_REPOSITORY}/git/commits --method POST --input /tmp/commit.json --jq .sha)"
+          printf '%s\n%s\n' "$parent" "$commit" > /tmp/map-layout-commit.txt
       - uses: actions/upload-artifact@v6
         with:
-          name: corrected-world-map-screen
-          path: mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
+          name: map-layout-detached-commit
+          path: /tmp/map-layout-commit.txt
           if-no-files-found: error
           retention-days: 1
