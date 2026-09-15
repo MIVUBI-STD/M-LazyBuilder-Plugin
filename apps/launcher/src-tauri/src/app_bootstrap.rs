@@ -1,5 +1,5 @@
 use crate::commands;
-use crate::engine::app_instance;
+use crate::engine::{app_data_migrations, app_instance, diagnostics};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
@@ -10,15 +10,27 @@ pub fn run() {
     let (_instance_lease, instance_state) = match app_instance::acquire() {
         Ok(value) => value,
         Err(error) => {
-            let _ = MessageDialog::new()
-                .set_title("LazyBuilder")
-                .set_description(&error)
-                .set_level(MessageLevel::Info)
-                .set_buttons(MessageButtons::Ok)
-                .show();
+            show_startup_error(&error, MessageLevel::Info);
             return;
         }
     };
+
+    let app_data_report = match app_data_migrations::initialize() {
+        Ok(report) => report,
+        Err(error) => {
+            show_startup_error(
+                &format!("LazyBuilder could not safely open its application data.\n\n{error}"),
+                MessageLevel::Error,
+            );
+            return;
+        }
+    };
+    if app_data_report.migrated {
+        diagnostics::info(&format!(
+            "LazyBuilder application data migrated from schema {} to {}.",
+            app_data_report.from_schema, app_data_report.to_schema
+        ));
+    }
 
     let (operation_registry, operation_recovery) = match OperationRegistry::initialize() {
         Ok((registry, report)) => (registry, Ok(report)),
@@ -113,4 +125,13 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run LazyBuilder desktop runtime");
+}
+
+fn show_startup_error(message: &str, level: MessageLevel) {
+    let _ = MessageDialog::new()
+        .set_title("LazyBuilder")
+        .set_description(message)
+        .set_level(level)
+        .set_buttons(MessageButtons::Ok)
+        .show();
 }
