@@ -15,6 +15,30 @@ Locked v1 boundaries:
 - Core modules: World-Manager + Utilities-Manager bundled from the same source/release as the desktop app
 - Application updater: manual NSIS upgrade for v1; built-in auto updater is deferred
 
+## Current deployment phase
+
+The current `Local` deployment phase is **installed Local PC validation**.
+
+Canonical execution plan:
+
+[`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Remote CI proves that the candidate can be built, packaged, smoke-installed, and that tested Paper lifecycle paths run successfully. It does not replace the final target-PC acceptance flow.
+
+The required Local PC order begins at the installer and proceeds through the full product:
+
+```text
+Installer
+→ Launcher
+→ managed Java + Paper
+→ Plugin Manager
+→ World Manager / Utilities Manager
+→ Client Setup / Modrinth
+→ Map Manager / Utility Manager
+→ interoperability/restart/update
+→ large-world/storage/conversion
+```
+
 ## Ownership
 
 ### Installer / NSIS
@@ -238,3 +262,21 @@ The release build must:
 5. emit the NSIS installer
 
 The installer never creates a Minecraft server by itself. Server creation is always performed from LazyBuilder's launcher after installation.
+
+## Local PC deployment acceptance
+
+The NSIS artifact is not considered end-user validated only because CI can install it silently.
+
+Before promotion discussion, the installed Local candidate must complete the acceptance sequence in `local-pc-validation-plan.md`, including:
+
+- clean install and update over an existing install;
+- Launcher first run;
+- managed Java/Paper provisioning and process lifecycle;
+- representative Plugin Manager flow;
+- World Manager and Utilities Manager behavior;
+- real Modrinth Client Setup;
+- real Map Manager and Utility Manager behavior inside Minecraft;
+- reconnect/restart/full-PC reboot recovery;
+- representative large-world/storage/conversion testing.
+
+No unresolved P0/P1 defect may remain before final audit/promotion discussion.
