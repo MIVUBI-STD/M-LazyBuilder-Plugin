@@ -17,9 +17,21 @@ REQUIRED_FILES = [
     "AGENTS.md",
     "GITHUB_RULES.md",
     "CONTEXT.md",
+    "DEV.cmd",
+    "toolchain.json",
+    "tooling/windows-toolchain/dev.ps1",
     "docs/README.md",
     "docs/04-system/development-discipline.md",
     "docs/04-system/skill-routing.md",
+    "docs/04-system/development-operations.md",
+]
+
+FORBIDDEN_ROOT_ENTRYPOINTS = [
+    "SETUP-DEV.cmd",
+    "CHECK-DEV.cmd",
+    "BUILD-LAUNCHER.cmd",
+    "TEST-LOCAL.cmd",
+    "UPDATE-LAUNCHER.cmd",
 ]
 
 EXPECTED_SKILLS = {
@@ -60,6 +72,14 @@ REQUIRED_DISCIPLINE_PHRASES = [
     "UNKNOWN",
 ]
 
+REQUIRED_OPERATIONS_PHRASES = [
+    "DEV.cmd",
+    "tooling/windows-toolchain/dev.ps1",
+    "one developer command surface",
+    "dist/Local/",
+    "workflow_dispatch",
+]
+
 
 def fail(errors: list[str], message: str) -> None:
     errors.append(message)
@@ -92,9 +112,16 @@ def main() -> int:
     for relative in REQUIRED_FILES:
         read_text(relative, errors)
 
+    for relative in FORBIDDEN_ROOT_ENTRYPOINTS:
+        if (ROOT / relative).exists():
+            fail(errors, f"legacy root developer entrypoint must stay removed: {relative}")
+
     agents = read_text("AGENTS.md", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
+    operations = read_text("docs/04-system/development-operations.md", errors)
+    build_local = read_text("apps/launcher/build-local.ps1", errors)
+    test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -103,6 +130,15 @@ def main() -> int:
     for phrase in REQUIRED_DISCIPLINE_PHRASES:
         if phrase not in discipline:
             fail(errors, f"development discipline missing contract section/marker: {phrase}")
+
+    for phrase in REQUIRED_OPERATIONS_PHRASES:
+        if phrase not in operations:
+            fail(errors, f"development operations missing canonical marker: {phrase}")
+
+    if "dist\\LazyBuilder" in build_local or "dist\\LazyBuilder" in test_local:
+        fail(errors, "legacy dist/LazyBuilder Local output path must not return")
+    if "dist\\Local" not in build_local or "dist\\Local" not in test_local:
+        fail(errors, "canonical Local build/test paths must resolve through dist/Local")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
@@ -162,6 +198,8 @@ def main() -> int:
 
     print("Repository contract verification PASS")
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
+    print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
+    print("Local distribution path: dist/Local")
     return 0
 
 
