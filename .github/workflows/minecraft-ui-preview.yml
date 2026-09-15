@@ -2,14 +2,6 @@ name: Minecraft UI Preview
 
 # Native visual-regression proof for Map Manager layout, responsive behavior, player-facing copy, and bottom-bar control placement.
 on:
-  push:
-    branches: [Local]
-    paths:
-      - 'mods/map-manager/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/registry/**'
-      - '.github/workflows/minecraft-ui-preview.yml'
   pull_request:
     branches: [Local, main]
     paths:
@@ -32,17 +24,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v4
+      # Linux-only visual-proof exception: the repository Gradle wrapper is Windows-first (gradlew.bat).
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           gradle-version: '8.12'
-          cache-read-only: false
+          cache-read-only: true
 
       - name: Ensure XVFB is available
         shell: bash
@@ -104,7 +99,7 @@ jobs:
 
       - name: Upload Minecraft UI visual proof
         if: success()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: LazyBuilder-Minecraft-UI-Preview-${{ github.sha }}
           path: .artifacts/minecraft-ui-preview/**
@@ -113,7 +108,7 @@ jobs:
 
       - name: Upload Minecraft UI diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: LazyBuilder-Minecraft-UI-Preview-Diagnostics-${{ github.sha }}
           path: |
