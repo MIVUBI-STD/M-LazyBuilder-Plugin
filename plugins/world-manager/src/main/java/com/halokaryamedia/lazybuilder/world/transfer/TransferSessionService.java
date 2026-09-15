@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
@@ -32,10 +34,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class TransferSessionService {
     private static final int HASH_BUFFER_BYTES = 64 * 1024;
+    private static final String COMPLETED_OWNERSHIP_DIR = ".completed-uploads";
+    private static final String OWNERSHIP_SUFFIX = ".owner";
+    private static final String OWNERSHIP_TEMP_PREFIX = "owner-";
+    private static final String OWNERSHIP_TEMP_SUFFIX = ".tmp";
 
     private final Path importsRoot;
     private final Path exportsRoot;
     private final Path tempRoot;
+    private final Path completedOwnershipRoot;
     private final TransferPolicy policy;
     private final Clock clock;
     private final Map<UUID, UploadSession> uploads = new ConcurrentHashMap<>();
@@ -51,8 +58,17 @@ public final class TransferSessionService {
         this.importsRoot = ownedRoot(importsRoot, "importsRoot");
         this.exportsRoot = ownedRoot(exportsRoot, "exportsRoot");
         this.tempRoot = ownedRoot(tempRoot, "tempRoot");
+        this.completedOwnershipRoot = this.tempRoot.resolve(COMPLETED_OWNERSHIP_DIR).normalize();
+        if (!this.tempRoot.equals(this.completedOwnershipRoot.getParent())) {
+            throw new IllegalArgumentException("Completed upload ownership root escaped transfer root");
+        }
         this.policy = Objects.requireNonNull(policy, "policy");
         this.clock = Objects.requireNonNull(clock, "clock");
+        try {
+            recoverCompletedUploadOwnership();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to recover completed upload ownership", exception);
+        }
     }
 
     public TransferDescriptor beginUpload(UUID ownerId, String fileName, long totalBytes, String sha256) throws IOException {
@@ -128,6 +144,7 @@ public final class TransferSessionService {
         UploadSession session = requireUpload(ownerId, sessionId);
         synchronized (session) {
             requireUpload(ownerId, sessionId, session);
+            Path ownershipMarker = ownershipMarkerPath(session.fileName);
             try {
                 if (session.receivedBytes != session.totalBytes || session.nextChunkIndex != session.totalChunks) {
                     throw new IOException("Upload is incomplete");
@@ -137,6 +154,8 @@ public final class TransferSessionService {
                 String actual = HexFormat.of().formatHex(session.digest.digest());
                 if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
+
+                persistOwnershipMarker(session.fileName, session.ownerId);
                 move(session.partial, session.target);
                 uploads.remove(sessionId, session);
                 synchronized (completedUploads) {
@@ -144,6 +163,10 @@ public final class TransferSessionService {
                 }
                 return session.target;
             } catch (IOException | RuntimeException failure) {
+                if (Files.notExists(session.target)) {
+                    try { Files.deleteIfExists(ownershipMarker); }
+                    catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
+                }
                 try { abortUploadInternal(sessionId, session); }
                 catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
                 throw failure;
@@ -187,6 +210,7 @@ public final class TransferSessionService {
             CompletedUploadOwnership ownership = completedUploads.get(safeName);
             if (ownership != null && ownership.ownerId().equals(ownerId)) {
                 completedUploads.remove(safeName);
+                deleteOwnershipMarkerQuietly(safeName);
             }
         }
     }
@@ -300,6 +324,7 @@ public final class TransferSessionService {
                 if (!ownership.ownerId().equals(ownerId) || ownership.claimedForReview()) continue;
                 try {
                     Files.deleteIfExists(directChild(importsRoot, entry.getKey()));
+                    Files.deleteIfExists(ownershipMarkerPath(entry.getKey()));
                     completedUploads.remove(entry.getKey(), ownership);
                 } catch (IOException exception) {
                     failure = combine(failure, exception);
@@ -312,6 +337,96 @@ public final class TransferSessionService {
 
     public int activeUploads() { return uploads.size(); }
     public int activeDownloads() { return downloads.size(); }
+
+    private void recoverCompletedUploadOwnership() throws IOException {
+        if (Files.notExists(completedOwnershipRoot)) return;
+        if (!Files.isDirectory(completedOwnershipRoot) || Files.isSymbolicLink(completedOwnershipRoot)) {
+            throw new IOException("Completed upload ownership root is unsafe");
+        }
+
+        try (var entries = Files.list(completedOwnershipRoot)) {
+            for (Path marker : entries.toList()) {
+                String markerName = marker.getFileName().toString();
+                if (isOwnershipTempName(markerName)) {
+                    if (Files.isSymbolicLink(marker)) Files.deleteIfExists(marker);
+                    else if (Files.isRegularFile(marker)) Files.deleteIfExists(marker);
+                    continue;
+                }
+                if (!markerName.endsWith(OWNERSHIP_SUFFIX)) continue;
+                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) continue;
+
+                String encoded = markerName.substring(0, markerName.length() - OWNERSHIP_SUFFIX.length());
+                String fileName;
+                UUID ownerId;
+                try {
+                    fileName = validateImportFileName(new String(
+                            Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
+                    ownerId = UUID.fromString(Files.readString(marker, StandardCharsets.UTF_8).strip());
+                } catch (IllegalArgumentException invalid) {
+                    continue;
+                }
+
+                Path artifact = directChild(importsRoot, fileName);
+                if (!Files.isRegularFile(artifact) || Files.isSymbolicLink(artifact)) {
+                    Files.deleteIfExists(marker);
+                    continue;
+                }
+                completedUploads.putIfAbsent(fileName, new CompletedUploadOwnership(ownerId, false));
+            }
+        }
+    }
+
+    private void persistOwnershipMarker(String fileName, UUID ownerId) throws IOException {
+        Files.createDirectories(tempRoot);
+        if (Files.exists(completedOwnershipRoot)) {
+            if (!Files.isDirectory(completedOwnershipRoot) || Files.isSymbolicLink(completedOwnershipRoot)) {
+                throw new IOException("Completed upload ownership root is unsafe");
+            }
+        } else {
+            Files.createDirectory(completedOwnershipRoot);
+        }
+
+        Path marker = ownershipMarkerPath(fileName);
+        if (Files.exists(marker) && (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker))) {
+            throw new IOException("Completed upload ownership marker is unsafe");
+        }
+        Path temporary = completedOwnershipRoot.resolve(
+                OWNERSHIP_TEMP_PREFIX + UUID.randomUUID() + OWNERSHIP_TEMP_SUFFIX).normalize();
+        if (!completedOwnershipRoot.equals(temporary.getParent())) {
+            throw new IOException("Completed upload ownership temp escaped owned root");
+        }
+        try {
+            Files.writeString(temporary, ownerId.toString(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            Files.deleteIfExists(marker);
+            move(temporary, marker);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private Path ownershipMarkerPath(String fileName) {
+        String safeName = validateImportFileName(fileName);
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(safeName.getBytes(StandardCharsets.UTF_8));
+        Path marker = completedOwnershipRoot.resolve(encoded + OWNERSHIP_SUFFIX).normalize();
+        if (!completedOwnershipRoot.equals(marker.getParent())) {
+            throw new IllegalArgumentException("Completed upload ownership marker escaped owned root");
+        }
+        return marker;
+    }
+
+    private static boolean isOwnershipTempName(String name) {
+        if (!name.startsWith(OWNERSHIP_TEMP_PREFIX) || !name.endsWith(OWNERSHIP_TEMP_SUFFIX)) return false;
+        String id = name.substring(OWNERSHIP_TEMP_PREFIX.length(), name.length() - OWNERSHIP_TEMP_SUFFIX.length());
+        try { UUID.fromString(id); return true; }
+        catch (IllegalArgumentException ignored) { return false; }
+    }
+
+    private void deleteOwnershipMarkerQuietly(String fileName) {
+        try { Files.deleteIfExists(ownershipMarkerPath(fileName)); }
+        catch (IOException ignored) { }
+    }
 
     private void expireIdleSessions(UUID ownerId) throws IOException {
         Instant now = clock.instant();
@@ -327,7 +442,8 @@ public final class TransferSessionService {
         for (DownloadSession session : downloads.values().toArray(DownloadSession[]::new)) {
             if (!session.ownerId.equals(ownerId) || !expired(session.lastActivity, now)) continue;
             synchronized (session) {
-                if (downloads.get(session.sessionId) != session || !expired(session.lastActivity, now)) continue;
+                if (!downloads.getOrDefault(session.sessionId, session).equals(session)
+                        || !expired(session.lastActivity, now)) continue;
                 downloads.remove(session.sessionId, session);
                 try { session.channel.close(); }
                 catch (IOException exception) { failure = combine(failure, exception); }
