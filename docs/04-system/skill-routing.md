@@ -29,6 +29,8 @@ lazybuilder-protocol
 
 There is no separate Launcher Framework Skill. **Launcher application engineering is part of `lazybuilder-desktop-runtime`**; presentation remains `lazybuilder-ui`.
 
+There is no separate Visual Testing or Minecraft UI Preview Skill. **Visual proof, UI research discipline, and presentation acceptance belong to `lazybuilder-ui`** while semantic/runtime ownership remains with the domain owner.
+
 There is no meta Development Brief Skill. Architecture/cross-owner ambiguity is resolved directly by `AGENTS.md` + `development-discipline.md` + this routing map, then work proceeds under one primary specialist.
 
 ## Primary-Owner Rule
@@ -39,6 +41,7 @@ workspace/process/provisioning/runtime/config decision             → desktop-r
 third-party Paper plugin lifecycle decision                        → plugin-management
 world/Paper domain/files/conversion decision                       → world-management
 presentation/input/UI issue decision                               → ui
+visual proof / UI research / renderer acceptance                   → ui
 neutral Paper/Fabric wire contract                                 → protocol
 ```
 
@@ -107,7 +110,7 @@ world filesystem safety
 
 ### `lazybuilder-ui`
 
-Owns presentation/input and UI issue resolution across three lanes:
+Owns presentation/input, UI issue resolution, platform-appropriate UI research, and visual proof across three lanes:
 
 ```text
 Launcher Desktop lane
@@ -116,25 +119,32 @@ Launcher Desktop lane
 → frontend request/result typing
 → single frontend Tauri bridge
 → visual progress/activity/health/settings presentation from canonical backend state
+→ deterministic Launcher UI Preview proof
 
 Fabric Mods lane
 → in-game UI/keybinds
 → fullscreen LazyBuilder map/world-navigation presentation
 → World Manager / Import-Export presentation
 → client-only navigation preferences and presentation state
+→ Minecraft-rendered visual proof for production Screen surfaces
 
 Plugin-facing presentation lane
 → plugin inventory/list/detail/status presentation
 → plugin warning/progress/error/confirmation UX
 → action availability derived from canonical plugin state/capability
 → user-facing in-game plugin messages when presentation-only
+→ native Minecraft proof for inventory/chat/title/bossbar/book/scoreboard/tab/resource-pack surfaces when applicable
 ```
 
 UI never becomes runtime, launcher-operation, updater, settings-persistence, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
 
-`lazybuilder-ui` owns the UI quality gate for these surfaces: interaction predictability, state authority/feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, presentation-performance checks, async race prevention, destructive-flow clarity, and cross-surface regression checks.
+`lazybuilder-ui` owns the UI quality gate for these surfaces: interaction predictability, state authority/feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, presentation-performance checks, async race prevention, destructive-flow clarity, cross-surface regression checks, source-quality research, and commit-addressed visual evidence.
 
 For non-trivial UI defects, use the issue-resolution playbook inside the UI skill. The UI specialist must identify the first wrong boundary and hand semantic defects back to `desktop-runtime`, `plugin-management`, `world-management`, or `protocol` rather than hiding them behind UI state.
+
+For visual/layout/state-presentation acceptance, `lazybuilder-ui` selects the cheapest proof renderer that can falsify the issue: real Svelte Launcher preview where applicable, real Minecraft client rendering for Fabric/plugin-facing game surfaces where available, and Local-PC native proof only for remaining environment-specific behavior. A simulated preview must never be reported as native proof.
+
+External UI sources are reference inputs only. LazyBuilder source/docs remain product authority; exact platform/API documentation is platform truth; mature open-source projects are implementation references. Do not introduce a dependency, second authority, or copied UI merely because an external implementation is useful to study.
 
 Xaero may be used only as a familiarity/behavior reference for map interaction. LazyBuilder owns its own map implementation; do not create a Xaero runtime dependency, adapter, copied asset/source path, or second map authority merely to imitate it.
 
@@ -206,6 +216,17 @@ world action needs a new shared payload
 Fabric button for an existing action
 → ui / Fabric Mods lane
 
+Fabric screen layout looks wrong at GUI scale 3
+→ ui / Fabric Mods lane
+→ Minecraft-rendered visual proof
+
+Paper bossbar/title/chat looks visually wrong but semantic payload is correct
+→ ui / plugin-facing lane
+→ native Minecraft-rendered proof
+
+Paper permission/result itself is wrong
+→ owning plugin/domain skill, not UI
+
 Desktop HTTP control behavior
 → desktop-runtime
 NOT protocol
@@ -272,7 +293,7 @@ security-only repository policy
 → SECURITY.md / exact boundary
 ```
 
-Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, or implementation mechanics alone. Framework knowledge belongs inside the semantic Skill that owns the product behavior.
+Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, visual testing, Playwright, Minecraft screenshots, or implementation mechanics alone. Framework/tooling knowledge belongs inside the semantic Skill that owns the product behavior.
 
 ## Skill Creation Gate
 
@@ -294,12 +315,13 @@ Before finishing a change, answer:
 Who is the primary semantic owner?
 Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership actually changed?
-Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, or compatibility layer unnecessarily?
+Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, compatibility layer, or preview subsystem unnecessarily?
 Can an existing path or deletion satisfy the same accepted result?
 For Launcher engineering: are durable owner, state machine, persistence, restart, retry/cancel, rollback/recovery, diagnostics, and package proof defined?
-For UI work: were flow, state authority, pending/error states, back/close behavior, responsive/GUI-scale behavior, input races, and sibling surfaces audited?
+For UI work: were flow, state authority, pending/error states, back/close behavior, responsive/GUI-scale behavior, input races, sibling surfaces, research accuracy, and visual proof audited?
 Was a plugin/mod/runtime semantic issue accidentally patched only in presentation?
 What is the cheapest proof that can falsify the result?
+Was simulated evidence clearly separated from real-renderer/native evidence?
 ```
 
 Finish under the exact specialist and STOP.
