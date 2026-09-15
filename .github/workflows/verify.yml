@@ -209,6 +209,10 @@ jobs:
             -InstallerPath $installer.FullName `
             -CommitSha "${{ github.sha }}" `
             -RunNumber "${{ github.run_number }}"
+      - name: Smoke test canonical Local installer
+        shell: pwsh
+        working-directory: .
+        run: ./tooling/windows-toolchain/scripts/distribution/verify-installer.ps1 -InstallerPath "dist/Local/LazyBuilder-Setup-Local.exe"
       - name: Upload canonical Local test package
         uses: actions/upload-artifact@v4
         with:
