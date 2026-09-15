@@ -108,6 +108,8 @@ export type DetachedRecoveryResult = { pid: number; stopped: boolean; message: s
 export type ServerLogTail = { path: string; content: string; truncated: boolean };
 export type ServerResourceProfile = { totalMemoryMb: number; safeMaxMemoryMb: number; currentMaxMemoryMb: number; currentMinMemoryMb: number; recommendedMaxMemoryMb: number; warning: string };
 export type ResourceUpdateRequest = { maxMemoryMb: number };
+export type ServerBackupSummary = { id: string; workspaceId: string; workspaceName: string; path: string; createdUnixSeconds: number; sourceBytes: number };
+export type ServerBackupEstimate = { sourceBytes: number; requiredBytes: number; availableBytes?: number | null };
 
 export type PluginState = 'Enabled' | 'Disabled' | 'Problem';
 export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: PluginState; problemDetail?: string | null; candidateFiles?: string[] | null; managedByLazyBuilder: boolean; mutable: boolean };
@@ -144,6 +146,12 @@ export const runtimeApi = {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
     get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
     cancel: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation_cancel', { id })
+  },
+  backups: {
+    list: (workspaceId: string) => invokeRuntime<ServerBackupSummary[]>('server_backup_list', { workspaceId }),
+    estimate: (workspaceId: string) => invokeRuntime<ServerBackupEstimate>('server_backup_estimate', { workspaceId }),
+    create: (workspaceId: string) => invokeRuntime<ServerBackupSummary>('server_backup_create', { workspaceId }),
+    delete: (workspaceId: string, backupId: string) => invokeRuntime<void>('server_backup_delete', { workspaceId, backupId })
   },
   workspace: {
     state: () => invokeRuntime<WorkspaceState>('workspace_state'),
