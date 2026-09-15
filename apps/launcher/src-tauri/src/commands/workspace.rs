@@ -192,25 +192,34 @@ fn ensure_switch_allowed(state: &ServerManagerState) -> CommandResult<()> {
 
 fn ensure_workspace_mutation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
-    if workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id) {
-        return ensure_runtime_update_allowed(state);
-    }
-    let root = PathBuf::from(entry.path);
+    let root = PathBuf::from(&entry.path);
     if !root.is_dir() {
         return Err(CommandError::new(
             "WORKSPACE_UNAVAILABLE",
             format!("Server location is currently unavailable: {}", root.display()),
         ));
     }
+
+    let is_active = workspace_registry::current().map_err(CommandError::from)?
+        .is_some_and(|active| active.id == target_id);
+    if is_active {
+        ensure_runtime_update_allowed(state)?;
+    }
+
+    // State labels alone are not process authority. A process can linger briefly
+    // after a crash/transition, so every destructive/copy mutation also validates
+    // that no Paper process currently owns the target root.
     server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)
 }
 
 fn ensure_remove_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
-    if workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id) {
-        return ensure_runtime_update_allowed(state);
+    let root = PathBuf::from(&entry.path);
+    let is_active = workspace_registry::current().map_err(CommandError::from)?
+        .is_some_and(|active| active.id == target_id);
+    if is_active {
+        ensure_runtime_update_allowed(state)?;
     }
-    let root = PathBuf::from(entry.path);
     if root.is_dir() {
         server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)?;
     }
