@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document closes the current Utility Manager concept pass before Performance Manager work begins.
+This document locks the current Utility Manager architecture after the performance/resource cleanup pass.
 
 Utility Manager is the passive, non-building client convenience layer. It must improve day-to-day Minecraft use without teaching builders a replacement workflow and without absorbing building or performance ownership.
 
@@ -22,7 +22,7 @@ Utility Manager
 Explicitly outside Utility Manager:
 
 ```text
-Axiom / WorldEdit
+Build-specific systems
 └── building and editing
 
 Map Manager
@@ -34,7 +34,7 @@ Performance Manager
 
 ## Keep
 
-The current implemented feature set is sufficient for the first stable Utility Manager scope:
+The current implemented feature set is sufficient for the stable Utility Manager scope:
 
 | Area | Feature | Decision | Default |
 | --- | --- | --- | --- |
@@ -48,13 +48,39 @@ The current implemented feature set is sufficient for the first stable Utility M
 | Screenshot | Contextual Screenshot Names | Keep | Off |
 | Clipboard | Small contextual copy helper | Keep | No keybind |
 
+## Runtime/lifecycle lock
+
+Utility Manager stays event/screen-driven:
+
+- no client tick loop;
+- no polling worker;
+- no background executor;
+- no permanent HUD;
+- no separate runtime per subfeature.
+
+Keep Chat Draft is connection-local within the Minecraft session. Closing/reopening chat preserves an unsent draft, but disconnect clears it so text from one server context is not restored in another.
+
+Reconnect state intentionally survives the disconnect event for the current Minecraft session because the disconnect screen needs the previous multiplayer target. The address is never persisted to disk.
+
+Borderless Window is startup-only. It is applied once after the client starts when enabled, and a changed preference takes effect on the next client start. Do not add a window watcher merely to make this live-switchable.
+
+Resource Reload Notice ignores startup resource loading and uses Minecraft's native toast surface only for later reload completion.
+
+## Version-maintenance lock
+
+Extended Chat History remains a minimal Vanilla patch rather than a replacement chat subsystem. The implementation modifies Vanilla retention constants in three ChatHud paths. These hooks are mapping/version-sensitive and must be reverified on Minecraft upgrades.
+
+This maintenance sensitivity is accepted because the alternative—owning a replacement chat storage/UI subsystem—would create substantially more code, overlap, and runtime ownership.
+
+Screenshot naming also remains a thin Vanilla interception: explicit filenames are preserved and only automatic names are changed when the preference is enabled.
+
 ## Deferred, not part of the active product surface
 
 These ideas are not implemented and must not appear as active preferences:
 
 - Auto Reconnect: can become surprising or loop against intentionally closed/unavailable servers. Reconsider only with a clear failure/cancellation policy.
 - Chat Timestamps: low-value visual modification for the current builder workflow. Reconsider only if actual usage proves a need.
-- Compact Info: overlaps with F3/BetterF3-style information and risks creating another permanent HUD. Keep out unless a concrete non-overlapping requirement appears.
+- Compact Info: overlaps with existing Minecraft debug information and risks creating another permanent HUD. Keep out unless a concrete non-overlapping requirement appears.
 - Message Filtering: can hide errors or server information. Requires a concrete allowlist/visibility contract before implementation.
 - Dark/Clean Loading replacement: visual replacement is not currently justified. Keep the safer reload-completion notice instead.
 
@@ -89,25 +115,16 @@ screenshots.contextual_names=false
 
 Legacy migration support may read an old key, but new saves must write only the current canonical keys.
 
-## Interaction rules
-
-Utility Manager should remain close to zero-interaction:
-
-- no mandatory keybinds;
-- no radial menu;
-- no permanent manager HUD;
-- no background polling unless a future feature proves it is unavoidable;
-- prefer vanilla screens, controls, events, and toast surfaces;
-- add contextual actions only where the user already expects that information.
-
 ## Exit criteria
 
-The current Utility Manager concept is considered sufficiently scoped for the architecture phase when:
+Utility Manager is considered architecture-locked when:
 
 1. every active preference maps to implemented behavior;
-2. no feature duplicates Vanilla, Axiom, Map Manager, or Performance Manager ownership;
-3. there is still one Utility Manager Fabric mod and one output JAR;
-4. no subfeature introduces a separate runtime component;
-5. deferred ideas remain out of the active config/UI until independently justified.
+2. no feature duplicates Vanilla, Map Manager, Performance Manager, or build-specific ownership;
+3. there is one Utility Manager Fabric mod and one output JAR;
+4. no subfeature introduces a background poller/worker;
+5. lifecycle boundaries are explicit for chat draft, reconnect target, and startup-only window behavior;
+6. mapping-sensitive mixins are documented as upgrade verification points;
+7. deferred ideas remain out of the active config/UI until independently justified.
 
-With these rules locked, additional Utility features should no longer be added by default. New requests must first pass the ownership/overlap filter. The next client architecture phase is Performance Manager.
+Additional Utility features should not be added by default. New requests must first pass the ownership/overlap filter.
