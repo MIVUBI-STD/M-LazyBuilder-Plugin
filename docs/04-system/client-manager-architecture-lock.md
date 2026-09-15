@@ -17,6 +17,8 @@ LazyBuilder Client Suite
 └── Performance Manager  -> 1 Fabric mod / 1 JAR
 ```
 
+All three Managers are active client components. The launcher, verification workflow, and client artifact must package the same three-manager set.
+
 Each Manager owns one responsibility. Features must have exactly one owner.
 
 ## Map Manager
@@ -33,7 +35,7 @@ Owns:
 
 Map-specific performance work stays inside Map Manager because the workload belongs to Map Manager. Performance Manager must not import Map internals to control it.
 
-Current map workload safeguards include bounded frame work, incremental cache merge, viewport sample caching, primitive/lazy region storage, primitive pending coordinates, bounded region loads, and a dedicated map I/O lane.
+Current map safeguards include bounded per-client-tick terrain work, incremental cache merge, viewport sample caching, primitive/lazy region storage, primitive pending coordinates, retryable bounded region loads, revision-based persistence, dedicated map/transfer I/O lanes, generation-guarded transfer continuations, and bounded shutdown draining.
 
 Canonical source:
 
@@ -66,7 +68,7 @@ Runtime rules:
 - no client tick loop;
 - no background poller/worker;
 - no permanent manager HUD;
-- reconnect target remains session-only and is not persisted;
+- reconnect target remains session-only and is captured at connection attempt time, then confirmed on JOIN;
 - chat draft is cleared on disconnect;
 - borderless mode is startup-only and takes effect on the next client start after a preference change.
 
@@ -88,16 +90,18 @@ The Fabric Utility Manager remains distinct from the Paper Utilities-Manager ser
 
 Owns required LazyBuilder performance behavior first-party.
 
-Current P0-P3 scope:
+Current scope:
 
-- actual frame-time monitoring with rolling pressure state;
-- `NORMAL / ELEVATED / HEAVY` frame pressure;
-- LazyBuilder workload-budget classification;
+- target-aware actual frame-time monitoring with rolling pressure state;
+- `NORMAL / ELEVATED / HEAVY` diagnostic pressure;
+- render-discontinuity protection during world/loading/focus transitions;
 - first-party unfocused/minimized FPS policy;
 - on-demand FPS/frame-time/JVM-memory status;
 - on-demand render-distance and simulation-distance status;
 - on-demand window focus/minimized state;
 - on-demand Vanilla chunk/entity/particle workload diagnostics.
+
+Performance Manager intentionally does not expose an unused cross-manager workload scheduler. Each Manager bounds its own workload at its actual source owner until a second real consumer proves a shared scheduling contract is necessary.
 
 Performance Manager has no mandatory external optimization dependency. External optimization mods may coexist, but required LazyBuilder behavior does not hand ownership to them.
 
@@ -138,7 +142,7 @@ Artifact: `lazybuilder-performance-manager.jar`
 11. Build-specific utilities stay outside this architecture lock.
 12. New Utility/Performance features must pass an ownership, overlap, and runtime-cost review.
 
-## Repository shape
+## Repository and release shape
 
 ```text
 mods/
@@ -147,19 +151,21 @@ mods/
 └── performance-manager/  -> lazybuilder-performance-manager.jar
 ```
 
+The Fabric CI job must build all three JARs, the client artifact must stage all three, and Launcher Client Setup must install/repair all three as one coherent suite.
+
 Shared protocol types genuinely consumed by Paper and Fabric remain under the existing shared protocol ownership. Do not create a generic shared client implementation tree merely for convenience.
 
 ## Phase status
 
 ```text
-Map Manager          implemented / map workload stabilized
+Map Manager          implemented / correctness hardening active
 Utility Manager      implemented / architecture locked
-Performance Manager  P0-P3 foundation complete
+Performance Manager  implemented / active client component
 Cross-manager audit  architecture locked
 ```
 
-Renderer-level P4 work is not automatically next. It is gated by runtime profiling evidence from the on-demand diagnostics already exposed by Performance Manager.
+Renderer-level work is not automatically next. It is gated by runtime profiling evidence from the on-demand diagnostics already exposed by Performance Manager.
 
 ## Next gate
 
-The next step for the current client suite is exact-state verification and defect correction, not feature expansion.
+The next step for the current client suite is exact-state verification, runtime smoke testing, and defect correction, not feature expansion.
