@@ -1,5 +1,6 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
+use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{server_backups, server_process_guard, server_restore, workspace_registry};
 use tauri::{AppHandle, Manager, State};
 
@@ -26,6 +27,14 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
 
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
+        let _start_lease = match ServerStartLease::acquire() {
+            Ok(value) => value,
+            Err(message) => {
+                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                fail_operation(&operations, &operation_id, &error, true);
+                return Err(error);
+            }
+        };
         let entry = workspace_registry::get(&workspace_id).map_err(CommandError::from)?;
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Confirming the server is offline and safe to snapshot.", None);
         if let Err(message) = server_process_guard::ensure_root_not_running(std::path::Path::new(&entry.path)) {
@@ -73,6 +82,14 @@ pub async fn server_backup_restore(
 
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
+        let _start_lease = match ServerStartLease::acquire() {
+            Ok(value) => value,
+            Err(message) => {
+                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                fail_operation(&operations, &operation_id, &error, true);
+                return Err(error);
+            }
+        };
         let entry = workspace_registry::get(&workspace_id).map_err(CommandError::from)?;
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Restore requires an offline, process-free server workspace.", None);
         if let Err(message) = server_process_guard::ensure_root_not_running(std::path::Path::new(&entry.path)) {
