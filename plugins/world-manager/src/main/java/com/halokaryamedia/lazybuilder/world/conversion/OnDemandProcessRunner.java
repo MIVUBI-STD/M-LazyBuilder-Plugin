@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 /** Starts one child process for one request and never keeps an idle daemon. */
 public final class OnDemandProcessRunner {
     private static final long MAX_CAPTURE_BYTES = 1024L * 1024L;
+    private static final Duration TERMINATION_GRACE = Duration.ofSeconds(2);
 
     public ProcessResult run(List<String> command, Path workingDirectory, Duration timeout) throws IOException, InterruptedException {
         Objects.requireNonNull(command, "command");
@@ -31,19 +33,58 @@ public final class OnDemandProcessRunner {
         try {
             boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
             if (!finished) {
-                process.destroy();
-                if (!process.waitFor(2, TimeUnit.SECONDS)) process.destroyForcibly();
-                throw new IOException("Conversion worker timed out after " + timeout + ": " + readTail(log));
+                String output = readTail(log);
+                terminateProcessTree(process);
+                throw new IOException("Conversion worker timed out after " + timeout + ": " + output);
             }
             return new ProcessResult(process.exitValue(), readTail(log));
         } catch (InterruptedException interrupted) {
-            process.destroyForcibly();
+            try {
+                terminateProcessTree(process);
+            } catch (InterruptedException cleanupInterrupted) {
+                interrupted.addSuppressed(cleanupInterrupted);
+            }
             Thread.currentThread().interrupt();
             throw interrupted;
         } finally {
-            if (process.isAlive()) process.destroyForcibly();
+            if (process.isAlive()) {
+                try {
+                    terminateProcessTree(process);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             Files.deleteIfExists(log);
         }
+    }
+
+    private static void terminateProcessTree(Process process) throws InterruptedException {
+        List<ProcessHandle> handles = new ArrayList<>(process.descendants().toList());
+        handles.add(process.toHandle());
+
+        destroy(handles, false);
+        if (waitForExit(handles, TERMINATION_GRACE)) return;
+
+        destroy(handles, true);
+        waitForExit(handles, TERMINATION_GRACE);
+    }
+
+    private static void destroy(List<ProcessHandle> handles, boolean forcibly) {
+        for (int index = handles.size() - 1; index >= 0; index--) {
+            ProcessHandle handle = handles.get(index);
+            if (!handle.isAlive()) continue;
+            if (forcibly) handle.destroyForcibly();
+            else handle.destroy();
+        }
+    }
+
+    private static boolean waitForExit(List<ProcessHandle> handles, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (handles.stream().noneMatch(ProcessHandle::isAlive)) return true;
+            Thread.sleep(25L);
+        }
+        return handles.stream().noneMatch(ProcessHandle::isAlive);
     }
 
     private static String readTail(Path log) throws IOException {
