@@ -1,4 +1,4 @@
-use crate::engine::{diagnostics, launcher_settings, runtime_environment, server_backups, server_process_guard, workspace_registry};
+use crate::engine::{diagnostics, launcher_settings, runtime_environment, server_backups, server_process_guard, server_restore, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -68,12 +68,36 @@ pub fn coordinate() -> StartupReport {
     };
 
     if registry_ready {
+        match server_restore::recover_pending_restores() {
+            Ok(report) => {
+                let mut details = Vec::new();
+                if report.recovered > 0 { details.push(format!("Reconciled {} interrupted server restore(s).", report.recovered)); }
+                if !report.issues.is_empty() { details.push(report.issues.join(" ")); }
+                if details.is_empty() { details.push("No interrupted server restore requires recovery.".into()); }
+                let details = details.join(" ");
+                if report.issues.is_empty() {
+                    steps.push(ready_step("server-restore-recovery", "Server restore state reconciled", &details));
+                } else {
+                    degraded = true;
+                    diagnostics::error(&format!("Server restore recovery needs attention: {details}"));
+                    steps.push(warning_step("server-restore-recovery", "Server restore needs attention", &details));
+                }
+            }
+            Err(error) => {
+                degraded = true;
+                diagnostics::error(&format!("Server restore recovery failed: {error}"));
+                steps.push(warning_step("server-restore-recovery", "Server restore recovery could not run", &error));
+            }
+        }
+
         match server_backups::recover_staging() {
             Ok(removed) => {
                 let details = if removed == 0 {
                     "No interrupted server backup staging required cleanup.".to_string()
+                } else if removed == 1 {
+                    "Cleaned 1 interrupted server backup staging directory.".to_string()
                 } else {
-                    format!("Cleaned {removed} interrupted server backup staging director{}.", if removed == 1 { "y" } else { "ies" })
+                    format!("Cleaned {removed} interrupted server backup staging directories.")
                 };
                 steps.push(ready_step("backup-recovery", "Backup staging reconciled", &details));
             }
@@ -108,6 +132,7 @@ pub fn coordinate() -> StartupReport {
         }
     } else {
         degraded = true;
+        steps.push(warning_step("server-restore-recovery", "Server restore recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted restores."));
         steps.push(warning_step("backup-recovery", "Backup staging could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted backup staging."));
         steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", "The server library was unavailable, so LazyBuilder could not safely inspect registered Paper process markers."));
     }
