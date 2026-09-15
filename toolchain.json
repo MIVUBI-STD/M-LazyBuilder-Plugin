@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "package": "LazyBuilder Windows Toolchain",
+  "target": {
+    "os": ["Windows 10 x64", "Windows 11 x64"],
+    "minecraft": "1.21.4",
+    "architecture": "x86_64"
+  },
+  "policy": {
+    "productionBuildsUsePinnedMajorOrExactVersions": true,
+    "noFloatingMajorUpgrades": true,
+    "wrappersRequiredForJavaBuildTools": true,
+    "pythonIsNotAMandatoryBuildDependency": true,
+    "endUserMustNotRequireDeveloperToolchain": true
+  },
+  "java": {
+    "vendor": "Eclipse Temurin",
+    "major": 21,
+    "channel": "LTS",
+    "scope": ["developer-build", "paper-server-runtime"],
+    "pinPolicy": "major-locked; approved security patch updates allowed"
+  },
+  "node": {
+    "major": 24,
+    "channel": "LTS",
+    "scope": ["developer-build"],
+    "pinPolicy": "major-locked to 24.x"
+  },
+  "npm": {
+    "source": "bundled-with-node",
+    "lockfileRequired": "apps/launcher/package-lock.json"
+  },
+  "rust": {
+    "toolchain": "1.98.1",
+    "target": "x86_64-pc-windows-msvc",
+    "scope": ["developer-build"],
+    "repoMinimumObserved": "1.77",
+    "pinPolicy": "exact",
+    "note": "Validate this exact pin with one clean full repository build before treating it as production-final."
+  },
+  "maven": {
+    "wrapperTarget": "3.9.16",
+    "globalInstallRequired": false,
+    "scope": ["developer-build"]
+  },
+  "gradle": {
+    "currentRepoBaseline": "8.12",
+    "wrapperTarget": "8.12",
+    "candidateUpgrade": "8.14.4",
+    "globalInstallRequired": false,
+    "scope": ["developer-build"],
+    "note": "Keep 8.12 during deployment hardening; test any upgrade separately."
+  },
+  "tauri": {
+    "major": 2,
+    "source": "package-lock.json/Cargo.lock",
+    "scope": ["developer-build", "desktop-runtime"]
+  },
+  "webview2": {
+    "channel": "Evergreen",
+    "scope": ["end-user-runtime"],
+    "installPolicy": "detect first; install only if missing"
+  },
+  "msvc": {
+    "product": "Visual Studio 2022 Build Tools",
+    "workload": "Desktop development with C++",
+    "scope": ["developer-build"]
+  },
+  "git": {
+    "product": "Git for Windows",
+    "scope": ["developer-build"]
+  },
+  "python": {
+    "mandatory": false,
+    "replacement": "PowerShell verification script",
+    "scope": []
+  }
+}
