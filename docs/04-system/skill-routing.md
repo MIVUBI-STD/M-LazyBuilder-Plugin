@@ -13,7 +13,7 @@ Ops docs       = current continuation/proof only
 Git history    = retired decisions/history
 ```
 
-One concern gets one canonical semantic owner. Select by the behavior being decided, not by edited file or implementation language.
+One concern gets one canonical semantic owner. Select by the behavior being decided, not by edited file, implementation language, or where the symptom is visible.
 
 ## Specialist Set
 
@@ -213,6 +213,123 @@ state competing owners
 
 Do not load a meta-skill for this step.
 
+## Scenario Routing Probes
+
+A symptom name is not an owner. Use the first evidence that can separate semantic truth from transport/adaptation/presentation.
+
+### Plugin warning is wrong
+
+```text
+canonical dependency/compatibility/lifecycle result is wrong
+→ plugin-management
+
+canonical result is correct but wording/layout/severity/action presentation is wrong
+→ ui
+```
+
+First probe: compare the canonical plugin lifecycle/capability result with the rendered warning. Do not start by editing the warning text if the underlying result is factually wrong.
+
+### World import UI fails
+
+```text
+wire request/result/default/bounds or InspectImport/DiscardImport shape is wrong
+→ protocol
+
+wire contract is correct but inspection/validation/publication/cleanup/domain ownership is wrong
+→ world-management
+
+canonical import/review result is correct but pending/review/back-close/error presentation is wrong
+→ ui
+```
+
+First probe: identify whether the failure appears in the neutral round trip, Paper/domain result, or only presentation. Load the next Skill only after the previous boundary is proven correct.
+
+### Server backup progress is wrong
+
+```text
+operation phase/current/total/cancel/retry/result is wrong at Rust/runtime authority
+→ desktop-runtime
+
+runtime snapshot is correct but progress bar/text/disabled state is wrong
+→ ui
+```
+
+First probe: inspect the canonical operation snapshot before touching Svelte progress logic.
+
+### Map teleport button errors
+
+```text
+click/key race, duplicate dispatch, pending/disabled feedback is wrong
+→ ui
+
+Map Action payload/capability/validation semantics are wrong
+→ protocol
+
+payload is correct but Paper authorization/load/teleport domain behavior is wrong
+→ world-management
+```
+
+First probe: distinguish duplicate/input behavior from wire mismatch from server-domain result.
+
+### Launcher readiness looks stale
+
+```text
+Rust readiness/health result itself is stale or wrong
+→ desktop-runtime
+
+Rust result is correct but UI keeps/renders stale state
+→ ui
+```
+
+First probe: compare the current authoritative readiness snapshot with the rendered surface.
+
+### Plugin install/update succeeds on disk but fails after restart
+
+```text
+identity/dependency/restart-required/load semantics or Paper plugin runtime result is wrong
+→ plugin-management
+```
+
+Do not route to desktop-runtime merely because a server restart is involved. Desktop owns the server process lifecycle; plugin-management owns whether the third-party plugin mutation is valid and what restart state it requires.
+
+### Bundled LazyBuilder core is missing or incompatible
+
+```text
+World/Utilities core provisioning/synchronization/runtime packaging
+→ desktop-runtime
+```
+
+Do not route bundled core through third-party plugin-management.
+
+### Desktop HTTP world request behaves incorrectly
+
+```text
+auth/session/loopback routing/request envelope is wrong
+→ desktop-runtime
+
+transport is correct but world lifecycle/filesystem/domain result is wrong
+→ world-management
+```
+
+Desktop may carry the request/result; it does not become World Manager semantic authority.
+
+### New Fabric world capability
+
+```text
+new/changed shared payload is required
+→ protocol
+→ STOP after neutral contract proof
+
+Paper/domain implementation of frozen payload
+→ world-management
+→ STOP after canonical domain proof
+
+screen/control/presentation for proven result
+→ ui
+```
+
+Never open all three Skills at once.
+
 ## Cross-Owner Handoff
 
 Cross-domain work is **sequential, typed, and minimal**, never simultaneous ownership.
@@ -337,6 +454,7 @@ Did another owner duplicate that state/rule?
 Was another Skill loaded before ownership changed?
 Did the handoff carry only the minimum typed result needed by the next owner?
 Did the next owner avoid recomputing the previous owner's truth?
+Was owner selection based on separating evidence rather than symptom location/name?
 Did the change introduce unnecessary manager/cache/registry/router/config/worker/dependency/compatibility/proof infrastructure?
 Can an existing path or deletion satisfy the same accepted result?
 What is the cheapest proof that can falsify the result?
