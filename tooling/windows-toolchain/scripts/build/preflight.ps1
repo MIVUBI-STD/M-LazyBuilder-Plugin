@@ -14,6 +14,21 @@ function Require-Command([string]$Name, [string]$Hint) {
     }
 }
 
+function Require-Msvc {
+    $vswhereCandidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    $vswhere = $vswhereCandidates | Select-Object -First 1
+    if (-not $vswhere) {
+        throw 'Missing Visual Studio 2022 Build Tools discovery. Run SETUP-DEV.cmd and install Desktop development with C++.'
+    }
+    $installation = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Workload.VCTools -property installationPath 2>$null | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace([string]$installation)) {
+        throw 'MSVC C++ workload is missing. Run SETUP-DEV.cmd and install Visual Studio 2022 Build Tools with Desktop development with C++.'
+    }
+}
+
 $requiredFiles = @(
     (Join-Path $RepoRoot 'mvnw.cmd'),
     (Join-Path $RepoRoot 'gradlew.bat'),
@@ -31,6 +46,7 @@ Require-Command 'node' 'Run SETUP-DEV.cmd and install Node.js 24 LTS.'
 Require-Command 'npm' 'Install Node.js with npm.'
 Require-Command 'rustc' 'Install rustup; the repository pins the Rust toolchain.'
 Require-Command 'cargo' 'Install rustup; the repository pins the Rust toolchain.'
+Require-Msvc
 if ($RequireJava) { Require-Command 'java' 'Install Eclipse Temurin/OpenJDK 21.' }
 
 $node = [string](& node --version 2>$null)
@@ -50,4 +66,4 @@ if ($RequireJava) {
     }
 }
 
-Write-Host "Build preflight PASS (Node $($T.node.major).x, Rust $($T.rust.toolchain)$(if ($RequireJava) { ', Java 21' } else { '' }))." -ForegroundColor Green
+Write-Host "Build preflight PASS (Node $($T.node.major).x, Rust $($T.rust.toolchain), MSVC VCTools$(if ($RequireJava) { ', Java 21' } else { '' }))." -ForegroundColor Green
