@@ -10,16 +10,22 @@ text = BUILD_SCRIPT.read_text(encoding="utf-8")
 required_markers = (
     "$PerformanceClientJar",
     "$PerformanceClientTargetJar",
-    "gradle -p mods/performance-manager --no-daemon build",
+    "$MavenWrapper",
+    "$GradleWrapper",
+    "$ClientVerifier",
+    "& $MavenWrapper --batch-mode --no-transfer-progress verify",
+    "& $GradleWrapper -p mods/map-manager --no-daemon build",
+    "& $GradleWrapper -p mods/utility-manager --no-daemon build",
+    "& $GradleWrapper -p mods/performance-manager --no-daemon build",
     "Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force",
-    "python scripts/verify_client_artifacts.py $ClientModsDir",
+    "& $ClientVerifier -ClientModsDir $ClientModsDir -RepoRoot $RepoRoot",
     "@($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceClientJar)",
 )
 
 errors: list[str] = []
 for marker in required_markers:
     if marker not in text:
-        errors.append(f"local Launcher build is missing required client-suite marker: {marker}")
+        errors.append(f"local Launcher build is missing required toolchain/client-suite marker: {marker}")
 
 for prefix in (
     "lazybuilder-map-manager-",
@@ -28,6 +34,17 @@ for prefix in (
 ):
     if prefix not in text:
         errors.append(f"local Launcher stale-artifact cleanup does not cover {prefix}")
+
+for forbidden in (
+    "Require-Command mvn",
+    "Require-Command gradle",
+    "Require-Command python",
+    "python scripts/verify_client_artifacts.py",
+    "\n        mvn --batch-mode --no-transfer-progress verify",
+    "\n        gradle -p mods/",
+):
+    if forbidden in text:
+        errors.append(f"local Launcher build restored a forbidden global/legacy tool path: {forbidden.strip()}")
 
 legacy_removal = (
     "Get-ChildItem $ClientModsDir -Filter 'lazybuilder-performance-manager-*.jar' "
@@ -42,4 +59,4 @@ if errors:
         print(f" - {error}")
     sys.exit(1)
 
-print("Local Launcher synchronization OK: Paper core + all three Fabric managers are required.")
+print("Local Launcher synchronization OK: repo-owned toolchain + Paper core + all three Fabric managers are required.")

@@ -32,7 +32,7 @@ Minecraft world authority remains in `plugins/world-manager/`. The Launcher may 
 
 ## Client Setup / Modrinth
 
-`Client` is a global Launcher surface; it does not belong to one server workspace. LazyBuilder does not replace Modrinth App and does not launch Minecraft itself. The desktop `client_integration` owner only maintains the LazyBuilder Fabric components required by V1 in one explicitly selected Modrinth profile.
+`Client` is a global Launcher surface; it does not belong to one server workspace. LazyBuilder does not replace Modrinth App and does not launch Minecraft itself. The desktop `client_integration` owner maintains the LazyBuilder Fabric components required by V1 in one explicitly selected Modrinth profile.
 
 ```text
 Modrinth owns
@@ -44,11 +44,10 @@ Modrinth owns
 LazyBuilder V1 owns
 - lazybuilder-map-manager-*.jar
 - lazybuilder-utility-manager-*.jar
+- lazybuilder-performance-manager-*.jar
 - compatibility/status check for Minecraft 1.21.4 + Fabric
-- install/update/duplicate cleanup for those two prefixes only
+- install/update/duplicate cleanup for those three prefixes only
 ```
-
-`mods/performance-manager/` remains deferred source for measured future work. It is not a required V1 client component, is not installed by Client Setup, and is not bundled into the Launcher package.
 
 Client Setup scans known Modrinth profile locations when the global Client surface is opened/refreshed. Custom locations are selected by choosing the exact `.../profiles/<profile>` folder; LazyBuilder derives `<profile>/mods` itself. There is no background watcher.
 
@@ -83,7 +82,7 @@ Normal runtime-ready build:
 BUILD-LAUNCHER.cmd
 → toolchain preflight
 → mvnw.cmd verify (repo-managed Maven 3.9.16)
-→ gradlew.bat build (repo-managed Gradle 8.12)
+→ gradlew.bat builds all three Fabric managers (repo-managed Gradle 8.12)
 → stage and verify matching Paper/client artifacts
 → npm ci
 → Svelte typecheck/build
@@ -136,7 +135,8 @@ src-tauri/resources/core/
 
 src-tauri/resources/client-mods/
 ├── lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
-└── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+├── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+└── lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
 ```
 
 Generated JARs are staged by local build/CI and are not committed.

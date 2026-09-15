@@ -73,10 +73,25 @@ for pom in (
 launcher_root = ROOT / "apps" / "launcher"
 package = json.loads((launcher_root / "package.json").read_text(encoding="utf-8"))
 expect("desktop package.json", package.get("version"), PRODUCT_VERSION)
+expect("desktop Node engine", package.get("engines", {}).get("node"), "24.x")
 
 package_lock = json.loads((launcher_root / "package-lock.json").read_text(encoding="utf-8"))
 expect("desktop package-lock.json", package_lock.get("version"), PRODUCT_VERSION)
 expect("desktop package-lock root package", package_lock.get("packages", {}).get("", {}).get("version"), PRODUCT_VERSION)
+
+toolchain = json.loads((ROOT / "toolchain.json").read_text(encoding="utf-8"))
+expect("toolchain Java major", str(toolchain.get("java", {}).get("major")), "21")
+expect("toolchain Node major", str(toolchain.get("node", {}).get("major")), "24")
+expect("toolchain Maven wrapper", toolchain.get("maven", {}).get("wrapperTarget"), "3.9.16")
+expect("toolchain Gradle wrapper", toolchain.get("gradle", {}).get("wrapperTarget"), "8.12")
+
+for wrapper_path in ("mvnw.cmd", "gradlew.bat"):
+    if not (ROOT / wrapper_path).is_file():
+        errors.append(f"repository toolchain wrapper is missing: {wrapper_path}")
+
+rust_toolchain_text = (ROOT / "rust-toolchain.toml").read_text(encoding="utf-8")
+if f'channel = "{toolchain.get("rust", {}).get("toolchain")}"' not in rust_toolchain_text:
+    errors.append("rust-toolchain.toml does not match toolchain.json")
 
 tauri = json.loads((launcher_root / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
 expect("tauri.conf.json", tauri.get("version"), PRODUCT_VERSION)
@@ -95,7 +110,6 @@ expect(
     PRODUCT_VERSION,
 )
 
-# Client source identity and isolation contract. All three managers are active V1 client components.
 for manager, contract in CLIENT_MANAGERS.items():
     manager_root = ROOT / "mods" / manager
     props_text = (manager_root / "gradle.properties").read_text(encoding="utf-8")
@@ -152,7 +166,6 @@ for label, prefix in (
     expected_name = f"{prefix}-{SNAPSHOT_VERSION}.jar"
     expect(label, match.group(1) if match else None, expected_name)
 
-# V1 client setup installs exactly the three active client managers.
 client_integration = (launcher_root / "src-tauri/src/engine/client_integration.rs").read_text(encoding="utf-8")
 for required in (
     "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
@@ -179,12 +192,22 @@ workflow = (ROOT / ".github/workflows/verify.yml").read_text(encoding="utf-8")
 if re.search(r"(?m)^  utilities:\s*$", workflow):
     errors.append("Verify workflow restored the duplicate standalone utilities job")
 for required_build in (
-    "gradle -p mods/map-manager --no-daemon build",
-    "gradle -p mods/utility-manager --no-daemon build",
-    "gradle -p mods/performance-manager --no-daemon build",
+    ".\\gradlew.bat -p mods/map-manager --no-daemon build",
+    ".\\gradlew.bat -p mods/utility-manager --no-daemon build",
+    ".\\gradlew.bat -p mods/performance-manager --no-daemon build",
 ):
     if required_build not in workflow:
-        errors.append(f"Verify workflow is missing required V1 Fabric build: {required_build}")
+        errors.append(f"Verify workflow is missing required V1 Fabric wrapper build: {required_build}")
+if ".\\mvnw.cmd --batch-mode --no-transfer-progress verify" not in workflow:
+    errors.append("Verify workflow is not using the repository Maven wrapper")
+for forbidden_ci in (
+    "gradle-version: '8.12'",
+    "run: mvn --batch-mode --no-transfer-progress verify",
+    "run: gradle -p mods/",
+    "python3 scripts/verify_client_artifacts.py",
+):
+    if forbidden_ci in workflow:
+        errors.append(f"Verify workflow restored a parallel/global build-tool path: {forbidden_ci}")
 for required_artifact in (
     "lazybuilder-map-manager-0.1.0-SNAPSHOT.jar",
     "lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar",
