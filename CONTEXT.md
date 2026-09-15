@@ -13,7 +13,7 @@ LazyBuilder
 ├── mods/                          Fabric client mods
 │   ├── map-manager/
 │   ├── utility-manager/
-│   └── performance-manager/
+│   └── performance-manager/       deferred research source
 └── shared/protocol/               Neutral Paper/Fabric contracts
 ```
 
@@ -39,6 +39,7 @@ mods/       Fabric client mods
 shared/     neutral cross-runtime contracts only
 docs/       canonical product/system/operations docs
 scripts/    repository verification/build support
+tooling/    repository-owned build/bootstrap/distribution tooling
 ```
 
 Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. New source belongs to the semantic runtime owner above.
@@ -52,7 +53,8 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 - prefer deletion/consolidation before introducing a new abstraction;
 - source/CI proof is distinct from local/live runtime proof;
 - no NMS unless a proven requirement cannot be met through stable Paper/Bukkit APIs;
-- no idle/background subsystem without a concrete runtime need.
+- no idle/background subsystem without a concrete runtime need;
+- deferred source stays isolated until explicit promotion based on measured evidence.
 
 Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
@@ -60,11 +62,11 @@ Current proof authority: `docs/05-operations/current-verification.md`.
 
 ## Component ownership
 
-### Launcher / Server-Manager
+### Launcher / Server Manager
 
 `apps/launcher/` is the canonical Tauri 2 + Svelte 5 + Rust desktop source. It owns workspace bootstrap, managed Java/Paper discovery, start/stop/restart, process identity/recovery, health/resource settings, Paper provisioning/update, and internal bundled runtime synchronization.
 
-### Plugin-Manager
+### Plugin Manager
 
 Also inside `apps/launcher/`. It owns third-party Paper plugin inventory, metadata, install/update, dependency/compatibility checks, duplicate resolution, restart-safe enable/disable, safe JAR removal with plugin data preserved, and minimum rollback state.
 
@@ -81,25 +83,32 @@ general mods and modpacks
 launching Minecraft
 ```
 
-LazyBuilder Client Setup owns only:
+LazyBuilder Client Setup target ownership is limited to:
 
 ```text
 detect Modrinth profiles
 user-selected profile persistence
 Minecraft 1.21.4 + Fabric compatibility verification
-status/install/update/repair for:
-  lazybuilder-map-manager-*.jar
-  lazybuilder-utility-manager-*.jar
-  lazybuilder-performance-manager-*.jar
+status/install/update/repair for LazyBuilder-owned required client components
+preserve unrelated files in the selected profile mods/ directory
 ```
 
-It must never modify unrelated files in the selected profile `mods/` directory, create Minecraft instances, or become a second general mod manager. There is no background profile watcher; checks are request-bound to the Client Setup surface and `Sync Client`.
+The intended V1 required Fabric set is:
 
-Current Modrinth metadata is database-backed. LazyBuilder intentionally does not couple to Modrinth's private database schema. Profile folders remain under Modrinth's `profiles/` directory; compatibility is verified from profile-local runtime evidence (`logs/latest.log`) after the profile has been launched, with legacy `profile.json` accepted only as a compatibility fallback.
+```text
+lazybuilder-map-manager-*.jar
+lazybuilder-utility-manager-*.jar
+```
 
-Runtime-ready Launcher packages include the three tested Fabric JARs from the same source revision as the desktop package so Client Setup does not fetch arbitrary client builds at runtime.
+`mods/performance-manager/` is deferred research source. Current `Local` Launcher/CI source may still reference or bundle its JAR while the active Launcher/installer consolidation is in progress. That transitional source state must be resolved by the Launcher owner; it must not be used as justification to add new Performance Manager dependencies or expand its product scope in parallel.
 
-### World-Manager
+Client Setup must never modify unrelated files in the selected profile `mods/` directory, create Minecraft instances, or become a second general mod manager. There is no background profile watcher; checks are request-bound to the Client Setup surface and `Sync Client`.
+
+Current Modrinth metadata is database-backed. LazyBuilder intentionally does not couple to Modrinth's private database schema. Profile folders remain under Modrinth's `profiles/` directory; compatibility is verified from profile-local runtime evidence (`logs/latest.log`) after the profile has been launched, with legacy metadata accepted only where current source still explicitly supports it for user-data compatibility.
+
+Runtime-ready Launcher packages must use tested same-revision LazyBuilder client artifacts rather than fetching arbitrary LazyBuilder client builds at runtime.
+
+### World Manager
 
 `plugins/world-manager/` is the Paper-side authority for managed world lifecycle, runtime coordination, files, settings, import/export/conversion, transfer safety, and server authorization.
 
@@ -112,7 +121,7 @@ ARCHIVED
 
 Manual Load/Unload and per-world `autoLoad` are not product features. Runtime loading is automatic; empty active worlds may idle-unload when safe. User-facing terminology is `Duplicate`, never `Clone`.
 
-### Utilities-Manager (Paper)
+### Utilities Manager (Paper)
 
 `plugins/utilities-manager/` owns small server-side builder conveniences only:
 
@@ -132,7 +141,9 @@ Build Helpers
 
 ### Performance Manager (Fabric)
 
-`mods/performance-manager/` owns lightweight performance/resource observation and background-FPS policy. External renderer/shader/culling engines remain external; when Dynamic FPS is present, LazyBuilder yields background-FPS ownership.
+`mods/performance-manager/` is an isolated deferred performance-research module. Its existing frame observation/background-FPS experiments do not make it required V1 runtime infrastructure.
+
+No Paper plugin, shared protocol, Map Manager, Utility Manager, or unrelated desktop subsystem may gain a dependency on Performance Manager while it is deferred. Promotion requires a concrete client bottleneck, a measurable success criterion, representative Minecraft-client proof, and an explicit product decision.
 
 ## Shared protocol
 
@@ -176,12 +187,14 @@ Do not hard-code a permanent current SHA or workflow run in stable context. Dete
 
 ```text
 current Local HEAD
-→ latest Verify workflow for that exact HEAD
+→ latest relevant Verify workflow for that exact HEAD
 → component-specific build/test evidence
-→ LOCAL_CODE proof where CI cannot prove behavior
-→ LIVE_SERVER proof for actual Paper/Minecraft behavior
+→ dedicated runtime proof where available
+→ target-machine / Minecraft-client proof where CI cannot faithfully reproduce behavior
 ```
 
-`REMOTE_GITHUB` success proves source/static/build/package claims only. It does not prove installed Windows behavior, real Paper lifecycle, Fabric interaction inside Minecraft, actual Modrinth profile discovery/sync on the target PC, large-file transfer behavior, gameplay behavior, or restart/shutdown persistence.
+`REMOTE_GITHUB` can prove more than static compilation when a workflow actually boots the relevant runtime. In particular, the dedicated Paper Runtime Proof is authoritative for the Paper lifecycle cases it explicitly executes, including real Paper boot/restart and the tested managed-world lifecycle.
 
-The phase after repository synchronization is local/runtime proof, not architecture expansion. Fix reproducible defects at the smallest owning boundary.
+Remote CI still does **not** prove arbitrary target-PC Launcher behavior, real Modrinth profile discovery/sync on the user's machine, Fabric UI/input inside a real Minecraft client, real-player gameplay interaction, representative production-scale large-world throughput, or representative cross-edition conversion quality.
+
+The phase after repository synchronization is empirical target-environment/runtime proof, not architecture expansion. Fix reproducible defects at the smallest owning boundary.
