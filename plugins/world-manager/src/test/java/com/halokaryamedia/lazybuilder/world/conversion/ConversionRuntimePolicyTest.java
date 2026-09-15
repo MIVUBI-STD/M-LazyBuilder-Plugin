@@ -13,7 +13,7 @@ class ConversionRuntimePolicyTest {
     void defaultsAreBoundedAndFailClosed() {
         ConversionRuntimePolicy policy = ConversionRuntimePolicy.defaults();
 
-        assertEquals(ConversionRuntimePolicy.UpdateMode.AUTOMATIC_STABLE, policy.updateMode());
+        assertEquals(ConversionRuntimePolicy.UpdateMode.NOTIFY_ONLY, policy.updateMode());
         assertEquals(Duration.ofHours(24), policy.minimumCheckInterval());
         assertTrue(policy.stableOnly());
         assertTrue(policy.checksumRequired());
@@ -26,7 +26,7 @@ class ConversionRuntimePolicyTest {
     @Test
     void rejectsUnboundedOrInvalidConcurrency() {
         assertThrows(IllegalArgumentException.class, () -> new ConversionRuntimePolicy(
-                ConversionRuntimePolicy.UpdateMode.AUTOMATIC_STABLE,
+                ConversionRuntimePolicy.UpdateMode.NOTIFY_ONLY,
                 Duration.ofHours(24),
                 true,
                 true,
