@@ -110,6 +110,7 @@ export type ServerResourceProfile = { totalMemoryMb: number; safeMaxMemoryMb: nu
 export type ResourceUpdateRequest = { maxMemoryMb: number };
 export type ServerBackupSummary = { id: string; workspaceId: string; workspaceName: string; path: string; createdUnixSeconds: number; sourceBytes: number };
 export type ServerBackupEstimate = { sourceBytes: number; requiredBytes: number; availableBytes?: number | null };
+export type ServerRestoreResult = { restoredBackupId: string; safetyBackup: ServerBackupSummary; cleanupPending: boolean };
 
 export type PluginState = 'Enabled' | 'Disabled' | 'Problem';
 export type PluginSummary = { id: string; displayName: string; version: string; category: string; state: PluginState; problemDetail?: string | null; candidateFiles?: string[] | null; managedByLazyBuilder: boolean; mutable: boolean };
@@ -151,6 +152,7 @@ export const runtimeApi = {
     list: (workspaceId: string) => invokeRuntime<ServerBackupSummary[]>('server_backup_list', { workspaceId }),
     estimate: (workspaceId: string) => invokeRuntime<ServerBackupEstimate>('server_backup_estimate', { workspaceId }),
     create: (workspaceId: string) => invokeRuntime<ServerBackupSummary>('server_backup_create', { workspaceId }),
+    restore: (workspaceId: string, backupId: string) => invokeRuntime<ServerRestoreResult>('server_backup_restore', { workspaceId, backupId }),
     delete: (workspaceId: string, backupId: string) => invokeRuntime<void>('server_backup_delete', { workspaceId, backupId })
   },
   workspace: {
