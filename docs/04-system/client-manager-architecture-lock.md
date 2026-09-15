@@ -1,266 +1,165 @@
 # LazyBuilder Client Manager Architecture Lock
 
-Status: architecture lock for the `Local` branch after Map, Utility, Performance, and cross-manager audits.
+Status: architecture lock for the `Local` branch after Map, Utility, Performance, and cross-manager cleanup.
 
 ## Purpose
 
-LazyBuilder client-side functionality is split by semantic ownership. The goal is to keep the client familiar to Minecraft builders, avoid duplicated tools, avoid unnecessary shortcuts, and prevent overlap with Axiom, WorldEdit, or specialist optimization mods.
+LazyBuilder client-side functionality is split by semantic ownership. The goal is to keep the client familiar, minimize redundant systems, keep required LazyBuilder behavior first-party, and prevent cross-manager coupling.
 
-This document covers only client-side Fabric responsibilities. Build-specific helper utilities are intentionally deferred and are not part of the current implementation scope.
+Build-specific helper systems remain outside this lock and are reviewed separately.
 
 ## Client-side manager model
 
 ```text
 LazyBuilder Client Suite
-├── Map Manager              -> 1 Fabric mod / 1 JAR
-├── Utility Manager          -> 1 Fabric mod / 1 JAR
-└── Performance Manager      -> 1 Fabric mod / 1 JAR
+├── Map Manager          -> 1 Fabric mod / 1 JAR
+├── Utility Manager      -> 1 Fabric mod / 1 JAR
+└── Performance Manager  -> 1 Fabric mod / 1 JAR
 ```
 
-Each manager is exactly one deployable Fabric mod. Internal identifiers such as Fabric `mod id` and Gradle artifact names are implementation metadata for that same mod; they are not additional plugins/mods and must not be presented to users as separate components.
+Each Manager owns one responsibility. Features must have exactly one owner.
 
-Each manager owns one responsibility. Features must have exactly one owner.
+## Map Manager
 
-### Map Manager
+Owns:
 
-Owns world/map workflow that already exists in the current Fabric client:
+- world list and world-management UI;
+- world map surface/navigation;
+- world settings and create/add/duplicate/delete flows;
+- world transfer UI and transfer preferences;
+- client map surface cache;
+- Fabric-to-Paper World-Manager transport and payload handling;
+- map-specific workload, cache, and I/O discipline.
 
-- world list and world-management UI
-- world map surface and map navigation
-- world settings UI
-- world create/add/duplicate/delete actions exposed by the World-Manager protocol
-- world transfer UI and transfer preferences
-- client-side map surface caching required by the map experience
-- Fabric-to-Paper World-Manager transport and payload handling
+Map-specific performance work stays inside Map Manager because the workload belongs to Map Manager. Performance Manager must not import Map internals to control it.
 
-Map Manager does **not** own generic client conveniences, renderer optimization, chat QoL, building/editing tools, measurement, palettes, placement helpers, or Axiom functionality.
+Current map workload safeguards include bounded frame work, incremental cache merge, viewport sample caching, primitive/lazy region storage, primitive pending coordinates, bounded region loads, and a dedicated map I/O lane.
 
-Canonical source authority:
+Canonical source:
 
 ```text
-client/map-manager/
+mods/map-manager/
 ```
 
-User-facing component:
+Fabric id: `lazybuilder_map_manager`
 
-```text
-LazyBuilder Map Manager
-```
+Artifact: `lazybuilder-map-manager.jar`
 
-Implementation metadata for this same single mod:
-
-```text
-Fabric mod id: lazybuilder_map_manager
-Build artifact: lazybuilder-map-manager.jar
-```
-
-### Utility Manager
+## Utility Manager
 
 Owns passive, non-building client convenience only.
 
-Current implemented and locked scope:
+Locked scope:
 
-- borderless window presentation
-- extended chat history
-- persistent unsent chat draft within the current session
-- reconnect button
-- contextual copy of connection/disconnect details
-- resource-reload completion notice
-- shared native-toast notification surface
-- contextual screenshot naming while preserving vanilla `F2`
-- preference persistence for implemented behavior only
+- borderless window presentation;
+- extended chat history;
+- unsent chat draft preservation within the active connection context;
+- reconnect button;
+- contextual connection/disconnect copy action;
+- resource-reload completion notice;
+- native-toast utility notification surface;
+- contextual screenshot naming while preserving vanilla `F2`;
+- preference persistence for implemented behavior only.
 
-Deferred ideas such as Auto Reconnect, Chat Timestamps, Compact Info, Message Filtering, and replacement loading visuals are not active product scope. They may only return after a separate ownership/value review.
+Runtime rules:
 
-Rules:
+- no client tick loop;
+- no background poller/worker;
+- no permanent manager HUD;
+- reconnect target remains session-only and is not persisted;
+- chat draft is cleared on disconnect;
+- borderless mode is startup-only and takes effect on the next client start after a preference change.
 
-- no default shortcut is required for Utility Manager
-- vanilla controls remain authoritative (`E`, `F2`, `F3`, chat controls, etc.)
-- Utility Manager must not create a parallel inventory, block browser, command workflow, build HUD, camera tool, editing system, generic clipboard manager, or performance engine
-- visual/behavior-changing features should be opt-in unless they are nearly invisible compatibility improvements
+Extended Chat History intentionally stays a small mapping-sensitive Vanilla patch instead of becoming a replacement chat system. Minecraft upgrades must reverify its ChatHud constant hooks.
 
-User-facing component:
-
-```text
-LazyBuilder Utility Manager
-```
-
-Implementation metadata for this same single mod:
+Canonical source:
 
 ```text
-Fabric mod id: lazybuilder_utility_manager
-Build artifact: lazybuilder-utility-manager.jar
+mods/utility-manager/
 ```
 
-This is one Fabric mod, not three components. The mod id and JAR name are only technical identifiers.
+Fabric id: `lazybuilder_utility_manager`
 
-Note: this is a **Fabric client manager** and is distinct from the existing Paper `Utilities-Manager`. Runtime naming must make that distinction explicit in technical documentation when ambiguity is possible.
+Artifact: `lazybuilder-utility-manager.jar`
 
-See `utility-manager-audit-lock.md` for the detailed scope decision.
+The Fabric Utility Manager remains distinct from the Paper Utilities-Manager server plugin.
 
-### Performance Manager
+## Performance Manager
 
-Owns performance coordination and lightweight resource policy, not renderer internals.
+Owns required LazyBuilder performance behavior first-party.
 
-Current implemented and locked scope:
+Current P0-P3 scope:
 
-- capability detection for installed optimization mods
-- on-demand FPS / approximate frame-time / JVM-memory status
-- on-demand render-distance and simulation-distance status
-- on-demand window focus/minimized state
-- minimal background FPS fallback for unfocused/minimized windows
-- automatic handoff to Dynamic FPS when that external provider is installed
+- actual frame-time monitoring with rolling pressure state;
+- `NORMAL / ELEVATED / HEAVY` frame pressure;
+- LazyBuilder workload-budget classification;
+- first-party unfocused/minimized FPS policy;
+- on-demand FPS/frame-time/JVM-memory status;
+- on-demand render-distance and simulation-distance status;
+- on-demand window focus/minimized state;
+- on-demand Vanilla chunk/entity/particle workload diagnostics.
 
-Performance profiles, permanent HUD/overlay, graphics auto-tuning, Sodium/Iris setting cloning, shader management, renderer hooks, memory optimization, chunk optimization, culling algorithms, and metrics-history storage are deferred. They are not approved by default.
+Performance Manager has no mandatory external optimization dependency. External optimization mods may coexist, but required LazyBuilder behavior does not hand ownership to them.
 
-Performance Manager must **not** reimplement specialist engines.
+Current explicit non-scope until profiling justifies it:
 
-The following remain external foundations unless a future architecture review explicitly changes this decision:
+- renderer replacement;
+- shader implementation/management;
+- generic entity or block-entity culling replacement;
+- particle-frustum bridge;
+- chunk-renderer replacement;
+- automatic visual-quality reduction;
+- permanent performance HUD/history database.
 
-- Sodium
-- Iris
-- ImmediatelyFast
-- FerriteCore
-- EntityCulling
-- MoreCulling
+Vanilla 1.21.4 already owns important entity visibility and block-entity render-distance behavior. LazyBuilder should not duplicate those paths merely to claim an optimization.
 
-Optional external conveniences/providers may also be detected without being absorbed:
-
-- Sodium Extra
-- Reese's Sodium Options
-- Dynamic FPS
-
-Performance Manager may detect and coordinate these mods, but it does not copy their source, import their implementation packages, replace their algorithms, or mirror their complete settings surfaces.
-
-User-facing component:
+Canonical source:
 
 ```text
-LazyBuilder Performance Manager
+mods/performance-manager/
 ```
 
-Implementation metadata for this same single mod:
+Fabric id: `lazybuilder_performance_manager`
 
-```text
-Fabric mod id: lazybuilder_performance_manager
-Build artifact: lazybuilder-performance-manager.jar
-```
-
-This is one Fabric mod and produces one Manager artifact. The internal mod id is not an additional plugin.
-
-See `performance-manager-audit-lock.md` for the detailed scope decision.
-
-## External build-tool boundary
-
-The client suite does not duplicate or wrap professional building/editing tools.
-
-Explicitly external:
-
-- Axiom
-- WorldEdit / WorldEditCUI
-- FAWE ecosystem
-- FastAsyncVoxelSniper
-- MetaBrushes
-- other specialist build editors
-
-The following categories are therefore deferred from LazyBuilder client implementation until a separate final build-utility review:
-
-- measurement/ruler
-- selection/editing
-- palettes/hotbar building systems
-- placement helpers
-- symmetry/build guides
-- terrain/brush tools
-- precision build flight
-- blueprint/build manipulation
-- build-specific free camera/inspection systems
-- other features already handled well by Axiom or another external builder tool
+Artifact: `lazybuilder-performance-manager.jar`
 
 ## Ownership rules
 
-1. **One Manager = one Fabric mod = one output JAR.**
-2. **Map Manager = world/map workflow.**
-3. **Utility Manager = client convenience and usability.**
-4. **Performance Manager = resource/performance coordination.**
-5. **Axiom/external tools = building and world editing.**
-6. Vanilla behavior stays authoritative where it already provides a familiar workflow.
-7. Do not add a shortcut when a setting, context action, or existing vanilla interaction is sufficient.
-8. Do not duplicate settings pages owned by Sodium, Iris, Minecraft, or other specialist mods.
-9. Shared services must have one implementation and may be consumed by multiple managers only through a small stable client contract when a second real consumer exists.
-10. No manager imports another manager's implementation packages.
-11. Build-specific utilities remain parked until Map, Utility, and Performance boundaries are stable.
-12. New Utility or Performance features must pass an ownership/overlap review before implementation.
+1. One Manager = one Fabric mod = one output JAR.
+2. Map Manager = world/map/transfer workflow and its own workload discipline.
+3. Utility Manager = generic client convenience/usability.
+4. Performance Manager = first-party performance policy and diagnostics.
+5. Required LazyBuilder behavior must not require an external mod to function.
+6. Vanilla behavior remains authoritative where it already solves the problem efficiently.
+7. Do not add a shortcut when an existing Vanilla interaction or contextual action is sufficient.
+8. Do not create duplicate renderer/culling systems without profiling evidence.
+9. Shared services require a second real consumer and a stable contract before extraction.
+10. No Manager imports another Manager's implementation packages.
+11. Build-specific utilities stay outside this architecture lock.
+12. New Utility/Performance features must pass an ownership, overlap, and runtime-cost review.
 
 ## Repository shape
 
 ```text
-client/
-├── map-manager/             -> lazybuilder-map-manager.jar
-├── utility-manager/         -> lazybuilder-utility-manager.jar
-├── performance-manager/     -> lazybuilder-performance-manager.jar
-└── README.md
+mods/
+├── map-manager/          -> lazybuilder-map-manager.jar
+├── utility-manager/      -> lazybuilder-utility-manager.jar
+└── performance-manager/  -> lazybuilder-performance-manager.jar
 ```
 
-All three client Managers now exist as independent Fabric source authorities. There must not be separate JARs for subfeatures such as chat, window behavior, FPS monitoring, notifications, or map subfeatures.
+Shared protocol types genuinely consumed by Paper and Fabric remain under the existing shared protocol ownership. Do not create a generic shared client implementation tree merely for convenience.
 
-Shared protocol types that are genuinely consumed by Paper and Fabric remain in the existing versioned protocol ownership model. A new generic shared client implementation tree must not be created merely for convenience.
+## Phase status
 
-## Migration phases
+```text
+Map Manager          implemented / map workload stabilized
+Utility Manager      implemented / architecture locked
+Performance Manager  P0-P3 foundation complete
+Cross-manager audit  architecture locked
+```
 
-### Phase C1 — Map Manager identity and path migration
+Renderer-level P4 work is not automatically next. It is gated by runtime profiling evidence from the on-demand diagnostics already exposed by Performance Manager.
 
-- preserve all existing world/map behavior
-- use `client/map-manager/` as the single source authority
-- produce one `lazybuilder-map-manager.jar`
-- keep protocol compatibility unchanged
+## Next gate
 
-Status: implemented.
-
-### Phase C2 — Utility Manager
-
-- one independent Fabric mod
-- one `lazybuilder-utility-manager.jar`
-- implemented non-tool conveniences only
-- no mandatory default keybinds
-- active scope locked by Utility audit
-
-Status: implemented / scope locked.
-
-### Phase C3 — Performance Manager
-
-- one independent Fabric mod
-- one `lazybuilder-performance-manager.jar`
-- capability detection and on-demand state first
-- minimal background FPS fallback only where no external provider owns it
-- no profiles/UI/optimizer-engine expansion without a new review
-
-Status: implemented baseline / scope locked.
-
-### Phase C4 — Cross-manager verification
-
-Verified architecture requirements:
-
-- each Manager has one Fabric identity and one artifact identity;
-- Map Manager is the only client Manager wired to shared World-Manager protocol;
-- Utility Manager and Performance Manager remain independent of Map Manager implementation packages;
-- no Manager imports another Manager's implementation packages;
-- Utility window presentation and Performance focus/minimized reads are separate ownership domains rather than duplicate systems;
-- no generic shared client implementation module is currently justified;
-- external build tools and specialist performance engines retain their ownership.
-
-Status: complete / architecture locked.
-
-See `client-cross-manager-audit-lock.md` for the final C4 audit.
-
-## Next architecture gate
-
-Client Manager expansion is closed by default. The next design discussion should be a separate **build-utility overlap audit** before any builder-facing feature is implemented. That audit must begin from what Vanilla, Axiom, WorldEdit, and the current mod stack already provide rather than from a wishlist of new tools.
-
-## Naming collision note
-
-The repository already contains a Paper `Utilities-Manager`. To avoid ambiguity:
-
-- the user-facing Fabric mod is simply **LazyBuilder Utility Manager**
-- technical documentation may say **Fabric Utility Manager** when runtime distinction is necessary
-- technical documentation should say **Paper Utilities-Manager** for the server plugin
-
-Do not rename the existing Paper Utilities-Manager as part of this client migration.
+The next step for the current client suite is exact-state verification and defect correction, not feature expansion.
