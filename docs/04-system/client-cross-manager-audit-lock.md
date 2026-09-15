@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document closes Phase C4 for the LazyBuilder client architecture by auditing Map Manager, Utility Manager, and Performance Manager together.
+This document locks the current Map Manager, Utility Manager, and Performance Manager boundaries after the P0-P3 client cleanup.
 
-The goal is to verify that the three Managers remain independent, non-overlapping, and compatible with the existing Vanilla/Axiom/WorldEdit/performance-mod workflow before any build-specific client work begins.
+The goal is to keep the three Managers independent, non-overlapping, first-party where LazyBuilder requires behavior, and free from unnecessary runtime coupling.
 
 ## Final ownership model
 
@@ -13,17 +13,12 @@ LazyBuilder Client Suite
 ├── Map Manager
 │   └── world / map / transfer workflow
 ├── Utility Manager
-│   └── passive client convenience
+│   └── passive generic client convenience
 └── Performance Manager
-    └── performance status / lightweight resource policy
-
-External specialist tools
-├── Vanilla Minecraft
-├── Axiom / WorldEdit
-└── Sodium / Iris / optimization stack
+    └── first-party performance policy / diagnostics
 ```
 
-Each Manager is one Fabric mod and one output JAR. No subfeature is allowed to become an additional runtime component without a separate architecture review.
+Each Manager is one Fabric mod and one output JAR. Internal feature groups are not separate mods.
 
 ## Cross-manager dependency audit
 
@@ -32,14 +27,14 @@ Each Manager is one Fabric mod and one output JAR. No subfeature is allowed to b
 Allowed dependencies:
 
 - Minecraft/Fabric client APIs;
-- shared protocol source required by the World-Manager wire contract.
+- shared protocol types required by the World-Manager wire contract.
 
 Forbidden dependencies:
 
 - Utility Manager implementation packages;
 - Performance Manager implementation packages.
 
-Map Manager must preserve existing map/world behavior when installed without Utility Manager or Performance Manager.
+Map Manager owns its own workload discipline. Performance Manager does not reach into Map Manager implementation packages to schedule map work.
 
 ### Utility Manager
 
@@ -51,24 +46,23 @@ Forbidden dependencies:
 
 - Map Manager implementation packages;
 - Performance Manager implementation packages;
-- shared World-Manager protocol for generic convenience features.
+- shared World-Manager protocol for generic convenience behavior.
 
-Utility features must not require map/project ownership to function.
+Utility Manager remains screen/event-driven with no client tick loop, poller, worker, or permanent HUD.
 
 ### Performance Manager
 
 Allowed dependencies:
 
-- Minecraft/Fabric client APIs;
-- Fabric Loader presence checks for optional optimization capabilities.
+- Minecraft/Fabric client APIs.
 
 Forbidden dependencies:
 
 - Map Manager implementation packages;
 - Utility Manager implementation packages;
-- direct implementation dependencies on Sodium, Iris, Dynamic FPS, or other specialist optimization mods.
+- mandatory runtime dependency on an external optimization mod.
 
-Performance Manager may detect external mods, but it must not absorb or copy their engines.
+Required LazyBuilder performance behavior is first-party and LazyBuilder-maintained. External optimization mods may coexist, but they are not authoritative owners for required LazyBuilder behavior.
 
 ## Ownership overlap audit
 
@@ -76,36 +70,73 @@ Performance Manager may detect external mods, but it must not absorb or copy the
 | --- | --- | --- |
 | World/map navigation | Map Manager | Utility/Performance do not participate |
 | Transfer/world workflow | Map Manager | Utility/Performance do not participate |
+| Map surface cache/workload | Map Manager | Performance does not import Map internals |
 | Chat convenience | Utility Manager | Map/Performance do not modify chat |
-| Borderless/window presentation | Utility Manager | Performance only reads focus/minimize state |
+| Borderless/window presentation | Utility Manager | Performance only reads focus/minimized state |
 | Screenshot naming | Utility Manager | Map Manager does not become a screenshot dependency |
-| Clipboard convenience | Utility Manager | Map Manager owns its own project/world metadata actions |
-| FPS/memory/status observation | Performance Manager | Utility does not create a performance HUD |
+| Contextual clipboard convenience | Utility Manager | Map owns only map/world metadata actions |
+| Frame pressure/workload policy | Performance Manager | Utility owns no performance policy |
 | Background FPS limit | Performance Manager | Utility owns no FPS/resource throttling |
-| Renderer/shaders/culling | External optimization stack | No LazyBuilder Manager reimplements it |
-| Building/editing tools | Axiom/WorldEdit/Vanilla | No LazyBuilder Manager duplicates them |
+| On-demand performance diagnostics | Performance Manager | No permanent monitoring HUD |
+| Building/editing systems | Deferred separate scope | Current three Managers do not absorb them |
 
-The only shared concept currently observed by more than one Manager is window state:
+The only shared concept observed by more than one Manager is window state:
 
-- Utility Manager may change window presentation through borderless mode;
-- Performance Manager may read focus/minimized state for background FPS policy.
+- Utility Manager may change window presentation through startup-only borderless mode;
+- Performance Manager reads focus/minimized state for background resource policy.
 
-This is not duplicate ownership because one Manager owns presentation and the other owns resource policy. No shared implementation package is required.
+This is not duplicate ownership: presentation and resource policy are distinct domains.
+
+## Performance ownership lock
+
+Performance Manager currently owns:
+
+- frame-time observation and pressure state;
+- LazyBuilder workload budget classification;
+- background/minimized FPS policy;
+- on-demand FPS, frame-time, memory, render/simulation distance and window diagnostics;
+- on-demand Vanilla chunk/entity/particle debug counters.
+
+It does **not** currently own:
+
+- renderer replacement;
+- shader implementation;
+- generic entity/block-entity culling replacement;
+- particle frustum bridge;
+- chunk renderer replacement;
+- graphics-quality auto-tuning.
+
+Those deeper optimizations require profiling evidence before implementation. This is a scope gate, not external ownership delegation.
+
+## Map workload lock
+
+Map Manager keeps map-specific optimization local to its own owner:
+
+- bounded per-frame terrain work;
+- incremental completed-region merge;
+- cached viewport sampling;
+- primitive/lazy region storage;
+- primitive pending coordinate set;
+- bounded asynchronous region loads;
+- dedicated ordered map I/O lane;
+- explicit map I/O shutdown lifecycle.
+
+Performance Manager must not import Map Manager internals merely to control these mechanisms.
 
 ## Shared-service audit
 
-No generic cross-manager shared client service is justified at this stage.
+No generic cross-manager shared client service is currently justified.
 
-Do **not** extract a new shared client module for:
+Do not extract a new shared client implementation module for:
 
 - notifications;
 - clipboard;
 - config persistence;
 - window state;
 - performance state;
-- map UI primitives.
+- map UI/cache primitives.
 
-A shared implementation is only justified after a second real consumer needs the same stable contract. Premature extraction would create coupling without reducing ownership ambiguity.
+Extraction requires a second real consumer and a stable shared contract.
 
 ## Artifact identity lock
 
@@ -126,46 +157,25 @@ Artifact: lazybuilder-performance-manager.jar
 Source: mods/performance-manager/
 ```
 
-All three remain independent Fabric source authorities under `mods/`.
+## Repository guards
 
-## External compatibility lock
+Repository consistency checks should enforce where practical:
 
-### Vanilla
-
-Vanilla controls and familiar interactions remain authoritative where they already exist. LazyBuilder should augment context rather than replace core interaction patterns.
-
-### Axiom / WorldEdit
-
-Build/edit functionality remains external. The client suite must not add measurement, selection, palette, brush, placement, terrain, symmetry, freecam, precision-build, or other build systems merely because they are useful to builders.
-
-### Performance stack
-
-Sodium, Iris, ImmediatelyFast, FerriteCore, EntityCulling, and MoreCulling remain external specialist foundations.
-
-Dynamic FPS is treated as an optional external owner for background-FPS behavior. When present, LazyBuilder Performance Manager's native fallback must remain inactive.
-
-## Automated repository guards
-
-Repository consistency checks should enforce the architecture lock where practical:
-
-- exact Fabric mod ids and artifact names;
-- exactly one `fabric.mod.json` per Manager source authority;
-- no Java references to another Manager's implementation package;
+- one Fabric mod identity per Manager;
+- one output artifact per Manager;
+- no Java import of another Manager's implementation package;
 - no Gradle dependency from one Manager to another;
 - Utility/Performance remain detached from shared World-Manager protocol;
-- Map Manager remains the only client Manager wired to shared World-Manager protocol.
+- Map Manager remains the only client Manager wired to shared World-Manager protocol;
+- no mandatory external optimization dependency for required Performance behavior.
 
-These guards are architectural checks, not a substitute for behavior testing.
-
-## C4 decision
-
-Phase C4 is considered complete when the repository reflects these boundaries and automated consistency checks guard against obvious cross-manager coupling.
+## Current decision
 
 ```text
-C1 Map Manager          complete
-C2 Utility Manager      complete / scope locked
-C3 Performance Manager  complete baseline / scope locked
-C4 Cross-manager audit  complete / architecture locked
+Map Manager          implemented / workload stabilized
+Utility Manager      implemented / architecture locked
+Performance Manager  P0-P3 foundation complete / deeper renderer work deferred pending profiling
+Cross-manager audit  architecture locked
 ```
 
-The next client design phase is **not** another Manager expansion. Any new builder-facing feature must be reviewed separately against Vanilla, Axiom, WorldEdit, and the existing three Manager ownership boundaries before implementation.
+The next step is verification of this exact repository state, not another Manager expansion.
