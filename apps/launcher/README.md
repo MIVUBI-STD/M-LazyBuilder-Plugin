@@ -63,66 +63,56 @@ Adopting a plain Paper server performs a best-effort live Java process check bef
 
 Server start does not rewrite Paper gameplay/performance configuration and the Launcher does not run a background CPU-priority governor. Performance tuning must be justified by local/runtime evidence before becoming product behavior.
 
-## Local Windows build
+## Developer operations
 
-Repository-root entrypoints:
+Launcher development uses the repository-wide developer command surface. Do not introduce Launcher-specific root shortcuts or a second task runner.
+
+From repository root:
 
 ```text
-SETUP-DEV.cmd
-CHECK-DEV.cmd
-BUILD-LAUNCHER.cmd
-UPDATE-LAUNCHER.cmd
+DEV.cmd setup
+DEV.cmd check
+DEV.cmd build
+DEV.cmd test
+DEV.cmd update
+DEV.cmd finalize-local
 ```
 
-`toolchain.json` is the canonical build-tool policy. Do not duplicate or float tool versions in local scripts or CI.
+`toolchain.json` is the canonical build-tool policy. The root orchestrator delegates Launcher build semantics to `apps/launcher/build-local.ps1`; that script is an implementation owner, not a second developer-facing command surface.
 
 Normal runtime-ready build:
 
 ```text
-BUILD-LAUNCHER.cmd
+DEV.cmd build
 → toolchain preflight
-→ mvnw.cmd verify (repo-managed Maven 3.9.16)
-→ gradlew.bat builds all three Fabric managers (repo-managed Gradle 8.12)
-→ stage and verify matching Paper/client artifacts
+→ repository Maven wrapper verify
+→ repository Gradle wrapper builds the required Fabric suite
+→ stage + verify matching Paper/Fabric artifacts
 → npm ci
-→ Svelte typecheck/build
-→ cargo check/test --locked
-→ Tauri + NSIS package
+→ Svelte typecheck
+→ cargo check/test with locked dependencies
+→ Tauri + NSIS build
+→ canonical Local package publication
 ```
 
-The repository wrappers download Maven/Gradle only when their pinned version is not already cached under `%LOCALAPPDATA%\LazyBuilder\build-tools`. Downloaded distributions are checked against their official SHA-512/SHA-256 checksum before extraction.
+Repository wrappers cache checksum-verified Maven/Gradle distributions under LazyBuilder-owned LocalAppData paths. Global Maven and Gradle are not developer requirements.
 
-Output:
+Runtime-ready output:
 
 ```text
-dist/LazyBuilder/
-├── LazyBuilder-Setup.exe
-├── LazyBuilder.exe
+dist/Local/
+├── LazyBuilder-Setup-Local.exe
+├── LazyBuilder-Diagnostics.exe
+├── build-info.json
+├── SHA256SUMS.txt
 └── README.txt
 ```
 
-For repeated installed-app testing, close LazyBuilder and use `UPDATE-LAUNCHER.cmd`. Server workspaces, selected Modrinth profile, and normal LazyBuilder user data are preserved.
+CI may add exact-run provenance to the same package contract. Compile-only diagnostics, when explicitly requested through the internal build owner, are isolated under `dist/CompileOnly/` and must not be treated as acceptance candidates.
 
-Required developer tools:
+Use `DEV.cmd update` for repeated installed-app testing. Server workspaces, selected Modrinth profile, and normal LazyBuilder user data are preserved by the owning update path.
 
-```text
-Windows 10/11 x64
-Eclipse Temurin / OpenJDK 21 (runtime-ready server builds)
-Node.js 24.x LTS + npm
-Rust toolchain selected by repository rust-toolchain.toml
-Microsoft Visual Studio 2022 Build Tools (Desktop development with C++)
-WebView2 runtime
-Git for Windows (source workflow)
-```
-
-Not required as global installs:
-
-```text
-Apache Maven   -> repo wrapper
-Gradle         -> repo wrapper
-Python         -> no longer part of Launcher build verification
-Tauri CLI      -> npm development dependency
-```
+Required developer foundations are validated by `DEV.cmd check`; see `tooling/windows-toolchain/README.md` and `docs/04-system/development-operations.md` for the canonical operational contract.
 
 ## Bundled runtime resources
 
@@ -141,14 +131,13 @@ src-tauri/resources/client-mods/
 
 Generated JARs are staged by local build/CI and are not committed.
 
-For explicit Launcher compile/typecheck work only:
+Direct `build-local.ps1 -AllowMissingRuntime` use is reserved for explicit Launcher compile diagnostics. It is not the normal developer flow and cannot satisfy runtime/installer acceptance.
 
-```powershell
-cd apps\launcher
-.\build-local.ps1 -AllowMissingRuntime
-```
+## Verification boundary
 
-Compile-only mode is not suitable for fresh-server or Client Setup runtime validation.
+Current remote/local readiness is owned by `docs/05-operations/current-verification.md`. Do not maintain a Launcher-local acceptance authority in this directory.
+
+Remote build/package proof does not replace target-machine behavior such as installed Windows environment, long-lived workspaces, real Modrinth/Fabric interaction, or other native acceptance boundaries.
 
 ## Protocol boundary
 
