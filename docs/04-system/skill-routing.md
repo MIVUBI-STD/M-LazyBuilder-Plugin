@@ -83,11 +83,12 @@ how that state/operation is rendered and interacted with          → ui
 Owns:
 
 ```text
-plugin scan/metadata/dependencies
+plugin scan/identity/metadata/dependencies
 install/update
 enable/disable
 safe remove
 duplicate resolution
+restart-required state
 minimum rollback state
 ```
 
@@ -98,55 +99,42 @@ Does not own bundled LazyBuilder core modules or generic desktop runtime configu
 Owns:
 
 ```text
-create/load/unload/settings
-BUILD_READY world policy
-archive/restore/backup/clone/delete
+create/settings + BUILD_READY policy
+ACTIVE/ARCHIVED durable lifecycle
+automatic Paper load / idle unload coordination
+archive/restore/backup/duplicate/delete
+import inspection/review/discard
 import/export/conversion
 world registry/persistence
 world operation leases/tasks
 Paper world runtime gateway
-world filesystem safety
+world filesystem safety/publication
 ```
+
+Loaded/unloaded are transient Paper runtime facts, not durable product lifecycle. Do not route manual Load/Unload or Clone product behavior back into this Skill; user-facing duplication is `Duplicate`.
 
 ### `lazybuilder-ui`
 
-Owns presentation/input, UI issue resolution, platform-appropriate UI research, and visual proof across three lanes:
+Owns presentation/input and visual proof across three lanes:
 
 ```text
-Launcher Desktop lane
-→ Tauri/Svelte launcher/dashboard/settings/plugins/worlds presentation
-→ Server Library / Plugin Manager / Client Setup presentation
-→ frontend request/result typing
-→ single frontend Tauri bridge
-→ visual progress/activity/health/settings presentation from canonical backend state
-→ deterministic Launcher UI Preview proof
+Launcher Desktop
+→ Tauri/Svelte Server Library / Plugin Manager / Client Setup / settings/world/runtime presentation
 
-Fabric Mods lane
-→ in-game UI/keybinds
-→ fullscreen LazyBuilder map/world-navigation presentation
-→ World Manager / Import-Export presentation
-→ client-only navigation preferences and presentation state
-→ Minecraft-rendered visual proof for production Screen surfaces
+Fabric Client Mods
+→ in-game UI/keybinds/map/world-navigation/import-export presentation
 
-Plugin-facing presentation lane
-→ plugin inventory/list/detail/status presentation
-→ plugin warning/progress/error/confirmation UX
-→ action availability derived from canonical plugin state/capability
-→ user-facing in-game plugin messages when presentation-only
-→ native Minecraft proof for inventory/chat/title/bossbar/book/scoreboard/tab/resource-pack surfaces when applicable
+Plugin-facing presentation
+→ plugin inventory/detail/status/warning/progress/error/confirmation and presentation-only in-game messages
 ```
 
-UI never becomes runtime, launcher-operation, updater, settings-persistence, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
+UI owns interaction correctness, truthful state presentation, input races, navigation, accessibility, responsive density/GUI-scale behavior, visual consistency, perceived performance, and the applicable proof renderer.
 
-`lazybuilder-ui` owns the UI quality gate for these surfaces: interaction predictability, state authority/feedback, hierarchy, keyboard/focus where applicable, responsive density/GUI-scale behavior, visual consistency, presentation-performance checks, async race prevention, destructive-flow clarity, cross-surface regression checks, source-quality research, and commit-addressed visual evidence.
+UI never becomes runtime, updater, settings-persistence, plugin-lifecycle, world-state, protocol-contract, filesystem-safety, or security authority.
 
-For non-trivial UI defects, use the issue-resolution playbook inside the UI skill. The UI specialist must identify the first wrong boundary and hand semantic defects back to `desktop-runtime`, `plugin-management`, `world-management`, or `protocol` rather than hiding them behind UI state.
+For non-trivial UI defects, identify the first wrong boundary and hand semantic defects back to `desktop-runtime`, `plugin-management`, `world-management`, or `protocol` rather than hiding them behind UI state.
 
-For visual/layout/state-presentation acceptance, `lazybuilder-ui` selects the cheapest proof renderer that can falsify the issue: real Svelte Launcher preview where applicable, real Minecraft client rendering for Fabric/plugin-facing game surfaces where available, and Local-PC native proof only for remaining environment-specific behavior. A simulated preview must never be reported as native proof.
-
-External UI sources are reference inputs only. LazyBuilder source/docs remain product authority; exact platform/API documentation is platform truth; mature open-source projects are implementation references. Do not introduce a dependency, second authority, or copied UI merely because an external implementation is useful to study.
-
-Xaero may be used only as a familiarity/behavior reference for map interaction. LazyBuilder owns its own map implementation; do not create a Xaero runtime dependency, adapter, copied asset/source path, or second map authority merely to imitate it.
+Xaero may be used only as a familiarity/behavior reference. LazyBuilder owns its map implementation; do not add Xaero runtime dependency, adapter, copied source/assets, or a second map authority.
 
 ### `lazybuilder-protocol`
 
@@ -156,7 +144,8 @@ Owns neutral shared Paper/Fabric contracts under `shared/protocol`:
 request/result payloads
 identifiers
 wire validation/defaults
-map-action contracts
+World Control V5
+Map Action V2
 shared transfer contracts
 Paper/Fabric compatibility contracts
 ```
@@ -171,61 +160,41 @@ Examples:
 
 ```text
 Launcher Activity page layout only
-→ ui / Launcher Desktop lane
+→ ui / Launcher Desktop
 
 whether an operation can cancel/retry and what survives restart
 → desktop-runtime
-→ ui displays returned operation state
+→ ui presents returned state
 
-Launcher self-update flow/signature/restart semantics
+Launcher self-update signature/restart semantics
 → desktop-runtime
 
-Update available banner layout/copy
-→ ui / Launcher Desktop lane
-
-Settings panel arrangement
-→ ui
+Update banner layout/copy
+→ ui / Launcher Desktop
 
 settings schema/default/migration/persistence
 → desktop-runtime
 
-NSIS shortcut/install/upgrade semantics
-→ desktop-runtime
-
-Plugins.svelte layout only
-→ ui / Launcher Desktop lane
+settings panel arrangement
+→ ui
 
 plugin dependency semantics + warning text
 → plugin-management owns rule/result
-→ ui / plugin-facing lane displays returned state
+→ ui presents returned state
 
 plugin update button submits twice
 → ui owns input/pending race
-→ plugin-management remains owner of update semantics
-
-Client Setup required-mod list is confusing
-→ ui / Launcher Desktop lane
-
-whether a mod is actually required/compatible
-→ owning runtime/product contract, not UI
+→ plugin-management still owns update semantics
 
 world action needs a new shared payload
 → protocol owns payload
 → world-management consumes it
 
 Fabric button for an existing action
-→ ui / Fabric Mods lane
-
-Fabric screen layout looks wrong at GUI scale 3
-→ ui / Fabric Mods lane
-→ Minecraft-rendered visual proof
-
-Paper bossbar/title/chat looks visually wrong but semantic payload is correct
-→ ui / plugin-facing lane
-→ native Minecraft-rendered proof
+→ ui / Fabric
 
 Paper permission/result itself is wrong
-→ owning plugin/domain skill, not UI
+→ owning plugin/domain Skill, not UI
 
 Desktop HTTP control behavior
 → desktop-runtime
@@ -235,7 +204,7 @@ NOT protocol
 If ownership is still ambiguous:
 
 ```text
-state the competing owners
+state competing owners
 → apply development-discipline decision ladder
 → identify first wrong owner / smallest contract boundary
 → choose one primary specialist
@@ -250,7 +219,7 @@ Cross-domain work is sequential, not simultaneous ownership.
 
 ```text
 Owner A decides/changes its contract
-→ produce the smallest handoff artifact/result
+→ produce smallest handoff result
 → Owner B consumes it
 ```
 
@@ -259,20 +228,16 @@ Typical handoffs:
 ```text
 launcher operation/update/settings semantic change
 → desktop-runtime
-→ ui / Launcher Desktop lane
+→ ui
 
-new world action + payload + Fabric button
+new world action + payload + Fabric presentation
 → protocol
 → world-management
-→ ui / Fabric Mods lane
+→ ui
 
-new desktop setting changes runtime
-→ desktop-runtime
-→ ui / Launcher Desktop lane
-
-plugin rule changes desktop warning
+plugin rule changes warning/action presentation
 → plugin-management
-→ ui / plugin-facing lane
+→ ui
 ```
 
 Do not keep multiple specialists active for the same decision.
@@ -283,8 +248,7 @@ Some source areas have clear ownership but do not need a dedicated Skill.
 
 ```text
 Utilities-Manager internals
-→ docs/04-system/utilities-manager-architecture-lock.md
-→ exact source owner
+→ exact source + canonical system/domain docs
 
 build/version scripts
 → exact build/script owner + GITHUB_RULES.md
@@ -293,7 +257,7 @@ security-only repository policy
 → SECURITY.md / exact boundary
 ```
 
-Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, visual testing, Playwright, Minecraft screenshots, or implementation mechanics alone. Framework/tooling knowledge belongs inside the semantic Skill that owns the product behavior.
+Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, visual testing, Playwright, screenshots, or implementation mechanics alone. Framework/tool knowledge belongs inside the semantic Skill that owns the product behavior.
 
 ## Skill Creation Gate
 
@@ -301,7 +265,7 @@ A new Skill is justified only when all are true:
 
 1. a new semantic responsibility exists;
 2. its execution procedure materially differs from the five existing Skills;
-3. the work is repeated, not one-off;
+3. work is repeated, not one-off;
 4. merging it into an existing Skill would materially increase unrelated context;
 5. its entry, exit, and handoff boundary can be stated clearly.
 
@@ -309,19 +273,16 @@ Otherwise route to an existing owner or a no-Skill source owner.
 
 ## Completion Check
 
-Before finishing a change, answer:
+Before finishing:
 
 ```text
 Who is the primary semantic owner?
 Did another owner duplicate that state/rule?
-Was another Skill loaded before ownership actually changed?
-Did the change add a user decision, manager, cache, registry, router, config path, worker, dependency, compatibility layer, or preview subsystem unnecessarily?
+Was another Skill loaded before ownership changed?
+Did the change introduce unnecessary manager/cache/registry/router/config/worker/dependency/compatibility/proof infrastructure?
 Can an existing path or deletion satisfy the same accepted result?
-For Launcher engineering: are durable owner, state machine, persistence, restart, retry/cancel, rollback/recovery, diagnostics, and package proof defined?
-For UI work: were flow, state authority, pending/error states, back/close behavior, responsive/GUI-scale behavior, input races, sibling surfaces, research accuracy, and visual proof audited?
-Was a plugin/mod/runtime semantic issue accidentally patched only in presentation?
 What is the cheapest proof that can falsify the result?
-Was simulated evidence clearly separated from real-renderer/native evidence?
+Was simulated evidence separated from real-renderer/native evidence?
 ```
 
 Finish under the exact specialist and STOP.
