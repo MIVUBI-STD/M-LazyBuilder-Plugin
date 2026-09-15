@@ -3,14 +3,17 @@ import type {
   ClientIntegrationStatus,
   DiagnosticSummary,
   LauncherOperationSnapshot,
+  LauncherSettings,
   ManagedWorldSummary,
   PluginInstallResult,
   PluginSummary,
   RuntimeUpdateStatus,
+  ServerHealthSnapshot,
   ServerLogTail,
   ServerPreflight,
   ServerResourceProfile,
   ServerSnapshot,
+  StartupReport,
   UpdateWorldSettingsRequest,
   WorkspaceDuplicateEstimate,
   WorkspaceEntry,
@@ -21,12 +24,7 @@ import type {
   WorldTaskSnapshot
 } from './runtimeApi';
 
-/**
- * Deterministic browser-only runtime used by the visual-preview proof workflow.
- *
- * It intentionally mirrors the public runtimeProduct surface while never becoming
- * product/runtime authority. Production builds continue to use the Tauri runtime.
- */
+/** Deterministic browser-only runtime for visual-preview proof. */
 
 const activeWorkspace: WorkspaceEntry = {
   id: 'preview-build-server',
@@ -47,6 +45,7 @@ const recentWorkspaces: WorkspaceEntry[] = [
 const previewOperations: LauncherOperationSnapshot[] = [
   {
     id: 'preview-operation-duplicate',
+    correlationId: 'operation-preview-1',
     kind: 'duplicate-server',
     resource: `workspace:${activeWorkspace.id}`,
     state: 'SUCCEEDED',
@@ -64,48 +63,55 @@ const previewOperations: LauncherOperationSnapshot[] = [
   }
 ];
 
+const previewStartup: StartupReport = {
+  ready: true,
+  degraded: false,
+  startedAtUnixSeconds: 1_788_399_990,
+  completedAtUnixSeconds: 1_788_399_991,
+  runtimeTempPath: 'C:\\Users\\Builder\\AppData\\Local\\LazyBuilder\\temp',
+  steps: [
+    { key: 'runtime-environment', state: 'READY', summary: 'Runtime environment ready', details: 'Preview runtime.' },
+    { key: 'launcher-settings', state: 'READY', summary: 'Launcher settings ready', details: 'Settings schema 1 loaded.' },
+    { key: 'workspace-registry', state: 'READY', summary: 'Server library ready', details: 'Registry loaded.' },
+    { key: 'server-process-reconciliation', state: 'READY', summary: 'Background server state reconciled', details: 'No recovery required.' }
+  ]
+};
+
+let previewSettings: LauncherSettings = {
+  schemaVersion: 1,
+  rememberLastServer: true,
+  confirmCloseWhileServerRunning: true,
+  autoCheckUpdates: true,
+  updateChannel: 'stable'
+};
+
+const previewHealth: ServerHealthSnapshot = {
+  workspaceId: activeWorkspace.id,
+  workspaceName: activeWorkspace.name,
+  state: 'READY',
+  ready: true,
+  running: false,
+  checks: [
+    { key: 'workspace-location', ready: true, summary: 'Server location available', details: activeWorkspace.path, repairable: false },
+    { key: 'workspace-manifest', ready: true, summary: 'Workspace identity valid', details: 'workspace.json', repairable: true },
+    { key: 'paper-runtime', ready: true, summary: 'Paper runtime ready', details: 'paper.jar', repairable: true },
+    { key: 'java-runtime', ready: true, summary: 'Java runtime ready', details: 'Java 21', repairable: true }
+  ]
+};
+
 function params() {
   return typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
 }
 
-function previewKind() {
-  return params().get('preview') ?? 'active';
-}
-
-function previewPage() {
-  return params().get('page') ?? 'Overview';
-}
-
-function workspaceState(): WorkspaceState {
-  return {
-    active: previewKind() === 'library' ? null : activeWorkspace,
-    recent: recentWorkspaces
-  };
-}
+function previewKind() { return params().get('preview') ?? 'active'; }
+function previewPage() { return params().get('page') ?? 'Overview'; }
+function workspaceState(): WorkspaceState { return { active: previewKind() === 'library' ? null : activeWorkspace, recent: recentWorkspaces }; }
 
 function provisioningStatus(): WorkspaceProvisioningStatus {
   const setup = previewKind() === 'setup';
   return setup
-    ? {
-        workspaceCreated: true,
-        javaReady: true,
-        paperReady: true,
-        coreModulesReady: true,
-        configReady: true,
-        eulaAccepted: false,
-        ready: false,
-        nextStep: 'Accept the Minecraft EULA'
-      }
-    : {
-        workspaceCreated: true,
-        javaReady: true,
-        paperReady: true,
-        coreModulesReady: true,
-        configReady: true,
-        eulaAccepted: true,
-        ready: true,
-        nextStep: 'Ready'
-      };
+    ? { workspaceCreated: true, javaReady: true, paperReady: true, coreModulesReady: true, configReady: true, eulaAccepted: false, ready: false, nextStep: 'Accept the Minecraft EULA' }
+    : { workspaceCreated: true, javaReady: true, paperReady: true, coreModulesReady: true, configReady: true, eulaAccepted: true, ready: true, nextStep: 'Ready' };
 }
 
 function serverSnapshot(): ServerSnapshot {
@@ -153,30 +159,8 @@ const worlds: ManagedWorldSummary[] = [
 
 const clientStatus: ClientIntegrationStatus = {
   modrinthDetected: true,
-  profiles: [
-    {
-      name: 'LazyBuilder 1.21.4',
-      path: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4',
-      modrinthRoot: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus',
-      modsPath: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4\\mods',
-      gameVersion: '1.21.4',
-      loader: 'Fabric',
-      verification: 'profile metadata',
-      compatible: true,
-      selected: true
-    }
-  ],
-  selectedProfile: {
-    name: 'LazyBuilder 1.21.4',
-    path: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4',
-    modrinthRoot: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus',
-    modsPath: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4\\mods',
-    gameVersion: '1.21.4',
-    loader: 'Fabric',
-    verification: 'profile metadata',
-    compatible: true,
-    selected: true
-  },
+  profiles: [{ name: 'LazyBuilder 1.21.4', path: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4', modrinthRoot: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus', modsPath: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4\\mods', gameVersion: '1.21.4', loader: 'Fabric', verification: 'profile metadata', compatible: true, selected: true }],
+  selectedProfile: { name: 'LazyBuilder 1.21.4', path: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4', modrinthRoot: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus', modsPath: 'C:\\Users\\Builder\\AppData\\Roaming\\com.modrinth.theseus\\profiles\\LazyBuilder 1.21.4\\mods', gameVersion: '1.21.4', loader: 'Fabric', verification: 'profile metadata', compatible: true, selected: true },
   selectedProfileMissing: false,
   mods: [
     { id: 'map-manager', displayName: 'Map Manager', state: 'Installed', installedFiles: ['lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'], targetFile: 'lazybuilder-map-manager-0.1.0-SNAPSHOT.jar', bundled: true },
@@ -188,40 +172,20 @@ const clientStatus: ClientIntegrationStatus = {
 };
 
 function completedTask(worldId = 'world-1'): WorldTaskSnapshot {
-  return {
-    taskId: 'preview-task',
-    taskType: 'PREVIEW',
-    worldId,
-    state: 'SUCCEEDED',
-    progressPercent: 100,
-    message: 'Complete',
-    result: '',
-    error: '',
-    createdAt: '2026-09-15T16:00:00Z',
-    updatedAt: '2026-09-15T16:00:01Z'
-  };
+  return { taskId: 'preview-task', taskType: 'PREVIEW', worldId, state: 'SUCCEEDED', progressPercent: 100, message: 'Complete', result: '', error: '', createdAt: '2026-09-15T16:00:00Z', updatedAt: '2026-09-15T16:00:01Z' };
 }
 
-const pluginResult: PluginInstallResult = {
-  success: true,
-  pluginId: 'preview-plugin',
-  message: 'Plugin changed. Restart the server to apply it.',
-  restartRequired: true
-};
-
-const resourceProfile: ServerResourceProfile = {
-  totalMemoryMb: 12288,
-  safeMaxMemoryMb: 8192,
-  currentMaxMemoryMb: 6144,
-  currentMinMemoryMb: 1024,
-  recommendedMaxMemoryMb: 6144,
-  warning: ''
-};
+const pluginResult: PluginInstallResult = { success: true, pluginId: 'preview-plugin', message: 'Plugin changed. Restart the server to apply it.', restartRequired: true };
+const resourceProfile: ServerResourceProfile = { totalMemoryMb: 12288, safeMaxMemoryMb: 8192, currentMaxMemoryMb: 6144, currentMinMemoryMb: 1024, recommendedMaxMemoryMb: 6144, warning: '' };
 
 export const runtimePreviewProduct = {
-  diagnostics: {
-    summary: async () => diagnostics
+  diagnostics: { summary: async () => diagnostics },
+  startup: { status: async () => previewStartup },
+  settings: {
+    get: async () => previewSettings,
+    save: async (settings: LauncherSettings) => { previewSettings = settings; return previewSettings; }
   },
+  health: { server: async (_id: string) => previewHealth },
   operations: {
     list: async () => previewOperations,
     get: async (id: string) => previewOperations.find((operation) => operation.id === id) ?? previewOperations[0],
