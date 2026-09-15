@@ -2,9 +2,21 @@ use crate::commands;
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::startup;
+use crate::engine::{diagnostics, server_restore, startup};
 
 pub fn run() {
+    match server_restore::recover_pending_restores() {
+        Ok(report) => {
+            if report.recovered > 0 {
+                diagnostics::info(&format!("Reconciled {} interrupted server restore(s) before startup.", report.recovered));
+            }
+            for issue in report.issues {
+                diagnostics::error(&format!("Server restore recovery needs attention: {issue}"));
+            }
+        }
+        Err(error) => diagnostics::error(&format!("Server restore recovery could not run before startup: {error}")),
+    }
+
     let startup_report = startup::coordinate();
 
     tauri::Builder::default()
@@ -24,6 +36,7 @@ pub fn run() {
             commands::server_backups::server_backup_list,
             commands::server_backups::server_backup_estimate,
             commands::server_backups::server_backup_create,
+            commands::server_backups::server_backup_restore,
             commands::server_backups::server_backup_delete,
             commands::workspace::workspace_state,
             commands::workspace::workspace_provisioning_status,
