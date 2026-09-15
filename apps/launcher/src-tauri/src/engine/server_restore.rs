@@ -1,6 +1,7 @@
 use crate::engine::{server_backups, workspace_registry};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use sysinfo::Disks;
@@ -58,6 +59,8 @@ where
     F: FnMut(&str, &str, &str, Option<(u64, u64)>),
 {
     validate_backup_id(backup_id).map_err(RestoreFailure::failed)?;
+    ensure_no_pending_restore(workspace_id).map_err(RestoreFailure::recovery)?;
+
     let entry = workspace_registry::get(workspace_id).map_err(RestoreFailure::failed)?;
     let root = PathBuf::from(&entry.path)
         .canonicalize()
@@ -123,9 +126,16 @@ where
         let _ = fs::remove_dir_all(&staging);
         return Err(RestoreFailure::failed(error));
     }
-    if !workspace_identity_matches(&staging, workspace_id).map_err(RestoreFailure::failed)? {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(RestoreFailure::failed("Staged restore validation failed because workspace identity changed"));
+    match workspace_identity_matches(&staging, workspace_id) {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(RestoreFailure::failed("Staged restore validation failed because workspace identity changed"));
+        }
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(RestoreFailure::failed(error));
+        }
     }
 
     let intent = PendingRestore {
@@ -135,20 +145,33 @@ where
         staging_path: staging.display().to_string(),
         rollback_path: rollback.display().to_string(),
     };
-    add_pending_restore(intent.clone()).map_err(RestoreFailure::failed)?;
+    if let Err(error) = add_pending_restore(intent.clone()) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(RestoreFailure::recovery(format!("Could not persist server restore recovery intent: {error}")));
+    }
 
     progress("committing", "Swapping restored server into place", "The current workspace is being moved to rollback staging before the restored workspace is published.", None);
     if let Err(error) = fs::rename(&root, &rollback) {
         let _ = fs::remove_dir_all(&staging);
-        let _ = clear_pending_restore(workspace_id, &rollback);
+        let clear_result = clear_pending_restore(workspace_id, &rollback);
+        if let Err(clear_error) = clear_result {
+            return Err(RestoreFailure::recovery(format!(
+                "Could not move the current server into restore rollback staging ({error}) and recovery intent cleanup also failed ({clear_error})."
+            )));
+        }
         return Err(RestoreFailure::failed(format!("Could not move the current server into restore rollback staging: {error}")));
     }
 
     if let Err(publish_error) = fs::rename(&staging, &root) {
         match fs::rename(&rollback, &root) {
             Ok(()) => {
-                let _ = clear_pending_restore(workspace_id, &rollback);
-                let _ = fs::remove_dir_all(&staging);
+                let cleanup_staging = remove_owned_restore_path(&staging);
+                let clear_intent = clear_pending_restore(workspace_id, &rollback);
+                if cleanup_staging.is_err() || clear_intent.is_err() {
+                    return Err(RestoreFailure::recovery(format!(
+                        "Could not publish the restored server ({publish_error}). The original server was restored, but restore cleanup still requires reconciliation."
+                    )));
+                }
                 return Err(RestoreFailure::failed(format!("Could not publish the restored server; the original server was restored automatically: {publish_error}")));
             }
             Err(rollback_error) => {
@@ -166,13 +189,13 @@ where
     }
 
     progress("verifying", "Verifying restored server", "The selected restore point is active and its workspace identity is valid.", None);
-    let cleanup_pending = match fs::remove_dir_all(&rollback) {
-        Ok(()) => clear_pending_restore(workspace_id, &rollback).is_err(),
-        Err(_) => true,
+    let rollback_cleanup = remove_owned_restore_path(&rollback);
+    let intent_cleanup = if rollback_cleanup.is_ok() {
+        clear_pending_restore(workspace_id, &rollback)
+    } else {
+        Ok(())
     };
-    if !cleanup_pending {
-        let _ = clear_pending_restore(workspace_id, &rollback);
-    }
+    let cleanup_pending = rollback_cleanup.is_err() || intent_cleanup.is_err();
 
     Ok(ServerRestoreResult {
         restored_backup_id: backup_id.to_string(),
@@ -217,7 +240,9 @@ pub fn recover_pending_restores() -> Result<RestoreRecoveryReport, String> {
         }
 
         if original.is_dir() && workspace_identity_matches(&original, &intent.workspace_id).unwrap_or(false) {
-            if remove_owned_restore_path(&staging).is_err() || remove_owned_restore_path(&rollback).is_err() {
+            let staging_cleanup = remove_owned_restore_path(&staging);
+            let rollback_cleanup = remove_owned_restore_path(&rollback);
+            if staging_cleanup.is_err() || rollback_cleanup.is_err() {
                 issues.push(format!("Restore recovery for {} completed but cleanup is still pending.", entry.name));
                 remaining.push(intent);
             } else {
@@ -229,8 +254,13 @@ pub fn recover_pending_restores() -> Result<RestoreRecoveryReport, String> {
         if !original.exists() && rollback.is_dir() && workspace_identity_matches(&rollback, &intent.workspace_id).unwrap_or(false) {
             match fs::rename(&rollback, &original) {
                 Ok(()) if workspace_identity_matches(&original, &intent.workspace_id).unwrap_or(false) => {
-                    let _ = remove_owned_restore_path(&staging);
-                    recovered = recovered.saturating_add(1);
+                    match remove_owned_restore_path(&staging) {
+                        Ok(()) => recovered = recovered.saturating_add(1),
+                        Err(error) => {
+                            issues.push(format!("Restore recovery for {} restored the preserved original workspace, but staging cleanup is still pending: {error}", entry.name));
+                            remaining.push(intent);
+                        }
+                    }
                 }
                 Ok(()) => {
                     issues.push(format!("Restore recovery for {} restored rollback staging but workspace identity still needs attention.", entry.name));
@@ -282,8 +312,12 @@ fn save_pending_restores(entries: &[PendingRestore]) -> Result<(), String> {
     }
     let incoming = path.with_extension("json.incoming");
     let backup = path.with_extension("json.previous");
-    fs::write(&incoming, serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
+    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
+    let mut file = fs::File::create(&incoming).map_err(|error| error.to_string())?;
+    file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| error.to_string())?;
+    drop(file);
+
     if path.exists() {
         let _ = fs::remove_file(&backup);
         fs::rename(&path, &backup).map_err(|error| error.to_string())?;
@@ -302,9 +336,19 @@ fn save_pending_restores(entries: &[PendingRestore]) -> Result<(), String> {
     }
 }
 
+fn ensure_no_pending_restore(workspace_id: &str) -> Result<(), String> {
+    if load_pending_restores()?.iter().any(|item| item.workspace_id == workspace_id) {
+        Err("A previous restore for this server still requires recovery. Restart LazyBuilder and resolve that restore before starting another one.".into())
+    } else {
+        Ok(())
+    }
+}
+
 fn add_pending_restore(intent: PendingRestore) -> Result<(), String> {
     let mut entries = load_pending_restores()?;
-    entries.retain(|item| item.workspace_id != intent.workspace_id);
+    if entries.iter().any(|item| item.workspace_id == intent.workspace_id) {
+        return Err("A previous restore for this server still requires recovery; LazyBuilder will not overwrite its recovery intent.".into());
+    }
     entries.push(intent);
     save_pending_restores(&entries)
 }
