@@ -28,6 +28,34 @@ main  = stable / release authority
 
 Do not silently fall back to `main`. Do not create side development branches unless explicitly requested.
 
+## Current continuation phase
+
+The repository has completed the current remote hardening cycle and the next canonical phase is **Local PC validation**.
+
+Canonical handoff:
+
+`docs/05-operations/local-pc-validation-plan.md`
+
+The next work is to exercise the existing product from the outside in:
+
+```text
+installer
+→ Launcher
+→ managed Java / Paper
+→ Plugin Manager
+→ World Manager
+→ Utilities Manager
+→ Client Setup / Modrinth
+→ Map Manager
+→ Utility Manager
+→ full Paper/Fabric interoperability
+→ restart/recovery/update
+→ large-world/storage/conversion validation
+→ final repository audit
+```
+
+During this phase, do not expand architecture merely because target-machine proof is incomplete. Fix reproducible defects at the smallest owning boundary.
+
 ## Repository organization
 
 The root is reserved for repository-level entrypoints, policy, versioning, docs, and CI support.
@@ -59,6 +87,7 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
 Current proof authority: `docs/05-operations/current-verification.md`.
+Current Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
 
 ## Component ownership
 
@@ -100,11 +129,9 @@ lazybuilder-map-manager-*.jar
 lazybuilder-utility-manager-*.jar
 ```
 
-`mods/performance-manager/` is deferred research source. Current `Local` Launcher/CI source may still reference or bundle its JAR while the active Launcher/installer consolidation is in progress. That transitional source state must be resolved by the Launcher owner; it must not be used as justification to add new Performance Manager dependencies or expand its product scope in parallel.
+`mods/performance-manager/` is deferred research source. Current `Local` Launcher/CI source may still reference or bundle its JAR as transitional packaging. That state must not be used as justification to add new Performance Manager dependencies or expand its product scope during Local PC validation.
 
 Client Setup must never modify unrelated files in the selected profile `mods/` directory, create Minecraft instances, or become a second general mod manager. There is no background profile watcher; checks are request-bound to the Client Setup surface and `Sync Client`.
-
-Current Modrinth metadata is database-backed. LazyBuilder intentionally does not couple to Modrinth's private database schema. Profile folders remain under Modrinth's `profiles/` directory; compatibility is verified from profile-local runtime evidence (`logs/latest.log`) after the profile has been launched, with legacy metadata accepted only where current source still explicitly supports it for user-data compatibility.
 
 Runtime-ready Launcher packages must use tested same-revision LazyBuilder client artifacts rather than fetching arbitrary LazyBuilder client builds at runtime.
 
@@ -189,12 +216,12 @@ Do not hard-code a permanent current SHA or workflow run in stable context. Dete
 current Local HEAD
 → latest relevant Verify workflow for that exact HEAD
 → component-specific build/test evidence
-→ dedicated runtime proof where available
+→ dedicated Paper Runtime Proof where applicable
 → target-machine / Minecraft-client proof where CI cannot faithfully reproduce behavior
 ```
 
-`REMOTE_GITHUB` can prove more than static compilation when a workflow actually boots the relevant runtime. In particular, the dedicated Paper Runtime Proof is authoritative for the Paper lifecycle cases it explicitly executes, including real Paper boot/restart and the tested managed-world lifecycle.
+`REMOTE_GITHUB` can prove more than static compilation when a workflow actually boots the relevant runtime. In particular, the dedicated Paper Runtime Proof is authoritative for the Paper lifecycle cases it explicitly executes, including real Paper boot/restart and tested managed-world persistence.
 
-Remote CI still does **not** prove arbitrary target-PC Launcher behavior, real Modrinth profile discovery/sync on the user's machine, Fabric UI/input inside a real Minecraft client, real-player gameplay interaction, representative production-scale large-world throughput, or representative cross-edition conversion quality.
+Remote CI still does **not** prove arbitrary target-PC Installer/Launcher behavior, real Modrinth profile discovery/sync on the user's machine, Fabric UI/input inside a real Minecraft client, representative Plugin Manager behavior on a long-lived server, real-player gameplay interaction, representative production-scale large-world throughput, full-PC reboot recovery, or representative cross-edition conversion quality.
 
-The phase after repository synchronization is empirical target-environment/runtime proof, not architecture expansion. Fix reproducible defects at the smallest owning boundary.
+Those are now explicit Local PC acceptance tasks in `docs/05-operations/local-pc-validation-plan.md`.
