@@ -261,11 +261,12 @@ try {
         throw "Runtime proof failed: backup task did not return a backup id."
     }
 
-    $exportArtifact = "runtime-proof-export.zip"
+    $exportBaseName = "runtime-proof-export"
+    $exportArtifact = "$exportBaseName.zip"
     $exportStart = Invoke-ControlJson -Method "POST" -Uri "$baseUri/v1/tasks/export" -Headers $headers -Body @{
         worldId = $sourceWorldId
         targetFormat = "JAVA_1_21_4"
-        artifactName = $exportArtifact
+        artifactName = $exportBaseName
     }
     $exportTask = Wait-ControlTask -BaseUri $baseUri -Headers $headers -TaskId $exportStart.taskId
     if ($exportTask.result -ne $exportArtifact) {
