@@ -45,6 +45,8 @@ pub fn run() {
             commands::workspace::workspace_duplicate,
             commands::workspace::workspace_remove_from_library,
             commands::workspace::workspace_delete,
+            commands::workspace_location::workspace_location_pick,
+            commands::workspace_location::workspace_location_reconnect,
             commands::server_manager::server_preflight,
             commands::server_manager::server_snapshot,
             commands::server_manager::server_start,
