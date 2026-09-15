@@ -436,7 +436,7 @@ public final class WorldMapScreen extends Screen {
         if (selected == null || isCurrentWorld(selected.worldId())) return;
         Rect action = selectedActionRect();
         if (action.top < 110) return;
-        boolean pending = worlds.teleportPending();
+        boolean pending = teleportBusy();
         boolean enabled = worlds.canTeleport() && !pending;
         int color = enabled ? LbUi.ACCENT_FILL : LbUi.SURFACE_1;
         if (action.contains(mouseX, mouseY) && enabled) color = LbUi.ACCENT_HOVER;
@@ -471,7 +471,7 @@ public final class WorldMapScreen extends Screen {
 
         int[] hovered = screenToWorld(mouseX, mouseY);
         String coordinates = hovered == null ? "" : "Cursor  X " + hovered[0] + "   Z " + hovered[1];
-        String status = maps.teleportPending() ? "Teleporting…"
+        String status = teleportBusy() ? "Teleporting…"
                 : SURFACE.pendingCount() > 0 ? "Loading map…"
                 : "";
 
@@ -526,9 +526,9 @@ public final class WorldMapScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("X " + contextBlockX + "  Z " + contextBlockZ),
                 menu.left + 8, menu.top + 20, LbUi.TEXT_MUTED);
 
-        boolean teleportEnabled = worlds.canTeleport() && !maps.teleportPending();
-        String teleportLabel = maps.teleportPending() ? "Teleporting…"
-                : worlds.canTeleport() ? "Teleport here" : "Teleport unavailable";
+        boolean teleportEnabled = maps.currentWorld() != null && worlds.canTeleport() && !teleportBusy();
+        String teleportLabel = teleportBusy() ? "Teleporting…"
+                : maps.currentWorld() != null && worlds.canTeleport() ? "Teleport here" : "Teleport unavailable";
         renderMenuRow(context, contextTeleportRect(), teleportLabel, teleportEnabled, mouseX, mouseY);
         renderMenuRow(context, contextExportRect(), "Export area", maps.currentWorld() != null && worlds.canManage(), mouseX, mouseY);
         renderMenuRow(context, contextCopyRect(), "Copy coordinates", true, mouseX, mouseY);
@@ -594,7 +594,7 @@ public final class WorldMapScreen extends Screen {
             if (selectedActionRect().contains(mouseX, mouseY)) {
                 WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
                 if (selected != null && !isCurrentWorld(selected.worldId())
-                        && worlds.canTeleport() && !worlds.teleportPending()) {
+                        && worlds.canTeleport() && !teleportBusy()) {
                     closeAfterWorldTeleport = true;
                     worlds.teleport(selected.worldId());
                 }
@@ -620,7 +620,7 @@ public final class WorldMapScreen extends Screen {
 
         if (contextOpen) {
             if (button == 0 && contextTeleportRect().contains(mouseX, mouseY)) {
-                if (worlds.canTeleport() && !maps.teleportPending()) {
+                if (maps.currentWorld() != null && worlds.canTeleport() && !teleportBusy()) {
                     closeAfterMapTeleport = true;
                     maps.teleportCurrent(contextBlockX, contextBlockZ);
                     contextOpen = false;
@@ -1165,6 +1165,10 @@ public final class WorldMapScreen extends Screen {
 
     private UUID currentWorldId() {
         return maps.currentWorld() == null ? null : maps.currentWorld().worldId().value();
+    }
+
+    private boolean teleportBusy() {
+        return maps.teleportPending() || worlds.teleportPending();
     }
 
     private boolean isCurrentWorld(UUID id) {
