@@ -1,6 +1,7 @@
 use crate::engine::java_runtime;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,9 +35,7 @@ struct WorkspaceRegistryFile {
 }
 
 impl Default for WorkspaceRegistryFile {
-    fn default() -> Self {
-        Self { schema_version: REGISTRY_SCHEMA_VERSION, servers: Vec::new() }
-    }
+    fn default() -> Self { Self { schema_version: REGISTRY_SCHEMA_VERSION, servers: Vec::new() } }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -75,12 +74,32 @@ pub struct WorkspaceDuplicateEstimate {
     pub available_bytes: Option<u64>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateRecoveryReport {
+    pub recovered: u32,
+    pub completed: u32,
+    pub cleaned: u32,
+    pub issues: Vec<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PendingDeletion {
     workspace_id: String,
     original_path: String,
     staging_path: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingDuplicate {
+    source_workspace_id: String,
+    source_path: String,
+    destination_parent: String,
+    staging_path: String,
+    final_path: String,
+    requested_name: String,
 }
 
 pub fn initialize() -> Result<(), String> {
@@ -90,12 +109,7 @@ pub fn initialize() -> Result<(), String> {
 }
 
 pub fn active_workspace() -> Result<PathBuf, String> {
-    ACTIVE_WORKSPACE
-        .get_or_init(|| RwLock::new(None))
-        .read()
-        .map_err(|_| "workspace state lock poisoned".to_string())?
-        .clone()
-        .ok_or_else(|| "No LazyBuilder server workspace is active. Create or open a server first.".to_string())
+    ACTIVE_WORKSPACE.get_or_init(|| RwLock::new(None)).read().map_err(|_| "workspace state lock poisoned".to_string())?.clone().ok_or_else(|| "No LazyBuilder server workspace is active. Create or open a server first.".to_string())
 }
 
 pub fn current() -> Result<Option<WorkspaceEntry>, String> {
@@ -106,11 +120,7 @@ pub fn current() -> Result<Option<WorkspaceEntry>, String> {
 }
 
 pub fn get(id: &str) -> Result<WorkspaceEntry, String> {
-    load_registry()?
-        .servers
-        .into_iter()
-        .find(|entry| entry.id == id)
-        .ok_or_else(|| "Saved server workspace was not found".to_string())
+    load_registry()?.servers.into_iter().find(|entry| entry.id == id).ok_or_else(|| "Saved server workspace was not found".to_string())
 }
 
 pub fn list() -> Result<Vec<WorkspaceEntry>, String> {
@@ -190,15 +200,11 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
     let mut registry = load_registry()?;
     let entry = registry.servers.iter_mut().find(|entry| entry.id == id).ok_or_else(|| "Saved server workspace was not found".to_string())?;
     let path = PathBuf::from(&entry.path);
-    if !path.is_dir() {
-        return Err(format!("Saved server workspace is currently unavailable: {}. Reconnect or restore that location and try again.", path.display()));
-    }
+    if !path.is_dir() { return Err(format!("Saved server workspace is currently unavailable: {}. Reconnect or restore that location and try again.", path.display())); }
     let canonical = path.canonicalize().map_err(|error| error.to_string())?;
     let manifest = read_manifest(&canonical)?.ok_or_else(|| "Saved server workspace has no LazyBuilder manifest".to_string())?;
     validate_manifest(&manifest)?;
-    if manifest.workspace_id != entry.id {
-        return Err("Saved server workspace identity does not match its manifest. Use Locate only with the original workspace identity.".into());
-    }
+    if manifest.workspace_id != entry.id { return Err("Saved server workspace identity does not match its manifest. Use Locate only with the original workspace identity.".into()); }
     entry.last_opened_unix_seconds = now_unix_seconds();
     let result = entry.clone();
     save_registry(&registry)?;
@@ -213,29 +219,17 @@ pub fn deactivate() -> Result<(), String> { set_active_memory(None) }
 
 pub fn relocate(id: &str, selected_root: &Path) -> Result<WorkspaceEntry, String> {
     let previous = get(id)?;
-    let selected_metadata = fs::symlink_metadata(selected_root)
-        .map_err(|error| format!("Could not inspect selected server location: {error}"))?;
-    if is_unsafe_link_or_reparse(selected_root, &selected_metadata.file_type())? {
-        return Err("LazyBuilder refused a symbolic link or Windows reparse point as a server location".into());
-    }
-    let canonical = selected_root.canonicalize()
-        .map_err(|error| format!("Could not resolve selected server location: {error}"))?;
+    let selected_metadata = fs::symlink_metadata(selected_root).map_err(|error| format!("Could not inspect selected server location: {error}"))?;
+    if is_unsafe_link_or_reparse(selected_root, &selected_metadata.file_type())? { return Err("LazyBuilder refused a symbolic link or Windows reparse point as a server location".into()); }
+    let canonical = selected_root.canonicalize().map_err(|error| format!("Could not resolve selected server location: {error}"))?;
     if !canonical.is_dir() { return Err("Selected server location is not a directory".into()); }
-
-    let manifest = read_manifest(&canonical)?
-        .ok_or_else(|| "Selected folder is not the missing LazyBuilder server: workspace.json is missing".to_string())?;
+    let manifest = read_manifest(&canonical)?.ok_or_else(|| "Selected folder is not the missing LazyBuilder server: workspace.json is missing".to_string())?;
     validate_manifest(&manifest)?;
-    if manifest.workspace_id != id {
-        return Err("Selected folder belongs to a different LazyBuilder server. Use Add existing for that server instead.".into());
-    }
-
+    if manifest.workspace_id != id { return Err("Selected folder belongs to a different LazyBuilder server. Use Add existing for that server instead.".into()); }
     let canonical_text = canonical.display().to_string();
     let mut registry = load_registry()?;
-    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) {
-        return Err("That folder is already registered as another LazyBuilder server".into());
-    }
-    let target = registry.servers.iter_mut().find(|entry| entry.id == id)
-        .ok_or_else(|| "Saved server workspace was not found".to_string())?;
+    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) { return Err("That folder is already registered as another LazyBuilder server".into()); }
+    let target = registry.servers.iter_mut().find(|entry| entry.id == id).ok_or_else(|| "Saved server workspace was not found".to_string())?;
     let was_active = active_workspace_memory()?.is_some_and(|active| active.display().to_string().eq_ignore_ascii_case(&previous.path));
     target.path = canonical_text;
     target.name = manifest.name.clone();
@@ -268,24 +262,33 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
     let estimate = duplicate_estimate(id, &parent)?;
     if let Some(available) = estimate.available_bytes {
         if available < estimate.required_bytes {
-            return Err(format!(
-                "Not enough storage to duplicate this server. Required approximately {} MB; available {} MB.",
-                bytes_to_mb(estimate.required_bytes),
-                bytes_to_mb(available)
-            ));
+            return Err(format!("Not enough storage to duplicate this server. Required approximately {} MB; available {} MB.", bytes_to_mb(estimate.required_bytes), bytes_to_mb(available)));
         }
     }
 
-    let staging = parent.join(format!(".lazybuilder-copying-{}-{}", std::process::id(), now_unix_seconds()));
+    let staging = parent.join(format!(".lazybuilder-copying-{}-{}", std::process::id(), now_unix_millis()));
     if staging.exists() { return Err("LazyBuilder duplicate staging path already exists".into()); }
-    fs::create_dir(&staging).map_err(|error| format!("Could not create duplicate staging directory: {error}"))?;
+    if !safe_duplicate_paths(&parent, &staging, &final_root, &safe_name) { return Err("LazyBuilder refused unsafe duplicate staging paths".into()); }
+
+    let intent = PendingDuplicate {
+        source_workspace_id: entry.id.clone(),
+        source_path: source.display().to_string(),
+        destination_parent: parent.display().to_string(),
+        staging_path: staging.display().to_string(),
+        final_path: final_root.display().to_string(),
+        requested_name: safe_name.clone(),
+    };
+    add_pending_duplicate(intent.clone())?;
+
+    if let Err(error) = fs::create_dir(&staging) {
+        return duplicate_failure_with_cleanup(&intent, false, format!("Could not create duplicate staging directory: {error}"));
+    }
 
     let prepare_result = (|| -> Result<(), String> {
         copy_directory_filtered(&source, &staging, Path::new(""))?;
         let now = now_unix_seconds();
         let new_id = workspace_id(&final_root.display().to_string());
-        let mut manifest = read_manifest(&staging)?
-            .ok_or_else(|| "Duplicate staging copy is missing its LazyBuilder workspace manifest".to_string())?;
+        let mut manifest = read_manifest(&staging)?.ok_or_else(|| "Duplicate staging copy is missing its LazyBuilder workspace manifest".to_string())?;
         validate_manifest(&manifest)?;
         manifest.workspace_id = new_id;
         manifest.name = safe_name.clone();
@@ -293,48 +296,112 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
         manifest.last_opened_unix_seconds = now;
         write_manifest(&staging, manifest)
     })();
-    if let Err(error) = prepare_result {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
+    if let Err(error) = prepare_result { return duplicate_failure_with_cleanup(&intent, true, error); }
 
     if let Err(error) = fs::rename(&staging, &final_root) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(format!("Could not publish duplicated server: {error}"));
+        return duplicate_failure_with_cleanup(&intent, true, format!("Could not publish duplicated server: {error}"));
     }
 
-    let canonical = match final_root.canonicalize() {
-        Ok(path) => path,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&final_root);
-            return Err(format!("Could not validate duplicated server path: {error}"));
-        }
-    };
+    let canonical = final_root.canonicalize().map_err(|error| duplicate_recovery_error(format!("Duplicated server was published but its final path could not be validated: {error}")))?;
+    let canonical_id = workspace_id(&canonical.display().to_string());
+    let mut manifest = read_manifest(&canonical).map_err(|error| duplicate_recovery_error(format!("Published duplicate manifest could not be read: {error}")))?.ok_or_else(|| duplicate_recovery_error("Published duplicate is missing its LazyBuilder workspace manifest"))?;
+    validate_manifest(&manifest).map_err(|error| duplicate_recovery_error(format!("Published duplicate manifest is invalid: {error}")))?;
+    manifest.workspace_id = canonical_id;
+    manifest.name = safe_name.clone();
+    write_manifest(&canonical, manifest).map_err(|error| duplicate_recovery_error(format!("Could not finalize published duplicate identity: {error}")))?;
 
-    let finalize_result = (|| -> Result<WorkspaceEntry, String> {
-        let canonical_id = workspace_id(&canonical.display().to_string());
-        let mut manifest = read_manifest(&canonical)?
-            .ok_or_else(|| "Published duplicate is missing its LazyBuilder workspace manifest".to_string())?;
-        manifest.workspace_id = canonical_id;
-        write_manifest(&canonical, manifest)?;
-        register_only(&canonical, &safe_name)
-    })();
+    let result = register_only(&canonical, &safe_name).map_err(|error| duplicate_recovery_error(format!("Duplicated server was published but could not be registered: {error}")))?;
+    let _ = clear_pending_duplicate(&intent.staging_path);
+    Ok(result)
+}
 
-    match finalize_result {
-        Ok(result) => Ok(result),
-        Err(error) => {
-            let _ = fs::remove_dir_all(&canonical);
-            Err(error)
+pub fn recover_pending_duplicates() -> Result<DuplicateRecoveryReport, String> {
+    let pending = load_pending_duplicates()?;
+    if pending.is_empty() { return Ok(DuplicateRecoveryReport { recovered: 0, completed: 0, cleaned: 0, issues: Vec::new() }); }
+
+    let mut remaining = Vec::new();
+    let mut report = DuplicateRecoveryReport { recovered: 0, completed: 0, cleaned: 0, issues: Vec::new() };
+
+    for intent in pending {
+        let source = PathBuf::from(&intent.source_path);
+        let parent = PathBuf::from(&intent.destination_parent);
+        let staging = PathBuf::from(&intent.staging_path);
+        let final_root = PathBuf::from(&intent.final_path);
+
+        if !safe_duplicate_paths(&parent, &staging, &final_root, &intent.requested_name) {
+            report.issues.push(format!("Duplicate recovery for {} has unsafe recorded paths. All files were preserved for manual review.", intent.requested_name));
+            remaining.push(intent);
+            continue;
         }
+        if !path_matches(&get(&intent.source_workspace_id).map(|entry| entry.path).unwrap_or_default(), &intent.source_path) {
+            report.issues.push(format!("Duplicate recovery for {} no longer matches the registered source server path. All files were preserved.", intent.requested_name));
+            remaining.push(intent);
+            continue;
+        }
+        if let Err(error) = reject_existing_reparse_points(&[&source, &parent, &staging, &final_root]) {
+            report.issues.push(format!("Duplicate recovery for {} was blocked by filesystem safety validation: {error}", intent.requested_name));
+            remaining.push(intent);
+            continue;
+        }
+
+        if final_root.exists() && staging.exists() {
+            report.issues.push(format!("Duplicate recovery for {} is ambiguous because both staging and final paths exist. Nothing was deleted.", intent.requested_name));
+            remaining.push(intent);
+            continue;
+        }
+
+        if final_root.is_dir() {
+            match finish_recovered_duplicate(&final_root, &intent.requested_name) {
+                Ok(()) => {
+                    report.recovered = report.recovered.saturating_add(1);
+                    report.completed = report.completed.saturating_add(1);
+                }
+                Err(error) => {
+                    report.issues.push(format!("Duplicate recovery for {} found a published copy but could not safely register it: {error}", intent.requested_name));
+                    remaining.push(intent);
+                }
+            }
+            continue;
+        }
+
+        if final_root.exists() {
+            report.issues.push(format!("Duplicate recovery for {} found a non-directory final target. Nothing was changed.", intent.requested_name));
+            remaining.push(intent);
+            continue;
+        }
+
+        if staging.is_dir() {
+            match remove_owned_duplicate_staging(&parent, &staging) {
+                Ok(()) => {
+                    report.recovered = report.recovered.saturating_add(1);
+                    report.cleaned = report.cleaned.saturating_add(1);
+                }
+                Err(error) => {
+                    report.issues.push(format!("Duplicate recovery for {} could not clean interrupted staging: {error}", intent.requested_name));
+                    remaining.push(intent);
+                }
+            }
+            continue;
+        }
+
+        if staging.exists() {
+            report.issues.push(format!("Duplicate recovery for {} found a non-directory staging target. Nothing was changed.", intent.requested_name));
+            remaining.push(intent);
+            continue;
+        }
+
+        report.recovered = report.recovered.saturating_add(1);
+        report.cleaned = report.cleaned.saturating_add(1);
     }
+
+    save_pending_duplicates(&remaining)?;
+    Ok(report)
 }
 
 pub fn remove_from_library(id: &str) -> Result<(), String> {
     let was_active = current()?.is_some_and(|entry| entry.id == id);
     let mut registry = load_registry()?;
-    if !registry.servers.iter().any(|entry| entry.id == id) {
-        return Err("Saved server workspace was not found".into());
-    }
+    if !registry.servers.iter().any(|entry| entry.id == id) { return Err("Saved server workspace was not found".into()); }
     registry.servers.retain(|entry| entry.id != id);
     save_registry(&registry)?;
     if was_active { set_active_memory(None)?; }
@@ -344,17 +411,13 @@ pub fn remove_from_library(id: &str) -> Result<(), String> {
 pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
     let entry = get(id)?;
     let was_active = current()?.is_some_and(|candidate| candidate.id == id);
-    if typed_display_name != entry.name {
-        return Err("Type the server name exactly to confirm permanent deletion".into());
-    }
+    if typed_display_name != entry.name { return Err("Type the server name exactly to confirm permanent deletion".into()); }
     let root = validated_registered_root(&entry)?;
     let parent = root.parent().ok_or_else(|| "Server workspace has no parent directory".to_string())?;
     let base = root.file_name().and_then(|value| value.to_str()).unwrap_or("server");
     let staging = parent.join(format!(".{base}.lazybuilder-deleting-{}-{}", std::process::id(), now_unix_seconds()));
     if staging.exists() { return Err("LazyBuilder deletion staging path already exists".into()); }
-    if !is_safe_deletion_staging(&root, &staging) {
-        return Err("LazyBuilder refused an unsafe deletion staging path".into());
-    }
+    if !is_safe_deletion_staging(&root, &staging) { return Err("LazyBuilder refused an unsafe deletion staging path".into()); }
 
     add_pending_deletion(PendingDeletion { workspace_id: entry.id.clone(), original_path: root.display().to_string(), staging_path: staging.display().to_string() })?;
     if let Err(error) = fs::rename(&root, &staging) {
@@ -402,11 +465,33 @@ pub fn accept_eula() -> Result<(), String> {
     fs::write(root.join("server").join("eula.txt"), "# Accepted through LazyBuilder after explicit user confirmation\neula=true\n").map_err(|error| error.to_string())
 }
 
+fn duplicate_failure_with_cleanup(intent: &PendingDuplicate, staging_may_exist: bool, message: String) -> Result<WorkspaceEntry, String> {
+    let staging = PathBuf::from(&intent.staging_path);
+    let parent = PathBuf::from(&intent.destination_parent);
+    let cleanup = if staging_may_exist { remove_owned_duplicate_staging(&parent, &staging) } else { Ok(()) };
+    let clear = clear_pending_duplicate(&intent.staging_path);
+    if cleanup.is_err() || clear.is_err() {
+        Err(duplicate_recovery_error(format!("{message}. Duplicate recovery metadata was preserved because cleanup did not complete safely.")))
+    } else {
+        Err(message)
+    }
+}
+
+fn duplicate_recovery_error(message: impl AsRef<str>) -> String {
+    format!("DUPLICATE_RECOVERY_REQUIRED: {}", message.as_ref())
+}
+
 fn duplicate_destination_parent(source: &Path, destination_parent: &Path) -> Result<PathBuf, String> {
     let parent = destination_parent.canonicalize().map_err(|error| format!("Could not resolve duplicate destination: {error}"))?;
     if !parent.is_dir() { return Err("Duplicate destination is not a directory".into()); }
     if parent == source || parent.starts_with(source) { return Err("Choose a duplicate destination outside the source server workspace".into()); }
     Ok(parent)
+}
+
+fn safe_duplicate_paths(parent: &Path, staging: &Path, final_root: &Path, requested_name: &str) -> bool {
+    if staging.parent() != Some(parent) || final_root.parent() != Some(parent) { return false; }
+    if final_root.file_name().and_then(|value| value.to_str()) != Some(requested_name) { return false; }
+    staging.file_name().and_then(|value| value.to_str()).is_some_and(|name| name.starts_with(".lazybuilder-copying-") && name.len() > ".lazybuilder-copying-".len())
 }
 
 fn validated_registered_root(entry: &WorkspaceEntry) -> Result<PathBuf, String> {
@@ -431,9 +516,7 @@ fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, Stri
     let id = manifest.workspace_id;
     let now = now_unix_seconds();
     let mut registry = load_registry()?;
-    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) {
-        return Err("This workspace path is already registered as another LazyBuilder server".into());
-    }
+    if registry.servers.iter().any(|entry| entry.id != id && entry.path.eq_ignore_ascii_case(&canonical_text)) { return Err("This workspace path is already registered as another LazyBuilder server".into()); }
     if let Some(existing) = registry.servers.iter_mut().find(|entry| entry.id == id) {
         existing.name = name.to_string();
         existing.path = canonical_text.clone();
@@ -453,13 +536,30 @@ fn register_only(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     let id = registered_manifest(&canonical)?.workspace_id;
     let now = now_unix_seconds();
     let mut registry = load_registry()?;
-    if registry.servers.iter().any(|entry| entry.id == id || entry.path.eq_ignore_ascii_case(&canonical_text)) {
-        return Err("This server workspace is already registered in LazyBuilder".into());
-    }
+    if registry.servers.iter().any(|entry| entry.id == id || entry.path.eq_ignore_ascii_case(&canonical_text)) { return Err("This server workspace is already registered in LazyBuilder".into()); }
     let result = WorkspaceEntry { id, name: name.to_string(), path: canonical_text, last_opened_unix_seconds: now };
     registry.servers.push(result.clone());
     save_registry(&registry)?;
     Ok(result)
+}
+
+fn finish_recovered_duplicate(root: &Path, requested_name: &str) -> Result<(), String> {
+    let canonical = root.canonicalize().map_err(|error| error.to_string())?;
+    let canonical_text = canonical.display().to_string();
+    let expected_id = workspace_id(&canonical_text);
+    let mut manifest = registered_manifest(&canonical)?;
+    if manifest.workspace_id != expected_id { return Err("Published duplicate identity does not match its final canonical path".into()); }
+    if manifest.name != requested_name { return Err("Published duplicate name does not match the recorded duplicate intent".into()); }
+
+    let registry = load_registry()?;
+    if let Some(existing) = registry.servers.iter().find(|entry| entry.id == expected_id || entry.path.eq_ignore_ascii_case(&canonical_text)) {
+        if existing.id == expected_id && existing.path.eq_ignore_ascii_case(&canonical_text) { return Ok(()); }
+        return Err("Published duplicate conflicts with another registered server".into());
+    }
+    drop(registry);
+    manifest.last_opened_unix_seconds = now_unix_seconds();
+    write_manifest(&canonical, manifest)?;
+    register_only(&canonical, requested_name).map(|_| ())
 }
 
 fn active_workspace_memory() -> Result<Option<PathBuf>, String> {
@@ -476,6 +576,7 @@ fn app_data_root() -> Result<PathBuf, String> {
 }
 fn registry_path() -> Result<PathBuf, String> { Ok(app_data_root()?.join("workspaces.json")) }
 fn pending_deletions_path() -> Result<PathBuf, String> { Ok(app_data_root()?.join("pending-deletions.json")) }
+fn pending_duplicates_path() -> Result<PathBuf, String> { Ok(app_data_root()?.join("pending-duplicates.json")) }
 
 fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     let path = registry_path()?;
@@ -510,6 +611,44 @@ fn save_pending_deletions(entries: &[PendingDeletion]) -> Result<(), String> {
     let incoming = path.with_extension("json.incoming");
     fs::write(&incoming, serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     replace_json_file(&incoming, &path)
+}
+
+fn load_pending_duplicates() -> Result<Vec<PendingDuplicate>, String> {
+    let path = pending_duplicates_path()?;
+    if !path.is_file() { return Ok(Vec::new()); }
+    let text = fs::read_to_string(path).map_err(|error| format!("Could not read pending server duplicates: {error}"))?;
+    serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server duplicates: {error}"))
+}
+
+fn save_pending_duplicates(entries: &[PendingDuplicate]) -> Result<(), String> {
+    let path = pending_duplicates_path()?;
+    if entries.is_empty() {
+        if path.exists() { fs::remove_file(path).map_err(|error| format!("Could not clear pending server duplicates: {error}"))?; }
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
+    let incoming = path.with_extension("json.incoming");
+    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
+    let mut file = fs::OpenOptions::new().create(true).truncate(true).write(true).open(&incoming).map_err(|error| format!("Could not write pending server duplicate intent: {error}"))?;
+    file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| format!("Could not flush pending server duplicate intent: {error}"))?;
+    drop(file);
+    replace_json_file(&incoming, &path)
+}
+
+fn add_pending_duplicate(intent: PendingDuplicate) -> Result<(), String> {
+    let mut entries = load_pending_duplicates()?;
+    if entries.iter().any(|item| path_matches(&item.final_path, &intent.final_path) || path_matches(&item.staging_path, &intent.staging_path)) {
+        return Err("A previous duplicate at this destination still requires recovery".into());
+    }
+    entries.push(intent);
+    save_pending_duplicates(&entries)
+}
+
+fn clear_pending_duplicate(staging_path: &str) -> Result<(), String> {
+    let mut entries = load_pending_duplicates()?;
+    entries.retain(|item| !path_matches(&item.staging_path, staging_path));
+    save_pending_duplicates(&entries)
 }
 
 fn replace_json_file(source: &Path, destination: &Path) -> Result<(), String> {
@@ -569,6 +708,28 @@ fn is_safe_deletion_staging(original: &Path, staging: &Path) -> bool {
     let prefix = format!(".{base}.lazybuilder-deleting-");
     name.strip_prefix(&prefix).is_some_and(|suffix| !suffix.is_empty())
 }
+
+fn remove_owned_duplicate_staging(parent: &Path, staging: &Path) -> Result<(), String> {
+    if !staging.exists() { return Ok(()); }
+    if staging.parent() != Some(parent) || !staging.file_name().and_then(|value| value.to_str()).is_some_and(|name| name.starts_with(".lazybuilder-copying-") && name.len() > ".lazybuilder-copying-".len()) {
+        return Err("LazyBuilder refused an unsafe duplicate staging cleanup path".into());
+    }
+    let metadata = fs::symlink_metadata(staging).map_err(|error| error.to_string())?;
+    if is_unsafe_link_or_reparse(staging, &metadata.file_type())? { return Err("LazyBuilder refused a duplicate staging symlink or Windows reparse point".into()); }
+    if !metadata.file_type().is_dir() { return Err("Duplicate staging path is not a directory".into()); }
+    fs::remove_dir_all(staging).map_err(|error| format!("Could not clean duplicate staging: {error}"))
+}
+
+fn reject_existing_reparse_points(paths: &[&Path]) -> Result<(), String> {
+    for path in paths {
+        if !path.exists() { continue; }
+        let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+        if is_unsafe_link_or_reparse(path, &metadata.file_type())? { return Err(format!("Unsafe symbolic link or Windows reparse point: {}", path.display())); }
+    }
+    Ok(())
+}
+
+fn path_matches(left: &str, right: &str) -> bool { if cfg!(windows) { left.eq_ignore_ascii_case(right) } else { left == right } }
 
 fn provision_layout(root: &Path) -> Result<(), String> {
     let directories = [root.join("server"), root.join("server").join("plugins"), root.join("world-system").join("worlds"), root.join("world-system").join("imports"), root.join("world-system").join("exports"), root.join("world-system").join("backups"), root.join("world-system").join("work"), root.join("tools").join("lazybuilder").join("config"), root.join("tools").join("lazybuilder").join("cache"), root.join("tools").join("lazybuilder").join("logs"), root.join("tools").join("lazybuilder").join("disabled-plugins"), root.join("tools").join("lazybuilder").join("plugin-backups")];
@@ -680,6 +841,7 @@ fn workspace_id(path: &str) -> String {
     format!("{:x}", digest.finalize())
 }
 fn now_unix_seconds() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_secs()).unwrap_or(0) }
+fn now_unix_millis() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_millis()).unwrap_or(0) }
 
 #[cfg(test)]
 mod tests {
@@ -704,6 +866,11 @@ mod tests {
         assert!(!is_safe_deletion_staging(original, Path::new("D:/Other/.Build.lazybuilder-deleting-1-2")));
         assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/.Other.lazybuilder-deleting-1-2")));
         assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/.Build.lazybuilder-deleting-")));
-        assert!(!is_safe_deletion_staging(original, Path::new("D:/Servers/Build")));
+    }
+    #[test] fn duplicate_recovery_paths_are_strictly_scoped() {
+        let parent = Path::new("D:/Servers");
+        assert!(safe_duplicate_paths(parent, Path::new("D:/Servers/.lazybuilder-copying-1-2"), Path::new("D:/Servers/Build Copy"), "Build Copy"));
+        assert!(!safe_duplicate_paths(parent, Path::new("D:/Other/.lazybuilder-copying-1-2"), Path::new("D:/Servers/Build Copy"), "Build Copy"));
+        assert!(!safe_duplicate_paths(parent, Path::new("D:/Servers/.lazybuilder-copying-1-2"), Path::new("D:/Servers/Other"), "Build Copy"));
     }
 }
