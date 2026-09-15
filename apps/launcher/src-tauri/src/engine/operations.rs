@@ -176,11 +176,13 @@ impl OperationRegistry {
     }
 
     pub fn fail(&self, id: &str, error: OperationError) -> Result<OperationSnapshot, String> {
-        self.finish(id, OperationState::Failed, &error.message, Some(error))
+        let status = error.message.clone();
+        self.finish(id, OperationState::Failed, &status, Some(error))
     }
 
     pub fn require_recovery(&self, id: &str, error: OperationError) -> Result<OperationSnapshot, String> {
-        self.finish(id, OperationState::RecoveryRequired, &error.message, Some(error))
+        let status = error.message.clone();
+        self.finish(id, OperationState::RecoveryRequired, &status, Some(error))
     }
 
     fn finish(
