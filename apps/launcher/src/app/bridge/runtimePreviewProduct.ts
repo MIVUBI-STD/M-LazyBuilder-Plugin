@@ -8,10 +8,13 @@ import type {
   PluginInstallResult,
   PluginSummary,
   RuntimeUpdateStatus,
+  ServerBackupEstimate,
+  ServerBackupSummary,
   ServerHealthSnapshot,
   ServerLogTail,
   ServerPreflight,
   ServerResourceProfile,
+  ServerRestoreResult,
   ServerSnapshot,
   StartupReport,
   UpdateWorldSettingsRequest,
@@ -99,10 +102,20 @@ const previewHealth: ServerHealthSnapshot = {
   ]
 };
 
+const previewBackups: ServerBackupSummary[] = [
+  {
+    id: 'backup-preview-1',
+    workspaceId: activeWorkspace.id,
+    workspaceName: activeWorkspace.name,
+    path: 'D:\\LazyBuilder\\.lazybuilder-backups\\preview-build-server\\backup-preview-1',
+    createdUnixSeconds: 1_788_390_000,
+    sourceBytes: 2_400_000_000
+  }
+];
+
 function params() {
   return typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
 }
-
 function previewKind() { return params().get('preview') ?? 'active'; }
 function previewPage() { return params().get('page') ?? 'Overview'; }
 function workspaceState(): WorkspaceState { return { active: previewKind() === 'library' ? null : activeWorkspace, recent: recentWorkspaces }; }
@@ -190,6 +203,13 @@ export const runtimePreviewProduct = {
     list: async () => previewOperations,
     get: async (id: string) => previewOperations.find((operation) => operation.id === id) ?? previewOperations[0],
     cancel: async (id: string) => previewOperations.find((operation) => operation.id === id) ?? previewOperations[0]
+  },
+  backups: {
+    list: async (_workspaceId: string) => previewBackups,
+    estimate: async (_workspaceId: string): Promise<ServerBackupEstimate> => ({ sourceBytes: 2_400_000_000, requiredBytes: 3_000_000_000, availableBytes: 120_000_000_000 }),
+    create: async (_workspaceId: string) => previewBackups[0],
+    restore: async (_workspaceId: string, backupId: string): Promise<ServerRestoreResult> => ({ restoredBackupId: backupId, safetyBackup: previewBackups[0], cleanupPending: false }),
+    delete: async (_workspaceId: string, _backupId: string) => undefined
   },
   workspace: {
     state: async () => workspaceState(),
