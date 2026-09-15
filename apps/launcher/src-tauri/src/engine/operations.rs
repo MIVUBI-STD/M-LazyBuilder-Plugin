@@ -81,40 +81,7 @@ impl OperationRegistry {
         let path = operation_journal_path()?;
         let mut entries = load_journal(&path)?;
         trim_history(&mut entries);
-
-        let now = now_unix_seconds();
-        let mut report = OperationRecoveryReport { interrupted: 0, recovery_required: 0, failed: 0 };
-        for entry in entries.iter_mut() {
-            if entry.state.is_terminal() { continue; }
-            report.interrupted = report.interrupted.saturating_add(1);
-            entry.can_cancel = false;
-            entry.cancel_requested = false;
-            entry.updated_at_unix_seconds = now;
-            entry.completed_at_unix_seconds = Some(now);
-            entry.progress = None;
-
-            if interruption_is_low_risk(&entry.kind) {
-                report.failed = report.failed.saturating_add(1);
-                entry.state = OperationState::Failed;
-                entry.status = "Interrupted when Launcher exited".into();
-                entry.error = Some(OperationError {
-                    code: "INTERRUPTED_LAUNCHER_OPERATION".into(),
-                    message: "This Launcher operation was interrupted by the previous app exit.".into(),
-                    details: "No durable workspace mutation is expected from this operation. Retry it if still needed.".into(),
-                    recoverable: true,
-                });
-            } else {
-                report.recovery_required = report.recovery_required.saturating_add(1);
-                entry.state = OperationState::RecoveryRequired;
-                entry.status = "Interrupted operation requires reconciliation".into();
-                entry.error = Some(OperationError {
-                    code: "INTERRUPTED_LAUNCHER_OPERATION".into(),
-                    message: "A previous Launcher operation ended before its terminal state was recorded.".into(),
-                    details: "LazyBuilder preserved the operation history. Domain recovery runs separately during startup; inspect the affected server before retrying destructive work.".into(),
-                    recoverable: true,
-                });
-            }
-        }
+        let report = reconcile_interrupted_entries(&mut entries, now_unix_seconds());
 
         let registry = Self {
             entries: RwLock::new(entries),
@@ -142,15 +109,18 @@ impl OperationRegistry {
         let resource = resource.trim();
         if kind.is_empty() { return Err("Operation kind is required".into()); }
         if resource.is_empty() { return Err("Operation resource is required".into()); }
+
         let mut guard = self.entries.write().map_err(|_| "operation registry lock poisoned".to_string())?;
         if exclusive && guard.iter().any(|entry| entry.resource == resource && !entry.state.is_terminal()) {
             return Err(format!("Another launcher operation is already active for {resource}"));
         }
+
         let now = now_unix_seconds();
         let sequence = NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed);
+        let launcher_pid = std::process::id();
         let correlation_id = diagnostics::new_correlation_id("operation");
         let snapshot = OperationSnapshot {
-            id: format!("op-{now}-{sequence}"),
+            id: format!("op-{now}-{launcher_pid}-{sequence}"),
             correlation_id: correlation_id.clone(),
             kind: kind.to_string(),
             resource: resource.to_string(),
@@ -167,6 +137,7 @@ impl OperationRegistry {
             updated_at_unix_seconds: now,
             completed_at_unix_seconds: None,
         };
+
         let mut next = guard.clone();
         next.push_front(snapshot.clone());
         trim_history(&mut next);
@@ -198,21 +169,47 @@ impl OperationRegistry {
     }
 
     pub fn set_phase(&self, id: &str, phase: &str, status: &str, details: &str, progress: Option<OperationProgress>) -> Result<OperationSnapshot, String> {
-        let result = self.mutate(id, |entry| { ensure_active(entry)?; entry.phase = phase.trim().to_string(); entry.status = status.trim().to_string(); entry.details = details.trim().to_string(); entry.progress = progress; Ok(()) })?;
+        let result = self.mutate(id, |entry| {
+            ensure_active(entry)?;
+            entry.phase = phase.trim().to_string();
+            entry.status = status.trim().to_string();
+            entry.details = details.trim().to_string();
+            entry.progress = progress;
+            Ok(())
+        })?;
         diagnostics::info_with_context(&result.correlation_id, &format!("operation phase id={} phase={} status={}", result.id, result.phase, result.status));
         Ok(result)
     }
 
     pub fn set_cancelable(&self, id: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
-        self.mutate(id, |entry| { ensure_active(entry)?; if entry.cancel_requested && can_cancel { return Err("Cancellation is already pending for this launcher operation".into()); } entry.can_cancel = can_cancel; Ok(()) })
+        self.mutate(id, |entry| {
+            ensure_active(entry)?;
+            if entry.cancel_requested && can_cancel { return Err("Cancellation is already pending for this launcher operation".into()); }
+            entry.can_cancel = can_cancel;
+            Ok(())
+        })
     }
 
     pub fn add_warning(&self, id: &str, warning: &str) -> Result<OperationSnapshot, String> {
-        self.mutate(id, |entry| { ensure_active(entry)?; let warning = warning.trim(); if !warning.is_empty() && !entry.warnings.iter().any(|existing| existing == warning) { entry.warnings.push(warning.to_string()); } Ok(()) })
+        self.mutate(id, |entry| {
+            ensure_active(entry)?;
+            let warning = warning.trim();
+            if !warning.is_empty() && !entry.warnings.iter().any(|existing| existing == warning) {
+                entry.warnings.push(warning.to_string());
+            }
+            Ok(())
+        })
     }
 
     pub fn request_cancel(&self, id: &str) -> Result<OperationSnapshot, String> {
-        let result = self.mutate(id, |entry| { ensure_active(entry)?; if !entry.can_cancel { return Err("This launcher operation cannot be cancelled safely".into()); } entry.cancel_requested = true; entry.state = OperationState::Cancelling; entry.status = "Cancelling".into(); Ok(()) })?;
+        let result = self.mutate(id, |entry| {
+            ensure_active(entry)?;
+            if !entry.can_cancel { return Err("This launcher operation cannot be cancelled safely".into()); }
+            entry.cancel_requested = true;
+            entry.state = OperationState::Cancelling;
+            entry.status = "Cancelling".into();
+            Ok(())
+        })?;
         diagnostics::info_with_context(&result.correlation_id, &format!("operation cancellation requested id={}", result.id));
         Ok(result)
     }
@@ -232,12 +229,19 @@ impl OperationRegistry {
             entry.error = error;
             entry.can_cancel = false;
             entry.cancel_requested = false;
-            entry.progress = entry.progress.take().map(|mut progress| { if let Some(total) = progress.total { progress.current = total; } progress });
+            entry.progress = entry.progress.take().map(|mut progress| {
+                if let Some(total) = progress.total { progress.current = total; }
+                progress
+            });
             entry.completed_at_unix_seconds = Some(now);
             Ok(())
         })?;
         let message = format!("operation finished id={} state={:?} status={}", result.id, result.state, result.status);
-        if matches!(result.state, OperationState::Failed | OperationState::RecoveryRequired) { diagnostics::error_with_context(&result.correlation_id, &message); } else { diagnostics::info_with_context(&result.correlation_id, &message); }
+        if matches!(result.state, OperationState::Failed | OperationState::RecoveryRequired) {
+            diagnostics::error_with_context(&result.correlation_id, &message);
+        } else {
+            diagnostics::info_with_context(&result.correlation_id, &message);
+        }
         Ok(result)
     }
 
@@ -276,6 +280,42 @@ impl OperationRegistry {
     }
 }
 
+fn reconcile_interrupted_entries(entries: &mut VecDeque<OperationSnapshot>, now: u64) -> OperationRecoveryReport {
+    let mut report = OperationRecoveryReport { interrupted: 0, recovery_required: 0, failed: 0 };
+    for entry in entries.iter_mut() {
+        if entry.state.is_terminal() { continue; }
+        report.interrupted = report.interrupted.saturating_add(1);
+        entry.can_cancel = false;
+        entry.cancel_requested = false;
+        entry.updated_at_unix_seconds = now;
+        entry.completed_at_unix_seconds = Some(now);
+        entry.progress = None;
+
+        if interruption_is_low_risk(&entry.kind) {
+            report.failed = report.failed.saturating_add(1);
+            entry.state = OperationState::Failed;
+            entry.status = "Interrupted when Launcher exited".into();
+            entry.error = Some(OperationError {
+                code: "INTERRUPTED_LAUNCHER_OPERATION".into(),
+                message: "This Launcher operation was interrupted by the previous app exit.".into(),
+                details: "No durable workspace mutation is expected from this operation. Retry it if still needed.".into(),
+                recoverable: true,
+            });
+        } else {
+            report.recovery_required = report.recovery_required.saturating_add(1);
+            entry.state = OperationState::RecoveryRequired;
+            entry.status = "Interrupted operation requires reconciliation".into();
+            entry.error = Some(OperationError {
+                code: "INTERRUPTED_LAUNCHER_OPERATION".into(),
+                message: "A previous Launcher operation ended before its terminal state was recorded.".into(),
+                details: "LazyBuilder preserved the operation history. Domain recovery runs separately during startup; inspect the affected server before retrying destructive work.".into(),
+                recoverable: true,
+            });
+        }
+    }
+    report
+}
+
 fn interruption_is_low_risk(kind: &str) -> bool {
     matches!(kind, "export-support-bundle")
 }
@@ -289,7 +329,33 @@ fn operation_journal_path() -> Result<PathBuf, String> {
 }
 
 fn load_journal(path: &Path) -> Result<VecDeque<OperationSnapshot>, String> {
-    if !path.is_file() { return Ok(VecDeque::new()); }
+    let incoming = path.with_extension("json.incoming");
+    let previous = path.with_extension("json.previous");
+
+    if path.is_file() {
+        let entries = read_journal_file(path)?;
+        let _ = fs::remove_file(&incoming);
+        let _ = fs::remove_file(&previous);
+        return Ok(entries);
+    }
+
+    if previous.is_file() {
+        fs::rename(&previous, path).map_err(|error| format!("Could not restore previous Launcher operation journal: {error}"))?;
+        let entries = read_journal_file(path)?;
+        let _ = fs::remove_file(&incoming);
+        return Ok(entries);
+    }
+
+    if incoming.is_file() {
+        let entries = read_journal_file(&incoming)?;
+        fs::rename(&incoming, path).map_err(|error| format!("Could not publish recovered Launcher operation journal: {error}"))?;
+        return Ok(entries);
+    }
+
+    Ok(VecDeque::new())
+}
+
+fn read_journal_file(path: &Path) -> Result<VecDeque<OperationSnapshot>, String> {
     let text = fs::read_to_string(path).map_err(|error| format!("Could not read Launcher operation journal: {error}"))?;
     let journal: OperationJournal = serde_json::from_str(&text).map_err(|error| format!("Could not parse Launcher operation journal: {error}"))?;
     if journal.schema_version != OPERATION_JOURNAL_SCHEMA_VERSION {
@@ -306,6 +372,7 @@ fn persist_journal(path: &Path, entries: &VecDeque<OperationSnapshot>) -> Result
     let previous = path.with_extension("json.previous");
     let journal = OperationJournal { schema_version: OPERATION_JOURNAL_SCHEMA_VERSION, entries: entries.clone() };
     let text = serde_json::to_string_pretty(&journal).map_err(|error| error.to_string())?;
+
     {
         let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(&incoming)
             .map_err(|error| format!("Could not write Launcher operation journal staging file: {error}"))?;
@@ -314,17 +381,21 @@ fn persist_journal(path: &Path, entries: &VecDeque<OperationSnapshot>) -> Result
     }
 
     if path.exists() {
-        let _ = fs::remove_file(&previous);
+        if previous.exists() {
+            fs::remove_file(&previous).map_err(|error| format!("Could not clear stale previous Launcher operation journal: {error}"))?;
+        }
         fs::rename(path, &previous).map_err(|error| format!("Could not preserve previous Launcher operation journal: {error}"))?;
         match fs::rename(&incoming, path) {
             Ok(()) => {
                 let _ = fs::remove_file(previous);
                 Ok(())
             }
-            Err(error) => {
-                let _ = fs::rename(&previous, path);
-                Err(format!("Could not publish Launcher operation journal: {error}"))
-            }
+            Err(publish_error) => match fs::rename(&previous, path) {
+                Ok(()) => Err(format!("Could not publish Launcher operation journal; previous journal was restored: {publish_error}")),
+                Err(rollback_error) => Err(format!(
+                    "Could not publish Launcher operation journal ({publish_error}) and could not restore the previous journal ({rollback_error}). Recovery files were preserved."
+                )),
+            },
         }
     } else {
         fs::rename(incoming, path).map_err(|error| format!("Could not publish Launcher operation journal: {error}"))
@@ -338,6 +409,27 @@ fn now_unix_seconds() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_operation(kind: &str, state: OperationState) -> OperationSnapshot {
+        OperationSnapshot {
+            id: "op-test".into(),
+            correlation_id: "operation-test".into(),
+            kind: kind.into(),
+            resource: "workspace:test".into(),
+            state,
+            phase: "copying".into(),
+            status: "Working".into(),
+            details: String::new(),
+            progress: Some(OperationProgress { current: 4, total: Some(10), unit: "bytes".into() }),
+            can_cancel: true,
+            cancel_requested: false,
+            warnings: Vec::new(),
+            error: None,
+            created_at_unix_seconds: 1,
+            updated_at_unix_seconds: 1,
+            completed_at_unix_seconds: None,
+        }
+    }
 
     #[test]
     fn operation_lifecycle_has_one_terminal_transition() {
@@ -388,17 +480,50 @@ mod tests {
     fn bounded_history_never_evicts_active_operations_first() {
         let registry = OperationRegistry::default();
         let active = registry.begin("active", "resource:active", false).unwrap();
-        for index in 0..(MAX_OPERATION_HISTORY + 5) { let operation = registry.begin("finished", &format!("resource:{index}"), false).unwrap(); registry.succeed(&operation.id, "done").unwrap(); }
+        for index in 0..(MAX_OPERATION_HISTORY + 5) {
+            let operation = registry.begin("finished", &format!("resource:{index}"), false).unwrap();
+            registry.succeed(&operation.id, "done").unwrap();
+        }
         let list = registry.list().unwrap();
         assert!(list.len() <= MAX_OPERATION_HISTORY + 1);
         assert!(list.iter().any(|operation| operation.id == active.id));
     }
 
     #[test]
-    fn low_risk_interruption_classification_is_explicit() {
-        assert!(interruption_is_low_risk("export-support-bundle"));
-        assert!(!interruption_is_low_risk("restore-server"));
-        assert!(!interruption_is_low_risk("update-paper"));
+    fn interrupted_mutations_require_recovery_and_reconciliation_is_idempotent() {
+        let mut entries = VecDeque::from([
+            sample_operation("restore-server", OperationState::Running),
+            sample_operation("export-support-bundle", OperationState::Cancelling),
+        ]);
+        entries[0].id = "op-restore".into();
+        entries[1].id = "op-support".into();
+
+        let report = reconcile_interrupted_entries(&mut entries, 50);
+        assert_eq!(report.interrupted, 2);
+        assert_eq!(report.recovery_required, 1);
+        assert_eq!(report.failed, 1);
+        assert_eq!(entries[0].state, OperationState::RecoveryRequired);
+        assert_eq!(entries[1].state, OperationState::Failed);
+        assert!(entries.iter().all(|entry| entry.completed_at_unix_seconds == Some(50)));
+
+        let second = reconcile_interrupted_entries(&mut entries, 60);
+        assert_eq!(second.interrupted, 0);
+        assert_eq!(entries[0].completed_at_unix_seconds, Some(50));
+    }
+
+    #[test]
+    fn journal_round_trip_preserves_operation_history() {
+        let sequence = NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!("lazybuilder-operation-journal-test-{}-{sequence}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("operations.json");
+        let entries = VecDeque::from([sample_operation("backup-server", OperationState::Succeeded)]);
+        persist_journal(&path, &entries).unwrap();
+        let loaded = load_journal(&path).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].kind, "backup-server");
+        assert_eq!(loaded[0].state, OperationState::Succeeded);
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
