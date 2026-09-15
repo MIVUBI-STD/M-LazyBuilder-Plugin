@@ -17,12 +17,14 @@ reproduced Local PC findings
 → source remediation
 → runtime/build/product synchronization
 → regression coverage
-→ Verify
-→ applicable Paper Runtime Proof
+→ DEV.cmd finalize-local where applicable
+→ integrated Verify
 → canonical installer proof
 → final source/repository audit
 → explicit decision to reopen Local PC acceptance
 ```
+
+Focused Paper/Launcher/visual workflows may be run manually when their specialist evidence is useful, but they are not parallel repository-readiness authorities.
 
 Only after that gate opens, use:
 
@@ -37,16 +39,18 @@ PRODUCT / FLOW          → 01-product/
 WORLD MANAGEMENT        → 02-world-management/
 FABRIC CLIENT / MAP UI  → 03-client-ui/
 SYSTEM / OWNERSHIP      → 04-system/
+DEVELOPMENT OPERATIONS  → 04-system/development-operations.md
 CURRENT OPERATIONS      → 05-operations/
 CURRENT REMEDIATION     → 05-operations/local-pc-remediation-2026-09-15.md
 LATER LOCAL ACCEPTANCE  → 05-operations/local-pc-validation-plan.md
 ```
 
-Two system documents answer different questions:
+Core system documents answer different questions:
 
 ```text
-How much should we build? → 04-system/development-discipline.md
-Who owns the decision?    → 04-system/skill-routing.md
+How much should we build?        → 04-system/development-discipline.md
+Who owns the decision?           → 04-system/skill-routing.md
+How do we build/test/deliver?    → 04-system/development-operations.md
 ```
 
 Do not read every Skill or every domain by default.
@@ -58,7 +62,7 @@ docs/
 ├── 01-product/            product identity, scope, end-to-end feature flow
 ├── 02-world-management/   world lifecycle, create, settings, transfer, safety
 ├── 03-client-ui/          Fabric client UI, first-party map interaction, navigation
-├── 04-system/             architecture, minimum-flow discipline, ownership, networking, specialist routing
+├── 04-system/             architecture, minimum-flow discipline, ownership, networking, routing, development operations
 └── 05-operations/         current remediation, verification, distribution proof, later Local PC acceptance
 ```
 
@@ -94,6 +98,11 @@ change third-party Paper plugin lifecycle
 change shared Paper/Fabric wire contract
 → 04-system/networking.md
 → lazybuilder-protocol
+
+change build/bootstrap/verification/package/deployment operations
+→ 04-system/development-operations.md
+→ tooling/windows-toolchain/
+→ preserve DEV.cmd as the sole root developer command surface
 
 change architecture/module ownership
 → 04-system/README.md
