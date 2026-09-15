@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 public final class ClientMapController {
     private final Consumer<String> completedExportHandler;
     private MapActionWireProtocol.CurrentWorldResult currentWorld;
+    private boolean teleportPending;
     private boolean exportBusy;
     private String lastError;
     private long revision;
@@ -26,13 +27,24 @@ public final class ClientMapController {
     }
 
     public void teleportCurrent(int blockX, int blockZ) {
+        if (teleportPending) return;
         MapActionWireProtocol.CurrentWorldResult current = currentWorld;
         if (current == null) {
             LazyBuilderClientNetworking.notifyPlayer("LazyBuilder: current world is not managed yet.");
             return;
         }
         WorldId worldId = current.worldId();
-        LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.teleportRequest(worldId, blockX, blockZ));
+        teleportPending = true;
+        lastError = null;
+        revision++;
+        try {
+            LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.teleportRequest(worldId, blockX, blockZ));
+        } catch (RuntimeException exception) {
+            teleportPending = false;
+            lastError = "Could not send teleport request";
+            revision++;
+            throw exception;
+        }
     }
 
     public void exportAreaCurrent(
@@ -74,10 +86,12 @@ public final class ClientMapController {
             }
             case MapActionWireProtocol.CurrentWorldCleared ignored -> {
                 currentWorld = null;
+                teleportPending = false;
                 lastError = null;
                 revision++;
             }
             case MapActionWireProtocol.TeleportOk teleport -> {
+                teleportPending = false;
                 lastError = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
@@ -96,6 +110,7 @@ public final class ClientMapController {
                 completedExportHandler.accept(complete.fileName());
             }
             case MapActionWireProtocol.ErrorResponse error -> {
+                teleportPending = false;
                 exportBusy = false;
                 lastError = error.message();
                 revision++;
@@ -106,6 +121,10 @@ public final class ClientMapController {
 
     public MapActionWireProtocol.CurrentWorldResult currentWorld() {
         return currentWorld;
+    }
+
+    public boolean teleportPending() {
+        return teleportPending;
     }
 
     public boolean exportBusy() {
@@ -122,6 +141,7 @@ public final class ClientMapController {
 
     public void reset() {
         currentWorld = null;
+        teleportPending = false;
         exportBusy = false;
         lastError = null;
         revision++;
