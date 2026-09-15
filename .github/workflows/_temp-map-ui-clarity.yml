@@ -57,6 +57,7 @@ jobs:
           git rm .github/workflows/_temp-map-ui-clarity.yml
           git add mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/WorldMapScreen.java
           git commit -m "fix(map-ui): clarify player-facing map labels"
+          git reset --hard HEAD
       - name: Rebase and push safely
         shell: bash
         run: |
