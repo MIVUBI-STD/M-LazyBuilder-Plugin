@@ -1,59 +1,109 @@
-# Paper Runtime Smoke Verification
+# Paper Runtime Verification
 
-This is the minimum live-server proof for LazyBuilder Paper plugins. It complements `mvn verify`; it does not replace unit tests or the full world-lifecycle validation checklist.
+This document defines the remote Paper runtime proof for LazyBuilder. It complements `mvn verify` with a real disposable Paper 1.21.4 process and is intentionally narrower than full Minecraft-client validation.
 
-## Goal
+## Remote authority
 
-Prove that the packaged Paper server can actually boot with the current `World-Manager` and `Utilities-Manager` JARs, that both plugins reach their enabled state, and that the server can be stopped cleanly.
-
-This catches failures that source/unit verification cannot prove, including plugin metadata errors, runtime linkage failures, Paper API incompatibilities, startup lifecycle failures, and packaged-JAR mistakes.
-
-## Prerequisites
-
-- Java 21 available on `PATH`, or pass `-JavaExecutable`.
-- A known Paper 1.21.4 server JAR already available locally.
-- Current Paper modules built from the repository root with `mvn verify`.
-
-## Run
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/verify-paper-runtime.ps1 `
-  -ServerJar "E:\1.21.4\paper.jar"
-```
-
-The harness uses the verified module artifacts by default:
+The canonical remote runtime gate is:
 
 ```text
-plugins/world-manager/target/World-Manager-0.1.0-SNAPSHOT.jar
-plugins/utilities-manager/target/Utilities-Manager-0.1.0-SNAPSHOT.jar
+.github/workflows/paper-runtime-proof.yml
 ```
 
-It creates an isolated disposable server under `.runtime-proof/paper-smoke/`. The existing live server is not modified.
+It runs on Windows with Java 21, builds the Paper modules from source, downloads a stable Paper 1.21.4 runtime from PaperMC, executes the lifecycle proof, then executes restart/persistence proof against the same disposable server directory.
 
-## Pass conditions
+The workflow is path-scoped to Paper/plugin/protocol/runtime-proof changes so unrelated Launcher churn does not continuously cancel or rerun server proof.
 
-The smoke proof passes only when Paper reaches its normal ready state, both LazyBuilder Paper plugins emit their enabled startup signals, no known fatal plugin startup signal is detected, and the disposable process accepts a normal `stop` command. Forced termination is only a cleanup fallback after timeout.
+## Lifecycle proof
 
-## Proof boundary
-
-A passing smoke run does not prove world operations. Stable-release validation still requires a disposable live-server scenario covering:
+`scripts/verify-paper-runtime.ps1` creates an isolated server under:
 
 ```text
-create
--> teleport
--> settings
--> unload/load
--> duplicate
--> backup
--> export
--> import
--> delete
--> restart
--> recovery / registry-filesystem consistency
+.runtime-proof/paper-smoke/
 ```
 
-Large-file transfer throughput and at least one real conversion workflow remain separate live-proof items.
+It verifies:
 
-## Failure handling
+```text
+Paper 1.21.4 boot
+→ World-Manager enable
+→ Utilities-Manager enable
+→ unauthenticated local-control rejection
+→ authenticated protocol/status contract
+→ managed-world listing
+→ Create World
+→ settings update/readback
+→ Archive
+→ Restore
+→ Duplicate
+→ Backup
+→ native Java 1.21.4 Export
+→ authenticated artifact upload
+→ Import
+→ managed-world publication
+→ permanent Delete
+→ cleanup confirmation
+→ clean server shutdown
+```
 
-Do not weaken the harness merely to make it green. Fix the actual runtime incompatibility. Do not add a second plugin bootstrap, compatibility manager, dependency injection container, or alternate Paper adapter unless a concrete runtime failure demonstrates a real architectural requirement.
+The native export test intentionally sends an artifact **base name**. The backend owns the `.zip`/`.mcworld` extension according to the selected export type.
+
+## Restart and persistence proof
+
+`scripts/verify-paper-restart.ps1` reuses the disposable runtime produced by the lifecycle test and verifies:
+
+```text
+boot existing runtime
+→ create persistent probe world
+→ confirm registry visibility
+→ clean shutdown
+→ boot the same runtime again
+→ reload registry
+→ resolve the same WorldId/display name
+→ read settings after restart
+→ delete the persisted probe
+→ confirm deletion
+→ clean shutdown
+```
+
+This is real Paper runtime evidence for normal clean restart and registry/filesystem persistence. It is not synthetic unit-test evidence.
+
+## Failure policy
+
+Do not weaken the runtime harness merely to make CI green. A failure must first be classified as either:
+
+- a real plugin/runtime defect;
+- a test-harness contract error;
+- an external runtime/download failure.
+
+Fix the smallest wrong owner. Do not introduce a second bootstrap, compatibility manager, dependency injection framework, alternate filesystem authority, or another world-operation path simply to bypass a runtime incompatibility.
+
+## What remote GitHub now proves
+
+For the Paper-side path, a green `Paper Runtime Proof` establishes real runtime evidence for:
+
+- Paper plugin loading/linkage on Java 21;
+- local loopback authentication and protocol status;
+- World-Manager lifecycle and task execution;
+- filesystem publication for duplicate/export/import/delete;
+- native Java export and HTTP upload/import path;
+- registry persistence across a clean restart;
+- Utilities-Manager startup and command-binding health signal;
+- clean plugin/server shutdown.
+
+## Remaining proof boundary
+
+The remote runner intentionally does **not** claim proof for capabilities that require a real Minecraft client, target workstation, or representative production-scale fixture:
+
+```text
+actual player teleport/gameplay interaction
+Fabric screen/input behavior inside Minecraft
+Utilities movement behavior with a real player
+installed Tauri/Windows UI interaction
+Modrinth profile/filesystem behavior on a target PC
+real large-world throughput at production scale
+cross-edition Chunker conversion quality on representative worlds
+network disconnect/reconnect with a real Fabric client
+```
+
+Those remain later client/target-environment validation items. Their absence must not be replaced by unnecessary architecture or mock systems.
