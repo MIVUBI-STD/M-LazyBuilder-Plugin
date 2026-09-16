@@ -1,12 +1,13 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::fs;
-use std::io::{Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const PAPER_VERSION: &str = "1.21.4";
-const USER_AGENT: &str = "LazyBuilder/0.1.0 (https://github.com/halokaryamedia-source/LazyBuilder-Plugin)";
+const USER_AGENT: &str = concat!("LazyBuilder/", env!("CARGO_PKG_VERSION"), " (https://github.com/halokaryamedia-source/LazyBuilder-Plugin)");
 const BUILDS_URL: &str = "https://fill.papermc.io/v3/projects/paper/versions/1.21.4/builds";
+const MAX_PAPER_JAR_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct PaperRelease {
@@ -35,7 +36,12 @@ pub fn ensure_release_for_workspace(workspace: &Path, release: &PaperRelease) ->
     }
 
     let temporary = target.with_extension("jar.tmp");
-    fs::copy(&cache, &temporary).map_err(|e| e.to_string())?;
+    remove_regular_file_if_exists(&temporary, "Paper publish staging file")?;
+    let mut source = fs::File::open(&cache).map_err(|e| e.to_string())?;
+    let mut output = OpenOptions::new().create_new(true).write(true).open(&temporary).map_err(|e| e.to_string())?;
+    std::io::copy(&mut source, &mut output).map_err(|e| e.to_string())?;
+    output.sync_all().map_err(|e| e.to_string())?;
+    drop(output);
     replace_file(&temporary, &target)
 }
 
@@ -85,14 +91,26 @@ fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<()
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let temp = destination.with_extension("download");
+    remove_regular_file_if_exists(&temp, "Paper download staging file")?;
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .call()
         .map_err(|e| format!("Paper download failed: {e}"))?;
-    let mut reader = response.into_reader();
-    let mut output = fs::File::create(&temp).map_err(|e| e.to_string())?;
-    std::io::copy(&mut reader, &mut output).map_err(|e| e.to_string())?;
-    output.flush().map_err(|e| e.to_string())?;
+    if let Some(length) = response.header("Content-Length").and_then(|value| value.parse::<u64>().ok()) {
+        if length > MAX_PAPER_JAR_BYTES {
+            return Err(format!("Paper download is unexpectedly large ({length} bytes)"));
+        }
+    }
+    let mut reader = response.into_reader().take(MAX_PAPER_JAR_BYTES.saturating_add(1));
+    let mut output = OpenOptions::new().create_new(true).write(true).open(&temp).map_err(|e| e.to_string())?;
+    let copied = std::io::copy(&mut reader, &mut output).map_err(|e| e.to_string())?;
+    if copied > MAX_PAPER_JAR_BYTES {
+        drop(output);
+        let _ = fs::remove_file(&temp);
+        return Err("Paper download exceeded the maximum allowed JAR size".into());
+    }
+    output.sync_all().map_err(|e| e.to_string())?;
+    drop(output);
     let actual = sha256_file(&temp)?;
     if actual != expected {
         let _ = fs::remove_file(&temp);
@@ -114,9 +132,11 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 }
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+    ensure_regular_file(source, "Paper staging file")?;
     if destination.exists() {
+        ensure_regular_file(destination, "Paper JAR")?;
         let backup = destination.with_extension("previous");
-        let _ = fs::remove_file(&backup);
+        remove_regular_file_if_exists(&backup, "previous Paper JAR")?;
         fs::rename(destination, &backup).map_err(|e| e.to_string())?;
         match fs::rename(source, destination) {
             Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
@@ -124,5 +144,39 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
         }
     } else {
         fs::rename(source, destination).map_err(|e| e.to_string())
+    }
+}
+
+fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    }
+    Ok(())
+}
+
+fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            ensure_regular_file(path, label)?;
+            fs::remove_file(path).map_err(|e| format!("Could not remove {label}: {e}"))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paper_download_bound_is_finite() {
+        assert!(MAX_PAPER_JAR_BYTES > 0);
+    }
+
+    #[test]
+    fn user_agent_tracks_launcher_version() {
+        assert!(USER_AGENT.contains(env!("CARGO_PKG_VERSION")));
     }
 }
