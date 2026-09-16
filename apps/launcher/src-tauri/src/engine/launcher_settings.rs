@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
 
-const SETTINGS_SCHEMA_VERSION: u32 = 1;
+const SETTINGS_SCHEMA_VERSION: u32 = 2;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
@@ -25,7 +25,7 @@ impl Default for LauncherSettings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             remember_last_server: true,
             confirm_close_while_server_running: true,
-            auto_check_updates: true,
+            auto_check_updates: false,
             update_channel: "stable".into(),
         }
     }
@@ -85,15 +85,22 @@ fn migrate(value: &mut serde_json::Value) -> Result<(), String> {
     let Some(object) = value.as_object_mut() else {
         return Err("Launcher settings must be a JSON object".into());
     };
+    if schema < 2 {
+        object.insert("autoCheckUpdates".into(), serde_json::json!(false));
+        object.insert("updateChannel".into(), serde_json::json!("stable"));
+    }
     object.insert("schemaVersion".into(), serde_json::json!(SETTINGS_SCHEMA_VERSION));
     Ok(())
 }
 
 fn validate(settings: &LauncherSettings) -> Result<(), String> {
-    match settings.update_channel.as_str() {
-        "stable" | "preview" => Ok(()),
-        _ => Err("updateChannel must be stable or preview".into()),
+    if settings.update_channel != "stable" {
+        return Err("Only the stable update channel is available until the in-app updater runtime is configured".into());
     }
+    if settings.auto_check_updates {
+        return Err("Automatic update checks are unavailable until the signed in-app updater runtime is configured".into());
+    }
+    Ok(())
 }
 
 fn settings_path() -> Result<PathBuf, String> {
@@ -217,16 +224,34 @@ mod tests {
     }
 
     #[test]
-    fn defaults_use_stable_update_channel() {
+    fn defaults_fail_closed_until_updater_runtime_exists() {
         let settings = LauncherSettings::default();
         assert_eq!(settings.update_channel, "stable");
-        assert!(settings.auto_check_updates);
+        assert!(!settings.auto_check_updates);
     }
 
     #[test]
-    fn invalid_update_channel_is_rejected() {
+    fn legacy_update_preferences_migrate_to_supported_state() {
+        let mut value = serde_json::json!({
+            "schemaVersion": 1,
+            "rememberLastServer": true,
+            "confirmCloseWhileServerRunning": true,
+            "autoCheckUpdates": true,
+            "updateChannel": "preview"
+        });
+        migrate(&mut value).unwrap();
+        assert_eq!(value["schemaVersion"], SETTINGS_SCHEMA_VERSION);
+        assert_eq!(value["autoCheckUpdates"], false);
+        assert_eq!(value["updateChannel"], "stable");
+    }
+
+    #[test]
+    fn unavailable_update_preferences_are_rejected() {
         let mut settings = LauncherSettings::default();
-        settings.update_channel = "other".into();
+        settings.update_channel = "preview".into();
+        assert!(validate(&settings).is_err());
+        settings.update_channel = "stable".into();
+        settings.auto_check_updates = true;
         assert!(validate(&settings).is_err());
     }
 
