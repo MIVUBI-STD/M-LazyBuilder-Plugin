@@ -134,7 +134,7 @@ Expected runtime temp:
 
 ## Phase 3 — managed Java and Paper server
 
-Verify:
+Verify the basic single-workspace lifecycle first:
 
 - managed Java 21 provisioning;
 - Paper 1.21.4 provisioning;
@@ -147,7 +147,116 @@ Verify:
 - restart can recover both `Stopping` and `Detached` states without killing unrelated Java processes;
 - workspace/process state survives Launcher restart correctly.
 
-**PASS:** healthy Paper can be operated entirely through LazyBuilder.
+Then run the canonical three-server acceptance matrix using three distinct registered workspaces `A`, `B`, and `C`.
+
+### 3A — sequential capacity
+
+```text
+Start A → A Online
+Start B → A + B Online
+Start C → A + B + C Online
+Attempt Start D → rejected before spawn
+```
+
+Verify:
+
+- capacity is exactly 3;
+- starting B or C does not stop, rebind, or detach an already-running server;
+- the fourth start fails closed with a clear capacity error;
+- each runtime remains associated with its original immutable workspace identity;
+- no server disappears from the runtime list during another server's lifecycle transition.
+
+### 3B — port and control isolation
+
+For A, B, and C verify:
+
+- each Paper server has a distinct effective listen port;
+- each World Manager loopback endpoint has a distinct workspace-owned control port/token;
+- Server Library/Overview displays the effective Paper port actually used by that runtime;
+- console command sent to A appears only on A, and likewise for B/C;
+- log tail for A cannot read B/C logs;
+- a forced preferred-port conflict selects another free port or fails safely; it must never silently attach to another Paper process.
+
+Record the effective Paper and World Manager ports for all three servers.
+
+### 3C — workspace switching while servers remain online
+
+With A/B/C Online, repeatedly switch the selected workspace:
+
+```text
+A → B → C → A
+```
+
+Verify:
+
+- selection changes only the UI/command target;
+- switching does not stop or discard any other runtime;
+- active-workspace actions operate on the selected workspace only;
+- Library-targeted console and Stop still operate on their explicit workspace even when another workspace is selected;
+- duplicate/remove/delete/locate remain blocked for a runtime that is Starting, Online, Stopping, or Detached.
+
+### 3D — lifecycle serialization
+
+Exercise conflicting user actions without intentionally bypassing the UI:
+
+```text
+Start A + immediately switch workspace
+Restart A + immediately switch workspace
+Stop A while another server is starting
+Recover detached A while another lifecycle transition is active
+```
+
+Verify:
+
+- lifecycle/selection changes serialize or return an actionable busy error;
+- no command changes target mid-operation;
+- no registry entry is removed while another lifecycle operation still owns it;
+- already-running unrelated servers remain online while transitions serialize.
+
+### 3E — stop/restart independence
+
+With A/B/C Online:
+
+```text
+Stop B
+→ A Online, B Offline, C Online
+Restart A
+→ C remains Online throughout
+Start B again
+→ A + B + C Online
+```
+
+Verify runtime status, PID, effective port and console ownership after each transition.
+
+### 3F — Launcher close/relaunch and detached recovery
+
+With at least two servers Online:
+
+- close request lists all active runtime names;
+- cancel keeps every runtime/controller intact;
+- confirmed close asks attached runtimes to stop through normal ownership;
+- simulate an unclean Launcher termination only in the controlled recovery test;
+- after relaunch, any surviving verified Paper process is surfaced as `Detached` rather than silently adopted as attached;
+- detached process consumes the 3-server capacity limit;
+- detached stop/recovery validates PID, process start identity and workspace command identity before termination;
+- stale marker for an exited/reused PID is cleared safely;
+- malformed/unreadable `server-process.json` is preserved as a recovery blocker and must **not** be interpreted as "no running server".
+
+Never edit a process marker while a real production world is in use; use disposable acceptance workspaces for corruption/recovery cases.
+
+### 3G — RAM admission
+
+Verify startup admission with representative memory profiles:
+
+- current host `available_memory` is honored before every new start;
+- A/B already running are reflected in host availability when C is considered;
+- insufficient headroom rejects the next start before Paper spawn;
+- changing one server's profile does not mutate another running controller's cached runtime values;
+- stopping a server releases enough host memory for a previously rejected start when physically available.
+
+### Phase 3 pass condition
+
+**PASS:** one, two, and three Paper workspaces can coexist with independent identity, ports, console/log routing and lifecycle ownership; the fourth concurrent start is rejected; selection/lifecycle races fail closed; detached and malformed-marker recovery do not allow duplicate process ownership; and normal single-server behavior remains intact.
 
 ## Phase 4 — Plugin Manager
 
