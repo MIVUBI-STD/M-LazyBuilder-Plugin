@@ -63,6 +63,10 @@ def main() -> int:
     close_guard = LAUNCHER / "src" / "app" / "closeGuard.ts"
     modal_accessibility = LAUNCHER / "src" / "app" / "modalAccessibility.ts"
     frontend_bootstrap = LAUNCHER / "src" / "main.ts"
+    activity = LAUNCHER / "src" / "pages" / "Activity.svelte"
+    dashboard = LAUNCHER / "src" / "pages" / "Dashboard.svelte"
+    worlds = LAUNCHER / "src" / "pages" / "Worlds.svelte"
+    app_css = LAUNCHER / "src" / "styles" / "app.css"
 
     require(
         engine_mod,
@@ -95,6 +99,7 @@ def main() -> int:
 
     require(
         operations,
+        "MAX_OPERATION_HISTORY: usize = 100",
         "OPERATION_JOURNAL_SCHEMA_VERSION",
         "operations.json",
         "persist_journal",
@@ -202,6 +207,34 @@ def main() -> int:
         "restoreFocus",
     )
     require(frontend_bootstrap, "installModalAccessibility", "installModalAccessibility();")
+
+    require(
+        activity,
+        "ACTIVE_POLL_MS",
+        "IDLE_POLL_MS",
+        "refreshInFlight",
+        "document.hidden",
+        "HISTORY_PAGE_SIZE",
+        "visibleHistory",
+    )
+    forbid(activity, "setInterval(")
+    require(
+        dashboard,
+        "ACTIVE_RUNTIME_POLL_MS",
+        "IDLE_RUNTIME_POLL_MS",
+        "runtimePollInFlight",
+        "document.hidden",
+    )
+    forbid(dashboard, "setInterval(")
+    require(
+        worlds,
+        "TASK_POLL_VISIBLE_MS",
+        "TASK_POLL_HIDDEN_MS",
+        "pageActive",
+        "runtimeProduct.worlds.tasks()",
+        "recoverActiveTask",
+    )
+    require(app_css, "content-visibility: auto", "contain-intrinsic-size: auto 76px")
 
     print("Launcher production-hardening source contract OK")
     return 0
