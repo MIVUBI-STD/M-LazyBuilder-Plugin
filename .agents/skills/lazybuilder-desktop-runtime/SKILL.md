@@ -49,18 +49,52 @@ desktop loopback auth/session/control boundary
 
 Does not own UI presentation, Paper world semantics, third-party plugin lifecycle, or neutral Paper↔Fabric contracts.
 
-## Reference routing
+## Context loading
 
-Load only when material:
+### Default load
 
 ```text
-Tauri/Rust/Svelte boundaries, state, settings → references/launcher-architecture.md
-operations/retry/cancel/recovery             → references/operations-and-recovery.md
-Windows/NSIS/update/release                  → references/windows-distribution-and-update.md
-launcher acceptance audit                    → references/launcher-quality-gates.md
-mature launcher patterns                     → references/real-launcher-patterns.md
-external research provenance                 → references/research-basis.md
+this SKILL.md
+→ exact Tauri/Rust/Svelte boundary involved in the reported runtime decision
+→ exact authoritative state/config/filesystem/process evidence for that concern
 ```
+
+Do not preload references for a routine, already-localized runtime defect.
+
+### Required if
+
+```text
+architecture/state/settings ownership is unclear
+→ references/launcher-architecture.md
+
+operation retry/cancel/progress/recovery semantics are material
+→ references/operations-and-recovery.md
+
+Windows identity/NSIS/release/update-channel/updater semantics are material
+→ references/windows-distribution-and-update.md
+
+broad Launcher acceptance audit is explicitly required
+→ references/launcher-quality-gates.md
+
+an existing LazyBuilder owner is known but mature external architecture patterns may change the design decision
+→ references/real-launcher-patterns.md
+
+provenance of external launcher research is specifically material
+→ references/research-basis.md
+```
+
+### Do not load if
+
+- do not load all six references for one task;
+- do not open `real-launcher-patterns.md` before the exact LazyBuilder owner/problem is known;
+- do not load Windows distribution material for ordinary workspace/process/settings defects;
+- do not load UI references when canonical runtime truth itself is wrong;
+- do not scan broad Launcher source when the authoritative owner/service is already identified;
+- do not load historical/operations context merely for reassurance.
+
+### Escalate when
+
+Load one additional reference only when the current source + selected reference cannot decide ownership, failure semantics, or acceptance. If the unresolved boundary is presentation/world/plugin/protocol, hand off rather than accumulating sibling context.
 
 ## Failure taxonomy
 
