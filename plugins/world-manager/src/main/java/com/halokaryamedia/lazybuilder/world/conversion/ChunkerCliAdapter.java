@@ -105,32 +105,36 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
     @Override
     public boolean canConvertWithoutRuntime(ConversionRequest request) {
-        return canUseLosslessNativeAreaPath(Objects.requireNonNull(request, "request"));
+        return canUseRuntimeFreeNativePath(Objects.requireNonNull(request, "request"));
     }
 
     @Override
     public ConversionResult convertWithoutRuntime(ConversionRequest request) throws IOException {
         validateRequest(request);
-        if (!canUseLosslessNativeAreaPath(request)) {
+        if (!canUseRuntimeFreeNativePath(request)) {
             throw new IOException("Conversion request requires the verified external runtime");
         }
-        NativeJavaAreaPruner.exportSelectedArea(
-                request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+        if (request.pruningSettings() != null) {
+            NativeJavaAreaPruner.exportSelectedArea(
+                    request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+        } else {
+            copyFullSameFormatOutput(request.inputDirectory(), request.outputDirectory());
+        }
         validateOutputDirectory(request.outputDirectory(), request.outputFormat());
-        return new ConversionResult("LazyBuilder lossless native Java Selected Area export");
+        return new ConversionResult("LazyBuilder lossless native Java export");
     }
 
     @Override
     public ConversionResult convert(Path runtimeArtifact, ConversionRequest request) throws IOException {
         validateRequest(request);
 
-        if (canUseLosslessNativeAreaPath(request)) {
+        if (canUseRuntimeFreeNativePath(request)) {
             return convertWithoutRuntime(request);
         }
 
         Path artifact = requireRuntimeArtifact(runtimeArtifact);
-        if (request.keepOriginalNbt()) {
-            return convertLosslessNativeAreaWithMetadataOverrides(artifact, request);
+        if (request.preserveNativeInput() && request.canonicalNativeOutput()) {
+            return convertLosslessNativeWithMetadataOverrides(artifact, request);
         }
 
         OnDemandProcessRunner.ProcessResult result = runExternalConversion(artifact, request);
@@ -138,7 +142,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         return new ConversionResult(result.output());
     }
 
-    private ConversionResult convertLosslessNativeAreaWithMetadataOverrides(
+    private ConversionResult convertLosslessNativeWithMetadataOverrides(
             Path artifact,
             ConversionRequest request
     ) throws IOException {
@@ -146,14 +150,18 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
             throw new IOException("Lossless native metadata conversion requires world settings");
         }
 
-        NativeJavaAreaPruner.exportSelectedArea(
-                request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+        if (request.pruningSettings() != null) {
+            NativeJavaAreaPruner.exportSelectedArea(
+                    request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+        } else {
+            copyFullSameFormatOutput(request.inputDirectory(), request.outputDirectory());
+        }
 
         Path parent = request.outputDirectory().getParent();
-        if (parent == null) throw new IOException("Native area output has no workspace parent");
+        if (parent == null) throw new IOException("Native output has no workspace parent");
         String token = UUID.randomUUID().toString();
-        Path metadataInput = parent.resolve("native-area-metadata-input-" + token);
-        Path metadataOutput = parent.resolve("native-area-metadata-output-" + token);
+        Path metadataInput = parent.resolve("native-metadata-input-" + token);
+        Path metadataOutput = parent.resolve("native-metadata-output-" + token);
         try {
             seedSameFormatOutput(request.inputDirectory(), metadataInput);
             ConversionRequest metadataRequest = new ConversionRequest(
@@ -162,7 +170,8 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
                     request.outputFormat(),
                     null,
                     request.worldSettings(),
-                    null
+                    null,
+                    false
             );
             OnDemandProcessRunner.ProcessResult result = runExternalConversion(artifact, metadataRequest);
             validateOutputDirectory(metadataOutput, request.outputFormat());
@@ -209,7 +218,16 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
     static boolean canUseLosslessNativeAreaPath(ConversionRequest request) {
         Objects.requireNonNull(request, "request");
-        return request.keepOriginalNbt() && request.worldSettings() == null;
+        return request.preserveNativeInput()
+                && request.keepOriginalNbt()
+                && request.worldSettings() == null;
+    }
+
+    static boolean canUseRuntimeFreeNativePath(ConversionRequest request) {
+        Objects.requireNonNull(request, "request");
+        return request.preserveNativeInput()
+                && request.canonicalNativeOutput()
+                && request.worldSettings() == null;
     }
 
     List<String> buildConversionCommand(Path runtimeArtifact, ConversionRequest request) {
@@ -324,13 +342,25 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     }
 
     static void seedSameFormatOutput(Path inputDirectory, Path outputDirectory) throws IOException {
+        copySameFormatOutput(inputDirectory, outputDirectory, true);
+    }
+
+    static void copyFullSameFormatOutput(Path inputDirectory, Path outputDirectory) throws IOException {
+        copySameFormatOutput(inputDirectory, outputDirectory, false);
+    }
+
+    private static void copySameFormatOutput(
+            Path inputDirectory,
+            Path outputDirectory,
+            boolean skipChunkOwnedData
+    ) throws IOException {
         Path input = Objects.requireNonNull(inputDirectory, "inputDirectory").toAbsolutePath().normalize();
         Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
         if (!Files.isDirectory(input) || Files.isSymbolicLink(input)) {
-            throw new IOException("Same-format seed input is missing or unsafe: " + input);
+            throw new IOException("Same-format copy input is missing or unsafe: " + input);
         }
         if (Files.exists(output)) {
-            throw new IOException("Same-format seed output must not already exist: " + output);
+            throw new IOException("Same-format copy output must not already exist: " + output);
         }
 
         Files.walkFileTree(input, new SimpleFileVisitor<>() {
@@ -340,7 +370,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
                     throw new IOException("Symbolic links are not supported in conversion input: " + directory);
                 }
                 Path relative = input.relativize(directory);
-                if (isJavaChunkDataDirectory(relative)) return FileVisitResult.SKIP_SUBTREE;
+                if (skipChunkOwnedData && isJavaChunkDataDirectory(relative)) return FileVisitResult.SKIP_SUBTREE;
                 Files.createDirectories(output.resolve(relative));
                 return FileVisitResult.CONTINUE;
             }
