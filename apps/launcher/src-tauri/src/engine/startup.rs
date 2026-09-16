@@ -1,4 +1,4 @@
-use crate::engine::{adoption, diagnostics, launcher_settings, operations::OperationRecoveryReport, runtime_environment, server_backups, server_process_guard, server_restore, workspace_registry};
+use crate::engine::{adoption, diagnostics, launcher_settings, operations::OperationRecoveryReport, runtime_environment, server_backups, server_process_guard, server_restore, workspace_creation, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -44,7 +44,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
     if previous_session_unclean {
         degraded = true;
         diagnostics::info("Previous LazyBuilder session ended without releasing its instance marker; recovery checks will run before normal use.");
-        steps.push(warning_step("launcher-session", "Previous Launcher session ended unexpectedly", "LazyBuilder recovered a stale instance marker. Filesystem, operation, adoption, duplicate, restore, backup, and Paper process reconciliation will run before normal use."));
+        steps.push(warning_step("launcher-session", "Previous Launcher session ended unexpectedly", "LazyBuilder recovered a stale instance marker. Filesystem, operation, creation, adoption, duplicate, restore, backup, and Paper process reconciliation will run before normal use."));
     } else {
         steps.push(ready_step("launcher-session", "Launcher session state clean", "No stale Launcher instance marker was found."));
     }
@@ -91,6 +91,29 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
     };
 
     if registry_ready {
+        match workspace_creation::recover_pending_creations() {
+            Ok(report) => {
+                let mut details = Vec::new();
+                if report.completed > 0 { details.push(format!("Completed {} interrupted server creation(s).", report.completed)); }
+                if report.cleaned > 0 { details.push(format!("Cleaned {} unpublished creation staging location(s).", report.cleaned)); }
+                if !report.issues.is_empty() { details.push(report.issues.join(" ")); }
+                if details.is_empty() { details.push("No interrupted server creation requires recovery.".into()); }
+                let details = details.join(" ");
+                if report.issues.is_empty() {
+                    steps.push(ready_step("creation-recovery", "Server creation state reconciled", &details));
+                } else {
+                    degraded = true;
+                    diagnostics::error(&format!("Server creation recovery needs attention: {details}"));
+                    steps.push(warning_step("creation-recovery", "Server creation needs attention", &details));
+                }
+            }
+            Err(error) => {
+                degraded = true;
+                diagnostics::error(&format!("Server creation recovery failed: {error}"));
+                steps.push(warning_step("creation-recovery", "Server creation recovery could not run", &error));
+            }
+        }
+
         match adoption::recover_pending_adoptions() {
             Ok(report) => {
                 let mut details = Vec::new();
@@ -211,6 +234,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
         }
     } else {
         degraded = true;
+        steps.push(warning_step("creation-recovery", "Server creation recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted creations."));
         steps.push(warning_step("adoption-recovery", "Server adoption recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted adoptions."));
         steps.push(warning_step("duplicate-recovery", "Server duplicate recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted duplicates."));
         steps.push(warning_step("server-restore-recovery", "Server restore recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted restores."));
