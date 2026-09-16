@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ServerConsole from '../components/ServerConsole.svelte';
   import BackupPanel from './BackupPanel.svelte';
   import HealthPanel from './HealthPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
@@ -11,6 +12,7 @@
   let preflight: ServerPreflight = { ready: false, workspace: '', serverDirectory: '', paperJar: '', worldsDirectory: '', javaPath: '', javaVersion: '', logDirectory: '', issues: [] };
   let logTail: ServerLogTail = { path: '', content: '', truncated: false };
   let logOpen = false;
+  let consoleOpen = false;
   let logBusy = false;
   let error = '';
   let notice = '';
@@ -122,7 +124,7 @@
       {:else if snapshot.state === 'Detached'}
         <button class="stop" disabled={busy} onclick={stopDetachedProcess}>Stop external server</button>
       {:else}<button class="secondary" disabled>{stateLabel(snapshot.state)}…</button>{/if}
-      <details class="more-menu"><summary aria-label="More server actions">•••</summary><div class="menu-popover">{#if snapshot.state === 'Online'}<button disabled={busy} onclick={() => action(runtimeProduct.server.restart)}>Restart server</button>{/if}<button disabled={logBusy} onclick={loadLog}>{logBusy ? 'Loading log…' : 'View server log'}</button></div></details>
+      <details class="more-menu"><summary aria-label="More server actions">•••</summary><div class="menu-popover">{#if snapshot.state === 'Online'}<button disabled={busy} onclick={() => action(runtimeProduct.server.restart)}>Restart server</button>{/if}<button disabled={snapshot.state !== 'Online'} onclick={() => (consoleOpen = true)}>Open server console</button><button disabled={logBusy} onclick={loadLog}>{logBusy ? 'Loading log…' : 'View server log'}</button></div></details>
     </div>
   </header>
 
@@ -139,6 +141,8 @@
   <HealthPanel onRepaired={refreshAll} />
   <BackupPanel onRestored={refreshAll} />
 </section>
+
+<ServerConsole open={consoleOpen} onClose={() => (consoleOpen = false)} />
 
 {#if logOpen}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && (logOpen = false)}><div class="log-dialog" role="dialog" aria-modal="true" aria-labelledby="server-log-title"><header><div><h2 id="server-log-title">Server log</h2><p>{logTail.path ? logTail.path.split(/[\\/]/).pop() : 'latest.log'}{logTail.truncated ? ' · showing recent lines' : ''}</p></div><button class="icon-button" aria-label="Close server log" onclick={() => (logOpen = false)}>×</button></header><pre>{logTail.content || 'No server log output is available yet.'}</pre><footer><button class="secondary" disabled={logBusy} onclick={loadLog}>{logBusy ? 'Refreshing…' : 'Refresh'}</button><button class="primary" onclick={() => (logOpen = false)}>Done</button></footer></div></div>{/if}
 

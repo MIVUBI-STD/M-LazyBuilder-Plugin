@@ -94,6 +94,7 @@ pub fn run() {
             commands::workspace_location::workspace_location_reconnect,
             commands::server_manager::server_preflight,
             commands::server_manager::server_snapshot,
+            commands::server_manager::server_console_command,
             commands::server_manager::server_start,
             commands::server_manager::server_stop,
             commands::server_manager::server_restart,

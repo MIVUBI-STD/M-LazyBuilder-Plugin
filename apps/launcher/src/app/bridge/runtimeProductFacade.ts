@@ -21,6 +21,10 @@ const previewRuntimeProduct = {
     ...runtimePreviewProduct.diagnostics,
     exportSupportBundle: async () => 'C:\\Users\\Builder\\Desktop\\LazyBuilder-Support.zip'
   },
+  server: {
+    ...runtimePreviewProduct.server,
+    command: async (_command: string) => undefined
+  },
   backups: {
     list: async (_workspaceId: string) => previewBackups,
     estimate: async (_workspaceId: string): Promise<ServerBackupEstimate> => ({

@@ -1,3 +1,4 @@
+use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::{java_runtime, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
@@ -17,6 +18,42 @@ pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String>
 #[tauri::command]
 pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSnapshot, String> {
     state.snapshot()
+}
+
+#[tauri::command]
+pub async fn server_console_command(app: AppHandle, command: String) -> CommandResult<()> {
+    let command = normalize_console_command(&command)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerManagerState>();
+        let snapshot = state.snapshot().map_err(CommandError::runtime)?;
+        match snapshot.state.as_str() {
+            "Online" => {}
+            "Detached" => {
+                return Err(CommandError::recoverable(
+                    "SERVER_CONSOLE_DETACHED",
+                    "This Paper process is still running, but LazyBuilder no longer owns its console input after the previous launcher session ended.",
+                    "Stop the external server and start it from LazyBuilder again",
+                ));
+            }
+            current => {
+                return Err(CommandError::recoverable(
+                    "SERVER_CONSOLE_UNAVAILABLE",
+                    format!("Server console is available only while Paper is Online; current state is {current}."),
+                    "Start the server and wait until it is Running",
+                ));
+            }
+        }
+
+        state.send_console_command(&command).map_err(|error| {
+            CommandError::recoverable(
+                "SERVER_COMMAND_WRITE_FAILED",
+                error,
+                "Refresh server state and retry",
+            )
+        })
+    })
+    .await
+    .map_err(|error| CommandError::new("SERVER_COMMAND_TASK_FAILED", format!("Server command task failed: {error}")))?
 }
 
 #[tauri::command]
@@ -62,6 +99,47 @@ pub async fn server_recover_detached(app: AppHandle) -> Result<DetachedRecoveryR
     })
     .await
     .map_err(|error| format!("Detached server recovery task failed: {error}"))?
+}
+
+fn normalize_console_command(raw: &str) -> CommandResult<String> {
+    let mut command = raw.trim();
+    if let Some(without_slash) = command.strip_prefix('/') {
+        command = without_slash.trim_start();
+    }
+
+    if command.is_empty() {
+        return Err(CommandError::recoverable(
+            "SERVER_COMMAND_EMPTY",
+            "Enter a Paper command before sending.",
+            "Enter a command",
+        ));
+    }
+    if command.len() > 4096 {
+        return Err(CommandError::recoverable(
+            "SERVER_COMMAND_TOO_LONG",
+            "Server commands are limited to 4096 characters per submission.",
+            "Shorten the command",
+        ));
+    }
+    if command.contains('\n') || command.contains('\r') {
+        return Err(CommandError::recoverable(
+            "SERVER_COMMAND_MULTILINE",
+            "Send one server command at a time.",
+            "Remove line breaks and retry",
+        ));
+    }
+
+    let label = command.split_whitespace().next().unwrap_or_default();
+    let base_label = label.rsplit(':').next().unwrap_or(label).to_ascii_lowercase();
+    if matches!(base_label.as_str(), "stop" | "restart") {
+        return Err(CommandError::recoverable(
+            "SERVER_COMMAND_LIFECYCLE_BLOCKED",
+            format!("The '{base_label}' lifecycle command must use LazyBuilder's server controls so process state and recovery remain correct."),
+            "Use the Stop server or Restart server control",
+        ));
+    }
+
+    Ok(command.to_string())
 }
 
 /// One canonical preparation path for both Start and Restart.
@@ -170,7 +248,7 @@ fn ensure_provisioned() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_loopback_port_available, is_recoverable_stop_snapshot};
+    use super::{ensure_loopback_port_available, is_recoverable_stop_snapshot, normalize_console_command};
     use crate::engine::server_manager::ServerSnapshot;
     use std::net::TcpListener;
 
@@ -210,5 +288,24 @@ mod tests {
         assert!(error.contains(&port.to_string()));
         drop(listener);
         assert!(ensure_loopback_port_available(port).is_ok());
+    }
+
+    #[test]
+    fn console_command_accepts_optional_slash_and_trims_input() {
+        assert_eq!(normalize_console_command(" /say hello ").unwrap(), "say hello");
+    }
+
+    #[test]
+    fn console_command_rejects_multiline_input() {
+        let error = normalize_console_command("say one\nsay two").expect_err("multiline command must fail");
+        assert_eq!(error.code, "SERVER_COMMAND_MULTILINE");
+    }
+
+    #[test]
+    fn console_command_routes_lifecycle_actions_to_launcher_controls() {
+        for value in ["stop", "/restart", "minecraft:stop"] {
+            let error = normalize_console_command(value).expect_err("lifecycle command must fail");
+            assert_eq!(error.code, "SERVER_COMMAND_LIFECYCLE_BLOCKED");
+        }
     }
 }

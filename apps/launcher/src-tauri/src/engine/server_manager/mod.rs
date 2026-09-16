@@ -13,6 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{Pid, Process, System};
 
+mod console;
+
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 type ServerManagerOptions = server_config::ServerConfig;

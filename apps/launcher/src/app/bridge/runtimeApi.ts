@@ -187,6 +187,7 @@ export const runtimeApi = {
   server: {
     preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
     snapshot: () => invokeRuntime<ServerSnapshot>('server_snapshot'),
+    command: (command: string) => invokeRuntime<void>('server_console_command', { command }),
     start: () => invokeRuntime<void>('server_start'),
     stop: () => invokeRuntime<void>('server_stop'),
     restart: () => invokeRuntime<void>('server_restart'),
