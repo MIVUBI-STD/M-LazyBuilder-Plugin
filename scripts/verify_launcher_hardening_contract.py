@@ -60,6 +60,8 @@ def main() -> int:
     support_bundle = RUST / "engine" / "support_bundle.rs"
     app = LAUNCHER / "src" / "App.svelte"
     close_guard = LAUNCHER / "src" / "app" / "closeGuard.ts"
+    modal_accessibility = LAUNCHER / "src" / "app" / "modalAccessibility.ts"
+    frontend_bootstrap = LAUNCHER / "src" / "main.ts"
 
     require(
         engine_mod,
@@ -181,6 +183,17 @@ def main() -> int:
     )
     require(app, "installLauncherCloseGuard", "closeGuardUnlisten = await installLauncherCloseGuard()")
     forbid(app, "getCurrentWindow")
+
+    require(
+        modal_accessibility,
+        'role="dialog"',
+        "MutationObserver",
+        "event.key === 'Escape'",
+        "event.key !== 'Tab'",
+        "Close dialog",
+        "restoreFocus",
+    )
+    require(frontend_bootstrap, "installModalAccessibility", "installModalAccessibility();")
 
     print("Launcher production-hardening source contract OK")
     return 0
