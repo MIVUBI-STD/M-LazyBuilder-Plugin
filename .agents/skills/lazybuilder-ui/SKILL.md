@@ -57,16 +57,45 @@ C Plugin-facing presentation
 
 If multiple lanes consume the same canonical result, fix one primary lane and inspect siblings only for regression.
 
-## Reference routing
+## Context loading
 
-Load only when material:
+### Default load
 
 ```text
-issue/state/flow/race diagnosis      → references/issue-resolution-playbook.md
-Launcher visual/layout proof         → references/launcher-visual-preview.md
-cross-surface/Minecraft visual proof → references/visual-proof-system.md
-external platform/UI research        → references/ui-knowledge-source-policy.md
+this SKILL.md
+→ exact affected UI surface/component/controller
+→ exact canonical semantic result/state consumed by that surface
 ```
+
+Do not preload visual references merely because the task is UI-related.
+
+### Required if
+
+```text
+non-trivial flow/state/input/async race diagnosis
+→ references/issue-resolution-playbook.md
+
+Launcher appearance/layout/state-presentation proof is material
+→ references/launcher-visual-preview.md
+
+cross-surface or Minecraft-rendered visual acceptance is material
+→ references/visual-proof-system.md
+
+platform/API/version behavior is genuinely uncertain and external research may change the decision
+→ references/ui-knowledge-source-policy.md
+```
+
+### Do not load if
+
+- do not load all four UI references for one defect;
+- do not load visual proof references for copy-only or already-obvious source-state fixes unless appearance acceptance is part of the claim;
+- do not load external research when LazyBuilder source/docs already answer the platform behavior;
+- do not load semantic-owner Skills merely because their result is displayed in the UI; consume the canonical result instead;
+- do not inspect sibling UI lanes unless they share the same canonical result or regression surface.
+
+### Escalate when
+
+Load one additional reference only when the current UI source + canonical semantic result cannot decide the failure class, renderer acceptance, or platform behavior. If evidence proves the semantic result itself is wrong, hand off immediately rather than loading more UI context.
 
 ## Failure taxonomy
 
