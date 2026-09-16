@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldAreaSelectionTest {
@@ -14,8 +15,10 @@ class WorldAreaSelectionTest {
 
     @Test
     void cornersNormalizeAndExpandToWholeChunksWithNegativeCoordinates() {
-        WorldAreaSelection area = WorldAreaSelection.ofCorners(31, 48, -17, -1);
+        WorldAreaSelection area = WorldAreaSelection.ofCorners(
+                "minecraft:overworld", 31, 48, -17, -1);
 
+        assertEquals("minecraft:overworld", area.dimensionId());
         assertEquals(-32, area.minBlockX());
         assertEquals(-16, area.minBlockZ());
         assertEquals(31, area.maxBlockX());
@@ -33,7 +36,8 @@ class WorldAreaSelectionTest {
 
     @Test
     void alreadyChunkAlignedSelectionRemainsStable() {
-        WorldAreaSelection area = WorldAreaSelection.ofCorners(112, -352, 847, 239);
+        WorldAreaSelection area = WorldAreaSelection.ofCorners(
+                "minecraft:the_nether", 112, -352, 847, 239);
 
         assertEquals(112, area.minBlockX());
         assertEquals(-352, area.minBlockZ());
@@ -48,18 +52,20 @@ class WorldAreaSelectionTest {
     }
 
     @Test
-    void pruningDocumentUsesChunkBoundsForAllVanillaDimensions() throws Exception {
-        WorldAreaSelection area = WorldAreaSelection.ofCorners(-17, -1, 31, 48);
+    void pruningDocumentKeepsRectangleOnlyInSelectedDimension() throws Exception {
+        WorldAreaSelection area = WorldAreaSelection.ofCorners(
+                "minecraft:the_nether", -17, -1, 31, 48);
         Path pruning = WorldExportService.writeAreaPruning(area, tempDir);
         String json = Files.readString(pruning);
 
-        assertTrue(json.contains("\"minecraft:overworld\""));
-        assertTrue(json.contains("\"minecraft:the_nether\""));
-        assertTrue(json.contains("\"minecraft:the_end\""));
-        assertTrue(json.contains("\"include\":true"));
-        assertTrue(json.contains("\"minChunkX\":-2"));
-        assertTrue(json.contains("\"minChunkZ\":-1"));
-        assertTrue(json.contains("\"maxChunkX\":1"));
-        assertTrue(json.contains("\"maxChunkZ\":3"));
+        assertTrue(json.contains("\"minecraft:overworld\":{\"include\":true,\"regions\":[]}"));
+        assertTrue(json.contains("\"minecraft:the_nether\":{\"include\":true,\"regions\":[{\"minChunkX\":-2,\"minChunkZ\":-1,\"maxChunkX\":1,\"maxChunkZ\":3}]}"));
+        assertTrue(json.contains("\"minecraft:the_end\":{\"include\":true,\"regions\":[]}"));
+    }
+
+    @Test
+    void selectedAreaRejectsUnsupportedCustomDimension() {
+        assertThrows(IllegalArgumentException.class, () -> WorldAreaSelection.ofCorners(
+                "example:custom_dimension", 0, 0, 15, 15));
     }
 }
