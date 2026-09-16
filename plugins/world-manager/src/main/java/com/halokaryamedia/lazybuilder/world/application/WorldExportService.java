@@ -307,6 +307,18 @@ public final class WorldExportService {
         JsonObject json = new JsonObject();
         if (options.gameMode() != null) json.addProperty("GameType", gameModeId(options.gameMode()));
         if (options.difficulty() != null) json.addProperty("Difficulty", difficultyId(options.difficulty()));
+        if (options.hasSpawnOverride()) {
+            json.addProperty("SpawnX", options.spawnX());
+            json.addProperty("SpawnY", options.spawnY());
+            json.addProperty("SpawnZ", options.spawnZ());
+        }
+        if (options.timeOfDayTicks() != null) json.addProperty("Time", options.timeOfDayTicks());
+        if (options.weather() != null) {
+            boolean raining = options.weather() != WorldWeather.CLEAR;
+            boolean thundering = options.weather() == WorldWeather.THUNDER;
+            json.addProperty("raining", raining);
+            json.addProperty("thundering", thundering);
+        }
         for (Map.Entry<String, String> rule : options.gameRules().entrySet()) {
             json.add(rule.getKey(), gameRuleValue(rule.getValue()));
         }
