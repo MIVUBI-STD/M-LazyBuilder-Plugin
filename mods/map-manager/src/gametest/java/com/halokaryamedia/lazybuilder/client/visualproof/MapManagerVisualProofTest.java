@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.client.visualproof;
 import com.halokaryamedia.lazybuilder.client.ClientMapController;
 import com.halokaryamedia.lazybuilder.client.ClientTransferController;
 import com.halokaryamedia.lazybuilder.client.ClientWorldController;
+import com.halokaryamedia.lazybuilder.client.WorldManagerScreen;
 import com.halokaryamedia.lazybuilder.client.WorldMapScreen;
 import com.halokaryamedia.lazybuilder.client.WorldNavigationPreferences;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
@@ -47,6 +48,9 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 captureScenario(context, state, 1440, 900, 3,
                         "map-manager-wide-1440x900-gui3");
 
+                captureWorldManagerEntry(context, state, 1440, 900, 2,
+                        "world-manager-export-import-entry-1440x900-gui2");
+
                 captureExportWorkspace(context, state, 1440, 900, 2, false, false,
                         "map-manager-export-full-world-1440x900-gui2");
                 captureExportWorkspace(context, state, 1440, 900, 2, true, true,
@@ -75,6 +79,44 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         openMap(context, state);
         context.waitTicks(24);
         context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureWorldManagerEntry(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            WorldMapScreen parent = new WorldMapScreen(state.worlds, state.transfers, state.maps);
+            suppressInitialNetworkRefresh(parent);
+            WorldManagerScreen screen = new WorldManagerScreen(parent, state.worlds, state.transfers, state.maps);
+            setBooleanField(screen, "requestedInitialRefresh", true,
+                    "World Manager proof could not suppress test-only list refresh");
+            setBooleanField(screen, "requestedCurrentWorld", true,
+                    "World Manager proof could not suppress test-only current-world refresh");
+            setObjectField(screen, "selectedWorld", TANA,
+                    "World Manager proof could not select the current world");
+            return screen;
+        });
+        context.waitForScreen(WorldManagerScreen.class);
+        context.waitTicks(12);
+        context.takeScreenshot(screenshotName);
+
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof WorldManagerScreen manager)) {
+                throw new IllegalStateException("World Manager proof screen is not open");
+            }
+            invokeCurrentWorldExport(manager, state.worlds);
+        });
+        context.waitForScreen(WorldMapScreen.class);
+        context.waitTicks(8);
         context.setScreen(() -> null);
         context.waitTicks(4);
     }
@@ -214,6 +256,24 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         }
     }
 
+    private static void invokeCurrentWorldExport(
+            WorldManagerScreen manager,
+            ClientWorldController worlds
+    ) {
+        try {
+            Method method = WorldManagerScreen.class.getDeclaredMethod(
+                    "openExport", WorldControlWireProtocol.WorldSummary.class);
+            method.setAccessible(true);
+            WorldControlWireProtocol.WorldSummary current = worlds.worlds().stream()
+                    .filter(world -> world.worldId().equals(TANA))
+                    .findFirst()
+                    .orElseThrow();
+            method.invoke(manager, current);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Could not exercise World Manager Export entry", exception);
+        }
+    }
+
     private static void expandAdvancedSections(WorldMapScreen screen) {
         try {
             Field stateField = WorldMapScreen.class.getDeclaredField("exportWorkspace");
@@ -235,6 +295,16 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             field.setBoolean(target, value);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(message, exception);
+        }
+    }
+
+    private static void setObjectField(Object target, String name, Object value, String message) {
+        try {
+            Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException(message, exception);
         }
