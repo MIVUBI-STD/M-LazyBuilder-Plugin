@@ -53,6 +53,10 @@ async function invokeRuntime<T>(command: string, args?: Record<string, unknown>)
   }
 }
 
+function workspaceArgs(workspaceId?: string) {
+  return workspaceId ? { workspaceId } : undefined;
+}
+
 export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
 export type StartupStepState = 'READY' | 'WARNING';
 export type StartupStep = { key: string; state: StartupStepState; summary: string; details: string };
@@ -187,15 +191,15 @@ export const runtimeApi = {
   },
   server: {
     preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
-    snapshot: () => invokeRuntime<ServerSnapshot>('server_snapshot'),
+    snapshot: (workspaceId?: string) => invokeRuntime<ServerSnapshot>('server_snapshot', workspaceArgs(workspaceId)),
     runtimes: () => invokeRuntime<ServerRuntimeSummary[]>('server_runtime_list'),
     connectionPort: () => invokeRuntime<number | null>('server_connection_port'),
-    command: (command: string) => invokeRuntime<void>('server_console_command', { command }),
+    command: (command: string, workspaceId?: string) => invokeRuntime<void>('server_console_command', { command, ...(workspaceId ? { workspaceId } : {}) }),
     start: () => invokeRuntime<void>('server_start'),
     stop: () => invokeRuntime<void>('server_stop'),
     restart: () => invokeRuntime<void>('server_restart'),
-    recoverDetached: () => invokeRuntime<DetachedRecoveryResult>('server_recover_detached'),
-    logTail: (path: string) => invokeRuntime<ServerLogTail>('server_log_tail', { path }),
+    recoverDetached: (workspaceId?: string) => invokeRuntime<DetachedRecoveryResult>('server_recover_detached', workspaceArgs(workspaceId)),
+    logTail: (path: string, workspaceId?: string) => invokeRuntime<ServerLogTail>('server_log_tail', { path, ...(workspaceId ? { workspaceId } : {}) }),
     resources: () => invokeRuntime<ServerResourceProfile>('server_resource_profile'),
     saveResources: (request: ResourceUpdateRequest) => invokeRuntime<ServerResourceProfile>('server_resource_save', { request })
   },
