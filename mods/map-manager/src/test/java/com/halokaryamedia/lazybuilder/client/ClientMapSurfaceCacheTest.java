@@ -72,4 +72,20 @@ class ClientMapSurfaceCacheTest {
         assertEquals(-6, ClientMapSurfaceCache.stableSampleCoordinate(-5, 4));
         assertEquals(-1, ClientMapSurfaceCache.stableSampleCoordinate(-1, 1));
     }
+
+    @Test
+    void netherVerticalBandRemainsStableForSixteenBlockSlice() {
+        assertEquals(8, ClientMapSurfaceCache.netherLayerCenter(0));
+        assertEquals(8, ClientMapSurfaceCache.netherLayerCenter(7));
+        assertEquals(8, ClientMapSurfaceCache.netherLayerCenter(15));
+        assertEquals(24, ClientMapSurfaceCache.netherLayerCenter(16));
+        assertEquals(24, ClientMapSurfaceCache.netherLayerCenter(31));
+    }
+
+    @Test
+    void netherVerticalBandUsesFloorDivisionBelowZero() {
+        assertEquals(-8, ClientMapSurfaceCache.netherLayerCenter(-1));
+        assertEquals(-8, ClientMapSurfaceCache.netherLayerCenter(-16));
+        assertEquals(-24, ClientMapSurfaceCache.netherLayerCenter(-17));
+    }
 }
