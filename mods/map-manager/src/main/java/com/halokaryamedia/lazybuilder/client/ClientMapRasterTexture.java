@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
@@ -61,6 +63,27 @@ final class ClientMapRasterTexture implements AutoCloseable {
             }
         }
         texture.upload();
+    }
+
+    /**
+     * Draws the complete retained raster as one textured quad. The texture uses
+     * nearest filtering, so scaling preserves crisp map cells instead of adding
+     * linear-filter blur.
+     */
+    void draw(DrawContext context, int x, int y, int drawWidth, int drawHeight) {
+        if (!ready() || drawWidth <= 0 || drawHeight <= 0) return;
+        context.drawTexture(
+                RenderLayer::getGuiTextured,
+                TEXTURE_ID,
+                x,
+                y,
+                0.0F,
+                0.0F,
+                drawWidth,
+                drawHeight,
+                width,
+                height
+        );
     }
 
     private void ensureTexture(int width, int height) {
