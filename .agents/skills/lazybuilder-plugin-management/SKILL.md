@@ -7,6 +7,8 @@ description: Own LazyBuilder-managed third-party Paper plugin lifecycle: discove
 
 Own third-party Paper plugin lifecycle semantics. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; cross-owner selection/handoff comes from `docs/04-system/skill-routing.md`.
 
+This Skill is consumer-neutral: ChatGPT and Codex use the same lifecycle rules and proof requirements. Adapt only execution mechanics to tools actually available; unavailable Paper/local proof remains explicit residue, never an assumed PASS.
+
 ## Entry gate
 
 Use this Skill only when the decision changes third-party plugin lifecycle truth:
@@ -100,7 +102,7 @@ name requested lifecycle result
 → stage rollback only when required
 → smallest complete mutation through one path
 → rescan canonical post-mutation state
-→ matching proof
+→ matching proof available in the current context
 → typed handoff if ownership changes
 → STOP
 ```
@@ -146,4 +148,4 @@ to desktop-runtime
 
 UI must not parse JAR metadata, resolve dependencies, choose duplicate winners, or decide compatibility again.
 
-Finish when canonical identity/lifecycle are correct, replacing work has required rollback, dependency/duplicate/restart semantics have one owner, and matching proof covers the claim. Stop before unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
+Finish when canonical identity/lifecycle are correct, replacing work has required rollback, dependency/duplicate/restart semantics have one owner, and matching proof covers the claim at the available context ceiling. Stop before unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
