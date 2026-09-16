@@ -22,17 +22,17 @@ class ChunkerCliAdapterTest {
     }
 
     @Test
-    void requiredCliContractChecksCoreAndPruningOptions() {
+    void requiredCliContractChecksExportCustomizationOptions() {
         assertTrue(ChunkerCliAdapter.hasRequiredCliContract(
-                "--inputDirectory --outputFormat --outputDirectory --pruning"
+                "--inputDirectory --outputFormat --outputDirectory --worldSettings --pruning --converterSettings"
         ));
         assertFalse(ChunkerCliAdapter.hasRequiredCliContract(
-                "--inputDirectory --outputFormat --outputDirectory"
+                "--inputDirectory --outputFormat --outputDirectory --pruning"
         ));
     }
 
     @Test
-    void conversionCommandAddsHeapBoundAndOnlyAddsPruningWhenSelected() {
+    void conversionCommandAddsOnlySelectedSettingsInputs() {
         ChunkerCliAdapter adapter = new ChunkerCliAdapter(
                 Path.of("/java/bin/java"),
                 2048,
@@ -46,11 +46,25 @@ class ChunkerCliAdapterTest {
         List<String> command = adapter.buildConversionCommand(Path.of("/runtime/converter.jar"), entireWorld);
         assertTrue(command.contains("-Xmx2048m"));
         assertTrue(command.contains("JAVA_1_21_4"));
+        assertFalse(command.contains("-s"));
         assertFalse(command.contains("-p"));
+        assertFalse(command.contains("-c"));
 
-        ConverterAdapter.ConversionRequest selectedArea = new ConverterAdapter.ConversionRequest(
-                Path.of("/input"), Path.of("/output"), "bedrock_1_21_80", Path.of("/tmp/pruning.json")
+        ConverterAdapter.ConversionRequest customized = new ConverterAdapter.ConversionRequest(
+                Path.of("/input"),
+                Path.of("/output"),
+                "bedrock_1_21_80",
+                Path.of("/tmp/pruning.json"),
+                Path.of("/tmp/world-settings.json"),
+                Path.of("/tmp/converter-settings.json")
         );
-        assertTrue(adapter.buildConversionCommand(Path.of("/runtime/converter.jar"), selectedArea).contains("-p"));
+        List<String> customizedCommand = adapter.buildConversionCommand(
+                Path.of("/runtime/converter.jar"), customized);
+        assertTrue(customizedCommand.contains("-s"));
+        assertTrue(customizedCommand.contains("/tmp/world-settings.json"));
+        assertTrue(customizedCommand.contains("-p"));
+        assertTrue(customizedCommand.contains("/tmp/pruning.json"));
+        assertTrue(customizedCommand.contains("-c"));
+        assertTrue(customizedCommand.contains("/tmp/converter-settings.json"));
     }
 }
