@@ -10,6 +10,7 @@
 
   let snapshot: ServerSnapshot = { state: 'Offline', health: 'Offline', cpuLoadPercent: 0, usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: '' };
   let preflight: ServerPreflight = { ready: false, workspace: '', serverDirectory: '', paperJar: '', worldsDirectory: '', javaPath: '', javaVersion: '', logDirectory: '', issues: [] };
+  let connectionPort: number | null = null;
   let logTail: ServerLogTail = { path: '', content: '', truncated: false };
   let logOpen = false;
   let consoleOpen = false;
@@ -43,7 +44,14 @@
     if (state === 'Crashed') return 'The server stopped unexpectedly.';
     return 'Start the server when your team is ready to build.';
   }
-  async function refreshRuntime() { snapshot = await runtimeProduct.server.snapshot(); }
+  async function refreshRuntime() {
+    const [nextSnapshot, nextPort] = await Promise.all([
+      runtimeProduct.server.snapshot(),
+      runtimeProduct.server.connectionPort()
+    ]);
+    snapshot = nextSnapshot;
+    connectionPort = nextPort;
+  }
   async function refreshPreflight() { preflight = await runtimeProduct.server.preflight(); }
   async function refreshAll() { try { await Promise.all([refreshRuntime(), refreshPreflight()]); error = ''; } catch (e) { error = friendlyError(e); } }
   async function pollRuntime() {
@@ -130,7 +138,7 @@
 
   <section class="status-card {stateTone(snapshot.state)}">
     <div class="status-copy"><span class="status-dot {stateTone(snapshot.state)}"></span><div><strong>{stateLabel(snapshot.state)}</strong><p>{stateDescription(snapshot.state)}</p></div></div>
-    {#if snapshot.state === 'Online'}<div class="live-facts"><div><span>Memory</span><strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div><div><span>CPU</span><strong>{snapshot.cpuLoadPercent.toFixed(0)}%</strong></div></div>{:else if snapshot.maxMemoryBytes > 0}<div class="live-facts"><div><span>Memory limit</span><strong>{gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div></div>{/if}
+    {#if snapshot.state === 'Online'}<div class="live-facts">{#if connectionPort}<div><span>Address</span><strong>localhost:{connectionPort}</strong></div>{/if}<div><span>Memory</span><strong>{gb(snapshot.usedMemoryBytes).toFixed(1)} / {gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div><div><span>CPU</span><strong>{snapshot.cpuLoadPercent.toFixed(0)}%</strong></div></div>{:else if snapshot.maxMemoryBytes > 0}<div class="live-facts"><div><span>Memory limit</span><strong>{gb(snapshot.maxMemoryBytes).toFixed(1)} GB</strong></div></div>{/if}
   </section>
 
   {#if error}<section class="notice danger" role="alert"><strong>{category(error)} problem</strong><p>{error}</p></section>{/if}
