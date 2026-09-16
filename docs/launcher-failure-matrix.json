@@ -47,7 +47,8 @@
     {
       "id": "backup-index-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
-      "markers": ["pending backup previous metadata", "prefer the previous committed copy", "read_pending_file", "create_new(true)"]
+      "markers": ["pending backup previous metadata", "prefer the previous committed copy", "read_pending_file", "create_new(true)"],
+      "testMarkers": ["interrupted_index_publish_prefers_previous_committed_copy", "incoming_index_is_recovered_when_no_committed_copy_exists"]
     },
     {
       "id": "legacy-backup-staging-upgrade",
