@@ -8,8 +8,13 @@
   let loading = true;
   let error = '';
   let cancellingId = '';
+  let historyVisibleLimit = 40;
+  let refreshInFlight = false;
 
   const ACTIVE_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
+  const ACTIVE_POLL_MS = 2000;
+  const IDLE_POLL_MS = 10000;
+  const HISTORY_PAGE_SIZE = 40;
 
   function isActive(operation: LauncherOperationSnapshot) {
     return ACTIVE_STATES.has(operation.state);
@@ -70,6 +75,8 @@
   }
 
   async function refresh(showLoading = false) {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
     if (showLoading) loading = true;
     try {
       operations = await runtimeProduct.operations.list();
@@ -77,6 +84,7 @@
     } catch (value) {
       error = value instanceof Error ? value.message : 'Could not load launcher activity.';
     } finally {
+      refreshInFlight = false;
       if (showLoading) loading = false;
     }
   }
@@ -101,13 +109,49 @@
   }
 
   onMount(() => {
-    void Promise.all([refresh(true), loadStartup()]);
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let timer: number | null = null;
+
+    const schedule = () => {
+      if (disposed || document.hidden) return;
+      const hasActive = operations.some(isActive);
+      timer = window.setTimeout(async () => {
+        timer = null;
+        if (disposed || document.hidden) return;
+        await refresh();
+        schedule();
+      }, hasActive ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+    };
+
+    const refreshNow = () => {
+      if (disposed || document.hidden) return;
+      if (timer !== null) { window.clearTimeout(timer); timer = null; }
+      void refresh().finally(schedule);
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (timer !== null) { window.clearTimeout(timer); timer = null; }
+        return;
+      }
+      refreshNow();
+    };
+
+    void Promise.all([refresh(true), loadStartup()]).finally(schedule);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', refreshNow);
+
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', refreshNow);
+    };
   });
 
   $: activeOperations = operations.filter(isActive);
   $: history = operations.filter((operation) => !isActive(operation));
+  $: visibleHistory = history.slice(0, historyVisibleLimit);
 </script>
 
 <section class="activity-page" aria-label="Launcher activity">
@@ -181,7 +225,7 @@
         <div class="quiet-state">Completed operations will appear here.</div>
       {:else}
         <div class="history-list">
-          {#each history as operation (operation.id)}
+          {#each visibleHistory as operation (operation.id)}
             <article class="history-row">
               <div class:failed-icon={operation.state === 'FAILED' || operation.state === 'RECOVERY_REQUIRED'} class:cancelled-icon={operation.state === 'CANCELLED'} class="history-icon" aria-hidden="true">
                 {operation.state === 'SUCCEEDED' ? '✓' : operation.state === 'CANCELLED' ? '–' : '!'}
@@ -195,11 +239,14 @@
             </article>
           {/each}
         </div>
+        {#if visibleHistory.length < history.length}
+          <button class="history-more" onclick={() => (historyVisibleLimit += HISTORY_PAGE_SIZE)}>Show more activity</button>
+        {/if}
       {/if}
     </section>
   {/if}
 </section>
 
 <style>
-  .activity-page{display:flex;flex-direction:column;gap:28px;max-width:980px;margin:0 auto;padding-bottom:40px}.activity-error{border:1px solid rgba(239,68,68,.38);background:rgba(127,29,29,.18);color:#fecaca;border-radius:10px;padding:12px 14px}.startup-recovery{display:grid;gap:12px;padding:15px;border:1px solid rgba(245,158,11,.36);border-radius:12px;background:rgba(120,83,18,.12)}.startup-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.startup-heading h2{margin:0;font-size:15px;color:var(--text,#f4f4f5)}.startup-heading p{margin:4px 0 0;color:var(--muted,#9ca3af);font-size:12px}.startup-heading>span{padding:4px 8px;border-radius:999px;background:rgba(245,158,11,.13);color:#fde68a;font-size:10px;white-space:nowrap}.startup-step-list{display:grid;gap:7px}.startup-step-list article{padding:10px 11px;border:1px solid rgba(245,158,11,.2);border-radius:8px;background:rgba(0,0,0,.1)}.startup-step-list strong{font-size:11px;color:#fde68a}.startup-step-list p{margin:3px 0 0;color:var(--muted,#9ca3af);font-size:11px;line-height:1.45}.activity-empty{min-height:280px;border:1px dashed var(--border,#30343b);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted,#9ca3af);text-align:center}.activity-empty strong{color:var(--text,#f4f4f5);font-size:16px}.empty-glyph{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(34,197,94,.12);color:#86efac;font-size:20px;margin-bottom:4px}.activity-section{display:flex;flex-direction:column;gap:12px}.section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.section-heading h2{margin:0;color:var(--text,#f4f4f5);font-size:16px}.section-heading p{margin:4px 0 0;color:var(--muted,#9ca3af);font-size:13px}.section-count{min-width:28px;height:24px;padding:0 8px;border:1px solid var(--border,#30343b);border-radius:999px;display:grid;place-items:center;color:var(--muted,#9ca3af);font-size:12px}.quiet-state{border:1px solid var(--border,#30343b);border-radius:12px;padding:18px;color:var(--muted,#9ca3af);font-size:13px}.operation-list,.history-list{display:flex;flex-direction:column;gap:10px}.operation-card{display:flex;gap:18px;align-items:flex-start;border:1px solid var(--border,#30343b);background:var(--panel,#17191d);border-radius:12px;padding:16px}.active-operation{border-color:rgba(99,102,241,.42)}.operation-main{flex:1;min-width:0}.operation-title-row{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.operation-title-row>div{display:flex;flex-direction:column;gap:4px;min-width:0}.operation-title-row strong{color:var(--text,#f4f4f5)}.operation-phase,.operation-details,.progress-meta,.history-status,.recovery-note{color:var(--muted,#9ca3af);font-size:12px}.state-badge{white-space:nowrap;border-radius:999px;padding:4px 8px;background:rgba(99,102,241,.14);color:#c7d2fe;font-size:11px;font-weight:650}.warning-state{background:rgba(245,158,11,.13);color:#fde68a}.operation-details{margin:10px 0 0;line-height:1.45}.progress-block{margin-top:14px}.progress-track{height:6px;border-radius:999px;background:rgba(148,163,184,.15);overflow:hidden}.progress-track span{display:block;height:100%;border-radius:inherit;background:var(--accent,#7c83ff);transition:width .2s ease}.progress-meta{display:flex;justify-content:space-between;gap:12px;margin-top:6px}.progress-meta strong{color:var(--text,#f4f4f5);font-size:12px}.standalone-progress{margin-top:12px}.operation-warning,.recovery-note{display:block;margin-top:10px;color:#fde68a}.cancel-button{flex:0 0 auto;border:1px solid var(--border,#3f444d);background:transparent;color:var(--text,#f4f4f5);border-radius:8px;padding:7px 11px;cursor:pointer}.cancel-button:hover:not(:disabled){background:rgba(255,255,255,.05)}.cancel-button:disabled{opacity:.5;cursor:not-allowed}.history-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;align-items:center;border-bottom:1px solid var(--border,#2b2f36);padding:12px 4px}.history-row:last-child{border-bottom:0}.history-icon{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgba(34,197,94,.12);color:#86efac;font-weight:700}.failed-icon{background:rgba(239,68,68,.12);color:#fca5a5}.cancelled-icon{background:rgba(148,163,184,.12);color:#cbd5e1}.history-copy{min-width:0;display:flex;flex-direction:column;gap:3px}.history-title{display:flex;gap:9px;align-items:baseline;min-width:0}.history-title strong{color:var(--text,#f4f4f5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-title span{color:var(--muted,#9ca3af);font-size:11px}.history-row time{color:var(--muted,#9ca3af);font-size:11px;white-space:nowrap}@media(max-width:720px){.activity-page{gap:22px}.startup-heading{flex-direction:column}.operation-card{flex-direction:column}.cancel-button{align-self:flex-start}.history-row{grid-template-columns:34px minmax(0,1fr)}.history-row time{grid-column:2}.operation-title-row{flex-direction:column;gap:8px}}
+  .activity-page{display:flex;flex-direction:column;gap:28px;max-width:980px;margin:0 auto;padding-bottom:40px}.activity-error{border:1px solid rgba(239,68,68,.38);background:rgba(127,29,29,.18);color:#fecaca;border-radius:10px;padding:12px 14px}.startup-recovery{display:grid;gap:12px;padding:15px;border:1px solid rgba(245,158,11,.36);border-radius:12px;background:rgba(120,83,18,.12)}.startup-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.startup-heading h2{margin:0;font-size:15px;color:var(--text,#f4f4f5)}.startup-heading p{margin:4px 0 0;color:var(--muted,#9ca3af);font-size:12px}.startup-heading>span{padding:4px 8px;border-radius:999px;background:rgba(245,158,11,.13);color:#fde68a;font-size:10px;white-space:nowrap}.startup-step-list{display:grid;gap:7px}.startup-step-list article{padding:10px 11px;border:1px solid rgba(245,158,11,.2);border-radius:8px;background:rgba(0,0,0,.1)}.startup-step-list strong{font-size:11px;color:#fde68a}.startup-step-list p{margin:3px 0 0;color:var(--muted,#9ca3af);font-size:11px;line-height:1.45}.activity-empty{min-height:280px;border:1px dashed var(--border,#30343b);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted,#9ca3af);text-align:center}.activity-empty strong{color:var(--text,#f4f4f5);font-size:16px}.empty-glyph{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(34,197,94,.12);color:#86efac;font-size:20px;margin-bottom:4px}.activity-section{display:flex;flex-direction:column;gap:12px}.section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.section-heading h2{margin:0;color:var(--text,#f4f4f5);font-size:16px}.section-heading p{margin:4px 0 0;color:var(--muted,#9ca3af);font-size:13px}.section-count{min-width:28px;height:24px;padding:0 8px;border:1px solid var(--border,#30343b);border-radius:999px;display:grid;place-items:center;color:var(--muted,#9ca3af);font-size:12px}.quiet-state{border:1px solid var(--border,#30343b);border-radius:12px;padding:18px;color:var(--muted,#9ca3af);font-size:13px}.operation-list,.history-list{display:flex;flex-direction:column;gap:10px}.operation-card{display:flex;gap:18px;align-items:flex-start;border:1px solid var(--border,#30343b);background:var(--panel,#17191d);border-radius:12px;padding:16px}.active-operation{border-color:rgba(99,102,241,.42)}.operation-main{flex:1;min-width:0}.operation-title-row{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.operation-title-row>div{display:flex;flex-direction:column;gap:4px;min-width:0}.operation-title-row strong{color:var(--text,#f4f4f5)}.operation-phase,.operation-details,.progress-meta,.history-status,.recovery-note{color:var(--muted,#9ca3af);font-size:12px}.state-badge{white-space:nowrap;border-radius:999px;padding:4px 8px;background:rgba(99,102,241,.14);color:#c7d2fe;font-size:11px;font-weight:650}.warning-state{background:rgba(245,158,11,.13);color:#fde68a}.operation-details{margin:10px 0 0;line-height:1.45}.progress-block{margin-top:14px}.progress-track{height:6px;border-radius:999px;background:rgba(148,163,184,.15);overflow:hidden}.progress-track span{display:block;height:100%;border-radius:inherit;background:var(--accent,#7c83ff);transition:width .2s ease}.progress-meta{display:flex;justify-content:space-between;gap:12px;margin-top:6px}.progress-meta strong{color:var(--text,#f4f4f5);font-size:12px}.standalone-progress{margin-top:12px}.operation-warning,.recovery-note{display:block;margin-top:10px;color:#fde68a}.cancel-button{flex:0 0 auto;border:1px solid var(--border,#3f444d);background:transparent;color:var(--text,#f4f4f5);border-radius:8px;padding:7px 11px;cursor:pointer}.cancel-button:hover:not(:disabled){background:rgba(255,255,255,.05)}.cancel-button:disabled{opacity:.5;cursor:not-allowed}.history-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;align-items:center;border-bottom:1px solid var(--border,#2b2f36);padding:12px 4px}.history-row:last-child{border-bottom:0}.history-icon{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgba(34,197,94,.12);color:#86efac;font-weight:700}.failed-icon{background:rgba(239,68,68,.12);color:#fca5a5}.cancelled-icon{background:rgba(148,163,184,.12);color:#cbd5e1}.history-copy{min-width:0;display:flex;flex-direction:column;gap:3px}.history-title{display:flex;gap:9px;align-items:baseline;min-width:0}.history-title strong{color:var(--text,#f4f4f5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.history-title span{color:var(--muted,#9ca3af);font-size:11px}.history-row time{color:var(--muted,#9ca3af);font-size:11px;white-space:nowrap}.history-more{align-self:flex-start;border:1px solid var(--border,#3f444d);background:transparent;color:var(--text,#f4f4f5);border-radius:8px;padding:7px 11px;cursor:pointer}.history-more:hover{background:rgba(255,255,255,.05)}@media(max-width:720px){.activity-page{gap:22px}.startup-heading{flex-direction:column}.operation-card{flex-direction:column}.cancel-button{align-self:flex-start}.history-row{grid-template-columns:34px minmax(0,1fr)}.history-row time{grid-column:2}.operation-title-row{flex-direction:column;gap:8px}}
 </style>
