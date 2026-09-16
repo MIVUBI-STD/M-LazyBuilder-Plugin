@@ -12,15 +12,13 @@ final class TerraformPaletteScreen extends Screen {
     TerraformPaletteScreen(){super(Text.literal("LazyBuilder Terraform"));}
     @Override public boolean shouldPause(){return false;}
     @Override public void render(DrawContext c,int mouseX,int mouseY,float delta){
-        TerraformEditorState s=TerraformManagerClient.state();panel(c,X,Y,W,232);c.drawText(textRenderer,"TERRAFORM",X+12,Y+10,TerraformUi.TEXT_PRIMARY,false);c.drawText(textRenderer,"Shape",X+12,Y+30,TerraformUi.TEXT_MUTED,false);
+        TerraformEditorState s=TerraformManagerClient.state();panel(c,X,Y,W,208);c.drawText(textRenderer,"TERRAFORM",X+12,Y+10,TerraformUi.TEXT_PRIMARY,false);c.drawText(textRenderer,"Shape",X+12,Y+30,TerraformUi.TEXT_MUTED,false);
         int yy=Y+43;for(TerrainTool tool:TerrainTool.values()){row(c,X+10,yy,W-20,ROW,tool.name(),s.tool()==tool);yy+=ROW+4;}
         c.drawText(textRenderer,"Options",X+12,yy+5,TerraformUi.TEXT_MUTED,false);yy+=19;
         option(c,"Size",String.valueOf((int)s.size()),yy);yy+=24;option(c,"Height",String.valueOf((int)s.height()),yy);yy+=24;
         c.drawText(textRenderer,"Variation  "+pretty(s.variation().name()),X+12,yy+5,TerraformUi.TEXT_SECONDARY,false);
-        c.drawText(textRenderer,"Live controls",X+12,Y+184,TerraformUi.TEXT_MUTED,false);
-        c.drawText(textRenderer,"[ / ] Tool   V Variation   P Close",X+12,Y+197,TerraformUi.TEXT_SECONDARY,false);
-        c.drawText(textRenderer,"Wheel Size   Shift+Wheel Height",X+12,Y+209,TerraformUi.TEXT_MUTED,false);
-        c.drawText(textRenderer,"Ctrl+Z Undo",X+12,Y+221,TerraformUi.TEXT_MUTED,false);
+        c.drawText(textRenderer,"World controls",X+12,Y+184,TerraformUi.TEXT_MUTED,false);
+        c.drawText(textRenderer,"Wheel Size   Shift+Wheel Height",X+12,Y+197,TerraformUi.TEXT_SECONDARY,false);
         super.render(c,mouseX,mouseY,delta);
     }
     @Override public boolean mouseClicked(double mx,double my,int button){if(button!=0)return super.mouseClicked(mx,my,button);TerraformEditorState s=TerraformManagerClient.state();int yy=Y+43;for(TerrainTool tool:TerrainTool.values()){if(inside(mx,my,X+10,yy,W-20,ROW)){TerraformInteractionController.cancelStroke();s.setTool(tool);return true;}yy+=ROW+4;}
