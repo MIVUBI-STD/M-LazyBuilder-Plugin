@@ -1,6 +1,6 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
-use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceDuplicateEstimate, WorkspaceEntry};
 use std::path::{Path, PathBuf};
@@ -37,11 +37,12 @@ pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
+    let active_id = active.id.clone();
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
-        let state = task_app.state::<ServerManagerState>();
+        let runtimes = task_app.state::<ServerRuntimeRegistry>();
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Confirming that runtime files can be changed safely.", None);
-        if let Err(error) = ensure_runtime_update_allowed(&state) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
+        if let Err(error) = ensure_runtime_update_allowed(&runtimes, &active_id) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
         let resource_dir = task_app.path().resource_dir().ok();
         let result = provisioning::provision_active_tracked(resource_dir.as_deref(), |phase, status, details| { let _ = operations.set_phase(&operation_id, phase, status, details, None); });
         match result {
@@ -71,11 +72,12 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
+    let active_id = active.id.clone();
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
-        let state = task_app.state::<ServerManagerState>();
+        let runtimes = task_app.state::<ServerRuntimeRegistry>();
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Confirming that Paper can be replaced safely while the server is offline.", None);
-        if let Err(error) = ensure_runtime_update_allowed(&state) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
+        if let Err(error) = ensure_runtime_update_allowed(&runtimes, &active_id) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
         let result = runtime_updates::update_paper_tracked(|phase, status, details| { let _ = operations.set_phase(&operation_id, phase, status, details, None); });
         match result {
             Ok(result) => { let _ = operations.succeed(&operation_id, "Paper updated"); Ok(result) }
@@ -109,8 +111,8 @@ pub fn workspace_pick_parent() -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
-pub fn workspace_adoption_pick(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>) -> CommandResult<Option<adoption::AdoptionPlan>> {
-    ensure_switch_allowed(&state, &operations)?;
+pub fn workspace_adoption_pick(operations: State<'_, OperationRegistry>) -> CommandResult<Option<adoption::AdoptionPlan>> {
+    ensure_switch_allowed(&operations)?;
     let Some(path) = rfd::FileDialog::new().set_title("Choose existing Paper server to adopt").pick_folder() else { return Ok(None); };
     server_process_guard::ensure_root_not_running(&path).map_err(CommandError::from)?;
     adoption::analyze(&path).map(Some).map_err(CommandError::from)
@@ -119,9 +121,8 @@ pub fn workspace_adoption_pick(state: State<'_, ServerManagerState>, operations:
 #[tauri::command]
 pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<String>) -> CommandResult<WorkspaceEntry> {
     {
-        let state = app.state::<ServerManagerState>();
         let operations = app.state::<OperationRegistry>();
-        ensure_switch_allowed(&state, &operations)?;
+        ensure_switch_allowed(&operations)?;
     }
     let operation = app.state::<OperationRegistry>().begin_exclusive("adopt-server", WORKSPACE_LIBRARY_RESOURCE, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
     let operation_id = operation.id.clone();
@@ -162,14 +163,14 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
 }
 
 #[tauri::command]
-pub fn workspace_activate(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>, id: String) -> CommandResult<WorkspaceEntry> {
-    ensure_activation_allowed(&state, &operations, &id)?;
+pub fn workspace_activate(operations: State<'_, OperationRegistry>, id: String) -> CommandResult<WorkspaceEntry> {
+    ensure_activation_allowed(&operations, &id)?;
     workspace_registry::activate(&id).map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub fn workspace_close(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>) -> CommandResult<()> {
-    ensure_switch_allowed(&state, &operations)?;
+pub fn workspace_close(operations: State<'_, OperationRegistry>) -> CommandResult<()> {
+    ensure_switch_allowed(&operations)?;
     workspace_registry::deactivate().map_err(CommandError::from)
 }
 
@@ -183,9 +184,9 @@ pub fn workspace_open_folder(id: String) -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub fn workspace_duplicate_estimate(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>, id: String, parent_path: String) -> CommandResult<WorkspaceDuplicateEstimate> {
+pub fn workspace_duplicate_estimate(runtimes: State<'_, ServerRuntimeRegistry>, operations: State<'_, OperationRegistry>, id: String, parent_path: String) -> CommandResult<WorkspaceDuplicateEstimate> {
     ensure_library_operation_idle(&operations)?;
-    ensure_workspace_mutation_allowed(&state, &id)?;
+    ensure_workspace_mutation_allowed(&runtimes, &id)?;
     workspace_registry::duplicate_estimate(&id, Path::new(&parent_path)).map_err(CommandError::from)
 }
 
@@ -202,9 +203,9 @@ pub async fn workspace_duplicate(app: AppHandle, id: String, parent_path: String
     let task_app = app.clone();
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
-        let state = task_app.state::<ServerManagerState>();
+        let runtimes = task_app.state::<ServerRuntimeRegistry>();
         operations.set_phase(&operation_id, "validating", "Validating source server", "", None).map_err(CommandError::from)?;
-        if let Err(error) = ensure_workspace_mutation_allowed(&state, &id) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
+        if let Err(error) = ensure_workspace_mutation_allowed(&runtimes, &id) { fail_operation(&operations, &operation_id, &error, true); return Err(error); }
         operations.set_phase(&operation_id, "preflight", "Checking storage", "", None).map_err(CommandError::from)?;
         let estimate = match workspace_registry::duplicate_estimate(&id, Path::new(&parent_path)) {
             Ok(estimate) => estimate,
@@ -236,10 +237,11 @@ pub async fn workspace_duplicate(app: AppHandle, id: String, parent_path: String
 }
 
 #[tauri::command]
-pub fn workspace_remove_from_library(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>, id: String) -> CommandResult<()> {
+pub fn workspace_remove_from_library(runtimes: State<'_, ServerRuntimeRegistry>, operations: State<'_, OperationRegistry>, id: String) -> CommandResult<()> {
     ensure_library_operation_idle(&operations)?;
     ensure_workspace_operation_idle(&operations, &id)?;
-    ensure_remove_allowed(&state, &id)?;
+    ensure_remove_allowed(&runtimes, &id)?;
+    runtimes.remove(&id).map_err(CommandError::from)?;
     workspace_registry::remove_from_library(&id).map_err(CommandError::from)
 }
 
@@ -252,9 +254,9 @@ pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: St
     let task_app = app.clone();
     let task = tauri::async_runtime::spawn_blocking(move || {
         let operations = task_app.state::<OperationRegistry>();
-        let state = task_app.state::<ServerManagerState>();
+        let runtimes = task_app.state::<ServerRuntimeRegistry>();
         let _ = operations.set_phase(&operation_id, "preflight", "Validating server deletion", "Confirming the server is offline and its workspace can be deleted safely.", None);
-        if let Err(error) = ensure_workspace_mutation_allowed(&state, &id) {
+        if let Err(error) = ensure_workspace_mutation_allowed(&runtimes, &id) {
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
@@ -262,6 +264,7 @@ pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: St
         let _ = operations.set_phase(&operation_id, "deleting", "Deleting server", "The server is staged under a durable deletion intent before it is removed from the library and filesystem.", None);
         match workspace_registry::delete(&id, &typed_display_name) {
             Ok(()) => {
+                let _ = runtimes.remove(&id);
                 let _ = operations.succeed(&operation_id, "Server deleted");
                 Ok(())
             }
@@ -311,45 +314,43 @@ fn ensure_current_workspace_operation_idle(operations: &OperationRegistry) -> Co
     Ok(())
 }
 
-fn ensure_activation_allowed(state: &ServerManagerState, operations: &OperationRegistry, target_id: &str) -> CommandResult<()> {
+fn ensure_activation_allowed(operations: &OperationRegistry, target_id: &str) -> CommandResult<()> {
     ensure_library_operation_idle(operations)?;
     ensure_current_workspace_operation_idle(operations)?;
-    ensure_workspace_operation_idle(operations, target_id)?;
-    server_process_guard::ensure_no_running_paper_except(Some(target_id)).map_err(CommandError::from)?;
-    if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
-    ensure_runtime_update_allowed(state)
+    ensure_workspace_operation_idle(operations, target_id)
 }
 
-fn ensure_switch_allowed(state: &ServerManagerState, operations: &OperationRegistry) -> CommandResult<()> {
+fn ensure_switch_allowed(operations: &OperationRegistry) -> CommandResult<()> {
     ensure_library_operation_idle(operations)?;
-    ensure_current_workspace_operation_idle(operations)?;
-    server_process_guard::ensure_no_running_paper_except(None).map_err(CommandError::from)?;
-    if workspace_registry::current().map_err(CommandError::from)?.is_none() { return Ok(()); }
-    ensure_runtime_update_allowed(state)
+    ensure_current_workspace_operation_idle(operations)
 }
 
-fn ensure_workspace_mutation_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
+fn ensure_workspace_mutation_allowed(runtimes: &ServerRuntimeRegistry, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
     let root = PathBuf::from(&entry.path);
     if !root.is_dir() { return Err(CommandError::new("WORKSPACE_UNAVAILABLE", format!("Server location is currently unavailable: {}", root.display()))); }
-    let is_active = workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id);
-    if is_active { ensure_runtime_update_allowed(state)?; }
+    ensure_runtime_update_allowed(runtimes, target_id)?;
     server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)
 }
 
-fn ensure_remove_allowed(state: &ServerManagerState, target_id: &str) -> CommandResult<()> {
+fn ensure_remove_allowed(runtimes: &ServerRuntimeRegistry, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
     let root = PathBuf::from(&entry.path);
-    let is_active = workspace_registry::current().map_err(CommandError::from)?.is_some_and(|active| active.id == target_id);
-    if is_active { ensure_runtime_update_allowed(state)?; }
+    ensure_runtime_update_allowed(runtimes, target_id)?;
     if root.is_dir() { server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)?; }
     Ok(())
 }
 
-fn ensure_runtime_update_allowed(state: &ServerManagerState) -> CommandResult<()> {
-    let snapshot = state.snapshot().map_err(CommandError::from)?;
-    match snapshot.state.as_str() {
-        "Offline" | "Crashed" => Ok(()),
-        other => Err(CommandError::new("SERVER_BUSY", format!("Stop the active server before changing workspace runtime files. Current server state: {other}."))),
+fn ensure_runtime_update_allowed(runtimes: &ServerRuntimeRegistry, workspace_id: &str) -> CommandResult<()> {
+    if let Some(state) = runtimes.runtime_if_present(workspace_id).map_err(CommandError::from)? {
+        let snapshot = state.snapshot().map_err(CommandError::from)?;
+        return match snapshot.state.as_str() {
+            "Offline" | "Crashed" => Ok(()),
+            other => Err(CommandError::new("SERVER_BUSY", format!("Stop this server before changing its runtime files. Current server state: {other}."))),
+        };
     }
+    if server_process_guard::workspace_has_running_paper(workspace_id).map_err(CommandError::from)? {
+        return Err(CommandError::new("SERVER_BUSY", "This server still has a verified Paper process running. Stop or recover it before changing runtime files."));
+    }
+    Ok(())
 }
