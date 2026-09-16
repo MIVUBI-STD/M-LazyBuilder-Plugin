@@ -323,20 +323,31 @@ Detailed issue patterns and proof mechanics belong in the references, not duplic
 
 ## Visual proof
 
-Use `references/visual-proof-system.md` when appearance/state presentation matters.
-
-Proof ladder:
+Use `references/visual-proof-system.md` when appearance/state presentation matters. The L0–L5 ladder is UI-specific shorthand mapped to the canonical proof vocabulary in `development-discipline.md`.
 
 ```text
 L0 source inspection
+→ STATIC_SOURCE
+
 L1 source-contract/typecheck/build/tests
+→ EXECUTED_SOURCE
+
 L2 deterministic simulated preview
-L3 real Launcher Svelte visual proof
-L4 real Minecraft-rendered proof
+→ VISUAL_SIMULATED
+
+L3 real Launcher Svelte/CSS rendering
+→ VISUAL_RENDERED
+
+L4 real Minecraft production renderer
+→ VISUAL_RENDERED
+
 L5 Local-PC native interaction/integration
+→ NATIVE_ACCEPTANCE
 ```
 
 Use the cheapest level that can falsify the issue; never claim a higher level than observed.
+
+`VISUAL_RENDERED` proves what the production renderer displayed for the captured scenario. It does **not** prove backend mutation, plugin-channel interoperability, Paper authorization, filesystem safety, mouse feel, or network timing. If those semantics changed, the owning Skill still requires `LIVE_RUNTIME`, `INTEGRATION_FIXTURE`, or another matching proof type independently.
 
 Visual evidence should be tied to exact source revision and identify renderer/scenario/viewport-or-GUI-scale/proof boundary where relevant. Prefer workflow artifacts over committed screenshot baselines.
 
