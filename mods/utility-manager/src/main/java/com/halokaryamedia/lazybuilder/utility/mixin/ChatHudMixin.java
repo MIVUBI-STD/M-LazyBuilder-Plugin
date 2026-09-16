@@ -1,11 +1,15 @@
 package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
+import com.halokaryamedia.lazybuilder.utility.chat.ChatCollapseState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatTimestampFormatter;
 import net.minecraft.client.gui.hud.ChatHud;
+import net.minecraft.client.gui.hud.ChatHudLine;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,15 +18,29 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.time.ZoneId;
+import java.util.List;
 
 /**
- * Extends vanilla chat retention, adds low-contrast timestamps, and indexes visible
- * text for search without replacing ChatHud.
+ * Thin vanilla ChatHud adapter for bounded history, timestamps, search indexing,
+ * and conservative in-place collapse of consecutive GAME/WARNING messages.
  */
 @Mixin(ChatHud.class)
 public abstract class ChatHudMixin {
     private static final int VANILLA_HISTORY_LIMIT = 100;
     private static final int EXTENDED_HISTORY_LIMIT = 1000;
+
+    @Shadow
+    @Final
+    private List<ChatHudLine> messages;
+
+    @Shadow
+    @Final
+    private List<ChatHudLine.Visible> visibleMessages;
+
+    @Shadow
+    private int scrolledLines;
+
+    private boolean lazybuilder$readdingCollapsedLine;
 
     @ModifyVariable(
             method = "addMessage(Lnet/minecraft/text/Text;)V",
@@ -38,10 +56,47 @@ public abstract class ChatHudMixin {
                 .append(message.copy());
     }
 
-    @Inject(method = "addMessage(Lnet/minecraft/text/Text;)V", at = @At("HEAD"))
-    private void lazybuilder$indexVisibleMessage(Text message, CallbackInfo ci) {
+    @Inject(method = "addMessage(Lnet/minecraft/text/Text;)V", at = @At("HEAD"), cancellable = true)
+    private void lazybuilder$collapseAndIndexVisibleMessage(Text message, CallbackInfo ci) {
         if (message == null) return;
-        UtilityManagerClient.chatSearchHistory().record(message.getString(), System.currentTimeMillis());
+
+        long nowMillis = System.currentTimeMillis();
+        if (!this.lazybuilder$readdingCollapsedLine) {
+            if (this.scrolledLines == 0) {
+                ChatCollapseState.Decision collapse = UtilityManagerClient.chatCollapseState()
+                        .accept(message.getString(), nowMillis);
+
+                if (collapse.collapse() && this.lazybuilder$removeNewestEntry()) {
+                    String collapsedText = collapse.collapsedText();
+                    UtilityManagerClient.chatSearchHistory().replaceLatest(collapsedText);
+
+                    this.lazybuilder$readdingCollapsedLine = true;
+                    try {
+                        ((ChatHud) (Object) this).addMessage(Text.literal(collapsedText));
+                    } finally {
+                        this.lazybuilder$readdingCollapsedLine = false;
+                    }
+                    ci.cancel();
+                    return;
+                }
+            } else {
+                // Never rewrite lines while the user is reading older chat.
+                UtilityManagerClient.chatCollapseState().clear();
+            }
+
+            UtilityManagerClient.chatSearchHistory().record(message.getString(), nowMillis);
+        }
+    }
+
+    private boolean lazybuilder$removeNewestEntry() {
+        if (this.messages.isEmpty()) return false;
+
+        this.messages.remove(0);
+        while (!this.visibleMessages.isEmpty()) {
+            ChatHudLine.Visible removed = this.visibleMessages.remove(0);
+            if (removed.endOfEntry()) break;
+        }
+        return true;
     }
 
     @ModifyConstant(
