@@ -6,7 +6,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Direction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,10 +72,6 @@ public final class TerraformInteractionController {
         net.minecraft.util.math.Vec3d p=hit.getPos();return new Vec3d(p.x,p.y,p.z);
     }
     private static Vec3d resolveFront(MinecraftClient client){
-        if(client==null||client.player==null)return new Vec3d(0,0,1);
-        if(client.crosshairTarget instanceof BlockHitResult hit){Direction d=hit.getSide();if(d.getAxis().isHorizontal()){
-            Vec3d n=new Vec3d(d.getOffsetX(),0,d.getOffsetZ());return TerraformManagerClient.state().faceFlipped()?n.multiply(-1):n;
-        }}
-        double yaw=Math.toRadians(client.player.getYaw());Vec3d view=new Vec3d(-Math.sin(yaw),0,Math.cos(yaw)).horizontalNormalized();return TerraformManagerClient.state().faceFlipped()?view.multiply(-1):view;
+        return TerrainContextResolver.resolveFront(client, TerraformManagerClient.state().faceFlipped());
     }
 }
