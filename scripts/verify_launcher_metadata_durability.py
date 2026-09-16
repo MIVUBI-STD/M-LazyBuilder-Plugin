@@ -18,6 +18,7 @@ def require(path: Path, *markers: str) -> None:
 
 def main() -> int:
     app_data = RUST / "app_data_migrations.rs"
+    operations = RUST / "operations.rs"
     server_config = RUST / "server_config.rs"
     launcher_settings = RUST / "launcher_settings.rs"
     workspace_registry = RUST / "workspace_registry.rs"
@@ -39,6 +40,23 @@ def main() -> int:
         "app_data_manifest_recovery_prefers_previous_committed_copy",
         "app_data_manifest_staging_recovers_when_no_committed_copy_exists",
         "existing_manifest_preserves_recovery_evidence_until_validation",
+    )
+
+    require(
+        operations,
+        "recover_journal_file(path)?",
+        "cleanup_journal_recovery_files(path)?",
+        "replace_journal_file",
+        "create_new(true)",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.incoming")',
+        "metadata_entry_exists",
+        "ensure_regular_metadata_file",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "operation_journal_recovery_prefers_previous_committed_copy",
+        "operation_journal_incoming_recovers_without_committed_copy",
+        "malformed_operation_journal_preserves_recovery_evidence",
     )
 
     require(
