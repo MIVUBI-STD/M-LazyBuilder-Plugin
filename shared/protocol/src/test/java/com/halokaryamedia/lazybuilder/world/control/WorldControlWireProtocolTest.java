@@ -70,7 +70,8 @@ class WorldControlWireProtocolTest {
         assertEquals(teleported, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(teleported)));
 
         var settings = new WorldControlWireProtocol.SettingsSnapshot(
-                id, "CREATIVE", "NORMAL", false, "CLEAR", 6000L, 0.0, 65.0, 0.0);
+                id, "CREATIVE", "NORMAL", false, "CLEAR", 6000L, 0.0, 65.0, 0.0,
+                Map.of("keepInventory", "false", "doDaylightCycle", "true"));
         assertEquals(settings, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(settings)));
 
         var export = new WorldControlWireProtocol.ExportReady(id, "build-export.zip", "JAVA_1_21_4");
