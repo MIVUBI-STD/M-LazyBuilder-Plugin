@@ -117,6 +117,7 @@ public final class WorldMapScreen extends Screen {
     private UUID observedCurrentWorldId;
     private boolean closeAfterWorldTeleport;
     private boolean closeAfterMapTeleport;
+    private Integer previousMenuBlur;
 
     public WorldMapScreen(
             ClientWorldController worlds,
@@ -133,6 +134,10 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     protected void init() {
+        if (previousMenuBlur == null && client != null) {
+            previousMenuBlur = client.options.getMenuBackgroundBlurriness().getValue();
+            client.options.getMenuBackgroundBlurriness().setValue(0);
+        }
         if (!centeredOnce) {
             centerOnPlayer();
             centeredOnce = true;
@@ -1537,6 +1542,10 @@ public final class WorldMapScreen extends Screen {
     public void close() {
         if (exportMode) exitExportWorkspace();
         else closeFromToggle();
+        if (client != null && previousMenuBlur != null) {
+            client.options.getMenuBackgroundBlurriness().setValue(previousMenuBlur);
+            previousMenuBlur = null;
+        }
     }
 
     void closeFromToggle() {

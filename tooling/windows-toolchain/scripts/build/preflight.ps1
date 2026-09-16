@@ -42,6 +42,14 @@ if ($missing.Count -gt 0) {
     throw "Build preflight failed. Missing reproducibility files: $($missing -join ', ')"
 }
 
+# rustup installs its Windows shims in the per-user Cargo bin directory, but a
+# PowerShell launched from a desktop shortcut may not inherit that PATH entry.
+# Resolve the installed toolchain without requiring the user to repair PATH.
+$CargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+if (Test-Path -LiteralPath $CargoBin -PathType Container) {
+    $env:PATH = "$CargoBin;$env:PATH"
+}
+
 Require-Command 'node' 'Run SETUP-DEV.cmd and install Node.js 24 LTS.'
 Require-Command 'npm' 'Install Node.js with npm.'
 Require-Command 'rustc' 'Install rustup; the repository pins the Rust toolchain.'
@@ -60,8 +68,11 @@ if ($rust -notmatch [regex]::Escape([string]$T.rust.toolchain)) {
 }
 
 if ($RequireJava) {
-    $javaText = [string](& java -version 2>&1 | Select-Object -First 1)
-    if ($javaText -notmatch '"21(\.|\")') {
+    # `java -version` writes its banner to stderr; Windows PowerShell can turn
+    # that native stderr stream into a terminating error. Java 9+ exposes the
+    # equivalent `--version` banner on stdout.
+    $javaText = [string](& java --version 2>$null | Select-Object -First 1)
+    if ($javaText -notmatch '^(?:openjdk|java)\s+21(?:\.|\s|$)') {
         throw "Java policy mismatch. Required Java 21, found: $javaText"
     }
 }

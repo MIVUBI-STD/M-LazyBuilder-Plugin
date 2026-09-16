@@ -129,11 +129,10 @@ try {
     $startInfo.CreateNoWindow = $true
     $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_TOKEN"] = $controlToken
     $startInfo.Environment["LAZYBUILDER_WORLD_CONTROL_PORT"] = $ControlPort.ToString()
-    $startInfo.ArgumentList.Add("-Xms512M")
-    $startInfo.ArgumentList.Add("-Xmx1024M")
-    $startInfo.ArgumentList.Add("-jar")
-    $startInfo.ArgumentList.Add($serverJarPath)
-    $startInfo.ArgumentList.Add("nogui")
+    # Windows PowerShell 5.1 exposes ProcessStartInfo.Arguments, not the newer
+    # ArgumentList collection. Keep the server path quoted for workspace names
+    # containing spaces while remaining compatible with both PowerShell hosts.
+    $startInfo.Arguments = "-Xms512M -Xmx1024M -jar `"$serverJarPath`" nogui"
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo

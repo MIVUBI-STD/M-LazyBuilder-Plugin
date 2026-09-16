@@ -313,3 +313,180 @@ Belum selesai:
 4. Jalankan native Java export/import.
 5. Baru lanjutkan conversion Bedrock dengan runtime yang tervalidasi.
 
+## 16. Kronologi lanjutan setelah sinkronisasi terbaru
+
+Bagian ini melanjutkan catatan di atas untuk sesi sinkronisasi dan testing pada 16 September 2026.
+
+### 16.1 Sinkronisasi source terbaru
+
+- Repository diambil dari `https://github.com/halokaryamedia-source/LazyBuilder-Plugin.git`, branch `Local`.
+- Local source diarahkan ke `origin/Local`; perubahan lokal lama tidak dijadikan source authority.
+- Commit terbaru yang terdeteksi saat sinkronisasi: `7be4b29c test(world): assert canonical converter setting paths`.
+- Sisa line-ending pada `gradlew.bat` dan `mvnw.cmd`, serta artefak generated `apps/launcher/src-tauri/gen/` dan `apps/launcher/src-tauri/icons/`, tetap muncul sebagai perubahan/untracked lokal dan belum menjadi perubahan source yang dipush.
+
+### 16.2 Source verification yang berhasil
+
+Focused Maven verification pada source terbaru:
+
+```text
+Terraform Core       8/8 tests passed
+World Manager        147/147 tests passed
+Utilities Manager    25/25 tests passed
+```
+
+Launcher verification:
+
+```text
+npm ci                passed; 0 vulnerabilities
+npm run typecheck     0 errors, 0 warnings
+npm run build:frontend passed
+```
+
+Paper runtime proof kemudian berhasil membuktikan:
+
+```text
+Paper boot
+plugin enable
+authenticated local control
+status/world contracts
+create
+settings
+archive/restore
+duplicate
+backup
+native export
+upload
+import
+delete
+```
+
+Paper restart persistence proof juga berhasil membuktikan clean shutdown, restart, registry reload, filesystem/world resolution, settings access, dan post-restart deletion.
+
+### 16.3 Perbaikan kompatibilitas PowerShell yang dilakukan
+
+Beberapa script memakai API `ProcessStartInfo.ArgumentList`, yang tidak tersedia pada Windows PowerShell 5.1. Perubahan lokal yang sudah dilakukan:
+
+- `scripts/verify-paper-runtime.ps1`: memakai `ProcessStartInfo.Arguments` dengan path JAR yang di-quote.
+- `scripts/verify-paper-restart.ps1`: memakai `ProcessStartInfo.Arguments` dengan path JAR yang di-quote.
+- `tooling/windows-toolchain/scripts/verify/test-local.ps1`: menghapus pemeriksaan `$LASTEXITCODE` setelah memanggil script PowerShell internal; script sukses tidak lagi dianggap gagal hanya karena `$LASTEXITCODE` belum ada.
+- `tooling/windows-toolchain/scripts/build/preflight.ps1`: otomatis menambahkan `%USERPROFILE%\.cargo\bin` ke PATH proses sebelum memeriksa `rustc`/`cargo`; pemeriksaan Java memakai `java --version` dan menerima format output OpenJDK/Java 21.
+- `tooling/windows-toolchain/scripts/distribution/verify-installer.ps1`: akses properti registry `DisplayName`, `InstallLocation`, dan `DisplayIcon` dibuat aman jika properti tidak tersedia.
+
+Validasi parser PowerShell untuk script terkait: **PASS**.
+
+### 16.4 Fabric/Gradle environment blocker
+
+Fabric Map Manager belum dapat diverifikasi dari terminal Codex karena Gradle/Java gagal membuat selector internal:
+
+```text
+java.io.IOException: Unable to establish loopback connection
+java.net.SocketException: Invalid argument: connect
+```
+
+Percobaan yang dilakukan:
+
+- `TEMP` dan `TMP` ke `C:\LazyBuilderTemp`, `C:\Windows\Temp`, dan path pendek lainnya.
+- `GRADLE_USER_HOME` ke cache khusus.
+- `GRADLE_OPTS` dengan dan tanpa `java.io.tmpdir`.
+- Gradle `--no-daemon`.
+- Java Temurin 21.0.12.
+- Java Zulu 21.0.8.
+- mematikan penggunaan native Gradle.
+
+Error tetap terjadi sebelum kompilasi Fabric. TCP loopback Windows biasa berhasil, sehingga kegagalan berada pada Java NIO `PipeImpl`/AF_UNIX di sandbox Codex, bukan pada source Fabric. Build harus dijalankan dari PowerShell/Windows Terminal native di luar sandbox dengan TEMP sangat pendek.
+
+### 16.5 Installer dan Local PC test
+
+- `DEV.cmd test` awalnya gagal setelah Paper runtime proof karena `$LASTEXITCODE` belum tersedia; sudah diperbaiki.
+- Paper restart proof kemudian lulus.
+- Installer smoke verifier awalnya gagal pada item registry tanpa properti `DisplayName`; sudah diperbaiki.
+- Artifact installer `dist/Local/LazyBuilder-Setup-Local.exe` belum konsisten tersedia sampai Fabric build berhasil pada terminal native.
+- Installer smoke sengaja membuka Launcher sekitar lima detik lalu menutupnya; penutupan tersebut bukan crash.
+
+### 16.6 Server dan profile yang dipakai
+
+Server yang dipakai untuk testing:
+
+```text
+D:\Work\Minecraft\Java-Version\Java Build Server\1.21.4 - Testing\1.21.4 - Testing\server
+```
+
+Plugin server yang terdeteksi:
+
+```text
+World-Manager-0.1.0-SNAPSHOT.jar
+Utilities-Manager-0.1.0-SNAPSHOT.jar
+Terraform-Manager-0.1.0-SNAPSHOT.jar
+```
+
+Log Paper mengonfirmasi:
+
+```text
+World-Manager enabled.
+Utilities-Manager enabled with 3 registered feature families and 8/8 command bindings ready.
+```
+
+Profile Modrinth yang dipakai:
+
+```text
+C:\Users\Administrator\AppData\Roaming\ModrinthApp\profiles\1.21.4 Testing
+```
+
+Mod LazyBuilder yang terdeteksi:
+
+```text
+lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
+lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
+lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+lazybuilder-terraform-manager-0.1.0-SNAPSHOT.jar
+```
+
+Catatan: `lazybuilder-client-0.1.0-SNAPSHOT.jar.disabled` tetap disabled dan bukan bagian dari empat mod manager terbaru.
+
+### 16.7 OP dan permission
+
+Player `Berchman` terdeteksi dengan UUID:
+
+```text
+7fee50f6-17ad-4ada-95e0-4595e943cc54
+```
+
+Player tersebut ditambahkan ke `ops.json` dengan level 4 dan bypass player limit. Paper harus direstart agar perubahan file dibaca ke memory. Error `Missing LazyBuilder.world permission` berarti sesi server belum memuat perubahan OP atau action yang diuji membutuhkan permission World Manager pada sesi tersebut.
+
+### 16.8 UI blur terakhir — BELUM DIPERBAIKI
+
+Pengguna melaporkan Map Manager/sidebar Minecraft terlihat sangat buram sehingga teks tidak terbaca.
+
+Investigasi source menemukan:
+
+- `WorldMapScreen` menggambar sidebar dengan warna solid dan tidak memiliki operasi blur.
+- Visual proof test Map Manager memang mengatur `client.options.getMenuBackgroundBlurriness()` menjadi `0` selama proof.
+- Profile `1.21.4 Testing` memiliki shader stack (Iris/Kappa) dan opsi menu background blur dapat memengaruhi tampilan screen.
+
+Perubahan lokal sementara sudah dicoba di `WorldMapScreen.java`:
+
+- menyimpan nilai blur sebelumnya;
+- mengatur menu background blurriness ke `0` saat `WorldMapScreen.init()`;
+- memulihkan nilai sebelumnya saat `close()`.
+
+Status tetap: **UNRESOLVED**. Pengguna melaporkan tampilan masih buram setelah perubahan tersebut. Perubahan itu belum dibuktikan melalui build Fabric terbaru dan belum boleh dianggap sebagai fix. Diagnosis berikutnya harus memakai screenshot/runtime build exact-head, memeriksa apakah blur berasal dari shader/profile atau dari jalur screen lain, lalu menambah visual proof yang benar-benar menangkap sidebar.
+
+### 16.9 Status handoff saat ini
+
+Sudah terbukti:
+
+- source Maven Paper dan unit tests terkait;
+- Paper runtime dan restart persistence;
+- Utilities Manager aktif di server;
+- Terraform plugin/mod sudah dipasang ke server/profile Testing;
+- launcher frontend build dan PowerShell verifier compatibility fixes.
+
+Belum terbukti/masih bermasalah:
+
+- full Fabric build dari terminal native pada exact current local source;
+- installer Local exact-head setelah Fabric build;
+- UI sidebar blur pada Minecraft runtime;
+- permission World Manager setelah sesi server benar-benar restart;
+- Utility reconnect flow dan Bedrock conversion end-to-end.
+
+Jangan menyatakan Local PC acceptance selesai sebelum Fabric build, installer provenance, dan unresolved UI/runtime findings di atas ditutup atau diberi status environment-only dengan bukti yang memadai.

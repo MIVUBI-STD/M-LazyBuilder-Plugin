@@ -13,6 +13,12 @@ function Normalize-RegistryPath([object]$Value) {
     return $text.Trim('"')
 }
 
+function Get-OptionalProperty([object]$Object, [string]$Name) {
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 Write-Host "Smoke installing: $InstallerPath" -ForegroundColor Cyan
 $process = Start-Process -FilePath $InstallerPath -ArgumentList '/S' -Wait -PassThru
 if ($process.ExitCode -ne 0) {
@@ -31,7 +37,7 @@ for ($attempt = 0; $attempt -lt 20 -and -not $entry; $attempt++) {
         if (-not (Test-Path $root)) { continue }
         $entry = Get-ChildItem $root -ErrorAction SilentlyContinue |
             Get-ItemProperty -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -eq 'LazyBuilder' } |
+            Where-Object { (Get-OptionalProperty $_ 'DisplayName') -eq 'LazyBuilder' } |
             Select-Object -First 1
         if ($entry) { break }
     }
@@ -43,7 +49,7 @@ if (-not $entry) {
 }
 
 $candidates = @()
-$installLocation = Normalize-RegistryPath $entry.InstallLocation
+$installLocation = Normalize-RegistryPath (Get-OptionalProperty $entry 'InstallLocation')
 if ($installLocation) {
     $candidates += (Join-Path $installLocation 'LazyBuilder.exe')
     $candidates += (Join-Path $installLocation 'lazybuilder.exe')
@@ -52,7 +58,7 @@ if ($env:LOCALAPPDATA) {
     $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\LazyBuilder\LazyBuilder.exe')
     $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\LazyBuilder\lazybuilder.exe')
 }
-$displayIcon = Normalize-RegistryPath $entry.DisplayIcon
+$displayIcon = Normalize-RegistryPath (Get-OptionalProperty $entry 'DisplayIcon')
 if ($displayIcon) {
     $iconPath = $displayIcon -replace ',\d+$',''
     if ($iconPath) { $candidates += $iconPath }

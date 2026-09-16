@@ -49,11 +49,8 @@ function Start-Paper(
     $info.CreateNoWindow = $true
     $info.Environment["LAZYBUILDER_WORLD_CONTROL_TOKEN"] = $Token
     $info.Environment["LAZYBUILDER_WORLD_CONTROL_PORT"] = $Port.ToString()
-    $info.ArgumentList.Add("-Xms512M")
-    $info.ArgumentList.Add("-Xmx1024M")
-    $info.ArgumentList.Add("-jar")
-    $info.ArgumentList.Add($Jar)
-    $info.ArgumentList.Add("nogui")
+    # Windows PowerShell 5.1 supports Arguments, but not ArgumentList.
+    $info.Arguments = "-Xms512M -Xmx1024M -jar `"$Jar`" nogui"
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $info
