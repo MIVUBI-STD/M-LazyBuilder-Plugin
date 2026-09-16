@@ -17,6 +17,8 @@ import java.util.function.BiConsumer;
 final class TerraformApplyQueue {
     private static final int BLOCKS_PER_TICK = 4096;
     private static final int HISTORY_LIMIT = 32;
+    private static final int MAX_QUEUE_TOTAL = 32;
+    private static final int MAX_QUEUE_PER_PLAYER = 4;
     private static final long MAX_CANDIDATES = 2_500_000L;
     private final JavaPlugin plugin;
     private final Deque<Job> queue = new ArrayDeque<>();
@@ -29,6 +31,9 @@ final class TerraformApplyQueue {
     void stop() { if (task != null) task.cancel(); task = null; queue.clear(); undo.clear(); }
 
     void submit(Player player, String id, BoundedShapeField field, BiConsumer<Integer, Boolean> done) {
+        UUID owner=player.getUniqueId();
+        if(queue.size()>=MAX_QUEUE_TOTAL)throw new IllegalStateException("terraform queue is busy");
+        if(countQueued(owner)>=MAX_QUEUE_PER_PLAYER)throw new IllegalStateException("too many queued terraform operations");
         ShapeBounds b = field.bounds();
         int minX = (int)Math.floor(b.minX()), maxX = (int)Math.ceil(b.maxX());
         int minY = Math.max(player.getWorld().getMinHeight(), (int)Math.floor(b.minY()));
@@ -36,17 +41,24 @@ final class TerraformApplyQueue {
         int minZ = (int)Math.floor(b.minZ()), maxZ = (int)Math.ceil(b.maxZ());
         long candidates = (long)(maxX-minX+1)*(maxY-minY+1)*(maxZ-minZ+1);
         if (candidates <= 0 || candidates > MAX_CANDIDATES) throw new IllegalArgumentException("terraform operation bounds too large");
-        queue.addLast(new Job(player.getUniqueId(), player.getWorld(), id, field, minX,maxX,minY,maxY,minZ,maxZ,done));
+        queue.addLast(new Job(owner, player.getWorld(), id, field, minX,maxX,minY,maxY,minZ,maxZ,done));
     }
 
     boolean submitUndo(Player player, String id, BiConsumer<Integer, Boolean> done) {
-        Deque<UndoRecord> history = undo.get(player.getUniqueId());
+        UUID owner=player.getUniqueId();
+        if(countQueued(owner)>0)return false;
+        Deque<UndoRecord> history = undo.get(owner);
         if (history == null || history.isEmpty()) return false;
-        UndoRecord record = history.removeLast();
+        UndoRecord record = history.peekLast();
         if (!record.worldUid.equals(player.getWorld().getUID())) return false;
-        queue.addFirst(Job.undo(player.getUniqueId(), player.getWorld(), id, record.changes, done));
+        history.removeLast();
+        queue.addFirst(Job.undo(owner, player.getWorld(), id, record.changes, done));
         return true;
     }
+
+    void clearHistory(UUID owner){undo.remove(owner);}
+
+    private int countQueued(UUID owner){int count=0;for(Job job:queue)if(job.owner.equals(owner))count++;return count;}
 
     private void tick() {
         Job job = queue.peekFirst(); if (job == null) return;
