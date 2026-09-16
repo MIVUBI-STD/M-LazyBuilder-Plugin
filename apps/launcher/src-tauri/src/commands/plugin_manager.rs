@@ -60,8 +60,9 @@ pub async fn plugin_install(app: AppHandle, jar_path: String) -> Result<PluginIn
         let plugins = app.state::<PluginManagerState>();
         let server = app.state::<ServerManagerState>();
         ensure_plugin_mutation_allowed(&server)?;
-        plugin_ingress::validate_selected_jar(Path::new(&jar_path))?;
-        plugins.install(&jar_path)
+        let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
+        let staged_path = ingress.path().to_string_lossy().into_owned();
+        plugins.install(&staged_path)
     })
     .await
 }
@@ -76,8 +77,9 @@ pub async fn plugin_update(
         let plugins = app.state::<PluginManagerState>();
         let server = app.state::<ServerManagerState>();
         ensure_plugin_mutation_allowed(&server)?;
-        plugin_ingress::validate_selected_jar(Path::new(&jar_path))?;
-        plugins.update(&plugin_id, &jar_path)
+        let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
+        let staged_path = ingress.path().to_string_lossy().into_owned();
+        plugins.update(&plugin_id, &staged_path)
     })
     .await
 }
