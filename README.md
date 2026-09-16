@@ -15,8 +15,9 @@ LazyBuilder
 │   ├── Map Manager
 │   ├── Utility Manager
 │   └── Performance Manager
-└── Shared Contracts
-    └── Protocol
+└── Shared
+    ├── Protocol
+    └── Terraform Core
 ```
 
 ## Current phase: source remediation and synchronization
@@ -83,7 +84,8 @@ mods/
 └── performance-manager/        bounded Fabric client performance policy/diagnostics
 
 shared/
-└── protocol/                   neutral Paper/Fabric wire contracts
+├── protocol/                   neutral Paper/Fabric wire contracts
+└── terraform-core/             deterministic platform-neutral terrain shape kernel
 
 docs/                           canonical product/system/operations docs
 scripts/                        repository/runtime verification utilities
@@ -105,7 +107,8 @@ dist/Local/       canonical Local-channel distributables
 - `apps/launcher/` owns desktop presentation and desktop-native Server/Plugin/Client Setup management.
 - `plugins/` contains server-side Paper plugins only.
 - `mods/` contains Minecraft Fabric client mods only.
-- `shared/protocol/` contains neutral Paper/Fabric contracts only.
+- `shared/protocol/` contains neutral Paper/Fabric wire contracts only.
+- `shared/terraform-core/` contains deterministic terrain geometry only and must not depend on Paper, Fabric, Minecraft rendering, protocol transport, materials, or world mutation.
 - External build/edit tools such as Vanilla, Axiom, and WorldEdit remain external specialist owners.
 - One Manager produces one deployable artifact and does not import another Manager's implementation packages.
 - V1 Client Setup owns one coherent three-manager Fabric suite: Map Manager, Utility Manager, and Performance Manager.
