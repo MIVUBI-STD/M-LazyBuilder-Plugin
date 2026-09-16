@@ -8,8 +8,8 @@ The design goal is immediate comprehension:
 
 ```text
 F3
-→ two small information groups
-→ client + current Minecraft context on the left
+→ coordinate first at the top-left
+→ compact client + Minecraft context below it
 → server condition on the right
 → no diagnostic wall
 ```
@@ -18,9 +18,12 @@ This document owns presentation and interaction semantics. Fabric implementation
 
 ## Product contract
 
-Compact Debug is deliberately narrow:
+Compact Debug is deliberately narrow. Coordinate is the highest-priority builder datum and is visually separated from the other groups:
 
 ```text
+COORDINATE
+-11 71 -481
+
 LEFT                                RIGHT
 CLIENT                              SERVER
 FPS        143                      World      TanaSamawa
@@ -29,17 +32,22 @@ GPU        14%                      RAM        3.7 / 8 GB
 RAM        664 / 6144 MB
 
 WORLD
-XYZ        -11 71 -481
 Facing     North (-Z)
 Biome      Taiga
 Time       08:34
 ```
 
-The left side answers two questions:
+The top-left coordinate block answers first:
+
+```text
+Where exactly am I?
+```
+
+The remaining left side answers:
 
 ```text
 How is my client running?
-Where am I in Minecraft?
+What Minecraft context am I in?
 ```
 
 The right side answers:
@@ -52,6 +60,26 @@ How is the server machine doing?
 Anything that does not help answer those questions stays out of the default F3 surface.
 
 ## Information hierarchy
+
+### Top-left — Coordinate
+
+Coordinate is a dedicated primary block, not a normal row inside `WORLD`.
+
+Show:
+
+```text
+COORDINATE
+-11 71 -481
+```
+
+Rules:
+
+- Use the explicit label `COORDINATE`, not only `XYZ`, so the meaning is immediately obvious.
+- The coordinate value uses integer block coordinates for builder readability.
+- This block sits at the highest top-left priority position before the `CLIENT` section.
+- Give it slightly stronger visual emphasis than normal rows while remaining Minecraft-native and compact.
+- Do not turn it into a large card, banner, badge, or center-screen element.
+- Coordinate remains the only interactive datum in the default Compact Debug surface.
 
 ### Left — Client
 
@@ -79,7 +107,6 @@ Show only:
 
 ```text
 WORLD
-XYZ
 Facing
 Biome
 Time
@@ -87,10 +114,10 @@ Time
 
 Rules:
 
-- XYZ uses integer block coordinates for builder readability.
 - Facing shows the player's current horizontal cardinal direction in a builder-readable form such as `North (-Z)`, `South (+Z)`, `West (-X)`, or `East (+X)`. Do not show yaw/pitch numbers, facing vectors, or other orientation internals in the default surface.
 - Biome is the biome at the player's current position. Prefer a readable display name; fall back to the registry identifier only when a readable name is unavailable.
 - Time is current in-game world time formatted for human reading. Do not expose raw tick counts in the default presentation.
+- Do not duplicate coordinate inside the `WORLD` section.
 - Do not show chunk coordinates, region file, velocity, light values, targeted block tags, entity details, packets, or world-generation internals.
 
 ### Right — Server
@@ -137,19 +164,21 @@ Disconnect or server switch invalidates all server telemetry immediately.
 
 ## Coordinate copy interaction
 
-The XYZ row is the only interactive row in the default Compact Debug surface.
+The dedicated Coordinate block is the only interactive datum in the default Compact Debug surface.
 
 Normal state:
 
 ```text
-XYZ        -11 71 -481
+COORDINATE
+-11 71 -481
 ```
 
 Hover/focus affordance:
 
 ```text
-XYZ        -11 71 -481
-           Click to copy coordinates
+COORDINATE
+-11 71 -481
+Click to copy coordinates
 ```
 
 Click copies exactly:
@@ -206,18 +235,29 @@ Use Minecraft-native text rendering and spacing. The surface should feel like a 
 Layout rules:
 
 ```text
-left anchor      small safe margin from top-left
-right anchor     small safe margin from top-right
-column width     content-driven, bounded
-row spacing      consistent and compact
-section gap      visibly larger than row spacing
-label/value gap  consistent within each side
-background       no large opaque cards
+coordinate anchor small safe margin from top-left; first visible block
+client anchor     directly below coordinate with a clear section gap
+world anchor      below client with a clear section gap
+right anchor      small safe margin from top-right
+column width      content-driven, bounded
+row spacing       consistent and compact
+section gap       visibly larger than row spacing
+label/value gap   consistent within each side
+background        no large opaque cards
+```
+
+Coordinate emphasis:
+
+```text
+COORDINATE label  clear section label
+coordinate value strongest single value on the left
+copy hint         secondary and shown only when relevant
 ```
 
 Visual hierarchy:
 
 ```text
+coordinate value highest-priority left-side datum
 section heading  strongest text weight/contrast available in native style
 value            primary readable text
 label            slightly quieter than value
@@ -236,9 +276,11 @@ Required behavior:
 
 ```text
 wide screen
+→ coordinate remains first at top-left
 → left and right stay at their respective edges
 
 narrow screen
+→ preserve coordinate priority
 → preserve both groups without overlap
 → reduce non-essential spacing before reducing text readability
 
@@ -247,7 +289,7 @@ GUI scale change
 → no stale coordinates or duplicated render state
 ```
 
-If the screen becomes too narrow to fit both sides safely, truthful information takes priority over decorative symmetry. Do not introduce horizontal scrolling.
+If the screen becomes too narrow to fit both sides safely, truthful information and coordinate priority take precedence over decorative symmetry. Do not introduce horizontal scrolling.
 
 ## Update cadence and performance
 
@@ -256,7 +298,7 @@ Compact Debug is a HUD, not a profiler.
 Fast-changing presentation:
 
 ```text
-FPS / XYZ / facing / biome / time
+coordinate / FPS / facing / biome / time
 → may consume current client state during normal render/update flow
 ```
 
@@ -309,17 +351,17 @@ Performance optimization engine
 Every displayed value must have one authoritative source and an explicit unavailable state.
 
 ```text
-FPS       client render/game state
-CPU       bounded client machine metric source
-GPU       bounded supported GPU metric source
-RAM       JVM/client memory source
-XYZ       current player position
-Facing    current player horizontal facing direction
-Biome     current player world biome
-Time      current player world time
-World     canonical current server/world identity available to the client
-Srv CPU   server telemetry only
-Srv RAM   server telemetry only
+Coordinate current player position
+FPS        client render/game state
+CPU        bounded client machine metric source
+GPU        bounded supported GPU metric source
+RAM        JVM/client memory source
+Facing     current player horizontal facing direction
+Biome      current player world biome
+Time       current player world time
+World      canonical current server/world identity available to the client
+Srv CPU    server telemetry only
+Srv RAM    server telemetry only
 ```
 
 Never infer server CPU/RAM from ping, TPS, packet timing, client CPU usage, or local machine metrics.
@@ -347,7 +389,7 @@ hud.compact_debug=true
 
 The feature is opened/closed by F3; the preference controls whether LazyBuilder owns the compact F3 presentation at all.
 
-Do not expose individual toggles for FPS, CPU, GPU, RAM, XYZ, facing, biome, time, world, server CPU, or server RAM in V1. The contract is intentionally opinionated so the F3 surface stays simple.
+Do not expose individual toggles for Coordinate, FPS, CPU, GPU, RAM, facing, biome, time, world, server CPU, or server RAM in V1. The contract is intentionally opinionated so the F3 surface stays simple.
 
 If a metric is unsupported or unavailable, show the defined unavailable state rather than requiring a user preference to hide it.
 
@@ -358,9 +400,12 @@ A future implementation is accepted only when all of the following are true:
 ```text
 F3 opens one compact LazyBuilder debug presentation
 F3 closes it predictably
+Coordinate is the first and most prominent top-left datum
+Coordinate is labeled explicitly as COORDINATE rather than only XYZ
+Coordinate is visually separated from CLIENT and WORLD
 left side contains only approved client/world rows, including Facing
 right side contains only approved server rows
-XYZ copies the exact integer coordinate triplet
+coordinate interaction copies the exact integer triplet
 copy confirmation uses existing Utility notification presentation
 unsupported server metrics are truthful and uncluttered
 server switch/disconnect cannot leak stale telemetry
