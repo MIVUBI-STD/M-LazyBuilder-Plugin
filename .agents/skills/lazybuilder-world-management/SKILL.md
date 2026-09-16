@@ -35,6 +35,46 @@ Does not own desktop server/process/provisioning, presentation, neutral shared w
 
 When a new/changed world capability requires a neutral Paper↔Fabric payload, Protocol defines that payload first.
 
+## Context loading
+
+### Default load
+
+```text
+this SKILL.md
+→ exact world service/registry/adapter involved
+→ exact affected world identity + lifecycle + relevant filesystem/runtime evidence
+```
+
+This is sufficient for normal lifecycle, registry, load preparation, archive/restore/duplicate/delete, and bounded import/export/conversion decisions when the durable contract is already clear.
+
+### Required if
+
+```text
+durable World Manager behavior, product lifecycle, or operation policy is uncertain
+→ docs/02-world-management/README.md
+
+new/changed Paper↔Fabric wire meaning is required
+→ hand off to lazybuilder-protocol; do not preload protocol internals while World Management remains owner
+
+actual Bukkit/Paper load/unload/teleport/thread behavior is disputed
+→ exact Paper adapter/runtime evidence for the changed world path
+
+filesystem publication/recovery cannot be decided from the local transaction owner
+→ exact staging/publication/registry paths + representative world fixture
+```
+
+### Do not load if
+
+- do not load Launcher/UI docs merely because a world action is initiated or displayed there;
+- do not load shared protocol context unless neutral wire meaning may actually change;
+- do not scan unrelated worlds, converter history, or server logs when one world identity/path can decide the task;
+- do not load broad operations/history context for reassurance when current registry/filesystem evidence is authoritative;
+- do not load implementation-specific converter details unless conversion acquisition/result/publication is the failure.
+
+### Escalate when
+
+Escalate context only when the current world source + exact lifecycle/registry/filesystem evidence cannot distinguish `PROTOCOL`, `PRESENTATION`, `ENVIRONMENT`, or a World Management subtype. Name the next separating evidence before loading another domain.
+
 ## Canonical lifecycle
 
 Persistent lifecycle is only:
