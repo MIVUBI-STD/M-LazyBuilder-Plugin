@@ -184,41 +184,48 @@ public final class WorldExportService {
         Path worldSettings = null;
         Path converterSettings = null;
         try {
-            boolean needsConverter = task.area != null
+            boolean needsProcessing = task.area != null
                     || !NATIVE_SERVER_FORMAT.equals(task.targetFormat)
                     || task.options.requiresConverterPass();
-            if (!needsConverter) {
+            if (!needsProcessing) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
                 task.completed = true;
                 return new ExportResult(artifact, task.targetFormat, false, null);
             }
 
-            ensureConversionRuntime();
-            ConversionRuntimeStore.InstalledRuntime runtime = conversionStore.current()
-                    .orElseThrow(() -> new IllegalStateException("Conversion support is not ready yet"));
-            boolean supported = runtime.manifest().supportedFormats().stream()
-                    .anyMatch(format -> format.equalsIgnoreCase(task.targetFormat));
-            if (!supported) {
-                throw new IllegalArgumentException("The selected export version is no longer supported by this server");
-            }
-
             if (task.area != null) pruning = writeAreaPruning(task.area, snapshot);
             if (task.options.hasWorldOverrides()) worldSettings = writeWorldSettings(task.options);
             if (task.options.discardEmptyChunks()) converterSettings = writeConverterSettings();
             converted = files.reserveWorkspace(UUID.randomUUID());
+
+            ConverterAdapter.ConversionRequest request = new ConverterAdapter.ConversionRequest(
+                    snapshot,
+                    converted,
+                    task.targetFormat,
+                    pruning,
+                    worldSettings,
+                    converterSettings
+            );
+
+            boolean usedExternalRuntime;
             try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
-                converter.convert(
-                        runtime.artifact(),
-                        new ConverterAdapter.ConversionRequest(
-                                snapshot,
-                                converted,
-                                task.targetFormat,
-                                pruning,
-                                worldSettings,
-                                converterSettings
-                        )
-                );
+                if (converter.canConvertWithoutRuntime(request)) {
+                    converter.convertWithoutRuntime(request);
+                    usedExternalRuntime = false;
+                } else {
+                    ensureConversionRuntime();
+                    ConversionRuntimeStore.InstalledRuntime runtime = conversionStore.current()
+                            .orElseThrow(() -> new IllegalStateException("Conversion support is not ready yet"));
+                    boolean supported = runtime.manifest().supportedFormats().stream()
+                            .anyMatch(format -> format.equalsIgnoreCase(task.targetFormat));
+                    if (!supported) {
+                        throw new IllegalArgumentException(
+                                "The selected export version is no longer supported by this server");
+                    }
+                    converter.convert(runtime.artifact(), request);
+                    usedExternalRuntime = true;
+                }
             }
 
             if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) writeNativeTransferMarker(converted);
@@ -227,7 +234,7 @@ public final class WorldExportService {
                     : ExportArtifactType.JAVA_ZIP;
             Path artifact = artifacts.packageDirectory(converted, task.artifactName, type);
             task.completed = true;
-            return new ExportResult(artifact, task.targetFormat, true, task.area);
+            return new ExportResult(artifact, task.targetFormat, usedExternalRuntime, task.area);
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Could not export " + task.source.displayName(), exception);
         } finally {
