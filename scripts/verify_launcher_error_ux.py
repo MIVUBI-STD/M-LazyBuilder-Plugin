@@ -30,6 +30,7 @@ def main() -> int:
         LAUNCHER / "pages" / "LauncherSettings.svelte",
         LAUNCHER / "pages" / "Client.svelte",
         LAUNCHER / "pages" / "Plugins.svelte",
+        LAUNCHER / "pages" / "Settings.svelte",
     ]
 
     require(presentation, "RuntimeErrorPresentation", "presentRuntimeError", "correlationId", "recoverable", "action")
@@ -39,6 +40,7 @@ def main() -> int:
         forbid(path, "function friendlyError(")
 
     require(LAUNCHER / "pages" / "Plugins.svelte", "localError(", "'SERVER_BUSY'", "'PLUGIN_FILE_AMBIGUOUS'")
+    require(LAUNCHER / "pages" / "Settings.svelte", "Could not load server memory settings.", "Could not save server memory settings.")
 
     print(f"Launcher structured RuntimeError UX contract OK ({len(surfaces)} surfaces)")
     return 0
