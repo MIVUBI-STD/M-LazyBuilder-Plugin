@@ -101,6 +101,8 @@ def main() -> None:
         "verify_launcher_update_manifest.py",
         "concurrency:",
         "group: launcher-release-stable",
+        "$requiredAssets = @($installerName, \"$installerName.sig\", 'latest.json', 'SHA256SUMS.txt')",
+        "Immutable Launcher release $tag is incomplete",
     )
     forbid(
         repair_workflow,
