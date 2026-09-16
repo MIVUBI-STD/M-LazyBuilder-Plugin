@@ -17,6 +17,14 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 - no pollers/watchers/background workers unless an active feature proves they are required;
 - preferences exist only for implemented behavior, not for speculative future features.
 
+## Product direction
+
+Utility Manager is the single client-side owner for passive LazyBuilder utilities. Features that previously required separate small client mods should be consolidated here only when they fit this boundary and can be maintained as independent internal modules.
+
+The target is one Fabric utility JAR with modular source ownership, not one monolithic implementation class.
+
+The chat surface follows the same rule: keep Minecraft's familiar chat interaction, but centralize message presentation, history, draft handling, search/context actions, signing compatibility, and notification routing under Utility Manager instead of stacking multiple overlapping chat mods.
+
 ## Implemented Utility behavior
 
 Current client-side behavior remains deliberately small and vanilla-shaped:
@@ -46,9 +54,34 @@ Coordinate copy reuses the familiar debug chord `F3+C` while Compact Debug is ac
 
 Clipboard helpers are contextual actions only. World/project copy actions belong in the Map Manager UI that owns those values; block, structure, NBT, and other build-data clipboard behavior remains outside Utility Manager.
 
+## Chat architecture direction
+
+Chat must stop acting as a catch-all developer console. Utility Manager should classify and route messages before presentation so player communication remains readable while developer-only diagnostics stay in logs or launcher/server console surfaces.
+
+The stable presentation categories are intentionally small:
+
+- `CHAT`: player-to-player communication;
+- `GAME`: normal Minecraft gameplay events such as join, advancement, and game-mode feedback;
+- `SYSTEM`: concise LazyBuilder/server information relevant to the player;
+- `WARNING`: actionable conflicts or degraded behavior;
+- `ERROR`: actionable failures such as invalid commands or failed operations.
+
+Routing policy:
+
+- player-relevant information may appear in chat;
+- developer-only detail belongs in logs/console;
+- information important to both should use a compact in-game message plus detailed console/log output;
+- repeated `GAME`, `SYSTEM`, and `WARNING` events may be collapsed by a stable message fingerprint;
+- normal player chat must not be deduplicated by default;
+- internal translation keys, stack traces, packet/signing state, and implementation identifiers must not be exposed in normal chat unless explicitly requested for diagnostics.
+
+The preferred chat implementation stays modular under `utility/chat/` with separate ownership for classification, history/deduplication, input/draft, search, presentation, contextual actions, and signing compatibility. Mixins should remain thin adapters into Minecraft UI/events.
+
+The migration target is to retire overlapping external chat/narrator helper mods only after equivalent required behavior is implemented and verified inside Utility Manager. Do not bundle third-party JARs inside Utility Manager as a shortcut.
+
 ## Maintenance notes
 
-Extended Chat History intentionally stays a minimal vanilla patch rather than replacing ChatHud. Its three `@ModifyConstant` hooks are mapping/version-sensitive because they target Vanilla's internal retention limits. Treat Minecraft-version upgrades as a verification point for these hooks rather than introducing a larger custom chat subsystem.
+Extended Chat History intentionally stays a minimal vanilla patch rather than replacing ChatHud. Its three `@ModifyConstant` hooks are mapping/version-sensitive because they target Vanilla's internal retention limits. Treat Minecraft-version upgrades as a verification point for these hooks rather than introducing a larger custom chat subsystem prematurely.
 
 Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existing `searchBox`, and private `setSelectedTab` path for Yarn 1.21.4. Treat Minecraft-version upgrades as a verification point for this mixin rather than introducing a replacement inventory/search controller.
 
@@ -74,4 +107,4 @@ hud.compact_debug=true
 
 The previous `screenshots.organize_by_project` key is accepted as a read-only migration alias so existing local configs continue to work. New saves use `screenshots.contextual_names`.
 
-Dormant options for Chat Timestamps and Auto Reconnect remain out of the active product surface. They may only return if a later audit proves that the feature itself is worth implementing.
+Dormant options for Chat Timestamps and Auto Reconnect remain out of the active product surface. They may only return when the feature itself is implemented and verified rather than added as speculative configuration.
