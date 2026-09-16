@@ -381,14 +381,10 @@ def main() -> int:
         if skill not in routing:
             fail(errors, f"skill-routing.md does not describe canonical skill: {skill}")
 
-    forbidden_skill_language = [
-        "standalone Skills for Rust, Java, TypeScript, Maven, Gradle, CI, testing",
-        "There is no meta Development Brief Skill",
-    ]
-    if forbidden_skill_language[0] not in agents:
-        fail(errors, "AGENTS.md must preserve the no-implementation-skill rule")
-    if forbidden_skill_language[1] not in routing:
-        fail(errors, "skill-routing.md must preserve the no-meta-skill rule")
+    if "Do not create standalone Skills for Java, Rust, TypeScript, Maven, Gradle, Tauri, Svelte, testing, or CI alone." not in agents:
+        fail(errors, "AGENTS.md must preserve the no-language/build-tool-skill rule")
+    if "Do not create additional Skills merely for Java, Rust, TypeScript, Maven, Gradle, Tauri, Svelte, testing, CI" not in routing:
+        fail(errors, "skill-routing.md must preserve the no-redundant-mechanic-skill rule")
 
     if errors:
         print("Repository contract verification FAILED:", file=sys.stderr)
