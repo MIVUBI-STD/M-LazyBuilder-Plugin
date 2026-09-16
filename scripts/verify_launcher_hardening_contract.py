@@ -53,8 +53,20 @@ def main() -> int:
     backups = RUST / "engine" / "server_backups.rs"
     storage = RUST / "engine" / "storage_health.rs"
     health = RUST / "engine" / "server_health.rs"
+    plugin_ingress = RUST / "engine" / "plugin_ingress.rs"
+    plugin_commands = RUST / "commands" / "plugin_manager.rs"
+    java_runtime = RUST / "engine" / "java_runtime.rs"
+    world_manager = RUST / "engine" / "world_manager" / "mod.rs"
+    support_bundle = RUST / "engine" / "support_bundle.rs"
 
-    require(engine_mod, "pub mod workspace_creation;", "pub mod app_instance;", "pub mod app_data_migrations;", "pub mod storage_health;")
+    require(
+        engine_mod,
+        "pub mod workspace_creation;",
+        "pub mod app_instance;",
+        "pub mod app_data_migrations;",
+        "pub mod storage_health;",
+        "pub mod plugin_ingress;",
+    )
     require(commands_mod, "pub mod workspace_creation;")
 
     require(
@@ -129,6 +141,30 @@ def main() -> int:
         "inspect_workspace",
     )
     require(health, '"storage-capacity"', "StoragePressure::Critical", "ServerHealthState::NeedsAttention")
+
+    require(
+        plugin_ingress,
+        "MAX_PLUGIN_JAR_BYTES",
+        "MAX_PLUGIN_ARCHIVE_ENTRIES",
+        "MAX_PLUGIN_METADATA_BYTES",
+        "validate_selected_jar",
+        "is_reparse_point(&metadata)",
+    )
+    require(
+        plugin_commands,
+        "plugin_ingress::validate_selected_jar(Path::new(&jar_path))?;",
+    )
+
+    require(java_runtime, ".enclosed_name()", "failed SHA-256 verification")
+    require(world_manager, '"X-LazyBuilder-Sha256"', "sha256_file(&path)?", '"Content-Length"')
+    require(
+        support_bundle,
+        '"diagnostics.json"',
+        '"operations.json"',
+        '"startup.json"',
+        '"README.txt"',
+        "MAX_LOG_FILE_BYTES",
+    )
 
     print("Launcher production-hardening source contract OK")
     return 0
