@@ -111,14 +111,15 @@ function healthSnapshot(): ServerHealthSnapshot {
 }
 
 function repairPlan(): ServerRepairPlan {
-  if (previewKind() !== 'repair') return { workspaceId: activeWorkspace.id, workspaceName: activeWorkspace.name, canRepair: false, blockedReason: '', repairs: [], manualActions: [] };
+  if (previewKind() !== 'repair') return { workspaceId: activeWorkspace.id, workspaceName: activeWorkspace.name, canRepair: false, blockedReason: '', repairs: [], manualActions: [], health: healthSnapshot() };
   return {
     workspaceId: activeWorkspace.id, workspaceName: activeWorkspace.name, canRepair: true, blockedReason: '',
     repairs: [
       { checkKey: 'paper-runtime', title: 'Repair Paper runtime', details: 'Provision the supported Paper runtime only because paper.jar is missing.' },
       { checkKey: 'core-modules', title: 'Repair LazyBuilder core modules', details: 'Republish LazyBuilder-owned World Manager and Utilities Manager transactionally.' }
     ],
-    manualActions: [{ checkKey: 'minecraft-eula', title: 'Accept Minecraft EULA', details: 'EULA acceptance always requires explicit user confirmation.' }]
+    manualActions: [{ checkKey: 'minecraft-eula', title: 'Accept Minecraft EULA', details: 'EULA acceptance always requires explicit user confirmation.' }],
+    health: healthSnapshot()
   };
 }
 
