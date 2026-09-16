@@ -105,6 +105,7 @@ export type ServerRepairResult = { repairedChecks: string[]; health: ServerHealt
 export type ServerState = 'Offline' | 'Starting' | 'Online' | 'Stopping' | 'Detached' | 'Crashed';
 export type ServerHealth = 'Offline' | 'Good' | 'Warning' | 'Critical';
 export type ServerSnapshot = { state: ServerState; health: ServerHealth; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
+export type ServerRuntimeSummary = { workspaceId: string; workspaceName: string; state: ServerState; pid?: number | null; paperPort?: number | null };
 export type ServerPreflight = { ready: boolean; workspace: string; serverDirectory: string; paperJar: string; worldsDirectory: string; javaPath: string; javaVersion: string; logDirectory: string; issues: string[] };
 export type DetachedRecoveryResult = { pid: number; stopped: boolean; message: string };
 export type ServerLogTail = { path: string; content: string; truncated: boolean };
@@ -187,6 +188,8 @@ export const runtimeApi = {
   server: {
     preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
     snapshot: () => invokeRuntime<ServerSnapshot>('server_snapshot'),
+    runtimes: () => invokeRuntime<ServerRuntimeSummary[]>('server_runtime_list'),
+    connectionPort: () => invokeRuntime<number | null>('server_connection_port'),
     command: (command: string) => invokeRuntime<void>('server_console_command', { command }),
     start: () => invokeRuntime<void>('server_start'),
     stop: () => invokeRuntime<void>('server_stop'),
