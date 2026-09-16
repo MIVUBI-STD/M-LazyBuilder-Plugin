@@ -75,6 +75,11 @@
       "id": "disk-pressure-before-heavy-write",
       "owner": "apps/launcher/src-tauri/src/engine/storage_health.rs",
       "markers": ["CRITICAL_AVAILABLE_BYTES", "WARNING_MIN_AVAILABLE_BYTES", "StoragePressure"]
+    },
+    {
+      "id": "world-control-port-conflict-before-paper-start",
+      "owner": "apps/launcher/src-tauri/src/commands/server_manager.rs",
+      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"]
     }
   ]
 }
