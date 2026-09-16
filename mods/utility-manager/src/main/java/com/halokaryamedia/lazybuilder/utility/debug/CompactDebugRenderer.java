@@ -1,0 +1,170 @@
+package com.halokaryamedia.lazybuilder.utility.debug;
+
+import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+
+/** Minecraft-native, compact replacement presentation for the vanilla F3 text wall. */
+public final class CompactDebugRenderer {
+    private static final int MARGIN = 6;
+    private static final int PADDING = 6;
+    private static final int ROW_HEIGHT = 11;
+    private static final int SECTION_GAP = 5;
+    private static final int LABEL_COLUMN_WIDTH = 52;
+
+    private static final int PANEL_BACKGROUND = 0x88000000;
+    private static final int COORDINATE_BACKGROUND = 0xA0000000;
+    private static final int TEXT_PRIMARY = 0xFFF2F2F2;
+    private static final int TEXT_SECONDARY = 0xFFB8B8B8;
+    private static final int TEXT_HEADING = 0xFFFFFFFF;
+    private static final int TEXT_HINT = 0xFF9E9E9E;
+
+    private CompactDebugRenderer() {
+    }
+
+    public static void render(MinecraftClient client, DrawContext context) {
+        if (client == null || context == null) return;
+
+        CompactDebugSnapshot snapshot = CompactDebugMetrics.capture(client);
+        TextRenderer text = client.textRenderer;
+
+        int coordinateWidth = coordinatePanelWidth(text, snapshot);
+        int coordinateHeight = PADDING * 2 + ROW_HEIGHT * 3;
+        drawCoordinatePanel(context, text, snapshot, MARGIN, MARGIN, coordinateWidth, coordinateHeight);
+
+        int leftY = MARGIN + coordinateHeight + SECTION_GAP;
+        int leftWidth = leftPanelWidth(text, snapshot);
+        int leftHeight = PADDING * 2 + ROW_HEIGHT * 11 + SECTION_GAP;
+        drawLeftPanel(context, text, snapshot, MARGIN, leftY, leftWidth, leftHeight);
+
+        int rightWidth = rightPanelWidth(text, snapshot);
+        int rightX = Math.max(MARGIN, client.getWindow().getScaledWidth() - MARGIN - rightWidth);
+        int rightHeight = PADDING * 2 + ROW_HEIGHT * (snapshot.serverMetricsAvailable() ? 4 : 3);
+        drawRightPanel(context, text, snapshot, rightX, MARGIN, rightWidth, rightHeight);
+    }
+
+    public static void copyCoordinates(MinecraftClient client) {
+        if (client == null || client.player == null) return;
+        int x = client.player.getBlockPos().getX();
+        int y = client.player.getBlockPos().getY();
+        int z = client.player.getBlockPos().getZ();
+        client.keyboard.setClipboard(x + " " + y + " " + z);
+        UtilityNotifications.show("Coordinates copied", x + " " + y + " " + z);
+    }
+
+    private static void drawCoordinatePanel(
+            DrawContext context,
+            TextRenderer text,
+            CompactDebugSnapshot snapshot,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        context.fill(x, y, x + width, y + height, COORDINATE_BACKGROUND);
+        int tx = x + PADDING;
+        int ty = y + PADDING;
+        draw(context, text, "COORDINATE", tx, ty, TEXT_HEADING);
+        draw(context, text, coordinateValue(snapshot), tx, ty + ROW_HEIGHT, TEXT_PRIMARY);
+        draw(context, text, "F3+C  Copy", tx, ty + ROW_HEIGHT * 2, TEXT_HINT);
+    }
+
+    private static void drawLeftPanel(
+            DrawContext context,
+            TextRenderer text,
+            CompactDebugSnapshot snapshot,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        context.fill(x, y, x + width, y + height, PANEL_BACKGROUND);
+        int tx = x + PADDING;
+        int ty = y + PADDING;
+
+        draw(context, text, "CLIENT", tx, ty, TEXT_HEADING);
+        ty += ROW_HEIGHT;
+        ty = drawRow(context, text, "FPS", Integer.toString(snapshot.fps()), tx, ty);
+        ty = drawRow(context, text, "CPU", snapshot.clientCpu(), tx, ty);
+        ty = drawRow(context, text, "GPU", snapshot.clientGpu(), tx, ty);
+        ty = drawRow(context, text, "RAM", snapshot.clientRam(), tx, ty);
+
+        ty += SECTION_GAP;
+        draw(context, text, "WORLD", tx, ty, TEXT_HEADING);
+        ty += ROW_HEIGHT;
+        ty = drawRow(context, text, "Facing", snapshot.facing(), tx, ty);
+        ty = drawRow(context, text, "Biome", snapshot.biome(), tx, ty);
+        drawRow(context, text, "Time", snapshot.time(), tx, ty);
+    }
+
+    private static void drawRightPanel(
+            DrawContext context,
+            TextRenderer text,
+            CompactDebugSnapshot snapshot,
+            int x,
+            int y,
+            int width,
+            int height
+    ) {
+        context.fill(x, y, x + width, y + height, PANEL_BACKGROUND);
+        int tx = x + PADDING;
+        int ty = y + PADDING;
+
+        draw(context, text, "SERVER", tx, ty, TEXT_HEADING);
+        ty += ROW_HEIGHT;
+        ty = drawRow(context, text, "World", snapshot.serverWorld(), tx, ty);
+        if (snapshot.serverMetricsAvailable()) {
+            ty = drawRow(context, text, "CPU", snapshot.serverCpu(), tx, ty);
+            drawRow(context, text, "RAM", snapshot.serverRam(), tx, ty);
+        } else {
+            drawRow(context, text, "Status", "Metrics unavailable", tx, ty);
+        }
+    }
+
+    private static int drawRow(
+            DrawContext context,
+            TextRenderer text,
+            String label,
+            String value,
+            int x,
+            int y
+    ) {
+        draw(context, text, label, x, y, TEXT_SECONDARY);
+        draw(context, text, value, x + LABEL_COLUMN_WIDTH, y, TEXT_PRIMARY);
+        return y + ROW_HEIGHT;
+    }
+
+    private static void draw(DrawContext context, TextRenderer text, String value, int x, int y, int color) {
+        context.drawTextWithShadow(text, value, x, y, color);
+    }
+
+    private static int coordinatePanelWidth(TextRenderer text, CompactDebugSnapshot snapshot) {
+        int content = Math.max(text.getWidth("COORDINATE"), text.getWidth(coordinateValue(snapshot)));
+        content = Math.max(content, text.getWidth("F3+C  Copy"));
+        return Math.max(150, content + PADDING * 2);
+    }
+
+    private static int leftPanelWidth(TextRenderer text, CompactDebugSnapshot snapshot) {
+        int valueWidth = Math.max(text.getWidth(snapshot.clientRam()), text.getWidth(snapshot.facing()));
+        valueWidth = Math.max(valueWidth, text.getWidth(snapshot.biome()));
+        valueWidth = Math.max(valueWidth, text.getWidth(snapshot.clientCpu()));
+        valueWidth = Math.max(valueWidth, text.getWidth(snapshot.clientGpu()));
+        return Math.max(170, PADDING * 2 + LABEL_COLUMN_WIDTH + valueWidth);
+    }
+
+    private static int rightPanelWidth(TextRenderer text, CompactDebugSnapshot snapshot) {
+        int valueWidth = text.getWidth(snapshot.serverWorld());
+        if (snapshot.serverMetricsAvailable()) {
+            valueWidth = Math.max(valueWidth, text.getWidth(snapshot.serverRam()));
+            valueWidth = Math.max(valueWidth, text.getWidth(snapshot.serverCpu()));
+        } else {
+            valueWidth = Math.max(valueWidth, text.getWidth("Metrics unavailable"));
+        }
+        return Math.max(160, PADDING * 2 + LABEL_COLUMN_WIDTH + valueWidth);
+    }
+
+    private static String coordinateValue(CompactDebugSnapshot snapshot) {
+        return "X " + snapshot.x() + "   Y " + snapshot.y() + "   Z " + snapshot.z();
+    }
+}
