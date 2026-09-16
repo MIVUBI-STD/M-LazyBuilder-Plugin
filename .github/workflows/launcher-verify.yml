@@ -2,6 +2,18 @@ name: Launcher Verify
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - Local
+    paths:
+      - 'apps/launcher/**'
+      - 'scripts/verify_launcher_*.py'
+      - 'scripts/verify_local_launcher_contract.py'
+      - 'scripts/verify_compatibility.py'
+      - 'scripts/build_launcher_update_manifest.py'
+      - 'scripts/set_launcher_version.py'
+      - 'docs/launcher-failure-matrix.json'
+      - '.github/workflows/launcher-verify.yml'
 
 permissions:
   contents: read
