@@ -30,6 +30,7 @@ public final class ClientWorldController {
     private boolean worldListReady;
     private boolean worldListPending;
     private boolean teleportPending;
+    private boolean exportPending;
     private String lastError;
     private String activityMessage;
     private long revision;
@@ -99,9 +100,19 @@ public final class ClientWorldController {
             String artifactName,
             ExportSettingsWire.Settings exportSettings
     ) {
+        if (exportPending) throw new IllegalStateException("A world export is already active");
+        exportPending = true;
         beginActivity("Preparing world export…");
-        send(new WorldControlWireProtocol.ExportWorld(
-                worldId, targetFormat, artifactName, Objects.requireNonNull(exportSettings, "exportSettings")));
+        try {
+            send(new WorldControlWireProtocol.ExportWorld(
+                    worldId, targetFormat, artifactName, Objects.requireNonNull(exportSettings, "exportSettings")));
+        } catch (RuntimeException exception) {
+            exportPending = false;
+            activityMessage = null;
+            lastError = "Could not send world export request";
+            revision++;
+            throw exception;
+        }
     }
 
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
@@ -174,6 +185,7 @@ public final class ClientWorldController {
                 revision++;
             }
             case WorldControlWireProtocol.ExportReady export -> {
+                exportPending = false;
                 lastError = null;
                 activityMessage = null;
                 revision++;
@@ -199,6 +211,7 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.ErrorResponse error -> {
                 if (worldListPending) worldListPending = false;
                 teleportPending = false;
+                exportPending = false;
                 discardWhenInspected.clear();
                 lastError = error.message();
                 activityMessage = null;
@@ -219,6 +232,7 @@ public final class ClientWorldController {
         worldListReady = false;
         worldListPending = false;
         teleportPending = false;
+        exportPending = false;
         lastError = null;
         activityMessage = null;
         revision++;
@@ -231,6 +245,7 @@ public final class ClientWorldController {
     public boolean worldListReady() { return worldListReady; }
     public boolean worldListPending() { return worldListPending; }
     public boolean teleportPending() { return teleportPending; }
+    public boolean exportPending() { return exportPending; }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public WorldControlWireProtocol.ImportInspection importInspection() { return importInspection; }
     public String lastError() { return lastError; }
