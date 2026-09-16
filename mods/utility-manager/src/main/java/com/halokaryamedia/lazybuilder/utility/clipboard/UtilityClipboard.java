@@ -15,6 +15,6 @@ public final class UtilityClipboard {
         if (client == null || client.keyboard == null) return;
 
         client.keyboard.setClipboard(text);
-        UtilityNotifications.show("Copied", confirmation);
+        UtilityNotifications.show("Copied to Clipboard", confirmation);
     }
 }
