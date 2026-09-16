@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.map;
 
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 
 import java.io.ByteArrayInputStream;
@@ -13,8 +14,8 @@ import java.util.UUID;
 
 /** Small versioned wire format shared by Paper and the Fabric map client. */
 public final class MapActionWireProtocol {
-    /** V2 adds an explicit unmanaged-current-world response so client state cannot remain stale. */
-    public static final int VERSION = 2;
+    /** V3 adds shared export-only settings to custom-area export requests. */
+    public static final int VERSION = 3;
     public static final int MAX_MESSAGE_BYTES = 4096;
     private static final int MAX_STRING_BYTES = 192;
 
@@ -43,12 +44,26 @@ public final class MapActionWireProtocol {
             int x2,
             int z2,
             String targetFormat,
-            String artifactName
+            String artifactName,
+            ExportSettingsWire.Settings settings
     ) implements Request {
+        public ExportArea(
+                WorldId worldId,
+                int x1,
+                int z1,
+                int x2,
+                int z2,
+                String targetFormat,
+                String artifactName
+        ) {
+            this(worldId, x1, z1, x2, z2, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
+        }
+
         public ExportArea {
             Objects.requireNonNull(worldId, "worldId");
             targetFormat = requireString(targetFormat, "targetFormat");
             artifactName = requireString(artifactName, "artifactName");
+            settings = Objects.requireNonNull(settings, "settings");
         }
     }
 
@@ -110,6 +125,7 @@ public final class MapActionWireProtocol {
                     out.writeInt(export.z2());
                     writeString(out, export.targetFormat());
                     writeString(out, export.artifactName());
+                    ExportSettingsWire.write(out, export.settings());
                 }
                 case CurrentWorldRequest ignored -> { }
             }
@@ -126,7 +142,9 @@ public final class MapActionWireProtocol {
             Request request = switch (opcode) {
                 case TELEPORT_LOCATION -> new TeleportLocation(readWorldId(in), in.readInt(), in.readInt());
                 case EXPORT_AREA -> new ExportArea(
-                        readWorldId(in), in.readInt(), in.readInt(), in.readInt(), in.readInt(), readString(in), readString(in));
+                        readWorldId(in),
+                        in.readInt(), in.readInt(), in.readInt(), in.readInt(),
+                        readString(in), readString(in), ExportSettingsWire.read(in));
                 case CURRENT_WORLD -> new CurrentWorldRequest();
                 default -> throw new IOException("Unknown map request opcode: " + opcode);
             };
@@ -204,7 +222,22 @@ public final class MapActionWireProtocol {
             String targetFormat,
             String artifactName
     ) {
-        return encodeRequest(new ExportArea(worldId, x1, z1, x2, z2, targetFormat, artifactName));
+        return exportAreaRequest(worldId, x1, z1, x2, z2,
+                targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
+    }
+
+    public static byte[] exportAreaRequest(
+            WorldId worldId,
+            int x1,
+            int z1,
+            int x2,
+            int z2,
+            String targetFormat,
+            String artifactName,
+            ExportSettingsWire.Settings settings
+    ) {
+        return encodeRequest(new ExportArea(
+                worldId, x1, z1, x2, z2, targetFormat, artifactName, settings));
     }
 
     public static byte[] currentWorldRequest() {
