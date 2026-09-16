@@ -12,9 +12,9 @@ import java.util.Objects;
 /**
  * Minecraft-facing bridge for normalized Utility messages.
  *
- * Keeps routing/presentation outside producers. Duplicate chat lines are suppressed
- * until the later in-place collapse presenter is introduced; console diagnostics
- * remain complete.
+ * Keeps routing/presentation outside producers. Duplicate chat messages continue
+ * through the HUD so ChatHud can replace the newest eligible line with a compact
+ * ×N presentation; duplicate toasts remain suppressed by UtilityMessageBus.
  */
 public final class UtilityMessageDispatcher {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/UtilityMessages");
@@ -33,9 +33,9 @@ public final class UtilityMessageDispatcher {
     static void dispatch(MinecraftClient client, ChatMessage message, long nowMillis) {
         UtilityMessageBus.DispatchDecision decision = UtilityManagerClient.messageBus().publish(message, nowMillis);
 
-        if (decision.showInChat() && !decision.duplicate() && client.inGameHud != null) {
+        if (decision.showInChat() && client.inGameHud != null) {
             client.inGameHud.getChatHud().addMessage(Text.literal(
-                    ChatPresentationFormatter.chatLine(message, 1)
+                    ChatPresentationFormatter.chatLine(message, decision.duplicateCount())
             ));
         }
 
