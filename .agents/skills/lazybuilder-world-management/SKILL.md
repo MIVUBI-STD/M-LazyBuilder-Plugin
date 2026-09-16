@@ -186,27 +186,30 @@ name exact world behavior
 
 ## Proof matrix
 
+Use the canonical proof vocabulary from `development-discipline.md`.
+
 ```text
-lifecycle / policy / validation
-→ focused unit test
+lifecycle / policy / validation rules
+→ EXECUTED_SOURCE
 
 registry serialization / path guards / transaction decisions
-→ focused filesystem/source fixture
+→ EXECUTED_SOURCE when pure
+→ INTEGRATION_FIXTURE when real filesystem/service interaction is required
 
-archive/restore/import/export/conversion publication
-→ local integration fixture with representative world data
+archive/restore/import/export/conversion staging + publication
+→ INTEGRATION_FIXTURE with representative world data
 
 Paper adapter compile/contract
-→ build/CI proof
+→ EXECUTED_SOURCE
 
 actual load/unload/teleport/player-presence/thread/runtime behavior
-→ LIVE_SERVER with exact built artifact
+→ LIVE_RUNTIME using exact built artifacts and the changed world path
 
 Launcher/Fabric presentation only
 → lazybuilder-ui proof lane
 ```
 
-A filesystem fixture does not prove Bukkit/Paper lifecycle behavior. A Paper boot that does not exercise the changed path is not feature proof.
+A filesystem fixture does not prove Bukkit/Paper lifecycle behavior. A Paper boot that does not exercise the changed path is not `LIVE_RUNTIME` proof for the feature. A Minecraft screenshot can prove presentation, not world-domain mutation or filesystem publication.
 
 ## Handoff / exit contract
 
