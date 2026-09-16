@@ -94,6 +94,8 @@ ENVIRONMENT      Windows/filesystem/process/security environment blocks correct 
 UNKNOWN          evidence cannot yet separate the above
 ```
 
+Local labels refine the global failure class from `development-discipline.md`; they do not replace it. `PRESENTATION` reclassifies to `UI_PRESENTATION`; `ENVIRONMENT` reclassifies to the narrowest supported runtime/environment global class; `OWNERSHIP` reclassifies through `ROUTING`; `UNKNOWN` must name the next separating evidence.
+
 For `PRESENTATION`, hand off to `lazybuilder-ui`. For `UNKNOWN`, gather the smallest separating evidence; do not add fallback state.
 
 ## Architecture model
