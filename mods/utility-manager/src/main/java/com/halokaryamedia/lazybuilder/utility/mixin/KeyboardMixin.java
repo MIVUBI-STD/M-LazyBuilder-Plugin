@@ -1,10 +1,11 @@
 package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
-import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
+import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
 import net.minecraft.client.Keyboard;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.math.BlockPos;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -35,7 +36,10 @@ abstract class KeyboardMixin {
         if (window != client.getWindow().getHandle()) return;
         if (!InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_F3)) return;
 
-        CompactDebugRenderer.copyCoordinates(client);
+        BlockPos pos = client.player.getBlockPos();
+        String coordinate = pos.getX() + " " + pos.getY() + " " + pos.getZ();
+        ((Keyboard) (Object) this).setClipboard(coordinate);
+        UtilityNotifications.show("Coordinates copied", coordinate);
         ci.cancel();
     }
 }
