@@ -147,12 +147,15 @@ fn cleanup_workspace_staging(workspace_id: &str) -> Result<u32, String> {
 }
 
 fn load_pending() -> Result<PendingBackupRecovery, String> {
-    let path = pending_path()?;
+    load_pending_from(&pending_path()?)
+}
+
+fn load_pending_from(path: &Path) -> Result<PendingBackupRecovery, String> {
     let incoming = path.with_extension("json.incoming");
     let previous = path.with_extension("json.previous");
 
-    if existing_regular_file(&path, "pending backup recovery index")? {
-        let pending = read_pending_file(&path)?;
+    if existing_regular_file(path, "pending backup recovery index")? {
+        let pending = read_pending_file(path)?;
         remove_regular_if_exists(&incoming, "stale pending backup incoming metadata")?;
         remove_regular_if_exists(&previous, "stale pending backup previous metadata")?;
         return Ok(pending);
@@ -161,16 +164,16 @@ fn load_pending() -> Result<PendingBackupRecovery, String> {
     // If the process died after committed metadata was moved aside but before the new
     // file was published, prefer the previous committed copy over the incoming copy.
     if existing_regular_file(&previous, "pending backup previous metadata")? {
-        fs::rename(&previous, &path)
+        fs::rename(&previous, path)
             .map_err(|error| format!("Could not restore previous pending backup recovery index: {error}"))?;
-        let pending = read_pending_file(&path)?;
+        let pending = read_pending_file(path)?;
         remove_regular_if_exists(&incoming, "stale pending backup incoming metadata")?;
         return Ok(pending);
     }
 
     if existing_regular_file(&incoming, "pending backup incoming metadata")? {
         let pending = read_pending_file(&incoming)?;
-        fs::rename(&incoming, &path)
+        fs::rename(&incoming, path)
             .map_err(|error| format!("Could not publish recovered pending backup recovery index: {error}"))?;
         return Ok(pending);
     }
@@ -300,6 +303,16 @@ fn is_reparse_point(_metadata: &fs::Metadata) -> bool { false }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn temp_index_path(label: &str) -> PathBuf {
+        let sequence = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!("lazybuilder-backup-recovery-{label}-{}-{sequence}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        directory.join("pending-backups.json")
+    }
 
     #[test]
     fn staging_prefix_is_narrowly_scoped() {
@@ -314,6 +327,38 @@ mod tests {
         let text = serde_json::to_string(&pending).unwrap();
         assert!(text.contains("schemaVersion"));
         assert!(text.contains("workspace-a"));
+    }
+
+    #[test]
+    fn interrupted_index_publish_prefers_previous_committed_copy() {
+        let path = temp_index_path("previous-wins");
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        let committed = PendingBackupRecovery { schema_version: RECOVERY_SCHEMA_VERSION, workspace_ids: vec!["committed-workspace".into()] };
+        let uncommitted = PendingBackupRecovery { schema_version: RECOVERY_SCHEMA_VERSION, workspace_ids: vec!["incoming-workspace".into()] };
+        fs::write(&previous, serde_json::to_vec(&committed).unwrap()).unwrap();
+        fs::write(&incoming, serde_json::to_vec(&uncommitted).unwrap()).unwrap();
+
+        let loaded = load_pending_from(&path).unwrap();
+        assert_eq!(loaded.workspace_ids, vec!["committed-workspace"]);
+        assert!(path.is_file());
+        assert!(!previous.exists());
+        assert!(!incoming.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn incoming_index_is_recovered_when_no_committed_copy_exists() {
+        let path = temp_index_path("incoming-only");
+        let incoming = path.with_extension("json.incoming");
+        let value = PendingBackupRecovery { schema_version: RECOVERY_SCHEMA_VERSION, workspace_ids: vec!["incoming-workspace".into()] };
+        fs::write(&incoming, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let loaded = load_pending_from(&path).unwrap();
+        assert_eq!(loaded.workspace_ids, vec!["incoming-workspace"]);
+        assert!(path.is_file());
+        assert!(!incoming.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
