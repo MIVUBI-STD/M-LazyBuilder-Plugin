@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { LauncherSettings } from '../app/bridge/runtimeApi';
 
   let saved: LauncherSettings | null = null;
@@ -8,14 +11,8 @@
   let loading = true;
   let saving = false;
   let exportingSupport = false;
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let message = '';
-
-  function friendlyError(value: unknown) {
-    return value instanceof Error && value.message.trim()
-      ? value.message.trim()
-      : String(value ?? '').replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
-  }
 
   function changed() {
     if (!saved || !draft) return false;
@@ -25,13 +22,13 @@
 
   async function load() {
     loading = true;
-    error = '';
+    error = null;
     try {
       const settings = await runtimeProduct.settings.get();
       saved = { ...settings };
       draft = { ...settings };
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not load Launcher settings.');
     } finally {
       loading = false;
     }
@@ -40,7 +37,7 @@
   async function save() {
     if (!draft || saving || !changed()) return;
     saving = true;
-    error = '';
+    error = null;
     message = '';
     try {
       const next = await runtimeProduct.settings.save(draft);
@@ -48,7 +45,7 @@
       draft = { ...next };
       message = 'Launcher preferences saved.';
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not save Launcher settings.');
     } finally {
       saving = false;
     }
@@ -57,13 +54,13 @@
   async function exportSupportBundle() {
     if (exportingSupport) return;
     exportingSupport = true;
-    error = '';
+    error = null;
     message = '';
     try {
       const path = await runtimeProduct.diagnostics.exportSupportBundle();
       if (path) message = `Support bundle exported to ${path}`;
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not export the support bundle.');
     } finally {
       exportingSupport = false;
     }
@@ -73,7 +70,7 @@
     if (!saved || saving) return;
     draft = { ...saved };
     message = '';
-    error = '';
+    error = null;
   }
 
   onMount(() => void load());
@@ -84,7 +81,7 @@
     <div><h2 id="launcher-settings-heading">Launcher settings</h2><p>Preferences that control how the LazyBuilder desktop app behaves.</p></div>
   </header>
 
-  {#if error}<div class="notice error" role="alert">{error}</div>{/if}
+  <RuntimeErrorNotice {error} />
   {#if message}<div class="notice success" aria-live="polite">{message}</div>{/if}
 
   {#if loading || !draft}
@@ -128,7 +125,7 @@
 
 <style>
   .launcher-settings{width:min(860px,100%)}.page-head{margin-bottom:18px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
-  .notice,.loading-card{margin-bottom:12px;padding:11px 13px;border:1px solid var(--border-soft);border-radius:9px;background:var(--surface);font-size:11px}.notice.error{border-color:#713940;background:var(--danger-bg);color:#ffdadd}.notice.success{border-color:var(--accent-border);background:var(--accent-soft);color:#a8e5b8}.loading-card{color:var(--muted)}
+  .notice,.loading-card{margin-bottom:12px;padding:11px 13px;border:1px solid var(--border-soft);border-radius:9px;background:var(--surface);font-size:11px}.notice.success{border-color:var(--accent-border);background:var(--accent-soft);color:#a8e5b8}.loading-card{color:var(--muted)}
   .settings-group{display:grid;grid-template-columns:190px minmax(0,1fr);gap:28px;padding:20px 0;border-top:1px solid var(--border-soft)}.settings-group:first-of-type{border-top:0}.group-copy h3{margin:0;font-size:12px}.group-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
   .setting-row,.support-card{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.setting-row{cursor:pointer}.setting-row>div,.support-card>div{display:grid;gap:3px}.setting-row strong,.support-card strong{font-size:11px}.setting-row span,.support-card span{color:var(--muted);font-size:10px;line-height:1.4}.support-card small{color:var(--muted-2);font-size:9px;line-height:1.4}.setting-row input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
   .future-group{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:12px;padding:13px 14px;border:1px dashed var(--border);border-radius:10px;background:var(--bg-elevated)}.future-group>div{display:grid;gap:3px}.future-group strong{font-size:11px}.future-group span{color:var(--muted);font-size:10px}.planned-badge{padding:4px 8px;border:1px solid var(--border);border-radius:999px;white-space:nowrap}
