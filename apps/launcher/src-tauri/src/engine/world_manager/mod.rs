@@ -4,6 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::Read;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ pub const TOKEN_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
 pub const PORT_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_PORT";
 pub const DEFAULT_PORT: u16 = 17842;
 const EXPECTED_PROTOCOL_VERSION: u32 = 2;
+const CONTROL_PORT_SCAN_LIMIT: u16 = 128;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +176,38 @@ pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
         save_control_options(&path, &options)?;
     }
     Ok(options)
+}
+
+/// Ensures the active workspace owns a currently free loopback control port.
+/// The selected port is persisted by the World Manager config owner so every
+/// subsequent Launcher request for this workspace resolves the same bridge.
+pub fn prepare_control_options_for_start() -> Result<WorldControlOptions, String> {
+    let path = control_config_path()?;
+    let mut options = load_or_create_control_options()?;
+    if loopback_port_available(options.port) {
+        return Ok(options);
+    }
+
+    let mut candidate = options.port.saturating_add(1).max(DEFAULT_PORT);
+    for _ in 0..CONTROL_PORT_SCAN_LIMIT {
+        if candidate < 1024 {
+            candidate = DEFAULT_PORT;
+        }
+        if loopback_port_available(candidate) {
+            options.port = candidate;
+            save_control_options(&path, &options)?;
+            return Ok(options);
+        }
+        candidate = candidate.checked_add(1).unwrap_or(DEFAULT_PORT);
+    }
+
+    Err(format!(
+        "LazyBuilder could not find a free World Manager loopback port after checking {CONTROL_PORT_SCAN_LIMIT} candidates. Stop conflicting local services and retry."
+    ))
+}
+
+fn loopback_port_available(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 pub fn list_worlds() -> Result<Vec<ManagedWorldSummary>, String> {
@@ -447,4 +481,19 @@ fn generate_token() -> String {
         let _ = write!(&mut token, "{byte:02X}");
     }
     token
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loopback_port_available;
+    use std::net::TcpListener;
+
+    #[test]
+    fn occupied_loopback_port_is_not_available() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral port");
+        let port = listener.local_addr().expect("local address").port();
+        assert!(!loopback_port_available(port));
+        drop(listener);
+        assert!(loopback_port_available(port));
+    }
 }
