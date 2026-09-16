@@ -11,6 +11,28 @@ User-authorized work proceeds through verified checkpoints; never claim proof ab
 - Canonical minimum-flow and diagnosis discipline is `docs/04-system/development-discipline.md`.
 - Current readiness is resolved from current `Local` source plus `docs/05-operations/` only when continuation/proof is material.
 
+## Dual-consumer contract
+
+These repository instructions and Skills are first-class inputs for **both ChatGPT and Codex**. Neither consumer is the semantic authority over the other.
+
+```text
+same user requirement
+→ same source precedence
+→ same failure classification
+→ same specialist routing
+→ same domain invariants
+→ same proof requirement
+```
+
+Only the **available execution capability** may differ by session.
+
+- Never assume shell, local checkout, filesystem, browser, GitHub mutation, CI dispatch, or live Minecraft access merely because one consumer often has it.
+- Detect the tools/context actually available, then use the lowest sufficient execution context.
+- ChatGPT may inspect or mutate repository state through connected tools when available; Codex may inspect or mutate a local workspace when available. Both must obey the same owner/proof contracts.
+- When required execution is unavailable, complete every independently provable partition and name the exact remaining residue. Do not simulate a command, test, screenshot, runtime result, or file mutation.
+- Repository-relative paths, exact symbols/contracts, and explicit handoff payloads are preferred over consumer-specific UI instructions.
+- A Skill must remain understandable when read directly by either consumer; consumer-specific mechanics belong only where the task genuinely depends on them.
+
 ## Execution Context Gate
 
 ```text
