@@ -3,9 +3,8 @@ use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::startup::StartupReport;
 use crate::engine::{diagnostics, support_bundle, workspace_registry};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+use serde::Serialize;
+use std::path::Path;
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone, Serialize)]
@@ -22,14 +21,6 @@ pub struct DiagnosticSummary {
     pub pid: Option<u32>,
     pub java_version: String,
     pub max_memory_mb: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WorkspaceManifestView {
-    minecraft_version: String,
-    server_platform: String,
-    paper_build: Option<u32>,
 }
 
 #[tauri::command]
@@ -136,7 +127,9 @@ pub async fn diagnostics_export_support_bundle(app: AppHandle) -> CommandResult<
 fn collect_summary(app: &AppHandle) -> DiagnosticSummary {
     let server = app.state::<ServerManagerState>();
     let workspace = workspace_registry::current().ok().flatten();
-    let manifest = workspace.as_ref().and_then(read_manifest);
+    let manifest = workspace
+        .as_ref()
+        .and_then(|entry| workspace_registry::manifest(Path::new(&entry.path)).ok());
     let snapshot = server.snapshot().ok();
     let preflight = server.preflight();
     let log_path = diagnostics::launcher_log_path()
@@ -156,14 +149,4 @@ fn collect_summary(app: &AppHandle) -> DiagnosticSummary {
         java_version: preflight.java_version,
         max_memory_mb: snapshot.as_ref().map(|value| value.max_memory_bytes / 1024 / 1024).unwrap_or_default(),
     }
-}
-
-fn read_manifest(workspace: &workspace_registry::WorkspaceEntry) -> Option<WorkspaceManifestView> {
-    let path = PathBuf::from(&workspace.path)
-        .join("tools")
-        .join("lazybuilder")
-        .join("config")
-        .join("workspace.json");
-    let text = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
 }
