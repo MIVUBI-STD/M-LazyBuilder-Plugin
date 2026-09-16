@@ -67,6 +67,7 @@ def main() -> int:
     runtime_api = read(LAUNCHER / "src/app/bridge/runtimeApi.ts")
     runtime_facade = read(LAUNCHER / "src/app/bridge/runtimeProductFacade.ts")
     preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
+    library_runtime_actions = read(LAUNCHER / "src/app/serverLibraryRuntimeActions.ts")
     close_guard = read(LAUNCHER / "src/app/closeGuard.ts")
     server_console = read(LAUNCHER / "src/components/ServerConsole.svelte")
     app = read(LAUNCHER / "src/App.svelte")
@@ -171,6 +172,24 @@ def main() -> int:
     ):
         if marker not in server_console:
             errors.append(f"ServerConsole no longer routes through its explicit workspace target: {marker}")
+
+    required_library_action_markers = (
+        "canOpenRuntimeConsole",
+        "canStopLibraryRuntime",
+        "runtimeProduct.server.stop(target)",
+    )
+    for marker in required_library_action_markers:
+        if marker not in library_runtime_actions:
+            errors.append(f"Server Library targeted action helper is missing marker: {marker}")
+    required_library_ui_markers = (
+        "openLibraryConsole(server, runtime)",
+        "stopRuntimeFromLibrary(server, runtime)",
+        "Stop external server",
+        "workspaceId={libraryConsoleWorkspaceId ?? undefined}",
+    )
+    for marker in required_library_ui_markers:
+        if marker not in app:
+            errors.append(f"Server Library targeted control UI is missing marker: {marker}")
 
     forbidden_runtime_fallbacks = (
         "resource_settings::runtime_resources().map(",
