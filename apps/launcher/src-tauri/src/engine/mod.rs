@@ -1,6 +1,7 @@
 pub mod adoption;
 pub mod app_data_migrations;
 pub mod app_instance;
+pub mod backup_recovery;
 pub mod client_integration;
 pub mod core_modules;
 pub mod diagnostics;
