@@ -53,7 +53,7 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.setScreen(() -> new DisconnectedScreen(
                 null,
                 Text.literal("Connection Lost"),
-                Text.literal("Disconnected by server: preview reason with enough text to exercise the vanilla wrapped-message layout.")));
+                Text.literal("Connection to the server was lost. You can reconnect or return to the server list.")));
         context.waitForScreen(DisconnectedScreen.class);
         context.waitTicks(12);
         context.takeScreenshot(screenshotName);
