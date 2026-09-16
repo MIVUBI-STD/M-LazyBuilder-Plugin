@@ -21,6 +21,8 @@
 
   function labelKind(kind: string) {
     const labels: Record<string, string> = {
+      'create-server': 'Create server',
+      'adopt-server': 'Adopt existing server',
       'duplicate-server': 'Duplicate server',
       'backup-server': 'Backup server',
       'restore-server': 'Restore server',
