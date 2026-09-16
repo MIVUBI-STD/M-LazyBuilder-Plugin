@@ -50,21 +50,24 @@ class ChunkerCliAdapterTest {
         assertFalse(command.contains("-p"));
         assertFalse(command.contains("-c"));
 
+        Path pruningSettings = Path.of("/tmp/pruning.json");
+        Path worldSettings = Path.of("/tmp/world-settings.json");
+        Path converterSettings = Path.of("/tmp/converter-settings.json");
         ConverterAdapter.ConversionRequest customized = new ConverterAdapter.ConversionRequest(
                 Path.of("/input"),
                 Path.of("/output"),
                 "bedrock_1_21_80",
-                Path.of("/tmp/pruning.json"),
-                Path.of("/tmp/world-settings.json"),
-                Path.of("/tmp/converter-settings.json")
+                pruningSettings,
+                worldSettings,
+                converterSettings
         );
         List<String> customizedCommand = adapter.buildConversionCommand(
                 Path.of("/runtime/converter.jar"), customized);
         assertTrue(customizedCommand.contains("-s"));
-        assertTrue(customizedCommand.contains("/tmp/world-settings.json"));
+        assertTrue(customizedCommand.contains(worldSettings.toString()));
         assertTrue(customizedCommand.contains("-p"));
-        assertTrue(customizedCommand.contains("/tmp/pruning.json"));
+        assertTrue(customizedCommand.contains(pruningSettings.toString()));
         assertTrue(customizedCommand.contains("-c"));
-        assertTrue(customizedCommand.contains("/tmp/converter-settings.json"));
+        assertTrue(customizedCommand.contains(converterSettings.toString()));
     }
 }
