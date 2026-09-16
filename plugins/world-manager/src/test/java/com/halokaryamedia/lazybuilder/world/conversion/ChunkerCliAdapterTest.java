@@ -1,16 +1,24 @@
 package com.halokaryamedia.lazybuilder.world.conversion;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChunkerCliAdapterTest {
+    @TempDir Path tempDir;
+
     @Test
     void parsesVersionAndSupportedFormatsFromVerifiedCliShapes() throws Exception {
         assertEquals("1.20.0", ChunkerCliAdapter.parseRuntimeVersion("1.20.0\n"));
@@ -97,5 +105,55 @@ class ChunkerCliAdapterTest {
         );
         assertFalse(crossVersionArea.keepOriginalNbt());
         assertFalse(adapter.buildConversionCommand(Path.of("/runtime/converter.jar"), crossVersionArea).contains("-k"));
+    }
+
+    @Test
+    void customDimensionDefinitionsAreDetectedInFolderAndZipDatapacks() throws Exception {
+        Path folderWorld = tempDir.resolve("folder-world");
+        Path definition = folderWorld.resolve("datapacks/custom/data/example/dimension/moon.json");
+        Files.createDirectories(definition.getParent());
+        Files.writeString(definition, "{}");
+        assertTrue(ChunkerCliAdapter.containsCustomDimensionDefinitions(folderWorld));
+
+        Path zipWorld = tempDir.resolve("zip-world");
+        Path datapacks = Files.createDirectories(zipWorld.resolve("datapacks"));
+        Path zip = datapacks.resolve("custom.zip");
+        try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
+            out.putNextEntry(new ZipEntry("data/example/dimension/moon.json"));
+            out.write("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.closeEntry();
+        }
+        assertTrue(ChunkerCliAdapter.containsCustomDimensionDefinitions(zipWorld));
+    }
+
+    @Test
+    void selectedAreaFailsClosedWhenCustomDimensionsExist() throws Exception {
+        Path world = tempDir.resolve("area-world");
+        Path definition = world.resolve("datapacks/custom/data/example/dimension/moon.json");
+        Files.createDirectories(definition.getParent());
+        Files.writeString(definition, "{}");
+        Path pruning = Files.writeString(tempDir.resolve("pruning.json"), "{}");
+
+        ConverterAdapter.ConversionRequest request = new ConverterAdapter.ConversionRequest(
+                world, tempDir.resolve("output"), "JAVA_1_21_4", pruning);
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChunkerCliAdapter.requireSupportedCustomDimensionShape(request));
+        assertTrue(failure.getMessage().contains("Selected Area"));
+    }
+
+    @Test
+    void fullConversionRequiresIntegratedMetadataForCustomDimensions() throws Exception {
+        Path world = tempDir.resolve("full-world");
+        Path definition = world.resolve("datapacks/custom/data/example/dimension/moon.json");
+        Files.createDirectories(definition.getParent());
+        Files.writeString(definition, "{}");
+        ConverterAdapter.ConversionRequest request = new ConverterAdapter.ConversionRequest(
+                world, tempDir.resolve("output"), "BEDROCK_1_21_80", null);
+
+        assertThrows(IOException.class, () -> ChunkerCliAdapter.requireSupportedCustomDimensionShape(request));
+
+        Files.writeString(world.resolve("custom_dimensions.chunker.json"), "{\"dimensions\":[]}");
+        ChunkerCliAdapter.requireSupportedCustomDimensionShape(request);
     }
 }
