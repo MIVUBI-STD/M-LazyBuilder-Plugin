@@ -4,12 +4,14 @@
     {
       "id": "operation-interrupted-by-launcher-exit",
       "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
-      "markers": ["reconcile_interrupted_entries", "INTERRUPTED_LAUNCHER_OPERATION", "journal_round_trip_preserves_operation_history"]
+      "markers": ["reconcile_interrupted_entries", "INTERRUPTED_LAUNCHER_OPERATION", "journal_round_trip_preserves_operation_history"],
+      "testMarkers": ["interrupted_mutations_require_recovery_and_reconciliation_is_idempotent", "journal_round_trip_preserves_operation_history"]
     },
     {
       "id": "create-crash-before-intent-identity-update",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
-      "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"]
+      "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"],
+      "testMarkers": ["creation_paths_are_strictly_scoped"]
     },
     {
       "id": "create-crash-after-publish-before-relocate",
@@ -38,23 +40,38 @@
     },
     {
       "id": "backup-crash-during-staging-copy",
-      "owner": "apps/launcher/src-tauri/src/engine/server_backups.rs",
-      "markers": [".creating-backup-", "recover_staging", "BACKUP_SCHEMA_VERSION"]
+      "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
+      "markers": ["pending-backups.json", "recover_pending", "STAGING_PREFIX", "recover_workspace"],
+      "testMarkers": ["staging_prefix_is_narrowly_scoped", "pending_index_schema_is_explicit"]
+    },
+    {
+      "id": "legacy-backup-staging-upgrade",
+      "owner": "apps/launcher/src-tauri/src/engine/startup.rs",
+      "markers": ["legacy_sweep_required", "server_backups::recover_staging()", "mark_legacy_sweep_complete"]
     },
     {
       "id": "backup-corruption-before-restore",
       "owner": "apps/launcher/src-tauri/src/engine/server_backups.rs",
-      "markers": ["verify_snapshot_integrity", "sha256", "BackupIntegrityStatus"]
+      "markers": ["verify_snapshot_integrity", "sha256", "BackupIntegrityStatus"],
+      "testMarkers": ["integrity_paths_reject_traversal_and_absolute_paths", "legacy_backup_schema_remains_supported"]
     },
     {
       "id": "large-backup-progress-write-amplification",
       "owner": "apps/launcher/src-tauri/src/commands/server_backups.rs",
-      "markers": ["DurableProgressReporter", "MIN_PROGRESS_JOURNAL_STEP_BYTES", "progress_journal_updates_are_bounded_for_large_copies"]
+      "markers": ["DurableProgressReporter", "MIN_PROGRESS_JOURNAL_STEP_BYTES", "progress_journal_updates_are_bounded_for_large_copies"],
+      "testMarkers": ["progress_journal_updates_are_bounded_for_large_copies", "progress_journal_uses_minimum_step_for_smaller_copies"]
+    },
+    {
+      "id": "world-task-exceeds-frontend-duration",
+      "owner": "apps/launcher/src/pages/Worlds.svelte",
+      "markers": ["World Manager owns task lifetime", "while (pageActive)", "runtimeProduct.worlds.tasks()", "recoverActiveTask"],
+      "forbidMarkers": ["TASK_TIMEOUT_MS", "taking unusually long"]
     },
     {
       "id": "plugin-input-changes-during-install",
       "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
-      "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"]
+      "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"],
+      "testMarkers": ["plugin_ingress_limits_are_bounded"]
     },
     {
       "id": "plugin-ingress-left-after-hard-kill",
@@ -84,7 +101,8 @@
     {
       "id": "world-control-port-conflict-before-paper-start",
       "owner": "apps/launcher/src-tauri/src/commands/server_manager.rs",
-      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"]
+      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"],
+      "testMarkers": ["occupied_world_control_port_is_rejected_before_paper_start"]
     }
   ]
 }
