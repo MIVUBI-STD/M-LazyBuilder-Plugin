@@ -14,18 +14,15 @@ Material/coloring is intentionally outside this milestone.
 
 - Axiom-familiar direct world manipulation.
 - LazyBuilder World/Map Manager visual language.
+- No Terraform keyboard shortcuts are registered in this milestone.
+- Tool/variation selection belongs to the Terraform UI surface rather than dedicated keybinds.
 - LMB drag draws/extends the active terrain form.
 - Mouse wheel adjusts size.
 - Shift + wheel adjusts height.
 - RMB flips the exposed/front side where relevant.
-- Esc cancels the active stroke.
-- Ctrl+Z requests operation undo.
-- `[` / `]` switch terrain tools directly in the live world.
-- `V` cycles Soft / Natural / Dramatic variation without opening the palette.
-- `P` opens/closes the compact options palette; entering Terraform does not force the palette over the viewport.
 - Preview uses the same platform-neutral shape reconstruction path as the Paper executor.
 - Hover preview must invalidate when the cursor target changes; it may not remain pinned to a stale block.
-- Size/height/front/tool/variation changes surface immediate HUD feedback without opening a blocking screen.
+- Size/height/front/tool/variation changes surface immediate HUD feedback without requiring shortcut keys.
 - Tool or variation changes cancel an in-progress stroke instead of silently changing semantics mid-gesture.
 - Accepted/finished operations use concise overlay feedback; errors remain visible chat messages.
 
