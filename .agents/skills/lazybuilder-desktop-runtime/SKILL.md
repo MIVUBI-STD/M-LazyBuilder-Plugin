@@ -190,27 +190,32 @@ For non-trivial infrastructure, compare against `real-launcher-patterns.md` only
 
 ## Proof matrix
 
+Use the canonical proof vocabulary from `development-discipline.md`.
+
 ```text
 state transitions / validation / migration / serialization
-→ focused unit/source-contract test
+→ EXECUTED_SOURCE
 
 filesystem transaction / path guards / rollback selection
-→ focused filesystem fixture/integration test
+→ INTEGRATION_FIXTURE
 
 Tauri command/service wiring / compile contracts
-→ Launcher source/build proof
+→ EXECUTED_SOURCE
 
-Windows installer/update/app identity/filesystem locking
-→ packaged Windows proof
+built installer/package identity, contents, basic install/start contract
+→ PACKAGE_SMOKE
+
+Windows shortcut/taskbar/DPI/dialog/update-install/filesystem-locking behavior
+→ NATIVE_ACCEPTANCE
 
 Paper process start/stop/restart/detached recovery
-→ local/live runtime proof using exact artifacts
+→ LIVE_RUNTIME using exact artifacts and the changed lifecycle path
 
 presentation-only behavior
 → lazybuilder-ui proof lane
 ```
 
-A green compile does not prove Windows process recovery or installer behavior.
+`PACKAGE_SMOKE` is not `NATIVE_ACCEPTANCE`. A green compile or package build does not prove Windows process recovery, user-visible shell identity, or updater restart behavior. A Paper boot proves only startup unless the changed lifecycle path is exercised.
 
 ## Handoff / exit contract
 
