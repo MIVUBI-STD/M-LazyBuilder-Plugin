@@ -113,6 +113,12 @@
       "markers": ["recover_stale_ingress", "INGRESS_FILE_PREFIX"]
     },
     {
+      "id": "server-config-crash-during-metadata-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/server_config.rs",
+      "markers": ["recover_atomic_file", "write_staging_file", "sync_all", "json.previous"],
+      "testMarkers": ["interrupted_publish_prefers_previous_committed_config", "staging_config_recovers_when_no_committed_copy_exists"]
+    },
+    {
       "id": "second-launcher-instance",
       "owner": "apps/launcher/src-tauri/src/engine/app_instance.rs",
       "markers": ["launcher-instance.json", "process_start_time", "instance_owner_is_alive"]
