@@ -109,11 +109,16 @@ def main() -> int:
         "ensure_regular_metadata_file",
         "FILE_ATTRIBUTE_REPARSE_POINT",
         "ambiguous {label} recovery staging files",
+        "pub fn manifest(root: &Path)",
+        "pub fn update_paper_build(root: &Path",
+        "pub fn update_core_versions(root: &Path",
+        "validate_manifest(&manifest)?;",
         "workspace_metadata_recovery_prefers_previous_committed_copy",
         "workspace_metadata_recovery_supports_legacy_tmp_staging",
         "workspace_metadata_recovery_preserves_ambiguous_staging",
         "workspace_metadata_preserves_recovery_evidence_until_validation",
-        "let workspace_created = match read_manifest(&root)?",
+        "workspace_manifest_semantic_validation_preserves_recovery_evidence",
+        "let workspace_created = manifest(&root)",
     )
 
     require(
