@@ -35,10 +35,12 @@ public final class UtilityManagerClient implements ClientModInitializer {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
         LOGGER.info(
-                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
+                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, chatSearch={}, chatTimestamps={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
                 preferences.reconnectButton(),
                 preferences.keepChatDraft(),
                 preferences.extendedChatHistory(),
+                preferences.chatSearch(),
+                preferences.chatTimestamps(),
                 preferences.borderlessWindow(),
                 preferences.contextualScreenshotNames(),
                 preferences.instantCreativeSearch(),
