@@ -15,6 +15,11 @@
   let error = '';
   let notice = '';
   let busy = false;
+  let runtimePollInFlight = false;
+
+  const ACTIVE_RUNTIME_STATES = new Set<ServerState>(['Starting', 'Online', 'Stopping', 'Detached']);
+  const ACTIVE_RUNTIME_POLL_MS = 3000;
+  const IDLE_RUNTIME_POLL_MS = 15000;
 
   function friendlyError(value: unknown) { return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.'; }
   function category(message: string) {
@@ -39,7 +44,12 @@
   async function refreshRuntime() { snapshot = await runtimeProduct.server.snapshot(); }
   async function refreshPreflight() { preflight = await runtimeProduct.server.preflight(); }
   async function refreshAll() { try { await Promise.all([refreshRuntime(), refreshPreflight()]); error = ''; } catch (e) { error = friendlyError(e); } }
-  async function pollRuntime() { try { await refreshRuntime(); } catch (e) { if (!error) error = friendlyError(e); } }
+  async function pollRuntime() {
+    if (runtimePollInFlight) return;
+    runtimePollInFlight = true;
+    try { await refreshRuntime(); } catch (e) { if (!error) error = friendlyError(e); }
+    finally { runtimePollInFlight = false; }
+  }
   async function action(run: () => Promise<void>) {
     if (busy) return; busy = true; notice = ''; error = '';
     try { await run(); await refreshAll(); }
@@ -58,7 +68,46 @@
     try { logTail = await runtimeProduct.server.logTail(snapshot.logPath || ''); logOpen = true; }
     catch (e) { error = friendlyError(e); } finally { logBusy = false; }
   }
-  onMount(() => { void refreshAll(); const timer = window.setInterval(() => void pollRuntime(), 5000); return () => window.clearInterval(timer); });
+  onMount(() => {
+    let disposed = false;
+    let timer: number | null = null;
+
+    const schedule = () => {
+      if (disposed || document.hidden) return;
+      const delay = ACTIVE_RUNTIME_STATES.has(snapshot.state) ? ACTIVE_RUNTIME_POLL_MS : IDLE_RUNTIME_POLL_MS;
+      timer = window.setTimeout(async () => {
+        timer = null;
+        if (disposed || document.hidden) return;
+        await pollRuntime();
+        schedule();
+      }, delay);
+    };
+
+    const refreshNow = () => {
+      if (disposed || document.hidden) return;
+      if (timer !== null) { window.clearTimeout(timer); timer = null; }
+      void pollRuntime().finally(schedule);
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (timer !== null) { window.clearTimeout(timer); timer = null; }
+        return;
+      }
+      refreshNow();
+    };
+
+    void refreshAll().finally(schedule);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', refreshNow);
+
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', refreshNow);
+    };
+  });
   const gb = (bytes: number) => bytes / 1024 / 1024 / 1024;
 </script>
 
