@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { DiagnosticSummary, ServerResourceProfile } from '../app/bridge/runtimeApi';
 
   const emptyProfile: ServerResourceProfile = {
@@ -18,7 +21,7 @@
   let savedRamMb = 1024;
   let loaded = false;
   let busy = false;
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let message = '';
 
   const gb = (mb: number) => mb / 1024;
@@ -33,13 +36,16 @@
   }
 
   async function load() {
-    error = '';
+    error = null;
     const [profileResult, diagnosticsResult] = await Promise.allSettled([
       runtimeProduct.server.resources(),
       runtimeProduct.diagnostics.summary()
     ]);
     if (profileResult.status === 'fulfilled') syncFromProfile(profileResult.value);
-    else { loaded = false; error = friendlyError(profileResult.reason); }
+    else {
+      loaded = false;
+      error = presentRuntimeError(profileResult.reason, 'Could not load server memory settings.');
+    }
     diagnostics = diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : null;
   }
 
@@ -51,18 +57,17 @@
 
   async function save() {
     if (busy || !dirty()) return;
-    busy = true; error = ''; message = '';
+    busy = true; error = null; message = '';
     try {
       const next = await runtimeProduct.server.saveResources({ maxMemoryMb: ramMb });
       syncFromProfile(next);
       diagnostics = await runtimeProduct.diagnostics.summary().catch(() => diagnostics);
       message = 'Saved. Memory changes apply the next time the server starts.';
-    } catch (e) { error = friendlyError(e); }
-    finally { busy = false; }
-  }
-
-  function friendlyError(value: unknown) {
-    return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
+    } catch (value) {
+      error = presentRuntimeError(value, 'Could not save server memory settings.');
+    } finally {
+      busy = false;
+    }
   }
 
   onMount(() => void load());
@@ -71,7 +76,7 @@
 <section class="settings-page">
   <header class="page-head"><div><h2>Settings</h2><p>Set the maximum memory available to this server.</p></div></header>
 
-  {#if error}<div class="notice error" role="alert"><strong>Settings unavailable</strong><span>{error}</span></div>{/if}
+  <RuntimeErrorNotice {error} />
   {#if message}<div class="notice success" aria-live="polite">{message}</div>{/if}
 
   <section class="settings-group">
@@ -114,7 +119,7 @@
 </section>
 
 <style>
-  .settings-page{width:min(920px,100%)}.page-head{margin-bottom:18px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.notice{display:grid;gap:3px;margin-bottom:12px;padding:10px 12px;border-radius:8px;font-size:11px}.notice.error{border:1px solid #713940;background:var(--danger-bg);color:#ffdadd}.notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#a8e5b8}
+  .settings-page{width:min(920px,100%)}.page-head{margin-bottom:18px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.notice{display:grid;gap:3px;margin-bottom:12px;padding:10px 12px;border-radius:8px;font-size:11px}.notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#a8e5b8}
   .settings-group{display:grid;grid-template-columns:180px minmax(0,1fr);gap:28px;padding:20px 0}.group-copy h3{margin:0;font-size:12px}.group-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}.group-content{min-width:0;display:grid;gap:10px}
   .recommendation{width:100%;min-height:66px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface);color:var(--text);text-align:left;cursor:pointer}.recommendation:hover:not(:disabled){background:var(--surface-2)}.recommendation.selected{border-color:var(--accent-border);background:var(--accent-soft)}.recommendation>div{display:grid;gap:2px}.recommendation strong{font-size:12px}.recommendation small{color:var(--muted);font-size:10px}.recommendation>span{font-size:12px;font-weight:750;color:var(--text-soft)}
   .memory-control{padding:13px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.memory-head{display:flex;justify-content:space-between;align-items:flex-end;gap:18px}.memory-head>div{display:grid;gap:2px}.memory-head span,.memory-head small{color:var(--muted);font-size:10px}.memory-head strong{font-size:18px}input[type='range']{width:100%;min-height:auto;margin:16px 0 4px;padding:0;border:0;background:transparent;accent-color:var(--accent)}.range-labels{display:flex;justify-content:space-between;color:var(--muted-2);font-size:9px}
