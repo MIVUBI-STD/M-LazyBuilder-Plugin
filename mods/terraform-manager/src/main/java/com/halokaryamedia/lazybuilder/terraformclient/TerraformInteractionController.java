@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.terraform.*;
 import com.halokaryamedia.lazybuilder.terraform.wire.TerraformWireProtocol;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 
@@ -42,8 +43,9 @@ public final class TerraformInteractionController {
         TerraformClientNetworking.send(request);RAW_PATH.clear();pathRevision++;
     }
     public static void cancelStroke(){drawing=false;RAW_PATH.clear();pathRevision++;}
-    public static void flipFace(){if(active()){TerraformManagerClient.state().flipFace();lockedFront=lockedFront.multiply(-1.0);pathRevision++;}}
-    public static void adjustWheel(double vertical,boolean shift){if(!active()||vertical==0)return;double delta=Math.copySign(shift?2.0:1.0,vertical);if(shift)TerraformManagerClient.state().adjustHeight(delta);else TerraformManagerClient.state().adjustSize(delta);pathRevision++;}
+    public static void resetRuntime(){drawing=false;RAW_PATH.clear();lastOperationId=null;lastStateRevision=-1;pathRevision++;}
+    public static void flipFace(){if(active()){TerraformManagerClient.state().flipFace();lockedFront=lockedFront.multiply(-1.0);pathRevision++;showToolStatus("Face flipped");}}
+    public static void adjustWheel(double vertical,boolean shift){if(!active()||vertical==0)return;double delta=Math.copySign(shift?2.0:1.0,vertical);if(shift)TerraformManagerClient.state().adjustHeight(delta);else TerraformManagerClient.state().adjustSize(delta);pathRevision++;showToolStatus(null);}
     public static void undo(){if(lastOperationId!=null)TerraformClientNetworking.send(new TerraformWireProtocol.Undo(UUID.randomUUID().toString()));}
 
     static List<Vec3d> previewPoints(){
@@ -81,7 +83,11 @@ public final class TerraformInteractionController {
         HitResult target=client.crosshairTarget;if(!(target instanceof BlockHitResult hit)||target.getType()!=HitResult.Type.BLOCK)return null;
         net.minecraft.util.math.Vec3d p=hit.getPos();return new Vec3d(p.x,p.y,p.z);
     }
-    private static Vec3d resolveFront(MinecraftClient client){
-        return TerrainContextResolver.resolveFront(client, TerraformManagerClient.state().faceFlipped());
+    private static Vec3d resolveFront(MinecraftClient client){return TerrainContextResolver.resolveFront(client, TerraformManagerClient.state().faceFlipped());}
+    private static void showToolStatus(String prefix){
+        MinecraftClient client=MinecraftClient.getInstance();if(client.player==null)return;TerraformEditorState s=TerraformManagerClient.state();
+        String status=(prefix==null?"":prefix+"  ·  ")+pretty(s.tool().name())+"  Size "+(int)s.size()+"  Height "+(int)s.height()+"  "+pretty(s.variation().name());
+        client.player.sendMessage(Text.literal(status),true);
     }
+    private static String pretty(String value){String v=value.toLowerCase();return Character.toUpperCase(v.charAt(0))+v.substring(1);}
 }
