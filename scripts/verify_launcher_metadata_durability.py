@@ -18,6 +18,7 @@ def require(path: Path, *markers: str) -> None:
 
 def main() -> int:
     server_config = RUST / "server_config.rs"
+    launcher_settings = RUST / "launcher_settings.rs"
     workspace_registry = RUST / "workspace_registry.rs"
 
     require(
@@ -32,6 +33,20 @@ def main() -> int:
         "FILE_ATTRIBUTE_REPARSE_POINT",
         "interrupted_publish_prefers_previous_committed_config",
         "staging_config_recovers_when_no_committed_copy_exists",
+    )
+
+    require(
+        launcher_settings,
+        "recover_atomic_file(&path)?",
+        "write_staging_file",
+        "create_new(true)",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.tmp")',
+        "ensure_regular_metadata_file",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "interrupted_settings_publish_prefers_previous_committed_copy",
+        "settings_staging_recovers_when_no_committed_copy_exists",
     )
 
     require(
