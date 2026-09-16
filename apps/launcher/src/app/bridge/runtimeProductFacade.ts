@@ -1,8 +1,6 @@
 import { runtimeApi } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
-import { runtimeServerStatus } from './runtimeServerStatus';
-import type { ServerBackupEstimate, ServerBackupSummary } from './runtimeApi';
-import type { ServerRuntimeSummary } from './runtimeServerStatus';
+import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary } from './runtimeApi';
 
 const previewBackup: ServerBackupSummary = {
   id: 'backup-1788400100000-1000',
@@ -15,13 +13,7 @@ const previewBackup: ServerBackupSummary = {
 
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
-const productionRuntimeProduct = {
-  ...runtimeApi,
-  server: {
-    ...runtimeApi.server,
-    ...runtimeServerStatus
-  }
-};
+const productionRuntimeProduct = runtimeApi;
 
 const previewRuntimeProduct = {
   ...runtimePreviewProduct,
