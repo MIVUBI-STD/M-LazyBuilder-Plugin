@@ -139,22 +139,27 @@ name requested lifecycle result
 
 ## Proof matrix
 
+Use the canonical proof vocabulary from `development-discipline.md`.
+
 ```text
 identity / metadata / dependency / compatibility rule
-→ focused unit/source-contract test
+→ EXECUTED_SOURCE
 
 mutation ordering / rollback / duplicate resolution
-→ filesystem fixture or focused integration test
+→ INTEGRATION_FIXTURE
 
-compile/package compatibility
-→ repository build/artifact proof
+JAR build/package structure or compile compatibility
+→ EXECUTED_SOURCE
+→ add PACKAGE_SMOKE only when artifact identity/contents are part of acceptance
 
-Paper discovery/load/enable behavior
-→ LIVE_SERVER using exact tested JAR/runtime
+Paper discovery/load/enable/restart behavior
+→ LIVE_RUNTIME using the exact tested JAR/runtime and the changed lifecycle path
 
 visual/list/detail/action state only
 → lazybuilder-ui proof lane
 ```
+
+A built JAR does not prove Paper discovery or enable behavior. A server restart does not prove the plugin path unless the exact mutation/load state is exercised. `PACKAGE_SMOKE` must not be reported as `LIVE_RUNTIME`.
 
 ## Handoff / exit contract
 
