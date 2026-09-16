@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
@@ -156,8 +157,15 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
         final WorldExportService.ExportTask task;
         try {
+            String activeDimension = vanillaDimensionId(player.getWorld().getEnvironment());
+            if (activeDimension == null) {
+                throw new IllegalArgumentException("Selected Area export does not support this custom dimension");
+            }
+            if (!activeDimension.equals(request.dimensionId())) {
+                throw new IllegalArgumentException("Selected Area dimension changed; reopen the map and select the area again");
+            }
             WorldAreaSelection area = WorldAreaSelection.ofCorners(
-                    request.x1(), request.z1(), request.x2(), request.z2());
+                    activeDimension, request.x1(), request.z1(), request.x2(), request.z2());
             WorldExportOptions options = ExportSettingsMapper.toOptions(request.settings());
             task = exportService.prepareArea(
                     request.worldId(), request.targetFormat(), request.artifactName(), area, options);
@@ -285,5 +293,14 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
         player.sendPluginMessage(plugin, CHANNEL, payload);
+    }
+
+    private static String vanillaDimensionId(World.Environment environment) {
+        return switch (environment) {
+            case NORMAL -> "minecraft:overworld";
+            case NETHER -> "minecraft:the_nether";
+            case THE_END -> "minecraft:the_end";
+            case CUSTOM -> null;
+        };
     }
 }
