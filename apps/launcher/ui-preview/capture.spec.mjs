@@ -89,6 +89,19 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
   await expect(page.getByText('Accept the Minecraft EULA', { exact: true })).toBeVisible();
   await capture(page, '07-server-setup-required.png');
 
+  const runtimeStates = [
+    ['starting', 'Starting', '08-overview-starting.png'],
+    ['stopping', 'Stopping', '09-overview-stopping.png'],
+    ['detached', 'Running externally', '10-overview-detached.png'],
+    ['crashed', 'Crashed', '11-overview-crashed.png']
+  ];
+  for (const [preview, label, fileName] of runtimeStates) {
+    await open(page, `?preview=${preview}&page=Overview`);
+    await expect(heading(page, 'Overview')).toBeVisible();
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    await capture(page, fileName);
+  }
+
   const manifest = {
     generatedAt: new Date().toISOString(),
     source: 'real Svelte launcher UI with deterministic visual-preview runtime',
@@ -101,7 +114,11 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
       '04-plugins.png',
       '05-settings.png',
       '06-client-setup.png',
-      '07-server-setup-required.png'
+      '07-server-setup-required.png',
+      '08-overview-starting.png',
+      '09-overview-stopping.png',
+      '10-overview-detached.png',
+      '11-overview-crashed.png'
     ]
   };
   await fs.writeFile(path.join(outputDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
