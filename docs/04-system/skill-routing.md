@@ -60,6 +60,64 @@ plugin dependency/compatibility truth  → plugin-management, not ui
 runtime/world/plugin truth shown in UI → semantic owner first; ui only presents it
 ```
 
+## Activation and discovery cues
+
+Natural-language wording is a **candidate trigger**, never final ownership proof. Use these cues to shortlist one Skill, then confirm with the first separating evidence.
+
+```text
+lazybuilder-desktop-runtime
+candidate cues:
+"server won't start", "launcher stuck", "workspace missing", "Paper/Java not provisioned",
+"restart/recovery", "readiness/health wrong", "backup/restore runtime", "settings not persisted",
+"NSIS/update/Windows identity", "long operation stuck", "desktop HTTP/auth"
+reject when:
+canonical runtime result is already correct and only presentation is wrong;
+issue is Paper world semantics, third-party plugin lifecycle, or neutral Paper↔Fabric wire meaning
+
+lazybuilder-plugin-management
+candidate cues:
+"plugin missing", "plugin duplicated", "wrong plugin version", "dependency missing",
+"plugin incompatible", "install/update/remove failed", "enable/disable", "restart required",
+"plugin JAR rollback"
+reject when:
+artifact is bundled LazyBuilder core; issue is only list/warning layout/copy;
+issue is world behavior or shared protocol
+
+lazybuilder-world-management
+candidate cues:
+"world won't load/teleport", "archive/restore world", "duplicate/delete world",
+"world import/export", "InspectImport", "conversion failed", "world registry wrong",
+"ACTIVE/ARCHIVED", "world filesystem/publish", "idle unload"
+reject when:
+issue is server process/provisioning, UI-only world screen behavior,
+neutral Paper↔Fabric payload meaning, or third-party plugin lifecycle
+
+lazybuilder-ui
+candidate cues:
+"button doesn't respond", "double submit", "stale screen", "wrong loading/error state",
+"back/close broken", "focus/keybind issue", "layout overflow", "GUI scale",
+"accessibility", "visual mismatch", "progress bar wrong", "map flicker/reset"
+reject when:
+canonical runtime/plugin/world/protocol result itself is wrong
+
+lazybuilder-protocol
+candidate cues:
+"client/server payload mismatch", "request/result shape wrong", "field/default mismatch",
+"validation/bounds", "identifier mismatch", "capability advertisement", "protocol version",
+"World Control", "Map Action", "transfer framing/chunk/order"
+reject when:
+only two modules are involved but shared wire meaning is unchanged;
+issue is desktop HTTP/Tauri IPC, Paper domain behavior, or presentation
+```
+
+Rules:
+
+- cue matching may nominate a Skill; it must not bypass the owner-selection rule below;
+- negative/rejection cues outrank superficial keyword matches;
+- feature names such as `Import`, `Teleport`, `Plugin`, `Map`, `Restart`, or `Update` are insufficient by themselves;
+- if two Skills remain plausible, gather one separating observation before loading either deeply;
+- ChatGPT and Codex use the same cues and rejection rules.
+
 ## Owner selection rule
 
 A symptom is not an owner. Choose the first wrong semantic boundary using the smallest separating evidence.
