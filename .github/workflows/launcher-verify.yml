@@ -49,6 +49,8 @@ jobs:
         run: python scripts/verify_launcher_hardening_contract.py
       - name: Verify Launcher cross-runtime compatibility contract
         run: python scripts/verify_compatibility.py
+      - name: Verify Launcher data preservation contract
+        run: python scripts/verify_launcher_data_preservation_contract.py
       - name: Verify updater tooling without signing secrets
         shell: bash
         run: |
@@ -58,7 +60,8 @@ jobs:
             scripts/verify_launcher_update_manifest.py \
             scripts/set_launcher_version.py \
             scripts/verify_launcher_hardening_contract.py \
-            scripts/verify_compatibility.py
+            scripts/verify_compatibility.py \
+            scripts/verify_launcher_data_preservation_contract.py
           mkdir -p .artifacts/updater-contract
           printf '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' > .artifacts/updater-contract/example.sig
           VERSION=$(python - <<'PY'
