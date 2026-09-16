@@ -1,8 +1,7 @@
 use crate::engine::{core_modules, paper_provider, workspace_registry};
 use serde::Serialize;
-use serde_json::Value;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,9 +59,9 @@ where
     on_stage(
         "workspace-metadata",
         "Updating Paper metadata",
-        "Recording the published Paper build in the LazyBuilder workspace manifest.",
+        "Recording the published Paper build through the canonical workspace manifest owner.",
     );
-    if let Err(manifest_error) = update_manifest_field(&workspace, "paperBuild", Value::from(release.build)) {
+    if let Err(manifest_error) = workspace_registry::update_paper_build(&workspace, release.build) {
         on_stage(
             "rollback",
             "Rolling back Paper update",
@@ -92,11 +91,11 @@ pub fn ensure_core_current(resource_dir: Option<&Path>) -> Result<(), String> {
     let workspace = workspace_registry::active_workspace()?;
     let transaction = core_modules::begin_sync(&workspace, resource_dir)?;
 
-    let mut manifest = read_manifest(&workspace)?;
-    manifest["worldManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
-    manifest["utilitiesManagerVersion"] = Value::String(core_modules::CORE_VERSION.into());
-
-    if let Err(manifest_error) = write_json_atomic(&manifest_path(&workspace), &manifest) {
+    if let Err(manifest_error) = workspace_registry::update_core_versions(
+        &workspace,
+        core_modules::CORE_VERSION,
+        core_modules::CORE_VERSION,
+    ) {
         return match transaction.rollback() {
             Ok(()) => Err(format!(
                 "Core metadata update failed and core JARs were rolled back: {manifest_error}"
@@ -116,8 +115,8 @@ fn status_with_release(
     workspace: &Path,
     release: &paper_provider::PaperRelease,
 ) -> Result<RuntimeUpdateStatus, String> {
-    let manifest = read_manifest(workspace)?;
-    let current_paper = manifest.get("paperBuild").and_then(Value::as_u64);
+    let manifest = workspace_registry::manifest(workspace)?;
+    let current_paper = manifest.paper_build.map(u64::from);
     Ok(RuntimeUpdateStatus {
         current_paper_build: current_paper,
         latest_paper_build: release.build,
@@ -136,53 +135,6 @@ fn rollback_paper(target: &Path, backup: &Path, had_target: bool) -> Result<(), 
         fs::copy(backup, target).map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-fn read_manifest(workspace: &Path) -> Result<Value, String> {
-    let path = manifest_path(workspace);
-    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&text).map_err(|e| e.to_string())
-}
-
-fn update_manifest_field(workspace: &Path, key: &str, value: Value) -> Result<(), String> {
-    let path = manifest_path(workspace);
-    let mut manifest = read_manifest(workspace)?;
-    manifest[key] = value;
-    write_json_atomic(&path, &manifest)
-}
-
-fn manifest_path(workspace: &Path) -> PathBuf {
-    workspace
-        .join("tools")
-        .join("lazybuilder")
-        .join("config")
-        .join("workspace.json")
-}
-
-fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
-    let temporary = PathBuf::from(format!("{}.tmp", path.display()));
-    let backup = PathBuf::from(format!("{}.previous", path.display()));
-    fs::write(
-        &temporary,
-        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    if path.exists() {
-        let _ = fs::remove_file(&backup);
-        fs::rename(path, &backup).map_err(|e| e.to_string())?;
-        match fs::rename(&temporary, path) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = fs::rename(&backup, path);
-                Err(error.to_string())
-            }
-        }
-    } else {
-        fs::rename(temporary, path).map_err(|e| e.to_string())
-    }
 }
 
 #[cfg(test)]
