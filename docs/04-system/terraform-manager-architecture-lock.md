@@ -21,22 +21,37 @@ Material/coloring is intentionally outside this milestone.
 - Esc cancels the active stroke.
 - Ctrl+Z requests operation undo.
 - Preview uses the same platform-neutral shape reconstruction path as the Paper executor.
+- Hover preview must invalidate when the cursor target changes; it may not remain pinned to a stale block.
 
 ## Geometry pipeline
 
 ```text
 user intent
+-> bounded local terrain context
 -> cleaned path / footprint
 -> stable local frames
 -> macro form
 -> meso landform events
 -> bounded micro deformation
+-> rooted terrain transition
 -> existing-world union by additive occupancy
 -> voxel occupancy
 -> bounded block queue
 ```
 
 Noise is deformation/detail, never the primary macro generator.
+
+## Terrain-context / blending lock
+
+- Context sampling is local and bounded around the cursor; no whole-world terrain scan is permitted.
+- Horizontal block-face normals are valid direct orientation hints.
+- For top-facing hits on slopes, the client estimates a smoothed downhill horizontal direction from nearby surface heights.
+- Flat/ambiguous terrain falls back to projected player view direction.
+- Orientation is locked when a stroke begins so the preview cannot flip during one gesture.
+- Cliff, Ridge, and Mountain fields extend a bounded root below the sampled surface so generated mass embeds into existing ground instead of sitting on top as a detached shell.
+- Root cross-section narrows with depth, preserving the visible landform while reducing seams beneath the existing surface.
+- Server composition remains additive for this geometry milestone: existing non-air blocks are preserved and generated occupancy fills only air.
+- Client preview shows only prospective air-to-solid additions. Existing occupied blocks inside the field are treated as already-unioned terrain and are not outlined as new work.
 
 ## Tool grammar
 
@@ -48,6 +63,7 @@ Noise is deformation/detail, never the primary macro generator.
 - base flare
 - sparse ledges, shoulders and recesses
 - continuous path with no visible segment seams
+- bounded rooted transition below the sampled terrain surface
 
 ### Ridge
 
@@ -56,6 +72,7 @@ Noise is deformation/detail, never the primary macro generator.
 - broad shoulders and two slopes
 - sparse erosion-like cuts
 - tapered endpoints
+- rooted shoulder transition into existing terrain
 
 ### Mountain
 
@@ -64,6 +81,7 @@ Noise is deformation/detail, never the primary macro generator.
 - secondary ridge branches
 - controlled valley cuts
 - macro asymmetry with bounded surface breakup
+- narrowed subsurface root for footprint attachment
 
 ## Ownership
 
@@ -85,6 +103,8 @@ No Terraform implementation belongs in Utility Manager or World Manager. Shared 
 - undo stores original BlockData rather than assuming generated material
 - no whole-world scans
 - no unbounded per-frame shape generation
+- context sampling remains bounded to a small neighborhood
+- large preview fields use reduced sampling density
 
 ## Deferred until after geometry milestone
 
