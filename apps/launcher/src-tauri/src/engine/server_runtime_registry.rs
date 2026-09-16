@@ -1,4 +1,5 @@
 use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_process_guard;
 use crate::engine::workspace_registry::{self, WorkspaceEntry};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -88,6 +89,20 @@ impl ServerRuntimeRegistry {
                 paper_port,
             });
         }
+
+        for detached in server_process_guard::running_registered_papers()? {
+            if summaries.iter().any(|entry| entry.workspace_id == detached.workspace_id) {
+                continue;
+            }
+            summaries.push(ServerRuntimeSummary {
+                workspace_id: detached.workspace_id,
+                workspace_name: detached.workspace_name,
+                state: "Detached".into(),
+                pid: Some(detached.pid),
+                paper_port: None,
+            });
+        }
+
         Ok(summaries)
     }
 
