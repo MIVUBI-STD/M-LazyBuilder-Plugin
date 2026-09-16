@@ -7,6 +7,8 @@ description: Own neutral shared Paper/Fabric contracts under shared/protocol: re
 
 Own neutral Paper↔Fabric wire semantics only. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; networking/product boundaries come from `docs/04-system/networking.md`; cross-owner handoff comes from `docs/04-system/skill-routing.md`.
 
+This Skill is consumer-neutral: ChatGPT and Codex use the same wire-contract reasoning. Adapt only execution mechanics to available tools; if a live round trip cannot be exercised, preserve that `LIVE_RUNTIME` residue explicitly rather than inferring it from source/build evidence.
+
 ## Entry gate
 
 Use this Skill only when a decision must be shared neutrally between Paper and Fabric:
@@ -124,7 +126,7 @@ name exact caller-visible contract
 → smallest payload/semantic change
 → change version only if compatibility requires it
 → update direct adapters lockstep
-→ focused contract proof
+→ focused contract proof available in the current context
 → typed handoff if ownership changes
 → STOP
 ```
@@ -173,4 +175,4 @@ adapter drift
 
 Desktop HTTP remains outside this chain.
 
-Finish when one neutral shared definition exists, producer/consumer agree, version/default/bounds/capability semantics are explicit, and matching proof covers the changed contract. Stop before second protocol namespaces, transports, generic compatibility frameworks, or speculative payloads.
+Finish when one neutral shared definition exists, producer/consumer agree, version/default/bounds/capability semantics are explicit, and matching proof covers the changed contract at the available context ceiling. Stop before second protocol namespaces, transports, generic compatibility frameworks, or speculative payloads.
