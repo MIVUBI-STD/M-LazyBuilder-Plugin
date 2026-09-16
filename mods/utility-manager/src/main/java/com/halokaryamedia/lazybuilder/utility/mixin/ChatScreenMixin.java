@@ -4,7 +4,11 @@ import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatHistoryEntry;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatSearchSession;
+import com.halokaryamedia.lazybuilder.utility.chat.ChatVisibleText;
+import com.halokaryamedia.lazybuilder.utility.clipboard.UtilityClipboard;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.hud.ChatHud;
+import net.minecraft.client.gui.hud.ChatHudLine;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -17,10 +21,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.List;
+
 /**
- * Keeps an unsent vanilla chat draft and adds a small native Ctrl+F search overlay.
- * The vanilla chat screen remains authoritative; this mixin only adds bounded
- * session search behavior on top of it.
+ * Keeps an unsent vanilla chat draft and adds small native search/context overlays.
+ * The vanilla chat screen remains authoritative.
  */
 @Mixin(ChatScreen.class)
 public abstract class ChatScreenMixin extends Screen {
@@ -28,6 +33,8 @@ public abstract class ChatScreenMixin extends Screen {
     private static final int SEARCH_HEIGHT = 18;
     private static final int SEARCH_MARGIN = 6;
     private static final int SEARCH_COUNTER_WIDTH = 42;
+    private static final int CONTEXT_WIDTH = 110;
+    private static final int CONTEXT_HEIGHT = 18;
 
     @Shadow
     protected TextFieldWidget chatField;
@@ -38,6 +45,10 @@ public abstract class ChatScreenMixin extends Screen {
     private ChatSearchSession lazybuilder$searchSession;
     private int lazybuilder$searchX;
     private int lazybuilder$searchY;
+    private boolean lazybuilder$contextOpen;
+    private int lazybuilder$contextX;
+    private int lazybuilder$contextY;
+    private String lazybuilder$contextMessage = "";
 
     protected ChatScreenMixin(Text title) {
         super(title);
@@ -78,15 +89,22 @@ public abstract class ChatScreenMixin extends Screen {
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
-    private void lazybuilder$handleSearchKeys(
+    private void lazybuilder$handleUtilityKeys(
             int keyCode,
             int scanCode,
             int modifiers,
             CallbackInfoReturnable<Boolean> cir
     ) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && this.lazybuilder$contextOpen) {
+            this.lazybuilder$closeContextMenu();
+            cir.setReturnValue(true);
+            return;
+        }
+
         if (!UtilityManagerClient.preferences().chatSearch()) return;
 
         if (Screen.hasControlDown() && keyCode == GLFW.GLFW_KEY_F) {
+            this.lazybuilder$closeContextMenu();
             if (this.lazybuilder$searchOpen) {
                 this.lazybuilder$closeSearch();
             } else {
@@ -116,39 +134,97 @@ public abstract class ChatScreenMixin extends Screen {
         }
     }
 
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void lazybuilder$handleContextClick(
+            double mouseX,
+            double mouseY,
+            int button,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        if (this.lazybuilder$contextOpen) {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && mouseX >= this.lazybuilder$contextX
+                    && mouseX <= this.lazybuilder$contextX + CONTEXT_WIDTH
+                    && mouseY >= this.lazybuilder$contextY
+                    && mouseY <= this.lazybuilder$contextY + CONTEXT_HEIGHT) {
+                UtilityClipboard.copy(this.lazybuilder$contextMessage, "Chat message copied.");
+                this.lazybuilder$closeContextMenu();
+                cir.setReturnValue(true);
+                return;
+            }
+            this.lazybuilder$closeContextMenu();
+        }
+
+        if (button != GLFW.GLFW_MOUSE_BUTTON_RIGHT || this.client == null || this.client.inGameHud == null) return;
+
+        ChatHud chatHud = this.client.inGameHud.getChatHud();
+        ChatHudAccessor accessor = (ChatHudAccessor) chatHud;
+        double chatX = accessor.lazybuilder$toChatLineX(mouseX);
+        double chatY = accessor.lazybuilder$toChatLineY(mouseY);
+        int messageIndex = accessor.lazybuilder$getMessageIndex(chatX, chatY);
+        List<ChatHudLine> messages = accessor.lazybuilder$getMessages();
+        if (messageIndex < 0 || messageIndex >= messages.size()) return;
+
+        String text = ChatVisibleText.withoutTimestamp(messages.get(messageIndex).content().getString()).trim();
+        if (text.isEmpty()) return;
+
+        this.lazybuilder$contextMessage = text;
+        this.lazybuilder$contextX = Math.max(SEARCH_MARGIN, Math.min((int) mouseX, this.width - CONTEXT_WIDTH - SEARCH_MARGIN));
+        this.lazybuilder$contextY = Math.max(SEARCH_MARGIN, Math.min((int) mouseY, this.height - CONTEXT_HEIGHT - SEARCH_MARGIN));
+        this.lazybuilder$contextOpen = true;
+        cir.setReturnValue(true);
+    }
+
     @Inject(method = "render", at = @At("TAIL"))
-    private void lazybuilder$renderSearchOverlay(
+    private void lazybuilder$renderUtilityOverlays(
             DrawContext context,
             int mouseX,
             int mouseY,
             float delta,
             CallbackInfo ci
     ) {
-        if (!this.lazybuilder$searchOpen || this.lazybuilder$searchSession == null) return;
+        if (this.lazybuilder$searchOpen && this.lazybuilder$searchSession != null) {
+            String counter = this.lazybuilder$searchSession.selectedOrdinal()
+                    + " / "
+                    + this.lazybuilder$searchSession.matchCount();
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    counter,
+                    this.lazybuilder$searchX + SEARCH_WIDTH + SEARCH_MARGIN,
+                    this.lazybuilder$searchY + 5,
+                    0xA0A0A0
+            );
 
-        String counter = this.lazybuilder$searchSession.selectedOrdinal()
-                + " / "
-                + this.lazybuilder$searchSession.matchCount();
-        context.drawTextWithShadow(
-                this.textRenderer,
-                counter,
-                this.lazybuilder$searchX + SEARCH_WIDTH + SEARCH_MARGIN,
-                this.lazybuilder$searchY + 5,
-                0xA0A0A0
-        );
+            ChatHistoryEntry selected = this.lazybuilder$searchSession.selected();
+            if (selected != null) {
+                String preview = this.textRenderer.trimToWidth(selected.text(), SEARCH_WIDTH + SEARCH_COUNTER_WIDTH);
+                int previewY = Math.max(SEARCH_MARGIN, this.lazybuilder$searchY - 12);
+                context.drawTextWithShadow(
+                        this.textRenderer,
+                        preview,
+                        this.lazybuilder$searchX,
+                        previewY,
+                        0xD0D0D0
+                );
+            }
+        }
 
-        ChatHistoryEntry selected = this.lazybuilder$searchSession.selected();
-        if (selected == null) return;
-
-        String preview = this.textRenderer.trimToWidth(selected.text(), SEARCH_WIDTH + SEARCH_COUNTER_WIDTH);
-        int previewY = Math.max(SEARCH_MARGIN, this.lazybuilder$searchY - 12);
-        context.drawTextWithShadow(
-                this.textRenderer,
-                preview,
-                this.lazybuilder$searchX,
-                previewY,
-                0xD0D0D0
-        );
+        if (this.lazybuilder$contextOpen) {
+            context.fill(
+                    this.lazybuilder$contextX,
+                    this.lazybuilder$contextY,
+                    this.lazybuilder$contextX + CONTEXT_WIDTH,
+                    this.lazybuilder$contextY + CONTEXT_HEIGHT,
+                    0xD0101010
+            );
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    "Copy Message",
+                    this.lazybuilder$contextX + 6,
+                    this.lazybuilder$contextY + 5,
+                    0xFFFFFF
+            );
+        }
     }
 
     @Inject(method = "sendMessage", at = @At("HEAD"))
@@ -159,6 +235,7 @@ public abstract class ChatScreenMixin extends Screen {
 
     @Inject(method = "removed", at = @At("HEAD"))
     private void lazybuilder$saveDraft(CallbackInfo ci) {
+        this.lazybuilder$closeContextMenu();
         if (!UtilityManagerClient.preferences().keepChatDraft()) {
             ChatDraftState.clear();
             return;
@@ -197,5 +274,10 @@ public abstract class ChatScreenMixin extends Screen {
         if (this.chatField != null) this.chatField.setFocused(false);
         this.setFocused(this.lazybuilder$searchField);
         this.lazybuilder$searchField.setFocused(true);
+    }
+
+    private void lazybuilder$closeContextMenu() {
+        this.lazybuilder$contextOpen = false;
+        this.lazybuilder$contextMessage = "";
     }
 }
