@@ -10,11 +10,13 @@ LazyBuilder
 │   └── Client Setup
 ├── Paper Plugins
 │   ├── World Manager
-│   └── Utilities Manager
+│   ├── Utilities Manager
+│   └── Terraform Manager
 ├── Fabric Mods
 │   ├── Map Manager
 │   ├── Utility Manager
-│   └── Performance Manager
+│   ├── Performance Manager
+│   └── Terraform Manager
 └── Shared
     ├── Protocol
     └── Terraform Core
@@ -76,12 +78,14 @@ apps/
 
 plugins/
 ├── world-manager/              Paper world lifecycle/import-export authority
-└── utilities-manager/          Paper builder/server conveniences
+├── utilities-manager/          Paper builder/server conveniences
+└── terraform-manager/          Paper terrain-operation validation, queue/history and world-write authority
 
 mods/
 ├── map-manager/                Fabric world/map/transfer client
 ├── utility-manager/            Fabric passive client convenience
-└── performance-manager/        bounded Fabric client performance policy/diagnostics
+├── performance-manager/        bounded Fabric client performance policy/diagnostics
+└── terraform-manager/          standalone Fabric terrain editor/input/preview client
 
 shared/
 ├── protocol/                   neutral Paper/Fabric wire contracts
@@ -107,11 +111,13 @@ dist/Local/       canonical Local-channel distributables
 - `apps/launcher/` owns desktop presentation and desktop-native Server/Plugin/Client Setup management.
 - `plugins/` contains server-side Paper plugins only.
 - `mods/` contains Minecraft Fabric client mods only.
+- `plugins/terraform-manager/` is the only LazyBuilder Paper authority for Terraform world mutation; it must not depend on Axiom, ezEdits, WorldEdit/FAWE, or another Manager implementation package.
+- `mods/terraform-manager/` is the only LazyBuilder client owner for Terraform editor input and preview; its interaction may be familiar to Axiom users but remains an independent implementation.
 - `shared/protocol/` contains neutral Paper/Fabric wire contracts only.
 - `shared/terraform-core/` contains deterministic terrain geometry only and must not depend on Paper, Fabric, Minecraft rendering, protocol transport, materials, or world mutation.
-- External build/edit tools such as Vanilla, Axiom, and WorldEdit remain external specialist owners.
+- External build/edit tools such as Vanilla, Axiom, ezEdits, and WorldEdit remain external references/specialist owners and are not Terraform runtime dependencies.
 - One Manager produces one deployable artifact and does not import another Manager's implementation packages.
-- V1 Client Setup owns one coherent three-manager Fabric suite: Map Manager, Utility Manager, and Performance Manager.
+- V1 Client Setup currently owns the existing three-manager Fabric suite: Map Manager, Utility Manager, and Performance Manager. Terraform Manager remains a separate development artifact until its provisioning/package contract is explicitly added to Client Setup.
 - `toolchain.json` owns supported developer toolchain policy; Maven/Gradle remain repository-wrapper owned.
 
 ## Branch authority
