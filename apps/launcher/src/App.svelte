@@ -7,8 +7,10 @@
   import LauncherSettingsPage from './pages/LauncherSettings.svelte';
   import Client from './pages/Client.svelte';
   import Activity from './pages/Activity.svelte';
+  import ServerConsole from './components/ServerConsole.svelte';
   import { installLauncherCloseGuard } from './app/closeGuard';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
+  import { canOpenRuntimeConsole, canStopLibraryRuntime, stopLibraryRuntime } from './app/serverLibraryRuntimeActions';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, ServerRuntimeSummary, WorkspaceDuplicateEstimate, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
@@ -38,6 +40,9 @@
   let updatingPaper = false;
 
   let menuServerId: string | null = null;
+  let libraryConsoleWorkspaceId: string | null = null;
+  let libraryConsoleServerName = 'Server';
+  let libraryRuntimeBusyId: string | null = null;
   let managementServer: WorkspaceEntry | null = null;
   let managementMode: ManagementMode = null;
   let managementBusy = false;
@@ -212,6 +217,33 @@
       const message = friendlyError(error);
       if (message.toLowerCase().includes('currently unavailable')) beginLocate(server, message);
       else workspaceError = message;
+    }
+  }
+
+  function openLibraryConsole(server: WorkspaceEntry, runtime: ServerRuntimeSummary | null) {
+    if (!canOpenRuntimeConsole(runtime)) return;
+    menuServerId = null;
+    libraryConsoleWorkspaceId = server.id;
+    libraryConsoleServerName = server.name;
+  }
+
+  async function stopRuntimeFromLibrary(server: WorkspaceEntry, runtime: ServerRuntimeSummary | null) {
+    if (!canStopLibraryRuntime(runtime) || libraryRuntimeBusyId) return;
+    const detached = runtime?.state === 'Detached';
+    const message = detached
+      ? `Stop the externally running Paper process for ${server.name}?`
+      : `Stop ${server.name}?`;
+    if (!window.confirm(message)) return;
+    menuServerId = null;
+    libraryRuntimeBusyId = server.id;
+    workspaceError = '';
+    try {
+      await stopLibraryRuntime(server.id);
+      await loadServerRuntimes();
+    } catch (error) {
+      workspaceError = friendlyError(error);
+    } finally {
+      libraryRuntimeBusyId = null;
     }
   }
 
@@ -398,7 +430,7 @@
                   <div class="server-tile">
                     <button class="server-open" onclick={() => activateServer(server)}><div class="server-icon">{server.name.slice(0,1).toUpperCase()}</div><div class="server-tile-copy"><strong>{server.name}</strong>{#if runtime && runtimeTone(runtime)}<span class={`runtime-meta ${runtimeTone(runtime)}`}><i aria-hidden="true"></i>{runtimeMeta(runtime)}</span>{:else}<span title={server.path}>{formatLastOpened(server.lastOpenedUnixSeconds)}</span>{/if}</div><span class="open-chevron">›</span></button>
                     <div class="server-menu-wrap"><button class="server-menu-button" aria-label={`Manage ${server.name}`} aria-expanded={menuServerId === server.id} onclick={() => (menuServerId = menuServerId === server.id ? null : server.id)}>•••</button>
-                      {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => activateServer(server)}>Open</button><button onclick={() => openServerFolder(server)}>Open folder</button><button onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
+                      {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => activateServer(server)}>Open</button>{#if canOpenRuntimeConsole(runtime)}<button onclick={() => openLibraryConsole(server, runtime)}>Open console</button><button disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop server'}</button><div class="menu-divider"></div>{:else if runtime?.state === 'Detached'}<button class="danger-menu-item" disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop external server'}</button><div class="menu-divider"></div>{/if}<button onclick={() => openServerFolder(server)}>Open folder</button><button onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
                     </div>
                   </div>
                 {/each}
@@ -433,6 +465,13 @@
 
   {#if managementServer && managementMode === 'delete-confirm'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Confirm permanent deletion</h2><p>Type the server name exactly to continue.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="typed-confirmation"><code>{managementServer.name}</code><label>Server name<input bind:value={deleteTypedName} autocomplete="off" disabled={managementBusy} /></label></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={() => (managementMode = 'delete-review')}>Back</button><button class="danger-button" disabled={managementBusy || deleteTypedName !== managementServer.name} onclick={deleteServer}>{managementBusy ? 'Deleting…' : 'Delete permanently'}</button></div></div></div>{/if}
 {/if}
+
+<ServerConsole
+  open={libraryConsoleWorkspaceId !== null}
+  workspaceId={libraryConsoleWorkspaceId ?? undefined}
+  serverName={libraryConsoleServerName}
+  onClose={() => (libraryConsoleWorkspaceId = null)}
+/>
 
 <style>
   .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);background:var(--bg)}.loading-copy{display:grid;gap:1px}.loading-copy strong{color:var(--text)}.loading-copy span{font-size:12px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-weight:900}.brand-lockup{display:flex;align-items:center;gap:10px}.desktop-shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:100%;height:100vh;background:var(--bg)}.navigation{display:flex;flex-direction:column;padding:14px 11px;border-right:1px solid var(--border-soft);background:#0e1012}.navigation-brand{padding:2px 8px 16px}.navigation-spacer{flex:1}.navigation-footer{padding:10px 9px 2px;color:var(--muted-2);font-size:9px;text-transform:uppercase}.global-nav,.server-nav{display:grid;gap:3px}.global-nav button,.server-nav button{position:relative;min-height:40px;display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.global-nav button:hover,.server-nav button:hover{background:var(--surface);color:var(--text)}.global-nav button.active,.server-nav button.active{background:var(--surface-2);color:var(--text);font-weight:650}.global-nav button.active::before,.server-nav button.active::before{content:'';position:absolute;left:-5px;top:9px;bottom:9px;width:2px;background:var(--accent)}.nav-icon{width:19px;height:19px;display:grid;place-items:center}.nav-icon :global(svg){width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav-divider{height:1px;margin:14px 5px 11px;background:var(--border-soft)}.nav-server-card{display:flex;align-items:center;gap:10px;margin:0 2px 9px;padding:8px}.nav-server-card>div:last-child{min-width:0;display:grid}.nav-server-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.nav-server-card span{color:var(--muted-2);font-size:10px}.nav-server-icon{width:30px!important;height:30px!important;font-size:12px!important}
