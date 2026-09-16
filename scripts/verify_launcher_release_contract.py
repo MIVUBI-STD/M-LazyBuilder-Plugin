@@ -117,6 +117,9 @@ def main() -> None:
         "parents = @()",
         "unexpected root entries",
         "Published stable updater manifest bytes do not match",
+        "does not match requested version",
+        "Refusing to downgrade stable Launcher channel",
+        "$existingVersion -gt $requestedVersion",
     )
 
     forbidden_names = {"private.key", "updater.key", "tauri.key", "minisign.key"}
