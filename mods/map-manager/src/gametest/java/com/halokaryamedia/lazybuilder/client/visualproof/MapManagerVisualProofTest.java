@@ -139,7 +139,7 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 throw new IllegalStateException("Map visual proof screen is not open");
             }
             invokeExportWorkspace(screen, customArea);
-            if (expandAdvanced) expandAdvancedSections(screen);
+            if (expandAdvanced) expandWorldSettings(screen);
         });
         context.waitTicks(18);
         context.takeScreenshot(screenshotName);
@@ -274,17 +274,14 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         }
     }
 
-    private static void expandAdvancedSections(WorldMapScreen screen) {
+    private static void expandWorldSettings(WorldMapScreen screen) {
         try {
             Field stateField = WorldMapScreen.class.getDeclaredField("exportWorkspace");
             stateField.setAccessible(true);
             Object state = stateField.get(screen);
             Method worldSettings = state.getClass().getDeclaredMethod("toggleWorldSettings");
-            Method gameRules = state.getClass().getDeclaredMethod("toggleGameRules");
             worldSettings.setAccessible(true);
-            gameRules.setAccessible(true);
             worldSettings.invoke(state);
-            gameRules.invoke(state);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Could not expand production Export settings for visual proof", exception);
         }
