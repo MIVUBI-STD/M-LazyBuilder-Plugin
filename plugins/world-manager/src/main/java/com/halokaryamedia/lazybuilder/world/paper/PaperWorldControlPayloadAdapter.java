@@ -12,7 +12,6 @@ import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
-import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
@@ -55,17 +54,11 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final TransferSessionService transfers;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
-    /** At most one heavy result can be pending per player because heavyInFlight is single-flight. */
     private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
-    /** One inspected upload is owned by each player until import succeeds or the review is discarded. */
     private final Map<UUID, String> reviewedImportArtifacts = new ConcurrentHashMap<>();
-    /** Exact upload currently being inspected for each player. */
     private final Map<UUID, String> inspectionInFlight = new ConcurrentHashMap<>();
-    /** Once a player disconnects during inspection, that review stays abandoned even if they reconnect quickly. */
     private final Set<UUID> abandonedInspectionOwners = ConcurrentHashMap.newKeySet();
-    /** Reviewed uploads cannot be deleted while another heavy operation may still be reading them. */
     private final Set<UUID> discardReviewedAfterHeavy = ConcurrentHashMap.newKeySet();
-    /** Export capability bootstrap is global single-flight; all requesting players share the same refresh. */
     private final Set<UUID> formatWaiters = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean formatRefreshInFlight = new AtomicBoolean();
     private volatile boolean started;
@@ -115,11 +108,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
         abandonedInspectionOwners.addAll(inspectionInFlight.keySet());
         for (Map.Entry<UUID, String> entry : Map.copyOf(reviewedImportArtifacts).entrySet()) {
-            if (heavyInFlight.contains(entry.getKey())) {
-                discardReviewedAfterHeavy.add(entry.getKey());
-            } else {
-                discardReviewedArtifact(entry.getKey(), entry.getValue());
-            }
+            if (heavyInFlight.contains(entry.getKey())) discardReviewedAfterHeavy.add(entry.getKey());
+            else discardReviewedArtifact(entry.getKey(), entry.getValue());
         }
         for (Map.Entry<UUID, String> entry : Map.copyOf(inspectionInFlight).entrySet()) {
             discardInspectionResult(entry.getKey(), entry.getValue());
@@ -162,34 +152,13 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
-        if (request instanceof WorldControlWireProtocol.GetExportFormats) {
-            handleExportFormats(player);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.InspectImport inspect) {
-            handleInspectImport(player, inspect);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.DiscardImport discard) {
-            handleDiscardImport(player, discard);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) {
-            handleDuplicate(player, duplicate);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.DeleteWorld delete) {
-            handleDelete(player, delete);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.ExportWorld export) {
-            handleExport(player, export);
-            return;
-        }
-        if (request instanceof WorldControlWireProtocol.ImportWorld importWorld) {
-            handleImport(player, importWorld);
-            return;
-        }
+        if (request instanceof WorldControlWireProtocol.GetExportFormats) { handleExportFormats(player); return; }
+        if (request instanceof WorldControlWireProtocol.InspectImport inspect) { handleInspectImport(player, inspect); return; }
+        if (request instanceof WorldControlWireProtocol.DiscardImport discard) { handleDiscardImport(player, discard); return; }
+        if (request instanceof WorldControlWireProtocol.DuplicateWorld duplicate) { handleDuplicate(player, duplicate); return; }
+        if (request instanceof WorldControlWireProtocol.DeleteWorld delete) { handleDelete(player, delete); return; }
+        if (request instanceof WorldControlWireProtocol.ExportWorld export) { handleExport(player, export); return; }
+        if (request instanceof WorldControlWireProtocol.ImportWorld importWorld) { handleImport(player, importWorld); return; }
 
         try {
             send(player, WorldControlWireProtocol.encodeResponse(handle(player, request)));
@@ -209,16 +178,11 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 requireAnyWorldPermission(player);
                 List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream().map(this::summary).toList();
                 yield new WorldControlWireProtocol.WorldList(
-                        worlds,
-                        player.hasPermission(MANAGE_PERMISSION),
-                        player.hasPermission(TELEPORT_PERMISSION));
+                        worlds, player.hasPermission(MANAGE_PERMISSION), player.hasPermission(TELEPORT_PERMISSION));
             }
-            case WorldControlWireProtocol.GetExportFormats ignored ->
-                    throw new IllegalStateException("Export formats must use async capability path");
-            case WorldControlWireProtocol.InspectImport ignored ->
-                    throw new IllegalStateException("Import inspection must use async path");
-            case WorldControlWireProtocol.DiscardImport ignored ->
-                    throw new IllegalStateException("Import discard must use review-cleanup path");
+            case WorldControlWireProtocol.GetExportFormats ignored -> throw new IllegalStateException("Export formats must use async capability path");
+            case WorldControlWireProtocol.InspectImport ignored -> throw new IllegalStateException("Import inspection must use async path");
+            case WorldControlWireProtocol.DiscardImport ignored -> throw new IllegalStateException("Import discard must use review-cleanup path");
             case WorldControlWireProtocol.CreateWorld create -> {
                 requireManage(player);
                 WorldRecord world = creation.create(create.folderName(), create.displayName(),
@@ -276,32 +240,24 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private void handleExportFormats(Player player) {
-        try {
-            requireManage(player);
-        } catch (RuntimeException exception) {
+        try { requireManage(player); }
+        catch (RuntimeException exception) {
             send(player, WorldControlWireProtocol.error(exception.getMessage()));
             return;
         }
-
         send(player, encode(new WorldControlWireProtocol.ExportFormats(exportService.supportedFormats())));
         formatWaiters.add(player.getUniqueId());
         if (!formatRefreshInFlight.compareAndSet(false, true)) return;
-
         try {
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                 Exception failure = null;
-                try {
-                    conversionUpdates.checkIfDue();
-                } catch (Exception exception) {
-                    failure = exception;
-                }
-
+                try { conversionUpdates.checkIfDue(); }
+                catch (Exception exception) { failure = exception; }
                 if (stopping || !started) {
                     formatWaiters.clear();
                     formatRefreshInFlight.set(false);
                     return;
                 }
-
                 List<String> refreshed = exportService.supportedFormats();
                 Exception finalFailure = failure;
                 try {
@@ -351,9 +307,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
         String previous = reviewedImportArtifacts.get(owner);
-        if (previous != null && !previous.equals(request.artifactName())) {
-            discardReviewedArtifact(owner, previous);
-        }
+        if (previous != null && !previous.equals(request.artifactName())) discardReviewedArtifact(owner, previous);
         abandonedInspectionOwners.remove(owner);
         inspectionInFlight.put(owner, request.artifactName());
         scheduleImportInspection(player, request.artifactName());
@@ -365,12 +319,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                 WorldImportArtifactStore.ImportInspection result = null;
                 Exception failure = null;
-                try {
-                    result = importService.inspect(artifactName);
-                } catch (Exception exception) {
-                    failure = exception;
-                }
-
+                try { result = importService.inspect(artifactName); }
+                catch (Exception exception) { failure = exception; }
                 if (stopping || !started) {
                     if (result != null) discardInspectionResult(owner, result.artifactName());
                     else discardInspectionResult(owner, artifactName);
@@ -379,7 +329,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                     heavyInFlight.remove(owner);
                     return;
                 }
-
                 WorldImportArtifactStore.ImportInspection finalResult = result;
                 Exception finalFailure = failure;
                 try {
@@ -404,12 +353,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
     }
 
-    private void completeImportInspection(
-            UUID owner,
-            String artifactName,
-            WorldImportArtifactStore.ImportInspection result,
-            Exception failure
-    ) {
+    private void completeImportInspection(UUID owner, String artifactName,
+                                          WorldImportArtifactStore.ImportInspection result, Exception failure) {
         try {
             boolean abandoned = abandonedInspectionOwners.remove(owner);
             if (stopping || !started) {
@@ -441,9 +386,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private void discardInspectionResult(UUID owner, String artifactName) {
-        try {
-            importService.discard(artifactName);
-        } catch (RuntimeException exception) {
+        try { importService.discard(artifactName); }
+        catch (RuntimeException exception) {
             plugin.getLogger().warning("Could not discard disconnected import inspection artifact for " + owner + ": "
                     + exception.getMessage());
         } finally {
@@ -455,11 +399,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private void handleDiscardImport(Player player, WorldControlWireProtocol.DiscardImport request) {
         UUID owner = player.getUniqueId();
         if (heavyInFlight.contains(owner)) return;
-        try {
-            requireManage(player);
-        } catch (RuntimeException ignored) {
-            return;
-        }
+        try { requireManage(player); } catch (RuntimeException ignored) { return; }
         String reviewed = reviewedImportArtifacts.get(owner);
         if (!request.artifactName().equals(reviewed)) return;
         discardReviewedArtifact(owner, reviewed);
@@ -467,9 +407,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void discardReviewedArtifact(UUID owner, String artifactName) {
         if (!reviewedImportArtifacts.remove(owner, artifactName)) return;
-        try {
-            importService.discard(artifactName);
-        } catch (RuntimeException exception) {
+        try { importService.discard(artifactName); }
+        catch (RuntimeException exception) {
             plugin.getLogger().warning("Could not discard abandoned import artifact for " + owner + ": "
                     + exception.getMessage());
         } finally {
@@ -486,29 +425,18 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void handleDuplicate(Player player, WorldControlWireProtocol.DuplicateWorld request) {
         if (!beginHeavy(player)) return;
-        scheduleHeavy(
-                player,
-                () -> heavyOperations.duplicateWorld(
-                        new WorldId(request.sourceWorldId()),
-                        request.destinationFolder(),
-                        request.displayName(),
-                        WorldHeavyOperationOrchestrator.Progress.NONE
-                ),
-                result -> encode(new WorldControlWireProtocol.WorldChanged("DUPLICATE", summary(result)))
-        );
+        scheduleHeavy(player,
+                () -> heavyOperations.duplicateWorld(new WorldId(request.sourceWorldId()), request.destinationFolder(),
+                        request.displayName(), WorldHeavyOperationOrchestrator.Progress.NONE),
+                result -> encode(new WorldControlWireProtocol.WorldChanged("DUPLICATE", summary(result))));
     }
 
     private void handleDelete(Player player, WorldControlWireProtocol.DeleteWorld request) {
         if (!beginHeavy(player)) return;
-        scheduleHeavy(
-                player,
-                () -> heavyOperations.deleteWorld(
-                        new WorldId(request.worldId()),
-                        request.typedDisplayName(),
-                        WorldHeavyOperationOrchestrator.Progress.NONE
-                ),
-                result -> encode(new WorldControlWireProtocol.WorldChanged("DELETE", summaryDeleted(result)))
-        );
+        scheduleHeavy(player,
+                () -> heavyOperations.deleteWorld(new WorldId(request.worldId()), request.typedDisplayName(),
+                        WorldHeavyOperationOrchestrator.Progress.NONE),
+                result -> encode(new WorldControlWireProtocol.WorldChanged("DELETE", summaryDeleted(result))));
     }
 
     private void handleImport(Player player, WorldControlWireProtocol.ImportWorld request) {
@@ -516,9 +444,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         UUID owner = player.getUniqueId();
         String reviewed = reviewedImportArtifacts.get(owner);
         boolean ownsUpload;
-        try {
-            ownsUpload = transfers.ownsCompletedUpload(owner, request.artifactName());
-        } catch (RuntimeException exception) {
+        try { ownsUpload = transfers.ownsCompletedUpload(owner, request.artifactName()); }
+        catch (RuntimeException exception) {
             heavyInFlight.remove(owner);
             send(player, WorldControlWireProtocol.error(exception.getMessage()));
             return;
@@ -529,63 +456,36 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                     "Import requires the currently reviewed upload. Choose and review the world file again."));
             return;
         }
-        scheduleHeavy(
-                player,
-                () -> heavyOperations.importWorld(
-                        request.artifactName(),
-                        request.destinationFolder(),
-                        request.displayName(),
-                        WorldHeavyOperationOrchestrator.Progress.NONE
-                ),
+        scheduleHeavy(player,
+                () -> heavyOperations.importWorld(request.artifactName(), request.destinationFolder(), request.displayName(),
+                        WorldHeavyOperationOrchestrator.Progress.NONE),
                 result -> {
                     reviewedImportArtifacts.remove(owner, request.artifactName());
                     transfers.releaseCompletedUpload(owner, request.artifactName());
                     return encode(new WorldControlWireProtocol.WorldChanged("IMPORT", summary(result)));
-                }
-        );
+                });
     }
 
     private void handleExport(Player player, WorldControlWireProtocol.ExportWorld request) {
         if (!beginHeavy(player)) return;
         final WorldExportOptions options;
-        try {
-            options = exportOptions(request.settings());
-        } catch (RuntimeException exception) {
+        try { options = ExportSettingsMapper.toOptions(request.settings()); }
+        catch (RuntimeException exception) {
             heavyInFlight.remove(player.getUniqueId());
             send(player, WorldControlWireProtocol.error(exception.getMessage()));
             return;
         }
-        scheduleHeavy(
-                player,
-                () -> heavyOperations.exportWorld(
-                        new WorldId(request.worldId()),
-                        request.targetFormat(),
-                        request.artifactName(),
-                        options,
-                        WorldHeavyOperationOrchestrator.Progress.NONE
-                ),
+        scheduleHeavy(player,
+                () -> heavyOperations.exportWorld(new WorldId(request.worldId()), request.targetFormat(),
+                        request.artifactName(), options, WorldHeavyOperationOrchestrator.Progress.NONE),
                 result -> encode(new WorldControlWireProtocol.ExportReady(
-                        request.worldId(), result.artifact().getFileName().toString(), result.targetFormat()))
-        );
-    }
-
-    private static WorldExportOptions exportOptions(ExportSettingsWire.Settings settings) {
-        Objects.requireNonNull(settings, "settings");
-        WorldGameMode gameMode = settings.gameMode().isEmpty()
-                ? null
-                : WorldGameMode.valueOf(settings.gameMode().toUpperCase(Locale.ROOT));
-        WorldDifficulty difficulty = settings.difficulty().isEmpty()
-                ? null
-                : WorldDifficulty.valueOf(settings.difficulty().toUpperCase(Locale.ROOT));
-        return new WorldExportOptions(
-                gameMode, difficulty, settings.gameRules(), settings.optimizeOutput());
+                        request.worldId(), result.artifact().getFileName().toString(), result.targetFormat())));
     }
 
     private boolean beginHeavy(Player player) {
         if (!started || stopping) return false;
-        try {
-            requireManage(player);
-        } catch (RuntimeException exception) {
+        try { requireManage(player); }
+        catch (RuntimeException exception) {
             send(player, WorldControlWireProtocol.error(exception.getMessage()));
             return false;
         }
@@ -602,18 +502,12 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
                 T result = null;
                 Exception failure = null;
-                try {
-                    result = work.run();
-                } catch (Exception exception) {
-                    failure = exception;
-                }
-
+                try { result = work.run(); } catch (Exception exception) { failure = exception; }
                 if (stopping || !started) {
                     discardDeferredReviewedArtifact(owner);
                     heavyInFlight.remove(owner);
                     return;
                 }
-
                 T finalResult = result;
                 Exception finalFailure = failure;
                 try {
@@ -640,11 +534,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             if (stopping || !started) return;
             byte[] payload = responseSupplier.get();
             Player online = plugin.getServer().getPlayer(owner);
-            if (online != null && online.isOnline()) {
-                send(online, payload);
-            } else {
-                pendingHeavyCompletion.put(owner, payload);
-            }
+            if (online != null && online.isOnline()) send(online, payload);
+            else pendingHeavyCompletion.put(owner, payload);
         } finally {
             discardDeferredReviewedArtifact(owner);
             heavyInFlight.remove(owner);
@@ -652,24 +543,25 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private WorldControlWireProtocol.WorldSummary summary(WorldRecord world) {
-        return new WorldControlWireProtocol.WorldSummary(
-                world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
-                world.lifecycle().name(), world.defaultGameMode());
+        return new WorldControlWireProtocol.WorldSummary(world.id().value(), world.folderName(), world.displayName(),
+                world.kind().name(), world.lifecycle().name(), world.defaultGameMode());
     }
 
     private static WorldControlWireProtocol.WorldSummary summaryDeleted(WorldRecord world) {
-        return new WorldControlWireProtocol.WorldSummary(
-                world.id().value(), world.folderName(), world.displayName(), world.kind().name(),
-                world.lifecycle().name(), world.defaultGameMode());
+        return new WorldControlWireProtocol.WorldSummary(world.id().value(), world.folderName(), world.displayName(),
+                world.kind().name(), world.lifecycle().name(), world.defaultGameMode());
     }
 
     private static WorldControlWireProtocol.SettingsSnapshot settingsSummary(WorldSettingsSnapshot snapshot) {
         var runtime = snapshot.runtime();
         var spawn = runtime.spawn();
+        List<WorldControlWireProtocol.GameRuleValue> rules = runtime.gamerules().stream()
+                .map(rule -> new WorldControlWireProtocol.GameRuleValue(rule.name(), rule.type().name(), rule.value()))
+                .toList();
         return new WorldControlWireProtocol.SettingsSnapshot(
-                snapshot.world().id().value(), snapshot.defaultGameMode().name(),
-                runtime.difficulty().name(), runtime.pvpEnabled(), runtime.weather().name(), runtime.timeOfDayTicks(),
-                spawn.x(), spawn.y(), spawn.z());
+                snapshot.world().id().value(), snapshot.defaultGameMode().name(), runtime.difficulty().name(),
+                runtime.pvpEnabled(), runtime.weather().name(), runtime.timeOfDayTicks(),
+                spawn.x(), spawn.y(), spawn.z(), rules);
     }
 
     private void requireAnyWorldPermission(Player player) {
@@ -686,11 +578,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private static void requireTeleport(Player player) { requirePermission(player, TELEPORT_PERMISSION); }
 
     private static byte[] encode(WorldControlWireProtocol.Response response) {
-        try {
-            return WorldControlWireProtocol.encodeResponse(response);
-        } catch (IOException impossible) {
-            throw new IllegalStateException(impossible);
-        }
+        try { return WorldControlWireProtocol.encodeResponse(response); }
+        catch (IOException impossible) { throw new IllegalStateException(impossible); }
     }
 
     private void send(Player player, byte[] payload) {
@@ -701,12 +590,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         player.sendPluginMessage(plugin, CHANNEL, payload);
     }
 
-    @FunctionalInterface
-    private interface HeavyWork<T> { T run() throws Exception; }
-
-    @FunctionalInterface
-    private interface HeavyResponse<T> { byte[] encode(T result); }
-
-    @FunctionalInterface
-    private interface ResponseSupplier { byte[] get(); }
+    @FunctionalInterface private interface HeavyWork<T> { T run() throws Exception; }
+    @FunctionalInterface private interface HeavyResponse<T> { byte[] encode(T result); }
+    @FunctionalInterface private interface ResponseSupplier { byte[] get(); }
 }
