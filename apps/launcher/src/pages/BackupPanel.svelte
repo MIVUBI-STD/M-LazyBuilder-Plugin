@@ -89,7 +89,7 @@
   async function restoreBackup(backup: ServerBackupSummary) {
     if (!workspace || restoringId || creating || deletingId || !serverOffline) return;
     const confirmed = window.confirm(
-      `Restore the full server to ${formatDate(backup.createdUnixSeconds)}?\n\nLazyBuilder will first create a safety backup of the current server. The server must remain offline during the restore.`
+      `Restore the full server to ${formatDate(backup.createdUnixSeconds)}?\n\nBefore restoring, LazyBuilder will back up the server's current state. Keep the server offline until the restore is complete.`
     );
     if (!confirmed) return;
 
@@ -99,8 +99,8 @@
     try {
       const result = await runtimeProduct.backups.restore(workspace.id, backup.id);
       notice = result.cleanupPending
-        ? 'Server restored. Cleanup of preserved rollback staging will be retried on next startup.'
-        : `Server restored. A pre-restore safety backup was created at ${formatDate(result.safetyBackup.createdUnixSeconds)}.`;
+        ? 'Server restored successfully. Final cleanup will finish automatically the next time LazyBuilder starts.'
+        : `Server restored. The previous server state was backed up at ${formatDate(result.safetyBackup.createdUnixSeconds)}.`;
       estimate = null;
       await refresh();
       await onRestored?.();
@@ -156,11 +156,11 @@
   {:else}
     <div class="backup-summary">
       <div><span>Server data</span><strong>{formatBytes(estimate?.sourceBytes)}</strong></div>
-      <div><span>Required with margin</span><strong>{formatBytes(estimate?.requiredBytes)}</strong></div>
-      <div><span>Available</span><strong>{formatBytes(estimate?.availableBytes)}</strong></div>
+      <div><span>Space needed</span><strong>{formatBytes(estimate?.requiredBytes)}</strong></div>
+      <div><span>Available space</span><strong>{formatBytes(estimate?.availableBytes)}</strong></div>
     </div>
     <div class="estimate-actions">
-      <span>Storage sizing scans the full server and runs only when requested.</span>
+      <span>Check storage to confirm there is enough free space for a full backup.</span>
       <button class="estimate-button" disabled={estimateBusy || mutationBusy} onclick={calculateEstimate}>{estimateBusy ? 'Calculating…' : estimate ? 'Recalculate storage' : 'Check storage'}</button>
     </div>
 
