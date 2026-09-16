@@ -1,25 +1,23 @@
 # Launcher Visual Preview Proof
 
-Use this reference when a Launcher Desktop change affects layout, hierarchy, spacing, styling, page composition, responsive behavior, loading/empty/error presentation, or any issue that cannot be proven from source/typecheck alone.
+Use when a Launcher Desktop change affects layout, hierarchy, spacing, styling, page composition, responsive behavior, loading/empty/error presentation, or any visual claim that source/typecheck alone cannot falsify.
 
-## Purpose
+This is a proof layer, not a second Launcher implementation. ChatGPT and Codex consume the same artifacts and proof boundary; use whichever exact-run/artifact/image tools are available in the current session.
 
-Reduce the Local-PC feedback loop by rendering the **real Svelte Launcher UI** in a deterministic browser proof mode and publishing screenshots that ChatGPT can retrieve from GitHub Actions.
-
-This is a proof layer, not a second Launcher implementation.
+## Purpose and architecture
 
 ```text
 production Launcher source
-→ visual-preview runtime fixture only
+→ deterministic preview runtime fixture only
 → same Svelte components + same CSS
 → Playwright canonical captures
-→ GitHub Actions artifact
-→ ChatGPT downloads and visually audits PNGs
+→ exact-commit CI artifact
+→ visual inspection
 ```
 
-Production continues to use the Tauri runtime. `visual-preview` mode changes only the runtime data source.
+Production continues to use Tauri runtime. Preview changes only the runtime data source.
 
-## Canonical files
+Canonical files:
 
 ```text
 apps/launcher/src/app/bridge/runtimePreviewProduct.ts
@@ -28,7 +26,7 @@ apps/launcher/ui-preview/capture.spec.mjs
 .github/workflows/ui-preview.yml
 ```
 
-Do not create a parallel HTML mock, duplicate component tree, Storybook-only copy of the Launcher, or committed screenshot baseline merely to support preview.
+Do not create a parallel HTML mock, duplicate component tree, Storybook-only product copy, or committed screenshot baseline merely for preview.
 
 ## Canonical artifact
 
@@ -44,109 +42,60 @@ Artifact:
 LazyBuilder-UI-Preview-<commit-sha>
 ```
 
-Canonical screenshots currently include:
+Representative captures currently include Server Library, Overview, Worlds, Plugins, Settings, Client Setup, setup-required state, plus `manifest.json` identifying branch/commit/viewport/proof boundary.
+
+## Review procedure
 
 ```text
-01-server-library.png
-02-overview-ready.png
-03-worlds.png
-04-plugins.png
-05-settings.png
-06-client-setup.png
-07-server-setup-required.png
-manifest.json
+1. Resolve the exact source revision under review.
+2. Find the matching successful Launcher UI Preview run, or a descendant whose relevant Launcher source is unchanged.
+3. Retrieve the exact artifact.
+4. Inspect manifest.json.
+5. Open only the screenshots relevant to the changed claim.
+6. Audit hierarchy, spacing, states, overflow, density, consistency, and visible regression.
+7. Report VISUAL_RENDERED evidence separately from remaining native/runtime residue.
 ```
 
-`manifest.json` identifies the exact branch, commit, viewport, and proof boundary.
+If preview fails, diagnose the first wrong boundary. Do not delete assertions merely to make the workflow green.
 
-## ChatGPT review procedure
+## Proof boundary
 
-For a Launcher visual review:
-
-```text
-1. Refresh Local HEAD.
-2. Find the latest successful Launcher UI Preview run for that commit or a descendant whose Launcher source is unchanged.
-3. Fetch its artifacts.
-4. Download LazyBuilder-UI-Preview-<sha>.
-5. Inspect manifest.json.
-6. Open the relevant PNGs in ChatGPT/tooling.
-7. Audit hierarchy, spacing, states, overflow, density, consistency, and obvious visual regressions.
-8. Report what is visually proven separately from what still requires native Local-PC proof.
-```
-
-If the latest preview workflow fails, inspect the diagnostics artifact and fix the first wrong boundary. Do not simply remove assertions to make the workflow green.
-
-## Proof levels
-
-### Source proof
-
-Can prove:
+Preview can prove:
 
 ```text
-types
-routing
-component ownership
-intended state flow
-static contracts
-```
-
-### Launcher UI Preview proof
-
-Can additionally prove:
-
-```text
-actual Svelte/CSS composition
-relative spacing and density
+real Svelte/CSS composition
+relative spacing/density
 text wrapping/truncation
-canonical loading/ready/problem/setup states
+canonical state presentation
 page hierarchy
-most browser-level responsive/layout defects
-whether async state actually reaches rendered DOM
+browser-level responsive/layout behavior
+whether representative async state reaches rendered DOM
 ```
 
-### Local PC / native Tauri proof
-
-Still required for:
+It does not prove:
 
 ```text
-Windows window chrome and native sizing behavior
-native file/folder dialogs
-Tauri IPC/runtime integration
+Windows chrome/native sizing
+native dialogs
+Tauri IPC/runtime semantics
 filesystem/process behavior
-OS scaling/DPI differences
-focus/window activation edge cases
-installed packaging behavior
-real runtime timing and external-process states
+OS DPI/activation edge cases
+installed packaging
+real external-process/network timing
 ```
 
-Never claim native acceptance from preview screenshots alone.
+Those require the matching semantic proof or `NATIVE_ACCEPTANCE`.
 
-## Quality gate
-
-For a Launcher task whose accepted result is visual/layout/state-presentation:
-
-```text
-source/typecheck green
-+ relevant Launcher UI Preview screenshot inspected
-+ no unresolved visual issue in canonical state
-```
-
-is the minimum pre-Local-PC proof.
-
-A compile-only result is insufficient for a visual issue.
+A compile-only result is insufficient for a visual claim. A preview screenshot is not native/runtime acceptance.
 
 ## Fixture discipline
 
-The preview runtime is deterministic test data, not product authority.
+Fixtures may select coherent representative state and feed production components. They must not implement product semantics again, invent capabilities, become runtime authority, or make production depend on preview-only parameters.
 
-- Keep fixture states internally possible and semantically coherent.
-- Exercise important ready/problem/setup/empty states without inventing product capabilities.
-- When a fixture exposes a real UI lifecycle bug, fix the real UI boundary rather than bypassing the assertion.
-- Do not let production code depend on fixture-only data or preview query parameters.
-- Prefer a few representative states over a combinatorial fixture framework.
+Prefer a few representative states over a combinatorial fixture framework.
 
 ## Anti-overdevelopment
 
-Do not add pixel-diff baselines, screenshot approval databases, a second UI framework, or a visual-regression service until repeated evidence proves they are needed.
+Do not add pixel-diff approval databases, committed golden-image repositories, a second UI framework, visual-regression SaaS, or exhaustive state/resolution matrices without repeated evidence they are needed.
 
-The goal is fast human/ChatGPT visual inspection before native testing, not a second product or test platform.
+The goal is fast exact-revision visual inspection, not a second product or proof platform.
