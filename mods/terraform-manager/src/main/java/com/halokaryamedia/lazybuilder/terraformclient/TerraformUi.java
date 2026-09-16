@@ -3,8 +3,9 @@ package com.halokaryamedia.lazybuilder.terraformclient;
 import net.minecraft.client.gui.DrawContext;
 
 /**
- * Terraform-specific view tokens intentionally mirror the current LazyBuilder
- * Map Manager visual system without importing another Manager implementation.
+ * Terraform-local copy of the established LazyBuilder Map Manager visual system.
+ * Values and primitive treatment intentionally match LbUi without importing
+ * another manager's implementation.
  */
 public final class TerraformUi {
     private TerraformUi() {}
@@ -26,21 +27,25 @@ public final class TerraformUi {
     public static final int ACCENT_FILL = 0xFF294579;
     public static final int ACCENT_HOVER = 0xFF355893;
 
-    public static final int SUCCESS = 0xFF6FD0A0;
+    public static final int DANGER = 0xFFE36A6A;
+    public static final int DANGER_BRIGHT = 0xFFFF8A8A;
+    public static final int DANGER_FILL = 0xFF572E32;
+    public static final int DANGER_HOVER = 0xFF71393F;
     public static final int WARNING = 0xFFF1C56A;
+    public static final int SUCCESS = 0xFF6FD0A0;
 
-    public static void elevatedPanel(DrawContext context, int x, int y, int width, int height) {
-        context.fill(x, y, x + width, y + height, 0x99000000);
-        context.fill(x + 1, y + 1, x + width - 1, y + height - 1, BORDER);
-        context.fill(x + 2, y + 2, x + width - 2, y + height - 2, SURFACE_2);
+    public static void panel(DrawContext context,int x,int y,int width,int height){
+        context.fill(x,y,x+width,y+height,BORDER);
+        context.fill(x+1,y+1,x+width-1,y+height-1,SURFACE_1);
     }
 
-    public static void panel(DrawContext context, int x, int y, int width, int height) {
-        context.fill(x, y, x + width, y + height, BORDER);
-        context.fill(x + 1, y + 1, x + width - 1, y + height - 1, SURFACE_1);
+    public static void elevatedPanel(DrawContext context,int x,int y,int width,int height){
+        context.fill(x,y,x+width,y+height,0x99000000);
+        context.fill(x+1,y+1,x+width-1,y+height-1,BORDER);
+        context.fill(x+2,y+2,x+width-2,y+height-2,SURFACE_2);
     }
 
-    public static void divider(DrawContext context, int x1, int y, int x2) {
-        context.fill(x1, y, x2, y + 1, BORDER);
+    public static void divider(DrawContext context,int x1,int y,int x2){
+        context.fill(x1,y,x2,y+1,BORDER);
     }
 }
