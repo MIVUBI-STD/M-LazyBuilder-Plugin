@@ -24,16 +24,20 @@ def forbid(path: Path, *needles: str) -> None:
 def main() -> int:
     presentation = LAUNCHER / "app" / "runtimeErrorPresentation.ts"
     notice = LAUNCHER / "components" / "RuntimeErrorNotice.svelte"
-    backup = LAUNCHER / "pages" / "BackupPanel.svelte"
-    health = LAUNCHER / "pages" / "HealthPanel.svelte"
+    surfaces = [
+        LAUNCHER / "pages" / "BackupPanel.svelte",
+        LAUNCHER / "pages" / "HealthPanel.svelte",
+        LAUNCHER / "pages" / "LauncherSettings.svelte",
+        LAUNCHER / "pages" / "Client.svelte",
+    ]
 
     require(presentation, "RuntimeErrorPresentation", "presentRuntimeError", "correlationId", "recoverable", "action")
     require(notice, "error.details", "error.correlationId", "error.recoverable && error.action", "Next step")
-    for path in (backup, health):
+    for path in surfaces:
         require(path, "RuntimeErrorNotice", "presentRuntimeError", "RuntimeErrorPresentation")
         forbid(path, "function friendlyError(")
 
-    print("Launcher structured RuntimeError UX contract OK")
+    print(f"Launcher structured RuntimeError UX contract OK ({len(surfaces)} surfaces)")
     return 0
 
 
