@@ -63,6 +63,8 @@ jobs:
         run: python scripts/verify_launcher_accessibility_contract.py
       - name: Verify Launcher notification contract
         run: python scripts/verify_launcher_notification_contract.py
+      - name: Verify Launcher runtime bridge contract
+        run: python scripts/verify_launcher_bridge_contract.py
       - name: Verify Launcher contract wiring
         run: python scripts/verify_launcher_contract_wiring.py
       - name: Verify updater tooling without signing secrets
@@ -82,6 +84,7 @@ jobs:
             scripts/verify_launcher_error_ux.py \
             scripts/verify_launcher_accessibility_contract.py \
             scripts/verify_launcher_notification_contract.py \
+            scripts/verify_launcher_bridge_contract.py \
             scripts/verify_launcher_contract_wiring.py
           mkdir -p .artifacts/updater-contract
           printf '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' > .artifacts/updater-contract/example.sig
