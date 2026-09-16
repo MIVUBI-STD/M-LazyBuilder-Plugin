@@ -9,9 +9,13 @@ public final class CompactDebugServerState {
     }
 
     public static Snapshot snapshot() {
+        return snapshotAt(System.nanoTime());
+    }
+
+    static Snapshot snapshotAt(long nowNanos) {
         Snapshot current = snapshot;
         if (!current.telemetryAvailable()) return current;
-        if (System.nanoTime() - current.updatedAtNanos() > FRESHNESS_NANOS) {
+        if (nowNanos - current.updatedAtNanos() > FRESHNESS_NANOS) {
             clear();
             return snapshot;
         }
@@ -19,13 +23,23 @@ public final class CompactDebugServerState {
     }
 
     public static void update(String worldName, double cpuPercent, long usedMemoryBytes, long maxMemoryBytes) {
+        updateAt(worldName, cpuPercent, usedMemoryBytes, maxMemoryBytes, System.nanoTime());
+    }
+
+    static void updateAt(
+            String worldName,
+            double cpuPercent,
+            long usedMemoryBytes,
+            long maxMemoryBytes,
+            long updatedAtNanos
+    ) {
         snapshot = new Snapshot(
                 sanitizeWorldName(worldName),
                 clampPercent(cpuPercent),
                 Math.max(0L, usedMemoryBytes),
                 Math.max(0L, maxMemoryBytes),
                 true,
-                System.nanoTime()
+                updatedAtNanos
         );
     }
 
@@ -34,7 +48,7 @@ public final class CompactDebugServerState {
     }
 
     private static String sanitizeWorldName(String worldName) {
-        if (worldName == null || worldName.isBlank()) return "Unknown";
+        if (worldName == null || worldName.isBlank()) return "";
         return worldName.strip();
     }
 
