@@ -66,9 +66,9 @@ final class ClientMapRasterTexture implements AutoCloseable {
     }
 
     /**
-     * Draws the complete retained raster as one textured quad. The texture uses
-     * nearest filtering, so scaling preserves crisp map cells instead of adding
-     * linear-filter blur.
+     * Draws the complete retained raster as one textured quad. Destination size
+     * is independent from the source region size so nearest filtering can scale
+     * one map texel to multiple screen pixels without reading outside the image.
      */
     void draw(DrawContext context, int x, int y, int drawWidth, int drawHeight) {
         if (!ready() || drawWidth <= 0 || drawHeight <= 0) return;
@@ -81,6 +81,8 @@ final class ClientMapRasterTexture implements AutoCloseable {
                 0.0F,
                 drawWidth,
                 drawHeight,
+                width,
+                height,
                 width,
                 height
         );
