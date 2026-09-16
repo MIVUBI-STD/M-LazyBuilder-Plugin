@@ -36,8 +36,8 @@ public final class ResourceReloadNotifier implements SimpleSynchronousResourceRe
     public void reload(ResourceManager manager) {
         if (!clientStarted) return;
         UtilityNotifications.show(
-                "Resources Reloaded",
-                "Client resources are ready."
+                "Resource Reload Complete",
+                "Client resources have been reloaded successfully."
         );
     }
 }
