@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipFile;
@@ -23,6 +24,10 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     private static final Pattern VERSION_PATTERN = Pattern.compile("(?<!\\d)(\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?)(?!\\d)");
     private static final Pattern FORMAT_PATTERN = Pattern.compile("\\b(?:JAVA|BEDROCK)_[A-Z0-9_]+\\b");
     private static final Pattern CUSTOM_DIMENSION_ENTRY = Pattern.compile("(?:^|/)data/[^/]+/dimension/.+\\.json$");
+    private static final Pattern MISSING_MAPPING_PATTERN = Pattern.compile(
+            "(?m)^Missing [^\\r\\n]+ mapping for [^\\r\\n]+$");
+    private static final Pattern NON_FATAL_EXCEPTION_PATTERN = Pattern.compile(
+            "(?m)^(?:java|javax|org|com|net)\\.[^\\r\\n]*(?:Exception|Error): [^\\r\\n]+$");
     private static final String CUSTOM_DIMENSION_METADATA = "custom_dimensions.chunker.json";
     private static final Set<String> JAVA_CHUNK_DATA_DIRECTORIES = Set.of("region", "entities", "poi");
     private static final Set<String> VANILLA_DIMENSION_DIRECTORIES = Set.of("DIM-1", "DIM1");
@@ -125,16 +130,67 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
         Path artifact = requireRuntimeArtifact(runtimeArtifact);
         if (request.keepOriginalNbt()) {
-            seedSameFormatOutput(request.inputDirectory(), request.outputDirectory());
+            return convertLosslessNativeAreaWithMetadataOverrides(artifact, request);
         }
 
+        OnDemandProcessRunner.ProcessResult result = runExternalConversion(artifact, request);
+        validateOutputDirectory(request.outputDirectory(), request.outputFormat());
+        return new ConversionResult(result.output());
+    }
+
+    private ConversionResult convertLosslessNativeAreaWithMetadataOverrides(
+            Path artifact,
+            ConversionRequest request
+    ) throws IOException {
+        if (request.worldSettings() == null) {
+            throw new IOException("Lossless native metadata conversion requires world settings");
+        }
+
+        NativeJavaAreaPruner.exportSelectedArea(
+                request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+
+        Path parent = request.outputDirectory().getParent();
+        if (parent == null) throw new IOException("Native area output has no workspace parent");
+        String token = UUID.randomUUID().toString();
+        Path metadataInput = parent.resolve("native-area-metadata-input-" + token);
+        Path metadataOutput = parent.resolve("native-area-metadata-output-" + token);
+        try {
+            seedSameFormatOutput(request.inputDirectory(), metadataInput);
+            ConversionRequest metadataRequest = new ConversionRequest(
+                    metadataInput,
+                    metadataOutput,
+                    request.outputFormat(),
+                    null,
+                    request.worldSettings(),
+                    null
+            );
+            OnDemandProcessRunner.ProcessResult result = runExternalConversion(artifact, metadataRequest);
+            validateOutputDirectory(metadataOutput, request.outputFormat());
+            Files.copy(
+                    metadataOutput.resolve("level.dat"),
+                    request.outputDirectory().resolve("level.dat"),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.COPY_ATTRIBUTES
+            );
+            validateOutputDirectory(request.outputDirectory(), request.outputFormat());
+            return new ConversionResult(result.output());
+        } finally {
+            deleteTree(metadataOutput);
+            deleteTree(metadataInput);
+        }
+    }
+
+    private OnDemandProcessRunner.ProcessResult runExternalConversion(
+            Path artifact,
+            ConversionRequest request
+    ) throws IOException {
         List<String> command = buildConversionCommand(artifact, request);
         OnDemandProcessRunner.ProcessResult result = run(command, artifact.getParent(), conversionTimeout);
         if (result.exitCode() != 0) {
             throw new IOException("Conversion runtime exited with code " + result.exitCode() + ": " + result.output());
         }
-        validateOutputDirectory(request.outputDirectory(), request.outputFormat());
-        return new ConversionResult(result.output());
+        validateConversionDiagnostics(result.output());
+        return result;
     }
 
     private static void validateRequest(ConversionRequest request) throws IOException {
@@ -176,6 +232,23 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         return List.copyOf(command);
     }
 
+    static void validateConversionDiagnostics(String output) throws IOException {
+        String value = Objects.requireNonNull(output, "output");
+        Matcher missing = MISSING_MAPPING_PATTERN.matcher(value);
+        if (missing.find()) {
+            throw new IOException("Conversion reported unsupported data mapping: " + concise(missing.group()));
+        }
+        Matcher exception = NON_FATAL_EXCEPTION_PATTERN.matcher(value);
+        if (exception.find()) {
+            throw new IOException("Conversion reported a non-fatal data error: " + concise(exception.group()));
+        }
+    }
+
+    private static String concise(String value) {
+        String normalized = value == null ? "" : value.strip().replaceAll("\\s+", " ");
+        return normalized.length() <= 320 ? normalized : normalized.substring(0, 317) + "...";
+    }
+
     static void validateOutputDirectory(Path outputDirectory, String outputFormat) throws IOException {
         Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
         String format = Objects.requireNonNull(outputFormat, "outputFormat").strip().toUpperCase(Locale.ROOT);
@@ -208,6 +281,16 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
     static boolean containsCustomDimensionDefinitions(Path inputDirectory) throws IOException {
         Path input = Objects.requireNonNull(inputDirectory, "inputDirectory").toAbsolutePath().normalize();
+        Path dimensionData = input.resolve("dimensions");
+        if (Files.exists(dimensionData)) {
+            if (!Files.isDirectory(dimensionData) || Files.isSymbolicLink(dimensionData)) {
+                throw new IOException("Custom dimension data path is unsafe: " + dimensionData);
+            }
+            try (var paths = Files.walk(dimensionData)) {
+                if (paths.anyMatch(Files::isRegularFile)) return true;
+            }
+        }
+
         Path datapacks = input.resolve("datapacks");
         if (!Files.isDirectory(datapacks)) return false;
 
