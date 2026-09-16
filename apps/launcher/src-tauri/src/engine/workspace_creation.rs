@@ -71,7 +71,10 @@ pub fn create(parent: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     };
 
     intent.workspace_id = Some(staged.id.clone());
-    update_pending_creation(&intent)?;
+    if let Err(error) = update_pending_creation(&intent) {
+        let _ = workspace_registry::deactivate();
+        return Err(recovery_error(format!("Server workspace was created in staging, but its durable creation identity could not be recorded: {error}")));
+    }
 
     if let Err(error) = fs::rename(&staging_workspace, &final_path) {
         let _ = workspace_registry::deactivate();
@@ -117,9 +120,15 @@ pub fn recover_pending_creations() -> Result<CreationRecoveryReport, String> {
             continue;
         }
 
-        let Some(workspace_id) = intent.workspace_id.as_deref() else {
+        let recovered_identity = match intent.workspace_id.clone() {
+            Some(id) => Some(id),
+            None => find_registered_workspace_id(&intent.staging_workspace)?
+                .or(find_registered_workspace_id(&intent.final_path)?),
+        };
+
+        let Some(workspace_id) = recovered_identity.as_deref() else {
             if final_path.exists() {
-                report.issues.push(format!("Server creation recovery for {} found a final workspace but the durable intent has no workspace identity. Nothing was changed.", intent.requested_name));
+                report.issues.push(format!("Server creation recovery for {} found a final workspace but no registered workspace identity. Nothing was changed.", intent.requested_name));
                 remaining.push(intent);
                 continue;
             }
@@ -205,6 +214,13 @@ fn finish_forward(workspace_id: &str, final_path: &Path) -> Result<(), String> {
         }
         Err(error) => Err(format!("Created workspace identity is missing from the server library: {error}")),
     }
+}
+
+fn find_registered_workspace_id(path: &str) -> Result<Option<String>, String> {
+    Ok(workspace_registry::list()?
+        .into_iter()
+        .find(|entry| paths_equal(&entry.path, path))
+        .map(|entry| entry.id))
 }
 
 fn validate_name(value: &str) -> Result<String, String> {
