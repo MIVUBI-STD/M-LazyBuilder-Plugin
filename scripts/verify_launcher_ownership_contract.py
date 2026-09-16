@@ -79,6 +79,18 @@ def main() -> int:
         if marker not in text:
             errors.append(f"ownership document lost explicit anti-duplication guard: {marker}")
 
+    # Create Server has one command boundary only. The generic workspace command file
+    # must never reintroduce the pre-transaction direct workspace_registry::create path.
+    bootstrap = (ROOT / "apps/launcher/src-tauri/src/app_bootstrap.rs").read_text(encoding="utf-8")
+    workspace_commands = (ROOT / "apps/launcher/src-tauri/src/commands/workspace.rs").read_text(encoding="utf-8")
+    creation_commands = (ROOT / "apps/launcher/src-tauri/src/commands/workspace_creation.rs").read_text(encoding="utf-8")
+    if "commands::workspace_creation::workspace_create" not in bootstrap:
+        errors.append("bootstrap no longer registers the crash-safe Create Server command owner")
+    if "pub fn workspace_create(" in workspace_commands:
+        errors.append("legacy workspace::workspace_create command authority was reintroduced")
+    if "workspace_creation::create" not in creation_commands or 'begin_exclusive("create-server"' not in creation_commands:
+        errors.append("crash-safe workspace_creation command no longer owns Create Server")
+
     if errors:
         print("Launcher ownership contract verification failed:")
         for error in errors:
