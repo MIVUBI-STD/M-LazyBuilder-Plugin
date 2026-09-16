@@ -36,6 +36,16 @@ public final class ChatSearchHistory {
         if (overflow > 0) entries.subList(0, overflow).clear();
     }
 
+    /** Replaces the newest indexed line without creating a second search result. */
+    public synchronized void replaceLatest(String text) {
+        String normalized = Objects.requireNonNullElse(text, "");
+        if (normalized.isBlank() || entries.isEmpty()) return;
+
+        int index = entries.size() - 1;
+        ChatHistoryEntry previous = entries.get(index);
+        entries.set(index, new ChatHistoryEntry(previous.timestampMillis(), normalized));
+    }
+
     public synchronized List<ChatHistoryEntry> search(String query) {
         String needle = Objects.requireNonNullElse(query, "").trim().toLowerCase(Locale.ROOT);
         if (needle.isEmpty()) return List.of();
