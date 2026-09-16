@@ -170,24 +170,27 @@ name exact caller-visible contract
 
 ## Proof matrix
 
+Use the canonical proof vocabulary from `development-discipline.md`.
+
 ```text
 shape / encode-decode / validation / defaults
-→ focused shared round-trip/contract test
+→ EXECUTED_SOURCE with focused shared round-trip/contract tests
 
-Paper + Fabric adapter alignment
-→ build tests for both direct consumers
+Paper + Fabric adapter compile/alignment
+→ EXECUTED_SOURCE for both direct consumers
 
-capability catalog
-→ contract test against authoritative backend-supported values
+capability catalog against deterministic authoritative values
+→ EXECUTED_SOURCE
+→ use INTEGRATION_FIXTURE only when multiple real owners/services must be exercised together
 
-compatibility migration
-→ old/new fixture or explicit supported-version test
+compatibility migration / supported old-new contract behavior
+→ EXECUTED_SOURCE or INTEGRATION_FIXTURE, whichever actually exercises the supported boundary
 
-real ordering/disconnect/reconnect/plugin-channel behavior
-→ LIVE_SERVER + real Fabric client using exact artifacts
+real plugin-channel ordering / disconnect / reconnect / client-server interoperability
+→ LIVE_RUNTIME using exact Paper + Fabric artifacts and the changed round-trip path
 ```
 
-Compile success does not prove a round trip. Unit round trip does not prove live plugin-channel timing.
+Compile success does not prove a round trip. A unit round trip does not prove plugin-channel timing. `VISUAL_RENDERED` proof from a Fabric screen does not prove protocol interoperability, and `LIVE_RUNTIME` must exercise both ends of the changed contract.
 
 ## Handoff / exit contract
 
