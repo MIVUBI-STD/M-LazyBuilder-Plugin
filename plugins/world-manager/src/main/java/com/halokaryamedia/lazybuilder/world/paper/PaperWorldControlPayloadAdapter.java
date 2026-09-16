@@ -577,7 +577,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         WorldDifficulty difficulty = settings.difficulty().isEmpty()
                 ? null
                 : WorldDifficulty.valueOf(settings.difficulty().toUpperCase(Locale.ROOT));
-        return new WorldExportOptions(gameMode, difficulty, settings.gameRules(), true);
+        return new WorldExportOptions(
+                gameMode, difficulty, settings.gameRules(), settings.optimizeOutput());
     }
 
     private boolean beginHeavy(Player player) {
