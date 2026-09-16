@@ -29,7 +29,9 @@ const previewRuntimeProduct = {
       workspaceName: 'MIVUBI Build Server',
       state: 'Online',
       pid: 14872,
-      paperPort: 25565
+      paperPort: 25565,
+      usedMemoryBytes: 3.1 * 1024 ** 3,
+      maxMemoryBytes: 6 * 1024 ** 3
     }],
     connectionPort: async () => 25565
   },
