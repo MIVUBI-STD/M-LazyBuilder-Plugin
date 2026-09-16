@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.world.paper;
 
 import com.halokaryamedia.lazybuilder.world.application.WorldDeleteService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDuplicateService;
+import com.halokaryamedia.lazybuilder.world.application.WorldExportOptions;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -103,10 +104,21 @@ public final class WorldHeavyOperationOrchestrator {
             String artifactName,
             Progress progress
     ) throws Exception {
+        return exportWorld(worldId, targetFormat, artifactName, WorldExportOptions.legacyDefaults(), progress);
+    }
+
+    public WorldExportService.ExportResult exportWorld(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldExportOptions options,
+            Progress progress
+    ) throws Exception {
         Progress reporter = progressOrNone(progress);
+        WorldExportOptions exportOptions = Objects.requireNonNull(options, "options");
         reporter.update(10, "Preparing source world on Paper.");
         WorldExportService.ExportTask task = mainThread.call(
-                () -> exportService.prepare(worldId, targetFormat, artifactName));
+                () -> exportService.prepare(worldId, targetFormat, artifactName, exportOptions));
         Exception failure = null;
         WorldExportService.ExportResult result = null;
         try {
