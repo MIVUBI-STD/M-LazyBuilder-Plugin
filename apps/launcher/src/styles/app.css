@@ -89,3 +89,18 @@ h2 { letter-spacing: -.015em; }
     transition-duration: .01ms !important;
   }
 }
+
+@media (forced-colors: active) {
+  button, input, select, summary, [role="dialog"], .menu-popover {
+    border-color: ButtonText !important;
+    forced-color-adjust: auto;
+  }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+  button:disabled, input:disabled, select:disabled {
+    opacity: 1;
+    color: GrayText !important;
+  }
+}
