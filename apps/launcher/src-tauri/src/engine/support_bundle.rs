@@ -1,13 +1,17 @@
 use crate::engine::{diagnostics, privacy_redaction::RedactionPolicy};
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 const MAX_LOG_FILES: usize = 5;
 const MAX_LOG_FILE_BYTES: u64 = 1024 * 1024;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
 pub fn write_bundle<S, O, T>(
     destination: &Path,
@@ -27,11 +31,14 @@ where
     fs::create_dir_all(parent).map_err(|error| format!("Could not prepare support bundle destination: {error}"))?;
 
     let staging = destination.with_extension("zip.incoming");
-    if staging.exists() {
-        fs::remove_file(&staging).map_err(|error| format!("Could not clear stale support bundle staging: {error}"))?;
-    }
+    remove_regular_file_if_exists(&staging, "support bundle staging file")?;
+    ensure_regular_file_if_exists(destination, "support bundle destination")?;
 
-    let file = fs::File::create(&staging).map_err(|error| format!("Could not create support bundle: {error}"))?;
+    let file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&staging)
+        .map_err(|error| format!("Could not create support bundle: {error}"))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default();
     let redaction = RedactionPolicy::for_support_bundle(sensitive_paths);
@@ -61,9 +68,10 @@ where
     let finished = zip.finish().map_err(|error| format!("Could not finalize support bundle: {error}"))?;
     finished.sync_all().map_err(|error| format!("Could not flush support bundle staging file: {error}"))?;
 
-    if destination.exists() {
+    if metadata_entry_exists(destination, "support bundle destination")? {
+        ensure_regular_file(destination, "support bundle destination")?;
         let previous = destination.with_extension("zip.previous");
-        let _ = fs::remove_file(&previous);
+        remove_regular_file_if_exists(&previous, "previous support bundle")?;
         fs::rename(destination, &previous).map_err(|error| format!("Could not stage existing support bundle: {error}"))?;
         match fs::rename(&staging, destination) {
             Ok(()) => {
@@ -79,6 +87,44 @@ where
     }
 
     Ok(destination.to_path_buf())
+}
+
+fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
+}
+
+fn ensure_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    if metadata_entry_exists(path, label)? {
+        ensure_regular_file(path, label)?;
+    }
+    Ok(())
+}
+
+fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("LazyBuilder refused a symbolic link as {label}"));
+    }
+    #[cfg(windows)]
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(format!("LazyBuilder refused a Windows reparse point as {label}"));
+    }
+    if !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    }
+    Ok(())
+}
+
+fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    if !metadata_entry_exists(path, label)? {
+        return Ok(());
+    }
+    ensure_regular_file(path, label)?;
+    fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))
 }
 
 fn write_json<T: Serialize>(
