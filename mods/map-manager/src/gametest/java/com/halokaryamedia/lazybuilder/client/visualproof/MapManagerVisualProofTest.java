@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.client.ClientWorldController;
 import com.halokaryamedia.lazybuilder.client.WorldManagerScreen;
 import com.halokaryamedia.lazybuilder.client.WorldMapScreen;
 import com.halokaryamedia.lazybuilder.client.WorldNavigationPreferences;
+import com.halokaryamedia.lazybuilder.client.WorldTransferScreen;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -18,7 +19,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.UUID;
 
-/** L4 visual proof for the production Map Manager and Export workspace. */
+/** L4 visual proof for the production Map Manager, Export workspace, and dedicated transfer surface. */
 @SuppressWarnings("UnstableApiUsage")
 public final class MapManagerVisualProofTest implements FabricClientGameTest {
     private static final UUID TANA = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -57,6 +58,11 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                         "map-manager-export-custom-area-1440x900-gui2");
                 captureExportWorkspace(context, state, 620, 480, 2, true, false,
                         "map-manager-export-custom-area-620x480-gui2");
+
+                captureDedicatedExport(context, state, 1440, 900, 2, true,
+                        "world-transfer-export-advanced-1440x900-gui2");
+                captureDedicatedExport(context, state, 620, 480, 2, false,
+                        "world-transfer-export-narrow-620x480-gui2");
             } finally {
                 context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(previousBlur));
             }
@@ -142,6 +148,39 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             if (expandAdvanced) expandWorldSettings(screen);
         });
         context.waitTicks(18);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureDedicatedExport(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            boolean advanced,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            WorldControlWireProtocol.WorldSummary world = state.worlds.worlds().stream()
+                    .filter(candidate -> candidate.worldId().equals(MUSEUM))
+                    .findFirst()
+                    .orElseThrow();
+            WorldTransferScreen screen = WorldTransferScreen.forWorldExport(
+                    null, state.worlds, state.transfers, world);
+            setBooleanField(screen, "requestedFormats", true,
+                    "World Transfer proof could not suppress test-only format refresh");
+            if (advanced) {
+                setBooleanField(screen, "advanced", true,
+                        "World Transfer proof could not open advanced export options");
+            }
+            return screen;
+        });
+        context.waitForScreen(WorldTransferScreen.class);
+        context.waitTicks(12);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
