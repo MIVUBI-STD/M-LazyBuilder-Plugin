@@ -31,6 +31,7 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 
 - Extended Chat History: enabled by default and retains more vanilla chat lines/history without replacing the chat screen;
 - Keep Chat Draft: enabled by default and restores an unsent draft while the current multiplayer connection/session remains active; disconnect clears the draft so text is not carried into another server context;
+- Chat Search: enabled by default and adds a compact `Ctrl+F` overlay to the existing vanilla chat screen. Search is session-only, indexes at most the existing bounded chat history, shows the selected match as a small preview, uses `Enter` / `Shift+Enter` for navigation, and does not persist chat to disk;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
 - Copy Connection Details: contextual action on the disconnect screen for copying the known server target and disconnect reason;
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
@@ -83,11 +84,13 @@ The migration target is to retire overlapping external chat/narrator helper mods
 
 Extended Chat History intentionally stays a minimal vanilla patch rather than replacing ChatHud. Its three `@ModifyConstant` hooks are mapping/version-sensitive because they target Vanilla's internal retention limits. Treat Minecraft-version upgrades as a verification point for these hooks rather than introducing a larger custom chat subsystem prematurely.
 
+Chat Search attaches a single hidden `TextFieldWidget` to vanilla `ChatScreen` during `init`, activates it only on `Ctrl+F`, and reuses the bounded session index observed from `ChatHud`. It does not replace `ChatScreen`, persist history, or add a background search service.
+
 Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existing `searchBox`, and private `setSelectedTab` path for Yarn 1.21.4. Treat Minecraft-version upgrades as a verification point for this mixin rather than introducing a replacement inventory/search controller.
 
 Compact Debug targets `DebugHud.render` and the existing `Keyboard.onKey` debug-input path for Yarn 1.21.4. Treat Minecraft-version upgrades as verification points for these mixins. Keep the renderer thin and keep metric/telemetry state outside the mixin classes.
 
-Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Keep Chat Draft, chat search, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
@@ -99,6 +102,7 @@ The active preference surface is intentionally limited to implemented features:
 window.borderless=false
 chat.extended_history=true
 chat.keep_draft=true
+chat.search=true
 connection.reconnect_button=true
 screenshots.contextual_names=false
 inventory.instant_creative_search=true
