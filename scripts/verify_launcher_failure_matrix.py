@@ -76,6 +76,7 @@ def main() -> int:
         "create-crash-before-intent-identity-update",
         "adoption-crash-mid-move",
         "duplicate-crash-after-publish-before-register",
+        "delete-crash-during-staging-or-cleanup",
         "restore-crash-during-workspace-swap",
         "backup-crash-during-staging-copy",
         "legacy-backup-staging-upgrade",
@@ -92,8 +93,8 @@ def main() -> int:
     if missing_required:
         errors.append(f"failure matrix is missing required scenarios: {missing_required}")
 
-    if scenarios_with_tests < 7:
-        errors.append(f"failure matrix must retain deterministic test evidence for at least 7 scenarios; found {scenarios_with_tests}")
+    if scenarios_with_tests < 8:
+        errors.append(f"failure matrix must retain deterministic test evidence for at least 8 scenarios; found {scenarios_with_tests}")
 
     if errors:
         print("Launcher failure matrix verification failed:")
