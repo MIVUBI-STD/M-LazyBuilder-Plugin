@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.chat;
 
+import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.text.Text;
 
@@ -27,7 +28,11 @@ public final class MinecraftMessageBridge {
             ChatMessage classified = MinecraftMessageClassifier.systemMessage(message.getString());
             if (!shouldCompact(classified)) return message;
 
-            return Text.literal(ChatPresentationFormatter.chatLine(classified, 1));
+            String compact = ChatPresentationFormatter.chatLine(classified, 1);
+            if (eligibleForCollapse(classified)) {
+                UtilityManagerClient.chatCollapseState().prepareEligible(compact);
+            }
+            return Text.literal(compact);
         });
     }
 
@@ -35,6 +40,13 @@ public final class MinecraftMessageBridge {
         return switch (message.type()) {
             case GAME, WARNING, ERROR -> true;
             case CHAT, SYSTEM -> false;
+        };
+    }
+
+    private static boolean eligibleForCollapse(ChatMessage message) {
+        return switch (message.type()) {
+            case GAME, WARNING -> true;
+            case CHAT, SYSTEM, ERROR -> false;
         };
     }
 }
