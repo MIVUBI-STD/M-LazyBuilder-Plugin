@@ -55,4 +55,21 @@ class ClientMapSurfaceCacheTest {
         assertEquals(0L, region.revision());
         assertEquals(1, region.size());
     }
+
+    @Test
+    void farZoomSampleCoordinateRemainsStableInsideWorldCell() {
+        assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(16, 4));
+        assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(17, 4));
+        assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(18, 4));
+        assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(19, 4));
+        assertEquals(22, ClientMapSurfaceCache.stableSampleCoordinate(20, 4));
+    }
+
+    @Test
+    void farZoomSampleCoordinateUsesFloorDivisionForNegativeWorldCoordinates() {
+        assertEquals(-2, ClientMapSurfaceCache.stableSampleCoordinate(-1, 4));
+        assertEquals(-2, ClientMapSurfaceCache.stableSampleCoordinate(-4, 4));
+        assertEquals(-6, ClientMapSurfaceCache.stableSampleCoordinate(-5, 4));
+        assertEquals(-1, ClientMapSurfaceCache.stableSampleCoordinate(-1, 1));
+    }
 }
