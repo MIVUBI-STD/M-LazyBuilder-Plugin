@@ -201,7 +201,8 @@ fn prepare_managed_start(app: &AppHandle, workspace_id: &str) -> Result<u16, Str
     ensure_bundled_core(app)?;
     ensure_provisioned()?;
     world_manager::prepare_control_options_for_start()?;
-    startup_guard::ensure_memory_headroom()?;
+    let active_runtime_count = app.state::<ServerRuntimeRegistry>().fleet()?.active_count;
+    startup_guard::ensure_memory_headroom(active_runtime_count)?;
     select_paper_port(configured_paper_port(&active.path)?)
 }
 
