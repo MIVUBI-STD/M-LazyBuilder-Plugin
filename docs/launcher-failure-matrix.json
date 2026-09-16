@@ -8,6 +8,12 @@
       "testMarkers": ["interrupted_mutations_require_recovery_and_reconciliation_is_idempotent", "journal_round_trip_preserves_operation_history"]
     },
     {
+      "id": "operation-journal-crash-during-metadata-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
+      "markers": ["recover_journal_file", "cleanup_journal_recovery_files", "replace_journal_file", "create_new(true)", "sync_all", "metadata_entry_exists"],
+      "testMarkers": ["operation_journal_recovery_prefers_previous_committed_copy", "operation_journal_incoming_recovers_without_committed_copy", "malformed_operation_journal_preserves_recovery_evidence"]
+    },
+    {
       "id": "workspace-library-overlaps-workspace-mutation",
       "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
       "markers": ["WORKSPACE_LIBRARY_RESOURCE", "WORKSPACE_RESOURCE_PREFIX", "resources_conflict"],
