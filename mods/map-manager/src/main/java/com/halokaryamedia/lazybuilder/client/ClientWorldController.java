@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -86,9 +87,21 @@ public final class ClientWorldController {
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedWorldName));
     }
 
+    /** Legacy export path retained for the existing transfer screen. */
     public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
+        exportWorld(worldId, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
+    }
+
+    /** Export-workspace path. Settings are applied to the export artifact only. */
+    public void exportWorld(
+            UUID worldId,
+            String targetFormat,
+            String artifactName,
+            ExportSettingsWire.Settings exportSettings
+    ) {
         beginActivity("Preparing world export…");
-        send(new WorldControlWireProtocol.ExportWorld(worldId, targetFormat, artifactName));
+        send(new WorldControlWireProtocol.ExportWorld(
+                worldId, targetFormat, artifactName, Objects.requireNonNull(exportSettings, "exportSettings")));
     }
 
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
