@@ -17,7 +17,8 @@
     ],
     "targetIdentity": "workspace-id",
     "targetedControlsRequireActiveWorkspace": false,
-    "runtimeFallbackMayReadAnotherActiveWorkspaceConfig": false
+    "runtimeFallbackMayReadAnotherActiveWorkspaceConfig": false,
+    "workspaceBoundControllerRequiresRuntimeRoot": true
   },
   "operationHistoryMax": 100,
   "activity": {
