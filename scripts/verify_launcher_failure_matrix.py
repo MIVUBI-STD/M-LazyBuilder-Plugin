@@ -61,6 +61,7 @@ def main() -> int:
         "second-launcher-instance",
         "close-launcher-during-active-operation",
         "disk-pressure-before-heavy-write",
+        "world-control-port-conflict-before-paper-start",
     }
     missing_required = sorted(required_ids - seen_ids)
     if missing_required:
