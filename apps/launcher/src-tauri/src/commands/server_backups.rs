@@ -4,6 +4,8 @@ use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{server_backups, server_process_guard, server_restore, workspace_registry};
 use tauri::{AppHandle, Manager, State};
 
+const MIN_PROGRESS_JOURNAL_STEP_BYTES: u64 = 16 * 1024 * 1024;
+
 #[tauri::command]
 pub fn server_backup_list(workspace_id: String) -> CommandResult<Vec<server_backups::ServerBackupSummary>> {
     server_backups::list(&workspace_id).map_err(CommandError::from)
@@ -42,9 +44,14 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
+
+        // Backup copy callbacks can fire once per 1 MiB chunk. Persisting every callback
+        // would rewrite the complete operation journal tens of thousands of times on a
+        // large server. Semantic phase changes remain immediate/durable; byte progress is
+        // sampled to roughly 1% (with a 16 MiB minimum step).
+        let mut reporter = DurableProgressReporter::new(&operations, &operation_id);
         let result = server_backups::create_tracked(&workspace_id, |phase, status, details, measured| {
-            let progress = measured.map(|(current, total)| OperationProgress { current, total: Some(total), unit: "bytes".into() });
-            let _ = operations.set_phase(&operation_id, phase, status, details, progress);
+            reporter.report(phase, status, details, measured);
         });
         match result {
             Ok(backup) => { let _ = operations.succeed(&operation_id, "Server backup created"); Ok(backup) }
@@ -124,9 +131,9 @@ pub async fn server_backup_restore(
             }
         }
 
+        let mut reporter = DurableProgressReporter::new(&operations, &operation_id);
         let result = server_restore::restore_tracked(&workspace_id, &backup_id, |phase, status, details, measured| {
-            let progress = measured.map(|(current, total)| OperationProgress { current, total: Some(total), unit: "bytes".into() });
-            let _ = operations.set_phase(&operation_id, phase, status, details, progress);
+            reporter.report(phase, status, details, measured);
         });
         match result {
             Ok(result) => {
@@ -173,8 +180,87 @@ pub fn server_backup_delete(
     server_backups::delete(&workspace_id, &backup_id).map_err(CommandError::from)
 }
 
+struct DurableProgressReporter<'a> {
+    operations: &'a OperationRegistry,
+    operation_id: &'a str,
+    last_phase: String,
+    last_status: String,
+    last_current: u64,
+    last_total: Option<u64>,
+}
+
+impl<'a> DurableProgressReporter<'a> {
+    fn new(operations: &'a OperationRegistry, operation_id: &'a str) -> Self {
+        Self {
+            operations,
+            operation_id,
+            last_phase: String::new(),
+            last_status: String::new(),
+            last_current: 0,
+            last_total: None,
+        }
+    }
+
+    fn report(&mut self, phase: &str, status: &str, details: &str, measured: Option<(u64, u64)>) {
+        let semantic_changed = self.last_phase != phase || self.last_status != status;
+        let progress_changed = measured.is_some_and(|(current, total)| {
+            should_persist_progress(self.last_current, self.last_total, current, total)
+        });
+        if !semantic_changed && !progress_changed {
+            return;
+        }
+
+        let progress = measured.map(|(current, total)| OperationProgress {
+            current,
+            total: Some(total),
+            unit: "bytes".into(),
+        });
+        if self.operations.set_phase(self.operation_id, phase, status, details, progress).is_ok() {
+            self.last_phase = phase.to_string();
+            self.last_status = status.to_string();
+            if let Some((current, total)) = measured {
+                self.last_current = current;
+                self.last_total = Some(total);
+            } else {
+                self.last_current = 0;
+                self.last_total = None;
+            }
+        }
+    }
+}
+
+fn should_persist_progress(last_current: u64, last_total: Option<u64>, current: u64, total: u64) -> bool {
+    if last_total != Some(total) || current >= total {
+        return true;
+    }
+    let step = (total / 100).max(MIN_PROGRESS_JOURNAL_STEP_BYTES).max(1);
+    current.saturating_sub(last_current) >= step
+}
+
 fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &CommandError, recoverable: bool) {
     let _ = operations.fail(operation_id, OperationError {
         code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_journal_updates_are_bounded_for_large_copies() {
+        let total = 100 * 1024 * 1024 * 1024u64;
+        let step = (total / 100).max(MIN_PROGRESS_JOURNAL_STEP_BYTES);
+        assert!(step >= 1024 * 1024 * 1024);
+        assert!(!should_persist_progress(0, Some(total), step - 1, total));
+        assert!(should_persist_progress(0, Some(total), step, total));
+        assert!(should_persist_progress(step, Some(total), total, total));
+    }
+
+    #[test]
+    fn progress_journal_uses_minimum_step_for_smaller_copies() {
+        let total = 100 * 1024 * 1024u64;
+        assert!(!should_persist_progress(0, Some(total), MIN_PROGRESS_JOURNAL_STEP_BYTES - 1, total));
+        assert!(should_persist_progress(0, Some(total), MIN_PROGRESS_JOURNAL_STEP_BYTES, total));
+    }
 }
