@@ -11,11 +11,14 @@ import java.util.Objects;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipFile;
 
 /** Concrete adapter for the verified Chunker CLI JAR contract. */
 public final class ChunkerCliAdapter implements ConverterAdapter {
     private static final Pattern VERSION_PATTERN = Pattern.compile("(?<!\\d)(\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?)(?!\\d)");
     private static final Pattern FORMAT_PATTERN = Pattern.compile("\\b(?:JAVA|BEDROCK)_[A-Z0-9_]+\\b");
+    private static final Pattern CUSTOM_DIMENSION_ENTRY = Pattern.compile("(?:^|/)data/[^/]+/dimension/.+\\.json$");
+    private static final String CUSTOM_DIMENSION_METADATA = "custom_dimensions.chunker.json";
 
     private final Path javaExecutable;
     private final int maxHeapMb;
@@ -101,6 +104,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         requireOptionalSettingsFile(request.pruningSettings(), "Pruning settings");
         requireOptionalSettingsFile(request.worldSettings(), "World settings");
         requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
+        requireSupportedCustomDimensionShape(request);
 
         List<String> command = buildConversionCommand(artifact, request);
         OnDemandProcessRunner.ProcessResult result = run(command, artifact.getParent(), conversionTimeout);
@@ -144,6 +148,55 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         if (format.startsWith("BEDROCK_") && !Files.isDirectory(output.resolve("db"))) {
             throw new IOException("Conversion runtime produced an incomplete Bedrock world: db directory is missing");
         }
+    }
+
+    static void requireSupportedCustomDimensionShape(ConversionRequest request) throws IOException {
+        Objects.requireNonNull(request, "request");
+        Path input = request.inputDirectory();
+        if (!containsCustomDimensionDefinitions(input)) return;
+
+        if (request.pruningSettings() != null) {
+            throw new IOException("Selected Area export does not yet support worlds with custom dimensions safely");
+        }
+
+        Path metadata = input.resolve(CUSTOM_DIMENSION_METADATA);
+        if (!Files.isRegularFile(metadata) || Files.size(metadata) == 0L) {
+            throw new IOException("World contains custom dimensions but verified Chunker custom-dimension metadata is missing");
+        }
+    }
+
+    static boolean containsCustomDimensionDefinitions(Path inputDirectory) throws IOException {
+        Path input = Objects.requireNonNull(inputDirectory, "inputDirectory").toAbsolutePath().normalize();
+        Path datapacks = input.resolve("datapacks");
+        if (!Files.isDirectory(datapacks)) return false;
+
+        try (var children = Files.list(datapacks)) {
+            for (Path pack : children.toList()) {
+                if (Files.isDirectory(pack) && !Files.isSymbolicLink(pack)) {
+                    try (var paths = Files.walk(pack)) {
+                        boolean found = paths
+                                .filter(Files::isRegularFile)
+                                .map(pack::relativize)
+                                .map(Path::toString)
+                                .map(name -> name.replace('\\', '/'))
+                                .anyMatch(name -> CUSTOM_DIMENSION_ENTRY.matcher(name).matches());
+                        if (found) return true;
+                    }
+                    continue;
+                }
+
+                String name = pack.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (!Files.isRegularFile(pack) || !name.endsWith(".zip")) continue;
+                try (ZipFile zip = new ZipFile(pack.toFile())) {
+                    var entries = zip.entries();
+                    while (entries.hasMoreElements()) {
+                        String entry = entries.nextElement().getName().replace('\\', '/');
+                        if (CUSTOM_DIMENSION_ENTRY.matcher(entry).matches()) return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     static String parseRuntimeVersion(String output) throws IOException {
