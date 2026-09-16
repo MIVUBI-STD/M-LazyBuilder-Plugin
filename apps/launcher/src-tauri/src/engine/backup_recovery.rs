@@ -77,7 +77,26 @@ pub fn recover_pending() -> Result<BackupRecoveryReport, String> {
 }
 
 pub fn legacy_sweep_required() -> Result<bool, String> {
-    Ok(!legacy_sweep_marker_path()?.is_file())
+    let path = legacy_sweep_marker_path()?;
+    if !path.exists() {
+        return Ok(true);
+    }
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("Could not inspect backup recovery migration marker: {error}"))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
+        return Err("Backup recovery migration marker is not a safe regular file".into());
+    }
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("Could not read backup recovery migration marker: {error}"))?;
+    let marker: LegacySweepMarker = serde_json::from_str(&text)
+        .map_err(|error| format!("Could not parse backup recovery migration marker: {error}"))?;
+    if marker.schema_version != LEGACY_SWEEP_SCHEMA_VERSION {
+        return Err(format!(
+            "Backup recovery migration marker schema {} is unsupported by this Launcher",
+            marker.schema_version
+        ));
+    }
+    Ok(false)
 }
 
 pub fn mark_legacy_sweep_complete() -> Result<(), String> {
@@ -233,5 +252,12 @@ mod tests {
         let text = serde_json::to_string(&pending).unwrap();
         assert!(text.contains("schemaVersion"));
         assert!(text.contains("workspace-a"));
+    }
+
+    #[test]
+    fn legacy_sweep_marker_schema_is_explicit() {
+        let marker = LegacySweepMarker { schema_version: LEGACY_SWEEP_SCHEMA_VERSION };
+        let text = serde_json::to_string(&marker).unwrap();
+        assert_eq!(text, r#"{"schemaVersion":1}"#);
     }
 }
