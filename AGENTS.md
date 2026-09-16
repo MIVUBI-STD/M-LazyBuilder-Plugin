@@ -188,15 +188,32 @@ Source is implementation truth; docs/Skills must not preserve a stale model agai
 
 ## Proof Ceiling
 
+Execution context and proof type are separate.
+
 ```text
-REMOTE_GITHUB → source/static/CI claims
-LOCAL_CODE    → compile/unit/integration/build/package claims
-LIVE_SERVER   → enable/disable, world lifecycle, teleport, persistence, gameplay/runtime claims
+REMOTE_GITHUB → can produce source/static, executed-source, integration-fixture, package-smoke, or rendered-visual evidence when the workflow genuinely exercises it
+LOCAL_CODE    → can additionally prove local build/filesystem/package/integration behavior
+LIVE_SERVER   → can produce live Paper/Minecraft runtime evidence only for the exact changed path that is exercised
 ```
+
+Canonical proof types are defined in `docs/04-system/development-discipline.md`:
+
+```text
+STATIC_SOURCE
+EXECUTED_SOURCE
+INTEGRATION_FIXTURE
+PACKAGE_SMOKE
+VISUAL_SIMULATED
+VISUAL_RENDERED
+LIVE_RUNTIME
+NATIVE_ACCEPTANCE
+```
+
+Do not infer proof strength from where a check ran. `windows-latest` is not automatically `NATIVE_ACCEPTANCE`; a Minecraft screenshot is not automatically `LIVE_RUNTIME`; a running Paper server is not feature proof unless the changed behavior was exercised.
 
 Use the cheapest proof capable of falsifying the changed claim. A green unrelated check is not acceptance evidence. A packaged artifact is not live runtime proof.
 
-Reusable CI artifacts should be traceable to the exact producing commit when provenance is material. Provenance records evidence; it does not raise the proof ceiling.
+Reusable CI artifacts should be traceable to the exact producing commit when provenance is material. Provenance records evidence; it does not raise the proof type or ceiling.
 
 ## Work Discipline
 
