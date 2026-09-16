@@ -169,7 +169,10 @@ impl ServerRuntimeRegistry {
             return Ok(Arc::clone(&entry.controller));
         }
 
-        let root = PathBuf::from(&workspace.path);
+        let root = PathBuf::from(workspace.path.trim());
+        if root.as_os_str().is_empty() {
+            return Err(format!("Server workspace '{}' has no runtime root.", workspace.name));
+        }
         let runtime = Arc::new(ServerManagerState::for_workspace(root));
         runtimes.insert(workspace.id.clone(), RuntimeEntry {
             workspace_name: workspace.name.clone(),
