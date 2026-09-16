@@ -251,12 +251,16 @@ public final class WorldManagerScreen extends Screen {
             y += 44;
         }
 
-        LbButtonWidget transfer = LbUi.button(x, y, contentWidth, 30, "Import / Export",
-                LbButtonWidget.Style.SECONDARY,
-                () -> { if (client != null) client.setScreen(new WorldTransferScreen(
-                        this, controller, transfers, world, WorldTransferScreen.Tab.EXPORT)); });
-        transfer.active = !busy;
-        addDrawableChild(transfer);
+        int half = Math.max(1, (contentWidth - 8) / 2);
+        LbButtonWidget export = LbUi.button(x, y, half, 30, "Export",
+                LbButtonWidget.Style.SECONDARY, () -> openExport(world));
+        export.active = !busy;
+        addDrawableChild(export);
+
+        LbButtonWidget importWorld = LbUi.button(x + half + 8, y, contentWidth - half - 8, 30, "Import",
+                LbButtonWidget.Style.SECONDARY, this::openImport);
+        importWorld.active = !busy;
+        addDrawableChild(importWorld);
         y += 42;
 
         LbButtonWidget duplicate = LbUi.button(x, y, contentWidth, 26, "Duplicate",
@@ -284,6 +288,24 @@ public final class WorldManagerScreen extends Screen {
                 () -> { if (client != null) client.setScreen(new DeleteWorldScreen(this, controller, world)); });
         delete.active = !busy;
         addDrawableChild(delete);
+    }
+
+    private void openExport(WorldControlWireProtocol.WorldSummary world) {
+        if (client == null || operationBusy()) return;
+        if (!isCurrentWorld(world.worldId())) {
+            client.setScreen(WorldTransferScreen.forWorldExport(this, controller, transfers, world));
+            return;
+        }
+        WorldMapScreen map = parent instanceof WorldMapScreen existing
+                ? existing
+                : new WorldMapScreen(controller, transfers, maps);
+        client.setScreen(map);
+        map.openExportWorkspace(false);
+    }
+
+    private void openImport() {
+        if (client == null || operationBusy()) return;
+        client.setScreen(WorldTransferScreen.forImport(this, controller, transfers));
     }
 
     private void confirmArchive(WorldControlWireProtocol.WorldSummary world) {
