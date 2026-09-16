@@ -1,0 +1,87 @@
+name: Launcher Update Channel Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing Launcher release version to republish (MAJOR.MINOR.PATCH)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Share the release serialization lane so a repair cannot race normal publication.
+concurrency:
+  group: launcher-release-stable
+  cancel-in-progress: false
+
+jobs:
+  repair-channel:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Resolve immutable release manifest
+        shell: pwsh
+        run: |
+          if ('${{ inputs.version }}' -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'Launcher version must use MAJOR.MINOR.PATCH.'
+          }
+          $tag = 'launcher-v${{ inputs.version }}'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) { throw "Launcher release $tag does not exist." }
+
+          New-Item -ItemType Directory -Force -Path '.artifacts/channel-repair' | Out-Null
+          gh release download $tag `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern 'latest.json' `
+            --dir '.artifacts/channel-repair' `
+            --clobber
+
+          $manifest = '.artifacts/channel-repair/latest.json'
+          if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+            throw 'Existing Launcher release does not contain latest.json.'
+          }
+          python scripts/verify_launcher_update_manifest.py $manifest --version '${{ inputs.version }}'
+
+          $installerName = python -c "import json,urllib.parse,pathlib; d=json.load(open(r'$manifest',encoding='utf-8')); print(pathlib.PurePosixPath(urllib.parse.urlparse(d['url']).path).name)"
+          if ([string]::IsNullOrWhiteSpace($installerName)) { throw 'Updater manifest has no installer filename.' }
+          $assets = @(gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($assets -notcontains $installerName) {
+            throw "Updater manifest references installer '$installerName' but that asset is not present in $tag."
+          }
+
+      - name: Republish stable channel metadata
+        shell: pwsh
+        run: |
+          ./scripts/publish_launcher_update_channel.ps1 `
+            -Repository $env:GITHUB_REPOSITORY `
+            -ManifestPath '.artifacts/channel-repair/latest.json' `
+            -Version '${{ inputs.version }}'
+
+      - name: Verify repaired stable channel
+        shell: pwsh
+        run: |
+          $published = gh api "repos/$env:GITHUB_REPOSITORY/contents/stable/latest.json?ref=launcher-update-channel" --jq '.content'
+          $published = ($published -replace '\s','')
+          [IO.File]::WriteAllBytes('.artifacts/channel-repair/published-latest.json', [Convert]::FromBase64String($published))
+          python scripts/verify_launcher_update_manifest.py `
+            .artifacts/channel-repair/published-latest.json `
+            --version '${{ inputs.version }}'
+
+      - name: Repair summary
+        shell: pwsh
+        run: |
+          "### Launcher update channel repaired" >> $env:GITHUB_STEP_SUMMARY
+          "Republished stable metadata from immutable release `launcher-v${{ inputs.version }}` without rebuilding or resigning artifacts." >> $env:GITHUB_STEP_SUMMARY
+          "Stable manifest: https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/launcher-update-channel/stable/latest.json" >> $env:GITHUB_STEP_SUMMARY
