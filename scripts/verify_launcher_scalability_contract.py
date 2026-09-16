@@ -56,6 +56,8 @@ def main() -> int:
     backup_recovery = read(LAUNCHER / "src-tauri/src/engine/backup_recovery.rs")
     startup = read(LAUNCHER / "src-tauri/src/engine/startup.rs")
     server_repair = read(LAUNCHER / "src-tauri/src/engine/server_repair.rs")
+    runtime_api = read(LAUNCHER / "src/app/bridge/runtimeApi.ts")
+    preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
     worlds = read(LAUNCHER / "src/pages/Worlds.svelte")
@@ -120,10 +122,16 @@ def main() -> int:
     if contract["overview"].get("repairPlanReusesHealthSnapshot"):
         if "pub health: server_health::ServerHealthSnapshot" not in server_repair:
             errors.append("repair plan no longer carries the health snapshot used to derive it")
-        if "(nextPlan as RepairPlanWithHealth).health" not in health_panel:
-            errors.append("HealthPanel no longer reuses the repair-plan health snapshot")
-        if "Promise.all([" in health_panel and "runtimeProduct.health.server" in health_panel:
-            errors.append("HealthPanel restored duplicate parallel health/repair-plan inspection")
+        if "health: ServerHealthSnapshot" not in runtime_api:
+            errors.append("TypeScript ServerRepairPlan no longer exposes the backend health snapshot")
+        if "health: healthSnapshot()" not in preview_runtime:
+            errors.append("visual preview repair plan no longer matches the production health contract")
+        if "health = nextPlan.health;" not in health_panel:
+            errors.append("HealthPanel no longer reuses the typed repair-plan health snapshot")
+        if "RepairPlanWithHealth" in health_panel:
+            errors.append("HealthPanel restored the legacy repair-plan health cast")
+        if "runtimeProduct.health.server(workspace.id)" in health_panel:
+            errors.append("HealthPanel restored a second backend health diagnosis")
 
     if contract["rendering"].get("offscreenContentVisibility"):
         if "content-visibility: auto" not in app_css:
