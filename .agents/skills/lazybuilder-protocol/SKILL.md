@@ -123,7 +123,9 @@ TRANSFER_BOUND    chunk/window/order/integrity/session rule is unsafe
 UNKNOWN           evidence cannot separate the above
 ```
 
-`ADAPTER_DRIFT` usually means the shared contract should not change.
+Local labels refine global classification while Protocol remains the first wrong owner. `ADAPTER_DRIFT` means the shared contract stays unchanged and the issue must be reclassified to the stale adapter owner; `DOMAIN_LEAK` routes to `WORLD_RUNTIME`; `PRESENTATION_LEAK` routes to `UI_PRESENTATION`; `TRANSPORT_LEAK` routes to the actual transport owner such as Desktop Runtime when loopback/IPC is involved; `UNKNOWN` must name the next separating round-trip evidence.
+
+`ADAPTER_DRIFT` never justifies changing shared types merely to fit a stale adapter.
 
 ## Versioning rules
 
@@ -147,8 +149,7 @@ name exact caller-visible contract
 → update direct Paper/Fabric adapters lockstep
 → update focused round-trip/validation tests
 → targeted build/contract proof
-→ freeze the neutral contract
-→ hand only the typed contract to the next semantic owner
+→ hand domain/presentation residue to its owner
 → STOP
 ```
 
@@ -190,31 +191,27 @@ Compile success does not prove a round trip. Unit round trip does not prove live
 
 ## Handoff / exit contract
 
-Protocol handoff is a **frozen neutral contract**, not a partially designed domain feature.
+Protocol hands off a frozen neutral contract, not a partially decided feature.
 
 ```text
-protocol → lazybuilder-world-management
-handoff: request/result types + identifiers + version + validation/default/bounds + capability semantics
-World Management implements authorization/domain/filesystem behavior without redefining wire meaning
+neutral payload/validation/version/capability contract correct
+→ lazybuilder-world-management
+handoff: exact neutral types + identifiers + defaults/bounds + compatibility/version semantics
+World Management must not redefine wire meaning while implementing Paper/domain behavior
 
-protocol → lazybuilder-ui
-only when the returned state is already presentation-ready
-handoff: typed neutral result/capability only
-UI must not invent server/domain meaning for an underspecified wire field
+neutral result already correct but only rendering/interaction is wrong
+→ lazybuilder-ui
+handoff: exact canonical payload/result/capability meaning only
+UI must not reinterpret permission/domain semantics
 
-protocol ↛ lazybuilder-desktop-runtime
-Desktop loopback HTTP/Tauri IPC is a separate transport/contract boundary; shared protocol is not a generic DTO library for desktop reuse
+adapter drift
+→ route to the adapter's semantic owner
+Paper/domain adapter → lazybuilder-world-management
+Fabric presentation/input adapter → lazybuilder-ui
+runtime-only Minecraft client behavior → preserve semantic owner and mark FABRIC_RUNTIME proof residue
 ```
 
-For a new world capability the normal chain is strictly:
-
-```text
-protocol contract complete
-→ STOP protocol ownership
-→ world-management implements domain behavior
-→ world-management returns canonical domain result
-→ ui presents it
-```
+Desktop HTTP remains outside this chain and routes to `lazybuilder-desktop-runtime`.
 
 Finish when:
 
@@ -222,7 +219,7 @@ Finish when:
 - direct producer and consumer agree with it;
 - version/default/bounds/capability semantics are explicit;
 - matching round-trip/build proof is complete for the available context;
-- downstream owners can consume the frozen contract without reopening protocol semantics;
+- any stale adapter is handed to its owner without modifying a correct shared contract;
 - remaining domain/UI/live interoperability residue is named precisely.
 
 Do not create a second protocol namespace, transport, compatibility framework, or speculative payload surface.
