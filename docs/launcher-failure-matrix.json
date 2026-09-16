@@ -47,6 +47,11 @@
       "markers": ["verify_snapshot_integrity", "sha256", "BackupIntegrityStatus"]
     },
     {
+      "id": "large-backup-progress-write-amplification",
+      "owner": "apps/launcher/src-tauri/src/commands/server_backups.rs",
+      "markers": ["DurableProgressReporter", "MIN_PROGRESS_JOURNAL_STEP_BYTES", "progress_journal_updates_are_bounded_for_large_copies"]
+    },
+    {
       "id": "plugin-input-changes-during-install",
       "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
       "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"]
