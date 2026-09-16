@@ -211,6 +211,64 @@ LIVE_SERVER
 
 A higher-context requirement does not transfer the whole task upward. Prepare and prove everything independent first, then hand off only the minimum residue with its first action, acceptance, and what must not be redone.
 
+## Canonical Proof Vocabulary
+
+Execution context answers **where evidence was produced**. Proof type answers **what the evidence actually observed**. Do not infer proof strength from location alone.
+
+```text
+STATIC_SOURCE
+= source/docs/contract inspection without executing the changed behavior
+
+EXECUTED_SOURCE
+= focused unit/contract/typecheck/compile/build execution of source-level behavior
+
+INTEGRATION_FIXTURE
+= deterministic filesystem/service/integration fixture exercising multiple real owners without claiming live game/OS behavior
+
+PACKAGE_SMOKE
+= built/package/installer artifact identity, contents, installability, basic startup, or provenance checks
+
+VISUAL_SIMULATED
+= deterministic preview/mock/fixture rendering that is explicitly not the native production renderer
+
+VISUAL_RENDERED
+= production Svelte or Minecraft rendering path with representative state; proves appearance/state presentation only
+
+LIVE_RUNTIME
+= actual Paper/Fabric/client-server behavior using exact artifacts and the changed runtime path
+
+NATIVE_ACCEPTANCE
+= installed Local-PC/target-OS acceptance for native Windows/Tauri dialogs, DPI/windowing, GPU/input feel, filesystem/process integration, and other environment-specific behavior
+```
+
+These are **proof types, not a universal linear ladder**. Choose the cheapest type capable of falsifying the claim.
+
+Rules:
+
+- `REMOTE_GITHUB`, `LOCAL_CODE`, and `LIVE_SERVER` are execution contexts, not proof types;
+- CI may legitimately produce `EXECUTED_SOURCE`, `INTEGRATION_FIXTURE`, `PACKAGE_SMOKE`, or `VISUAL_RENDERED` evidence;
+- a CI artifact does not become `NATIVE_ACCEPTANCE` merely because it ran on `windows-latest`;
+- a screenshot does not prove semantic mutation, networking, input timing, or filesystem safety;
+- a compile/build does not prove Paper/Fabric runtime behavior;
+- a live server boot does not prove a feature unless the changed path was actually exercised;
+- `LIVE_RUNTIME` requires exact artifacts and a scenario that touches the changed runtime contract;
+- `NATIVE_ACCEPTANCE` is reserved for behavior whose acceptance materially depends on the target local OS/device environment;
+- exact-commit provenance identifies evidence; it does not upgrade its proof type;
+- report both proof type and remaining ceiling when acceptance is incomplete.
+
+UI's L0–L5 visual ladder is a **specialized presentation mapping** onto this vocabulary:
+
+```text
+L0 → STATIC_SOURCE
+L1 → EXECUTED_SOURCE
+L2 → VISUAL_SIMULATED
+L3 → VISUAL_RENDERED (real Launcher Svelte/CSS)
+L4 → VISUAL_RENDERED (real Minecraft production renderer)
+L5 → NATIVE_ACCEPTANCE
+```
+
+L4 is stronger visual evidence than L3 for Minecraft surfaces, but neither becomes semantic `LIVE_RUNTIME` unless the actual changed runtime behavior is exercised end to end.
+
 ## Context Economy
 
 ```text
@@ -245,13 +303,15 @@ A slightly larger change is justified when it **removes** duplicated owners or s
 Use the cheapest proof capable of disproving the changed claim.
 
 ```text
-trivial adapter/rename        → source/static check
-repository routing/policy     → repository contract verifier
-pure branch/parser/policy     → one focused runnable test
-build/compile contract        → targeted build/test
-filesystem transaction       → focused local/integration fixture
-packaged artifact identity    → exact-SHA provenance + package smoke proof
-Paper/client runtime behavior → LIVE_SERVER / appropriate live context
+trivial adapter/rename        → STATIC_SOURCE
+repository routing/policy     → STATIC_SOURCE + focused repository contract execution when available
+pure branch/parser/policy     → EXECUTED_SOURCE
+build/compile contract        → EXECUTED_SOURCE
+filesystem transaction       → INTEGRATION_FIXTURE
+packaged artifact identity    → PACKAGE_SMOKE + exact-SHA provenance
+visual/layout presentation    → VISUAL_RENDERED when the real renderer path exists
+Paper/Fabric runtime behavior → LIVE_RUNTIME
+native Windows/device behavior→ NATIVE_ACCEPTANCE
 ```
 
 A green unrelated check is not acceptance evidence. A build artifact is not automatically runtime proof. A runtime log from another commit is not proof for the current source.
