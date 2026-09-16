@@ -111,6 +111,7 @@ No Terraform implementation belongs in Utility Manager or World Manager. Shared 
 - per-player bounded history
 - offline players do not retain completed-operation undo history
 - client editor/stroke state resets on disconnect
+- client stroke/undo context also resets when the active Minecraft world or dimension identity changes
 - undo stores original BlockData rather than assuming generated material
 - no whole-world scans
 - no unbounded per-frame shape generation
