@@ -77,6 +77,27 @@ public final class WorldRuntimeService {
         return unloadInternal(id);
     }
 
+    /** Begins a snapshot window without moving players or unloading the world. */
+    boolean beginLiveSnapshotDuringOperation(WorldId id) {
+        WorldRecord world = requireWorld(id);
+        if (world.lifecycle() != WorldLifecycle.ACTIVE) {
+            throw new IllegalStateException("Archived worlds must be restored before use");
+        }
+        if (!runtime.isLoaded(world)) {
+            throw new IllegalStateException("Live snapshot requires a loaded world: " + world.displayName());
+        }
+        return runtime.beginLiveSnapshot(world);
+    }
+
+    /** Ends a snapshot window and restores its previous runtime save policy. */
+    void endLiveSnapshotDuringOperation(WorldId id, boolean previousAutoSave) {
+        WorldRecord world = requireWorld(id);
+        if (!runtime.isLoaded(world)) {
+            throw new IllegalStateException("Live snapshot source is no longer loaded: " + world.displayName());
+        }
+        runtime.endLiveSnapshot(world, previousAutoSave);
+    }
+
     private WorldRecord loadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
         if (world.lifecycle() != WorldLifecycle.ACTIVE) {
