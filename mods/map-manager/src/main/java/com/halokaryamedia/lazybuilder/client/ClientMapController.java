@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.client;
 
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 
@@ -47,6 +48,7 @@ public final class ClientMapController {
         }
     }
 
+    /** Legacy export path retained for compatibility with the old transfer screen. */
     public void exportAreaCurrent(
             int x1,
             int z1,
@@ -54,6 +56,19 @@ public final class ClientMapController {
             int z2,
             String targetFormat,
             String artifactName
+    ) {
+        exportAreaCurrent(x1, z1, x2, z2, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
+    }
+
+    /** Export-workspace path. Settings are export-only and never mutate the source world. */
+    public void exportAreaCurrent(
+            int x1,
+            int z1,
+            int x2,
+            int z2,
+            String targetFormat,
+            String artifactName,
+            ExportSettingsWire.Settings settings
     ) {
         if (exportBusy) throw new IllegalStateException("An Export Area request is already active");
         MapActionWireProtocol.CurrentWorldResult current = currentWorld;
@@ -67,7 +82,8 @@ public final class ClientMapController {
         revision++;
         try {
             LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.exportAreaRequest(
-                    worldId, x1, z1, x2, z2, targetFormat, artifactName));
+                    worldId, x1, z1, x2, z2, targetFormat, artifactName,
+                    Objects.requireNonNull(settings, "settings")));
         } catch (RuntimeException exception) {
             exportBusy = false;
             lastError = "Could not send Export Area request";
@@ -100,13 +116,13 @@ public final class ClientMapController {
             case MapActionWireProtocol.ExportAccepted ignored -> {
                 lastError = null;
                 revision++;
-                LazyBuilderClientNetworking.notifyPlayer("Export Area started.");
+                LazyBuilderClientNetworking.notifyPlayer("Export started.");
             }
             case MapActionWireProtocol.ExportComplete complete -> {
                 exportBusy = false;
                 lastError = null;
                 revision++;
-                LazyBuilderClientNetworking.notifyPlayer("Export Area ready: " + complete.fileName());
+                LazyBuilderClientNetworking.notifyPlayer("Export ready: " + complete.fileName());
                 completedExportHandler.accept(complete.fileName());
             }
             case MapActionWireProtocol.ErrorResponse error -> {
