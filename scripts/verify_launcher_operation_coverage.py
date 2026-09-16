@@ -24,6 +24,7 @@ def main() -> int:
     diagnostics = RUST / "commands" / "diagnostics.rs"
     plugins = RUST / "commands" / "plugin_manager.rs"
     resources = RUST / "commands" / "resource_settings.rs"
+    client = RUST / "commands" / "client_integration.rs"
 
     require(creation, 'begin_exclusive("create-server"')
     require(
@@ -62,6 +63,15 @@ def main() -> int:
         "ServerStartLease::acquire()",
         '"RESOURCE_SETTINGS_SAVE_FAILED"',
         '"Server resource settings task ended unexpectedly"',
+    )
+    require(
+        client,
+        'CLIENT_INTEGRATION_RESOURCE: &str = "client:modrinth"',
+        "run_client_mutation(",
+        '"select-client-profile"',
+        '"sync-client-components"',
+        "begin_exclusive(kind, CLIENT_INTEGRATION_RESOURCE, false)",
+        '"Client integration task ended unexpectedly"',
     )
     require(repair, 'begin_exclusive("repair-server"')
     require(diagnostics, 'begin_exclusive("export-support-bundle"')
