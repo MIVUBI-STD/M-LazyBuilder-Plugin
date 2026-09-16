@@ -109,12 +109,6 @@ pub fn workspace_pick_parent() -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
-pub fn workspace_create(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>, parent_path: String, name: String) -> CommandResult<WorkspaceEntry> {
-    ensure_switch_allowed(&state, &operations)?;
-    workspace_registry::create(&PathBuf::from(parent_path), &name).map_err(CommandError::from)
-}
-
-#[tauri::command]
 pub fn workspace_adoption_pick(state: State<'_, ServerManagerState>, operations: State<'_, OperationRegistry>) -> CommandResult<Option<adoption::AdoptionPlan>> {
     ensure_switch_allowed(&state, &operations)?;
     let Some(path) = rfd::FileDialog::new().set_title("Choose existing Paper server to adopt").pick_folder() else { return Ok(None); };
