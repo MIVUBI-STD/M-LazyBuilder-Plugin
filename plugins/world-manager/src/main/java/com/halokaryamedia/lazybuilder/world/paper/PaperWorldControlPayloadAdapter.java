@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.world.paper;
 
 import com.halokaryamedia.lazybuilder.world.application.WorldCreationService;
 import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
+import com.halokaryamedia.lazybuilder.world.application.WorldExportOptions;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
 import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
@@ -11,6 +12,7 @@ import com.halokaryamedia.lazybuilder.world.application.WorldSettingsSnapshot;
 import com.halokaryamedia.lazybuilder.world.application.WorldTeleportService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
@@ -545,17 +547,37 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
 
     private void handleExport(Player player, WorldControlWireProtocol.ExportWorld request) {
         if (!beginHeavy(player)) return;
+        final WorldExportOptions options;
+        try {
+            options = exportOptions(request.settings());
+        } catch (RuntimeException exception) {
+            heavyInFlight.remove(player.getUniqueId());
+            send(player, WorldControlWireProtocol.error(exception.getMessage()));
+            return;
+        }
         scheduleHeavy(
                 player,
                 () -> heavyOperations.exportWorld(
                         new WorldId(request.worldId()),
                         request.targetFormat(),
                         request.artifactName(),
+                        options,
                         WorldHeavyOperationOrchestrator.Progress.NONE
                 ),
                 result -> encode(new WorldControlWireProtocol.ExportReady(
                         request.worldId(), result.artifact().getFileName().toString(), result.targetFormat()))
         );
+    }
+
+    private static WorldExportOptions exportOptions(ExportSettingsWire.Settings settings) {
+        Objects.requireNonNull(settings, "settings");
+        WorldGameMode gameMode = settings.gameMode().isEmpty()
+                ? null
+                : WorldGameMode.valueOf(settings.gameMode().toUpperCase(Locale.ROOT));
+        WorldDifficulty difficulty = settings.difficulty().isEmpty()
+                ? null
+                : WorldDifficulty.valueOf(settings.difficulty().toUpperCase(Locale.ROOT));
+        return new WorldExportOptions(gameMode, difficulty, settings.gameRules(), true);
     }
 
     private boolean beginHeavy(Player player) {
