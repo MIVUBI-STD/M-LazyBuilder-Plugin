@@ -88,32 +88,32 @@
     <div class="loading-card" aria-live="polite">Loading Launcher settings…</div>
   {:else}
     <section class="settings-group">
-      <div class="group-copy"><h3>Startup</h3><p>Choose whether LazyBuilder should reopen your most recently used server workspace when the app starts.</p></div>
+      <div class="group-copy"><h3>Startup</h3><p>Choose whether LazyBuilder should reopen your most recently used server when the app starts.</p></div>
       <label class="setting-row">
-        <div><strong>Remember last server</strong><span>Reopen the most recent available server without starting Paper.</span></div>
+        <div><strong>Remember last server</strong><span>Reopen the most recent available server without starting it.</span></div>
         <input type="checkbox" bind:checked={draft.rememberLastServer} disabled={saving} />
       </label>
     </section>
 
     <section class="settings-group">
-      <div class="group-copy"><h3>Safety</h3><p>Protect active server sessions from accidental Launcher shutdown.</p></div>
+      <div class="group-copy"><h3>Safety</h3><p>Protect active server sessions from accidental app shutdown.</p></div>
       <label class="setting-row">
-        <div><strong>Confirm before closing while server is running</strong><span>Ask before closing the desktop app when LazyBuilder is managing an active Paper process.</span></div>
+        <div><strong>Confirm before closing while server is running</strong><span>Ask before closing LazyBuilder when a server is still running.</span></div>
         <input type="checkbox" bind:checked={draft.confirmCloseWhileServerRunning} disabled={saving} />
       </label>
     </section>
 
     <section class="settings-group">
-      <div class="group-copy"><h3>Support</h3><p>Create a local troubleshooting archive when you need to inspect or share Launcher diagnostics.</p></div>
+      <div class="group-copy"><h3>Support</h3><p>Create a local troubleshooting package when you need help diagnosing a problem.</p></div>
       <div class="support-card">
-        <div><strong>Export support bundle</strong><span>Includes bounded Launcher metadata, operation/startup state, and Launcher logs. Worlds, plugin data, server configuration, authentication material, and signing keys are excluded.</span><small>Known workspace and user-data paths are redacted. Nothing is uploaded automatically.</small></div>
+        <div><strong>Export support bundle</strong><span>Includes Launcher information, recent activity, startup status, and logs. Worlds, plugin data, server configuration, sign-in data, and security keys are excluded.</span><small>Personal file paths are redacted where possible. Nothing is uploaded automatically.</small></div>
         <button class="secondary" disabled={exportingSupport} onclick={exportSupportBundle}>{exportingSupport ? 'Exporting…' : 'Export ZIP'}</button>
       </div>
     </section>
 
     <section class="future-group" aria-label="Update preferences status">
-      <div><strong>Update preferences</strong><span>Signed release infrastructure is prepared. Automatic update checks and channels will appear here after the canonical updater public key is provisioned.</span></div>
-      <span class="planned-badge">Key setup required</span>
+      <div><strong>Update preferences</strong><span>Automatic update checks and update channels will be available after secure update verification is configured.</span></div>
+      <span class="planned-badge">Not available yet</span>
     </section>
 
     <footer class="settings-footer">
