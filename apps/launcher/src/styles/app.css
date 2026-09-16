@@ -73,6 +73,8 @@ h2 { letter-spacing: -.015em; }
    DOM semantics and keyboard navigation intact. Intrinsic sizes prevent scroll jumps. */
 .server-tile,
 .world-row,
+.plugin-row,
+.backup-row,
 .history-row,
 .operation-card {
   content-visibility: auto;
