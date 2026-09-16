@@ -33,6 +33,7 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Keep Chat Draft: enabled by default and restores an unsent draft while the current multiplayer connection/session remains active; disconnect clears the draft so text is not carried into another server context;
 - Chat Search: enabled by default and adds a compact `Ctrl+F` overlay to the existing vanilla chat screen. Search is session-only, indexes at most the existing bounded chat history, shows the selected match as a small preview, uses `Enter` / `Shift+Enter` for navigation, and does not persist chat to disk;
 - Chat Timestamps: enabled by default and prefixes visible chat lines with a low-contrast local `HH:mm` timestamp while preserving the original text component styling/click behavior;
+- Compact Duplicate Messages: consecutive recognized gameplay/warning lines such as repeated join/leave, game-mode feedback, advancement/challenge feedback, and compact warnings are replaced in place with a single `×N` line within an eight-second window. Player chat and unknown system text are never collapsed. Rewriting is suspended while the user is scrolled up in chat;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
 - Copy Connection Details: contextual action on the disconnect screen for copying the known server target and disconnect reason;
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
@@ -73,8 +74,9 @@ Routing policy:
 - player-relevant information may appear in chat;
 - developer-only detail belongs in logs/console;
 - information important to both should use a compact in-game message plus detailed console/log output;
-- repeated `GAME`, `SYSTEM`, and `WARNING` events may be collapsed by a stable message fingerprint;
+- repeated recognized `GAME` and `WARNING` presentation lines may be collapsed conservatively when they are consecutive;
 - normal player chat must not be deduplicated by default;
+- unknown system text must not be collapsed merely because its rendered text happens to repeat;
 - internal translation keys, stack traces, packet/signing state, and implementation identifiers must not be exposed in normal chat unless explicitly requested for diagnostics.
 
 The preferred chat implementation stays modular under `utility/chat/` with separate ownership for classification, history/deduplication, input/draft, search, presentation, contextual actions, and signing compatibility. Mixins should remain thin adapters into Minecraft UI/events.
@@ -89,11 +91,13 @@ Chat Search attaches a single hidden `TextFieldWidget` to vanilla `ChatScreen` d
 
 Chat Timestamps remain a thin `ChatHud.addMessage(Text)` argument transform rather than a custom renderer. The prefix uses a copied text component so the original message content retains its style and click metadata. Treat this method signature as a Minecraft-version verification point.
 
+Compact Duplicate Messages only rewrites the newest unsigned vanilla `addMessage(Text)` entry. It removes that entry and its visible wrapped lines, then lets vanilla add the compact replacement again so line wrapping remains Minecraft-owned. This path intentionally does not target signed player-chat storage, does not run while chat is scrolled, and resets at connection boundaries. `messages`, `visibleMessages`, `scrolledLines`, and `ChatHudLine.Visible.endOfEntry()` are version-sensitive verification points.
+
 Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existing `searchBox`, and private `setSelectedTab` path for Yarn 1.21.4. Treat Minecraft-version upgrades as a verification point for this mixin rather than introducing a replacement inventory/search controller.
 
 Compact Debug targets `DebugHud.render` and the existing `Keyboard.onKey` debug-input path for Yarn 1.21.4. Treat Minecraft-version upgrades as verification points for these mixins. Keep the renderer thin and keep metric/telemetry state outside the mixin classes.
 
-Keep Chat Draft, chat search, chat timestamps, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Keep Chat Draft, chat search, chat timestamps, compact duplicate messages, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
