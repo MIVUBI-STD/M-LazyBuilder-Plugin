@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use sysinfo::{Pid, System};
 
 const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
+const START_IN_PROGRESS_MESSAGE: &str = "A LazyBuilder server start is currently in progress. Wait for it to finish before changing the active server or starting another server.";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,7 +32,7 @@ impl ServerStartLease {
                 Ok(()) => return Ok(Self { path, marker }),
                 Err(error) if error.kind() == ErrorKind::AlreadyExists => {
                     if lock_owner_is_alive(&path)? {
-                        return Err("Another LazyBuilder window is currently starting a server. Wait for that start to finish before starting another server.".into());
+                        return Err(START_IN_PROGRESS_MESSAGE.into());
                     }
 
                     // Never delete a stale-looking lock in place. Another launcher may
@@ -48,7 +49,7 @@ impl ServerStartLease {
                         Err(rename_error) if rename_error.kind() == ErrorKind::NotFound => continue,
                         Err(rename_error) => {
                             if lock_owner_is_alive(&path)? {
-                                return Err("Another LazyBuilder window is currently starting a server. Wait for that start to finish before starting another server.".into());
+                                return Err(START_IN_PROGRESS_MESSAGE.into());
                             }
                             return Err(format!("Could not retire stale server-start lock: {rename_error}"));
                         }
