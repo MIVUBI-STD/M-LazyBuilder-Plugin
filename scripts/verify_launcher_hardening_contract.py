@@ -51,8 +51,10 @@ def main() -> int:
     registry = RUST / "engine" / "workspace_registry.rs"
     restore = RUST / "engine" / "server_restore.rs"
     backups = RUST / "engine" / "server_backups.rs"
+    storage = RUST / "engine" / "storage_health.rs"
+    health = RUST / "engine" / "server_health.rs"
 
-    require(engine_mod, "pub mod workspace_creation;", "pub mod app_instance;", "pub mod app_data_migrations;")
+    require(engine_mod, "pub mod workspace_creation;", "pub mod app_instance;", "pub mod app_data_migrations;", "pub mod storage_health;")
     require(commands_mod, "pub mod workspace_creation;")
 
     require(
@@ -110,6 +112,15 @@ def main() -> int:
         "pub fn verify(",
         "verify_snapshot_integrity",
     )
+
+    require(
+        storage,
+        "CRITICAL_AVAILABLE_BYTES",
+        "WARNING_MIN_AVAILABLE_BYTES",
+        "StoragePressure { Normal, Warning, Critical, Unknown }",
+        "inspect_workspace",
+    )
+    require(health, '"storage-capacity"', "StoragePressure::Critical", "ServerHealthState::NeedsAttention")
 
     print("Launcher production-hardening source contract OK")
     return 0
