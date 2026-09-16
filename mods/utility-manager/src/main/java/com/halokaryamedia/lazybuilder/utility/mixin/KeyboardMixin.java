@@ -1,11 +1,9 @@
 package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
-import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
+import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugInteraction;
 import net.minecraft.client.Keyboard;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.math.BlockPos;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,15 +12,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Uses the familiar F3+C chord to copy the clean XYZ triplet while Compact Debug is active. */
+/** Temporarily releases the pointer while Alt is held over an active Compact Debug HUD. */
 @Mixin(Keyboard.class)
 abstract class KeyboardMixin {
     @Shadow
     @Final
     private MinecraftClient client;
 
-    @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
-    private void lazybuilder$copyCompactCoordinates(
+    @Inject(method = "onKey", at = @At("HEAD"))
+    private void lazybuilder$compactDebugInteraction(
             long window,
             int key,
             int scancode,
@@ -31,15 +29,13 @@ abstract class KeyboardMixin {
             CallbackInfo ci
     ) {
         if (!UtilityManagerClient.preferences().compactDebugHud()) return;
-        if (action != GLFW.GLFW_PRESS || key != GLFW.GLFW_KEY_C) return;
-        if (client.player == null || client.currentScreen != null) return;
         if (window != client.getWindow().getHandle()) return;
-        if (!InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_F3)) return;
+        if (key != GLFW.GLFW_KEY_LEFT_ALT && key != GLFW.GLFW_KEY_RIGHT_ALT) return;
 
-        BlockPos pos = client.player.getBlockPos();
-        String coordinate = pos.getX() + " " + pos.getY() + " " + pos.getZ();
-        ((Keyboard) (Object) this).setClipboard(coordinate);
-        UtilityNotifications.show("Coordinates copied", coordinate);
-        ci.cancel();
+        if (action == GLFW.GLFW_PRESS) {
+            CompactDebugInteraction.begin(client);
+        } else if (action == GLFW.GLFW_RELEASE) {
+            CompactDebugInteraction.end(client);
+        }
     }
 }

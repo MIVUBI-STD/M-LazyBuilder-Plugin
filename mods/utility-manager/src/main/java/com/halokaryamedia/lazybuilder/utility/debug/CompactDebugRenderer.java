@@ -14,6 +14,7 @@ public final class CompactDebugRenderer {
 
     private static final int PANEL_BACKGROUND = 0x88000000;
     private static final int COORDINATE_BACKGROUND = 0xA0000000;
+    private static final int COORDINATE_HOVER_BACKGROUND = 0xB8202020;
     private static final int TEXT_PRIMARY = 0xFFF2F2F2;
     private static final int TEXT_SECONDARY = 0xFFB8B8B8;
     private static final int TEXT_HEADING = 0xFFFFFFFF;
@@ -30,7 +31,8 @@ public final class CompactDebugRenderer {
 
         int coordinateWidth = coordinatePanelWidth(text, snapshot);
         int coordinateHeight = PADDING * 2 + ROW_HEIGHT * 3;
-        drawCoordinatePanel(context, text, snapshot, MARGIN, MARGIN, coordinateWidth, coordinateHeight);
+        CompactDebugInteraction.publishCoordinateBounds(MARGIN, MARGIN, coordinateWidth, coordinateHeight);
+        drawCoordinatePanel(context, text, snapshot, client, MARGIN, MARGIN, coordinateWidth, coordinateHeight);
 
         int leftY = MARGIN + coordinateHeight + SECTION_GAP;
         int leftWidth = leftPanelWidth(text, snapshot);
@@ -47,17 +49,21 @@ public final class CompactDebugRenderer {
             DrawContext context,
             TextRenderer text,
             CompactDebugSnapshot snapshot,
+            MinecraftClient client,
             int x,
             int y,
             int width,
             int height
     ) {
-        context.fill(x, y, x + width, y + height, COORDINATE_BACKGROUND);
+        int background = CompactDebugInteraction.isCoordinateHovered(client)
+                ? COORDINATE_HOVER_BACKGROUND
+                : COORDINATE_BACKGROUND;
+        context.fill(x, y, x + width, y + height, background);
         int tx = x + PADDING;
         int ty = y + PADDING;
         draw(context, text, "COORDINATE", tx, ty, TEXT_HEADING);
         draw(context, text, coordinateValue(snapshot), tx, ty + ROW_HEIGHT, TEXT_PRIMARY);
-        draw(context, text, "F3+C  Copy", tx, ty + ROW_HEIGHT * 2, TEXT_HINT);
+        draw(context, text, coordinateHint(client), tx, ty + ROW_HEIGHT * 2, TEXT_HINT);
     }
 
     private static void drawLeftPanel(
@@ -131,7 +137,7 @@ public final class CompactDebugRenderer {
 
     private static int coordinatePanelWidth(TextRenderer text, CompactDebugSnapshot snapshot) {
         int content = Math.max(text.getWidth("COORDINATE"), text.getWidth(coordinateValue(snapshot)));
-        content = Math.max(content, text.getWidth("F3+C  Copy"));
+        content = Math.max(content, text.getWidth("Hold Alt · Click to copy"));
         return Math.max(150, content + PADDING * 2);
     }
 
@@ -156,5 +162,10 @@ public final class CompactDebugRenderer {
 
     private static String coordinateValue(CompactDebugSnapshot snapshot) {
         return "X " + snapshot.x() + "   Y " + snapshot.y() + "   Z " + snapshot.z();
+    }
+
+    private static String coordinateHint(MinecraftClient client) {
+        if (!CompactDebugInteraction.interactionActive()) return "Hold Alt · Click to copy";
+        return CompactDebugInteraction.isCoordinateHovered(client) ? "Click to copy" : "Alt interaction active";
     }
 }

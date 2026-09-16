@@ -19,7 +19,7 @@ This document owns presentation and interaction semantics. Fabric implementation
 ```text
 COORDINATE                         SERVER
 X -11   Y 71   Z -481             World      TanaSamawa
-F3+C  Copy                        CPU        18%
+Hold Alt · Click to copy           CPU        18%
                                   RAM        3.7 / 8 GB
 CLIENT
 FPS        143
@@ -44,7 +44,7 @@ Show:
 ```text
 COORDINATE
 X -11   Y 71   Z -481
-F3+C  Copy
+Hold Alt · Click to copy
 ```
 
 Rules:
@@ -130,17 +130,29 @@ The visible axis labels are presentation aids. Clipboard output stays clean:
 -11 71 -481
 ```
 
-V1 uses the existing Minecraft debug chord:
+V1 uses a temporary pointer interaction instead of an F3 key chord:
 
 ```text
-F3 + C
+F3 open
+→ hold Alt
+→ Minecraft releases the pointer temporarily
+→ Coordinate block highlights when hovered
+→ left-click anywhere on the Coordinate block
 → copy complete XYZ triplet
 → Utility toast: Coordinates copied
+→ release Alt
+→ pointer returns to normal camera control
 ```
 
-This deliberately avoids a second permanent keybind. It also avoids pretending the normal gameplay HUD has a reliable clickable pointer while Minecraft keeps the cursor captured.
+Rules:
 
-If a future native cursor-enabled debug interaction is introduced, the whole Coordinate block may become clickable, but X/Y/Z must never become three independent copy targets.
+- `F3+C` is not owned or overridden by Utility Manager;
+- no second permanent keybind is introduced;
+- X/Y/Z are one copy target, never three independent targets;
+- interaction exists only while Compact Debug was recently rendered, no other screen is open, and Alt is held;
+- Coordinate remains readable without entering interaction mode;
+- gameplay left-click must not also dispatch when the Coordinate block owns the click;
+- leaving interaction mode restores normal cursor capture.
 
 ## F3 behavior
 
@@ -151,7 +163,7 @@ F3 → Compact Debug off
 
 Do not create another debug-screen keybind or a parallel debug UI.
 
-Useful Vanilla F3 combinations should remain untouched except the explicitly owned `F3+C` coordinate-copy behavior while Compact Debug is enabled.
+Vanilla F3 combinations remain untouched. Compact Debug owns only its rendered presentation plus the temporary Alt pointer interaction for Coordinate copy.
 
 ## Visual treatment
 
@@ -163,6 +175,7 @@ Approved treatment:
 Coordinate
 → compact translucent background
 → slightly stronger visual priority
+→ subtle hover highlight only while Alt interaction is active
 
 Client / World / Server
 → restrained translucent background
@@ -179,6 +192,7 @@ Rules:
 - labels are quieter than values;
 - headings are clear but compact;
 - coordinate value is the strongest single left-side value;
+- hover must not be the only indication that copying exists: the Coordinate block includes the `Hold Alt · Click to copy` hint;
 - readability must survive bright sky, snow, Nether, caves, shaders, and no-shader scenes.
 
 ## Layout
@@ -195,7 +209,7 @@ section gap        larger than row spacing
 
 At narrow widths, reduce non-essential spacing before compromising text readability. Coordinate priority is preserved. No horizontal scrolling.
 
-GUI-scale changes recompute placement from the current scaled window size.
+GUI-scale changes recompute placement and Coordinate hit bounds from the current scaled window size.
 
 ## Performance
 
@@ -250,7 +264,11 @@ No individual row toggles in V1.
 F3 renders one compact LazyBuilder presentation
 Coordinate is first and most prominent at top-left
 X/Y/Z are explicit and cannot be confused
-F3+C copies raw integer XYZ in X Y Z order
+holding Alt temporarily enables pointer interaction
+Coordinate block visibly highlights on hover
+left-clicking Coordinate copies raw integer XYZ in X Y Z order
+releasing Alt restores normal camera cursor capture
+F3+C remains vanilla/unowned
 copy confirmation uses existing Utility toast
 Client shows only FPS/CPU/GPU/RAM
 World shows only Facing/Biome/Time
