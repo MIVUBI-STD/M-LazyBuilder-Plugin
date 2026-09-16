@@ -24,6 +24,15 @@ if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
 }
 
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw
+try {
+    $manifestDocument = $manifest | ConvertFrom-Json
+} catch {
+    throw "Updater manifest is not valid JSON: $($_.Exception.Message)"
+}
+if ([string]$manifestDocument.version -ne $Version) {
+    throw "Updater manifest version '$($manifestDocument.version)' does not match requested version '$Version'."
+}
+
 $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($manifest))
 $refEndpoint = "repos/$Repository/git/ref/heads/$Branch"
 
@@ -67,9 +76,34 @@ if (-not $branchExists) {
         throw "Updater channel contains unexpected root entries: $($unexpected -join ', ')"
     }
 
-    $existing = gh api "repos/$Repository/contents/stable/latest.json?ref=$Branch" --jq '.sha' 2>$null
-    $manifestExists = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existing)
+    $existingJson = gh api "repos/$Repository/contents/stable/latest.json?ref=$Branch" 2>$null
+    $manifestExists = $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingJson)
     $global:LASTEXITCODE = 0
+
+    $existing = $null
+    if ($manifestExists) {
+        $existingMetadata = $existingJson | ConvertFrom-Json
+        $existing = [string]$existingMetadata.sha
+        if ([string]::IsNullOrWhiteSpace($existing)) {
+            throw 'Stable update channel metadata is missing the current latest.json SHA.'
+        }
+
+        $existingContent = ([string]$existingMetadata.content -replace '\s','')
+        if ([string]::IsNullOrWhiteSpace($existingContent)) {
+            throw 'Stable update channel metadata is missing current latest.json content.'
+        }
+        try {
+            $existingManifestText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($existingContent))
+            $existingManifest = $existingManifestText | ConvertFrom-Json
+            $existingVersion = [Version]([string]$existingManifest.version)
+            $requestedVersion = [Version]$Version
+        } catch {
+            throw "Could not validate the currently published stable version: $($_.Exception.Message)"
+        }
+        if ($existingVersion -gt $requestedVersion) {
+            throw "Refusing to downgrade stable Launcher channel from $existingVersion to $requestedVersion."
+        }
+    }
 
     $payload = @{
         message = "release(launcher): stable $Version"
