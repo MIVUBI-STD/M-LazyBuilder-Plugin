@@ -16,6 +16,20 @@ public interface WorldRuntimeGateway {
 
     void unloadWorld(WorldRecord world);
 
+    /**
+     * Flushes a loaded world's current state to disk and pauses periodic autosave while
+     * a read-only filesystem snapshot is captured. The returned token must be restored
+     * with {@link #endLiveSnapshot(WorldRecord, boolean)} on the runtime thread.
+     */
+    default boolean beginLiveSnapshot(WorldRecord world) {
+        throw new UnsupportedOperationException("Live world snapshots are not supported by this runtime");
+    }
+
+    /** Restores the runtime state captured by {@link #beginLiveSnapshot(WorldRecord)}. */
+    default void endLiveSnapshot(WorldRecord world, boolean previousAutoSave) {
+        throw new UnsupportedOperationException("Live world snapshots are not supported by this runtime");
+    }
+
     void teleportPlayerToSpawn(UUID playerId, WorldRecord world);
 
     default void teleportPlayerToSpawn(UUID playerId, WorldRecord world, WorldGameMode gameMode) {
