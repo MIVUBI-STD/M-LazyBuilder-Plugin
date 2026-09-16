@@ -1,7 +1,7 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_start_lock::ServerStartLease;
-use crate::engine::{server_backups, server_process_guard, server_restore, workspace_registry};
+use crate::engine::{backup_recovery, server_backups, server_process_guard, server_restore, workspace_registry};
 use tauri::{AppHandle, Manager, State};
 
 const MIN_PROGRESS_JOURNAL_STEP_BYTES: u64 = 16 * 1024 * 1024;
@@ -44,6 +44,11 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
+        if let Err(message) = backup_recovery::begin(&workspace_id) {
+            let error = CommandError::recoverable("BACKUP_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+            require_recovery(&operations, &operation_id, &error);
+            return Err(error);
+        }
 
         // Backup copy callbacks can fire once per 1 MiB chunk. Persisting every callback
         // would rewrite the complete operation journal tens of thousands of times on a
@@ -54,11 +59,32 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
             reporter.report(phase, status, details, measured);
         });
         match result {
-            Ok(backup) => { let _ = operations.succeed(&operation_id, "Server backup created"); Ok(backup) }
+            Ok(backup) => {
+                if let Err(recovery_error) = backup_recovery::recover_workspace(&workspace_id) {
+                    let _ = operations.add_warning(&operation_id, &format!(
+                        "Backup succeeded, but recovery-index cleanup is pending and will be retried on next startup: {recovery_error}"
+                    ));
+                }
+                let _ = operations.succeed(&operation_id, "Server backup created");
+                Ok(backup)
+            }
             Err(message) => {
-                let error = CommandError::recoverable("BACKUP_FAILED", message, "Retry backup");
-                fail_operation(&operations, &operation_id, &error, true);
-                Err(error)
+                match backup_recovery::recover_workspace(&workspace_id) {
+                    Ok(_) => {
+                        let error = CommandError::recoverable("BACKUP_FAILED", message, "Retry backup");
+                        fail_operation(&operations, &operation_id, &error, true);
+                        Err(error)
+                    }
+                    Err(recovery_error) => {
+                        let error = CommandError::recoverable(
+                            "BACKUP_RECOVERY_REQUIRED",
+                            format!("{message}. Backup staging recovery also needs attention: {recovery_error}"),
+                            "Restart LazyBuilder",
+                        );
+                        require_recovery(&operations, &operation_id, &error);
+                        Err(error)
+                    }
+                }
             }
         }
     });
@@ -66,7 +92,7 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
     match task.await {
         Ok(result) => result,
         Err(error) => {
-            let _ = app.state::<OperationRegistry>().fail(&join_operation_id, OperationError {
+            let _ = app.state::<OperationRegistry>().require_recovery(&join_operation_id, OperationError {
                 code: "TASK_FAILED".into(), message: "Server backup task ended unexpectedly".into(), details: error.to_string(), recoverable: true,
             });
             Err(CommandError::new("TASK_FAILED", format!("Server backup task failed: {error}")))
@@ -130,28 +156,57 @@ pub async fn server_backup_restore(
                 return Err(error);
             }
         }
+        // Restore always creates a full safety backup before swapping the workspace.
+        // Track that staging by workspace so a hard kill can be reconciled without a
+        // full scan of every registered server on subsequent Launcher starts.
+        if let Err(message) = backup_recovery::begin(&workspace_id) {
+            let error = CommandError::recoverable("BACKUP_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+            require_recovery(&operations, &operation_id, &error);
+            return Err(error);
+        }
 
         let mut reporter = DurableProgressReporter::new(&operations, &operation_id);
         let result = server_restore::restore_tracked(&workspace_id, &backup_id, |phase, status, details, measured| {
             reporter.report(phase, status, details, measured);
         });
+        let backup_cleanup = backup_recovery::recover_workspace(&workspace_id);
         match result {
             Ok(result) => {
+                if let Err(recovery_error) = backup_cleanup {
+                    let _ = operations.add_warning(&operation_id, &format!(
+                        "Restore succeeded, but safety-backup recovery-index cleanup is pending: {recovery_error}"
+                    ));
+                }
                 if result.cleanup_pending { let _ = operations.add_warning(&operation_id, "Restore succeeded; rollback staging cleanup will be retried on next startup."); }
                 let _ = operations.succeed(&operation_id, "Server restored");
                 Ok(result)
             }
             Err(failure) if failure.recovery_required => {
-                let error = CommandError::recoverable("RESTORE_RECOVERY_REQUIRED", failure.message.clone(), "Restart LazyBuilder");
-                let _ = operations.require_recovery(&operation_id, OperationError {
-                    code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true,
-                });
+                let details = match backup_cleanup {
+                    Ok(_) => failure.message.clone(),
+                    Err(recovery_error) => format!("{}. Safety-backup staging recovery also needs attention: {recovery_error}", failure.message),
+                };
+                let error = CommandError::recoverable("RESTORE_RECOVERY_REQUIRED", details, "Restart LazyBuilder");
+                require_recovery(&operations, &operation_id, &error);
                 Err(error)
             }
             Err(failure) => {
-                let error = CommandError::recoverable("RESTORE_FAILED", failure.message, "Retry restore");
-                fail_operation(&operations, &operation_id, &error, true);
-                Err(error)
+                match backup_cleanup {
+                    Ok(_) => {
+                        let error = CommandError::recoverable("RESTORE_FAILED", failure.message, "Retry restore");
+                        fail_operation(&operations, &operation_id, &error, true);
+                        Err(error)
+                    }
+                    Err(recovery_error) => {
+                        let error = CommandError::recoverable(
+                            "BACKUP_RECOVERY_REQUIRED",
+                            format!("{}. Safety-backup staging recovery also needs attention: {recovery_error}", failure.message),
+                            "Restart LazyBuilder",
+                        );
+                        require_recovery(&operations, &operation_id, &error);
+                        Err(error)
+                    }
+                }
             }
         }
     });
@@ -240,6 +295,12 @@ fn should_persist_progress(last_current: u64, last_total: Option<u64>, current: 
 fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &CommandError, recoverable: bool) {
     let _ = operations.fail(operation_id, OperationError {
         code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable,
+    });
+}
+
+fn require_recovery(operations: &OperationRegistry, operation_id: &str, error: &CommandError) {
+    let _ = operations.require_recovery(operation_id, OperationError {
+        code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true,
     });
 }
 
