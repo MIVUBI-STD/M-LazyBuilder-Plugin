@@ -10,7 +10,7 @@
   import ServerConsole from './components/ServerConsole.svelte';
   import { installLauncherCloseGuard } from './app/closeGuard';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
-  import { canOpenRuntimeConsole, canStopLibraryRuntime, stopLibraryRuntime } from './app/serverLibraryRuntimeActions';
+  import { canMutateLibraryServer, canOpenRuntimeConsole, canStopLibraryRuntime, stopLibraryRuntime } from './app/serverLibraryRuntimeActions';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, ServerRuntimeSummary, WorkspaceDuplicateEstimate, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
@@ -227,6 +227,11 @@
     libraryConsoleServerName = server.name;
   }
 
+  function closeLibraryConsole() {
+    libraryConsoleWorkspaceId = null;
+    void loadServerRuntimes();
+  }
+
   async function stopRuntimeFromLibrary(server: WorkspaceEntry, runtime: ServerRuntimeSummary | null) {
     if (!canStopLibraryRuntime(runtime) || libraryRuntimeBusyId) return;
     const detached = runtime?.state === 'Detached';
@@ -430,7 +435,7 @@
                   <div class="server-tile">
                     <button class="server-open" onclick={() => activateServer(server)}><div class="server-icon">{server.name.slice(0,1).toUpperCase()}</div><div class="server-tile-copy"><strong>{server.name}</strong>{#if runtime && runtimeTone(runtime)}<span class={`runtime-meta ${runtimeTone(runtime)}`}><i aria-hidden="true"></i>{runtimeMeta(runtime)}</span>{:else}<span title={server.path}>{formatLastOpened(server.lastOpenedUnixSeconds)}</span>{/if}</div><span class="open-chevron">›</span></button>
                     <div class="server-menu-wrap"><button class="server-menu-button" aria-label={`Manage ${server.name}`} aria-expanded={menuServerId === server.id} onclick={() => (menuServerId = menuServerId === server.id ? null : server.id)}>•••</button>
-                      {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => activateServer(server)}>Open</button>{#if canOpenRuntimeConsole(runtime)}<button onclick={() => openLibraryConsole(server, runtime)}>Open console</button><button disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop server'}</button><div class="menu-divider"></div>{:else if runtime?.state === 'Detached'}<button class="danger-menu-item" disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop external server'}</button><div class="menu-divider"></div>{/if}<button onclick={() => openServerFolder(server)}>Open folder</button><button onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
+                      {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => activateServer(server)}>Open</button>{#if canOpenRuntimeConsole(runtime)}<button onclick={() => openLibraryConsole(server, runtime)}>Open console</button><button disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop server'}</button><div class="menu-divider"></div>{:else if runtime?.state === 'Detached'}<button class="danger-menu-item" disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop external server'}</button><div class="menu-divider"></div>{/if}<button onclick={() => openServerFolder(server)}>Open folder</button><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
                     </div>
                   </div>
                 {/each}
@@ -470,7 +475,7 @@
   open={libraryConsoleWorkspaceId !== null}
   workspaceId={libraryConsoleWorkspaceId ?? undefined}
   serverName={libraryConsoleServerName}
-  onClose={() => (libraryConsoleWorkspaceId = null)}
+  onClose={closeLibraryConsole}
 />
 
 <style>
