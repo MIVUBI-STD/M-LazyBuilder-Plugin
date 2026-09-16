@@ -69,6 +69,54 @@ class WorldExportServiceTest {
     }
 
     @Test
+    void liveSnapshotKeepsBuildersInLoadedWorldAndRestoresAutosave() throws Exception {
+        Fixture fixture = fixture(true, true, false, false);
+
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+
+        assertTrue(task.liveSnapshot());
+        assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.runtime.autoSave);
+        assertEquals(1, fixture.runtime.beginLiveSnapshotCount);
+        assertEquals(0, fixture.runtime.unloadCount);
+
+        fixture.service.captureSnapshot(task);
+        assertTrue(fixture.runtime.loaded);
+        fixture.service.resumeSourceAfterSnapshot(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertTrue(fixture.runtime.autoSave);
+        assertTrue(task.sourceRestored());
+        assertEquals(1, fixture.runtime.endLiveSnapshotCount);
+        assertEquals(0, fixture.runtime.loadCount);
+        assertEquals(0, fixture.runtime.unloadCount);
+
+        fixture.service.processSnapshot(task);
+        fixture.service.finish(task);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void liveSnapshotCopyFailureRestoresAutosaveDuringFinish() {
+        Fixture fixture = fixture(true, true, false, true);
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(), WorldExportService.NATIVE_SERVER_FORMAT, "Build-export");
+
+        assertFalse(fixture.runtime.autoSave);
+        assertThrows(IllegalStateException.class, () -> fixture.service.captureSnapshot(task));
+        assertFalse(fixture.runtime.autoSave);
+
+        fixture.service.finish(task);
+
+        assertTrue(fixture.runtime.loaded);
+        assertTrue(fixture.runtime.autoSave);
+        assertEquals(1, fixture.runtime.beginLiveSnapshotCount);
+        assertEquals(1, fixture.runtime.endLiveSnapshotCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void exportOnlySettingsSerializeChunkerWorldAndCleanupSettings() throws Exception {
         WorldExportOptions options = new WorldExportOptions(
                 WorldGameMode.CREATIVE,
@@ -200,13 +248,18 @@ class WorldExportServiceTest {
     }
 
     private Fixture fixture(boolean loaded, boolean failPackage) {
+        return fixture(loaded, false, failPackage, false);
+    }
+
+    private Fixture fixture(boolean loaded, boolean hasPlayers, boolean failPackage, boolean failStageCopy) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
         registry.register(world);
         FakeRuntime runtime = new FakeRuntime(loaded);
         WorldOperationCoordinator operations = new WorldOperationCoordinator();
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
-        FakeFiles files = new FakeFiles(tempDir);
+        WorldRuntimeService runtimeService = new WorldRuntimeService(
+                registry, runtime, operations, ignored -> hasPlayers);
+        FakeFiles files = new FakeFiles(tempDir, failStageCopy);
         FakeArtifacts artifacts = new FakeArtifacts(tempDir, failPackage);
         FakeStore store = new FakeStore();
         ConverterAdapter converter = runtimeArtifact -> { throw new IOException("must not probe"); };
@@ -236,25 +289,43 @@ class WorldExportServiceTest {
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
+        private boolean autoSave = true;
         int loadCount;
         int unloadCount;
+        int beginLiveSnapshotCount;
+        int endLiveSnapshotCount;
         FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {}
         @Override public void rollbackCreatedWorld(WorldRecord world) {}
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
         @Override public void loadWorld(WorldRecord world) { loaded = true; loadCount++; }
         @Override public void unloadWorld(WorldRecord world) { loaded = false; unloadCount++; }
+        @Override public boolean beginLiveSnapshot(WorldRecord world) {
+            beginLiveSnapshotCount++;
+            boolean previous = autoSave;
+            autoSave = false;
+            return previous;
+        }
+        @Override public void endLiveSnapshot(WorldRecord world, boolean previousAutoSave) {
+            endLiveSnapshotCount++;
+            autoSave = previousAutoSave;
+        }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {}
     }
 
     private static final class FakeFiles implements WorldFileRepository {
         private final Path root;
+        private final boolean failStageCopy;
         private WorldCopyProfile lastProfile;
         private int stageCopyCount;
-        FakeFiles(Path root) { this.root = root; }
+        FakeFiles(Path root, boolean failStageCopy) {
+            this.root = root;
+            this.failStageCopy = failStageCopy;
+        }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException {
             stageCopyCount++;
             lastProfile = profile;
+            if (failStageCopy) throw new IOException("snapshot copy failed");
             Path path = root.resolve(operationId.toString());
             Files.createDirectory(path);
             Files.writeString(path.resolve("level.dat"), "data");
