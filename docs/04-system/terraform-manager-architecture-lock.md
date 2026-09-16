@@ -57,6 +57,17 @@ Noise is deformation/detail, never the primary macro generator.
 - Server composition remains additive for this geometry milestone: existing non-air blocks are preserved and generated occupancy fills only air.
 - Client preview shows only prospective air-to-solid additions. Existing occupied blocks inside the field are treated as already-unioned terrain and are not outlined as new work.
 
+### Automatic path continuation
+
+- Cliff and Ridge do not expose an `Attach`, `Continue`, or `Spline` mode.
+- After a successful path stroke, the client keeps only a bounded continuation tail: the previous point, endpoint, front orientation, seed, and public shape settings.
+- A new Cliff/Ridge stroke that starts near that endpoint and still uses compatible tool, variation, size, and height automatically overlaps the prior tail.
+- The overlap moves the new stroke's start taper behind the visible join so two operations read as one terrain formation instead of two tapered pieces touching end-to-end.
+- Continuation reuses the prior front orientation and operation seed to reduce visible orientation/detail discontinuity.
+- Hover preview uses the same continuation tail, so the builder sees the joined result before committing.
+- Continuation is cleared by world/dimension changes, disconnect/reset, undo, face reversal, Mountain selection, or materially different shape settings.
+- This is a local bounded continuity aid only; it does not create a second persistent terrain registry or scan prior operations globally.
+
 ## Tool grammar
 
 ### Cliff
@@ -68,6 +79,7 @@ Noise is deformation/detail, never the primary macro generator.
 - sparse ledges, shoulders and recesses
 - continuous path with no visible segment seams
 - bounded rooted transition below the sampled terrain surface
+- nearby compatible strokes automatically overlap their tails for visual continuation
 
 ### Ridge
 
@@ -77,6 +89,7 @@ Noise is deformation/detail, never the primary macro generator.
 - sparse erosion-like cuts
 - tapered endpoints
 - rooted shoulder transition into existing terrain
+- nearby compatible strokes automatically overlap their tails for visual continuation
 
 ### Mountain
 
@@ -109,7 +122,7 @@ No Terraform implementation belongs in Utility Manager or World Manager. Shared 
 - per-player bounded history
 - offline players do not retain completed-operation undo history
 - client editor/stroke state resets on disconnect
-- client stroke/undo context also resets when the active Minecraft world or dimension identity changes
+- client stroke/undo/continuation context also resets when the active Minecraft world or dimension identity changes
 - undo stores original BlockData rather than assuming generated material
 - no whole-world scans
 - no unbounded per-frame shape generation
