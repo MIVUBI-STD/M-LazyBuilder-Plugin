@@ -2,7 +2,7 @@ use crate::commands;
 use crate::engine::{app_data_migrations, app_instance, diagnostics, plugin_ingress};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
-use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::startup;
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
@@ -52,7 +52,7 @@ pub fn run() {
     );
 
     tauri::Builder::default()
-        .manage(ServerManagerState::default())
+        .manage(ServerRuntimeRegistry::default())
         .manage(PluginManagerState::default())
         .manage(operation_registry)
         .manage(startup_report)
