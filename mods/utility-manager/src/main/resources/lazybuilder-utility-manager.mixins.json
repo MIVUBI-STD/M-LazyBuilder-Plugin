@@ -6,6 +6,7 @@
     "ConnectScreenMixin",
     "ChatScreenMixin",
     "ChatHudMixin",
+    "CreativeInventoryScreenMixin",
     "DisconnectedScreenMixin",
     "MultiplayerScreenMixin",
     "ScreenshotRecorderMixin"

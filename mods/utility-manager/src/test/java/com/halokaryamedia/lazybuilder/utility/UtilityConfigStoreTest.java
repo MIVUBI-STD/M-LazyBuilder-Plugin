@@ -28,6 +28,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
         assertFalse(preferences.contextualScreenshotNames());
+        assertTrue(preferences.instantCreativeSearch());
     }
 
     @Test
@@ -38,7 +39,8 @@ final class UtilityConfigStoreTest {
                 false,
                 false,
                 false,
-                true
+                true,
+                false
         );
 
         store.save(expected);
@@ -56,6 +58,7 @@ final class UtilityConfigStoreTest {
                         + "chat.keep_draft=FALSE\n"
                         + "connection.reconnect_button=not-a-boolean\n"
                         + "screenshots.contextual_names=TRUE\n"
+                        + "inventory.instant_creative_search=not-a-boolean\n"
         );
 
         UtilityPreferences preferences = store.load();
@@ -65,6 +68,7 @@ final class UtilityConfigStoreTest {
         assertFalse(preferences.keepChatDraft());
         assertTrue(preferences.reconnectButton());
         assertTrue(preferences.contextualScreenshotNames());
+        assertTrue(preferences.instantCreativeSearch());
     }
 
     @Test

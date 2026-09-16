@@ -43,7 +43,8 @@ public final class UtilityConfigStore {
                         "screenshots.contextual_names",
                         "screenshots.organize_by_project",
                         defaults.contextualScreenshotNames()
-                )
+                ),
+                readBoolean(properties, "inventory.instant_creative_search", defaults.instantCreativeSearch())
         );
     }
 
@@ -56,6 +57,10 @@ public final class UtilityConfigStore {
         properties.setProperty(
                 "screenshots.contextual_names",
                 Boolean.toString(preferences.contextualScreenshotNames())
+        );
+        properties.setProperty(
+                "inventory.instant_creative_search",
+                Boolean.toString(preferences.instantCreativeSearch())
         );
 
         Path parent = configFile.getParent();

@@ -4,7 +4,7 @@ LazyBuilder Utility Manager is the passive, non-building Fabric client convenien
 
 ## Boundary
 
-Approved scope includes window/client behavior, loading and reload UX, chat convenience, reconnect behavior, preference persistence, notifications, screenshot convenience, and small contextual clipboard actions.
+Approved scope includes window/client behavior, loading and reload UX, chat convenience, reconnect behavior, preference persistence, notifications, screenshot convenience, creative-inventory convenience, and small contextual clipboard actions.
 
 It must not own building/editing tools, palettes, measurement, placement helpers, camera build tools, renderer internals, performance engines, or generic clipboard/history systems.
 
@@ -28,7 +28,8 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
 - Shared Notifications: Utility features use Minecraft's native system-toast surface instead of creating separate HUD or popup systems;
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
-- Contextual Screenshot Names: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots.
+- Contextual Screenshot Names: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots;
+- Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched.
 
 Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
 
@@ -36,13 +37,17 @@ Borderless Window changes only window presentation. Focus-based FPS/resource thr
 
 Screenshot naming does not depend on Map Manager and does not create a replacement screenshot system. Explicit filenames supplied by Minecraft or another mod are left unchanged.
 
+Instant Creative Search does not replace the creative inventory or its search implementation. It only enters the existing vanilla search path earlier, and it adds no keybind or background tick loop.
+
 Clipboard helpers are contextual actions only. World/project copy actions belong in the Map Manager UI that owns those values; block, structure, NBT, and other build-data clipboard behavior remains outside Utility Manager.
 
 ## Maintenance notes
 
 Extended Chat History intentionally stays a minimal vanilla patch rather than replacing ChatHud. Its three `@ModifyConstant` hooks are mapping/version-sensitive because they target Vanilla's internal retention limits. Treat Minecraft-version upgrades as a verification point for these hooks rather than introducing a larger custom chat subsystem.
 
-Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existing `searchBox`, and private `setSelectedTab` path for Yarn 1.21.4. Treat Minecraft-version upgrades as a verification point for this mixin rather than introducing a replacement inventory/search controller.
+
+Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, instant creative search, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
@@ -56,6 +61,7 @@ chat.extended_history=true
 chat.keep_draft=true
 connection.reconnect_button=true
 screenshots.contextual_names=false
+inventory.instant_creative_search=true
 ```
 
 The previous `screenshots.organize_by_project` key is accepted as a read-only migration alias so existing local configs continue to work. New saves use `screenshots.contextual_names`.
