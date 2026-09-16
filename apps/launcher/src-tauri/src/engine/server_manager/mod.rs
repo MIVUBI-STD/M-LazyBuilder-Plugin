@@ -164,8 +164,9 @@ impl ServerManagerState {
     }
 
     pub fn stop(&self) -> Result<(), String> {
-        let timeout_seconds = self.cached_graceful_stop_timeout(); let mut guard = self.child.lock().map_err(|_| "server state lock poisoned".to_string())?;
+        let mut guard = self.child.lock().map_err(|_| "server state lock poisoned".to_string())?;
         let Some(child) = guard.as_mut() else { if let Some(pid) = self.detached_process()? { return Err(format!("Paper PID {pid} is still running but this controller no longer owns its stdin. Stop that process explicitly before continuing.")); } set_runtime_state(&self.runtime_state, "Offline")?; return Ok(()); };
+        let timeout_seconds = self.cached_graceful_stop_timeout();
         self.expected_stop.store(true, Ordering::SeqCst); set_runtime_state(&self.runtime_state, "Stopping")?;
         if let Some(stdin) = child.stdin.as_mut() { stdin.write_all(b"stop\n").map_err(|error| error.to_string())?; stdin.flush().map_err(|error| error.to_string())?; }
         let pid = child.id(); let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
@@ -186,19 +187,17 @@ impl ServerManagerState {
     }
 
     fn runtime_max_memory_bytes(&self) -> u64 {
-        let cached = self.max_memory_bytes.lock().map(|value| *value).unwrap_or(0);
-        if cached != 0 { return cached; }
-        resource_settings::runtime_resources().map(|value| value.max_memory_mb * 1024 * 1024).unwrap_or(0)
+        self.max_memory_bytes.lock().map(|value| *value).unwrap_or(0)
     }
 
     fn cached_startup_timeout(&self) -> u64 {
         let cached = self.startup_timeout_seconds.lock().map(|value| *value).unwrap_or(0);
-        if cached != 0 { cached } else { load_options().map(|value| value.startup_timeout_seconds).unwrap_or(90) }
+        if cached != 0 { cached } else { 90 }
     }
 
     fn cached_graceful_stop_timeout(&self) -> u64 {
         let cached = self.graceful_stop_timeout_seconds.lock().map(|value| *value).unwrap_or(0);
-        if cached != 0 { cached } else { load_options().map(|value| value.graceful_stop_timeout_seconds).unwrap_or(30) }
+        if cached != 0 { cached } else { 30 }
     }
 
     fn process_usage(&self, pid: u32) -> Result<(f32, u64), String> { let pid = Pid::from_u32(pid); let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?; system.refresh_process(pid); Ok(system.process(pid).map(|process| (process.cpu_usage(), process.memory())).unwrap_or((0.0, 0))) }
