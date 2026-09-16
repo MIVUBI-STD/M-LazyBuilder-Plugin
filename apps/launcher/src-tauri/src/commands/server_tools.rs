@@ -1,4 +1,4 @@
-use crate::engine::paths;
+use crate::engine::{paths, workspace_registry};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -16,10 +16,17 @@ pub struct ServerLogTail {
 }
 
 #[tauri::command]
-pub fn server_log_tail(path: String) -> Result<ServerLogTail, String> {
-    let workspace = canonical_or_normalized(paths::workspace_root()?);
+pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<ServerLogTail, String> {
+    let workspace = match workspace_id.as_deref() {
+        Some(id) if !id.trim().is_empty() => {
+            let entry = workspace_registry::get(id.trim())?;
+            canonical_or_normalized(PathBuf::from(entry.path))
+        }
+        Some(_) => return Err("Workspace id is required for targeted log access.".into()),
+        None => canonical_or_normalized(paths::workspace_root()?),
+    };
     let paper_log_root = canonical_or_normalized(workspace.join("server").join("logs"));
-    let lazybuilder_log_root = canonical_or_normalized(paths::lazybuilder_logs_dir()?);
+    let lazybuilder_log_root = canonical_or_normalized(workspace.join("tools").join("lazybuilder").join("logs"));
     let requested = if path.trim().is_empty() {
         paper_log_root.join("latest.log")
     } else {
