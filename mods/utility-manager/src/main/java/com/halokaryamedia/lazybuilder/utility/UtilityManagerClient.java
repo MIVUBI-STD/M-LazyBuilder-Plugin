@@ -1,8 +1,10 @@
 package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
+import com.halokaryamedia.lazybuilder.utility.chat.ChatSessionPresentation;
 import com.halokaryamedia.lazybuilder.utility.chat.MinecraftMessageBridge;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageBus;
+import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageDispatcher;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
@@ -15,6 +17,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.ZoneId;
 import java.util.Objects;
 
 /** Fabric client entrypoint for LazyBuilder Utility Manager. */
@@ -53,6 +56,15 @@ public final class UtilityManagerClient implements ClientModInitializer {
             MESSAGE_BUS.clearSession();
             CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
+
+            String target = ReconnectState.serverAddress();
+            if (target.isBlank()) target = "Local World";
+            UtilityMessageDispatcher.publish(ChatSessionPresentation.started(
+                    target,
+                    System.currentTimeMillis(),
+                    ZoneId.systemDefault()
+            ));
+
             if (preferences.compactDebugHud()) CompactDebugNetworking.requestSnapshot();
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
