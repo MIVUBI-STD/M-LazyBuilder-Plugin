@@ -29,6 +29,9 @@ dependencies {
 }
 
 sourceSets {
+    main {
+        java.srcDir '../../shared/terraform-core/src/main/java'
+    }
     gametest {
         compileClasspath += main.output
         compileClasspath += main.compileClasspath
