@@ -29,6 +29,7 @@ def main() -> int:
         LAUNCHER / "pages" / "HealthPanel.svelte",
         LAUNCHER / "pages" / "LauncherSettings.svelte",
         LAUNCHER / "pages" / "Client.svelte",
+        LAUNCHER / "pages" / "Plugins.svelte",
     ]
 
     require(presentation, "RuntimeErrorPresentation", "presentRuntimeError", "correlationId", "recoverable", "action")
@@ -36,6 +37,8 @@ def main() -> int:
     for path in surfaces:
         require(path, "RuntimeErrorNotice", "presentRuntimeError", "RuntimeErrorPresentation")
         forbid(path, "function friendlyError(")
+
+    require(LAUNCHER / "pages" / "Plugins.svelte", "localError(", "'SERVER_BUSY'", "'PLUGIN_FILE_AMBIGUOUS'")
 
     print(f"Launcher structured RuntimeError UX contract OK ({len(surfaces)} surfaces)")
     return 0
