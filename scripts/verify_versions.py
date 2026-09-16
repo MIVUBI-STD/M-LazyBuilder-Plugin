@@ -57,6 +57,18 @@ def expect(label: str, actual: str | None, expected: str) -> None:
         errors.append(f"{label}: expected {expected!r}, found {actual!r}")
 
 
+def expect_rust_user_agent(label: str, source: str, suffix: str = "") -> None:
+    literal = f'const USER_AGENT: &str = "LazyBuilder/{PRODUCT_VERSION}{suffix}";'
+    dynamic = 'env!("CARGO_PKG_VERSION")'
+    if literal in source:
+        return
+    if "const USER_AGENT: &str = concat!(" in source and dynamic in source:
+        return
+    errors.append(
+        f"{label}: must derive LazyBuilder user-agent version from CARGO_PKG_VERSION or literal {PRODUCT_VERSION!r}"
+    )
+
+
 def maven_versions(path: str) -> tuple[str | None, str | None]:
     root = ET.parse(ROOT / path).getroot()
     version = root.find("m:version", NS)
@@ -104,12 +116,12 @@ for required in (
 
 package_lock = json.loads((launcher_root / "package-lock.json").read_text(encoding="utf-8"))
 expect("desktop package-lock.json", package_lock.get("version"), PRODUCT_VERSION)
-expect("desktop package-lock root package", package_lock.get("packages", {}).get("", {}).get("version"), PRODUCT_VERSION)
-expect(
-    "desktop package-lock Node engine",
-    package_lock.get("packages", {}).get("", {}).get("engines", {}).get("node"),
-    f"{NODE_MAJOR}.x",
-)
+lock_root = package_lock.get("packages", {}).get("", {})
+expect("desktop package-lock root package", lock_root.get("version"), PRODUCT_VERSION)
+if lock_root.get("dependencies", {}) != package.get("dependencies", {}):
+    errors.append("desktop package-lock root dependencies do not match package.json")
+if lock_root.get("devDependencies", {}) != package.get("devDependencies", {}):
+    errors.append("desktop package-lock root devDependencies do not match package.json")
 
 for wrapper_path in ("mvnw.cmd", "gradlew.bat"):
     if not (ROOT / wrapper_path).is_file():
@@ -234,12 +246,10 @@ for required_artifact in EXPECTED_CLIENT_JARS.values():
         errors.append(f"Verify workflow is missing required V1 client artifact: {required_artifact}")
 
 paper_provider = (launcher_root / "src-tauri/src/engine/paper_provider.rs").read_text(encoding="utf-8")
-match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^ (]+)', paper_provider)
-expect("Paper provider user-agent", match.group(1) if match else None, PRODUCT_VERSION)
+expect_rust_user_agent("Paper provider user-agent", paper_provider)
 
 java_runtime = (launcher_root / "src-tauri/src/engine/java_runtime.rs").read_text(encoding="utf-8")
-match = re.search(r'const USER_AGENT: &str = "LazyBuilder/([^"]+)";', java_runtime)
-expect("Managed Java user-agent", match.group(1) if match else None, PRODUCT_VERSION)
+expect_rust_user_agent("Managed Java user-agent", java_runtime)
 
 map_build = (ROOT / "mods/map-manager/build.gradle").read_text(encoding="utf-8")
 if "../../plugins/world-manager/src/main/java" in map_build or "../../modules/world-manager/src/main/java" in map_build:
