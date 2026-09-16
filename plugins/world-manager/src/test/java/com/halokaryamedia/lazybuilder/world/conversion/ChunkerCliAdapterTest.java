@@ -156,4 +156,48 @@ class ChunkerCliAdapterTest {
         Files.writeString(world.resolve("custom_dimensions.chunker.json"), "{\"dimensions\":[]}");
         ChunkerCliAdapter.requireSupportedCustomDimensionShape(request);
     }
+
+    @Test
+    void sameFormatSeedCopiesWorldMetadataButNotChunkOwnedData() throws Exception {
+        Path input = tempDir.resolve("seed-input");
+        Files.createDirectories(input.resolve("region"));
+        Files.createDirectories(input.resolve("entities"));
+        Files.createDirectories(input.resolve("poi"));
+        Files.createDirectories(input.resolve("DIM-1/region"));
+        Files.createDirectories(input.resolve("DIM-1/entities"));
+        Files.createDirectories(input.resolve("DIM-1/poi"));
+        Files.createDirectories(input.resolve("DIM1/region"));
+        Files.createDirectories(input.resolve("data"));
+        Files.createDirectories(input.resolve("datapacks/example"));
+        Files.createDirectories(input.resolve("playerdata"));
+
+        Files.writeString(input.resolve("level.dat"), "level");
+        Files.writeString(input.resolve("session.lock"), "lock");
+        Files.writeString(input.resolve("data/map_0.dat"), "map");
+        Files.writeString(input.resolve("datapacks/example/pack.mcmeta"), "{}");
+        Files.writeString(input.resolve("playerdata/player.dat"), "player");
+        Files.writeString(input.resolve("region/r.0.0.mca"), "chunk");
+        Files.writeString(input.resolve("entities/r.0.0.mca"), "entities");
+        Files.writeString(input.resolve("poi/r.0.0.mca"), "poi");
+        Files.writeString(input.resolve("DIM-1/region/r.0.0.mca"), "nether");
+        Files.writeString(input.resolve("DIM-1/entities/r.0.0.mca"), "nether-entities");
+        Files.writeString(input.resolve("DIM-1/poi/r.0.0.mca"), "nether-poi");
+        Files.writeString(input.resolve("DIM1/region/r.0.0.mca"), "end");
+
+        Path output = tempDir.resolve("seed-output");
+        ChunkerCliAdapter.seedSameFormatOutput(input, output);
+
+        assertTrue(Files.isRegularFile(output.resolve("level.dat")));
+        assertTrue(Files.isRegularFile(output.resolve("data/map_0.dat")));
+        assertTrue(Files.isRegularFile(output.resolve("datapacks/example/pack.mcmeta")));
+        assertTrue(Files.isRegularFile(output.resolve("playerdata/player.dat")));
+        assertFalse(Files.exists(output.resolve("session.lock")));
+        assertFalse(Files.exists(output.resolve("region")));
+        assertFalse(Files.exists(output.resolve("entities")));
+        assertFalse(Files.exists(output.resolve("poi")));
+        assertFalse(Files.exists(output.resolve("DIM-1/region")));
+        assertFalse(Files.exists(output.resolve("DIM-1/entities")));
+        assertFalse(Files.exists(output.resolve("DIM-1/poi")));
+        assertFalse(Files.exists(output.resolve("DIM1/region")));
+    }
 }
