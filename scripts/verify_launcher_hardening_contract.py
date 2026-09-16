@@ -51,6 +51,7 @@ def main() -> int:
     registry = RUST / "engine" / "workspace_registry.rs"
     restore = RUST / "engine" / "server_restore.rs"
     backups = RUST / "engine" / "server_backups.rs"
+    backup_recovery = RUST / "engine" / "backup_recovery.rs"
     backup_commands = RUST / "commands" / "server_backups.rs"
     storage = RUST / "engine" / "storage_health.rs"
     health = RUST / "engine" / "server_health.rs"
@@ -75,6 +76,7 @@ def main() -> int:
         "pub mod workspace_creation;",
         "pub mod app_instance;",
         "pub mod app_data_migrations;",
+        "pub mod backup_recovery;",
         "pub mod storage_health;",
         "pub mod plugin_ingress;",
     )
@@ -95,7 +97,10 @@ def main() -> int:
         "adoption::recover_pending_adoptions()",
         "workspace_registry::recover_pending_duplicates()",
         "server_restore::recover_pending_restores()",
+        "backup_recovery::recover_pending()",
+        "backup_recovery::legacy_sweep_required()",
         "server_backups::recover_staging()",
+        "backup_recovery::mark_legacy_sweep_complete()",
         "server_process_guard::reconcile_registered_process_markers()",
     )
 
@@ -145,7 +150,20 @@ def main() -> int:
         "verify_snapshot_integrity",
     )
     require(
+        backup_recovery,
+        "pending-backups.json",
+        "backup-recovery-index-v1.json",
+        "pub fn begin(",
+        "pub fn recover_workspace(",
+        "pub fn recover_pending(",
+        "legacy_sweep_required",
+        "mark_legacy_sweep_complete",
+        "STAGING_PREFIX",
+    )
+    require(
         backup_commands,
+        "backup_recovery::begin(&workspace_id)",
+        "backup_recovery::recover_workspace(&workspace_id)",
         "MIN_PROGRESS_JOURNAL_STEP_BYTES",
         "DurableProgressReporter",
         "should_persist_progress",
@@ -239,10 +257,12 @@ def main() -> int:
         worlds,
         "TASK_POLL_VISIBLE_MS",
         "TASK_POLL_HIDDEN_MS",
-        "pageActive",
+        "World Manager owns task lifetime",
+        "while (pageActive)",
         "runtimeProduct.worlds.tasks()",
         "recoverActiveTask",
     )
+    forbid(worlds, "TASK_TIMEOUT_MS", "taking unusually long")
     require(
         backup_panel,
         "BACKUP_PAGE_SIZE",
