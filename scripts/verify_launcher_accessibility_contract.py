@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Launcher modal, disclosure-menu and high-contrast accessibility contracts."""
+"""Verify Launcher modal, disclosure-menu, activity and high-contrast accessibility contracts."""
 
 from pathlib import Path
 
@@ -17,6 +17,7 @@ def require(path: Path, *needles: str) -> None:
 def main() -> int:
     modal = SRC / "app" / "modalAccessibility.ts"
     disclosure = SRC / "app" / "disclosureAccessibility.ts"
+    activity = SRC / "app" / "activityAccessibility.ts"
     main = SRC / "main.ts"
     css = SRC / "styles" / "app.css"
 
@@ -31,7 +32,21 @@ def main() -> int:
         "event.key === 'Escape'",
         "summary?.focus()",
     )
-    require(main, "installModalAccessibility();", "installDisclosureAccessibility();")
+    require(
+        activity,
+        "installActivityAccessibility",
+        "aria-live', 'off'",
+        "role', 'status'",
+        "HISTORY_ROW_SELECTOR",
+        "MAX_SEEN = 100",
+        "Existing history is context, not a new event",
+    )
+    require(
+        main,
+        "installModalAccessibility();",
+        "installDisclosureAccessibility();",
+        "installActivityAccessibility();",
+    )
     require(css, "@media (prefers-reduced-motion: reduce)", "@media (forced-colors: active)", "outline: 2px solid Highlight")
 
     print("Launcher accessibility contract OK")
