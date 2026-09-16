@@ -107,9 +107,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         if (result.exitCode() != 0) {
             throw new IOException("Conversion runtime exited with code " + result.exitCode() + ": " + result.output());
         }
-        if (!Files.exists(request.outputDirectory())) {
-            throw new IOException("Conversion runtime reported success but produced no output directory");
-        }
+        validateOutputDirectory(request.outputDirectory(), request.outputFormat());
         return new ConversionResult(result.output());
     }
 
@@ -131,6 +129,21 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         addSettingsArgument(command, "-c", request.converterSettings());
         if (request.keepOriginalNbt()) command.add("-k");
         return List.copyOf(command);
+    }
+
+    static void validateOutputDirectory(Path outputDirectory, String outputFormat) throws IOException {
+        Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
+        String format = Objects.requireNonNull(outputFormat, "outputFormat").strip().toUpperCase(Locale.ROOT);
+        if (!Files.isDirectory(output)) {
+            throw new IOException("Conversion runtime reported success but produced no output directory");
+        }
+        Path levelDat = output.resolve("level.dat");
+        if (!Files.isRegularFile(levelDat) || Files.size(levelDat) == 0L) {
+            throw new IOException("Conversion runtime produced an incomplete world: level.dat is missing or empty");
+        }
+        if (format.startsWith("BEDROCK_") && !Files.isDirectory(output.resolve("db"))) {
+            throw new IOException("Conversion runtime produced an incomplete Bedrock world: db directory is missing");
+        }
     }
 
     static String parseRuntimeVersion(String output) throws IOException {
