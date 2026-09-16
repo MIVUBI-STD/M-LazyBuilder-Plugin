@@ -62,6 +62,7 @@ def main() -> int:
     plugin_commands = RUST / "commands" / "plugin_manager.rs"
     server_commands = RUST / "commands" / "server_manager.rs"
     java_runtime = RUST / "engine" / "java_runtime.rs"
+    paper_provider = RUST / "engine" / "paper_provider.rs"
     world_manager = RUST / "engine" / "world_manager" / "mod.rs"
     privacy_redaction = RUST / "engine" / "privacy_redaction.rs"
     support_bundle = RUST / "engine" / "support_bundle.rs"
@@ -257,7 +258,27 @@ def main() -> int:
         "occupied_world_control_port_is_rejected_before_paper_start",
     )
 
-    require(java_runtime, ".enclosed_name()", "failed SHA-256 verification")
+    require(
+        java_runtime,
+        ".enclosed_name()",
+        "failed SHA-256 verification",
+        "MAX_JAVA_ARCHIVE_BYTES",
+        "MAX_JAVA_ARCHIVE_ENTRIES",
+        "MAX_JAVA_EXTRACTED_BYTES",
+        "create_new(true)",
+        "sync_all()",
+        'concat!("LazyBuilder/", env!("CARGO_PKG_VERSION"))',
+        "managed_java_bounds_are_finite",
+    )
+    require(
+        paper_provider,
+        "MAX_PAPER_JAR_BYTES",
+        "failed SHA-256 verification",
+        "create_new(true)",
+        "sync_all()",
+        'env!("CARGO_PKG_VERSION")',
+        "paper_download_bound_is_finite",
+    )
     require(world_manager, '"X-LazyBuilder-Sha256"', "sha256_file(&path)?", '"Content-Length"')
     require(
         privacy_redaction,
