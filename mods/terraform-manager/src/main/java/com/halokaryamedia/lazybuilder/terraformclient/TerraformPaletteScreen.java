@@ -8,10 +8,10 @@ import net.minecraft.text.Text;
 
 /**
  * Axiom-like live editor behavior presented with Map Manager visual language.
- * The panel only configures the live editor; terrain work remains in the world.
+ * The panel configures the editor; terrain work remains in the world.
  */
 final class TerraformPaletteScreen extends Screen {
-    private static final int X=16,Y=34,W=246,H=286;
+    private static final int X=16,Y=28,W=246,H=306;
     private static final int PAD=14;
     private static final int INNER_X=X+PAD;
     private static final int INNER_W=W-PAD*2;
@@ -21,7 +21,8 @@ final class TerraformPaletteScreen extends Screen {
     @Override protected void init(){
         TerraformEditorState s=TerraformManagerClient.state();
         int three=(INNER_W-12)/3;
-        int toolY=Y+52;
+
+        int toolY=Y+58;
         TerrainTool[] tools=TerrainTool.values();
         for(int i=0;i<tools.length;i++){
             TerrainTool tool=tools[i];
@@ -34,18 +35,18 @@ final class TerraformPaletteScreen extends Screen {
             addDrawableChild(button);
         }
 
-        int sizeY=Y+121;
+        int sizeY=Y+132;
         addStepper(sizeY,true,s);
-        int heightY=Y+151;
+        int heightY=Y+164;
         addStepper(heightY,false,s);
 
-        int variationY=Y+199;
+        int variationY=Y+224;
         TerrainVariation[] variations=TerrainVariation.values();
         for(int i=0;i<variations.length;i++){
             TerrainVariation variation=variations[i];
             int bx=INNER_X+i*(three+6);
             TerraformButtonWidget button=new TerraformButtonWidget(
-                    bx,variationY,three,24,Text.literal(pretty(variation.name())),
+                    bx,variationY,three,24,Text.literal(variationLabel(variation)),
                     s.variation()==variation?TerraformButtonWidget.Style.SECONDARY:TerraformButtonWidget.Style.GHOST,
                     ()->{TerraformInteractionController.cancelStroke();s.setVariation(variation);clearAndInit();});
             button.active=!s.busy();
@@ -53,7 +54,7 @@ final class TerraformPaletteScreen extends Screen {
         }
 
         TerraformButtonWidget undo=new TerraformButtonWidget(
-                X+W-82,Y+236,62,22,Text.literal("Undo"),TerraformButtonWidget.Style.SECONDARY,
+                X+W-82,Y+262,62,22,Text.literal("Undo"),TerraformButtonWidget.Style.SECONDARY,
                 TerraformInteractionController::undo);
         undo.active=s.undoAvailable();
         addDrawableChild(undo);
@@ -77,27 +78,26 @@ final class TerraformPaletteScreen extends Screen {
         TerraformUi.elevatedPanel(c,X,Y,W,H);
 
         c.drawCenteredTextWithShadow(textRenderer,Text.literal("TERRAFORM"),X+W/2,Y+10,TerraformUi.TEXT_MUTED);
-        c.drawTextWithShadow(textRenderer,Text.literal("LIVE TERRAIN"),INNER_X,Y+31,TerraformUi.TEXT_PRIMARY);
-        c.drawTextWithShadow(textRenderer,Text.literal("World-first editing"),INNER_X+92,Y+31,TerraformUi.TEXT_MUTED);
+        c.drawTextWithShadow(textRenderer,Text.literal("TERRAIN TOOL"),INNER_X,Y+36,TerraformUi.TEXT_PRIMARY);
+        c.drawTextWithShadow(textRenderer,Text.literal("Choose a form, then draw directly in the world"),INNER_X,Y+48,TerraformUi.TEXT_MUTED);
 
-        TerraformUi.divider(c,INNER_X,Y+45,X+W-PAD);
-        c.drawTextWithShadow(textRenderer,Text.literal("TOOL"),INNER_X,Y+48,TerraformUi.TEXT_MUTED);
+        TerraformUi.divider(c,INNER_X,Y+96,X+W-PAD);
+        c.drawTextWithShadow(textRenderer,Text.literal("SETTINGS"),INNER_X,Y+106,TerraformUi.TEXT_MUTED);
+        settingRow(c,"Size",String.valueOf((int)s.size()),Y+130);
+        settingRow(c,"Height",String.valueOf((int)s.height()),Y+162);
 
-        TerraformUi.divider(c,INNER_X,Y+92,X+W-PAD);
-        c.drawTextWithShadow(textRenderer,Text.literal("SETTINGS"),INNER_X,Y+101,TerraformUi.TEXT_MUTED);
-        settingRow(c,"Size",String.valueOf((int)s.size()),Y+119);
-        settingRow(c,"Height",String.valueOf((int)s.height()),Y+149);
+        TerraformUi.divider(c,INNER_X,Y+202,X+W-PAD);
+        c.drawTextWithShadow(textRenderer,Text.literal("TERRAIN CHARACTER"),INNER_X,Y+212,TerraformUi.TEXT_MUTED);
+        c.drawTextWithShadow(textRenderer,Text.literal("Controls how restrained or rugged the form feels"),INNER_X,Y+236,TerraformUi.TEXT_DISABLED);
 
-        c.drawTextWithShadow(textRenderer,Text.literal("VARIATION"),INNER_X,Y+181,TerraformUi.TEXT_MUTED);
-
-        TerraformUi.divider(c,INNER_X,Y+228,X+W-PAD);
+        TerraformUi.divider(c,INNER_X,Y+254,X+W-PAD);
         String status=s.busy()?"Applying terrain…":"Ready to draw";
         int statusColor=s.busy()?TerraformUi.ACCENT_BRIGHT:TerraformUi.SUCCESS;
-        c.drawTextWithShadow(textRenderer,Text.literal(status),INNER_X,Y+240,statusColor);
+        c.drawTextWithShadow(textRenderer,Text.literal(status),INNER_X,Y+268,statusColor);
 
-        TerraformUi.divider(c,INNER_X,Y+266,X+W-PAD);
-        c.drawTextWithShadow(textRenderer,Text.literal("LMB Draw   RMB Flip"),INNER_X,Y+273,TerraformUi.TEXT_SECONDARY);
-        c.drawTextWithShadow(textRenderer,Text.literal("Wheel Size   Shift+Wheel Height"),INNER_X,Y+284,TerraformUi.TEXT_MUTED);
+        TerraformUi.divider(c,INNER_X,Y+292,X+W-PAD);
+        c.drawTextWithShadow(textRenderer,Text.literal("LMB Draw   RMB Flip"),INNER_X,Y+300,TerraformUi.TEXT_SECONDARY);
+        c.drawTextWithShadow(textRenderer,Text.literal("Wheel Size   Shift+Wheel Height"),INNER_X,Y+312,TerraformUi.TEXT_MUTED);
         super.render(c,mouseX,mouseY,delta);
     }
 
@@ -108,6 +108,14 @@ final class TerraformPaletteScreen extends Screen {
     }
 
     @Override public void close(){if(client!=null)client.setScreen(null);}
+
+    private static String variationLabel(TerrainVariation variation){
+        return switch(variation){
+            case SOFT -> "Smooth";
+            case NATURAL -> "Balanced";
+            case DRAMATIC -> "Rugged";
+        };
+    }
 
     private static String pretty(String s){String lower=s.toLowerCase();return Character.toUpperCase(lower.charAt(0))+lower.substring(1);}
 }
