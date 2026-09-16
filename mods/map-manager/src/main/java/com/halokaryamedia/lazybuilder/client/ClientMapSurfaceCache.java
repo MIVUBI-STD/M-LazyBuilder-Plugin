@@ -886,7 +886,7 @@ public final class ClientMapSurfaceCache {
             if (present != null) return;
             colors = new int[REGION_CAPACITY];
             heights = new int[REGION_CAPACITY];
-            present = new BitSet(REGION_CAPACITY];
+            present = new BitSet(REGION_CAPACITY);
         }
     }
 
