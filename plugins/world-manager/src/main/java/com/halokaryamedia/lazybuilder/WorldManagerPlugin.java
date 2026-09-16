@@ -73,11 +73,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
                     worldManager.worldRegistry(),
                     worldManager.worldRuntimeService(),
                     worldManager.worldOperationCoordinator(),
-                    world -> getServer().getWorld(world.folderName()) != null,
-                    world -> {
-                        var loaded = getServer().getWorld(world.folderName());
-                        return loaded != null && !loaded.getPlayers().isEmpty();
-                    },
+                    world -> worldManager.worldRuntimeService().isLoaded(world.id()),
+                    world -> worldManager.worldRuntimeService().hasPlayers(world.id()),
                     worldManager.worldProtectionPolicy(),
                     Duration.ofMinutes(idleMinutes)
             );
