@@ -47,6 +47,7 @@ def main() -> int:
     instance = RUST / "engine" / "app_instance.rs"
     creation = RUST / "engine" / "workspace_creation.rs"
     creation_command = RUST / "commands" / "workspace_creation.rs"
+    workspace_commands = RUST / "commands" / "workspace.rs"
     adoption = RUST / "engine" / "adoption.rs"
     registry = RUST / "engine" / "workspace_registry.rs"
     restore = RUST / "engine" / "server_restore.rs"
@@ -136,6 +137,15 @@ def main() -> int:
         "CREATE_RECOVERY_REQUIRED",
         "ensure_no_running_paper_except(None)",
     )
+    require(
+        workspace_commands,
+        'begin_exclusive("delete-server"',
+        '"deleting"',
+        '"DELETE_FAILED"',
+        '"DELETE_RECOVERY_REQUIRED"',
+        "operations.require_recovery",
+        "workspace_registry::delete(&id, &typed_display_name)",
+    )
 
     require(
         adoption,
@@ -146,7 +156,7 @@ def main() -> int:
         "fn reject_tree_links(",
         "is_reparse_point(&metadata)",
     )
-    require(registry, "pending-duplicates.json", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates")
+    require(registry, "pending-duplicates.json", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates", "pending-deletions.json", "recover_pending_deletions")
     require(restore, "pending-restores.json", "recover_pending_restores")
 
     require(
