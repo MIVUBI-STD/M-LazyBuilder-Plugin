@@ -647,9 +647,12 @@ public final class WorldMapScreen extends Screen {
         if (exportMode && areaMode) {
             int chunksX = maxChunkX - minChunkX + 1;
             int chunksZ = maxChunkZ - minChunkZ + 1;
-            String summary = chunksX + " × " + chunksZ + " chunks  ·  "
+            String chunkSummary = chunksX + " × " + chunksZ + " chunks";
+            String fullSummary = chunkSummary + "  ·  "
                     + chunksX * CHUNK_BLOCKS + " × " + chunksZ * CHUNK_BLOCKS + " blocks";
-            context.drawTextWithShadow(textRenderer, Text.literal(trim(summary, Math.max(0, map.width() / 3))),
+            int available = Math.max(0, map.width() / 3);
+            String summary = textRenderer.getWidth(fullSummary) <= available ? fullSummary : chunkSummary;
+            context.drawTextWithShadow(textRenderer, Text.literal(trim(summary, available)),
                     left + 8, height - 16, LbUi.ACCENT_BRIGHT);
         }
 
@@ -1045,13 +1048,18 @@ public final class WorldMapScreen extends Screen {
         clearAndInit();
     }
 
-    /** Test/proof hook that opens the production Export workspace without duplicating product semantics. */
-    void openExportWorkspaceForProof(boolean customArea) {
+    /** Opens the production Export workspace from another Map Manager surface. */
+    void openExportWorkspace(boolean customArea) {
         int blockX = client != null && client.player != null ? client.player.getBlockX() : 0;
         int blockZ = client != null && client.player != null ? client.player.getBlockZ() : 0;
         enterExportWorkspace(customArea
                 ? MapExportWorkspaceState.Scope.CUSTOM_AREA
                 : MapExportWorkspaceState.Scope.FULL_WORLD, blockX, blockZ);
+    }
+
+    /** Test/proof hook retained as a thin alias over the production entry point. */
+    void openExportWorkspaceForProof(boolean customArea) {
+        openExportWorkspace(customArea);
     }
 
     private void exitExportWorkspace() {
