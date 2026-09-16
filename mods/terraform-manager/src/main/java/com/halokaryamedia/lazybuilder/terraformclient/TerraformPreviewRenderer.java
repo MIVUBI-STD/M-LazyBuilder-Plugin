@@ -8,7 +8,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.WorldRenderer;
+import net.minecraft.client.render.VertexRendering;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -121,7 +121,7 @@ final class TerraformPreviewRenderer {
         float g=drawing?0.70f:0.62f;
         float b=1.00f;
         for(BlockPos p:surface){
-            WorldRenderer.drawBox(matrices,lines,
+            VertexRendering.drawBox(matrices,lines,
                     p.getX()+0.03,p.getY()+0.03,p.getZ()+0.03,
                     p.getX()+0.97,p.getY()+0.97,p.getZ()+0.97,
                     r,g,b,alpha);
@@ -135,7 +135,7 @@ final class TerraformPreviewRenderer {
             float gb=1.00f;
             float ga=endpoint?0.95f:0.72f;
             double inset=endpoint?0.10:0.22;
-            WorldRenderer.drawBox(matrices,lines,
+            VertexRendering.drawBox(matrices,lines,
                     p.getX()+inset,p.getY()+inset,p.getZ()+inset,
                     p.getX()+1.0-inset,p.getY()+1.0-inset,p.getZ()+1.0-inset,
                     gr,gg,gb,ga);
