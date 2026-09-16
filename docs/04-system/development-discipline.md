@@ -66,6 +66,36 @@ current user requirement
 → history
 ```
 
+## Instruction conflict precedence
+
+When two valid rules point in different directions, resolve the conflict in this order:
+
+```text
+1. explicit accepted requirement + safety / correctness / data protection
+2. current source + canonical current contract
+3. semantic ownership + required typed handoff
+4. required recoverability / supported compatibility / error handling
+5. matching proof + proof honesty / capability ceiling
+6. minimum sufficient context
+7. smallest complete change / ownership economy
+8. STOP / optional optimization / polish
+```
+
+This is a precedence rule, not a license to broaden scope. Apply the higher rule only far enough to satisfy the conflict, then return to minimum-flow.
+
+Canonical conflict resolutions:
+
+- **smallest change vs safety/recoverability:** safety, data-loss prevention, trust-boundary validation, and required recovery win; implement the smallest change that still satisfies them;
+- **one owner vs cross-owner work:** one semantic decision still has one active owner, but a proven boundary may require a typed sequential handoff; do not keep both owners active for the same decision;
+- **STOP vs current-contract drift:** do not stop while the bounded change has made its canonical Skill/doc/contract copy stale; synchronize the directly affected canonical instruction, then STOP;
+- **minimal context vs unresolved ambiguity/version behavior:** minimum context wins until the missing evidence can change owner, compatibility, safety, or acceptance; then load only that separating evidence;
+- **smallest change vs supported compatibility:** do not add compatibility for hypothetical consumers, but do preserve compatibility that a real currently supported peer requires;
+- **proof completion vs unavailable capability:** never overbuild a proxy merely to avoid an unavailable proof context; complete lower-context work and state the exact higher-context residue;
+- **No change required vs stale evidence:** `No change required` is valid only when the accepted requirement and current canonical source/contract already agree; stale docs/tests do not justify changing correct product behavior, but the stale instruction/evidence itself may need correction;
+- **performance/polish vs correctness:** correctness, truthful state, safety, and accessibility basics precede optimization or decoration.
+
+If a conflict still cannot be resolved, classify `REQUIREMENT`, `ROUTING`, or `UNKNOWN` as appropriate and name the next evidence or decision needed. Do not silently choose the more convenient rule.
+
 ## Core Rule
 
 ```text
