@@ -58,7 +58,8 @@ where
         zip.write_all(redaction.redact(&text).as_bytes()).map_err(|error| error.to_string())?;
     }
 
-    zip.finish().map_err(|error| format!("Could not finalize support bundle: {error}"))?;
+    let finished = zip.finish().map_err(|error| format!("Could not finalize support bundle: {error}"))?;
+    finished.sync_all().map_err(|error| format!("Could not flush support bundle staging file: {error}"))?;
 
     if destination.exists() {
         let previous = destination.with_extension("zip.previous");
