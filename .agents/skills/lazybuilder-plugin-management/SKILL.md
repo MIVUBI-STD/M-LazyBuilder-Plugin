@@ -39,15 +39,41 @@ one previous-valid rollback snapshot per replacing mutation
 
 Does not own bundled core synchronization, presentation, Paper world behavior, or shared Paper↔Fabric protocol.
 
-## Minimal context
+## Context loading
+
+### Default load
 
 ```text
-exact plugin-manager source
-→ exact JAR/metadata/filesystem evidence
-→ Paper live evidence only when load/enable behavior cannot be decided from source
+this SKILL.md
+→ exact plugin-manager source for the requested lifecycle action
+→ exact JAR/plugin metadata/filesystem evidence for the affected plugin only
 ```
 
-Do not scan unrelated plugins, Launcher surfaces, or server history for reassurance.
+This is sufficient for normal discovery, identity, dependency, compatibility, mutation, duplicate, rollback, and restart-required decisions.
+
+### Required if
+
+```text
+Paper rejects/fails an otherwise-correct plugin contract
+→ exact Paper/runtime evidence for that plugin and changed lifecycle path
+
+ownership is ambiguous with bundled LazyBuilder core
+→ skill-routing.md + exact artifact/source identity
+
+cross-owner presentation residue exists
+→ canonical plugin result only; hand off through skill-routing.md
+```
+
+### Do not load if
+
+- unrelated plugin inventories, Launcher screens, or historical server logs are not decision evidence;
+- do not load Desktop/UI/World/Protocol Skills merely because those files or surfaces are nearby;
+- do not scan every installed plugin when one canonical plugin identity can decide the task;
+- do not read broad Paper history for reassurance when metadata/filesystem evidence already separates the failure.
+
+### Escalate when
+
+Escalate context only when the current evidence cannot distinguish `PAPER_RUNTIME`, bundled-core ownership, or another semantic owner. Name the missing separating evidence before loading more context.
 
 ## Failure taxonomy
 
