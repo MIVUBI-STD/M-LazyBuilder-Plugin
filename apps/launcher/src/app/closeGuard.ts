@@ -1,7 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { runtimeProduct } from './bridge/runtimeProductFacade';
-import type { LauncherOperationSnapshot } from './bridge/runtimeApi';
-import type { ServerRuntimeSummary } from './bridge/runtimeServerStatus';
+import type { LauncherOperationSnapshot, ServerRuntimeSummary } from './bridge/runtimeApi';
 
 const ACTIVE_OPERATION_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
 const RUNNING_SERVER_STATES = new Set(['Online', 'Starting', 'Stopping', 'Detached']);
