@@ -57,10 +57,12 @@ class WorldAreaSelectionTest {
                 "minecraft:the_nether", -17, -1, 31, 48);
         Path pruning = WorldExportService.writeAreaPruning(area, tempDir);
         String json = Files.readString(pruning);
+        String fullExclusion = "{\"minChunkX\":-2147483648,\"minChunkZ\":-2147483648,"
+                + "\"maxChunkX\":2147483647,\"maxChunkZ\":2147483647}";
 
-        assertTrue(json.contains("\"minecraft:overworld\":{\"include\":true,\"regions\":[]}"));
+        assertTrue(json.contains("\"minecraft:overworld\":{\"include\":false,\"regions\":[" + fullExclusion + "]}"));
         assertTrue(json.contains("\"minecraft:the_nether\":{\"include\":true,\"regions\":[{\"minChunkX\":-2,\"minChunkZ\":-1,\"maxChunkX\":1,\"maxChunkZ\":3}]}"));
-        assertTrue(json.contains("\"minecraft:the_end\":{\"include\":true,\"regions\":[]}"));
+        assertTrue(json.contains("\"minecraft:the_end\":{\"include\":false,\"regions\":[" + fullExclusion + "]}"));
     }
 
     @Test
