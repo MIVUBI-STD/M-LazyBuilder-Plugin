@@ -106,8 +106,9 @@ def main() -> int:
         backups,
         "BACKUP_SCHEMA_VERSION: u32 = 2",
         "sha256",
-        "verify_integrity",
-        "LEGACY_UNVERIFIED",
+        "BackupIntegrityStatus { Verified, LegacyUnverified }",
+        "pub fn verify(",
+        "verify_snapshot_integrity",
     )
 
     print("Launcher production-hardening source contract OK")
