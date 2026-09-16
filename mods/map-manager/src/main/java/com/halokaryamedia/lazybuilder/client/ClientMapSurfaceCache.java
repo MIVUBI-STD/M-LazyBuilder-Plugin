@@ -52,7 +52,7 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class ClientMapSurfaceCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMapSurfaceCache.class);
-    private static final int FORMAT_VERSION = 3;
+    private static final int FORMAT_VERSION = 4;
     private static final int LEGACY_FORMAT_VERSION = 1;
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
@@ -566,17 +566,9 @@ public final class ClientMapSurfaceCache {
         if (water) {
             int waterRgb = BiomeColors.getWaterColor(world, pos);
             color = 0xFF000000 | (waterRgb & 0x00FFFFFF);
-            color = shade(color, waterDepthFactor(world, x, surfaceY, z));
+            color = shade(color, waterDepthFactor(world, x, surfaceY, z) * shorelineFactor(world, x, z));
         } else {
-            int blockRgb = MinecraftClient.getInstance().getBlockColors().getParticleColor(state, world, pos);
-            MapColor mapColor = state.getMapColor(world, pos);
-            if (blockRgb == -1) {
-                color = mapColor == MapColor.CLEAR
-                        ? UNEXPLORED_COLOR
-                        : mapColor.getRenderColor(MapColor.Brightness.NORMAL);
-            } else {
-                color = 0xFF000000 | (blockRgb & 0x00FFFFFF);
-            }
+            color = resolveBlockColor(world, pos, state);
         }
 
         int westX = x - 1;
@@ -605,9 +597,24 @@ public final class ClientMapSurfaceCache {
             pos.set(x, y, z);
             BlockState state = world.getBlockState(pos);
             if (state.getFluidState().isIn(FluidTags.WATER)) return y;
-            if (state.getMapColor(world, pos) != MapColor.CLEAR) return y;
+            if (isRenderableSurface(world, pos, state)) return y;
         }
         return start;
+    }
+
+    private static boolean isRenderableSurface(ClientWorld world, BlockPos pos, BlockState state) {
+        if (state.isAir()) return false;
+        if (state.getMapColor(world, pos) != MapColor.CLEAR) return true;
+        return MinecraftClient.getInstance().getBlockColors().getParticleColor(state, world, pos) != -1;
+    }
+
+    private static int resolveBlockColor(ClientWorld world, BlockPos pos, BlockState state) {
+        int blockRgb = MinecraftClient.getInstance().getBlockColors().getParticleColor(state, world, pos);
+        if (blockRgb != -1) return 0xFF000000 | (blockRgb & 0x00FFFFFF);
+        MapColor mapColor = state.getMapColor(world, pos);
+        return mapColor == MapColor.CLEAR
+                ? UNEXPLORED_COLOR
+                : mapColor.getRenderColor(MapColor.Brightness.NORMAL);
     }
 
     private static double waterDepthFactor(ClientWorld world, int x, int surfaceY, int z) {
@@ -621,6 +628,27 @@ public final class ClientMapSurfaceCache {
             depth++;
         }
         return Math.max(0.64, 0.97 - Math.max(0, depth - 1) * 0.023);
+    }
+
+    private static double shorelineFactor(ClientWorld world, int x, int z) {
+        int waterNeighbors = 0;
+        if (isWaterSurface(world, x - 1, z)) waterNeighbors++;
+        if (isWaterSurface(world, x + 1, z)) waterNeighbors++;
+        if (isWaterSurface(world, x, z - 1)) waterNeighbors++;
+        if (isWaterSurface(world, x, z + 1)) waterNeighbors++;
+        return switch (waterNeighbors) {
+            case 0, 1 -> 1.12;
+            case 2 -> 1.08;
+            case 3 -> 1.04;
+            default -> 1.0;
+        };
+    }
+
+    private static boolean isWaterSurface(ClientWorld world, int x, int z) {
+        if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) return true;
+        int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
+        int surfaceY = findVisibleSurfaceY(world, x, z, topY);
+        return world.getBlockState(new BlockPos(x, surfaceY, z)).getFluidState().isIn(FluidTags.WATER);
     }
 
     private static long packSample(int color, int height) {
