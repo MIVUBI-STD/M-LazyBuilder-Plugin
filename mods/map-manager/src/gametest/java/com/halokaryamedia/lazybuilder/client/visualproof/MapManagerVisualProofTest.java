@@ -51,6 +51,8 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
 
                 captureWorldManagerEntry(context, state, 1440, 900, 2,
                         "world-manager-export-import-entry-1440x900-gui2");
+                captureWorldManagerCompactDetail(context, state, 620, 480, 2,
+                        "world-manager-compact-detail-620x480-gui2");
 
                 captureExportWorkspace(context, state, 1440, 900, 2, false, false,
                         "map-manager-export-full-world-1440x900-gui2");
@@ -123,6 +125,37 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         });
         context.waitForScreen(WorldMapScreen.class);
         context.waitTicks(8);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureWorldManagerCompactDetail(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            WorldMapScreen parent = new WorldMapScreen(state.worlds, state.transfers, state.maps);
+            suppressInitialNetworkRefresh(parent);
+            WorldManagerScreen screen = new WorldManagerScreen(parent, state.worlds, state.transfers, state.maps);
+            setBooleanField(screen, "requestedInitialRefresh", true,
+                    "Compact World Manager proof could not suppress test-only list refresh");
+            setBooleanField(screen, "requestedCurrentWorld", true,
+                    "Compact World Manager proof could not suppress test-only current-world refresh");
+            setObjectField(screen, "selectedWorld", TANA,
+                    "Compact World Manager proof could not select the current world");
+            setBooleanField(screen, "compactDetail", true,
+                    "Compact World Manager proof could not open the detail pane");
+            return screen;
+        });
+        context.waitForScreen(WorldManagerScreen.class);
+        context.waitTicks(12);
+        context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
     }
