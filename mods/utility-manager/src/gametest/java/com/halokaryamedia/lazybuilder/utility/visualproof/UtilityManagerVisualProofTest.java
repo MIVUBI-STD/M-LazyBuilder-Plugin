@@ -1,13 +1,16 @@
 package com.halokaryamedia.lazybuilder.utility.visualproof;
 
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.itemgroup.v1.FabricCreativeInventoryScreen;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.DisconnectedScreen;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -22,6 +25,10 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
     public void runTest(ClientGameTestContext context) {
         try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             context.waitTicks(40);
+            captureCompactDebug(context, 1440, 900, 2,
+                    "utility-compact-debug-1440x900-gui2");
+            captureCompactDebug(context, 620, 480, 2,
+                    "utility-compact-debug-620x480-gui2");
             verifyInstantCreativeSearch(context);
 
             context.runOnClient(client -> ReconnectState.capture(new ServerInfo(
@@ -47,6 +54,36 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
 
             context.setScreen(() -> null);
         }
+    }
+
+    /**
+     * Renderer-only visual fixture for Compact Debug layout at representative GUI widths.
+     * The production renderer is used directly; F3/mixin/input acceptance remains a live-client proof boundary.
+     */
+    private static void captureCompactDebug(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new Screen(Text.literal("Compact Debug Visual Proof")) {
+            @Override
+            public void render(DrawContext drawContext, int mouseX, int mouseY, float delta) {
+                CompactDebugRenderer.render(MinecraftClient.getInstance(), drawContext);
+            }
+
+            @Override
+            public boolean shouldPause() {
+                return false;
+            }
+        });
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static void verifyInstantCreativeSearch(ClientGameTestContext context) {
