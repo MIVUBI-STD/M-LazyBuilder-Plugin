@@ -1,10 +1,12 @@
 package com.halokaryamedia.lazybuilder.world.map;
 
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,6 +37,19 @@ class MapActionWireProtocolTest {
         assertEquals(-1, decoded.z2());
         assertEquals("JAVA_1_21_4", decoded.targetFormat());
         assertEquals("area-export", decoded.artifactName());
+        assertEquals(ExportSettingsWire.Settings.inherit(), decoded.settings());
+    }
+
+    @Test
+    void customizedExportAreaRequestCarriesSharedSettings() throws Exception {
+        WorldId worldId = WorldId.create();
+        var settings = new ExportSettingsWire.Settings(
+                "ADVENTURE", "HARD", Map.of("keepinventory", "true"));
+        byte[] payload = MapActionWireProtocol.exportAreaRequest(
+                worldId, 0, 0, 15, 15, "BEDROCK_1_21_80", "custom-area", settings);
+
+        var decoded = (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(payload);
+        assertEquals(settings, decoded.settings());
     }
 
     @Test
