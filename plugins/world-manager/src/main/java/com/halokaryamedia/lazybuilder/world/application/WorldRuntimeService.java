@@ -12,7 +12,7 @@ import java.util.function.Predicate;
 public final class WorldRuntimeService {
     private final WorldRegistry registry;
     private final WorldRuntimeGateway runtime;
-    private final Predicate<WorldRecord> hasPlayers;
+    private final Predicate<WorldRecord> additionalPlayerPresence;
     private WorldOperationCoordinator operations;
 
     public WorldRuntimeService(WorldRegistry registry, WorldRuntimeGateway runtime) {
@@ -27,16 +27,20 @@ public final class WorldRuntimeService {
         this(registry, runtime, operations, ignored -> false);
     }
 
+    /**
+     * The predicate is retained as a test/integration extension point. Production Paper
+     * player presence comes from the runtime gateway so dimension siblings share one owner.
+     */
     public WorldRuntimeService(
             WorldRegistry registry,
             WorldRuntimeGateway runtime,
             WorldOperationCoordinator operations,
-            Predicate<WorldRecord> hasPlayers
+            Predicate<WorldRecord> additionalPlayerPresence
     ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.operations = operations;
-        this.hasPlayers = Objects.requireNonNull(hasPlayers, "hasPlayers");
+        this.additionalPlayerPresence = Objects.requireNonNull(additionalPlayerPresence, "additionalPlayerPresence");
     }
 
     synchronized void attachOperations(WorldOperationCoordinator coordinator) {
@@ -54,9 +58,10 @@ public final class WorldRuntimeService {
         return runtime.isLoaded(requireWorld(id));
     }
 
-    /** Player presence is ephemeral Paper truth and never becomes world metadata. */
+    /** Player presence is ephemeral runtime truth and never becomes world metadata. */
     public boolean hasPlayers(WorldId id) {
-        return hasPlayers.test(requireWorld(id));
+        WorldRecord world = requireWorld(id);
+        return runtime.hasPlayers(world) || additionalPlayerPresence.test(world);
     }
 
     public WorldRecord load(WorldId id) {
@@ -77,8 +82,8 @@ public final class WorldRuntimeService {
         return unloadInternal(id);
     }
 
-    /** Begins a snapshot window without moving players or unloading the world. */
-    boolean beginLiveSnapshotDuringOperation(WorldId id) {
+    /** Begins a snapshot window without moving players or unloading the managed world family. */
+    WorldRuntimeGateway.LiveSnapshotState beginLiveSnapshotDuringOperation(WorldId id) {
         WorldRecord world = requireWorld(id);
         if (world.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Archived worlds must be restored before use");
@@ -86,16 +91,16 @@ public final class WorldRuntimeService {
         if (!runtime.isLoaded(world)) {
             throw new IllegalStateException("Live snapshot requires a loaded world: " + world.displayName());
         }
-        return runtime.beginLiveSnapshot(world);
+        return runtime.beginManagedLiveSnapshot(world);
     }
 
-    /** Ends a snapshot window and restores its previous runtime save policy. */
-    void endLiveSnapshotDuringOperation(WorldId id, boolean previousAutoSave) {
+    /** Ends a snapshot window and restores the exact previous runtime save policy. */
+    void endLiveSnapshotDuringOperation(WorldId id, WorldRuntimeGateway.LiveSnapshotState snapshotState) {
         WorldRecord world = requireWorld(id);
         if (!runtime.isLoaded(world)) {
             throw new IllegalStateException("Live snapshot source is no longer loaded: " + world.displayName());
         }
-        runtime.endLiveSnapshot(world, previousAutoSave);
+        runtime.endManagedLiveSnapshot(world, Objects.requireNonNull(snapshotState, "snapshotState"));
     }
 
     private WorldRecord loadInternal(WorldId id) {
@@ -109,7 +114,7 @@ public final class WorldRuntimeService {
 
     private WorldRecord unloadInternal(WorldId id) {
         WorldRecord world = requireWorld(id);
-        if (hasPlayers.test(world)) {
+        if (runtime.hasPlayers(world) || additionalPlayerPresence.test(world)) {
             throw new IllegalStateException("Cannot unload " + world.displayName()
                     + " while builders are inside the world");
         }
