@@ -1,6 +1,8 @@
 import { runtimeApi } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
+import { runtimeServerStatus } from './runtimeServerStatus';
 import type { ServerBackupEstimate, ServerBackupSummary } from './runtimeApi';
+import type { ServerRuntimeSummary } from './runtimeServerStatus';
 
 const previewBackup: ServerBackupSummary = {
   id: 'backup-1788400100000-1000',
@@ -13,7 +15,13 @@ const previewBackup: ServerBackupSummary = {
 
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
-const productionRuntimeProduct = runtimeApi;
+const productionRuntimeProduct = {
+  ...runtimeApi,
+  server: {
+    ...runtimeApi.server,
+    ...runtimeServerStatus
+  }
+};
 
 const previewRuntimeProduct = {
   ...runtimePreviewProduct,
@@ -23,7 +31,15 @@ const previewRuntimeProduct = {
   },
   server: {
     ...runtimePreviewProduct.server,
-    command: async (_command: string) => undefined
+    command: async (_command: string) => undefined,
+    runtimes: async (): Promise<ServerRuntimeSummary[]> => [{
+      workspaceId: 'preview-build-server',
+      workspaceName: 'MIVUBI Build Server',
+      state: 'Online',
+      pid: 14872,
+      paperPort: 25565
+    }],
+    connectionPort: async () => 25565
   },
   backups: {
     list: async (_workspaceId: string) => previewBackups,
