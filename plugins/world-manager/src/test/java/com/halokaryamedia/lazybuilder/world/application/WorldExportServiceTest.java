@@ -141,10 +141,10 @@ class WorldExportServiceTest {
     }
 
     @Test
-    void workspaceDefaultsForceConverterWithoutInventingWorldOverrides() {
+    void workspaceDefaultsPreserveChunksWithoutInventingWorldOverrides() {
         WorldExportOptions options = WorldExportOptions.workspaceDefaults();
-        assertTrue(options.discardEmptyChunks());
-        assertTrue(options.requiresConverterPass());
+        assertFalse(options.discardEmptyChunks());
+        assertFalse(options.requiresConverterPass());
         assertFalse(options.hasWorldOverrides());
 
         WorldExportOptions legacy = WorldExportOptions.legacyDefaults();
