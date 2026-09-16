@@ -51,6 +51,7 @@ def main() -> int:
     registry = RUST / "engine" / "workspace_registry.rs"
     restore = RUST / "engine" / "server_restore.rs"
     backups = RUST / "engine" / "server_backups.rs"
+    backup_commands = RUST / "commands" / "server_backups.rs"
     storage = RUST / "engine" / "storage_health.rs"
     health = RUST / "engine" / "server_health.rs"
     plugin_ingress = RUST / "engine" / "plugin_ingress.rs"
@@ -66,6 +67,7 @@ def main() -> int:
     activity = LAUNCHER / "src" / "pages" / "Activity.svelte"
     dashboard = LAUNCHER / "src" / "pages" / "Dashboard.svelte"
     worlds = LAUNCHER / "src" / "pages" / "Worlds.svelte"
+    backup_panel = LAUNCHER / "src" / "pages" / "BackupPanel.svelte"
     app_css = LAUNCHER / "src" / "styles" / "app.css"
 
     require(
@@ -141,6 +143,13 @@ def main() -> int:
         "BackupIntegrityStatus { Verified, LegacyUnverified }",
         "pub fn verify(",
         "verify_snapshot_integrity",
+    )
+    require(
+        backup_commands,
+        "MIN_PROGRESS_JOURNAL_STEP_BYTES",
+        "DurableProgressReporter",
+        "should_persist_progress",
+        "progress_journal_updates_are_bounded_for_large_copies",
     )
 
     require(
@@ -234,6 +243,14 @@ def main() -> int:
         "runtimeProduct.worlds.tasks()",
         "recoverActiveTask",
     )
+    require(
+        backup_panel,
+        "BACKUP_PAGE_SIZE",
+        "calculateEstimate",
+        "Storage sizing scans the full server and runs only when requested.",
+        "visibleBackups",
+    )
+    forbid(backup_panel, "runtimeProduct.backups.estimate(workspace.id),")
     require(app_css, "content-visibility: auto", "contain-intrinsic-size: auto 76px")
 
     print("Launcher production-hardening source contract OK")
