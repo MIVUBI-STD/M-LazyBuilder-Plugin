@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,6 +66,50 @@ class WorldExportServiceTest {
         assertEquals(1, fixture.runtime.loadCount);
         assertFalse(fixture.operations.isBusy(fixture.world.id()));
         assertEquals(WorldCopyProfile.SNAPSHOT, fixture.files.lastProfile);
+    }
+
+    @Test
+    void exportOnlySettingsSerializeChunkerWorldAndCleanupSettings() throws Exception {
+        WorldExportOptions options = new WorldExportOptions(
+                WorldGameMode.CREATIVE,
+                WorldDifficulty.HARD,
+                Map.of("keepinventory", "true", "randomTickSpeed", "3"),
+                true
+        );
+
+        Path worldSettings = WorldExportService.writeWorldSettings(options);
+        Path converterSettings = WorldExportService.writeConverterSettings();
+        try {
+            String worldJson = Files.readString(worldSettings);
+            assertTrue(worldJson.contains("\"GameType\":1"));
+            assertTrue(worldJson.contains("\"Difficulty\":3"));
+            assertTrue(worldJson.contains("\"keepinventory\":true"));
+            assertTrue(worldJson.contains("\"randomTickSpeed\":3"));
+            assertEquals("{\"discardEmptyChunks\":true}", Files.readString(converterSettings));
+        } finally {
+            Files.deleteIfExists(worldSettings);
+            Files.deleteIfExists(converterSettings);
+        }
+    }
+
+    @Test
+    void workspaceDefaultsForceConverterWithoutInventingWorldOverrides() {
+        WorldExportOptions options = WorldExportOptions.workspaceDefaults();
+        assertTrue(options.discardEmptyChunks());
+        assertTrue(options.requiresConverterPass());
+        assertFalse(options.hasWorldOverrides());
+
+        WorldExportOptions legacy = WorldExportOptions.legacyDefaults();
+        assertFalse(legacy.discardEmptyChunks());
+        assertFalse(legacy.requiresConverterPass());
+    }
+
+    @Test
+    void exportOptionsRejectMalformedGameRuleKeysAndValues() {
+        assertThrows(IllegalArgumentException.class, () -> new WorldExportOptions(
+                null, null, Map.of("bad rule", "true"), true));
+        assertThrows(IllegalArgumentException.class, () -> new WorldExportOptions(
+                null, null, Map.of("keepinventory", "\n"), true));
     }
 
     @Test
