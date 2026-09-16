@@ -1,4 +1,4 @@
-use crate::engine::{adoption, diagnostics, launcher_settings, operations::OperationRecoveryReport, runtime_environment, server_backups, server_process_guard, server_restore, workspace_creation, workspace_registry};
+use crate::engine::{adoption, backup_recovery, diagnostics, launcher_settings, operations::OperationRecoveryReport, runtime_environment, server_backups, server_process_guard, server_restore, workspace_creation, workspace_registry};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -182,16 +182,49 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
             }
         }
 
-        match server_backups::recover_staging() {
-            Ok(removed) => {
-                let details = if removed == 0 { "No interrupted server backup staging required cleanup.".to_string() }
-                    else if removed == 1 { "Cleaned 1 interrupted server backup staging directory.".to_string() }
-                    else { format!("Cleaned {removed} interrupted server backup staging directories.") };
-                steps.push(ready_step("backup-recovery", "Backup staging reconciled", &details));
+        // New builds recover only workspace IDs recorded in pending-backups.json. To
+        // preserve upgrade compatibility, one full legacy sweep is allowed until the
+        // migration marker is committed successfully; after that startup is O(pending)
+        // for backup staging rather than O(all registered servers).
+        match backup_recovery::recover_pending() {
+            Ok(report) => {
+                let mut details = Vec::new();
+                let mut issues = report.issues;
+                if report.recovered_workspaces > 0 {
+                    details.push(format!("Reconciled backup staging for {} interrupted workspace(s).", report.recovered_workspaces));
+                }
+                if report.removed_staging > 0 {
+                    details.push(format!("Cleaned {} indexed backup staging director{}.", report.removed_staging, if report.removed_staging == 1 { "y" } else { "ies" }));
+                }
+
+                match backup_recovery::legacy_sweep_required() {
+                    Ok(true) => match server_backups::recover_staging() {
+                        Ok(removed) => match backup_recovery::mark_legacy_sweep_complete() {
+                            Ok(()) => details.push(format!("Completed the one-time legacy backup staging sweep; cleaned {removed} legacy staging director{}.", if removed == 1 { "y" } else { "ies" })),
+                            Err(error) => issues.push(format!("Legacy backup sweep completed but its migration marker could not be persisted: {error}")),
+                        },
+                        Err(error) => issues.push(format!("One-time legacy backup staging sweep failed: {error}")),
+                    },
+                    Ok(false) => {}
+                    Err(error) => issues.push(format!("Could not inspect the backup recovery migration marker: {error}")),
+                }
+
+                if details.is_empty() && issues.is_empty() {
+                    details.push("No indexed interrupted server backup staging requires cleanup.".into());
+                }
+                if !issues.is_empty() { details.push(issues.join(" ")); }
+                let details = details.join(" ");
+                if issues.is_empty() {
+                    steps.push(ready_step("backup-recovery", "Backup staging reconciled", &details));
+                } else {
+                    degraded = true;
+                    diagnostics::error(&format!("Server backup staging recovery needs attention: {details}"));
+                    steps.push(warning_step("backup-recovery", "Backup staging needs attention", &details));
+                }
             }
             Err(error) => {
                 degraded = true;
-                diagnostics::error(&format!("Server backup staging recovery failed: {error}"));
+                diagnostics::error(&format!("Indexed server backup staging recovery failed: {error}"));
                 steps.push(warning_step("backup-recovery", "Backup staging needs attention", &error));
             }
         }
