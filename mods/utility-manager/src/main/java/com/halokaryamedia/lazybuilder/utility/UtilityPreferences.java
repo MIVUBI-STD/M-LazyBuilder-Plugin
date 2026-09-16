@@ -12,7 +12,8 @@ public record UtilityPreferences(
         boolean keepChatDraft,
         boolean reconnectButton,
         boolean contextualScreenshotNames,
-        boolean instantCreativeSearch
+        boolean instantCreativeSearch,
+        boolean compactDebugHud
 ) {
     public static UtilityPreferences defaults() {
         return new UtilityPreferences(
@@ -21,6 +22,7 @@ public record UtilityPreferences(
                 true,
                 true,
                 false,
+                true,
                 true
         );
     }
