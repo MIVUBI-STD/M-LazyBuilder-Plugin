@@ -1,4 +1,4 @@
-use crate::engine::{java_runtime, server_process_guard, workspace_registry};
+use crate::engine::{java_runtime, server_process_guard, storage_health::{self, StoragePressure}, workspace_registry};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,6 +43,23 @@ pub fn inspect(workspace_id: &str) -> Result<ServerHealthSnapshot, String> {
     }
     checks.push(check("workspace-location", true, "Server location available", &entry.path, false));
 
+    let storage = storage_health::inspect_workspace(workspace_id)?;
+    let storage_warning = matches!(storage.pressure, StoragePressure::Warning | StoragePressure::Critical | StoragePressure::Unknown);
+    let storage_critical = matches!(storage.pressure, StoragePressure::Critical);
+    let storage_summary = match storage.pressure {
+        StoragePressure::Normal => "Storage capacity healthy",
+        StoragePressure::Warning => "Storage running low",
+        StoragePressure::Critical => "Storage critically low",
+        StoragePressure::Unknown => "Storage capacity could not be determined",
+    };
+    checks.push(check(
+        "storage-capacity",
+        !storage_warning,
+        storage_summary,
+        &storage.details,
+        false,
+    ));
+
     let manifest_path = root.join("tools").join("lazybuilder").join("config").join("workspace.json");
     let manifest_ready = fs::read_to_string(&manifest_path)
         .ok()
@@ -79,9 +96,16 @@ pub fn inspect(workspace_id: &str) -> Result<ServerHealthSnapshot, String> {
     let running = server_process_guard::workspace_has_running_paper(&entry.id)?;
     checks.push(check("process-state", true, if running { "Server is running" } else { "Server is offline" }, if running { "A validated LazyBuilder Paper process owns this workspace." } else { "No validated LazyBuilder Paper process owns this workspace." }, false));
 
-    let required_ready = manifest_ready && config_ready && paper_ready && java_ready && core_modules_ready && eula_ready;
-    let state = if running { ServerHealthState::Busy } else if required_ready { ServerHealthState::Ready } else { ServerHealthState::NeedsAttention };
-    Ok(ServerHealthSnapshot { workspace_id: entry.id, workspace_name: entry.name, state, ready: required_ready, running, checks })
+    let runtime_ready = manifest_ready && config_ready && paper_ready && java_ready && core_modules_ready && eula_ready;
+    let ready = runtime_ready && !storage_critical;
+    let state = if running {
+        ServerHealthState::Busy
+    } else if !runtime_ready || storage_warning {
+        ServerHealthState::NeedsAttention
+    } else {
+        ServerHealthState::Ready
+    };
+    Ok(ServerHealthSnapshot { workspace_id: entry.id, workspace_name: entry.name, state, ready, running, checks })
 }
 
 fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String> {
