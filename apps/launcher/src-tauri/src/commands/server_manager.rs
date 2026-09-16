@@ -2,7 +2,7 @@ use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::{java_runtime, paths, runtime_updates, server_config, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
-use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
+use crate::engine::server_runtime_registry::{ServerRuntimeRegistry, ServerRuntimeSummary};
 use std::fs;
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -26,6 +26,16 @@ pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String>
 pub fn server_snapshot(registry: State<'_, ServerRuntimeRegistry>) -> Result<ServerSnapshot, String> {
     let (_, state) = registry.active_runtime()?;
     state.snapshot()
+}
+
+#[tauri::command]
+pub fn server_runtime_list(registry: State<'_, ServerRuntimeRegistry>) -> Result<Vec<ServerRuntimeSummary>, String> {
+    registry.summaries()
+}
+
+#[tauri::command]
+pub fn server_connection_port(registry: State<'_, ServerRuntimeRegistry>) -> Result<Option<u16>, String> {
+    registry.active_paper_port()
 }
 
 #[tauri::command]
@@ -71,8 +81,11 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
         let registry = app.state::<ServerRuntimeRegistry>();
         let (active, state) = registry.active_runtime()?;
         let snapshot = state.snapshot()?;
-        if matches!(snapshot.state.as_str(), "Starting" | "Online") {
-            return Ok(());
+        match snapshot.state.as_str() {
+            "Starting" | "Online" => return Ok(()),
+            "Detached" => return Err("This server still has a detached Paper process. Stop or recover that process before starting it again.".into()),
+            "Stopping" => return Err("This server is still stopping. Wait until it is Offline before starting it again.".into()),
+            _ => {}
         }
         let _lease = ServerStartLease::acquire()?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
@@ -80,6 +93,7 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
             let _ = registry.remove(&active.id);
             return Err(error);
         }
+        registry.set_paper_port(&active.id, paper_port)?;
         Ok(())
     })
     .await
@@ -106,7 +120,8 @@ pub async fn server_restart(app: AppHandle) -> Result<(), String> {
         stop_with_recovery(&state)?;
         let _lease = ServerStartLease::acquire()?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
-        state.start(paper_port)
+        state.start(paper_port)?;
+        registry.set_paper_port(&active.id, paper_port)
     })
     .await
     .map_err(|error| format!("Server restart task failed: {error}"))?
