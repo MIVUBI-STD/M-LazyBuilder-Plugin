@@ -49,7 +49,7 @@ class WorldControlWireProtocolTest {
     void customizedExportWorldCarriesSharedSettings() throws Exception {
         UUID id = UUID.randomUUID();
         var settings = new ExportSettingsWire.Settings(
-                "CREATIVE", "HARD", Map.of("keepinventory", "true", "randomTickSpeed", "3"));
+                "CREATIVE", "HARD", Map.of("keepInventory", "true", "randomTickSpeed", "3"));
         var request = new WorldControlWireProtocol.ExportWorld(
                 id, "BEDROCK_1_21_80", "build-export", settings);
         assertEquals(request, roundTrip(request));
@@ -71,7 +71,10 @@ class WorldControlWireProtocolTest {
 
         var settings = new WorldControlWireProtocol.SettingsSnapshot(
                 id, "CREATIVE", "NORMAL", false, "CLEAR", 6000L, 0.0, 65.0, 0.0,
-                Map.of("keepInventory", "false", "doDaylightCycle", "true"));
+                List.of(
+                        new WorldControlWireProtocol.GameRuleValue("keepInventory", "BOOLEAN", "false"),
+                        new WorldControlWireProtocol.GameRuleValue("doDaylightCycle", "BOOLEAN", "true")
+                ));
         assertEquals(settings, WorldControlWireProtocol.decodeResponse(WorldControlWireProtocol.encodeResponse(settings)));
 
         var export = new WorldControlWireProtocol.ExportReady(id, "build-export.zip", "JAVA_1_21_4");
