@@ -78,6 +78,7 @@ def main() -> int:
         "launcher-settings-crash-during-metadata-publish",
         "creation-intent-crash-during-metadata-publish",
         "adoption-intent-crash-during-metadata-publish",
+        "restore-intent-crash-during-metadata-publish",
         "create-crash-before-intent-identity-update",
         "adoption-crash-mid-move",
         "duplicate-crash-after-publish-before-register",

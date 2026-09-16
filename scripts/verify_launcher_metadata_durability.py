@@ -23,6 +23,7 @@ def main() -> int:
     workspace_registry = RUST / "workspace_registry.rs"
     workspace_creation = RUST / "workspace_creation.rs"
     adoption = RUST / "adoption.rs"
+    server_restore = RUST / "server_restore.rs"
 
     require(
         app_data,
@@ -127,6 +128,22 @@ def main() -> int:
         "adoption_intent_recovery_prefers_previous_committed_copy",
         "adoption_intent_incoming_recovers_without_committed_copy",
         "malformed_adoption_intent_preserves_recovery_evidence",
+    )
+
+    require(
+        server_restore,
+        "recover_pending_restore_file(&path)?",
+        "cleanup_pending_restore_recovery_files(&path)?",
+        "replace_pending_restore_file",
+        "create_new(true)",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.incoming")',
+        "metadata_entry_exists",
+        "ensure_regular_metadata_file",
+        "restore_intent_recovery_prefers_previous_committed_copy",
+        "restore_intent_incoming_recovers_without_committed_copy",
+        "malformed_restore_intent_preserves_recovery_evidence",
     )
 
     print("Launcher metadata durability contract OK")
