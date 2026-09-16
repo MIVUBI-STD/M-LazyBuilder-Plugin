@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementFeature
 import com.halokaryamedia.lazybuilder.utilities.feature.movement.MovementSettings;
 import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetyFeature;
 import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetySettings;
+import com.halokaryamedia.lazybuilder.utilities.telemetry.PaperUtilityTelemetryAdapter;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.Configuration;
@@ -46,6 +47,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     private MovementSettings movementSettings;
     private BuildHelpersSettings buildHelpersSettings;
     private WorldSafetySettings worldSafetySettings;
+    private PaperUtilityTelemetryAdapter telemetryAdapter;
 
     @Override
     public void onEnable() {
@@ -54,6 +56,8 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             validateConfiguration(getConfig());
             installFeatures(getConfig());
             bindHubCommand();
+            telemetryAdapter = new PaperUtilityTelemetryAdapter(this);
+            telemetryAdapter.start();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Utilities-Manager could not start safely.", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -71,6 +75,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (telemetryAdapter != null) telemetryAdapter.stop();
         disableCurrentRegistry("One or more Utilities-Manager features did not disable cleanly.");
         getLogger().info("Utilities-Manager disabled.");
     }

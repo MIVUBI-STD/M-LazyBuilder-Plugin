@@ -16,6 +16,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.halokaryamedia</groupId>
+            <artifactId>lazybuilder-protocol</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <scope>provided</scope>

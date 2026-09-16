@@ -63,7 +63,7 @@ public final class CompactDebugMetrics {
                 formatBiome(client, pos),
                 formatTime(client.world.getTimeOfDay()),
                 server.worldName().isBlank() ? fallbackWorld : server.worldName(),
-                server.telemetryAvailable() ? formatPercent(server.cpuPercent()) : "Unavailable",
+                server.telemetryAvailable() ? formatCpuPercent(server.cpuPercent()) : "Unavailable",
                 server.telemetryAvailable()
                         ? formatMemory(server.usedMemoryBytes(), server.maxMemoryBytes())
                         : "Unavailable",

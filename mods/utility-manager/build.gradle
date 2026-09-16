@@ -29,6 +29,12 @@ dependencies {
 }
 
 sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', '../../shared/protocol/src/main/java']
+            include 'com/halokaryamedia/lazybuilder/utility/**'
+        }
+    }
     gametest {
         compileClasspath += main.output
         compileClasspath += main.compileClasspath

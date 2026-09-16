@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
@@ -36,22 +37,24 @@ public final class UtilityManagerClient implements ClientModInitializer {
         );
 
         ResourceReloadNotifier.register();
+        CompactDebugNetworking.register();
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             ResourceReloadNotifier.markClientStarted();
             BorderlessWindowController.applyIfEnabled(client, preferences.borderlessWindow());
         });
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            LOGGER.debug("Client JOIN event received; refreshing reconnect target");
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
+            LOGGER.debug("Client JOIN event received; refreshing reconnect target and compact telemetry");
             CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
-        });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            if (preferences.compactDebugHud()) CompactDebugNetworking.requestSnapshot();
+        }));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             LOGGER.debug("Client DISCONNECT event received");
             ChatDraftState.clear();
             CompactDebugServerState.clear();
-        });
+        }));
     }
 
     public static UtilityPreferences preferences() {

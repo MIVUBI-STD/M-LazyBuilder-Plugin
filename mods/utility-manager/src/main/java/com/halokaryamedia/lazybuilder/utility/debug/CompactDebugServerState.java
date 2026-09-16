@@ -1,19 +1,21 @@
 package com.halokaryamedia.lazybuilder.utility.debug;
 
-/**
- * Session-scoped server telemetry consumed by Compact Debug.
- *
- * The state intentionally has no transport logic. A later protocol adapter may
- * update it, while disconnect/server-switch lifecycle always clears it.
- */
+/** Session-scoped, expiring server telemetry consumed by Compact Debug. */
 public final class CompactDebugServerState {
-    private static Snapshot snapshot = Snapshot.unavailable();
+    private static final long FRESHNESS_NANOS = 6_000_000_000L;
+    private static volatile Snapshot snapshot = Snapshot.unavailable();
 
     private CompactDebugServerState() {
     }
 
     public static Snapshot snapshot() {
-        return snapshot;
+        Snapshot current = snapshot;
+        if (!current.telemetryAvailable()) return current;
+        if (System.nanoTime() - current.updatedAtNanos() > FRESHNESS_NANOS) {
+            clear();
+            return snapshot;
+        }
+        return current;
     }
 
     public static void update(String worldName, double cpuPercent, long usedMemoryBytes, long maxMemoryBytes) {
@@ -22,7 +24,8 @@ public final class CompactDebugServerState {
                 clampPercent(cpuPercent),
                 Math.max(0L, usedMemoryBytes),
                 Math.max(0L, maxMemoryBytes),
-                true
+                true,
+                System.nanoTime()
         );
     }
 
@@ -45,10 +48,11 @@ public final class CompactDebugServerState {
             double cpuPercent,
             long usedMemoryBytes,
             long maxMemoryBytes,
-            boolean telemetryAvailable
+            boolean telemetryAvailable,
+            long updatedAtNanos
     ) {
         private static Snapshot unavailable() {
-            return new Snapshot("", Double.NaN, 0L, 0L, false);
+            return new Snapshot("", Double.NaN, 0L, 0L, false, 0L);
         }
     }
 }
