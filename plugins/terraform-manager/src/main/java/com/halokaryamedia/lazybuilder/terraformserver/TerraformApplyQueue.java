@@ -66,7 +66,7 @@ final class TerraformApplyQueue {
         while (budget-- > 0 && !job.finished()) job.step();
         if (job.finished()) {
             queue.removeFirst();
-            if (!job.undoMode && !job.changed.isEmpty()) {
+            if (!job.undoMode && !job.changed.isEmpty() && Bukkit.getPlayer(job.owner)!=null) {
                 Deque<UndoRecord> history = undo.computeIfAbsent(job.owner, k -> new ArrayDeque<>());
                 history.addLast(new UndoRecord(job.world.getUID(), List.copyOf(job.changed)));
                 while (history.size() > HISTORY_LIMIT) history.removeFirst();
