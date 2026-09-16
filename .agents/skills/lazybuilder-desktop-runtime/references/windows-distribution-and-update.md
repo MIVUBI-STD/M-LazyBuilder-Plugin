@@ -2,6 +2,28 @@
 
 Use for LazyBuilder executable identity, NSIS installer behavior, release artifacts, signing, update-channel publication, and any future in-app self-update runtime.
 
+## Temporal status
+
+This reference mixes stable distribution rules with current implementation facts.
+
+```text
+STABLE_RULE
+→ one product identity
+→ signing/private-key safety
+→ application-data vs server-workspace ownership
+→ publication/runtime separation
+→ proof boundaries
+
+IMPLEMENTATION_SNAPSHOT
+→ current NSIS/Tauri/WebView2 configuration
+→ current release workflow shape
+→ current dependency presence/absence
+→ current channel support
+→ current bundle identifiers and installer policy
+```
+
+Before making a current-state claim or changing packaging/update behavior, verify the relevant snapshot against the exact Tauri config, Launcher dependencies, and release workflow on the current branch. Newer source overrides this reference; update this file when the snapshot materially changes. Do not keep an old dependency absence, workflow name, channel assumption, or installer option alive as a compatibility rule.
+
 ## Current implementation boundary
 
 Current repository behavior already includes:
