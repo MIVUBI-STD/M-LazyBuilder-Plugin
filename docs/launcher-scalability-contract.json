@@ -22,7 +22,9 @@
     "initialRows": 20,
     "estimateMode": "on-demand",
     "minimumProgressJournalStepBytes": 16777216,
-    "relativeProgressJournalStepPercent": 1
+    "relativeProgressJournalStepPercent": 1,
+    "startupRecoveryMode": "indexed-after-one-legacy-sweep",
+    "recoveryIndexFile": "pending-backups.json"
   },
   "serverLogs": {
     "tailBytesMax": 262144,
