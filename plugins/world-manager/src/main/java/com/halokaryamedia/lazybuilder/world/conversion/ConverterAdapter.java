@@ -46,9 +46,24 @@ public interface ConverterAdapter {
             String outputFormat,
             Path pruningSettings,
             Path worldSettings,
-            Path converterSettings
+            Path converterSettings,
+            boolean preserveNativeInput
     ) {
         private static final String CANONICAL_NATIVE_FORMAT = "JAVA_1_21_4";
+
+        /** Compatibility constructor used by normal converter-backed requests. */
+        public ConversionRequest(
+                Path inputDirectory,
+                Path outputDirectory,
+                String outputFormat,
+                Path pruningSettings,
+                Path worldSettings,
+                Path converterSettings
+        ) {
+            this(inputDirectory, outputDirectory, outputFormat, pruningSettings,
+                    worldSettings, converterSettings,
+                    pruningSettings != null && CANONICAL_NATIVE_FORMAT.equalsIgnoreCase(outputFormat));
+        }
 
         public ConversionRequest(
                 Path inputDirectory,
@@ -56,7 +71,8 @@ public interface ConverterAdapter {
                 String outputFormat,
                 Path pruningSettings
         ) {
-            this(inputDirectory, outputDirectory, outputFormat, pruningSettings, null, null);
+            this(inputDirectory, outputDirectory, outputFormat, pruningSettings, null, null,
+                    pruningSettings != null && CANONICAL_NATIVE_FORMAT.equalsIgnoreCase(outputFormat));
         }
 
         public ConversionRequest {
@@ -67,15 +83,18 @@ public interface ConverterAdapter {
             if (pruningSettings != null) pruningSettings = pruningSettings.toAbsolutePath().normalize();
             if (worldSettings != null) worldSettings = worldSettings.toAbsolutePath().normalize();
             if (converterSettings != null) converterSettings = converterSettings.toAbsolutePath().normalize();
+            if (preserveNativeInput && !CANONICAL_NATIVE_FORMAT.equals(outputFormat)) {
+                throw new IllegalArgumentException("Native-input preservation requires canonical Java 1.21.4 output");
+            }
         }
 
-        /**
-         * Managed LazyBuilder worlds are canonical Java 1.21.4. A pruning request targeting
-         * that same format is therefore a same-format area export and can safely request
-         * original NBT preservation. Cross-version/cross-edition conversions must not.
-         */
+        /** Same-format native chunk preservation is valid only for canonical managed export input. */
         public boolean keepOriginalNbt() {
-            return pruningSettings != null && CANONICAL_NATIVE_FORMAT.equals(outputFormat);
+            return preserveNativeInput && pruningSettings != null && CANONICAL_NATIVE_FORMAT.equals(outputFormat);
+        }
+
+        public boolean canonicalNativeOutput() {
+            return CANONICAL_NATIVE_FORMAT.equals(outputFormat);
         }
     }
 
