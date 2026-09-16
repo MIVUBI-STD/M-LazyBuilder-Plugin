@@ -40,7 +40,7 @@ async function open(page, query) {
 async function openServerPage(page, pageName, queryPage = pageName) {
   await open(page, `?preview=active&page=${encodeURIComponent(queryPage)}`);
   if (pageName !== 'Overview') {
-    await page.getByRole('button', { name: pageName, exact: true }).click();
+    await page.getByLabel('Server navigation').getByRole('button', { name: pageName, exact: true }).click();
   }
   await expect(heading(page, pageName)).toBeVisible();
 }
