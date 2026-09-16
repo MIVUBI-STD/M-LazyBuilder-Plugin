@@ -1,98 +1,160 @@
-# Utilities-Manager Architecture Lock
+# Utilities Manager Architecture Lock
 
-Utilities-Manager is the Paper-side owner for small builder conveniences that do not belong to world lifecycle, desktop process management, plugin installation, or performance tuning.
+## Status
 
-## Locked scope
+This document locks the ownership boundary and migration direction for LazyBuilder Utilities on the Minecraft Java 1.21.4 client.
 
-```text
-Utilities-Manager
-├── Movement
-│   ├── familiar gamemode shortcuts
-│   ├── Fly
-│   ├── spectator-based Noclip
-│   └── Night Vision
-├── Build Helpers
-│   ├── Iron Door Toggle
-│   ├── Double Slab Break
-│   └── Glazed Terracotta Rotate
-└── World Safety
-    ├── explosion block-damage protection
-    ├── leaves decay protection
-    ├── farmland trample protection
-    └── dragon egg interaction protection
-```
+## Ownership
 
-`/lb` is a lightweight discovery/diagnostic adapter. It must not become a second command language or a replacement for familiar direct Minecraft, WorldEdit/FAWE, or Utilities commands.
+Utilities Manager owns passive, non-building client convenience behavior only:
 
-## Canonical runtime shape
+- chat presentation and convenience;
+- notification routing;
+- reconnect UX;
+- creative inventory convenience;
+- compact debug presentation;
+- screenshot convenience;
+- borderless window behavior;
+- small contextual clipboard actions;
+- accessibility helpers that do not replace Minecraft's accessibility system.
 
-```text
-UtilitiesManagerPlugin
-↓
-UtilityFeatureRegistry
-├── WorldSafetyFeature
-├── MovementFeature
-└── BuildHelpersFeature
+Utilities Manager must not own:
 
-UtilitiesCommand
-└── presents current capabilities/help/diagnostics only
-```
+- terrain/build/edit tools;
+- placement or palette systems;
+- world management;
+- performance optimization engines;
+- server lifecycle;
+- generic renderer internals;
+- background workers unless a concrete implemented feature requires them.
 
-`UtilitiesManagerPlugin` owns bootstrap, config activation, command-health reporting, and reload coordination. `UtilityFeatureRegistry` owns feature lifecycle ordering and failure isolation. Each feature family owns its own Paper behavior and configuration model.
+## Packaging lock
 
-Movement owns `/gmc`, `/gms`, `/gma`, `/gmsp`, `/fly`, `/noclip`, and `/nightvision` so gamemode and temporary movement state have one authority.
+One Manager equals one Fabric mod and one client output JAR.
 
-## Familiarity contract
+The source tree may contain many internal modules, but the product must not return to a stack of overlapping small utility mods for features that fit the Utilities boundary.
 
-- preserve familiar short commands;
-- do not force daily builder actions through `/lb ...`;
-- reuse Vanilla commands when Vanilla already owns the capability;
-- reuse WorldEdit/FAWE commands when those tools already own the capability;
-- only add a new root command for a real, frequent builder gap;
-- keep normal help concise and permission-aware; keep diagnostics admin-oriented.
+Paper/server code remains a separate runtime artifact. Client and Paper implementations may belong to one product family, but they must not be forced into one binary.
 
-## Configuration ownership
+## Chat ownership lock
 
-Each family owns one section:
+Utilities Manager is the single client-side owner for LazyBuilder chat UX.
+
+The chat implementation must remain modular rather than becoming one large mixin or replacement screen. Preferred internal ownership:
 
 ```text
-features.world-safety
-features.movement
-features.build-helpers
+utility/chat/
+├── classify/
+├── history/
+├── input/
+├── search/
+├── presentation/
+├── context/
+└── signing/
 ```
 
-World Safety may scope protections by world name without importing World-Manager internals. The supported scope modes are `all` and `include`, with include/exclude lists owned by World Safety itself.
+Thin mixins adapt Minecraft events and screens into these modules.
 
-Missing canonical family sections are configuration errors; do not silently create a typo'd replacement section at runtime.
+### Stable message categories
 
-## Lifecycle contract
+Only five primary presentation categories are approved:
 
-- register features once per activation;
-- mark a feature enabled only after `enable()` succeeds;
-- one feature activation failure must not prevent unrelated families from attempting activation;
-- disable enabled features in reverse activation order;
-- continue cleanup when one feature fails to disable and report combined failure;
-- restore transient Movement player state on shutdown/quit;
-- validate a reload candidate before disabling the current runtime;
-- no background worker, watcher, or polling loop without a concrete active-runtime requirement.
+1. `CHAT` — player communication.
+2. `GAME` — normal gameplay feedback.
+3. `SYSTEM` — concise LazyBuilder/server information relevant to the player.
+4. `WARNING` — actionable degraded behavior or conflict.
+5. `ERROR` — actionable failure.
 
-## Dependency boundary
+Do not create a category per plugin or subsystem.
 
-Utilities-Manager remains independently deployable. It must not import World-Manager internals, desktop implementation code, Fabric client code, or third-party build-tool internals. Stable Paper/Bukkit APIs are the preferred runtime boundary. No NMS is allowed without a proven requirement.
+### Routing policy
 
-## Scope exclusions
+Chat is not a developer console.
 
-Do not add without a new explicit requirement:
+- Player-relevant information may appear in chat.
+- Developer-only diagnostics go to logs or launcher/server console.
+- Information relevant to both uses a concise in-game message plus detailed log/console output.
+- Internal translation keys, stack traces, packet/signing internals, and implementation identifiers are not normal user-facing chat content.
+- Repeated `GAME`, `SYSTEM`, and `WARNING` messages may be collapsed using a stable fingerprint.
+- Normal player chat is never deduplicated by default.
 
-- world lifecycle/storage/import/export/backup/conversion;
-- plugin install/update/disable/remove;
-- server process/JVM management;
-- performance optimizer behavior;
-- duplicate Vanilla or WorldEdit aliases;
-- Banner Creator, Armor Color Creator, Special Builder Items;
-- a second spectator/game-mode subsystem;
-- an inventory GUI or custom client UI when concise chat interaction is sufficient.
+### Presentation policy
 
-## Proof boundary
+The default visual direction stays Minecraft-native and compact.
 
-A green repository verification establishes source/build/test proof only. Actual block interaction, command visibility for real permission setups, player state restoration, Paper event ordering, plugin interoperability, and multi-world gameplay behavior still require LOCAL_CODE/LIVE_SERVER validation.
+- Do not replace the entire chat screen unless a verified requirement cannot be met with bounded mixins/adapters.
+- Timestamps, if implemented, default to `HH:mm`; seconds are optional.
+- System/game feedback uses lower visual emphasis than player chat.
+- Warning/error emphasis is reserved for actionable conditions.
+- Session boundaries may be rendered as compact separators instead of repeated connection noise.
+- Command errors should be simplified for the player while retaining raw detail in diagnostics.
+- Repeated keybind warnings must be deduplicated and must resolve human-readable names rather than exposing translation keys.
+
+### Search and contextual actions
+
+Chat search and context actions are permitted when implemented without a background indexer or database.
+
+Preferred behavior:
+
+- search operates over retained in-memory chat history;
+- contextual actions remain small and relevant, such as Copy Message, Copy Player Name, or Copy Raw Text;
+- coordinate actions are allowed only when coordinates are parsed confidently;
+- no oversized Discord-style context menu or replacement social UI.
+
+### Signing compatibility
+
+Message signing/reporting compatibility is a transport/security concern, not a presentation concern.
+
+Signing compatibility must live behind a dedicated internal boundary so packet/signing behavior cannot become entangled with rendering, history, search, or input handling.
+
+Third-party chat/signing mods must not be embedded or shaded into Utilities Manager as a shortcut. Required behavior must be independently implemented, audited, and verified before an external dependency is retired.
+
+### Narrator/accessibility
+
+Narrator-related convenience belongs under an accessibility helper boundary, not inside the chat renderer.
+
+Utilities Manager may suppress unwanted narrator behavior or redundant narrator warnings when explicitly configured, but it must not remove Minecraft accessibility infrastructure wholesale.
+
+## External-mod consolidation policy
+
+The current consolidation target covers behavior historically provided by small overlapping client mods such as chat-patching, chat-signing hiding/reporting helpers, and narrator suppression.
+
+Every external feature must be classified before migration:
+
+- `KEEP` — behavior is valuable and should be reproduced inside Utilities Manager;
+- `REBUILD` — useful behavior exists but must be reimplemented to fit LazyBuilder architecture;
+- `DROP` — redundant, unsafe, noisy, or unnecessary behavior;
+- `ALREADY OWNED` — equivalent behavior already exists in Utilities Manager.
+
+Removal of an external mod is allowed only after required `KEEP`/`REBUILD` behavior is implemented and runtime-verified.
+
+## Current implementation lock
+
+Already-owned Utility behavior includes:
+
+- extended chat history;
+- keep-chat-draft;
+- reconnect button and connection-detail copy;
+- shared Minecraft-native notifications;
+- resource reload completion notice;
+- contextual screenshot naming;
+- instant creative search;
+- compact debug HUD;
+- borderless window preference.
+
+Do not duplicate these features during consolidation.
+
+## Verification gates
+
+Chat consolidation is not complete until all of the following are true:
+
+1. one Utility Manager client JAR owns the approved utility behavior;
+2. no duplicate mixins compete for the same chat/signing surface;
+3. player chat remains readable during repeated join/system/warning traffic;
+4. repeated warning events do not spam identical lines;
+5. internal translation keys are absent from normal user-facing warnings;
+6. command errors remain actionable and understandable;
+7. chat history and draft behavior still pass existing tests;
+8. no new background polling loop is introduced;
+9. Minecraft-version-sensitive mixins are covered by upgrade verification;
+10. external chat/narrator mods are removed only after replacement behavior passes runtime validation.
