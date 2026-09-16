@@ -23,7 +23,10 @@ const previewRuntimeProduct = {
   },
   server: {
     ...runtimePreviewProduct.server,
-    command: async (_command: string) => undefined,
+    snapshot: async (_workspaceId?: string) => runtimePreviewProduct.server.snapshot(),
+    command: async (_command: string, _workspaceId?: string) => undefined,
+    recoverDetached: async (_workspaceId?: string) => runtimePreviewProduct.server.recoverDetached(),
+    logTail: async (path: string, _workspaceId?: string) => runtimePreviewProduct.server.logTail(path),
     runtimes: async (): Promise<ServerRuntimeSummary[]> => [{
       workspaceId: 'preview-build-server',
       workspaceName: 'MIVUBI Build Server',
