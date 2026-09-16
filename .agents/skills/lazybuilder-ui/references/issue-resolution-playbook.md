@@ -1,67 +1,46 @@
 # LazyBuilder UI Issue Resolution Playbook
 
-Use this reference only for a **reported UI defect/regression** where reproduction, state authority, input timing, or cross-surface behavior needs deeper diagnosis than the main `lazybuilder-ui/SKILL.md` procedure.
+Use only for a **reported UI defect/regression** that needs deeper diagnosis than the main `lazybuilder-ui/SKILL.md` procedure. The Skill owns taxonomy, priority, proof mapping, and handoff; this reference adds diagnostic depth.
 
 Goal: find the **first wrong boundary** and fix the smallest owner that can produce a reliable user-visible result.
 
 ## Triage sequence
 
 ```text
-1. reproduce shortest failing flow
-2. choose one dominant defect class
-3. trace every visible fact/action to one authority
-4. verify uncertain platform behavior only if material
-5. identify first wrong boundary
-6. make smallest complete fix
-7. inspect sibling consumers of the same canonical result
-8. choose proof level that can falsify the defect
-9. state remaining native/live boundary
+reproduce shortest failing flow
+→ capture only behavior-changing conditions
+→ trace visible facts/actions to authorities
+→ identify first wrong boundary
+→ make smallest complete fix
+→ inspect sibling consumers only when they share the same canonical result
+→ use matching proof
+→ STOP
 ```
 
 Do not start with redesign.
 
 ## Reproduction record
 
-Capture only conditions that can change behavior:
+Capture only what can change behavior:
 
 ```text
 starting state
 user input
 visible intermediate state
-expected result
-actual result
+expected vs actual
 window size / GUI scale when relevant
-selected entity
+selected entity identity
 connection/capability state
 pending operation state
 fresh vs returning surface
 mouse vs keyboard/keybind path
 ```
 
-If the issue cannot yet be reproduced or separated by evidence, narrow/instrument before rewriting UI.
-
-## Defect classes
-
-Use one primary class:
-
-```text
-FLOW       navigation/back/dead-end
-STATE      stale/duplicated/misleading authority
-INPUT      double-submit, focus, key/click race, event leak
-LAYOUT     overlap/overflow/density/GUI-scale breakage
-VISUAL     hierarchy/contrast/token/icon inconsistency
-ASYNC      flicker/pending ambiguity/late response/retry
-PERF       repeated rebuild/layout/render-cache churn
-COPY       unclear consequence/recovery or internal jargon
-ACCESS     keyboard/focus/readability/non-hover alternative
-OWNERSHIP  UI workaround masking runtime/plugin/world/protocol defect
-```
-
-Fix P0/P1 interaction/state problems before polish.
+If evidence cannot yet separate the defect, instrument/narrow before rewriting UI.
 
 ## Authority trace
 
-Every visible value/action should resolve to exactly one of:
+Every visible value/action should resolve to one authority:
 
 ```text
 local presentation state
@@ -79,7 +58,7 @@ same fact persisted in multiple UI locations
 backend fact copied into another durable frontend store
 optimistic result remains authoritative after failure
 late response mutates a newly selected entity
-UI computes permissions/compatibility/readiness independently
+UI recomputes permissions/compatibility/readiness
 presentation state invalidates heavy renderer/domain state unnecessarily
 ```
 
@@ -89,19 +68,19 @@ If the canonical result itself is wrong, stop UI editing and hand off to its sem
 
 ```text
 button enabled although returned capability denies action
-→ UI defect
+→ UI
 
-required capability is absent from a shared payload
-→ protocol/domain defect first
+required capability absent from shared payload
+→ Protocol/domain first
 
 plugin dependency warning factually wrong
-→ plugin-management first
+→ Plugin Management first
 
 Map terrain resets when sidebar/favorite changes
-→ UI/render invalidation defect unless map scope actually changed
+→ UI/render invalidation unless map scope actually changed
 
 Launcher confirmation is clear but deletion target/path is unsafe
-→ desktop-runtime first
+→ Desktop Runtime first
 ```
 
 Never compensate for missing/wrong backend semantics with hidden UI guesses.
@@ -112,25 +91,15 @@ For each user-triggered async action:
 
 ```text
 pending starts before repeat dispatch
-one logical action cannot run twice from independent handlers
-success clears pending
-error clears pending
+one logical action cannot run twice through independent handlers
+success/error clears pending
 reset/disconnect clears local pending safely
-late response is bound to the original target identity
-screen close does not imply cancellation unless owner supports it
+late response remains bound to original target identity
+screen close does not imply unsupported cancellation
 reopen does not replay the prior request
 ```
 
-When relevant check both:
-
-```text
-mouse click
-Enter/Space
-screen key handler
-global keybind/event handler
-```
-
-One physical input must not be interpreted twice.
+When relevant check mouse, Enter/Space, screen key handlers, and global keybind/event handlers. One physical input must not be interpreted twice.
 
 ## Navigation / state preservation
 
@@ -146,7 +115,7 @@ sidebar state
 workspace/server context
 ```
 
-Back/Esc/close must return where the user reasonably expects. Leaving a screen is not cancellation by default.
+Back/Esc/close should return to the meaningful parent/context. Leaving a screen is not cancellation by default.
 
 ## Destructive-flow audit
 
@@ -156,8 +125,8 @@ For delete/remove/archive/reset/replace-like actions:
 target identity visible
 consequence matches backend semantics
 routine and destructive actions separated
-conflicting work blocks the action
-success shown only after authoritative success
+conflicting work blocks action
+success appears only after authoritative success
 failure leaves recoverable context
 ```
 
@@ -165,7 +134,7 @@ UI confirmation never substitutes for backend safety.
 
 ## Layout / rendering audit
 
-Use only representative constraints that can expose the current defect.
+Inspect only constraints capable of exposing the reported defect.
 
 Launcher examples:
 
@@ -180,9 +149,9 @@ keyboard path
 Fabric examples:
 
 ```text
-small window / common GUI scales
+representative GUI scales
 1080p-class fullscreen
-wide layout when relevant
+wide layout only when relevant
 long labels / max list
 sidebar open/collapsed
 cold/warm map state when renderer is involved
@@ -193,57 +162,40 @@ Performance red flags:
 ```text
 full rebuild on hover/selection
 renderer/cache reset from unrelated presentation state
-polling each frame/tick for event/revision-driven state
+polling every frame/tick for event/revision-driven state
 clearing valid content before replacement is ready
-large allocations/sorting in hot render path
+large allocations/sorting in a hot render path
 ```
 
 ## Cross-surface regression
 
-After fixing one presentation of a canonical action/result, inspect sibling consumers only where the same contract is used.
+Inspect sibling consumers only when they consume the same canonical action/result, for example:
 
 ```text
 teleport result → Map + World Manager
 plugin update result → list + detail + notification
 server lifecycle result → Library + confirmation/status surfaces
-client-sync result → required-mod list + repair/restart guidance
 ```
 
-Do not duplicate implementation; align presentation around the same authority.
+Align presentation around one authority; do not duplicate implementation.
 
-## External research trigger
+## External knowledge trigger
 
-Read `ui-knowledge-source-policy.md` only when platform/API behavior is genuinely uncertain, version-sensitive, or a new interaction type has no established LazyBuilder pattern.
+Use `ui-knowledge-source-policy.md` only when platform/API behavior is genuinely uncertain, version-sensitive, or a new interaction type lacks an established LazyBuilder pattern.
 
-Do not browse for ordinary copy/spacing/state fixes that source already answers.
+For ordinary copy/spacing/state fixes already answered by source, stay inside the repo.
 
-## Proof selection
+## Completion
 
-Read `visual-proof-system.md` when appearance/state presentation is part of acceptance.
-
-```text
-L0 source inspection
-L1 typecheck/build/tests
-L2 simulated preview (explicitly simulated)
-L3 real Launcher Svelte preview
-L4 real Minecraft renderer
-L5 Local-PC native interaction
-```
-
-Choose the cheapest level that can disprove the reported issue. Never claim a higher level than observed.
-
-## Completion report
-
-A UI defect is complete when you can state:
+A diagnosed UI defect is ready to close when you can state:
 
 ```text
 reproduced cause
-primary owner
+first wrong owner
 smallest changed boundary
-states/inputs checked
-sibling consumers checked when relevant
-proof level + renderer/commit when visual
-remaining native/live boundary
+relevant states/inputs checked
+sibling consumers checked when applicable
+matching proof + remaining native/live residue
 ```
 
 Then STOP. Do not convert one defect into a broad UI redesign or framework project.
