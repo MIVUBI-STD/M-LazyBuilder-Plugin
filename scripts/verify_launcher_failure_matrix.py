@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that every mapped Launcher failure scenario still has a concrete source owner."""
+"""Validate that every mapped Launcher failure scenario has concrete source and test evidence."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ def main() -> int:
         scenarios = []
 
     seen_ids: set[str] = set()
+    scenarios_with_tests = 0
     for scenario in scenarios:
         scenario_id = scenario.get("id")
         owner = scenario.get("owner")
@@ -50,13 +51,36 @@ def main() -> int:
         if missing:
             errors.append(f"{scenario_id}: owner {owner} is missing markers {missing}")
 
+        forbidden = scenario.get("forbidMarkers", [])
+        if not isinstance(forbidden, list):
+            errors.append(f"{scenario_id}: forbidMarkers must be an array when present")
+        else:
+            found = [marker for marker in forbidden if isinstance(marker, str) and marker in source]
+            if found:
+                errors.append(f"{scenario_id}: owner {owner} contains forbidden regression markers {found}")
+
+        test_markers = scenario.get("testMarkers", [])
+        if not isinstance(test_markers, list):
+            errors.append(f"{scenario_id}: testMarkers must be an array when present")
+        elif test_markers:
+            scenarios_with_tests += 1
+            if "#[cfg(test)]" not in source:
+                errors.append(f"{scenario_id}: declares testMarkers but owner has no Rust test module")
+            missing_tests = [marker for marker in test_markers if not isinstance(marker, str) or marker not in source]
+            if missing_tests:
+                errors.append(f"{scenario_id}: owner {owner} is missing test evidence {missing_tests}")
+
     required_ids = {
         "operation-interrupted-by-launcher-exit",
         "create-crash-before-intent-identity-update",
         "adoption-crash-mid-move",
         "duplicate-crash-after-publish-before-register",
         "restore-crash-during-workspace-swap",
+        "backup-crash-during-staging-copy",
+        "legacy-backup-staging-upgrade",
         "backup-corruption-before-restore",
+        "large-backup-progress-write-amplification",
+        "world-task-exceeds-frontend-duration",
         "plugin-input-changes-during-install",
         "second-launcher-instance",
         "close-launcher-during-active-operation",
@@ -67,13 +91,16 @@ def main() -> int:
     if missing_required:
         errors.append(f"failure matrix is missing required scenarios: {missing_required}")
 
+    if scenarios_with_tests < 6:
+        errors.append(f"failure matrix must retain deterministic test evidence for at least 6 scenarios; found {scenarios_with_tests}")
+
     if errors:
         print("Launcher failure matrix verification failed:")
         for error in errors:
             print(f" - {error}")
         return 1
 
-    print(f"Launcher failure matrix OK ({len(scenarios)} scenarios)")
+    print(f"Launcher failure matrix OK ({len(scenarios)} scenarios; {scenarios_with_tests} with test evidence)")
     return 0
 
 
