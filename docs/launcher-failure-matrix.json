@@ -45,9 +45,20 @@
       "testMarkers": ["staging_prefix_is_narrowly_scoped", "pending_index_schema_is_explicit"]
     },
     {
+      "id": "backup-index-crash-during-metadata-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
+      "markers": ["pending backup previous metadata", "prefer the previous committed copy", "read_pending_file", "create_new(true)"]
+    },
+    {
       "id": "legacy-backup-staging-upgrade",
       "owner": "apps/launcher/src-tauri/src/engine/startup.rs",
       "markers": ["legacy_sweep_required", "server_backups::recover_staging()", "mark_legacy_sweep_complete"]
+    },
+    {
+      "id": "malformed-backup-migration-marker",
+      "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
+      "markers": ["legacy_marker_requires_sweep", "existing_regular_file"],
+      "testMarkers": ["legacy_sweep_marker_schema_is_explicit", "malformed_or_future_legacy_marker_requires_a_sweep"]
     },
     {
       "id": "backup-corruption-before-restore",
