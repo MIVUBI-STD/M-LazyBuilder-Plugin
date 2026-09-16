@@ -26,6 +26,46 @@ Rules:
 - prefer repository-relative paths, exact symbols, exact commands, and typed handoff data over instructions tied to one product UI;
 - a Skill should be readable as an operational contract by either consumer without needing consumer-specific interpretation.
 
+## Temporal stability / drift resistance
+
+Treat repository knowledge according to how quickly it can become stale:
+
+```text
+STABLE_RULE
+= ownership, invariant, safety rule, or architectural boundary intended to survive implementation churn
+
+CURRENT_CONTRACT
+= versioned/current product or wire contract that is authoritative now but may intentionally evolve
+
+IMPLEMENTATION_SNAPSHOT
+= current module/file/config/workflow/provider/state fact derived from source and expected to drift as implementation changes
+
+EXTERNAL_REFERENCE
+= external documentation, repository, pattern, or research used as evidence/reference but never LazyBuilder authority
+```
+
+Rules:
+
+- `STABLE_RULE` may be applied directly unless current user requirements or current source prove the architecture itself changed;
+- `CURRENT_CONTRACT` must agree with the current canonical contract source before mutation; when the version/shape changes intentionally, update the Skill/doc in the same bounded change rather than preserving the old contract as a compatibility fiction;
+- `IMPLEMENTATION_SNAPSHOT` is never allowed to override newer source. Validate it against the exact current owner before making a factual current-state claim;
+- `EXTERNAL_REFERENCE` must be revalidated when version/platform behavior is material. External material can inform a decision but cannot override LazyBuilder source/domain contracts;
+- historical terms, versions, filenames, enum members, workflow names, dependency presence, package behavior, or release-channel details must not be kept alive merely because they appear in a Skill/reference;
+- do not add timestamps everywhere. Use an exact version/commit/source check only where temporal drift can change the decision;
+- when drift is found, classify the stale document/Skill/test as evidence of drift, fix the current canonical instruction, and do not add fallback/compatibility layers unless a real supported consumer requires them.
+
+Temporal precedence:
+
+```text
+current user requirement
+→ current source / canonical current contract
+→ STABLE_RULE
+→ CURRENT_CONTRACT copy in Skill/reference (must match source)
+→ IMPLEMENTATION_SNAPSHOT (verify before use)
+→ EXTERNAL_REFERENCE
+→ history
+```
+
 ## Core Rule
 
 ```text
