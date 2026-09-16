@@ -19,6 +19,7 @@ final class MapExportWorkspaceState {
 
     private static final String BUILDER_GAME_MODE = "CREATIVE";
     private static final String BUILDER_DIFFICULTY = "NORMAL";
+    private static final WorldTransferPreferences VERSION_PREFERENCES = new WorldTransferPreferences();
 
     private UUID worldId;
     private WorldControlWireProtocol.SettingsSnapshot source;
@@ -44,7 +45,8 @@ final class MapExportWorkspaceState {
         if (!differentWorld) return;
 
         artifactName = sanitizeWorldName(displayName);
-        format = formats == null || formats.isEmpty() ? "JAVA_1_21_4" : formats.get(0);
+        List<String> ordered = VERSION_PREFERENCES.preferredFirst(formats);
+        format = ordered.isEmpty() ? "JAVA_1_21_4" : ordered.get(0);
         spawnX = round(source.spawnX());
         spawnY = round(source.spawnY());
         spawnZ = round(source.spawnZ());
@@ -60,6 +62,7 @@ final class MapExportWorkspaceState {
     String artifactName() { return artifactName; }
     void artifactName(String value) { artifactName = Objects.requireNonNullElse(value, ""); }
     String format() { return format; }
+    boolean formatPreferred() { return VERSION_PREFERENCES.isPreferredFormat(format); }
     int spawnX() { return spawnX == null ? 0 : spawnX; }
     int spawnY() { return spawnY == null ? 0 : spawnY; }
     int spawnZ() { return spawnZ == null ? 0 : spawnZ; }
@@ -67,8 +70,10 @@ final class MapExportWorkspaceState {
     void toggleWorldSettings() { worldSettingsExpanded = !worldSettingsExpanded; }
 
     void cycleFormat(List<String> formats) {
-        if (formats == null || formats.isEmpty()) return;
-        format = next(formats.toArray(String[]::new), format);
+        List<String> ordered = VERSION_PREFERENCES.preferredFirst(formats);
+        if (ordered.isEmpty()) return;
+        format = next(ordered.toArray(String[]::new), format);
+        VERSION_PREFERENCES.setExportFormat(format);
     }
 
     void useSpawn(int x, int y, int z) {
@@ -79,6 +84,7 @@ final class MapExportWorkspaceState {
 
     ExportSettingsWire.Settings toWire() {
         WorldControlWireProtocol.SettingsSnapshot base = Objects.requireNonNull(source, "source settings");
+        VERSION_PREFERENCES.setExportFormat(format);
 
         Integer outSpawnX = null;
         Integer outSpawnY = null;
