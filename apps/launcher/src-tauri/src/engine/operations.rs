@@ -167,7 +167,7 @@ impl OperationRegistry {
             .read()
             .map_err(|_| "operation registry lock poisoned".to_string())?
             .iter()
-            .any(|entry| entry.resource == resource && !entry.state.is_terminal()))
+            .any(|entry| resources_conflict(resource, &entry.resource) && !entry.state.is_terminal()))
     }
 
     pub fn set_phase(&self, id: &str, phase: &str, status: &str, details: &str, progress: Option<OperationProgress>) -> Result<OperationSnapshot, String> {
@@ -493,10 +493,12 @@ mod tests {
     fn library_and_workspace_exclusive_operations_are_serialized() {
         let registry = OperationRegistry::default();
         let library = registry.begin_exclusive("adopt-server", "workspace-library", false).unwrap();
+        assert!(registry.has_active_for_resource("workspace:one").unwrap());
         assert!(registry.begin_exclusive("backup-server", "workspace:one", false).is_err());
         registry.succeed(&library.id, "done").unwrap();
 
         let workspace = registry.begin_exclusive("backup-server", "workspace:one", false).unwrap();
+        assert!(registry.has_active_for_resource("workspace-library").unwrap());
         assert!(registry.begin_exclusive("create-server", "workspace-library", false).is_err());
         assert!(registry.begin_exclusive("backup-server", "workspace:two", false).is_ok());
         registry.succeed(&workspace.id, "done").unwrap();
