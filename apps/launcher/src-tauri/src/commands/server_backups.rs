@@ -2,7 +2,7 @@ use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{backup_recovery, server_backups, server_process_guard, server_restore, workspace_registry};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 const MIN_PROGRESS_JOURNAL_STEP_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -223,16 +223,48 @@ pub async fn server_backup_restore(
 }
 
 #[tauri::command]
-pub fn server_backup_delete(
-    operations: State<'_, OperationRegistry>,
-    workspace_id: String,
-    backup_id: String,
-) -> CommandResult<()> {
+pub async fn server_backup_delete(app: AppHandle, workspace_id: String, backup_id: String) -> CommandResult<()> {
     let resource = format!("workspace:{workspace_id}");
-    if operations.has_active_for_resource(&resource).map_err(CommandError::from)? {
-        return Err(CommandError::recoverable("OPERATION_BUSY", "Wait for the active server operation to finish before deleting a restore point.", "Open Activity"));
+    let operation = app.state::<OperationRegistry>().begin_exclusive("delete-backup", &resource, false)
+        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let _ = operations.set_phase(
+            &operation_id,
+            "deleting",
+            "Deleting restore point",
+            "Removing the selected validated server restore point.",
+            None,
+        );
+        match server_backups::delete(&workspace_id, &backup_id) {
+            Ok(()) => {
+                let _ = operations.succeed(&operation_id, "Restore point deleted");
+                Ok(())
+            }
+            Err(message) => {
+                let error = CommandError::recoverable("BACKUP_DELETE_FAILED", message, "Review restore points and retry");
+                fail_operation(&operations, &operation_id, &error, true);
+                Err(error)
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(&join_operation_id, OperationError {
+                code: "TASK_FAILED".into(),
+                message: "Backup deletion task ended unexpectedly".into(),
+                details: error.to_string(),
+                recoverable: true,
+            });
+            Err(CommandError::new("TASK_FAILED", format!("Backup deletion task failed: {error}")))
+        }
     }
-    server_backups::delete(&workspace_id, &backup_id).map_err(CommandError::from)
 }
 
 struct DurableProgressReporter<'a> {
