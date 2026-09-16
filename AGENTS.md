@@ -33,6 +33,71 @@ Only the **available execution capability** may differ by session.
 - Repository-relative paths, exact symbols/contracts, and explicit handoff payloads are preferred over consumer-specific UI instructions.
 - A Skill must remain understandable when read directly by either consumer; consumer-specific mechanics belong only where the task genuinely depends on them.
 
+## Capability Gate
+
+Resolve capability from the current session before choosing execution mechanics. Capability affects **what can be executed or proven now**, never which semantic owner is correct.
+
+```text
+REPO_READ
+= can inspect current repository source/history/docs
+
+REPO_WRITE
+= can mutate the authoritative repository/ref
+
+LOCAL_SHELL
+= can execute commands against a local checkout/toolchain
+
+CI_CONTROL
+= can inspect/dispatch/re-run relevant CI and retrieve exact-run evidence
+
+ARTIFACT_ACCESS
+= can inspect/download exact build/proof artifacts
+
+VISUAL_RENDERER
+= can produce or inspect the relevant production/simulated renderer output
+
+LIVE_RUNTIME
+= can exercise the exact changed Paper/Fabric/client-server path
+
+NATIVE_HOST
+= can exercise target local Windows/device behavior
+```
+
+Use the smallest available capability set that can satisfy the claim:
+
+```text
+REPO_READ only
+→ diagnose / route / inspect contracts / STATIC_SOURCE
+→ do not imply mutation or execution
+
+REPO_READ + REPO_WRITE
+→ repository mutation is allowed
+→ proof remains limited to evidence actually observed
+
+LOCAL_SHELL
+→ source/build/test/filesystem execution may produce EXECUTED_SOURCE or INTEGRATION_FIXTURE
+
+CI_CONTROL / ARTIFACT_ACCESS
+→ use exact commit/run/artifact evidence
+→ CI location never upgrades the proof type by itself
+
+VISUAL_RENDERER
+→ may produce VISUAL_SIMULATED or VISUAL_RENDERED according to the real renderer used
+
+LIVE_RUNTIME
+→ may produce LIVE_RUNTIME only when the changed runtime path is exercised end to end
+
+NATIVE_HOST
+→ may produce NATIVE_ACCEPTANCE only for behavior actually exercised on the target host/device
+```
+
+Capability rules:
+
+- capability is additive, not hierarchical: having `REPO_WRITE` does not imply `LOCAL_SHELL`; having `CI_CONTROL` does not imply `LIVE_RUNTIME`; having a screenshot does not imply `VISUAL_RENDERER` for the current revision;
+- never substitute a different capability for a required proof type merely to finish the task;
+- if a higher capability is absent, finish all lower-capability partitions and record only the precise residue that still requires it;
+- do not create ChatGPT-specific or Codex-specific Skill branches; capability names, repository-relative paths, exact commands, and typed handoffs are the portable contract.
+
 ## Execution Context Gate
 
 ```text
