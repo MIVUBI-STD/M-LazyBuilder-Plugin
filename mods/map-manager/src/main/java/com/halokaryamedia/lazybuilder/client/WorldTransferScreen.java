@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 
-/** One builder-facing Import / Export workspace with daily defaults and optional advanced overrides. */
+/** Shared transfer implementation that can render dedicated Import or Export flows. */
 public final class WorldTransferScreen extends Screen {
     public enum Tab { EXPORT, IMPORT }
 
@@ -27,6 +27,7 @@ public final class WorldTransferScreen extends Screen {
     private final ClientMapController maps;
     private final WorldControlWireProtocol.WorldSummary world;
     private final AreaSelection area;
+    private final boolean dedicatedFlow;
 
     private Tab tab;
     private boolean advanced;
@@ -56,7 +57,7 @@ public final class WorldTransferScreen extends Screen {
             WorldControlWireProtocol.WorldSummary world,
             Tab initialTab
     ) {
-        this(parent, worlds, transfers, null, world, initialTab, null);
+        this(parent, worlds, transfers, null, world, initialTab, null, false);
     }
 
     private WorldTransferScreen(
@@ -66,15 +67,19 @@ public final class WorldTransferScreen extends Screen {
             ClientMapController maps,
             WorldControlWireProtocol.WorldSummary world,
             Tab initialTab,
-            AreaSelection area
+            AreaSelection area,
+            boolean dedicatedFlow
     ) {
-        super(Text.literal("Import / Export"));
+        super(Text.literal(dedicatedFlow
+                ? initialTab == Tab.IMPORT ? "Import World" : "Export World"
+                : "Import / Export"));
         this.parent = parent;
         this.worlds = worlds;
         this.transfers = transfers;
         this.maps = maps;
         this.world = world;
         this.area = area;
+        this.dedicatedFlow = dedicatedFlow;
         this.tab = world == null ? Tab.IMPORT : initialTab;
         this.observedWorldRevision = worlds.revision();
         this.observedTransferRevision = transfers.revision();
@@ -84,6 +89,23 @@ public final class WorldTransferScreen extends Screen {
             String suffix = area == null ? "" : "-area";
             this.exportFileName = fileStem(world.displayName()) + suffix + "-" + EXPORT_SUFFIX.format(LocalDateTime.now());
         }
+    }
+
+    public static WorldTransferScreen forImport(
+            Screen parent,
+            ClientWorldController worlds,
+            ClientTransferController transfers
+    ) {
+        return new WorldTransferScreen(parent, worlds, transfers, null, null, Tab.IMPORT, null, true);
+    }
+
+    public static WorldTransferScreen forWorldExport(
+            Screen parent,
+            ClientWorldController worlds,
+            ClientTransferController transfers,
+            WorldControlWireProtocol.WorldSummary world
+    ) {
+        return new WorldTransferScreen(parent, worlds, transfers, null, world, Tab.EXPORT, null, true);
     }
 
     public static WorldTransferScreen forArea(
@@ -101,7 +123,7 @@ public final class WorldTransferScreen extends Screen {
                 current.worldId().value(), current.folderName(), current.displayName(),
                 "IMPORTED", "ACTIVE", "CREATIVE");
         return new WorldTransferScreen(parent, worlds, transfers, maps, summary, Tab.EXPORT,
-                new AreaSelection(x1, z1, x2, z2));
+                new AreaSelection(x1, z1, x2, z2), true);
     }
 
     @Override
@@ -117,7 +139,7 @@ public final class WorldTransferScreen extends Screen {
         int contentLeft = left + 30;
         int contentWidth = panelWidth - 60;
 
-        if (area == null) {
+        if (area == null && !dedicatedFlow) {
             int tabWidth = (contentWidth - 8) / 2;
             LbButtonWidget exportTab = LbUi.button(contentLeft, 72, tabWidth, 24,
                     "Export", tab == Tab.EXPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
@@ -258,7 +280,7 @@ public final class WorldTransferScreen extends Screen {
     }
 
     private void switchTab(Tab next) {
-        if (busy() || next == tab || (area != null && next == Tab.IMPORT)) return;
+        if (dedicatedFlow || busy() || next == tab || (area != null && next == Tab.IMPORT)) return;
         if (next == Tab.EXPORT && world == null) return;
         rememberFields();
         if (tab == Tab.IMPORT && next != Tab.IMPORT) discardPendingImportReview();
@@ -490,8 +512,10 @@ public final class WorldTransferScreen extends Screen {
         int panelHeight = Math.min(height - 70, panelHeight());
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
-        context.drawTextWithShadow(textRenderer, Text.literal(area == null ? "IMPORT / EXPORT" : "EXPORT AREA"),
-                left + 24, 40, LbUi.TEXT_MUTED);
+        String heading = area != null ? "EXPORT AREA"
+                : dedicatedFlow ? tab == Tab.IMPORT ? "IMPORT WORLD" : "EXPORT WORLD"
+                : "IMPORT / EXPORT";
+        context.drawTextWithShadow(textRenderer, Text.literal(heading), left + 24, 40, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world == null ? "Import World" : world.displayName()),
                 left + 24, 56, LbUi.TEXT_PRIMARY);
 
