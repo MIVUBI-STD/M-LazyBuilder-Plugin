@@ -24,4 +24,18 @@ public final class ChatRoutingPolicy {
             case CHAT, GAME, SYSTEM -> false;
         };
     }
+
+    public static boolean showToast(ChatMessageType type) {
+        return switch (type) {
+            case WARNING, ERROR -> true;
+            case CHAT, GAME, SYSTEM -> false;
+        };
+    }
+
+    public static boolean writeConsole(ChatMessageType type) {
+        return switch (type) {
+            case SYSTEM, WARNING, ERROR -> true;
+            case CHAT, GAME -> false;
+        };
+    }
 }
