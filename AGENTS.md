@@ -200,18 +200,28 @@ Use the canonical taxonomy in `docs/04-system/development-discipline.md`. `UNKNO
 
 ## Specialist Routing
 
-Select the specialist by the **semantic decision**, not by implementation language, edited file, screen/page name, or where the symptom is visible. A UI-visible problem is not automatically a UI-owned defect; a restart-related problem is not automatically Desktop Runtime; a multi-module change is not automatically Protocol.
+Select the specialist by the **decision being made**, not by language or filename.
 
-Load exactly one primary specialist. Add another only after ownership actually changes and the first owner has produced the smallest typed handoff result required by the next owner.
+There are now two specialist layers:
 
 ```text
-workspace / provisioning / Java / Paper / core / server process / recovery / resources
+SEMANTIC / PRODUCT SPECIALISTS
+→ decide what the product/domain/wire/presentation contract means
+
+IMPLEMENTATION SPECIALISTS
+→ implement an already-decided Paper or Fabric contract using the platform correctly
+```
+
+A semantic Skill and an implementation Skill are sequential, not competing authorities. When semantics are material, freeze/prove the semantic contract first, emit a typed handoff, STOP that Skill, then load the matching implementation Skill.
+
+```text
+workspace / provisioning / Java / Paper process / core / recovery / resources
 → lazybuilder-desktop-runtime
 
 third-party Paper plugin lifecycle
 → lazybuilder-plugin-management
 
-World Manager / Paper world behavior / import-export-conversion
+World Manager / Paper world behavior / import-export-conversion semantics
 → lazybuilder-world-management
 
 presentation/input on desktop or Fabric/Minecraft client
@@ -220,6 +230,32 @@ presentation/input on desktop or Fabric/Minecraft client
 
 shared Paper/Fabric request-result/wire contract
 → lazybuilder-protocol
+
+LazyBuilder-owned Paper plugin/module implementation
+→ lazybuilder-paper-plugin-development
+
+LazyBuilder-owned Fabric mod/module implementation
+→ lazybuilder-fabric-mod-development
+```
+
+Examples:
+
+```text
+new world capability implemented in Paper plugin
+→ protocol/world semantics first as required
+→ typed contract
+→ paper-plugin-development
+
+new Fabric screen interaction
+→ ui semantics first
+→ typed UI contract
+→ fabric-mod-development
+
+internal Paper command/listener refactor with unchanged semantics
+→ paper-plugin-development directly
+
+Fabric initializer/build/resource fix with unchanged semantics
+→ fabric-mod-development directly
 ```
 
 Cross-owner rule:
@@ -231,9 +267,9 @@ Owner A decides + proves its boundary
 → Owner B consumes result without recomputing Owner A truth
 ```
 
-If the symptom can fit more than one specialist, gather the smallest evidence that separates canonical semantic truth from adapter/transport/presentation before loading another Skill. Canonical scenario probes and handoff payloads live in `docs/04-system/skill-routing.md`.
+If the symptom can fit more than one specialist, gather the smallest evidence that separates semantic truth from platform implementation before loading another Skill. Canonical scenario probes and handoff payloads live in `docs/04-system/skill-routing.md`.
 
-Do not create standalone Skills for Rust, Java, TypeScript, Maven, Gradle, CI, testing, or implementation mechanics.
+Do not create standalone Skills for Java, Rust, TypeScript, Maven, Gradle, Tauri, Svelte, testing, or CI alone. Paper Plugin Development and Fabric Mod Development exist because each represents a repeated platform-specific implementation procedure, not merely a programming language or build tool.
 
 ## Development Discipline
 
@@ -256,6 +292,7 @@ Never trade away trust-boundary validation, security, bounded resource limits, d
 
 - One responsibility has one canonical owner and one primary execution path.
 - One persisted fact has one authority; other layers derive/present it.
+- Paper/Fabric implementation specialists consume semantic contracts; they do not become duplicate product/domain/wire/UI authorities.
 - Do not create duplicate managers, registries, caches, routers, config systems, schedulers, process markers, or compatibility layers without evidence.
 - Commands/UI/listeners are adapters; business rules live in explicit semantic owners.
 - Shared Paper/Fabric contracts live in `shared/protocol`; desktop loopback HTTP remains Desktop Runtime.
@@ -299,7 +336,7 @@ LIVE_RUNTIME
 NATIVE_ACCEPTANCE
 ```
 
-Do not infer proof strength from where a check ran. `windows-latest` is not automatically `NATIVE_ACCEPTANCE`; a Minecraft screenshot is not automatically `LIVE_RUNTIME`; a running Paper server is not feature proof unless the changed behavior was exercised.
+Do not infer proof strength from where a check ran. `windows-latest` is not automatically `NATIVE_ACCEPTANCE`; a Minecraft screenshot is not automatically `LIVE_RUNTIME`; a running Paper server/client is not feature proof unless the changed behavior was exercised.
 
 Use the cheapest proof capable of falsifying the changed claim. A green unrelated check is not acceptance evidence. A packaged artifact is not live runtime proof.
 
@@ -331,6 +368,8 @@ Fabric client UI         → docs/03-client-ui/
 system ownership         → docs/04-system/
 current operations       → docs/05-operations/
 shared wire contracts    → shared/protocol/
+Paper plugin code        → plugins/**
+Fabric mod code          → mods/**
 ```
 
 Do not create duplicate roadmaps, decision logs, status archives, or parallel state systems. Git history is the archive.
