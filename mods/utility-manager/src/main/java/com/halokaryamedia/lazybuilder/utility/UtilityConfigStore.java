@@ -44,7 +44,8 @@ public final class UtilityConfigStore {
                         "screenshots.organize_by_project",
                         defaults.contextualScreenshotNames()
                 ),
-                readBoolean(properties, "inventory.instant_creative_search", defaults.instantCreativeSearch())
+                readBoolean(properties, "inventory.instant_creative_search", defaults.instantCreativeSearch()),
+                readBoolean(properties, "hud.compact_debug", defaults.compactDebugHud())
         );
     }
 
@@ -62,6 +63,7 @@ public final class UtilityConfigStore {
                 "inventory.instant_creative_search",
                 Boolean.toString(preferences.instantCreativeSearch())
         );
+        properties.setProperty("hud.compact_debug", Boolean.toString(preferences.compactDebugHud()));
 
         Path parent = configFile.getParent();
         Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
