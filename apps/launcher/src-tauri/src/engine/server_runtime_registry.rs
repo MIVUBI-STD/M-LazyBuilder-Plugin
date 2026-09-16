@@ -1,8 +1,25 @@
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::workspace_registry::{self, WorkspaceEntry};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRuntimeSummary {
+    pub workspace_id: String,
+    pub workspace_name: String,
+    pub state: String,
+    pub pid: Option<u32>,
+    pub paper_port: Option<u16>,
+}
+
+struct RuntimeEntry {
+    workspace_name: String,
+    controller: Arc<ServerManagerState>,
+    paper_port: Option<u16>,
+}
 
 /// In-memory owner for Launcher-attached Paper controllers.
 ///
@@ -11,7 +28,7 @@ use std::sync::{Arc, Mutex};
 /// switching the selected workspace cannot discard another server's stdin or
 /// runtime state.
 pub struct ServerRuntimeRegistry {
-    runtimes: Mutex<HashMap<String, Arc<ServerManagerState>>>,
+    runtimes: Mutex<HashMap<String, RuntimeEntry>>,
 }
 
 impl Default for ServerRuntimeRegistry {
@@ -35,7 +52,43 @@ impl ServerRuntimeRegistry {
 
     pub fn runtime_if_present(&self, workspace_id: &str) -> Result<Option<Arc<ServerManagerState>>, String> {
         let runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
-        Ok(runtimes.get(workspace_id).cloned())
+        Ok(runtimes.get(workspace_id).map(|entry| Arc::clone(&entry.controller)))
+    }
+
+    pub fn set_paper_port(&self, workspace_id: &str, port: u16) -> Result<(), String> {
+        let mut runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
+        let entry = runtimes.get_mut(workspace_id)
+            .ok_or_else(|| "Server runtime disappeared while publishing its connection port.".to_string())?;
+        entry.paper_port = Some(port);
+        Ok(())
+    }
+
+    pub fn active_paper_port(&self) -> Result<Option<u16>, String> {
+        let Some(active) = workspace_registry::current()? else { return Ok(None); };
+        let runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
+        Ok(runtimes.get(&active.id).and_then(|entry| entry.paper_port))
+    }
+
+    pub fn summaries(&self) -> Result<Vec<ServerRuntimeSummary>, String> {
+        let entries = {
+            let runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
+            runtimes.iter().map(|(id, entry)| {
+                (id.clone(), entry.workspace_name.clone(), Arc::clone(&entry.controller), entry.paper_port)
+            }).collect::<Vec<_>>()
+        };
+
+        let mut summaries = Vec::with_capacity(entries.len());
+        for (workspace_id, workspace_name, controller, paper_port) in entries {
+            let snapshot = controller.snapshot()?;
+            summaries.push(ServerRuntimeSummary {
+                workspace_id,
+                workspace_name,
+                state: snapshot.state,
+                pid: snapshot.pid,
+                paper_port,
+            });
+        }
+        Ok(summaries)
     }
 
     pub fn remove(&self, workspace_id: &str) -> Result<(), String> {
@@ -51,13 +104,17 @@ impl ServerRuntimeRegistry {
 
     fn runtime_for(&self, workspace: &WorkspaceEntry) -> Result<Arc<ServerManagerState>, String> {
         let mut runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
-        if let Some(runtime) = runtimes.get(&workspace.id) {
-            return Ok(Arc::clone(runtime));
+        if let Some(entry) = runtimes.get(&workspace.id) {
+            return Ok(Arc::clone(&entry.controller));
         }
 
         let root = PathBuf::from(&workspace.path);
         let runtime = Arc::new(ServerManagerState::for_workspace(root));
-        runtimes.insert(workspace.id.clone(), Arc::clone(&runtime));
+        runtimes.insert(workspace.id.clone(), RuntimeEntry {
+            workspace_name: workspace.name.clone(),
+            controller: Arc::clone(&runtime),
+            paper_port: None,
+        });
         Ok(runtime)
     }
 }
