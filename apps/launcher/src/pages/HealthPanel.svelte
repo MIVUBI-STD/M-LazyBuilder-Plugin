@@ -48,7 +48,7 @@
     try {
       const result = await runtimeProduct.health.repair(workspace.id);
       notice = result.health.ready
-        ? 'Server components were repaired and the server is ready.'
+        ? 'Server components were repaired and the server setup is ready.'
         : 'Repairs completed. Your attention is still required for the remaining items.';
       await refresh();
       await onRepaired?.();
@@ -69,7 +69,7 @@
   <header class="health-heading">
     <div>
       <h3 id="health-heading">Server health</h3>
-      <p>Checks that determine whether this server is ready to run.</p>
+      <p>Checks that determine whether this server can start and run correctly.</p>
     </div>
     {#if plan?.canRepair}
       <button class="repair-button" disabled={repairing} onclick={repair}>{repairing ? 'Repairing…' : `Repair ${plan.repairs.length} item${plan.repairs.length === 1 ? '' : 's'}`}</button>
@@ -84,7 +84,7 @@
   {:else if !workspace || !health || !plan}
     <div class="health-empty">Open a server to inspect its health.</div>
   {:else if health.ready}
-    <div class="ready-state"><span aria-hidden="true">✓</span><div><strong>Server is ready</strong><small>Everything required to run this server is ready.</small></div></div>
+    <div class="ready-state"><span aria-hidden="true">✓</span><div><strong>Server setup is ready</strong><small>Everything required to start this server is available.</small></div></div>
   {:else}
     {#if plan.blockedReason}<div class="health-notice warning"><strong>Automatic repair isn't available</strong><span>{plan.blockedReason}</span></div>{/if}
 
