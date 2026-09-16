@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { ServerLogTail, ServerSnapshot } from '../app/bridge/runtimeApi';
 
@@ -68,9 +68,13 @@
     }
   }
 
-  function schedulePolling() {
+  function clearPolling() {
     if (pollTimer !== null) window.clearTimeout(pollTimer);
     pollTimer = null;
+  }
+
+  function schedulePolling() {
+    clearPolling();
     if (!open || document.hidden) return;
     pollTimer = window.setTimeout(async () => {
       pollTimer = null;
@@ -85,11 +89,19 @@
     onClose();
   }
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (!open || event.key !== 'Escape') return;
-    event.preventDefault();
-    closeConsole();
-  }
+  onMount(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        clearPolling();
+        return;
+      }
+      if (open) void refreshConsole().finally(schedulePolling);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  });
+
+  onDestroy(clearPolling);
 
   $: if (open !== lastOpen) {
     lastOpen = open;
@@ -99,14 +111,14 @@
         await tick();
         commandInput?.focus();
       });
-    } else if (pollTimer !== null) {
-      window.clearTimeout(pollTimer);
-      pollTimer = null;
+    } else {
+      clearPolling();
+      command = '';
+      error = '';
+      notice = '';
     }
   }
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 {#if open}
   <div class="console-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConsole()}>
