@@ -34,10 +34,54 @@ class WorldExportRuntimeFreeAreaTest {
 
     @Test
     void nativeAreaCompletesWithoutInstalledConversionRuntime() throws Exception {
-        Path worlds = tempDir.resolve("worlds");
+        Fixture fixture = fixture("area");
+
+        WorldExportService.ExportTask task = fixture.service.prepareArea(
+                fixture.world.id(),
+                WorldExportService.NATIVE_SERVER_FORMAT,
+                "native-area",
+                WorldAreaSelection.ofCorners("minecraft:overworld", 0, 0, 15, 15),
+                WorldExportOptions.legacyDefaults()
+        );
+        fixture.service.captureSnapshot(task);
+        WorldExportService.ExportResult result = fixture.service.processSnapshot(task);
+        fixture.service.finish(task);
+
+        assertFalse(result.converted());
+        assertTrue(Files.isRegularFile(result.artifact()));
+        assertTrue(fixture.adapter.runtimeFreeCalled);
+        assertFalse(fixture.adapter.externalRuntimeCalled);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
+    void fullNativeWorkspaceDefaultsDoNotInvokeConverterForEmptyChunkOptimization() throws Exception {
+        Fixture fixture = fixture("full");
+
+        WorldExportService.ExportTask task = fixture.service.prepare(
+                fixture.world.id(),
+                WorldExportService.NATIVE_SERVER_FORMAT,
+                "native-full",
+                WorldExportOptions.workspaceDefaults()
+        );
+        fixture.service.captureSnapshot(task);
+        WorldExportService.ExportResult result = fixture.service.processSnapshot(task);
+        fixture.service.finish(task);
+
+        assertFalse(result.converted());
+        assertTrue(Files.isRegularFile(result.artifact()));
+        assertFalse(fixture.adapter.runtimeFreeCalled);
+        assertFalse(fixture.adapter.externalRuntimeCalled);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    private Fixture fixture(String suffix) throws Exception {
+        Path root = tempDir.resolve(suffix);
+        Path worlds = root.resolve("worlds");
         Path source = worlds.resolve("Build");
-        Files.createDirectories(source);
+        Files.createDirectories(source.resolve("region"));
         Files.writeString(source.resolve("level.dat"), "level");
+        Files.writeString(source.resolve("region/r.0.0.mca"), "region");
 
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
@@ -47,8 +91,8 @@ class WorldExportRuntimeFreeAreaTest {
         WorldOperationCoordinator operations = new WorldOperationCoordinator();
         WorldRuntimeService runtimeService = new WorldRuntimeService(
                 registry, new UnloadedRuntime(), operations);
-        LocalWorldFileRepository files = new LocalWorldFileRepository(worlds, tempDir.resolve("work"));
-        LocalWorldExportArtifactStore artifacts = new LocalWorldExportArtifactStore(tempDir.resolve("exports"));
+        LocalWorldFileRepository files = new LocalWorldFileRepository(worlds, root.resolve("work"));
+        LocalWorldExportArtifactStore artifacts = new LocalWorldExportArtifactStore(root.resolve("exports"));
         EmptyRuntimeStore store = new EmptyRuntimeStore();
         RuntimeFreeAdapter adapter = new RuntimeFreeAdapter();
         ConversionReleaseSource releases = Optional::empty;
@@ -58,7 +102,7 @@ class WorldExportRuntimeFreeAreaTest {
                 releases,
                 (release, directory) -> { throw new AssertionError("runtime download must not run"); },
                 adapter,
-                tempDir.resolve("downloads"),
+                root.resolve("downloads"),
                 Clock.fixed(Instant.parse("2026-09-17T00:00:00Z"), ZoneOffset.UTC)
         );
 
@@ -73,24 +117,15 @@ class WorldExportRuntimeFreeAreaTest {
                 adapter,
                 new ConversionJobCoordinator()
         );
-
-        WorldExportService.ExportTask task = service.prepareArea(
-                world.id(),
-                WorldExportService.NATIVE_SERVER_FORMAT,
-                "native-area",
-                WorldAreaSelection.ofCorners("minecraft:overworld", 0, 0, 15, 15),
-                WorldExportOptions.legacyDefaults()
-        );
-        service.captureSnapshot(task);
-        WorldExportService.ExportResult result = service.processSnapshot(task);
-        service.finish(task);
-
-        assertFalse(result.converted());
-        assertTrue(Files.isRegularFile(result.artifact()));
-        assertTrue(adapter.runtimeFreeCalled);
-        assertFalse(adapter.externalRuntimeCalled);
-        assertFalse(operations.isBusy(world.id()));
+        return new Fixture(service, world, operations, adapter);
     }
+
+    private record Fixture(
+            WorldExportService service,
+            WorldRecord world,
+            WorldOperationCoordinator operations,
+            RuntimeFreeAdapter adapter
+    ) { }
 
     private static final class RuntimeFreeAdapter implements ConverterAdapter {
         private boolean runtimeFreeCalled;
@@ -103,7 +138,9 @@ class WorldExportRuntimeFreeAreaTest {
 
         @Override
         public boolean canConvertWithoutRuntime(ConversionRequest request) {
-            return request.keepOriginalNbt() && request.worldSettings() == null;
+            return request.preserveNativeInput()
+                    && request.canonicalNativeOutput()
+                    && request.worldSettings() == null;
         }
 
         @Override
