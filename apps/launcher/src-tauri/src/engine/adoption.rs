@@ -293,8 +293,6 @@ fn reject_adoption_source_trees(intent: &PendingAdoption) -> Result<(), String> 
     for movement in &intent.moves {
         let source = PathBuf::from(&movement.source);
         if !source.exists() { continue; }
-        // A parent source tree already covers descendants (for example the root
-        // plugins directory covers legacy plugin JARs that will later move again).
         if checked.iter().any(|parent| source.starts_with(parent)) { continue; }
         reject_tree_links(&source)?;
         checked.push(source);
@@ -373,7 +371,7 @@ fn save_pending_adoptions(entries: &[PendingAdoption]) -> Result<(), String> {
 fn add_pending_adoption(intent: PendingAdoption) -> Result<(), String> {
     let mut entries = load_pending_adoptions()?;
     if entries.iter().any(|item| paths_equal(&item.root, &intent.root)) { return Err("A previous adoption for this server still requires recovery".into()); }
-    entries.push(intent;
+    entries.push(intent);
     save_pending_adoptions(&entries)
 }
 
