@@ -47,6 +47,15 @@ release/update-channel publication = implemented
 in-app self-update runtime          = not current implementation unless source later adds it
 ```
 
+Launcher settings intentionally fail closed while this runtime is absent:
+
+```text
+autoCheckUpdates = false
+updateChannel     = stable
+```
+
+Legacy settings that enabled automatic checks or selected `preview` are migrated back to this supported state. The backend rejects unsupported update preferences rather than implying a capability that is not installed.
+
 Do not describe the Launcher as having working automatic self-update merely because signed update artifacts/channel metadata are published.
 
 ## Product identity
@@ -122,16 +131,9 @@ Private signing material stays in GitHub secrets/secure infrastructure; never co
 
 ## Update channels
 
-Current Launcher settings accept:
+Only `stable` is operational in the current Launcher settings contract.
 
-```text
-stable
-preview
-```
-
-But a channel is only operational when matching publication/runtime support actually exists. Do not infer a maintained Preview feed merely because the settings schema accepts `preview`.
-
-Keep channel semantics explicit and fail closed when the selected feed/runtime path is unsupported.
+`preview` must not be accepted until both publication and runtime support exist for that channel. When channel selection is later introduced, keep channel semantics explicit and fail closed if the selected feed/runtime path is unsupported.
 
 ## Future in-app updater runtime
 
@@ -151,6 +153,8 @@ query selected channel metadata
 ```
 
 Use one updater state authority. Current release publication does not by itself satisfy this runtime contract.
+
+Do not add the updater dependency/config with an invented or placeholder public key. Provision the canonical public verification key first, then wire the updater against the existing stable channel.
 
 ## Signature and key safety
 
@@ -245,6 +249,7 @@ Do not claim previous-version rollback unless an actual restoration mechanism ex
 [ ] release workflow is explicit and main-only
 [ ] signing secrets are external
 [ ] signed artifact/manifest/checksum claims match produced files
+[ ] settings fail closed while updater runtime is absent
 [ ] stable vs preview capability is not overstated
 [ ] publication is not confused with in-app updater implementation
 [ ] server workspaces remain outside Launcher uninstall/update ownership
