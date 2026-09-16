@@ -19,7 +19,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.UUID;
 
-/** L4 visual proof for the production Map Manager, Export workspace, and dedicated transfer surface. */
+/** L4 visual proof for the production Map Manager, Export workspace, and dedicated transfer surfaces. */
 @SuppressWarnings("UnstableApiUsage")
 public final class MapManagerVisualProofTest implements FabricClientGameTest {
     private static final UUID TANA = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -65,6 +65,15 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                         "world-transfer-export-advanced-1440x900-gui2");
                 captureDedicatedExport(context, state, 620, 480, 2, false,
                         "world-transfer-export-narrow-620x480-gui2");
+
+                captureDedicatedImport(context, state, 1440, 900, 2, false, false,
+                        "world-transfer-import-initial-1440x900-gui2");
+                captureDedicatedImport(context, state, 1440, 900, 2, true, false,
+                        "world-transfer-import-advanced-1440x900-gui2");
+                captureDedicatedImport(context, state, 1440, 900, 2, true, true,
+                        "world-transfer-import-review-1440x900-gui2");
+                captureDedicatedImport(context, state, 620, 480, 2, true, true,
+                        "world-transfer-import-review-narrow-620x480-gui2");
             } finally {
                 context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(previousBlur));
             }
@@ -209,6 +218,46 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             if (advanced) {
                 setBooleanField(screen, "advanced", true,
                         "World Transfer proof could not open advanced export options");
+            }
+            return screen;
+        });
+        context.waitForScreen(WorldTransferScreen.class);
+        context.waitTicks(12);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureDedicatedImport(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            boolean advanced,
+            boolean reviewed,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            WorldTransferScreen screen = WorldTransferScreen.forImport(null, state.worlds, state.transfers);
+            if (advanced) {
+                setBooleanField(screen, "advanced", true,
+                        "World Transfer import proof could not open advanced options");
+            }
+            if (reviewed) {
+                WorldControlWireProtocol.ImportInspection inspection = new WorldControlWireProtocol.ImportInspection(
+                        "preview-import.mcworld",
+                        "BEDROCK",
+                        "1.21.80",
+                        "Mosaic of Us — Imported World With A Deliberately Long Review Name");
+                setObjectField(screen, "importInspection", inspection,
+                        "World Transfer import proof could not stage import review");
+                setObjectField(screen, "importArtifactName", inspection.artifactName(),
+                        "World Transfer import proof could not bind import artifact");
+                setObjectField(screen, "importDisplayName", inspection.suggestedName(),
+                        "World Transfer import proof could not stage world name");
             }
             return screen;
         });
