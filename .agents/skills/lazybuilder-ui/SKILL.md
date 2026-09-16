@@ -7,6 +7,8 @@ description: Own LazyBuilder presentation, interaction, UI issue resolution, and
 
 Own presentation and user interaction only. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; cross-owner selection/handoff comes from `docs/04-system/skill-routing.md`.
 
+This Skill is consumer-neutral: ChatGPT and Codex use the same UI ownership, diagnosis, and proof rules. Use whichever source/renderer/artifact tools are actually available; never treat an unavailable visual/native proof as observed.
+
 ## Entry gate
 
 Use this Skill when the first wrong owner is presentation or interaction:
@@ -123,8 +125,8 @@ reproduce
 → smallest presentation fix
 → check pending/error/empty + focus/keyboard + representative responsive constraint
 → inspect sibling Launcher consumer only when it uses the same result
-→ EXECUTED_SOURCE
-→ VISUAL_RENDERED when appearance/state presentation changed
+→ EXECUTED_SOURCE when available
+→ VISUAL_RENDERED when appearance/state presentation changed and renderer proof is available
 → NATIVE_ACCEPTANCE only for remaining Windows-native boundary
 → STOP
 ```
@@ -151,8 +153,8 @@ reproduce player interaction
 → reuse existing screen/keybind/controller/protocol
 → smallest presentation fix
 → inspect lifecycle/back-close/repeated input/representative GUI scale
-→ EXECUTED_SOURCE
-→ VISUAL_RENDERED when appearance matters
+→ EXECUTED_SOURCE when available
+→ VISUAL_RENDERED when appearance matters and renderer proof is available
 → NATIVE_ACCEPTANCE only for local GPU/input/environment residue
 → STOP
 ```
@@ -215,7 +217,7 @@ reproduce
 → hand semantic defect to plugin-management
 → otherwise fix list/detail/action/status flow
 → align sibling views using the same canonical result
-→ EXECUTED_SOURCE + matching visual proof when needed
+→ EXECUTED_SOURCE + matching visual proof when available/needed
 → STOP
 ```
 
@@ -310,7 +312,7 @@ Finish when:
 - one primary UI lane is corrected;
 - async/input/navigation state cannot duplicate or mis-target work;
 - relevant layout/accessibility/performance risk is covered;
-- matching source/visual proof is complete;
+- matching source/visual proof is complete to the available context ceiling;
 - remaining native/live residue is named precisely.
 
 Do not redesign unrelated surfaces or continue decorative polish after the accepted interaction/presentation contract is satisfied.
