@@ -16,16 +16,38 @@ Material/coloring is intentionally outside this milestone.
 - LazyBuilder World/Map Manager visual language.
 - Exactly one Terraform keyboard shortcut is registered: **Right Shift** toggles the Terraform editor panel, matching Axiom's default Toggle Editor UI key.
 - No dedicated keyboard shortcuts exist for tool selection, variation, undo, size, height, or face direction.
-- Tool/variation selection belongs to the Terraform UI surface.
+- Tool/variation selection and Undo belong to the Terraform UI surface.
 - LMB drag draws/extends the active terrain form.
 - Mouse wheel adjusts size.
 - Shift + wheel adjusts height.
 - RMB flips the exposed/front side where relevant.
+- Opening the Terraform panel cancels an unfinished live stroke rather than leaving a hidden half-stroke active.
 - Preview uses the same platform-neutral shape reconstruction path as the Paper executor.
 - Hover preview must invalidate when the cursor target changes; it may not remain pinned to a stale block.
 - Size/height/front/tool/variation changes surface immediate HUD feedback without requiring shortcut keys.
 - Tool or variation changes cancel an in-progress stroke instead of silently changing semantics mid-gesture.
 - Accepted/finished operations use concise overlay feedback; errors remain visible chat messages.
+
+## Operation lifecycle lock
+
+```text
+stroke release
+-> request encoded/sent
+-> client pending state
+-> server validation + queue admission
+-> Accepted
+-> bounded world mutation
+-> Finished or Error
+-> client ready state
+```
+
+- While an operation is pending, direct drawing and hover preview are suspended. This avoids stacking a new gesture onto terrain that has not finished mutating.
+- The panel remains available during pending work and shows `Applying terrain...`.
+- Undo is a panel action, not a keyboard shortcut.
+- Undo is enabled only when the latest completed operation is eligible and there is no pending operation.
+- Pending/undo state is cleared on disconnect and world/dimension identity change.
+- Server undo history is cleared on player world change/quit.
+- A completed server job is added to undo history only if the player is still online in the same authoritative world in which that job executed.
 
 ## Geometry pipeline
 
@@ -94,8 +116,8 @@ Noise is deformation/detail, never the primary macro generator.
 ### Mountain
 
 - dominant coherent mass
-- offset main crest
-- secondary ridge branches
+- offset main/secondary summit structure
+- hierarchical secondary ridge branches
 - controlled valley cuts
 - macro asymmetry with bounded surface breakup
 - narrowed subsurface root for footprint attachment
@@ -122,7 +144,7 @@ No Terraform implementation belongs in Utility Manager or World Manager. Shared 
 - per-player bounded history
 - offline players do not retain completed-operation undo history
 - client editor/stroke state resets on disconnect
-- client stroke/undo/continuation context also resets when the active Minecraft world or dimension identity changes
+- client stroke/pending/undo/continuation context also resets when the active Minecraft world or dimension identity changes
 - undo stores original BlockData rather than assuming generated material
 - no whole-world scans
 - no unbounded per-frame shape generation
