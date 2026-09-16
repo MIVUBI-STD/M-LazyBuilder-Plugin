@@ -43,6 +43,7 @@ final class MapExportWorkspaceState {
     private Integer spawnZ;
     private Long timeOfDayTicks;
     private String weather = "CLEAR";
+    private final Map<String, String> sourceGameRules = new LinkedHashMap<>();
     private final Map<String, String> gameRules = new LinkedHashMap<>();
     private boolean worldSettingsExpanded;
     private boolean gameRulesExpanded;
@@ -69,8 +70,12 @@ final class MapExportWorkspaceState {
         spawnZ = round(source.spawnZ());
         timeOfDayTicks = source.timeOfDayTicks();
         weather = source.weather();
+        sourceGameRules.clear();
         gameRules.clear();
-        gameRules.putAll(source.gameRules());
+        for (WorldControlWireProtocol.GameRuleValue rule : source.gameRules()) {
+            sourceGameRules.put(rule.name(), rule.value());
+            gameRules.put(rule.name(), rule.value());
+        }
         worldSettingsExpanded = false;
         gameRulesExpanded = false;
     }
@@ -126,13 +131,8 @@ final class MapExportWorkspaceState {
         spawnZ = z;
     }
 
-    String ruleValue(String name) {
-        return gameRules.get(name);
-    }
-
-    boolean hasRule(String name) {
-        return gameRules.containsKey(name);
-    }
+    String ruleValue(String name) { return gameRules.get(name); }
+    boolean hasRule(String name) { return gameRules.containsKey(name); }
 
     void toggleBooleanRule(String name) {
         String value = gameRules.get(name);
@@ -145,7 +145,7 @@ final class MapExportWorkspaceState {
         WorldControlWireProtocol.SettingsSnapshot base = Objects.requireNonNull(source, "source settings");
         Map<String, String> ruleOverrides = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : gameRules.entrySet()) {
-            String original = base.gameRules().get(entry.getKey());
+            String original = sourceGameRules.get(entry.getKey());
             if (!Objects.equals(original, entry.getValue())) ruleOverrides.put(entry.getKey(), entry.getValue());
         }
 
