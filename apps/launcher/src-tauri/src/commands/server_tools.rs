@@ -25,10 +25,9 @@ pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<Ser
         Some(_) => return Err("Workspace id is required for targeted log access.".into()),
         None => canonical_or_normalized(paths::workspace_root()?),
     };
-    let paper_log_root = canonical_or_normalized(workspace.join("server").join("logs"));
-    let lazybuilder_log_root = canonical_or_normalized(workspace.join("tools").join("lazybuilder").join("logs"));
+    let default_log = workspace.join("server").join("logs").join("latest.log");
     let requested = if path.trim().is_empty() {
-        paper_log_root.join("latest.log")
+        default_log
     } else {
         PathBuf::from(path.trim())
     };
@@ -38,11 +37,13 @@ pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<Ser
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("log")) == Some(true);
-    let direct_allowed_parent = requested.parent().is_some_and(|parent| {
-        parent == paper_log_root.as_path() || parent == lazybuilder_log_root.as_path()
-    });
-    if !direct_allowed_parent || !is_log {
-        return Err("Refusing to read a log outside this server's managed log directories.".into());
+    let has_log_parent = requested
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("logs")) == Some(true);
+    if !requested.starts_with(&workspace) || !has_log_parent || !is_log {
+        return Err("Refusing to read a log outside this server's managed workspace log directories.".into());
     }
     if !requested.is_file() {
         return Ok(ServerLogTail {
