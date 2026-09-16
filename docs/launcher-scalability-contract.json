@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "operationHistoryMax": 100,
+  "activity": {
+    "activePollMs": 2000,
+    "idlePollMs": 10000,
+    "initialHistoryRows": 40
+  },
+  "overview": {
+    "activePollMs": 3000,
+    "idlePollMs": 15000
+  },
+  "worldTasks": {
+    "visiblePollMs": 1000,
+    "hiddenPollMs": 5000,
+    "timeoutMs": 1800000
+  },
+  "backups": {
+    "initialRows": 20,
+    "estimateMode": "on-demand",
+    "minimumProgressJournalStepBytes": 16777216,
+    "relativeProgressJournalStepPercent": 1
+  },
+  "serverLogs": {
+    "tailBytesMax": 262144,
+    "tailLinesMax": 300
+  },
+  "rendering": {
+    "offscreenContentVisibility": true
+  }
+}
