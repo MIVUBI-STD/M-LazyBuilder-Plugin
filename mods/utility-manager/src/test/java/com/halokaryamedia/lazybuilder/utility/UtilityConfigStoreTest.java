@@ -26,6 +26,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.extendedChatHistory());
         assertTrue(preferences.keepChatDraft());
         assertTrue(preferences.chatSearch());
+        assertTrue(preferences.chatTimestamps());
         assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
         assertFalse(preferences.contextualScreenshotNames());
@@ -38,6 +39,7 @@ final class UtilityConfigStoreTest {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
         UtilityPreferences expected = new UtilityPreferences(
                 true,
+                false,
                 false,
                 false,
                 false,
@@ -61,6 +63,7 @@ final class UtilityConfigStoreTest {
                         + "chat.extended_history=not-a-boolean\n"
                         + "chat.keep_draft=FALSE\n"
                         + "chat.search=not-a-boolean\n"
+                        + "chat.timestamps=not-a-boolean\n"
                         + "connection.reconnect_button=not-a-boolean\n"
                         + "screenshots.contextual_names=TRUE\n"
                         + "inventory.instant_creative_search=not-a-boolean\n"
@@ -73,6 +76,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.extendedChatHistory());
         assertFalse(preferences.keepChatDraft());
         assertTrue(preferences.chatSearch());
+        assertTrue(preferences.chatTimestamps());
         assertTrue(preferences.reconnectButton());
         assertTrue(preferences.contextualScreenshotNames());
         assertTrue(preferences.instantCreativeSearch());
