@@ -116,13 +116,13 @@
     if (!plugin.mutable) return;
     const jar = plugin.candidateFiles?.[0];
     if (!jar) {
-      error = localError('PLUGIN_FILE_AMBIGUOUS', 'LazyBuilder could not identify the broken JAR safely.', 'Refresh plugins and review the affected files');
+      error = localError('PLUGIN_FILE_AMBIGUOUS', 'LazyBuilder could not identify the broken plugin file safely.', 'Refresh plugins and review the affected files');
       return;
     }
     if (!window.confirm(`Remove broken plugin file ${jar}?`)) return;
     await run(async () => {
       await runtimeProduct.plugins.removeProblem(plugin.id, jar);
-      message = 'Broken plugin JAR removed safely.';
+      message = 'Broken plugin file removed safely.';
     });
   }
 
@@ -163,7 +163,7 @@
 
             {#if hasDuplicates(plugin)}
               <div class="problem-card">
-                <strong>Multiple plugin files found</strong><span>Choose which JAR LazyBuilder should keep.</span>
+                <strong>Multiple plugin files found</strong><span>Choose which plugin file LazyBuilder should keep.</span>
                 <div class="problem-actions">
                   <select disabled={busy || !canMutatePlugins} value={duplicateSelection[plugin.id] ?? plugin.candidateFiles?.[0]} onchange={(event) => duplicateSelection = { ...duplicateSelection, [plugin.id]: (event.currentTarget as HTMLSelectElement).value }}>
                     {#each plugin.candidateFiles ?? [] as candidate}<option value={candidate}>{candidate}</option>{/each}
@@ -172,7 +172,7 @@
                 </div>
               </div>
             {:else if isInvalid(plugin)}
-              <div class="problem-card danger-card"><strong>Broken plugin file</strong><span>{plugin.candidateFiles?.[0] || 'LazyBuilder could not read this JAR.'}</span></div>
+              <div class="problem-card danger-card"><strong>Broken plugin file</strong><span>{plugin.candidateFiles?.[0] || 'LazyBuilder could not read this plugin file.'}</span></div>
             {:else if plugin.problemDetail}
               <small class="problem-text">{plugin.problemDetail}</small>
             {/if}
