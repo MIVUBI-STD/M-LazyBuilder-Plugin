@@ -7,6 +7,8 @@ description: Own LazyBuilder Launcher engineering and desktop runtime semantics:
 
 Own Launcher application/runtime semantics. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; cross-owner selection/handoff comes from `docs/04-system/skill-routing.md`.
 
+This Skill is consumer-neutral: ChatGPT and Codex follow the same semantic procedure. Adapt only execution steps to tools actually available; never assume shell/local workspace/live server access or claim proof that was not observed.
+
 Rust/Tauri is trusted runtime authority; Svelte is presentation.
 
 ## Entry gate
@@ -112,10 +114,12 @@ name exact runtime responsibility
 → define restart/partial-failure/retry/rollback semantics
 → reuse/consolidate one execution path
 → smallest recoverable mutation
-→ matching proof
+→ matching proof available in the current context
 → typed handoff only if ownership changes
 → STOP
 ```
+
+If the current consumer cannot execute the required local/native/live proof, finish all lower-context work and name that exact residue instead of fabricating completion.
 
 ## Runtime invariants
 
@@ -192,4 +196,4 @@ to plugin-management
 
 Desktop loopback/Tauri IPC never becomes shared Paper↔Fabric protocol merely for reuse.
 
-Finish when runtime/persistence/recovery ownership is singular, failure/retry/restart semantics are explicit, destructive work is recoverable where required, and matching proof covers the changed claim. Stop before visual redesign, generic framework work, or unrelated future-proofing.
+Finish when runtime/persistence/recovery ownership is singular, failure/retry/restart semantics are explicit, destructive work is recoverable where required, and matching proof covers the changed claim at the available context ceiling. Stop before visual redesign, generic framework work, or unrelated future-proofing.
