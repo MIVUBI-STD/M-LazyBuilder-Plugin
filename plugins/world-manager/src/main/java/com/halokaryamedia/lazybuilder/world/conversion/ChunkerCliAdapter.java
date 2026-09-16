@@ -1,13 +1,18 @@
 package com.halokaryamedia.lazybuilder.world.conversion;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,6 +24,8 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     private static final Pattern FORMAT_PATTERN = Pattern.compile("\\b(?:JAVA|BEDROCK)_[A-Z0-9_]+\\b");
     private static final Pattern CUSTOM_DIMENSION_ENTRY = Pattern.compile("(?:^|/)data/[^/]+/dimension/.+\\.json$");
     private static final String CUSTOM_DIMENSION_METADATA = "custom_dimensions.chunker.json";
+    private static final Set<String> JAVA_CHUNK_DATA_DIRECTORIES = Set.of("region", "entities", "poi");
+    private static final Set<String> VANILLA_DIMENSION_DIRECTORIES = Set.of("DIM-1", "DIM1");
 
     private final Path javaExecutable;
     private final int maxHeapMb;
@@ -105,6 +112,9 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         requireOptionalSettingsFile(request.worldSettings(), "World settings");
         requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
         requireSupportedCustomDimensionShape(request);
+        if (request.keepOriginalNbt()) {
+            seedSameFormatOutput(request.inputDirectory(), request.outputDirectory());
+        }
 
         List<String> command = buildConversionCommand(artifact, request);
         OnDemandProcessRunner.ProcessResult result = run(command, artifact.getParent(), conversionTimeout);
@@ -197,6 +207,55 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
             }
         }
         return false;
+    }
+
+    static void seedSameFormatOutput(Path inputDirectory, Path outputDirectory) throws IOException {
+        Path input = Objects.requireNonNull(inputDirectory, "inputDirectory").toAbsolutePath().normalize();
+        Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
+        if (!Files.isDirectory(input) || Files.isSymbolicLink(input)) {
+            throw new IOException("Same-format seed input is missing or unsafe: " + input);
+        }
+        if (Files.exists(output)) {
+            throw new IOException("Same-format seed output must not already exist: " + output);
+        }
+
+        Files.walkFileTree(input, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
+                if (Files.isSymbolicLink(directory)) {
+                    throw new IOException("Symbolic links are not supported in conversion input: " + directory);
+                }
+                Path relative = input.relativize(directory);
+                if (isJavaChunkDataDirectory(relative)) return FileVisitResult.SKIP_SUBTREE;
+                Files.createDirectories(output.resolve(relative));
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (Files.isSymbolicLink(file)) {
+                    throw new IOException("Symbolic links are not supported in conversion input: " + file);
+                }
+                Path relative = input.relativize(file);
+                if (relative.getNameCount() == 1 && relative.getFileName().toString().equals("session.lock")) {
+                    return FileVisitResult.CONTINUE;
+                }
+                Path target = output.resolve(relative);
+                Path parent = target.getParent();
+                if (parent != null) Files.createDirectories(parent);
+                Files.copy(file, target, StandardCopyOption.COPY_ATTRIBUTES);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private static boolean isJavaChunkDataDirectory(Path relative) {
+        if (relative.getNameCount() == 1) {
+            return JAVA_CHUNK_DATA_DIRECTORIES.contains(relative.getFileName().toString());
+        }
+        return relative.getNameCount() == 2
+                && VANILLA_DIMENSION_DIRECTORIES.contains(relative.getName(0).toString())
+                && JAVA_CHUNK_DATA_DIRECTORIES.contains(relative.getName(1).toString());
     }
 
     static String parseRuntimeVersion(String output) throws IOException {
