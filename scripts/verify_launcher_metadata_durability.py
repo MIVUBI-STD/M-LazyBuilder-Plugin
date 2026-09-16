@@ -18,6 +18,8 @@ def require(path: Path, *markers: str) -> None:
 
 def main() -> int:
     server_config = RUST / "server_config.rs"
+    workspace_registry = RUST / "workspace_registry.rs"
+
     require(
         server_config,
         "recover_atomic_file(&path)?",
@@ -30,6 +32,26 @@ def main() -> int:
         "FILE_ATTRIBUTE_REPARSE_POINT",
         "interrupted_publish_prefers_previous_committed_config",
         "staging_config_recovers_when_no_committed_copy_exists",
+    )
+
+    require(
+        workspace_registry,
+        "recover_json_file(&path, \"workspace registry\")?",
+        "recover_json_file(&path, \"pending server deletions\")?",
+        "recover_json_file(&path, \"pending server duplicates\")?",
+        "recover_json_file(&path, \"workspace manifest\")?",
+        "write_json_file",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.incoming")',
+        'with_extension("json.tmp")',
+        "metadata_entry_exists",
+        "ensure_regular_metadata_file",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "ambiguous {label} recovery staging files",
+        "workspace_metadata_recovery_prefers_previous_committed_copy",
+        "workspace_metadata_recovery_supports_legacy_tmp_staging",
+        "workspace_metadata_recovery_preserves_ambiguous_staging",
     )
 
     print("Launcher metadata durability contract OK")
