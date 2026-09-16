@@ -134,25 +134,58 @@ public final class ClientMapSurfaceCache {
 
     /**
      * Returns one stable representative surface sample for a raster footprint.
-     *
-     * <p>Far-zoom sampling is anchored to a world-space grid instead of the moving
-     * screen center. Panning inside the same footprint therefore resolves the same
-     * sample coordinate and does not make terrain colours crawl or blink. This is
-     * the cache-side half of retained-tile behaviour; the screen renderer remains
-     * responsible for retaining and drawing the visible raster/tile.</p>
+     * Far zoom uses a fixed five-point footprint only after all points are known,
+     * avoiding progressive colour blending while preserving more roads, shorelines,
+     * and small structures than a single center sample.
      */
     public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
         int stableSpan = Math.max(1, span);
-        if (stableSpan == 1) return sample(world, blockX, blockZ);
         int anchorX = stableSampleCoordinate(blockX, stableSpan);
         int anchorZ = stableSampleCoordinate(blockZ, stableSpan);
-        return sample(world, anchorX, anchorZ);
+        SurfaceSample center = sample(world, anchorX, anchorZ);
+        if (stableSpan < 4) return center;
+
+        int offset = Math.max(1, stableSpan / 3);
+        SurfaceSample nw = sample(world, anchorX - offset, anchorZ - offset);
+        SurfaceSample ne = sample(world, anchorX + offset, anchorZ - offset);
+        SurfaceSample sw = sample(world, anchorX - offset, anchorZ + offset);
+        SurfaceSample se = sample(world, anchorX + offset, anchorZ + offset);
+        if (!center.explored() || !nw.explored() || !ne.explored() || !sw.explored() || !se.explored()) {
+            return center;
+        }
+        return blendStableFive(center, nw, ne, sw, se);
     }
 
     static int stableSampleCoordinate(int coordinate, int span) {
         int stableSpan = Math.max(1, span);
         int cell = Math.floorDiv(coordinate, stableSpan);
         return cell * stableSpan + stableSpan / 2;
+    }
+
+    private static SurfaceSample blendStableFive(
+            SurfaceSample center,
+            SurfaceSample nw,
+            SurfaceSample ne,
+            SurfaceSample sw,
+            SurfaceSample se
+    ) {
+        long red = 0;
+        long green = 0;
+        long blue = 0;
+        long height = 0;
+        SurfaceSample[] samples = {center, nw, ne, sw, se};
+        for (SurfaceSample sample : samples) {
+            int color = sample.color();
+            red += (color >>> 16) & 0xFF;
+            green += (color >>> 8) & 0xFF;
+            blue += color & 0xFF;
+            height += sample.height();
+        }
+        int color = 0xFF000000
+                | ((int) (red / samples.length) << 16)
+                | ((int) (green / samples.length) << 8)
+                | (int) (blue / samples.length);
+        return new SurfaceSample(color, (int) (height / samples.length), true);
     }
 
     /**
