@@ -14,7 +14,9 @@ Ops docs       = current continuation/proof only
 Git history    = retired decisions/history
 ```
 
-Select by the semantic decision, not by implementation language, edited file, screen/page name, restart involvement, or where the symptom is visible.
+These routing rules are consumer-neutral: ChatGPT and Codex select the same semantic owner and handoff chain. Tool availability may change execution mechanics, never ownership.
+
+Select by the semantic decision, not by implementation language, edited file, screen/page name, restart involvement, consumer, or where the symptom is visible.
 
 ## Canonical specialist set
 
@@ -26,7 +28,7 @@ lazybuilder-ui
 lazybuilder-protocol
 ```
 
-Keep this set intentionally small. There is no separate Launcher Framework, Visual Testing, implementation-language, build-tool, CI, or Development Brief Skill.
+Keep this set intentionally small. There is no separate Launcher Framework, Visual Testing, implementation-language, build-tool, CI, ChatGPT, Codex, or Development Brief Skill.
 
 ## Primary owner map
 
@@ -236,7 +238,7 @@ build/version scripts         → exact build/script owner + GITHUB_RULES.md
 security-only policy          → SECURITY.md / exact boundary
 ```
 
-Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, Playwright, screenshots, testing, or implementation mechanics alone.
+Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, Playwright, screenshots, testing, ChatGPT, Codex, or implementation mechanics alone.
 
 ## Skill creation gate
 
@@ -256,7 +258,7 @@ Before leaving routing:
 
 ```text
 Is there exactly one primary semantic owner?
-Was owner selection based on separating evidence rather than symptom location/name?
+Was owner selection based on separating evidence rather than symptom location/name/consumer?
 Is another Skill actually required now, or only potentially later?
 If ownership changes, is the handoff the minimum typed result needed?
 Can the next owner proceed without recomputing the previous owner's truth?
