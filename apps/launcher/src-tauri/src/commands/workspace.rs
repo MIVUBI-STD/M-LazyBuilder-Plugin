@@ -1,7 +1,7 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
-use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, workspace_registry};
+use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, workspace_registry};
 use crate::engine::workspace_registry::{ProvisioningStatus, WorkspaceDuplicateEstimate, WorkspaceEntry};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -120,6 +120,7 @@ pub fn workspace_adoption_pick(operations: State<'_, OperationRegistry>) -> Comm
 
 #[tauri::command]
 pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<String>) -> CommandResult<WorkspaceEntry> {
+    let _selection_lease = acquire_workspace_selection_lease()?;
     {
         let operations = app.state::<OperationRegistry>();
         ensure_switch_allowed(&operations)?;
@@ -164,12 +165,14 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
 
 #[tauri::command]
 pub fn workspace_activate(operations: State<'_, OperationRegistry>, id: String) -> CommandResult<WorkspaceEntry> {
+    let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_activation_allowed(&operations, &id)?;
     workspace_registry::activate(&id).map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub fn workspace_close(operations: State<'_, OperationRegistry>) -> CommandResult<()> {
+    let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_switch_allowed(&operations)?;
     workspace_registry::deactivate().map_err(CommandError::from)
 }
@@ -292,6 +295,14 @@ pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: St
 
 fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &CommandError, recoverable: bool) {
     let _ = operations.fail(operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable });
+}
+
+fn acquire_workspace_selection_lease() -> CommandResult<ServerStartLease> {
+    ServerStartLease::acquire().map_err(|message| CommandError::recoverable(
+        "SERVER_START_BUSY",
+        message,
+        "Wait for server start",
+    ))
 }
 
 fn ensure_library_operation_idle(operations: &OperationRegistry) -> CommandResult<()> {
