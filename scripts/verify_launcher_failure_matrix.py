@@ -73,6 +73,7 @@ def main() -> int:
     required_ids = {
         "operation-interrupted-by-launcher-exit",
         "workspace-library-overlaps-workspace-mutation",
+        "workspace-metadata-crash-during-publish",
         "create-crash-before-intent-identity-update",
         "adoption-crash-mid-move",
         "duplicate-crash-after-publish-before-register",
@@ -96,8 +97,8 @@ def main() -> int:
     if missing_required:
         errors.append(f"failure matrix is missing required scenarios: {missing_required}")
 
-    if scenarios_with_tests < 9:
-        errors.append(f"failure matrix must retain deterministic test evidence for at least 9 scenarios; found {scenarios_with_tests}")
+    if scenarios_with_tests < 10:
+        errors.append(f"failure matrix must retain deterministic test evidence for at least 10 scenarios; found {scenarios_with_tests}")
 
     if errors:
         print("Launcher failure matrix verification failed:")
