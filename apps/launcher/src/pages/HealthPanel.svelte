@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ServerHealthSnapshot, ServerRepairPlan, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
   export let onRepaired: (() => Promise<void> | void) | undefined = undefined;
@@ -12,14 +15,8 @@
   let plan: ServerRepairPlan | null = null;
   let loading = true;
   let repairing = false;
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let notice = '';
-
-  function friendlyError(value: unknown) {
-    return value instanceof Error && value.message.trim()
-      ? value.message.trim()
-      : String(value ?? '').replace(/^Error:\s*/i, '').trim() || 'Could not inspect server health.';
-  }
 
   async function refresh() {
     const state = await runtimeProduct.workspace.state();
@@ -40,16 +37,16 @@
 
   async function initialLoad() {
     loading = true;
-    error = '';
+    error = null;
     try { await refresh(); }
-    catch (value) { error = friendlyError(value); }
+    catch (value) { error = presentRuntimeError(value, 'Could not inspect server health.'); }
     finally { loading = false; }
   }
 
   async function repair() {
     if (!workspace || !plan?.canRepair || repairing) return;
     repairing = true;
-    error = '';
+    error = null;
     notice = '';
     try {
       const result = await runtimeProduct.health.repair(workspace.id);
@@ -59,7 +56,7 @@
       await refresh();
       await onRepaired?.();
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not repair this server.');
       try { await refresh(); } catch {}
     } finally {
       repairing = false;
@@ -82,7 +79,7 @@
     {/if}
   </header>
 
-  {#if error}<div class="health-notice danger" role="alert">{error}</div>{/if}
+  <RuntimeErrorNotice {error} />
   {#if notice}<div class="health-notice success" aria-live="polite">{notice}</div>{/if}
 
   {#if loading}
@@ -125,7 +122,7 @@
   .health-panel{margin-top:16px;padding:16px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}
   .health-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.health-heading h3{margin:0;font-size:14px}.health-heading p{margin:3px 0 0;color:var(--muted);font-size:10px}
   .repair-button{min-height:34px;padding:7px 12px;border:1px solid var(--accent-border);border-radius:8px;background:var(--accent-soft);color:#9ee8b9;font-weight:700;cursor:pointer}.repair-button:disabled{opacity:.5;cursor:default}
-  .health-notice{display:grid;gap:3px;margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.health-notice.danger{border:1px solid #62343a;background:var(--danger-bg);color:#ffd9dc}.health-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}.health-notice.warning{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}
+  .health-notice{display:grid;gap:3px;margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.health-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}.health-notice.warning{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}
   .health-empty{min-height:92px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px}.ready-state{display:flex;align-items:center;gap:10px;margin-top:13px;padding:12px;border:1px solid var(--accent-border);border-radius:9px;background:var(--accent-soft)}.ready-state>span{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:rgba(34,197,94,.16);color:#9ee8b9}.ready-state div{display:grid;gap:2px}.ready-state strong{font-size:11px}.ready-state small{color:var(--muted);font-size:9px}
   .repair-plan,.manual-plan{display:grid;gap:8px;margin-top:12px;padding:11px;border:1px solid var(--border-soft);border-radius:9px;background:var(--bg-elevated)}.repair-plan>strong,.manual-plan>strong{font-size:10px}.repair-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:start}.repair-row div{display:grid;gap:2px}.repair-row b{font-size:10px}.repair-row small{color:var(--muted);font-size:9px;line-height:1.45}.repair-dot{width:7px;height:7px;margin-top:4px;border-radius:50%;background:var(--accent)}.manual-dot{width:18px;height:18px;display:grid;place-items:center;border-radius:50%;background:var(--warning-bg);color:var(--warning);font-size:9px;font-weight:800}
   .technical-checks{margin-top:11px;border-top:1px solid var(--border-soft);padding-top:9px}.technical-checks summary{color:var(--muted);font-size:9px;cursor:pointer}.technical-checks p{display:grid;grid-template-columns:130px 1fr;gap:8px;margin:8px 0;font-size:9px}.technical-checks span{color:var(--muted)}
