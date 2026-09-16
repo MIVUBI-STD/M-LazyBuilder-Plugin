@@ -50,6 +50,8 @@ def main() -> int:
     workspace_commands = RUST / "commands" / "workspace.rs"
     adoption = RUST / "engine" / "adoption.rs"
     registry = RUST / "engine" / "workspace_registry.rs"
+    runtime_updates = RUST / "engine" / "runtime_updates.rs"
+    diagnostics_command = RUST / "commands" / "diagnostics.rs"
     restore = RUST / "engine" / "server_restore.rs"
     backups = RUST / "engine" / "server_backups.rs"
     backup_recovery = RUST / "engine" / "backup_recovery.rs"
@@ -96,6 +98,9 @@ def main() -> int:
 
     require(
         startup,
+        "let mut ready = true;",
+        "ready = false;",
+        "StartupReport { ready, degraded",
         "workspace_creation::recover_pending_creations()",
         "adoption::recover_pending_adoptions()",
         "workspace_registry::recover_pending_duplicates()",
@@ -106,6 +111,7 @@ def main() -> int:
         "backup_recovery::mark_legacy_sweep_complete()",
         "server_process_guard::reconcile_registered_process_markers()",
     )
+    forbid(startup, "StartupReport { ready: true")
 
     require(
         operations,
@@ -119,6 +125,12 @@ def main() -> int:
         "library_and_workspace_exclusive_operations_are_serialized",
         "operations.json",
         "persist_journal",
+        "recover_journal_file",
+        "cleanup_journal_recovery_files",
+        "replace_journal_file",
+        "create_new(true)",
+        "ensure_regular_metadata_file",
+        "malformed_operation_journal_preserves_recovery_evidence",
         "INTERRUPTED_LAUNCHER_OPERATION",
         "RecoveryRequired",
     )
@@ -156,7 +168,28 @@ def main() -> int:
         "fn reject_tree_links(",
         "is_reparse_point(&metadata)",
     )
-    require(registry, "pending-duplicates.json", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates", "pending-deletions.json", "recover_pending_deletions")
+    require(
+        registry,
+        "pending-duplicates.json",
+        "DUPLICATE_RECOVERY_REQUIRED",
+        "recover_pending_duplicates",
+        "pending-deletions.json",
+        "recover_pending_deletions",
+        "pub fn manifest(root: &Path)",
+        "pub fn update_paper_build(root: &Path",
+        "pub fn update_core_versions(root: &Path",
+        "validate_manifest(&manifest)?;",
+        "workspace_manifest_semantic_validation_preserves_recovery_evidence",
+    )
+    require(
+        runtime_updates,
+        "workspace_registry::manifest(workspace)?",
+        "workspace_registry::update_paper_build(&workspace, release.build)",
+        "workspace_registry::update_core_versions(",
+    )
+    forbid(runtime_updates, "fn write_json_atomic(", "fn update_manifest_field(", "fn manifest_path(")
+    require(diagnostics_command, "workspace_registry::manifest(Path::new(&entry.path))")
+    forbid(diagnostics_command, "WorkspaceManifestView", "fn read_manifest(")
     require(restore, "pending-restores.json", "recover_pending_restores")
 
     require(
