@@ -8,8 +8,9 @@ import java.util.regex.Pattern;
 /**
  * Consecutive duplicate tracker used by the vanilla ChatHud adapter.
  *
- * Only a small, explicit set of compact GAME/WARNING presentation shapes are
- * eligible. Player chat and unknown system text are never collapsed here.
+ * Eligibility is explicitly prepared by a trusted Utility/Fabric adapter before
+ * ChatHud sees the line. Repeated arbitrary system text and player chat therefore
+ * cannot become collapsible merely because their visible text looks similar.
  */
 public final class ChatCollapseState {
     private static final Duration DEFAULT_WINDOW = Duration.ofSeconds(8);
@@ -17,6 +18,7 @@ public final class ChatCollapseState {
     private static final Pattern COUNT_SUFFIX = Pattern.compile("\\s+×\\d+$");
 
     private final long windowMillis;
+    private String preparedFingerprint = "";
     private String lastFingerprint = "";
     private long lastSeenMillis = Long.MIN_VALUE;
     private int count;
@@ -31,14 +33,23 @@ public final class ChatCollapseState {
         this.windowMillis = window.toMillis();
     }
 
+    /** Marks exactly one upcoming rendered line as eligible for collapse. */
+    public void prepareEligible(String renderedText) {
+        String baseText = normalize(renderedText);
+        preparedFingerprint = fingerprint(baseText);
+    }
+
     public Decision accept(String renderedText, long nowMillis) {
         String baseText = normalize(renderedText);
-        if (!eligible(baseText)) {
-            clear();
+        String fingerprint = fingerprint(baseText);
+        boolean eligible = !preparedFingerprint.isEmpty() && fingerprint.equals(preparedFingerprint);
+        preparedFingerprint = "";
+
+        if (!eligible) {
+            clearSequence();
             return new Decision(false, false, 1, baseText);
         }
 
-        String fingerprint = baseText.toLowerCase(Locale.ROOT);
         boolean insideWindow = !lastFingerprint.isEmpty()
                 && fingerprint.equals(lastFingerprint)
                 && nowMillis - lastSeenMillis <= windowMillis;
@@ -56,6 +67,11 @@ public final class ChatCollapseState {
     }
 
     public void clear() {
+        preparedFingerprint = "";
+        clearSequence();
+    }
+
+    private void clearSequence() {
         lastFingerprint = "";
         lastSeenMillis = Long.MIN_VALUE;
         count = 0;
@@ -68,14 +84,8 @@ public final class ChatCollapseState {
         return text.trim();
     }
 
-    static boolean eligible(String text) {
-        if (text == null || text.isBlank()) return false;
-        String lower = text.toLowerCase(Locale.ROOT);
-        if (text.startsWith("⚠ ")) return true;
-        if (text.startsWith("Gamemode → ")) return true;
-        if (lower.endsWith(" joined") || lower.endsWith(" left")) return true;
-        return lower.contains(" has made the advancement ")
-                || lower.contains(" has completed the challenge ");
+    private static String fingerprint(String text) {
+        return text == null || text.isBlank() ? "" : text.toLowerCase(Locale.ROOT);
     }
 
     public record Decision(boolean eligible, boolean collapse, int count, String baseText) {
