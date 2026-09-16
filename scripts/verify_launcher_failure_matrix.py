@@ -72,6 +72,7 @@ def main() -> int:
 
     required_ids = {
         "operation-interrupted-by-launcher-exit",
+        "operation-journal-crash-during-metadata-publish",
         "workspace-library-overlaps-workspace-mutation",
         "workspace-metadata-crash-during-publish",
         "app-data-crash-during-metadata-publish",
