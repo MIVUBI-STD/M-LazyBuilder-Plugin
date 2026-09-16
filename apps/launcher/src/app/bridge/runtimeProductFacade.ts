@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { RuntimeError, runtimeApi, runtimeError } from './runtimeApi';
+import { runtimeApi } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
 import type { ServerBackupEstimate, ServerBackupSummary } from './runtimeApi';
 
@@ -14,21 +13,7 @@ const previewBackup: ServerBackupSummary = {
 
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
-async function exportSupportBundle() {
-  try {
-    return await invoke<string | null>('diagnostics_export_support_bundle');
-  } catch (value) {
-    throw new RuntimeError(runtimeError(value));
-  }
-}
-
-const productionRuntimeProduct = {
-  ...runtimeApi,
-  diagnostics: {
-    ...runtimeApi.diagnostics,
-    exportSupportBundle
-  }
-};
+const productionRuntimeProduct = runtimeApi;
 
 const previewRuntimeProduct = {
   ...runtimePreviewProduct,
@@ -56,9 +41,9 @@ const previewRuntimeProduct = {
 };
 
 /**
- * Production uses the Tauri runtime. Vite visual-preview mode swaps only the
- * runtime data source so the real Svelte UI can be rendered deterministically
- * in CI without requiring a local Windows/Tauri session.
+ * Production uses the canonical typed Tauri runtime bridge. Vite visual-preview
+ * mode swaps only the runtime data source so the real Svelte UI can be rendered
+ * deterministically in CI without requiring a local Windows/Tauri session.
  */
 export const runtimeProduct = import.meta.env.MODE === 'visual-preview'
   ? previewRuntimeProduct
