@@ -58,6 +58,8 @@ def main() -> int:
     java_runtime = RUST / "engine" / "java_runtime.rs"
     world_manager = RUST / "engine" / "world_manager" / "mod.rs"
     support_bundle = RUST / "engine" / "support_bundle.rs"
+    app = LAUNCHER / "src" / "App.svelte"
+    close_guard = LAUNCHER / "src" / "app" / "closeGuard.ts"
 
     require(
         engine_mod,
@@ -147,12 +149,16 @@ def main() -> int:
         "MAX_PLUGIN_JAR_BYTES",
         "MAX_PLUGIN_ARCHIVE_ENTRIES",
         "MAX_PLUGIN_METADATA_BYTES",
-        "validate_selected_jar",
+        "stage_selected_jar",
+        "recover_stale_ingress",
+        "PluginIngressLease",
         "is_reparse_point(&metadata)",
     )
     require(
         plugin_commands,
-        "plugin_ingress::validate_selected_jar(Path::new(&jar_path))?;",
+        "plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;",
+        "plugins.install(&staged_path)",
+        "plugins.update(&plugin_id, &staged_path)",
     )
 
     require(java_runtime, ".enclosed_name()", "failed SHA-256 verification")
@@ -165,6 +171,16 @@ def main() -> int:
         '"README.txt"',
         "MAX_LOG_FILE_BYTES",
     )
+
+    require(
+        close_guard,
+        "ACTIVE_OPERATION_STATES",
+        "runtimeProduct.operations.list()",
+        "Closing now will interrupt the operation and may require recovery",
+        "RUNNING_SERVER_STATES",
+    )
+    require(app, "installLauncherCloseGuard", "closeGuardUnlisten = await installLauncherCloseGuard()")
+    forbid(app, "getCurrentWindow")
 
     print("Launcher production-hardening source contract OK")
     return 0
