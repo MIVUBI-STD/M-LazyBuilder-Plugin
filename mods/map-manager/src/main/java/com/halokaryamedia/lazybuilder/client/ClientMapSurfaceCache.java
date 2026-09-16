@@ -53,7 +53,7 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class ClientMapSurfaceCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMapSurfaceCache.class);
-    private static final int FORMAT_VERSION = 4;
+    private static final int FORMAT_VERSION = 5;
     private static final int LEGACY_FORMAT_VERSION = 1;
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
@@ -183,23 +183,30 @@ public final class ClientMapSurfaceCache {
             SurfaceSample sw,
             SurfaceSample se
     ) {
+        if (center.color() == UNEXPLORED_COLOR) return center;
+
         long red = 0;
         long green = 0;
         long blue = 0;
         long height = 0;
+        int count = 0;
         SurfaceSample[] samples = {center, nw, ne, sw, se};
         for (SurfaceSample sample : samples) {
             int color = sample.color();
+            if (color == UNEXPLORED_COLOR) continue;
             red += (color >>> 16) & 0xFF;
             green += (color >>> 8) & 0xFF;
             blue += color & 0xFF;
             height += sample.height();
+            count++;
         }
+        if (count == 0) return center;
+
         int color = 0xFF000000
-                | ((int) (red / samples.length) << 16)
-                | ((int) (green / samples.length) << 8)
-                | (int) (blue / samples.length);
-        return new SurfaceSample(color, (int) (height / samples.length), true);
+                | ((int) (red / count) << 16)
+                | ((int) (green / count) << 8)
+                | (int) (blue / count);
+        return new SurfaceSample(color, (int) (height / count), true);
     }
 
     /**
@@ -591,12 +598,16 @@ public final class ClientMapSurfaceCache {
         BlockPos pos = new BlockPos(x, surfaceY, z);
         BlockState state = world.getBlockState(pos);
         boolean water = state.getFluidState().isIn(FluidTags.WATER);
+        boolean lava = state.getFluidState().isIn(FluidTags.LAVA);
 
         int color;
         if (water) {
             int waterRgb = BiomeColors.getWaterColor(world, pos);
             color = 0xFF000000 | (waterRgb & 0x00FFFFFF);
             color = shade(color, waterDepthFactor(world, x, surfaceY, z) * shorelineFactor(world, x, z));
+        } else if (lava) {
+            color = resolveBlockColor(world, pos, state);
+            if (color != UNEXPLORED_COLOR) color = shade(color, 1.10);
         } else {
             color = resolveBlockColor(world, pos, state);
         }
@@ -605,7 +616,7 @@ public final class ClientMapSurfaceCache {
         int northZ = z - 1;
         boolean westLoaded = world.getChunkManager().isChunkLoaded(westX >> 4, z >> 4);
         boolean northLoaded = world.getChunkManager().isChunkLoaded(x >> 4, northZ >> 4);
-        if (!water && westLoaded && northLoaded) {
+        if (!water && !lava && color != UNEXPLORED_COLOR && westLoaded && northLoaded) {
             int west = surfaceY(world, westX, z);
             int north = surfaceY(world, x, northZ);
             int relief = (surfaceY - west) + (surfaceY - north);
@@ -643,8 +654,7 @@ public final class ClientMapSurfaceCache {
 
             abovePos.set(x, y + 1, z);
             BlockState above = world.getBlockState(abovePos);
-            boolean exposed = above.isAir() || !above.getFluidState().isEmpty();
-            if (!exposed) continue;
+            if (!above.isAir()) continue;
 
             int distance = Math.abs((y + 1) - layerCenter);
             if (distance < bestDistance || distance == bestDistance && y > bestY) {
@@ -680,7 +690,7 @@ public final class ClientMapSurfaceCache {
         for (int y = start; y >= limit; y--) {
             pos.set(x, y, z);
             BlockState state = world.getBlockState(pos);
-            if (state.getFluidState().isIn(FluidTags.WATER)) return y;
+            if (!state.getFluidState().isEmpty()) return y;
             if (isRenderableSurface(world, pos, state)) return y;
         }
         return start;
@@ -688,6 +698,7 @@ public final class ClientMapSurfaceCache {
 
     private static boolean isRenderableSurface(ClientWorld world, BlockPos pos, BlockState state) {
         if (state.isAir()) return false;
+        if (!state.getFluidState().isEmpty()) return true;
         if (state.getMapColor(world, pos) != MapColor.CLEAR) return true;
         return MinecraftClient.getInstance().getBlockColors().getParticleColor(state, world, pos) != -1;
     }
