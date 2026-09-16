@@ -1,163 +1,119 @@
 # Launcher Quality Gates
 
-Use this reference only for a **non-trivial Launcher acceptance audit** after ownership and implementation direction are already clear from `lazybuilder-desktop-runtime/SKILL.md`.
+Use only for a **non-trivial Launcher acceptance audit** after owner, scope, and implementation direction are already clear from `lazybuilder-desktop-runtime/SKILL.md`.
 
-This file is a quality checklist, not a feature roadmap. A missing capability is not automatically work to add.
+This is an applicability checklist, not a roadmap and not a second proof system. Global proof vocabulary and STOP rules remain in `docs/04-system/development-discipline.md`.
 
 ## Acceptance order
 
-Evaluate in this order:
-
 ```text
 1. ownership / source of truth
-2. destructive and process safety
+2. destructive + process safety
 3. restart / retry / recovery
 4. state/queryability
-5. diagnostics / supportability
-6. packaged Windows behavior
+5. diagnostics/supportability
+6. packaged/native Windows boundary when applicable
 7. presentation handoff
 ```
 
 Do not fail a bounded feature because unrelated future capabilities are absent.
 
-## Ownership gate
+## Core gates
+
+### Ownership
 
 ```text
-[ ] one durable owner for the changed fact
-[ ] Svelte does not persist or infer backend truth independently
-[ ] Tauri command validates/delegates instead of becoming a second domain owner
-[ ] one process / settings / updater / backup / recovery authority
-[ ] no new queue, registry, cache, settings store, or recovery path without proven need
+[ ] one durable owner for each changed fact
+[ ] Svelte does not persist/infer backend truth independently
+[ ] Tauri command validates/delegates instead of duplicating domain logic
+[ ] no duplicate process/settings/updater/backup/recovery authority
 ```
 
-## Operation gate
-
-For long-running or restart-sensitive work:
+### Long-running/restart-sensitive work
 
 ```text
-[ ] operation identity and target are stable
-[ ] legal states/transitions are explicit
-[ ] current state is queryable after UI reload
-[ ] progress is semantic when measurable
+[ ] stable operation identity + target
+[ ] legal lifecycle is explicit/queryable
 [ ] duplicate conflicting execution is blocked
-[ ] cancel is exposed only at safe boundaries
-[ ] retry reconciles authoritative state before repeating effects
-[ ] committed success cannot be relabeled failure by a later refresh problem
+[ ] cancel exists only at safe boundaries
+[ ] retry reconciles authoritative state first
+[ ] committed success is not relabeled failed by later refresh error
 ```
 
-Read `operations-and-recovery.md` when any of these are materially involved.
+Read `operations-and-recovery.md` only when these semantics are materially involved.
 
-## Filesystem / destructive gate
+### Filesystem/destructive work
 
 ```text
-[ ] mutation path derives from trusted registry/manifest identity
-[ ] source and destination are validated before destructive work
-[ ] staging + validate + publish is used where practical
-[ ] partial failure cannot register a half-created result
-[ ] previous-valid state or deterministic recovery exists where replacement is risky
-[ ] ENOSPC / permission denial / lingering process are handled explicitly
-[ ] user server workspaces are never treated as disposable app data
+[ ] trusted identity derives the mutation path
+[ ] source/destination safety validated before mutation
+[ ] staging/validation/publication boundary is explicit where needed
+[ ] partial failure cannot register half-created output
+[ ] deterministic recovery/previous-valid state exists when replacement is risky
+[ ] ENOSPC / permission denial / lingering process are handled when applicable
 ```
 
-## Server-library gate
-
-When a change affects server/workspace library behavior:
+### Persistence/readiness
 
 ```text
-[ ] missing path remains visible rather than silently reattached
-[ ] relocate/adopt validates workspace identity
-[ ] process state is reconciled against the actual process, not labels alone
-[ ] readiness/health comes from one Rust authority
-[ ] expensive checks are bounded/progressive for large libraries
-[ ] duplicate/remove/delete/backup/restore semantics remain distinct
+[ ] one schema/default/readiness authority
+[ ] migration is deterministic and newer/unknown schema fails safely
+[ ] startup reconciliation completes before readiness is claimed
+[ ] expensive readiness checks are bounded/progressive where relevant
 ```
 
-## Persistence / migration gate
+### Update/distribution
 
-```text
-[ ] schema/default authority is singular
-[ ] migration is deterministic
-[ ] newer/unknown schema fails safely
-[ ] risky migration preserves previous-valid data
-[ ] startup reconciliation happens before UI claims readiness
-```
-
-## Update / distribution gate
-
-When launcher self-update or packaging is touched:
+Apply only when packaging/self-update is touched:
 
 ```text
 [ ] Launcher update remains separate from Paper/runtime update
-[ ] artifact authenticity/integrity is verified before activation
-[ ] update state is explicit and queryable
-[ ] only one updater operation may run
-[ ] product/executable/installer/updater identity stays consistent
-[ ] private signing material never enters source/logs/artifacts
-[ ] package proof is not overstated as real Windows acceptance
+[ ] authenticity/integrity checked before activation
+[ ] updater state/lock/identity is singular
+[ ] signing secrets stay outside source/logs/artifacts
+[ ] package evidence is not overstated as native Windows acceptance
 ```
 
-Read `windows-distribution-and-update.md` for details.
+Read `windows-distribution-and-update.md` for current implementation boundaries.
 
-## Diagnostics gate
+### Diagnostics/supportability
 
 ```text
-[ ] technical failures have stable machine-readable categories where durable handling needs them
+[ ] durable failures have stable machine-readable identity where useful
 [ ] logs/history are bounded
-[ ] support evidence includes version/build and relevant runtime/operation state
+[ ] support evidence includes relevant build/runtime/operation context
 [ ] secrets/tokens/private keys are excluded
 [ ] events accelerate presentation but are not the only state source
 ```
 
-## Performance gate
+### Performance
 
-Professional desktop behavior requires:
+Check only architecture-level hazards relevant to the change:
 
 ```text
 no large filesystem recursion on UI thread
 no blocking external-process wait on UI thread
-bounded log/history memory
-large copy/hash/archive work off the UI thread
-bounded progress emission
-startup usable from local state before optional network work
+bounded logs/history/progress emission
+large copy/hash/archive work off UI thread
+optional network work does not unnecessarily block usable local startup
 ```
 
-Optimize after measurement, but do not knowingly introduce blocking architecture.
+## Presentation boundary
 
-## Presentation handoff
+`lazybuilder-ui` owns layout, wording, accessibility, focus, density, and visual proof. Desktop Runtime must return enough canonical state that UI does not invent readiness, operation result, retry/cancel availability, process truth, or recovery requirement.
 
-`lazybuilder-ui` owns layout, wording, accessibility, focus, density, and visual proof. Desktop Runtime must provide enough authoritative state so UI does not invent:
+## Proof
+
+Select proof from the canonical vocabulary by the changed claim. Typical mappings:
 
 ```text
-readiness
-operation success/failure
-retry/cancel availability
-plugin/world/process truth
-recovery requirement
+state/validation/migration          → EXECUTED_SOURCE
+filesystem transaction/recovery    → INTEGRATION_FIXTURE
+installer/package identity         → PACKAGE_SMOKE
+real Windows/process/native behavior → NATIVE_ACCEPTANCE or matching LIVE_RUNTIME
+visual presentation                → lazybuilder-ui proof lane
 ```
-
-## Proof gate
-
-Choose proof by claim:
-
-```text
-state machine / validation / migration / path guards
-→ focused source/unit tests
-
-filesystem transaction / recovery
-→ isolated integration fixture
-
-packaging / installer contents
-→ build + package / installer smoke
-
-real process / Windows filesystem / updater restart
-→ packaged Local-PC proof
-
-visual presentation
-→ lazybuilder-ui proof lane
-```
-
-A green compile is not runtime proof; a packaged installer is not proof of every Windows UX detail.
 
 ## Completion
 
-A non-trivial Launcher feature is acceptable when all **applicable** gates above are satisfied and remaining higher-context proof is named precisely. Stop there; do not turn this checklist into justification for unrelated platform work.
+The audit is complete when all **applicable** gates are satisfied and any higher-capability residue is named precisely. Stop; do not use this checklist to justify unrelated platform work.
