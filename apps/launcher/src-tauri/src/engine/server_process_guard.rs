@@ -4,6 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
 
+/// Canonical LazyBuilder Desktop concurrency ceiling.
+///
+/// This is a product/runtime safety limit, not a recommendation. The runtime
+/// registry may own at most this many verified live Paper workspaces at once.
+pub const MAX_CONCURRENT_SERVERS: usize = 3;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessMarker {
@@ -18,6 +24,14 @@ pub struct StartupProcessReconciliation {
     pub running_servers: Vec<String>,
     pub stale_markers_cleared: u32,
     pub issues: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunningServerProcess {
+    pub workspace_id: String,
+    pub workspace_name: String,
+    pub pid: u32,
 }
 
 pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconciliation, String> {
@@ -57,6 +71,50 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
     Ok(result)
 }
 
+/// Returns only registered workspaces whose process markers still resolve to the
+/// exact live Paper process for that workspace. Stale or ambiguous markers are
+/// deliberately excluded from runtime-capacity decisions.
+pub fn running_registered_papers() -> Result<Vec<RunningServerProcess>, String> {
+    let servers = workspace_registry::list()?;
+    let mut system = System::new_all();
+    let mut running = Vec::new();
+
+    for server in servers {
+        let root = PathBuf::from(&server.path);
+        let Some(marker) = read_marker(&process_marker_path(&root)) else { continue; };
+        let pid = Pid::from_u32(marker.pid);
+        system.refresh_process(pid);
+        let Some(process) = system.process(pid) else { continue; };
+        if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { continue; }
+        if !looks_like_workspace_paper(process, &root) { continue; }
+        running.push(RunningServerProcess {
+            workspace_id: server.id,
+            workspace_name: server.name,
+            pid: marker.pid,
+        });
+    }
+
+    Ok(running)
+}
+
+/// Enforces the three-server ceiling without treating an already-running target
+/// as a fourth start. This does not itself grant multi-server ownership; callers
+/// must still bind the target workspace to a runtime-registry entry before spawn.
+pub fn ensure_concurrent_server_capacity(target_workspace_id: &str) -> Result<(), String> {
+    let running = running_registered_papers()?;
+    let target_already_running = running.iter().any(|entry| entry.workspace_id == target_workspace_id);
+    ensure_capacity(running.len(), target_already_running)
+}
+
+fn ensure_capacity(running_count: usize, target_already_running: bool) -> Result<(), String> {
+    if target_already_running || running_count < MAX_CONCURRENT_SERVERS {
+        return Ok(());
+    }
+    Err(format!(
+        "LazyBuilder can run at most {MAX_CONCURRENT_SERVERS} Paper servers at the same time. Stop one running server before starting another."
+    ))
+}
+
 pub fn workspace_has_running_paper(workspace_id: &str) -> Result<bool, String> {
     let server = workspace_registry::get(workspace_id)?;
     let root = PathBuf::from(&server.path);
@@ -70,6 +128,10 @@ pub fn workspace_has_running_paper(workspace_id: &str) -> Result<bool, String> {
     Ok(looks_like_workspace_paper(process, &root))
 }
 
+/// Legacy single-runtime guard retained until ServerManagerState is replaced by
+/// the workspace-keyed runtime registry. Do not remove this guard early: doing
+/// so would allow multiple Paper processes while the Launcher still owns only
+/// one stdin/state slot.
 pub fn ensure_no_running_paper_except(allowed_workspace_id: Option<&str>) -> Result<(), String> {
     let active_id = workspace_registry::current()?.map(|entry| entry.id);
     let servers = workspace_registry::list()?;
@@ -118,10 +180,21 @@ fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> b
 
 #[cfg(test)]
 mod tests {
-    use super::process_marker_path;
+    use super::{ensure_capacity, process_marker_path, MAX_CONCURRENT_SERVERS};
     use std::path::Path;
+
     #[test]
     fn marker_path_stays_workspace_local() {
         assert_eq!(process_marker_path(Path::new("C:/BuildServer")), Path::new("C:/BuildServer/tools/lazybuilder/cache/server-process.json"));
+    }
+
+    #[test]
+    fn three_server_capacity_is_canonical() {
+        assert_eq!(MAX_CONCURRENT_SERVERS, 3);
+        assert!(ensure_capacity(0, false).is_ok());
+        assert!(ensure_capacity(2, false).is_ok());
+        assert!(ensure_capacity(3, true).is_ok());
+        assert!(ensure_capacity(3, false).is_err());
+        assert!(ensure_capacity(4, false).is_err());
     }
 }
