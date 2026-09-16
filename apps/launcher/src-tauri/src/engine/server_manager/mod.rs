@@ -45,10 +45,6 @@ pub struct ServerManagerState {
     graceful_stop_timeout_seconds: Mutex<u64>,
 }
 
-impl Default for ServerManagerState {
-    fn default() -> Self { Self::for_workspace(PathBuf::new()) }
-}
-
 impl ServerManagerState {
     pub fn for_workspace(workspace_root: PathBuf) -> Self {
         Self {
@@ -66,7 +62,10 @@ impl ServerManagerState {
     }
 
     fn workspace_root(&self) -> Result<PathBuf, String> {
-        if self.workspace_root.as_os_str().is_empty() { paths::workspace_root() } else { Ok(self.workspace_root.clone()) }
+        if self.workspace_root.as_os_str().is_empty() {
+            return Err("Server runtime controller is missing its immutable workspace root.".into());
+        }
+        Ok(self.workspace_root.clone())
     }
 
     pub fn preflight(&self) -> ServerPreflight {
