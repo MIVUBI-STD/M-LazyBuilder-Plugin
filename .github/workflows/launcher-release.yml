@@ -139,53 +139,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         shell: pwsh
         run: |
-          $manifest = Get-Content 'update-channel/stable/latest.json' -Raw
-          $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($manifest))
-
-          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/launcher-update-channel" *> $null 2>$null
-          $channelExists = $LASTEXITCODE -eq 0
-          $global:LASTEXITCODE = 0
-
-          if (-not $channelExists) {
-            # Create an orphan Git object graph containing distribution metadata only.
-            # Never seed the update channel from main, otherwise source files become
-            # part of the distribution branch forever.
-            $blobPayload = @{ content = $content; encoding = 'base64' } | ConvertTo-Json -Compress
-            $blobSha = $blobPayload | gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/blobs" --input - --jq '.sha'
-            if ([string]::IsNullOrWhiteSpace($blobSha)) { throw 'Could not create stable manifest blob.' }
-
-            $treePayload = @{
-              tree = @(@{
-                path = 'stable/latest.json'
-                mode = '100644'
-                type = 'blob'
-                sha = $blobSha
-              })
-            } | ConvertTo-Json -Depth 5 -Compress
-            $treeSha = $treePayload | gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/trees" --input - --jq '.sha'
-            if ([string]::IsNullOrWhiteSpace($treeSha)) { throw 'Could not create updater channel tree.' }
-
-            $commitPayload = @{
-              message = 'release(launcher): bootstrap stable update channel'
-              tree = $treeSha
-              parents = @()
-            } | ConvertTo-Json -Depth 4 -Compress
-            $commitSha = $commitPayload | gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/commits" --input - --jq '.sha'
-            if ([string]::IsNullOrWhiteSpace($commitSha)) { throw 'Could not create updater channel commit.' }
-
-            $refPayload = @{ ref = 'refs/heads/launcher-update-channel'; sha = $commitSha } | ConvertTo-Json -Compress
-            $refPayload | gh api --method POST "repos/$env:GITHUB_REPOSITORY/git/refs" --input - *> $null
-          } else {
-            $existing = gh api "repos/$env:GITHUB_REPOSITORY/contents/stable/latest.json?ref=launcher-update-channel" --jq '.sha'
-            if ([string]::IsNullOrWhiteSpace($existing)) { throw 'Stable update channel exists but latest.json is missing.' }
-            $payload = @{
-              message = 'release(launcher): stable ${{ inputs.version }}'
-              content = $content
-              branch = 'launcher-update-channel'
-              sha = $existing
-            } | ConvertTo-Json -Compress
-            $payload | gh api --method PUT "repos/$env:GITHUB_REPOSITORY/contents/stable/latest.json" --input - *> $null
-          }
+          ./scripts/publish_launcher_update_channel.ps1 `
+            -Repository $env:GITHUB_REPOSITORY `
+            -ManifestPath 'update-channel/stable/latest.json' `
+            -Version '${{ inputs.version }}'
 
       - name: Verify published stable channel
         working-directory: ${{ github.workspace }}
