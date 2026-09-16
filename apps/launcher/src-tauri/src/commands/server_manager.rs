@@ -106,12 +106,12 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn server_stop(app: AppHandle) -> Result<(), String> {
+pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let registry = app.state::<ServerRuntimeRegistry>();
-        let (active, state) = registry.active_runtime()?;
+        let (target_id, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
         stop_with_recovery(&state)?;
-        registry.remove(&active.id)
+        registry.remove(&target_id)
     })
     .await
     .map_err(|error| format!("Server stop task failed: {error}"))?
