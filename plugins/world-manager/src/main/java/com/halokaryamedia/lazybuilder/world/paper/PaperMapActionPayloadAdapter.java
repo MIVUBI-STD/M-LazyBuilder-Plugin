@@ -28,6 +28,8 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     public static final String CHANNEL = "lazybuilder:map";
     public static final String TELEPORT_PERMISSION = "lazybuilder.world.teleport";
     public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
+    private static final String PAPER_NETHER_SUFFIX = "_nether";
+    private static final String PAPER_END_SUFFIX = "_the_end";
 
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
@@ -111,7 +113,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     }
 
     private void sendCurrentWorldState(Player player) {
-        WorldRecord world = registry.findByFolderName(player.getWorld().getName()).orElse(null);
+        WorldRecord world = currentManagedWorld(player);
         if (world == null) {
             send(player, MapActionWireProtocol.currentWorldCleared());
             return;
@@ -157,6 +159,10 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
         final WorldExportService.ExportTask task;
         try {
+            WorldRecord current = currentManagedWorld(player);
+            if (current == null || !current.id().equals(request.worldId())) {
+                throw new IllegalArgumentException("Selected Area world changed; reopen the map and select the area again");
+            }
             String activeDimension = vanillaDimensionId(player.getWorld().getEnvironment());
             if (activeDimension == null) {
                 throw new IllegalArgumentException("Selected Area export does not support this custom dimension");
@@ -293,6 +299,22 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
         player.sendPluginMessage(plugin, CHANNEL, payload);
+    }
+
+    private WorldRecord currentManagedWorld(Player player) {
+        World world = Objects.requireNonNull(player, "player").getWorld();
+        WorldRecord direct = registry.findByFolderName(world.getName()).orElse(null);
+        if (direct != null) return direct;
+
+        String suffix = switch (world.getEnvironment()) {
+            case NETHER -> PAPER_NETHER_SUFFIX;
+            case THE_END -> PAPER_END_SUFFIX;
+            case NORMAL, CUSTOM -> null;
+        };
+        String name = world.getName();
+        if (suffix == null || !name.endsWith(suffix) || name.length() <= suffix.length()) return null;
+        String rootFolder = name.substring(0, name.length() - suffix.length());
+        return registry.findByFolderName(rootFolder).orElse(null);
     }
 
     private static String vanillaDimensionId(World.Environment environment) {
