@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /** Small versioned wire format shared by Paper and the Fabric map client. */
 public final class MapActionWireProtocol {
-    /** V3 adds shared export-only settings to custom-area export requests. */
-    public static final int VERSION = 3;
+    /** V4 scopes custom-area export requests to the map's active dimension. */
+    public static final int VERSION = 4;
     public static final int MAX_MESSAGE_BYTES = 4096;
     private static final int MAX_STRING_BYTES = 192;
 
@@ -39,6 +39,7 @@ public final class MapActionWireProtocol {
 
     public record ExportArea(
             WorldId worldId,
+            String dimensionId,
             int x1,
             int z1,
             int x2,
@@ -47,20 +48,9 @@ public final class MapActionWireProtocol {
             String artifactName,
             ExportSettingsWire.Settings settings
     ) implements Request {
-        public ExportArea(
-                WorldId worldId,
-                int x1,
-                int z1,
-                int x2,
-                int z2,
-                String targetFormat,
-                String artifactName
-        ) {
-            this(worldId, x1, z1, x2, z2, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
-        }
-
         public ExportArea {
             Objects.requireNonNull(worldId, "worldId");
+            dimensionId = requireString(dimensionId, "dimensionId");
             targetFormat = requireString(targetFormat, "targetFormat");
             artifactName = requireString(artifactName, "artifactName");
             settings = Objects.requireNonNull(settings, "settings");
@@ -119,6 +109,7 @@ public final class MapActionWireProtocol {
                 }
                 case ExportArea export -> {
                     writeWorldId(out, export.worldId());
+                    writeString(out, export.dimensionId());
                     out.writeInt(export.x1());
                     out.writeInt(export.z1());
                     out.writeInt(export.x2());
@@ -142,7 +133,7 @@ public final class MapActionWireProtocol {
             Request request = switch (opcode) {
                 case TELEPORT_LOCATION -> new TeleportLocation(readWorldId(in), in.readInt(), in.readInt());
                 case EXPORT_AREA -> new ExportArea(
-                        readWorldId(in),
+                        readWorldId(in), readString(in),
                         in.readInt(), in.readInt(), in.readInt(), in.readInt(),
                         readString(in), readString(in), ExportSettingsWire.read(in));
                 case CURRENT_WORLD -> new CurrentWorldRequest();
@@ -215,6 +206,7 @@ public final class MapActionWireProtocol {
 
     public static byte[] exportAreaRequest(
             WorldId worldId,
+            String dimensionId,
             int x1,
             int z1,
             int x2,
@@ -222,12 +214,13 @@ public final class MapActionWireProtocol {
             String targetFormat,
             String artifactName
     ) {
-        return exportAreaRequest(worldId, x1, z1, x2, z2,
+        return exportAreaRequest(worldId, dimensionId, x1, z1, x2, z2,
                 targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
     }
 
     public static byte[] exportAreaRequest(
             WorldId worldId,
+            String dimensionId,
             int x1,
             int z1,
             int x2,
@@ -237,7 +230,7 @@ public final class MapActionWireProtocol {
             ExportSettingsWire.Settings settings
     ) {
         return encodeRequest(new ExportArea(
-                worldId, x1, z1, x2, z2, targetFormat, artifactName, settings));
+                worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings));
     }
 
     public static byte[] currentWorldRequest() {
