@@ -1,0 +1,81 @@
+name: Launcher Package Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - Local
+    paths:
+      - '.github/workflows/launcher-package-smoke.yml'
+      - 'apps/launcher/package.json'
+      - 'apps/launcher/package-lock.json'
+      - 'apps/launcher/src-tauri/Cargo.toml'
+      - 'apps/launcher/src-tauri/Cargo.lock'
+      - 'apps/launcher/src-tauri/build.rs'
+      - 'apps/launcher/src-tauri/tauri.conf.json'
+      - 'apps/launcher/src-tauri/tauri.release.conf.json'
+      - 'apps/launcher/src-tauri/app-icon.svg'
+      - 'apps/launcher/src-tauri/icons/**'
+      - 'apps/launcher/src-tauri/resources/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-package-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/launcher
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/launcher/package-lock.json
+      - name: Select release-aligned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          rustc --version
+      - name: Install exact Launcher dependencies
+        run: npm ci
+      - name: Build unsigned NSIS package smoke artifact
+        run: npx tauri build --bundles nsis
+      - name: Validate package smoke artifact
+        id: package
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'src-tauri\target\release\bundle\nsis'
+          $installers = @(Get-ChildItem $bundle -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installers.Count)."
+          }
+          $installer = $installers[0]
+          if ($installer.Length -le 0) {
+            throw 'Package smoke installer is empty.'
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          "installer_sha256=$hash" >> $env:GITHUB_OUTPUT
+          "### Launcher package smoke" >> $env:GITHUB_STEP_SUMMARY
+          "Built an unsigned NSIS package smoke artifact from commit $env:GITHUB_SHA." >> $env:GITHUB_STEP_SUMMARY
+          "This proves package construction only; it is not a signed release or native install acceptance result." >> $env:GITHUB_STEP_SUMMARY
+          "SHA-256: ``$hash``" >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload short-lived package smoke artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: LazyBuilder-Package-Smoke-${{ github.sha }}
+          path: ${{ steps.package.outputs.installer_path }}
+          if-no-files-found: error
+          retention-days: 3
