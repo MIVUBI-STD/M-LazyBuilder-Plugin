@@ -7,6 +7,8 @@ description: Own World Manager semantics and Paper world behavior: ACTIVE/ARCHIV
 
 Own World Manager domain semantics and Paper world behavior. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; durable world behavior comes from `docs/02-world-management/README.md`; cross-owner handoff comes from `docs/04-system/skill-routing.md`.
 
+This Skill is consumer-neutral: ChatGPT and Codex use the same world-domain rules, transaction model, and proof requirements. Adapt only execution mechanics to tools actually available; unavailable filesystem/live Paper proof remains explicit residue.
+
 ## Entry gate
 
 Use this Skill only when the decision changes world-domain truth, lifecycle, filesystem publication, conversion, or Paper-facing world behavior.
@@ -155,7 +157,7 @@ name exact world behavior
 → touch persistence/filesystem only when behavior requires it
 → preserve one transaction/lease/execution path
 → smallest complete recoverable change
-→ matching proof
+→ matching proof available in the current context
 → typed handoff if ownership changes
 → STOP
 ```
@@ -191,4 +193,4 @@ to desktop-runtime
 
 UI must not infer lifecycle from folders, registry internals, transient Paper load state, or converter implementation. Desktop Runtime must not reinterpret world lifecycle/filesystem semantics.
 
-Finish when durable lifecycle remains ACTIVE/ARCHIVED, registry/filesystem/runtime/task ownership is singular, destructive/import/conversion work has bounded recoverability, and matching proof covers the changed claim. Stop before UI work, generic framework work, or unrelated world cleanup.
+Finish when durable lifecycle remains ACTIVE/ARCHIVED, registry/filesystem/runtime/task ownership is singular, destructive/import/conversion work has bounded recoverability, and matching proof covers the changed claim at the available context ceiling. Stop before UI work, generic framework work, or unrelated world cleanup.
