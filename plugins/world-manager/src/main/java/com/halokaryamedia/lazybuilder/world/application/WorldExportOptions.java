@@ -45,8 +45,9 @@ public record WorldExportOptions(
             throw new IllegalArgumentException("Export time must be in range 0..23999");
         }
 
+        Map<String, String> sourceRules = gameRules == null ? Map.of() : gameRules;
         Map<String, String> normalizedRules = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : Objects.requireNonNullElse(gameRules, Map.of()).entrySet()) {
+        for (Map.Entry<String, String> entry : sourceRules.entrySet()) {
             String name = Objects.requireNonNull(entry.getKey(), "gameRule name").strip();
             String value = Objects.requireNonNull(entry.getValue(), "gameRule value").strip();
             if (!RULE_NAME.matcher(name).matches()) {
