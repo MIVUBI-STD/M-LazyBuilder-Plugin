@@ -105,6 +105,8 @@ OWNERSHIP  UI workaround is masking backend/plugin/world/protocol defect
 UNKNOWN    evidence cannot separate the above
 ```
 
+Local labels refine global classification while UI remains the first wrong owner. `OWNERSHIP` is not a UI failure to patch: translate it through global `ROUTING`, identify the real semantic owner, hand off, then stop UI semantic mutation. Runtime-only rendering/input defects may retain UI semantic ownership while the remaining proof class becomes `FABRIC_RUNTIME` or environment-specific. `UNKNOWN` must name the next separating evidence.
+
 Fix the dominant class first. For `OWNERSHIP`, hand off before adding UI-side guesses.
 
 ## UI priority
@@ -141,22 +143,6 @@ What proof level can falsify the issue?
 
 If semantic ownership is unclear, stop and route first.
 
-## Semantic defect handoff
-
-If UI evidence shows another owner is wrong, do not keep patching presentation. Emit only the minimum defect packet:
-
-```text
-short reproduction
-expected vs actual
-selected entity canonical id
-canonical input/result currently received by UI
-proof that the wrong behavior survives beyond layout/copy/local presentation state
-```
-
-Then STOP UI semantic changes until the owning Skill returns a corrected canonical result.
-
-When UI resumes, it consumes the returned typed state/capability/result/error. It must not re-scan filesystem/process/JAR/registry data or reinterpret neutral protocol fields to recreate the upstream rule locally.
-
 ## Lane A — Launcher Desktop
 
 Procedure:
@@ -166,7 +152,6 @@ reproduce user decision/flow
 → trace Svelte state to existing Tauri bridge/result
 → verify Rust/runtime authority
 → classify UI failure
-→ if semantic owner is wrong, emit defect packet and STOP
 → reuse existing component/bridge/control
 → smallest presentation/lifecycle fix
 → check pending/error/empty + focus/keyboard + representative responsive constraint
@@ -199,7 +184,6 @@ reproduce player interaction
 → identify authoritative server/client state
 → verify Minecraft/Fabric API only when uncertain
 → classify UI/input/layout/render failure
-→ if wire/domain owner is wrong, emit defect packet and STOP
 → reuse existing screen/keybind/controller/protocol
 → smallest presentation/state fix
 → inspect screen lifecycle + back/close + repeated input + representative GUI scale
@@ -269,7 +253,7 @@ Procedure:
 reproduce plugin-facing issue
 → consume canonical plugin-management state/result
 → classify semantic vs presentation defect
-→ if semantic: emit defect packet to lazybuilder-plugin-management and STOP
+→ hand semantic defect to lazybuilder-plugin-management
 → otherwise fix list/detail/action/status flow
 → align pending/error/success on sibling plugin views using same result
 → choose Launcher or Minecraft proof lane
@@ -377,31 +361,33 @@ Study behavior; implement independently. Stop research once ownership, platform 
 
 ## Handoff / exit contract
 
-UI handoffs carry evidence of the semantic defect; returning handoffs carry canonical typed results.
+When UI discovers the semantic owner is wrong, hand off only a defect packet:
+
+```text
+short reproduction
+expected vs actual
+selected canonical entity id
+canonical input/result observed by UI
+evidence that the defect survives beyond presentation
+```
+
+Then STOP semantic UI patching until the owning Skill returns a corrected canonical result.
 
 ```text
 runtime/workspace/process semantic defect
 → lazybuilder-desktop-runtime
 
-defect packet only; Desktop returns canonical ids/state/capabilities/result/error
-
 plugin lifecycle semantic defect
 → lazybuilder-plugin-management
-
-defect packet only; Plugin Management returns canonical identity/lifecycle/capabilities/restart state/result
 
 world-domain semantic defect
 → lazybuilder-world-management
 
-defect packet only; World Management returns canonical world identity/lifecycle/capabilities/result
-
 neutral wire semantic defect
 → lazybuilder-protocol
-
-defect packet must show producer/consumer mismatch; Protocol returns frozen neutral types/version/bounds/defaults
 ```
 
-UI resumes only after the upstream contract/result is stable enough to present. It does not keep a parallel workaround while the upstream owner is being fixed.
+When the corrected result returns, UI may resume only to present it; do not keep the prior semantic owner active for the same decision.
 
 Finish when:
 
