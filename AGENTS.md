@@ -56,7 +56,7 @@ ARTIFACT_ACCESS
 VISUAL_RENDERER
 = can produce or inspect the relevant production/simulated renderer output
 
-LIVE_RUNTIME
+LIVE_RUNTIME_ACCESS
 = can exercise the exact changed Paper/Fabric/client-server path
 
 NATIVE_HOST
@@ -84,7 +84,7 @@ CI_CONTROL / ARTIFACT_ACCESS
 VISUAL_RENDERER
 → may produce VISUAL_SIMULATED or VISUAL_RENDERED according to the real renderer used
 
-LIVE_RUNTIME
+LIVE_RUNTIME_ACCESS
 → may produce LIVE_RUNTIME only when the changed runtime path is exercised end to end
 
 NATIVE_HOST
@@ -93,7 +93,8 @@ NATIVE_HOST
 
 Capability rules:
 
-- capability is additive, not hierarchical: having `REPO_WRITE` does not imply `LOCAL_SHELL`; having `CI_CONTROL` does not imply `LIVE_RUNTIME`; having a screenshot does not imply `VISUAL_RENDERER` for the current revision;
+- capability is additive, not hierarchical: having `REPO_WRITE` does not imply `LOCAL_SHELL`; having `CI_CONTROL` does not imply `LIVE_RUNTIME_ACCESS`; having a screenshot does not imply `VISUAL_RENDERER` for the current revision;
+- capability names describe access/execution ability; proof types describe evidence actually observed. Never treat a capability name as proof by itself;
 - never substitute a different capability for a required proof type merely to finish the task;
 - if a higher capability is absent, finish all lower-capability partitions and record only the precise residue that still requires it;
 - do not create ChatGPT-specific or Codex-specific Skill branches; capability names, repository-relative paths, exact commands, and typed handoffs are the portable contract.
@@ -101,10 +102,12 @@ Capability rules:
 ## Execution Context Gate
 
 ```text
-REMOTE_GITHUB = repository + CI/static evidence
-LOCAL_CODE    = local checkout + JDK/build/tests/filesystem
-LIVE_SERVER   = LOCAL_CODE + running Minecraft 1.21.4 Paper server with current build
+REMOTE_GITHUB = remote repository/evidence context; exact capabilities still come from the Capability Gate
+LOCAL_CODE    = local checkout + available local toolchain/filesystem capabilities
+LIVE_SERVER   = LOCAL_CODE + available running Minecraft 1.21.4 Paper/Fabric runtime access
 ```
+
+Execution context does not grant capability by itself. For example, `REMOTE_GITHUB` does not imply `CI_CONTROL` or `ARTIFACT_ACCESS`, and `LOCAL_CODE` does not imply a live server.
 
 Use the lowest sufficient provable context. `LIVE_SERVER` is never assumed.
 
@@ -278,9 +281,9 @@ Source is implementation truth; docs/Skills must not preserve a stale model agai
 Execution context and proof type are separate.
 
 ```text
-REMOTE_GITHUB → can produce source/static, executed-source, integration-fixture, package-smoke, or rendered-visual evidence when the workflow genuinely exercises it
-LOCAL_CODE    → can additionally prove local build/filesystem/package/integration behavior
-LIVE_SERVER   → can produce live Paper/Minecraft runtime evidence only for the exact changed path that is exercised
+REMOTE_GITHUB → may produce source/static, executed-source, integration-fixture, package-smoke, or rendered-visual evidence only when the matching capabilities/workflow evidence are actually available and exercised
+LOCAL_CODE    → may additionally prove local build/filesystem/package/integration behavior when the required local capabilities are available
+LIVE_SERVER   → may produce live Paper/Minecraft runtime evidence only when `LIVE_RUNTIME_ACCESS` is available and the exact changed path is exercised
 ```
 
 Canonical proof types are defined in `docs/04-system/development-discipline.md`:
