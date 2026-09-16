@@ -89,10 +89,7 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
         }
         let _lease = ServerStartLease::acquire()?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
-        if let Err(error) = state.start(paper_port) {
-            let _ = registry.remove(&active.id);
-            return Err(error);
-        }
+        state.start(paper_port)?;
         registry.set_paper_port(&active.id, paper_port)?;
         Ok(())
     })
