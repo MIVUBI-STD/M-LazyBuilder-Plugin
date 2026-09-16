@@ -4,7 +4,7 @@
   "multiServer": {
     "runtimeAuthority": "workspace-keyed-server-runtime-registry",
     "workspaceSwitchKeepsRunningServers": true,
-    "startSerialization": "global-server-start-lease",
+    "lifecycleSerialization": "global-server-lifecycle-lease",
     "paperPortAssignment": "runtime-dynamic-visible",
     "worldControlPortAssignment": "workspace-persistent-loopback",
     "detachedProcessesConsumeCapacity": true,
@@ -18,7 +18,8 @@
     "targetIdentity": "workspace-id",
     "targetedControlsRequireActiveWorkspace": false,
     "runtimeFallbackMayReadAnotherActiveWorkspaceConfig": false,
-    "workspaceBoundControllerRequiresRuntimeRoot": true
+    "workspaceBoundControllerRequiresRuntimeRoot": true,
+    "invalidProcessMarkersFailClosed": true
   },
   "operationHistoryMax": 100,
   "activity": {
