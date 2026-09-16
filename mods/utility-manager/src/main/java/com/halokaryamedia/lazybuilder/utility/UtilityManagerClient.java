@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
+import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageBus;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
@@ -18,6 +19,7 @@ import java.util.Objects;
 /** Fabric client entrypoint for LazyBuilder Utility Manager. */
 public final class UtilityManagerClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Utility");
+    private static final UtilityMessageBus MESSAGE_BUS = new UtilityMessageBus();
     private static UtilityConfigStore configStore;
     private static UtilityPreferences preferences = UtilityPreferences.defaults();
 
@@ -46,12 +48,14 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             LOGGER.debug("Client JOIN event received; refreshing reconnect target and compact telemetry");
+            MESSAGE_BUS.clearSession();
             CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
             if (preferences.compactDebugHud()) CompactDebugNetworking.requestSnapshot();
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             LOGGER.debug("Client DISCONNECT event received");
+            MESSAGE_BUS.clearSession();
             ChatDraftState.clear();
             CompactDebugServerState.clear();
         }));
@@ -59,6 +63,10 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
     public static UtilityPreferences preferences() {
         return preferences;
+    }
+
+    public static UtilityMessageBus messageBus() {
+        return MESSAGE_BUS;
     }
 
     public static void updatePreferences(UtilityPreferences updated) {
