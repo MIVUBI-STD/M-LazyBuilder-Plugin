@@ -1,12 +1,12 @@
 # Skill Routing / Jobdesk Map
 
-Canonical map for LazyBuilder specialist selection and cross-owner handoff. Durable behavior belongs to domain docs/source; minimum-flow, global failure taxonomy, proof vocabulary, and STOP discipline belong to [`development-discipline.md`](development-discipline.md).
+Canonical map for LazyBuilder specialist selection and cross-owner handoff. Durable behavior belongs to domain docs/source; minimum-flow, global failure taxonomy, proof vocabulary, temporal rules, and STOP discipline belong to [`development-discipline.md`](development-discipline.md).
 
 ## Authority roles
 
 ```text
-AGENTS.md      = repository/task routing
-skill-routing  = specialist selection + cross-owner handoff
+AGENTS.md      = repository/task routing + capability/context gate
+skill-routing  = specialist selection + sequential handoff + Skill maintenance
 Skills         = execution procedure inside one specialist boundary
 Docs           = durable semantic contracts
 Source         = current implementation/runtime truth
@@ -14,21 +14,26 @@ Ops docs       = current continuation/proof only
 Git history    = retired decisions/history
 ```
 
-These routing rules are consumer-neutral: ChatGPT and Codex select the same semantic owner and handoff chain. Tool availability may change execution mechanics, never ownership.
-
-Select by the semantic decision, not by implementation language, edited file, screen/page name, restart involvement, consumer, or where the symptom is visible.
+These routing rules are consumer-neutral: ChatGPT and Codex select the same owner/handoff chain. Tool availability changes execution mechanics, never semantic ownership.
 
 ## Canonical specialist set
 
 ```text
+SEMANTIC / PRODUCT SPECIALISTS
 lazybuilder-desktop-runtime
 lazybuilder-plugin-management
 lazybuilder-world-management
 lazybuilder-ui
 lazybuilder-protocol
+
+IMPLEMENTATION SPECIALISTS
+lazybuilder-paper-plugin-development
+lazybuilder-fabric-mod-development
 ```
 
-Keep this set intentionally small. There is no separate Launcher Framework, Visual Testing, implementation-language, build-tool, CI, ChatGPT, Codex, or Development Brief Skill.
+The first five decide product/domain/wire/presentation semantics. The final two implement LazyBuilder-owned Minecraft platform code after any required semantic contract is frozen.
+
+Do not create additional Skills merely for Java, Rust, TypeScript, Maven, Gradle, Tauri, Svelte, testing, CI, screenshots, or another implementation mechanic.
 
 ## Primary owner map
 
@@ -40,7 +45,7 @@ workspace / process / provisioning / Java / Paper runtime / bundled LazyBuilder 
 third-party Paper plugin identity / dependency / compatibility / lifecycle / rollback / restart requirement
 → lazybuilder-plugin-management
 
-world lifecycle / registry / Paper world behavior / filesystem / import-export-conversion
+world lifecycle / registry / Paper world behavior / filesystem / import-export-conversion semantics
 → lazybuilder-world-management
 
 presentation / interaction / input / navigation / layout / accessibility / visual proof
@@ -48,224 +53,202 @@ presentation / interaction / input / navigation / layout / accessibility / visua
 
 neutral Paper↔Fabric request-result / identifiers / validation / versioning / transfer framing
 → lazybuilder-protocol
+
+LazyBuilder-owned Paper plugin implementation under plugins/**
+→ lazybuilder-paper-plugin-development
+
+LazyBuilder-owned Fabric mod implementation under mods/**
+→ lazybuilder-fabric-mod-development
 ```
 
 Key exclusions:
 
 ```text
 desktop loopback HTTP/Tauri IPC        → desktop-runtime, not protocol
-bundled World/Utilities core           → desktop-runtime, not plugin-management
-Paper/world domain behavior            → world-management, not protocol
-plugin dependency/compatibility truth  → plugin-management, not ui
-runtime/world/plugin truth shown in UI → semantic owner first; ui only presents it
+bundled World/Utilities core lifecycle  → desktop-runtime, not plugin-management
+third-party Paper plugin lifecycle      → plugin-management, not paper-plugin-development
+Paper/world semantic behavior           → world-management, not paper-plugin-development
+shared Paper↔Fabric meaning             → protocol, not Paper/Fabric implementation Skills
+presentation/interaction semantics      → ui, not fabric-mod-development
+Paper/Fabric implementation mechanics   → corresponding implementation Skill after semantic contract is known
 ```
+
+## Semantic vs implementation routing
+
+Use this decision order:
+
+```text
+Does the request change what the product/domain/wire/UI contract means?
+├─ yes → load ONE semantic/product Skill first
+│        → decide + prove contract
+│        → typed handoff
+│        → STOP semantic Skill
+│        → load Paper or Fabric implementation Skill only if implementation remains
+└─ no  → if it is internal Paper/Fabric implementation work,
+         load the matching implementation Skill directly
+```
+
+Examples:
+
+```text
+"add a new World capability used by Fabric"
+→ protocol and/or world semantics first as required
+→ paper-plugin-development / fabric-mod-development sequentially
+
+"fix command listener duplicate registration"
+→ paper-plugin-development directly if semantic result is unchanged
+
+"change how the map screen behaves on Back/Esc"
+→ ui first
+→ fabric-mod-development only for implementation after UI contract is frozen
+
+"fix Fabric Loom/resource packaging"
+→ fabric-mod-development directly
+
+"install/update a third-party Paper plugin"
+→ plugin-management, never paper-plugin-development
+```
+
+One semantic decision still has one active owner. Implementation specialists do not stay active while a semantic owner is unresolved.
 
 ## Activation and discovery cues
 
-Natural-language wording is a **candidate trigger**, never final ownership proof. Use these cues to shortlist one Skill, then confirm with the first separating evidence.
+Natural-language wording is a candidate trigger, never ownership proof.
 
 ```text
 lazybuilder-desktop-runtime
-candidate cues:
-"server won't start", "launcher stuck", "workspace missing", "Paper/Java not provisioned",
-"restart/recovery", "readiness/health wrong", "backup/restore runtime", "settings not persisted",
-"NSIS/update/Windows identity", "long operation stuck", "desktop HTTP/auth"
-reject when:
-canonical runtime result is already correct and only presentation is wrong;
-issue is Paper world semantics, third-party plugin lifecycle, or neutral Paper↔Fabric wire meaning
+candidate: launcher/server process/workspace/provisioning/readiness/settings/update/Windows/desktop HTTP
+reject: Paper world semantics, third-party plugin lifecycle, shared Paper↔Fabric contract, presentation-only issue
 
 lazybuilder-plugin-management
-candidate cues:
-"plugin missing", "plugin duplicated", "wrong plugin version", "dependency missing",
-"plugin incompatible", "install/update/remove failed", "enable/disable", "restart required",
-"plugin JAR rollback"
-reject when:
-artifact is bundled LazyBuilder core; issue is only list/warning layout/copy;
-issue is world behavior or shared protocol
+candidate: third-party plugin missing/duplicate/version/dependency/install/update/remove/enable/disable/restart/rollback
+reject: bundled LazyBuilder core, internal plugin coding, presentation-only issue
 
 lazybuilder-world-management
-candidate cues:
-"world won't load/teleport", "archive/restore world", "duplicate/delete world",
-"world import/export", "InspectImport", "conversion failed", "world registry wrong",
-"ACTIVE/ARCHIVED", "world filesystem/publish", "idle unload"
-reject when:
-issue is server process/provisioning, UI-only world screen behavior,
-neutral Paper↔Fabric payload meaning, or third-party plugin lifecycle
+candidate: world load/teleport/archive/restore/duplicate/delete/import/export/conversion/registry/ACTIVE-ARCHIVED
+reject: server process, UI-only state, shared payload meaning, pure Paper implementation mechanics
 
 lazybuilder-ui
-candidate cues:
-"button doesn't respond", "double submit", "stale screen", "wrong loading/error state",
-"back/close broken", "focus/keybind issue", "layout overflow", "GUI scale",
-"accessibility", "visual mismatch", "progress bar wrong", "map flicker/reset"
-reject when:
-canonical runtime/plugin/world/protocol result itself is wrong
+candidate: button/input/focus/back-close/loading/error/layout/GUI-scale/accessibility/visual/map interaction
+reject: canonical semantic result itself is wrong
 
 lazybuilder-protocol
-candidate cues:
-"client/server payload mismatch", "request/result shape wrong", "field/default mismatch",
-"validation/bounds", "identifier mismatch", "capability advertisement", "protocol version",
-"World Control", "Map Action", "transfer framing/chunk/order"
-reject when:
-only two modules are involved but shared wire meaning is unchanged;
-issue is desktop HTTP/Tauri IPC, Paper domain behavior, or presentation
+candidate: payload/request-result/default/bounds/identifier/capability/version/World Control/Map Action/transfer framing
+reject: desktop HTTP, Paper domain behavior, presentation, adapter-only defect
+
+lazybuilder-paper-plugin-development
+candidate: create internal Paper plugin, command, listener, service wiring, Paper API adapter, scheduler/threading, plugin resources, Maven/shading, Paper adapter implementation
+reject: third-party plugin lifecycle, world/product meaning, shared wire meaning, presentation
+
+lazybuilder-fabric-mod-development
+candidate: create Fabric mod, initializer, keybind, Screen/controller/render adapter, Fabric networking adapter, resources, Loom/Gradle, mixin/API integration
+reject: UI semantic decision, shared wire meaning, world semantics, Launcher runtime
 ```
 
 Rules:
 
-- cue matching may nominate a Skill; it must not bypass the owner-selection rule below;
 - negative/rejection cues outrank superficial keyword matches;
-- feature names such as `Import`, `Teleport`, `Plugin`, `Map`, `Restart`, or `Update` are insufficient by themselves;
-- if two Skills remain plausible, gather one separating observation before loading either deeply;
-- ChatGPT and Codex use the same cues and rejection rules.
+- feature words such as `Plugin`, `Mod`, `Import`, `Teleport`, `Map`, `Restart`, or `Update` never decide ownership alone;
+- if semantic and implementation Skills both seem plausible, ask which boundary is actually wrong using the smallest separating evidence;
+- ChatGPT and Codex use the same cues.
 
 ## Owner selection rule
 
-A symptom is not an owner. Choose the first wrong semantic boundary using the smallest separating evidence.
+A symptom is not an owner.
 
 ```text
 symptom
-→ compare canonical semantic result with adapter/transport/presentation
-→ identify first wrong owner
-→ load ONE primary Skill
+→ inspect canonical semantic result/contract
+→ is semantic truth wrong?
+   yes → semantic/product Skill
+   no  → inspect platform adapter/implementation/presentation
+→ choose ONE first wrong owner
 ```
 
-If evidence cannot yet distinguish owners, use global `UNKNOWN` and name the next separating evidence. Do not load several Skills "just in case".
+If evidence cannot distinguish owners, use global `UNKNOWN` and name the next separating evidence. Do not load multiple Skills just in case.
 
 ## Fast routing matrix
 
-Use this matrix only when the observed evidence matches the row directly. It is a shortcut to the same owner/taxonomy rules, not a second routing authority. If no row matches cleanly, return to the owner-selection rule above.
+Use only when evidence matches directly.
 
-| Observed evidence | Primary owner | Next context | Action | Proof / exit |
-|---|---|---|---|---|
-| Rust/runtime canonical state itself is wrong | desktop-runtime | exact runtime owner/service only | classify local runtime subtype and fix there | matching Desktop proof; STOP |
-| Rust/runtime result is correct but rendered Launcher state is stale/wrong | ui | canonical runtime result + exact UI consumer | fix presentation only | UI proof; STOP |
-| Third-party plugin metadata/dependency/compatibility result is wrong | plugin-management | exact plugin manager + affected JAR/metadata | fix plugin lifecycle truth | plugin proof; STOP |
-| Plugin lifecycle result is correct but warning/list/action presentation is wrong | ui | canonical plugin result + exact UI surface | fix presentation only | UI proof; STOP |
-| Shared Paper↔Fabric payload/default/bounds/version meaning disagrees | protocol | exact shared type + one producer + one consumer | fix neutral contract | contract proof; typed handoff if domain work remains |
-| Shared contract is correct but Paper world behavior/result is wrong | world-management | canonical payload/result + exact Paper world owner | fix world-domain implementation | world proof; STOP |
-| World lifecycle/registry/filesystem/import-publication truth is wrong | world-management | exact world id/service/registry/filesystem evidence | fix world semantics | matching world proof; STOP |
-| World result is correct but screen/map pending/back-close/layout state is wrong | ui | canonical world result + exact UI surface | fix presentation only | UI proof; STOP |
-| Desktop HTTP auth/session/request envelope is wrong | desktop-runtime | exact loopback route/session evidence | fix transport envelope | Desktop proof; STOP |
-| Desktop HTTP transport is correct but world-domain result is wrong | world-management | authenticated request context + exact world evidence | fix domain result | world proof; STOP |
-| Bundled LazyBuilder World/Utilities core is missing/incompatible | desktop-runtime | exact managed-core identity/provisioning evidence | fix provisioning/synchronization | Desktop proof; STOP |
-| Third-party plugin mutation is correct on disk but Paper rejects/load-enable state is wrong | plugin-management | exact plugin artifact + live Paper evidence when available | keep plugin semantic owner; classify `PAPER_RUNTIME` residue as needed | `LIVE_RUNTIME` for runtime claim |
-| UI click/key/pending race duplicates an otherwise-correct action | ui | exact UI controller + canonical action result | fix input/async presentation path | UI proof; STOP |
-| New world capability requires new shared Paper↔Fabric meaning | protocol first | exact domain requirement only | freeze neutral contract, prove, STOP Protocol | hand typed contract to world-management |
+| Observed evidence | Primary owner | Next action |
+|---|---|---|
+| Rust/runtime canonical state wrong | desktop-runtime | fix runtime truth; matching Desktop proof |
+| Runtime result correct, Launcher presentation wrong | ui | fix presentation only |
+| Third-party plugin lifecycle truth wrong | plugin-management | fix lifecycle truth |
+| Internal Paper plugin command/listener/API wiring wrong; semantics already correct | paper-plugin-development | fix Paper implementation |
+| Shared Paper↔Fabric contract meaning disagrees | protocol | fix/freeze neutral contract first |
+| Protocol correct, Paper-side adapter stale/wrong | paper-plugin-development | implement frozen contract |
+| Protocol correct, Fabric-side adapter stale/wrong | fabric-mod-development | implement frozen contract |
+| World lifecycle/registry/filesystem truth wrong | world-management | fix world semantics |
+| World semantics correct, Paper world adapter implementation wrong | paper-plugin-development | fix adapter mechanics |
+| Canonical result correct, Fabric screen/input behavior wrong | ui first if interaction meaning changes; otherwise fabric-mod-development | freeze UI contract if needed, then implement |
+| Fabric Gradle/Loom/resources/initializer defect | fabric-mod-development | fix module/toolchain implementation |
+| Paper Maven/resources/bootstrap defect | paper-plugin-development | fix module/toolchain implementation |
+| Desktop HTTP envelope wrong | desktop-runtime | fix desktop transport |
+| UI duplicate dispatch around otherwise-correct action | ui | fix presentation/input path |
 
-Fast-path rules:
+The table is a shortcut, not a second authority. If no row fits exactly, return to owner selection.
 
-- do not infer a row from a feature name alone;
-- `Next context` is a ceiling for the next read, not permission for a broad scan;
-- when a row ends in another owner, emit the minimum typed handoff and stop the current Skill;
-- proof type remains determined by the changed claim, not by the table row;
-- ChatGPT and Codex use the same matrix; only available execution tools may differ.
+## Common sequential flows
 
-## Scenario probes
-
-These probes exist only for recurring ambiguous boundaries.
-
-### Plugin warning is wrong
+### New Paper feature with existing semantics
 
 ```text
-plugin identity/dependency/compatibility/lifecycle result wrong
-→ plugin-management
-
-canonical plugin result correct; wording/layout/severity/action presentation wrong
-→ ui
+known semantic contract
+→ paper-plugin-development
+→ source/build proof
+→ LIVE_RUNTIME residue only if actual Paper behavior must be exercised
 ```
 
-Probe the canonical plugin result before editing presentation.
-
-### World import UI fails
+### New cross-platform Paper↔Fabric capability
 
 ```text
-wire shape/default/bounds/InspectImport/DiscardImport contract wrong
-→ protocol
+protocol
+→ freeze/prove neutral contract
+→ STOP
 
-wire contract correct; inspection/validation/publication/cleanup semantics wrong
-→ world-management
+world-management or other semantic owner when domain behavior is required
+→ freeze/prove domain result
+→ STOP
 
-canonical import/review result correct; pending/review/back-close/error presentation wrong
-→ ui
+paper-plugin-development
+→ implement Paper adapter
+→ prove implementation boundary
+→ STOP
+
+fabric-mod-development
+→ implement Fabric adapter
+→ prove implementation boundary
+→ STOP
+
+ui when presentation semantics are required
+→ decide UI contract before/independently of Fabric mechanics as appropriate
 ```
 
-Prove each boundary before loading the next Skill.
+Never keep all specialists active on one decision.
 
-### Server operation progress is wrong
+### UI behavior in Fabric
 
 ```text
-operation phase/progress/cancel/retry/result wrong at Rust authority
-→ desktop-runtime
+canonical backend result correct?
+no  → route to semantic owner
 
-runtime snapshot correct; bar/text/disabled state wrong
+yes, interaction/presentation contract unclear/wrong
 → ui
+→ freeze expected interaction/state behavior
+→ STOP
+→ fabric-mod-development implements it
 ```
 
-Inspect the canonical operation snapshot first.
-
-### Map teleport errors
+### Third-party plugin issue
 
 ```text
-input race / duplicate dispatch / pending feedback wrong
-→ ui
-
-Map Action payload/capability/validation wrong
-→ protocol
-
-wire contract correct; Paper authorization/load/teleport behavior wrong
-→ world-management
-```
-
-### Launcher readiness looks stale
-
-```text
-Rust readiness result wrong
-→ desktop-runtime
-
-Rust result correct; rendered state stale
-→ ui
-```
-
-### Plugin mutation fails after restart
-
-```text
-plugin identity/dependency/restart-required/load semantics wrong
+installed third-party plugin lifecycle
 → plugin-management
 ```
 
-Desktop owns the restart process, not third-party plugin lifecycle truth.
-
-### Bundled LazyBuilder core missing/incompatible
-
-```text
-World/Utilities core provisioning/synchronization/runtime packaging
-→ desktop-runtime
-```
-
-### Desktop HTTP world request behaves incorrectly
-
-```text
-auth/session/loopback request envelope wrong
-→ desktop-runtime
-
-transport correct; world lifecycle/filesystem/domain result wrong
-→ world-management
-```
-
-### New Paper↔Fabric world capability
-
-```text
-neutral contract required
-→ protocol → freeze/prove contract → STOP
-
-Paper/domain behavior for frozen contract
-→ world-management → prove canonical result → STOP
-
-presentation for proven result
-→ ui
-```
-
-Never keep all three active on one semantic decision.
+Do not route to Paper Plugin Development unless the artifact is LazyBuilder-owned source being implemented in this repository.
 
 ## Cross-owner handoff
 
@@ -276,7 +259,7 @@ Owner A decides/changes its contract
 → prove Owner A boundary
 → emit minimum typed handoff
 → STOP Owner A
-→ Owner B consumes it without recomputing Owner A truth
+→ Owner B consumes without recomputing Owner A truth
 ```
 
 Canonical payloads:
@@ -288,156 +271,139 @@ canonical ids + runtime/readiness/operation state + capabilities + stable result
 plugin-management → ui
 canonical plugin identity + lifecycle/capability + restart-required + stable result/error
 
-protocol → world-management
+protocol → paper-plugin-development / fabric-mod-development
 neutral types + identifiers + version + validation/default/bounds/capability semantics
 
-world-management → ui
-canonical world identity + lifecycle + capabilities + presentation metadata + operation result/error
+world-management → paper-plugin-development
+world-domain intent + lifecycle/filesystem/runtime constraints + canonical result/error
+
+ui → fabric-mod-development
+expected interaction/state contract + production surface/controller target + accessibility/input constraints + proof requirement
+
+paper-plugin-development → ui
+proven canonical result/capability/error surfaced by the internal plugin
+
+fabric-mod-development → ui
+production Screen/controller implementation constraints + canonical result consumed
 
 desktop-runtime ↔ world-management
-Desktop supplies authenticated loopback/process/provisioning envelope;
-World Management supplies world semantic result
+Desktop supplies authenticated process/provisioning envelope; World Management supplies world semantic result
 ```
 
-The receiving owner must not rescan/recalculate the previous owner's truth merely because it can access the same files or state.
+The receiving owner must not rescan/recalculate the previous owner's truth merely because it can access the same files/state.
 
-### UI-originated semantic defect
-
-When UI proves the semantic result itself is wrong, hand off only:
+### UI-originated semantic defect packet
 
 ```text
 short reproduction
 expected vs actual
 selected canonical entity id
 canonical input/result observed by UI
-evidence that the defect survives beyond presentation
+evidence that defect survives beyond presentation
 ```
 
-Then stop semantic UI mutation. UI resumes only after the owning Skill returns a corrected canonical result.
+Then stop semantic UI mutation until the owning Skill returns a corrected canonical result.
 
 ## No-Skill owners
 
-Some repeated repository work has a clear owner but does not justify a specialist Skill.
+Some work remains source-owned without a specialist:
 
 ```text
-Utilities-Manager internals  → exact source + canonical system/domain docs
-build/version scripts         → exact build/script owner + GITHUB_RULES.md
-security-only policy          → SECURITY.md / exact boundary
+build/version scripts not specific to Paper/Fabric module semantics → exact script owner + GITHUB_RULES.md
+security-only policy                                           → SECURITY.md / exact boundary
+ordinary language/framework mechanics                          → exact source + existing specialist context
 ```
 
-Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, Playwright, screenshots, testing, ChatGPT, Codex, or implementation mechanics alone.
+Do not create Skills for programming languages or build tools alone. Paper/Fabric development Skills exist because they combine repeated platform lifecycle, API, packaging, runtime, and proof procedures.
 
 ## Skill maintenance / change triggers
 
-Skills are operational contracts, not changelogs. Update them only when a repository change alters reusable agent behavior, semantic ownership, or a copied current contract.
+Skills are operational contracts, not changelogs.
 
 ### MUST update
 
-Update the directly affected Skill and/or routing contract in the same bounded change when any of these change:
-
 ```text
 semantic responsibility / owner boundary
-entry trigger or explicit exclusion
+entry trigger or exclusion
 reusable canonical procedure
 stable invariant / safety rule
 required proof boundary
-cross-owner handoff payload or sequencing
-CURRENT_CONTRACT version / required payload / capability semantics
-reference purpose/path when the Skill routes to it
+cross-owner handoff payload/sequencing
+CURRENT_CONTRACT version/required payload/capability semantics
+routed reference purpose/path
+Paper/Fabric implementation procedure when the repository platform/toolchain model materially changes
 ```
 
-A repeated execution failure that is caused by the instruction itself is also a `SKILL_INSTRUCTION` trigger: fix the smallest canonical instruction that caused the wrong behavior.
+Repeated execution failure caused by the instruction itself is a `SKILL_INSTRUCTION` trigger.
 
 ### MAY update
 
-Update only when it materially improves future decisions:
-
 ```text
-IMPLEMENTATION_SNAPSHOT that a reference intentionally documents
+IMPLEMENTATION_SNAPSHOT intentionally documented by a Skill/reference
 external pattern/provenance after an adopted rule materially changes
-clarification that removes recurring ambiguity without duplicating another authority
-new recurring failure mode that changes diagnosis or proof selection
+clarification removing recurring ambiguity without duplicating authority
+new recurring failure mode changing diagnosis/proof selection
 ```
-
-Prefer updating an existing paragraph/table over adding a new maintenance layer.
 
 ### DO NOT update
 
-Do not edit Skills merely because code changed. Normal examples that stay source/test-only include:
-
 ```text
-ordinary bug fix inside existing semantics
-internal refactor with same owner/contract/procedure
+ordinary bug fix inside existing semantics/procedure
+internal refactor with same owner/contract
 additional regression test for an existing rule
-private helper/internal symbol rename not referenced by the Skill
-performance optimization that preserves accepted behavior and proof boundary
-one-off implementation detail that is not reusable agent guidance
+private symbol rename not referenced by the Skill
+performance optimization preserving behavior/proof boundary
+one-off implementation detail
 commit/status/history information
 ```
-
-If an internal rename makes an `IMPLEMENTATION_SNAPSHOT` reference factually stale, update only that exact reference/snapshot; do not rewrite the Skill unless routing/procedure also changed.
 
 ### Sync matrix
 
 ```text
-semantic owner/routing boundary changed
-→ skill-routing.md + affected SKILL.md + durable domain doc if product semantics changed
+semantic owner/routing changed
+→ skill-routing.md + affected Skill + durable domain doc if semantics changed
 
-CURRENT_CONTRACT version/shape changed
-→ canonical source + canonical contract/domain doc + affected SKILL copy + direct adapters/tests
+CURRENT_CONTRACT changed
+→ source + canonical contract doc + affected semantic Skill + direct adapters/tests
 
-stable invariant/procedure/proof rule changed
-→ affected SKILL.md + only references whose deeper guidance is now wrong
+Paper implementation procedure/toolchain boundary changed materially
+→ paper-plugin-development + only directly affected routing/docs
+
+Fabric implementation procedure/toolchain boundary changed materially
+→ fabric-mod-development + only directly affected routing/docs
+
+stable invariant/proof/handoff changed
+→ affected Skill + only references made wrong
 
 IMPLEMENTATION_SNAPSHOT changed
-→ exact snapshot/reference only when that fact is intentionally documented
-
-external reference changed
-→ no LazyBuilder mutation unless the adopted rule/provenance materially changes
-
-presentation copy/layout implementation changed
-→ UI Skill only if reusable interaction/accessibility/proof guidance changed
+→ exact Skill/reference snapshot only when intentionally documented
 ```
 
-Maintenance is semantic, not file-based. Editing a Rust/Java/TypeScript file does not by itself trigger a Skill update; changing the reusable decision contract does.
-
-### Maintenance completion check
-
-Before STOP on a change that touched a Skill-owned boundary, ask:
-
-```text
-Did semantic ownership change?
-Did a CURRENT_CONTRACT copy change?
-Did the reusable procedure/invariant/proof/handoff change?
-Did a routed reference become factually wrong?
-```
-
-If all are no, leave the Skill unchanged. If any are yes, synchronize only the directly affected canonical instruction before STOP.
-
-Never add timestamps, per-commit status, migration diary entries, or historical decision logs to a Skill. Git history remains the archive.
+Maintenance is semantic/procedural, not file-based.
 
 ## Skill creation gate
 
 A new Skill is justified only when all are true:
 
-1. a new semantic responsibility exists;
-2. its execution procedure materially differs from the five existing Skills;
+1. a distinct repeated responsibility exists;
+2. its execution procedure materially differs from the seven existing Skills;
 3. work is repeated, not one-off;
-4. merging it into an existing Skill would materially increase unrelated context;
+4. merging it into an existing Skill would materially increase unrelated context or blur authority;
 5. entry, exit, and handoff can be stated clearly.
 
-Otherwise use an existing Skill or a no-Skill source owner.
+Otherwise use an existing Skill or an exact source owner.
 
 ## Routing completion check
 
 Before leaving routing:
 
 ```text
-Is there exactly one primary semantic owner?
-Was owner selection based on separating evidence rather than symptom location/name/consumer?
-Is another Skill actually required now, or only potentially later?
-If ownership changes, is the handoff the minimum typed result needed?
-Can the next owner proceed without recomputing the previous owner's truth?
+Is there exactly one first wrong owner?
+Is this a semantic decision or an implementation decision?
+If semantic, has that contract been frozen before platform implementation begins?
+Was selection based on separating evidence rather than filename/language/symptom location?
+If ownership changes, is the typed handoff minimal?
+Can the receiver proceed without recomputing the previous owner's truth?
 ```
 
 Then continue under the selected specialist. Global proof/STOP rules remain owned by `development-discipline.md`.
