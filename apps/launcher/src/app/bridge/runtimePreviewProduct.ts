@@ -136,7 +136,28 @@ function provisioningStatus(): WorkspaceProvisioningStatus {
 }
 
 function serverSnapshot(): ServerSnapshot {
-  const offline = previewPage() === 'Plugins' || previewPage() === 'Settings' || previewKind() === 'repair';
+  const kind = previewKind();
+  const forcedStates: Record<string, ServerSnapshot['state']> = {
+    starting: 'Starting',
+    stopping: 'Stopping',
+    detached: 'Detached',
+    crashed: 'Crashed'
+  };
+  const forcedState = forcedStates[kind];
+  if (forcedState) {
+    const health = forcedState === 'Detached' ? 'Warning' : forcedState === 'Crashed' ? 'Critical' : 'Good';
+    const hasProcess = forcedState !== 'Crashed';
+    return {
+      state: forcedState,
+      health,
+      cpuLoadPercent: 0,
+      usedMemoryBytes: 0,
+      maxMemoryBytes: 6 * 1024 ** 3,
+      pid: hasProcess ? 14872 : null,
+      logPath: 'D:\\LazyBuilder\\MIVUBI Build Server\\logs\\latest.log'
+    };
+  }
+  const offline = previewPage() === 'Plugins' || previewPage() === 'Settings' || kind === 'repair';
   return { state: offline ? 'Offline' : 'Online', health: offline ? 'Offline' : 'Good', cpuLoadPercent: offline ? 0 : 17, usedMemoryBytes: offline ? 0 : 2.4 * 1024 ** 3, maxMemoryBytes: 6 * 1024 ** 3, pid: offline ? null : 14872, logPath: 'D:\\LazyBuilder\\MIVUBI Build Server\\logs\\latest.log' };
 }
 
