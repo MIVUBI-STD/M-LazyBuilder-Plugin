@@ -71,9 +71,10 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
     Ok(result)
 }
 
-/// Returns only registered workspaces whose process markers still resolve to the
-/// exact live Paper process for that workspace. Stale or ambiguous markers are
-/// deliberately excluded from runtime-capacity decisions.
+/// Returns only registered workspaces whose process markers resolve to the
+/// exact live Paper process for that workspace. Unreadable or malformed marker
+/// evidence fails closed so capacity and mutation checks cannot silently ignore
+/// a potentially live managed server.
 pub fn running_registered_papers() -> Result<Vec<RunningServerProcess>, String> {
     let servers = workspace_registry::list()?;
     let mut system = System::new_all();
@@ -81,7 +82,7 @@ pub fn running_registered_papers() -> Result<Vec<RunningServerProcess>, String> 
 
     for server in servers {
         let root = PathBuf::from(&server.path);
-        let Some(marker) = read_marker(&process_marker_path(&root)) else { continue; };
+        let Some(marker) = read_marker(&process_marker_path(&root))? else { continue; };
         let pid = Pid::from_u32(marker.pid);
         system.refresh_process(pid);
         let Some(process) = system.process(pid) else { continue; };
@@ -119,36 +120,13 @@ pub fn workspace_has_running_paper(workspace_id: &str) -> Result<bool, String> {
     let server = workspace_registry::get(workspace_id)?;
     let root = PathBuf::from(&server.path);
     let marker_path = process_marker_path(&root);
-    let Some(marker) = read_marker(&marker_path) else { return Ok(false); };
+    let Some(marker) = read_marker(&marker_path)? else { return Ok(false); };
     let pid = Pid::from_u32(marker.pid);
     let mut system = System::new_all();
     system.refresh_process(pid);
     let Some(process) = system.process(pid) else { return Ok(false); };
     if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { return Ok(false); }
     Ok(looks_like_workspace_paper(process, &root))
-}
-
-/// Legacy single-runtime guard retained until ServerManagerState is replaced by
-/// the workspace-keyed runtime registry. Do not remove this guard early: doing
-/// so would allow multiple Paper processes while the Launcher still owns only
-/// one stdin/state slot.
-pub fn ensure_no_running_paper_except(allowed_workspace_id: Option<&str>) -> Result<(), String> {
-    let active_id = workspace_registry::current()?.map(|entry| entry.id);
-    let servers = workspace_registry::list()?;
-    let mut system = System::new_all();
-    for server in servers {
-        if active_id.as_deref() == Some(server.id.as_str()) || allowed_workspace_id == Some(server.id.as_str()) { continue; }
-        let root = PathBuf::from(&server.path);
-        let marker_path = process_marker_path(&root);
-        let Some(marker) = read_marker(&marker_path) else { continue; };
-        let pid = Pid::from_u32(marker.pid);
-        system.refresh_process(pid);
-        let Some(process) = system.process(pid) else { continue; };
-        if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { continue; }
-        if !looks_like_workspace_paper(process, &root) { continue; }
-        return Err(format!("{} is still running in the background. Open that server and stop it before opening, creating, or adopting another server.", server.name));
-    }
-    Ok(())
 }
 
 pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
@@ -169,7 +147,16 @@ pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
 }
 
 fn process_marker_path(workspace: &Path) -> PathBuf { workspace.join("tools").join("lazybuilder").join("cache").join("server-process.json") }
-fn read_marker(path: &Path) -> Option<ProcessMarker> { let text = fs::read_to_string(path).ok()?; serde_json::from_str(&text).ok() }
+
+fn read_marker(path: &Path) -> Result<Option<ProcessMarker>, String> {
+    if !path.is_file() { return Ok(None); }
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read managed Paper process marker {}: {error}", path.display()))?;
+    let marker = serde_json::from_str(&text)
+        .map_err(|error| format!("Managed Paper process marker {} is malformed and requires recovery before another server lifecycle action: {error}", path.display()))?;
+    Ok(Some(marker))
+}
+
 fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> bool {
     let name = process.name().to_ascii_lowercase();
     if !name.contains("java") { return false; }
