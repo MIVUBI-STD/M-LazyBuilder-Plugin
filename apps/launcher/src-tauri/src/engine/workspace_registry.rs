@@ -593,6 +593,7 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     let mut registry: WorkspaceRegistryFile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
     registry.servers.retain(|entry| !entry.path.trim().is_empty());
+    cleanup_json_recovery_files(&path, "workspace registry")?;
     Ok(registry)
 }
 
@@ -607,8 +608,10 @@ fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
     recover_json_file(&path, "pending server deletions")?;
     if !metadata_entry_exists(&path, "pending server deletions")? { return Ok(Vec::new()); }
     ensure_regular_metadata_file(&path, "pending server deletions")?;
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&text).map_err(|error| format!("Could not read pending server deletions: {error}"))
+    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not read pending server deletions: {error}"))?;
+    cleanup_json_recovery_files(&path, "pending server deletions")?;
+    Ok(entries)
 }
 
 fn save_pending_deletions(entries: &[PendingDeletion]) -> Result<(), String> {
@@ -626,8 +629,10 @@ fn load_pending_duplicates() -> Result<Vec<PendingDuplicate>, String> {
     recover_json_file(&path, "pending server duplicates")?;
     if !metadata_entry_exists(&path, "pending server duplicates")? { return Ok(Vec::new()); }
     ensure_regular_metadata_file(&path, "pending server duplicates")?;
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read pending server duplicates: {error}"))?;
-    serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server duplicates: {error}"))
+    let text = fs::read_to_string(&path).map_err(|error| format!("Could not read pending server duplicates: {error}"))?;
+    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server duplicates: {error}"))?;
+    cleanup_json_recovery_files(&path, "pending server duplicates")?;
+    Ok(entries)
 }
 
 fn save_pending_duplicates(entries: &[PendingDuplicate]) -> Result<(), String> {
@@ -682,17 +687,12 @@ fn recover_json_file(destination: &Path, label: &str) -> Result<(), String> {
 
     if metadata_entry_exists(destination, label)? {
         ensure_regular_metadata_file(destination, label)?;
-        remove_metadata_file_if_exists(&previous, &format!("previous {label}"))?;
-        remove_metadata_file_if_exists(&incoming, &format!("{label} staging file"))?;
-        remove_metadata_file_if_exists(&legacy_tmp, &format!("legacy {label} staging file"))?;
         return Ok(());
     }
 
     if metadata_entry_exists(&previous, &format!("previous {label}"))? {
         ensure_regular_metadata_file(&previous, &format!("previous {label}"))?;
         fs::rename(&previous, destination).map_err(|error| format!("Could not restore previous {label}: {error}"))?;
-        remove_metadata_file_if_exists(&incoming, &format!("{label} staging file"))?;
-        remove_metadata_file_if_exists(&legacy_tmp, &format!("legacy {label} staging file"))?;
         return Ok(());
     }
 
@@ -707,6 +707,12 @@ fn recover_json_file(destination: &Path, label: &str) -> Result<(), String> {
         fs::rename(&staging, destination).map_err(|error| format!("Could not publish recovered {label}: {error}"))?;
     }
     Ok(())
+}
+
+fn cleanup_json_recovery_files(destination: &Path, label: &str) -> Result<(), String> {
+    remove_metadata_file_if_exists(&destination.with_extension("json.previous"), &format!("previous {label}"))?;
+    remove_metadata_file_if_exists(&destination.with_extension("json.incoming"), &format!("{label} staging file"))?;
+    remove_metadata_file_if_exists(&destination.with_extension("json.tmp"), &format!("legacy {label} staging file"))
 }
 
 fn replace_json_file(source: &Path, destination: &Path, label: &str) -> Result<(), String> {
@@ -846,8 +852,10 @@ fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
     recover_json_file(&path, "workspace manifest")?;
     if !metadata_entry_exists(&path, "workspace manifest")? { return Ok(None); }
     ensure_regular_metadata_file(&path, "workspace manifest")?;
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    Ok(Some(serde_json::from_str(&text).map_err(|error| error.to_string())?))
+    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let manifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    cleanup_json_recovery_files(&path, "workspace manifest")?;
+    Ok(Some(manifest))
 }
 fn validate_manifest(manifest: &WorkspaceManifest) -> Result<(), String> {
     if manifest.schema_version != WORKSPACE_SCHEMA_VERSION { return Err("Workspace manifest schema is newer or unsupported".into()); }
@@ -986,6 +994,8 @@ mod tests {
         fs::write(&incoming, b"incoming").unwrap();
         recover_json_file(&path, "test metadata").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "previous");
+        assert!(incoming.exists());
+        cleanup_json_recovery_files(&path, "test metadata").unwrap();
         assert!(!incoming.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -1006,6 +1016,19 @@ mod tests {
         assert!(recover_json_file(&path, "test metadata").is_err());
         assert!(incoming.exists());
         assert!(legacy.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+    #[test] fn workspace_metadata_preserves_recovery_evidence_until_validation() {
+        let path = temp_metadata_path("malformed");
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        fs::write(&path, b"not-json").unwrap();
+        fs::write(&previous, b"previous").unwrap();
+        fs::write(&incoming, b"incoming").unwrap();
+        recover_json_file(&path, "test metadata").unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).is_err());
+        assert!(previous.exists());
+        assert!(incoming.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

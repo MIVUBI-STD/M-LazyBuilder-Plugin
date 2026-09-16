@@ -78,6 +78,7 @@ def main() -> int:
         "recover_json_file(&path, \"pending server deletions\")?",
         "recover_json_file(&path, \"pending server duplicates\")?",
         "recover_json_file(&path, \"workspace manifest\")?",
+        "cleanup_json_recovery_files",
         "write_json_file",
         "file.sync_all()",
         'with_extension("json.previous")',
@@ -90,6 +91,7 @@ def main() -> int:
         "workspace_metadata_recovery_prefers_previous_committed_copy",
         "workspace_metadata_recovery_supports_legacy_tmp_staging",
         "workspace_metadata_recovery_preserves_ambiguous_staging",
+        "workspace_metadata_preserves_recovery_evidence_until_validation",
         "let workspace_created = match read_manifest(&root)?",
     )
 

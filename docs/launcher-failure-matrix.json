@@ -16,8 +16,8 @@
     {
       "id": "workspace-metadata-crash-during-publish",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
-      "markers": ["recover_json_file", "write_json_file", "sync_all", "ambiguous {label} recovery staging files"],
-      "testMarkers": ["workspace_metadata_recovery_prefers_previous_committed_copy", "workspace_metadata_recovery_supports_legacy_tmp_staging", "workspace_metadata_recovery_preserves_ambiguous_staging"]
+      "markers": ["recover_json_file", "cleanup_json_recovery_files", "write_json_file", "sync_all", "ambiguous {label} recovery staging files"],
+      "testMarkers": ["workspace_metadata_recovery_prefers_previous_committed_copy", "workspace_metadata_recovery_supports_legacy_tmp_staging", "workspace_metadata_recovery_preserves_ambiguous_staging", "workspace_metadata_preserves_recovery_evidence_until_validation"]
     },
     {
       "id": "app-data-crash-during-metadata-publish",
