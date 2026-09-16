@@ -8,12 +8,12 @@ import net.minecraft.text.Text;
 
 /** Compact tool/options palette over the live world, styled to match LazyBuilder World/Map Manager. */
 final class TerraformPaletteScreen extends Screen {
-    private static final int X=16,Y=22,W=200,ROW=22;
+    private static final int X=16,Y=22,W=200,H=272,ROW=22;
     TerraformPaletteScreen(){super(Text.literal("LazyBuilder Terraform"));}
     @Override public boolean shouldPause(){return false;}
     @Override public void render(DrawContext c,int mouseX,int mouseY,float delta){
         TerraformEditorState s=TerraformManagerClient.state();
-        panel(c,X,Y,W,232);
+        panel(c,X,Y,W,H);
         c.drawText(textRenderer,"TERRAFORM",X+12,Y+10,TerraformUi.TEXT_PRIMARY,false);
         c.drawText(textRenderer,"Shape",X+12,Y+30,TerraformUi.TEXT_MUTED,false);
         int yy=Y+43;
