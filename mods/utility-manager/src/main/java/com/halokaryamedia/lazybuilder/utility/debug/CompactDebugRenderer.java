@@ -161,7 +161,7 @@ public final class CompactDebugRenderer {
     }
 
     private static String coordinateValue(CompactDebugSnapshot snapshot) {
-        return "X " + snapshot.x() + "   Y " + snapshot.y() + "   Z " + snapshot.z();
+        return CompactDebugCoordinateText.display(snapshot.x(), snapshot.y(), snapshot.z());
     }
 
     private static String coordinateHint(MinecraftClient client) {
