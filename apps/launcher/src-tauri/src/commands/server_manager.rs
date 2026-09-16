@@ -86,6 +86,7 @@ pub async fn server_console_command(
 #[tauri::command]
 pub async fn server_start(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (active, state) = registry.active_runtime()?;
         let snapshot = state.snapshot()?;
@@ -95,7 +96,6 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
             "Stopping" => return Err("This server is still stopping. Wait until it is Offline before starting it again.".into()),
             _ => {}
         }
-        let _lease = ServerStartLease::acquire()?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
         state.start(paper_port)?;
         registry.set_paper_port(&active.id, paper_port)?;
@@ -120,10 +120,10 @@ pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Result
 #[tauri::command]
 pub async fn server_restart(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (active, state) = registry.active_runtime()?;
         stop_with_recovery(&state)?;
-        let _lease = ServerStartLease::acquire()?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
         state.start(paper_port)?;
         registry.set_paper_port(&active.id, paper_port)
