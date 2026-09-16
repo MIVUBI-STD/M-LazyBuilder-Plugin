@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.application;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
@@ -20,6 +22,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -74,14 +77,41 @@ public final class WorldExportService {
     }
 
     public ExportTask prepare(WorldId worldId, String targetFormat, String artifactName) {
-        return prepare(worldId, targetFormat, artifactName, null);
+        return prepare(worldId, targetFormat, artifactName, null, WorldExportOptions.legacyDefaults());
+    }
+
+    public ExportTask prepare(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldExportOptions options
+    ) {
+        return prepare(worldId, targetFormat, artifactName, null, Objects.requireNonNull(options, "options"));
     }
 
     public ExportTask prepareArea(WorldId worldId, String targetFormat, String artifactName, WorldAreaSelection area) {
-        return prepare(worldId, targetFormat, artifactName, Objects.requireNonNull(area, "area"));
+        return prepare(worldId, targetFormat, artifactName,
+                Objects.requireNonNull(area, "area"), WorldExportOptions.legacyDefaults());
     }
 
-    private ExportTask prepare(WorldId worldId, String targetFormat, String artifactName, WorldAreaSelection area) {
+    public ExportTask prepareArea(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldAreaSelection area,
+            WorldExportOptions options
+    ) {
+        return prepare(worldId, targetFormat, artifactName,
+                Objects.requireNonNull(area, "area"), Objects.requireNonNull(options, "options"));
+    }
+
+    private ExportTask prepare(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldAreaSelection area,
+            WorldExportOptions options
+    ) {
         Objects.requireNonNull(worldId, "worldId");
         WorldRecord source = registry.find(worldId)
                 .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
@@ -99,7 +129,8 @@ public final class WorldExportService {
         boolean wasLoaded = runtimeService.isLoaded(worldId);
         try {
             runtimeService.unloadDuringOperation(worldId);
-            return new ExportTask(UUID.randomUUID(), source, format, safeArtifact, area, wasLoaded, lease);
+            return new ExportTask(UUID.randomUUID(), source, format, safeArtifact,
+                    area, options, wasLoaded, lease);
         } catch (RuntimeException exception) {
             lease.close();
             throw exception;
@@ -135,8 +166,13 @@ public final class WorldExportService {
         Path snapshot = task.beginSnapshotProcessing();
         Path converted = null;
         Path pruning = null;
+        Path worldSettings = null;
+        Path converterSettings = null;
         try {
-            if (task.area == null && NATIVE_SERVER_FORMAT.equals(task.targetFormat)) {
+            boolean needsConverter = task.area != null
+                    || !NATIVE_SERVER_FORMAT.equals(task.targetFormat)
+                    || task.options.requiresConverterPass();
+            if (!needsConverter) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
                 task.completed = true;
@@ -153,11 +189,20 @@ public final class WorldExportService {
             }
 
             if (task.area != null) pruning = writeAreaPruning(task.area, snapshot);
+            if (task.options.hasWorldOverrides()) worldSettings = writeWorldSettings(task.options);
+            if (task.options.discardEmptyChunks()) converterSettings = writeConverterSettings();
             converted = files.reserveWorkspace(UUID.randomUUID());
             try (ConversionJobCoordinator.Lease ignored = conversionJobs.acquire()) {
                 converter.convert(
                         runtime.artifact(),
-                        new ConverterAdapter.ConversionRequest(snapshot, converted, task.targetFormat, pruning)
+                        new ConverterAdapter.ConversionRequest(
+                                snapshot,
+                                converted,
+                                task.targetFormat,
+                                pruning,
+                                worldSettings,
+                                converterSettings
+                        )
                 );
             }
 
@@ -171,9 +216,9 @@ public final class WorldExportService {
         } catch (IOException | RuntimeException exception) {
             throw new IllegalStateException("Could not export " + task.source.displayName(), exception);
         } finally {
-            if (pruning != null) {
-                try { Files.deleteIfExists(pruning); } catch (IOException ignored) { }
-            }
+            deleteQuietly(pruning);
+            deleteQuietly(worldSettings);
+            deleteQuietly(converterSettings);
             cleanupWorkspace(converted);
             cleanupWorkspace(snapshot);
             task.endSnapshotProcessing(snapshot);
@@ -256,6 +301,56 @@ public final class WorldExportService {
         return file;
     }
 
+    static Path writeWorldSettings(WorldExportOptions options) throws IOException {
+        Objects.requireNonNull(options, "options");
+        if (!options.hasWorldOverrides()) return null;
+        JsonObject json = new JsonObject();
+        if (options.gameMode() != null) json.addProperty("GameType", gameModeId(options.gameMode()));
+        if (options.difficulty() != null) json.addProperty("Difficulty", difficultyId(options.difficulty()));
+        for (Map.Entry<String, String> rule : options.gameRules().entrySet()) {
+            json.add(rule.getKey(), gameRuleValue(rule.getValue()));
+        }
+        Path file = Files.createTempFile("lazybuilder-world-settings-", ".json");
+        Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
+        return file;
+    }
+
+    static Path writeConverterSettings() throws IOException {
+        JsonObject json = new JsonObject();
+        json.addProperty("discardEmptyChunks", true);
+        Path file = Files.createTempFile("lazybuilder-converter-settings-", ".json");
+        Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
+        return file;
+    }
+
+    private static JsonPrimitive gameRuleValue(String raw) {
+        if (raw.equalsIgnoreCase("true")) return new JsonPrimitive(true);
+        if (raw.equalsIgnoreCase("false")) return new JsonPrimitive(false);
+        try {
+            return new JsonPrimitive(Integer.parseInt(raw));
+        } catch (NumberFormatException ignored) {
+            return new JsonPrimitive(raw);
+        }
+    }
+
+    private static int gameModeId(WorldGameMode mode) {
+        return switch (mode) {
+            case SURVIVAL -> 0;
+            case CREATIVE -> 1;
+            case ADVENTURE -> 2;
+            case SPECTATOR -> 3;
+        };
+    }
+
+    private static int difficultyId(WorldDifficulty difficulty) {
+        return switch (difficulty) {
+            case PEACEFUL -> 0;
+            case EASY -> 1;
+            case NORMAL -> 2;
+            case HARD -> 3;
+        };
+    }
+
     private static void writeNativeTransferMarker(Path snapshot) throws IOException {
         Files.writeString(snapshot.resolve(TRANSFER_MARKER),
                 "format=" + NATIVE_SERVER_FORMAT + "\n", StandardCharsets.UTF_8);
@@ -275,6 +370,12 @@ public final class WorldExportService {
     private void cleanupWorkspace(Path workspace) {
         if (workspace == null) return;
         try { files.deleteWorkspace(workspace); }
+        catch (IOException ignored) { }
+    }
+
+    private static void deleteQuietly(Path path) {
+        if (path == null) return;
+        try { Files.deleteIfExists(path); }
         catch (IOException ignored) { }
     }
 
@@ -310,6 +411,7 @@ public final class WorldExportService {
         private final String targetFormat;
         private final String artifactName;
         private final WorldAreaSelection area;
+        private final WorldExportOptions options;
         private final boolean wasLoaded;
         private final WorldOperationCoordinator.Lease lease;
         private volatile boolean sourceRestoreResolved;
@@ -319,13 +421,22 @@ public final class WorldExportService {
         private Path snapshot;
         private boolean snapshotProcessing;
 
-        private ExportTask(UUID operationId, WorldRecord source, String targetFormat, String artifactName,
-                           WorldAreaSelection area, boolean wasLoaded, WorldOperationCoordinator.Lease lease) {
+        private ExportTask(
+                UUID operationId,
+                WorldRecord source,
+                String targetFormat,
+                String artifactName,
+                WorldAreaSelection area,
+                WorldExportOptions options,
+                boolean wasLoaded,
+                WorldOperationCoordinator.Lease lease
+        ) {
             this.operationId = operationId;
             this.source = source;
             this.targetFormat = targetFormat;
             this.artifactName = artifactName;
             this.area = area;
+            this.options = options;
             this.wasLoaded = wasLoaded;
             this.lease = lease;
         }
@@ -333,6 +444,7 @@ public final class WorldExportService {
         public WorldRecord source() { return source; }
         public String targetFormat() { return targetFormat; }
         public WorldAreaSelection area() { return area; }
+        public WorldExportOptions options() { return options; }
         public boolean completed() { return completed; }
         public boolean sourceRestored() { return sourceRestored; }
 
