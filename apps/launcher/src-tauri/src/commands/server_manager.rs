@@ -108,6 +108,7 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (target_id, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
         stop_with_recovery(&state)?;
@@ -138,6 +139,7 @@ pub async fn server_recover_detached(
     workspace_id: Option<String>,
 ) -> Result<DetachedRecoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (target_id, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
         let result = state.recover_detached()?;
