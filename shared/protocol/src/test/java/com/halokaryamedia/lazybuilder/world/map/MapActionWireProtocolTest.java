@@ -24,13 +24,15 @@ class MapActionWireProtocolTest {
     }
 
     @Test
-    void exportAreaRequestRoundTrips() throws Exception {
+    void exportAreaRequestRoundTripsWithDimension() throws Exception {
         WorldId worldId = WorldId.create();
         byte[] payload = MapActionWireProtocol.exportAreaRequest(
-                worldId, 31, 48, -17, -1, "JAVA_1_21_4", "area-export");
+                worldId, "minecraft:the_nether", 31, 48, -17, -1,
+                "JAVA_1_21_4", "area-export");
 
         var decoded = (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(payload);
         assertEquals(worldId, decoded.worldId());
+        assertEquals("minecraft:the_nether", decoded.dimensionId());
         assertEquals(31, decoded.x1());
         assertEquals(48, decoded.z1());
         assertEquals(-17, decoded.x2());
@@ -46,9 +48,11 @@ class MapActionWireProtocolTest {
         var settings = new ExportSettingsWire.Settings(
                 "ADVENTURE", "HARD", Map.of("keepinventory", "true"));
         byte[] payload = MapActionWireProtocol.exportAreaRequest(
-                worldId, 0, 0, 15, 15, "BEDROCK_1_21_80", "custom-area", settings);
+                worldId, "minecraft:the_end", 0, 0, 15, 15,
+                "BEDROCK_1_21_80", "custom-area", settings);
 
         var decoded = (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(payload);
+        assertEquals("minecraft:the_end", decoded.dimensionId());
         assertEquals(settings, decoded.settings());
     }
 
