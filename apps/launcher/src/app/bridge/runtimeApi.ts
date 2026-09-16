@@ -137,7 +137,10 @@ export type UpdateWorldSettingsRequest = Partial<{ defaultGameMode: GameMode; ti
 export type WorldTaskSnapshot = { taskId: string; taskType: string; worldId?: string | null; state: WorldTaskState; progressPercent: number; message: string; result: string; error: string; createdAt: string; updatedAt: string };
 
 export const runtimeApi = {
-  diagnostics: { summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary') },
+  diagnostics: {
+    summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary'),
+    exportSupportBundle: () => invokeRuntime<string | null>('diagnostics_export_support_bundle')
+  },
   startup: { status: () => invokeRuntime<StartupReport>('launcher_startup_status') },
   settings: {
     get: () => invokeRuntime<LauncherSettings>('launcher_settings_get'),
