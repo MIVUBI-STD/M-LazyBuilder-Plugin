@@ -53,6 +53,7 @@ def main() -> int:
     operations = read(LAUNCHER / "src-tauri/src/engine/operations.rs")
     process_guard = read(LAUNCHER / "src-tauri/src/engine/server_process_guard.rs")
     runtime_registry = read(LAUNCHER / "src-tauri/src/engine/server_runtime_registry.rs")
+    server_engine = read(LAUNCHER / "src-tauri/src/engine/server_manager/mod.rs")
     server_commands = read(LAUNCHER / "src-tauri/src/commands/server_manager.rs")
     workspace_commands = read(LAUNCHER / "src-tauri/src/commands/workspace.rs")
     workspace_creation = read(LAUNCHER / "src-tauri/src/commands/workspace_creation.rs")
@@ -63,7 +64,6 @@ def main() -> int:
     server_repair = read(LAUNCHER / "src-tauri/src/engine/server_repair.rs")
     runtime_api = read(LAUNCHER / "src/app/bridge/runtimeApi.ts")
     runtime_facade = read(LAUNCHER / "src/app/bridge/runtimeProductFacade.ts")
-    runtime_status = read(LAUNCHER / "src/app/bridge/runtimeServerStatus.ts")
     preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
     close_guard = read(LAUNCHER / "src/app/closeGuard.ts")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
@@ -92,7 +92,7 @@ def main() -> int:
         errors.append("server start no longer enforces the concurrent runtime ceiling")
     if "prepare_control_options_for_start" not in server_commands:
         errors.append("server start no longer allocates a workspace-safe World Manager control port")
-    if '.arg("--port").arg(paper_port.to_string())' not in read(LAUNCHER / "src-tauri/src/engine/server_manager/mod.rs"):
+    if '.arg("--port").arg(paper_port.to_string())' not in server_engine:
         errors.append("Paper runtime no longer receives its isolated listen-port override")
     for label, source in (("server commands", server_commands), ("workspace commands", workspace_commands), ("workspace creation", workspace_creation)):
         if "ensure_no_running_paper_except" in source:
@@ -101,8 +101,11 @@ def main() -> int:
         errors.append("close guard no longer checks all attached server runtimes")
     if "runtimeProduct.server.connectionPort()" not in dashboard or "localhost:{connectionPort}" not in dashboard:
         errors.append("Overview no longer exposes the actual active Paper connection port")
-    if "...runtimeServerStatus" not in runtime_facade or "server_runtime_list" not in runtime_status:
-        errors.append("typed product bridge no longer exposes multi-runtime status")
+    for command_name in ("server_runtime_list", "server_connection_port"):
+        if command_name not in runtime_api:
+            errors.append(f"canonical runtimeApi no longer exposes {command_name}")
+    if "const productionRuntimeProduct = runtimeApi;" not in runtime_facade:
+        errors.append("production runtime product no longer uses the single canonical runtimeApi bridge")
 
     expected = contract["operationHistoryMax"]
     actual = rust_usize(operations, "MAX_OPERATION_HISTORY")
