@@ -28,6 +28,7 @@ final class TerraformHotkeys {
                 } else if (client.currentScreen instanceof TerraformPaletteScreen) {
                     client.setScreen(null);
                 } else if (client.currentScreen == null) {
+                    TerraformInteractionController.cancelStroke();
                     client.setScreen(new TerraformPaletteScreen());
                 }
             }
