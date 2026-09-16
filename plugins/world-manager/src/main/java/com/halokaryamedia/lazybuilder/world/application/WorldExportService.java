@@ -184,10 +184,11 @@ public final class WorldExportService {
         Path worldSettings = null;
         Path converterSettings = null;
         try {
-            boolean needsProcessing = task.area != null
-                    || !NATIVE_SERVER_FORMAT.equals(task.targetFormat)
-                    || task.options.requiresConverterPass();
-            if (!needsProcessing) {
+            boolean nativeTarget = NATIVE_SERVER_FORMAT.equals(task.targetFormat);
+            boolean nativeWholeFastPath = nativeTarget
+                    && task.area == null
+                    && !task.options.hasWorldOverrides();
+            if (nativeWholeFastPath) {
                 writeNativeTransferMarker(snapshot);
                 Path artifact = artifacts.packageDirectory(snapshot, task.artifactName, ExportArtifactType.JAVA_ZIP);
                 task.completed = true;
@@ -205,7 +206,8 @@ public final class WorldExportService {
                     task.targetFormat,
                     pruning,
                     worldSettings,
-                    converterSettings
+                    converterSettings,
+                    nativeTarget
             );
 
             boolean usedExternalRuntime;
@@ -228,7 +230,7 @@ public final class WorldExportService {
                 }
             }
 
-            if (NATIVE_SERVER_FORMAT.equals(task.targetFormat)) writeNativeTransferMarker(converted);
+            if (nativeTarget) writeNativeTransferMarker(converted);
             ExportArtifactType type = task.targetFormat.startsWith("BEDROCK_")
                     ? ExportArtifactType.BEDROCK_WORLD
                     : ExportArtifactType.JAVA_ZIP;
