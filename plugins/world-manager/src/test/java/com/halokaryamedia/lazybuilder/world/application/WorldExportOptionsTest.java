@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -26,5 +27,13 @@ class WorldExportOptionsTest {
                 false);
 
         assertTrue(options.gameRules().isEmpty());
+    }
+
+    @Test
+    void workspaceDefaultsPreserveEmptyChunkMetadataByDefault() {
+        WorldExportOptions options = WorldExportOptions.workspaceDefaults();
+
+        assertFalse(options.discardEmptyChunks());
+        assertFalse(options.requiresConverterPass());
     }
 }
