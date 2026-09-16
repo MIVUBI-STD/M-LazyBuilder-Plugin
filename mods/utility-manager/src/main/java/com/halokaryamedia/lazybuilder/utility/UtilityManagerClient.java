@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.api.ClientModInitializer;
@@ -24,12 +25,14 @@ public final class UtilityManagerClient implements ClientModInitializer {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
         LOGGER.info(
-                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, borderless={}, contextualScreenshots={}",
+                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
                 preferences.reconnectButton(),
                 preferences.keepChatDraft(),
                 preferences.extendedChatHistory(),
                 preferences.borderlessWindow(),
-                preferences.contextualScreenshotNames()
+                preferences.contextualScreenshotNames(),
+                preferences.instantCreativeSearch(),
+                preferences.compactDebugHud()
         );
 
         ResourceReloadNotifier.register();
@@ -41,11 +44,13 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             LOGGER.debug("Client JOIN event received; refreshing reconnect target");
+            CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             LOGGER.debug("Client DISCONNECT event received");
             ChatDraftState.clear();
+            CompactDebugServerState.clear();
         });
     }
 
