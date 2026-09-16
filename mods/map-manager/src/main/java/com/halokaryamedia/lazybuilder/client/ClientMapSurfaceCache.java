@@ -10,6 +10,7 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.registry.tag.FluidTags;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,6 +65,7 @@ public final class ClientMapSurfaceCache {
     private static final int LIVE_SAMPLE_WORK_COST = 4;
     private static final int MAX_SURFACE_SCAN_DEPTH = 8;
     private static final int MAX_WATER_DEPTH = 16;
+    private static final int NETHER_LAYER_HEIGHT = 16;
     private static final long SHUTDOWN_WAIT_SECONDS = 3L;
 
     public static final int UNEXPLORED_COLOR = 0xFF101419;
@@ -81,7 +83,9 @@ public final class ClientMapSurfaceCache {
     });
 
     private String scope = "";
+    private Path baseScopeDirectory;
     private Path scopeDirectory;
+    private Integer activeNetherLayerCenter;
     private volatile long scopeGeneration;
     private RegionSnapshot activeCompletedSnapshot;
     private RegionData activeCompletedRegion;
@@ -100,12 +104,22 @@ public final class ClientMapSurfaceCache {
         flushAsync();
         this.scope = normalized;
         this.scopeGeneration++;
+        this.activeNetherLayerCenter = null;
 
         boolean identifiedManagedWorld = !normalized.startsWith("unmanaged|");
-        this.scopeDirectory = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
+        this.baseScopeDirectory = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
                 ? null
                 : storageRoot.resolve(safeName(normalized));
+        this.scopeDirectory = baseScopeDirectory;
 
+        clearResidentState();
+
+        if (scopeDirectory != null) {
+            migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
+        }
+    }
+
+    private void clearResidentState() {
         regions.clear();
         pending.clear();
         completedLoads.clear();
@@ -114,10 +128,6 @@ public final class ClientMapSurfaceCache {
         activeCompletedIndex = 0;
         residentSampleCount = 0;
         lastProcessedWorldTime = Long.MIN_VALUE;
-
-        if (scopeDirectory != null) {
-            migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
-        }
     }
 
     /** Returns remembered terrain immediately and queues missing loaded terrain. */
@@ -162,6 +172,10 @@ public final class ClientMapSurfaceCache {
         return cell * stableSpan + stableSpan / 2;
     }
 
+    static int netherLayerCenter(int blockY) {
+        return Math.floorDiv(blockY, NETHER_LAYER_HEIGHT) * NETHER_LAYER_HEIGHT + NETHER_LAYER_HEIGHT / 2;
+    }
+
     private static SurfaceSample blendStableFive(
             SurfaceSample center,
             SurfaceSample nw,
@@ -199,11 +213,12 @@ public final class ClientMapSurfaceCache {
      */
     public int processPending(ClientWorld world, int budget) {
         drainCompletedWrites();
+        boolean layerChanged = updateVerticalLayer(world);
 
         long worldTime = world.getTime();
         if (worldTime == lastProcessedWorldTime) {
             pruneRegions();
-            return 0;
+            return layerChanged ? 1 : 0;
         }
         lastProcessedWorldTime = worldTime;
 
@@ -214,11 +229,11 @@ public final class ClientMapSurfaceCache {
         int sampleBudget = Math.min(remainingWork / LIVE_SAMPLE_WORK_COST, MAX_LIVE_SAMPLES_PER_TICK);
         if (sampleBudget <= 0 || pending.isEmpty()) {
             pruneRegions();
-            return merged;
+            return merged + (layerChanged ? 1 : 0);
         }
 
         int processed = 0;
-        int changed = merged;
+        int changed = merged + (layerChanged ? 1 : 0);
         while (!pending.isEmpty() && processed < sampleBudget) {
             long key = pending.removeFirstLong();
             int x = unpackX(key);
@@ -236,6 +251,22 @@ public final class ClientMapSurfaceCache {
         }
         pruneRegions();
         return changed;
+    }
+
+    private boolean updateVerticalLayer(ClientWorld world) {
+        if (!World.NETHER.equals(world.getRegistryKey())) return false;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return false;
+
+        int nextCenter = netherLayerCenter(client.player.getBlockY());
+        if (activeNetherLayerCenter != null && activeNetherLayerCenter == nextCenter) return false;
+
+        flushAsync();
+        scopeGeneration++;
+        activeNetherLayerCenter = nextCenter;
+        scopeDirectory = baseScopeDirectory == null ? null : baseScopeDirectory.resolve("y." + nextCenter);
+        clearResidentState();
+        return true;
     }
 
     public int pendingCount() {
@@ -555,9 +586,8 @@ public final class ClientMapSurfaceCache {
         return localZ * REGION_SIZE + localX;
     }
 
-    private static long readSurfacePacked(ClientWorld world, int x, int z) {
-        int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
-        int surfaceY = findVisibleSurfaceY(world, x, z, topY);
+    private long readSurfacePacked(ClientWorld world, int x, int z) {
+        int surfaceY = surfaceY(world, x, z);
         BlockPos pos = new BlockPos(x, surfaceY, z);
         BlockState state = world.getBlockState(pos);
         boolean water = state.getFluidState().isIn(FluidTags.WATER);
@@ -576,9 +606,9 @@ public final class ClientMapSurfaceCache {
         boolean westLoaded = world.getChunkManager().isChunkLoaded(westX >> 4, z >> 4);
         boolean northLoaded = world.getChunkManager().isChunkLoaded(x >> 4, northZ >> 4);
         if (!water && westLoaded && northLoaded) {
-            int west = world.getTopY(Heightmap.Type.WORLD_SURFACE, westX, z);
-            int north = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, northZ);
-            int relief = (topY - west) + (topY - north);
+            int west = surfaceY(world, westX, z);
+            int north = surfaceY(world, x, northZ);
+            int relief = (surfaceY - west) + (surfaceY - north);
             if (relief >= 3) color = shade(color, 1.14);
             else if (relief <= -3) color = shade(color, 0.80);
             else if (relief >= 1) color = shade(color, 1.06);
@@ -586,6 +616,60 @@ public final class ClientMapSurfaceCache {
         }
 
         return packSample(color, surfaceY + 1);
+    }
+
+    private int surfaceY(ClientWorld world, int x, int z) {
+        if (World.NETHER.equals(world.getRegistryKey()) && activeNetherLayerCenter != null) {
+            return findNetherLayerSurfaceY(world, x, z, activeNetherLayerCenter);
+        }
+        int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
+        return findVisibleSurfaceY(world, x, z, topY);
+    }
+
+    private static int findNetherLayerSurfaceY(ClientWorld world, int x, int z, int layerCenter) {
+        int bottom = world.getBottomY();
+        int top = bottom + world.getHeight() - 1;
+        int bandBottom = Math.max(bottom, layerCenter - NETHER_LAYER_HEIGHT / 2);
+        int bandTop = Math.min(top - 1, layerCenter + NETHER_LAYER_HEIGHT / 2 - 1);
+        BlockPos.Mutable pos = new BlockPos.Mutable();
+        BlockPos.Mutable abovePos = new BlockPos.Mutable();
+
+        int bestY = Integer.MIN_VALUE;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int y = bandBottom; y <= bandTop; y++) {
+            pos.set(x, y, z);
+            BlockState state = world.getBlockState(pos);
+            if (!isRenderableSurface(world, pos, state)) continue;
+
+            abovePos.set(x, y + 1, z);
+            BlockState above = world.getBlockState(abovePos);
+            boolean exposed = above.isAir() || !above.getFluidState().isEmpty();
+            if (!exposed) continue;
+
+            int distance = Math.abs((y + 1) - layerCenter);
+            if (distance < bestDistance || distance == bestDistance && y > bestY) {
+                bestDistance = distance;
+                bestY = y;
+            }
+        }
+        if (bestY != Integer.MIN_VALUE) return bestY;
+
+        int clampedCenter = Math.max(bandBottom, Math.min(bandTop, layerCenter));
+        for (int distance = 0; distance <= NETHER_LAYER_HEIGHT; distance++) {
+            int low = clampedCenter - distance;
+            if (low >= bandBottom) {
+                pos.set(x, low, z);
+                BlockState state = world.getBlockState(pos);
+                if (isRenderableSurface(world, pos, state)) return low;
+            }
+            int high = clampedCenter + distance;
+            if (high <= bandTop && high != low) {
+                pos.set(x, high, z);
+                BlockState state = world.getBlockState(pos);
+                if (isRenderableSurface(world, pos, state)) return high;
+            }
+        }
+        return clampedCenter;
     }
 
     private static int findVisibleSurfaceY(ClientWorld world, int x, int z, int topY) {
@@ -630,7 +714,7 @@ public final class ClientMapSurfaceCache {
         return Math.max(0.64, 0.97 - Math.max(0, depth - 1) * 0.023);
     }
 
-    private static double shorelineFactor(ClientWorld world, int x, int z) {
+    private double shorelineFactor(ClientWorld world, int x, int z) {
         int waterNeighbors = 0;
         if (isWaterSurface(world, x - 1, z)) waterNeighbors++;
         if (isWaterSurface(world, x + 1, z)) waterNeighbors++;
@@ -644,10 +728,9 @@ public final class ClientMapSurfaceCache {
         };
     }
 
-    private static boolean isWaterSurface(ClientWorld world, int x, int z) {
+    private boolean isWaterSurface(ClientWorld world, int x, int z) {
         if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) return true;
-        int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
-        int surfaceY = findVisibleSurfaceY(world, x, z, topY);
+        int surfaceY = surfaceY(world, x, z);
         return world.getBlockState(new BlockPos(x, surfaceY, z)).getFluidState().isIn(FluidTags.WATER);
     }
 
@@ -803,7 +886,7 @@ public final class ClientMapSurfaceCache {
             if (present != null) return;
             colors = new int[REGION_CAPACITY];
             heights = new int[REGION_CAPACITY];
-            present = new BitSet(REGION_CAPACITY);
+            present = new BitSet(REGION_CAPACITY];
         }
     }
 
