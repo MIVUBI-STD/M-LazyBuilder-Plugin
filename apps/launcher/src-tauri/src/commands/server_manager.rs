@@ -1,6 +1,7 @@
-use crate::engine::{java_runtime, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry};
+use crate::engine::{java_runtime, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
+use std::net::TcpListener;
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
@@ -77,6 +78,7 @@ fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
     ensure_base_provisioned()?;
     ensure_bundled_core(app)?;
     ensure_provisioned()?;
+    ensure_world_control_port_available()?;
     startup_guard::ensure_memory_headroom()?;
     Ok(())
 }
@@ -84,6 +86,21 @@ fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
 fn ensure_bundled_core(app: &AppHandle) -> Result<(), String> {
     let resource_dir = app.path().resource_dir().ok();
     runtime_updates::ensure_core_current(resource_dir.as_deref())
+}
+
+fn ensure_world_control_port_available() -> Result<(), String> {
+    let options = world_manager::load_or_create_control_options()?;
+    ensure_loopback_port_available(options.port)
+}
+
+fn ensure_loopback_port_available(port: u16) -> Result<(), String> {
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+        format!(
+            "LazyBuilder world-control port {port} is already in use on 127.0.0.1 ({error}). Stop the process using this port or change the World Manager control port before starting Paper."
+        )
+    })?;
+    drop(listener);
+    Ok(())
 }
 
 fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
@@ -153,8 +170,9 @@ fn ensure_provisioned() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_recoverable_stop_snapshot;
+    use super::{ensure_loopback_port_available, is_recoverable_stop_snapshot};
     use crate::engine::server_manager::ServerSnapshot;
+    use std::net::TcpListener;
 
     fn snapshot(state: &str, pid: Option<u32>) -> ServerSnapshot {
         ServerSnapshot {
@@ -182,5 +200,15 @@ mod tests {
     fn non_recovery_states_or_missing_pid_are_rejected() {
         assert!(!is_recoverable_stop_snapshot(&snapshot("Offline", Some(42))));
         assert!(!is_recoverable_stop_snapshot(&snapshot("Detached", None)));
+    }
+
+    #[test]
+    fn occupied_world_control_port_is_rejected_before_paper_start() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral test port");
+        let port = listener.local_addr().expect("local address").port();
+        let error = ensure_loopback_port_available(port).expect_err("occupied port must be rejected");
+        assert!(error.contains(&port.to_string()));
+        drop(listener);
+        assert!(ensure_loopback_port_available(port).is_ok());
     }
 }
