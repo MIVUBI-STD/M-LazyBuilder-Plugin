@@ -30,6 +30,13 @@ abstract class KeyboardMixin {
     ) {
         if (!UtilityManagerClient.preferences().compactDebugHud()) return;
         if (window != client.getWindow().getHandle()) return;
+
+        // Closing/toggling F3 while Alt interaction is active must never leave the pointer released.
+        if (key == GLFW.GLFW_KEY_F3 && action == GLFW.GLFW_PRESS) {
+            CompactDebugInteraction.end(client);
+            return;
+        }
+
         if (key != GLFW.GLFW_KEY_LEFT_ALT && key != GLFW.GLFW_KEY_RIGHT_ALT) return;
 
         if (action == GLFW.GLFW_PRESS) {

@@ -36,13 +36,22 @@ public final class CompactDebugRenderer {
 
         int leftY = MARGIN + coordinateHeight + SECTION_GAP;
         int leftWidth = leftPanelWidth(text, snapshot);
-        int leftHeight = PADDING * 2 + ROW_HEIGHT * 11 + SECTION_GAP;
+        // CLIENT = heading + 4 rows, WORLD = heading + 3 rows: 9 rows total.
+        int leftHeight = PADDING * 2 + ROW_HEIGHT * 9 + SECTION_GAP;
         drawLeftPanel(context, text, snapshot, MARGIN, leftY, leftWidth, leftHeight);
 
         int rightWidth = rightPanelWidth(text, snapshot);
-        int rightX = Math.max(MARGIN, client.getWindow().getScaledWidth() - MARGIN - rightWidth);
         int rightHeight = PADDING * 2 + ROW_HEIGHT * (snapshot.serverMetricsAvailable() ? 4 : 3);
-        drawRightPanel(context, text, snapshot, rightX, MARGIN, rightWidth, rightHeight);
+        int rightX = client.getWindow().getScaledWidth() - MARGIN - rightWidth;
+        int rightY = MARGIN;
+
+        // On narrow GUI widths, preserve readability by stacking SERVER below the left column.
+        int occupiedLeftWidth = Math.max(coordinateWidth, leftWidth);
+        if (rightX < MARGIN + occupiedLeftWidth + SECTION_GAP) {
+            rightX = MARGIN;
+            rightY = leftY + leftHeight + SECTION_GAP;
+        }
+        drawRightPanel(context, text, snapshot, rightX, rightY, rightWidth, rightHeight);
     }
 
     private static void drawCoordinatePanel(

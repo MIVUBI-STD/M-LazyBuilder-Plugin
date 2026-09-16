@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.utility.chat.MinecraftMessageBridge;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageBus;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageDispatcher;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugInteraction;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
@@ -57,6 +58,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
             LOGGER.debug("Client JOIN event received; refreshing reconnect target and compact telemetry");
             MESSAGE_BUS.clearSession();
             CHAT_SEARCH_HISTORY.clearSession();
+            CompactDebugInteraction.end(client);
             CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
 
@@ -75,6 +77,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
             MESSAGE_BUS.clearSession();
             CHAT_SEARCH_HISTORY.clearSession();
             ChatDraftState.clear();
+            CompactDebugInteraction.end(client);
             CompactDebugServerState.clear();
         }));
     }
