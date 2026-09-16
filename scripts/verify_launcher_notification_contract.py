@@ -33,8 +33,11 @@ def main() -> int:
         "IDLE_POLL_MS = 15000",
         "HIDDEN_POLL_MS = 10000",
         "document.querySelector('.activity-page')",
+        "knownStates.clear()",
+        "seeded = false",
         "TERMINAL.has(operation.state)",
-        "knownStates",
+        "operation.correlationId",
+        "Reference: {notice.reference}",
         "role=\"status\"",
     )
     forbid(host, "new Notification(", "Notification.requestPermission", "setInterval(")
