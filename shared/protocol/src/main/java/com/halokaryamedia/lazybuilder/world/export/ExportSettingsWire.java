@@ -18,20 +18,39 @@ public final class ExportSettingsWire {
 
     private ExportSettingsWire() {}
 
-    /** Empty gameMode/difficulty means inherit the staged source value. */
+    /** Empty/absent fields mean inherit the staged source value. */
     public record Settings(
             String gameMode,
             String difficulty,
+            Integer spawnX,
+            Integer spawnY,
+            Integer spawnZ,
+            Long timeOfDayTicks,
+            String weather,
             Map<String, String> gameRules,
             boolean optimizeOutput
     ) {
+        /** Compatibility constructor for the first export-settings wire shape. */
+        public Settings(String gameMode, String difficulty, Map<String, String> gameRules, boolean optimizeOutput) {
+            this(gameMode, difficulty, null, null, null, null, "", gameRules, optimizeOutput);
+        }
+
         public Settings(String gameMode, String difficulty, Map<String, String> gameRules) {
-            this(gameMode, difficulty, gameRules, false);
+            this(gameMode, difficulty, null, null, null, null, "", gameRules, false);
         }
 
         public Settings {
             gameMode = normalizeOptional(gameMode, "gameMode");
             difficulty = normalizeOptional(difficulty, "difficulty");
+            weather = normalizeOptional(weather, "weather");
+
+            boolean anySpawn = spawnX != null || spawnY != null || spawnZ != null;
+            boolean fullSpawn = spawnX != null && spawnY != null && spawnZ != null;
+            if (anySpawn && !fullSpawn) throw new IllegalArgumentException("Spawn override must include X, Y, and Z");
+            if (timeOfDayTicks != null && (timeOfDayTicks < 0 || timeOfDayTicks >= 24000)) {
+                throw new IllegalArgumentException("Export time must be in range 0..23999");
+            }
+
             Map<String, String> normalizedRules = new LinkedHashMap<>();
             for (Map.Entry<String, String> entry : Objects.requireNonNullElse(gameRules, Map.of()).entrySet()) {
                 String name = requireRuleName(entry.getKey());
@@ -44,12 +63,12 @@ public final class ExportSettingsWire {
 
         /** Legacy client behavior: inherit settings and do not force a converter pass. */
         public static Settings inherit() {
-            return new Settings("", "", Map.of(), false);
+            return new Settings("", "", null, null, null, null, "", Map.of(), false);
         }
 
         /** Export workspace behavior: inherit by default while enabling automatic output cleanup. */
         public static Settings workspaceDefaults() {
-            return new Settings("", "", Map.of(), true);
+            return new Settings("", "", null, null, null, null, "", Map.of(), true);
         }
     }
 
@@ -59,6 +78,15 @@ public final class ExportSettingsWire {
         out.writeBoolean(value.optimizeOutput());
         writeOptionalString(out, value.gameMode());
         writeOptionalString(out, value.difficulty());
+        out.writeBoolean(value.spawnX() != null);
+        if (value.spawnX() != null) {
+            out.writeInt(value.spawnX());
+            out.writeInt(value.spawnY());
+            out.writeInt(value.spawnZ());
+        }
+        out.writeBoolean(value.timeOfDayTicks() != null);
+        if (value.timeOfDayTicks() != null) out.writeLong(value.timeOfDayTicks());
+        writeOptionalString(out, value.weather());
         out.writeShort(value.gameRules().size());
         for (Map.Entry<String, String> rule : value.gameRules().entrySet()) {
             writeString(out, rule.getKey());
@@ -71,6 +99,16 @@ public final class ExportSettingsWire {
         boolean optimizeOutput = in.readBoolean();
         String gameMode = readOptionalString(in);
         String difficulty = readOptionalString(in);
+        Integer spawnX = null;
+        Integer spawnY = null;
+        Integer spawnZ = null;
+        if (in.readBoolean()) {
+            spawnX = in.readInt();
+            spawnY = in.readInt();
+            spawnZ = in.readInt();
+        }
+        Long time = in.readBoolean() ? in.readLong() : null;
+        String weather = readOptionalString(in);
         int ruleCount = in.readUnsignedShort();
         if (ruleCount > MAX_RULES) throw new IOException("Too many export game rules");
         Map<String, String> rules = new LinkedHashMap<>();
@@ -80,7 +118,7 @@ public final class ExportSettingsWire {
             if (rules.put(name, value) != null) throw new IOException("Duplicate export game rule: " + name);
         }
         try {
-            return new Settings(gameMode, difficulty, rules, optimizeOutput);
+            return new Settings(gameMode, difficulty, spawnX, spawnY, spawnZ, time, weather, rules, optimizeOutput);
         } catch (IllegalArgumentException exception) {
             throw new IOException("Invalid export settings: " + exception.getMessage(), exception);
         }
