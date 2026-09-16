@@ -16,7 +16,8 @@ $SnapshotVersion = "$ProductVersion-SNAPSHOT"
 $Expected = @(
     [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
-    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' }
+    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
+    [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
 )
 
 function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
@@ -80,6 +81,12 @@ function Verify-Jar($Spec) {
 
         foreach ($config in @(Get-MixinConfigs $metadata)) {
             if (-not $zip.GetEntry([string]$config)) { Fail "$($Spec.File) mixin config is missing: $config" }
+        }
+
+        if ($Spec.Id -eq 'lazybuilder-terraform-manager') {
+            if ([string]$metadata.depends.fabricloader -ne '>=0.16.10') { Fail "$($Spec.File) Fabric Loader contract drifted" }
+            if ([string]$metadata.depends.minecraft -ne '1.21.4') { Fail "$($Spec.File) Minecraft contract drifted" }
+            if ([string]$metadata.depends.java -ne '>=21') { Fail "$($Spec.File) Java contract drifted" }
         }
     }
     catch [System.IO.InvalidDataException] {
