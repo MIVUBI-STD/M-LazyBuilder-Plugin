@@ -54,6 +54,7 @@ def main() -> int:
     process_guard = read(LAUNCHER / "src-tauri/src/engine/server_process_guard.rs")
     runtime_registry = read(LAUNCHER / "src-tauri/src/engine/server_runtime_registry.rs")
     server_engine = read(LAUNCHER / "src-tauri/src/engine/server_manager/mod.rs")
+    startup_guard = read(LAUNCHER / "src-tauri/src/engine/startup_guard.rs")
     server_commands = read(LAUNCHER / "src-tauri/src/commands/server_manager.rs")
     workspace_commands = read(LAUNCHER / "src-tauri/src/commands/workspace.rs")
     workspace_creation = read(LAUNCHER / "src-tauri/src/commands/workspace_creation.rs")
@@ -67,6 +68,7 @@ def main() -> int:
     runtime_facade = read(LAUNCHER / "src/app/bridge/runtimeProductFacade.ts")
     preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
     close_guard = read(LAUNCHER / "src/app/closeGuard.ts")
+    app = read(LAUNCHER / "src/App.svelte")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
     worlds = read(LAUNCHER / "src/pages/Worlds.svelte")
@@ -98,6 +100,12 @@ def main() -> int:
         errors.append("server start no longer enforces the concurrent runtime ceiling")
     if "prepare_control_options_for_start" not in server_commands:
         errors.append("server start no longer allocates a workspace-safe World Manager control port")
+    if "ensure_memory_headroom(active_runtime_count)" not in server_commands:
+        errors.append("server start no longer passes current fleet load into RAM admission")
+    if "active_runtime_count: usize" not in startup_guard or "system.available_memory()" not in startup_guard:
+        errors.append("startup RAM admission no longer uses concurrency context plus current host availability")
+    if "registry.remove(&active.id)" in re.search(r"pub async fn server_start.*?\n}\n", server_commands, re.S).group(0):
+        errors.append("failed server start can still discard its controller before recovery")
     if '.arg("--port").arg(paper_port.to_string())' not in server_engine:
         errors.append("Paper runtime no longer receives its isolated listen-port override")
     for label, source in (("server commands", server_commands), ("workspace commands", workspace_commands), ("workspace creation", workspace_creation)):
@@ -109,6 +117,10 @@ def main() -> int:
         errors.append("Overview no longer exposes the actual active Paper connection port")
     if "runtimeProduct.server.runtimes()" not in dashboard or "managedMemoryBytes()" not in dashboard:
         errors.append("Overview no longer presents aggregate multi-server runtime status")
+    if "runtimeProduct.server.runtimes()" not in app or "runtimeMeta(runtime)" not in app:
+        errors.append("Server Library no longer surfaces runtime state from the canonical runtime list")
+    if "setInterval(" in app:
+        errors.append("Server Library added a second fixed polling loop for runtime status")
     if "usedMemoryBytes: number; maxMemoryBytes: number" not in runtime_api:
         errors.append("runtimeApi no longer types per-runtime resource usage")
     for command_name in ("server_runtime_list", "server_connection_port"):
