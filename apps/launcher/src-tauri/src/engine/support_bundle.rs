@@ -1,4 +1,4 @@
-use crate::engine::diagnostics;
+use crate::engine::{diagnostics, privacy_redaction::RedactionPolicy};
 use serde::Serialize;
 use std::fs;
 use std::io::Write;
@@ -34,12 +34,13 @@ where
     let file = fs::File::create(&staging).map_err(|error| format!("Could not create support bundle: {error}"))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default();
+    let redaction = RedactionPolicy::for_support_bundle(sensitive_paths);
 
-    write_json(&mut zip, options, "diagnostics.json", summary, sensitive_paths)?;
-    write_json(&mut zip, options, "operations.json", operations, sensitive_paths)?;
-    write_json(&mut zip, options, "startup.json", startup, sensitive_paths)?;
+    write_json(&mut zip, options, "diagnostics.json", summary, &redaction)?;
+    write_json(&mut zip, options, "operations.json", operations, &redaction)?;
+    write_json(&mut zip, options, "startup.json", startup, &redaction)?;
 
-    let readme = "LazyBuilder Support Bundle\n\nThis archive was created locally for troubleshooting.\nIt is not uploaded automatically.\nIt intentionally excludes worlds, server configuration, plugin configuration/data, authentication material, and signing keys.\nAbsolute workspace/user-data paths are redacted where known.\n";
+    let readme = "LazyBuilder Support Bundle\n\nThis archive was created locally for troubleshooting.\nIt is not uploaded automatically.\nIt intentionally excludes worlds, server configuration, plugin configuration/data, authentication material, and signing keys.\nAbsolute workspace/user-data paths are redacted where known, including JSON-escaped Windows path forms.\n";
     zip.start_file("README.txt", options).map_err(|error| error.to_string())?;
     zip.write_all(readme.as_bytes()).map_err(|error| error.to_string())?;
 
@@ -54,7 +55,7 @@ where
         let text = fs::read_to_string(&path).map_err(|error| format!("Could not read launcher diagnostic log: {error}"))?;
         let name = if index == 0 { "logs/launcher.log".to_string() } else { format!("logs/launcher.{index}.log") };
         zip.start_file(name, options).map_err(|error| error.to_string())?;
-        zip.write_all(redact(&text, sensitive_paths).as_bytes()).map_err(|error| error.to_string())?;
+        zip.write_all(redaction.redact(&text).as_bytes()).map_err(|error| error.to_string())?;
     }
 
     zip.finish().map_err(|error| format!("Could not finalize support bundle: {error}"))?;
@@ -84,67 +85,9 @@ fn write_json<T: Serialize>(
     options: SimpleFileOptions,
     name: &str,
     value: &T,
-    sensitive_paths: &[String],
+    redaction: &RedactionPolicy,
 ) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
     zip.start_file(name, options).map_err(|error| error.to_string())?;
-    zip.write_all(redact(&text, sensitive_paths).as_bytes()).map_err(|error| error.to_string())
-}
-
-fn redact(input: &str, sensitive_paths: &[String]) -> String {
-    let mut replacements: Vec<(String, &'static str)> = Vec::new();
-    for (key, marker) in [
-        ("LOCALAPPDATA", "<LOCALAPPDATA>"),
-        ("APPDATA", "<APPDATA>"),
-        ("USERPROFILE", "<USERPROFILE>"),
-        ("HOME", "<HOME>"),
-    ] {
-        if let Some(value) = std::env::var_os(key).and_then(|value| value.into_string().ok()) {
-            if !value.trim().is_empty() {
-                replacements.push((value, marker));
-            }
-        }
-    }
-    for value in sensitive_paths {
-        if !value.trim().is_empty() {
-            replacements.push((value.clone(), "<WORKSPACE>"));
-        }
-    }
-    replacements.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
-
-    let mut output = input.to_string();
-    for (value, marker) in replacements {
-        output = replace_case_insensitive(&output, &value, marker);
-    }
-    output
-}
-
-fn replace_case_insensitive(input: &str, needle: &str, replacement: &str) -> String {
-    if needle.is_empty() {
-        return input.to_string();
-    }
-    let lower_input = input.to_ascii_lowercase();
-    let lower_needle = needle.to_ascii_lowercase();
-    let mut output = String::with_capacity(input.len());
-    let mut cursor = 0usize;
-    while let Some(relative) = lower_input[cursor..].find(&lower_needle) {
-        let start = cursor + relative;
-        output.push_str(&input[cursor..start]);
-        output.push_str(replacement);
-        cursor = start + needle.len();
-    }
-    output.push_str(&input[cursor..]);
-    output
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn redaction_removes_workspace_paths_case_insensitively() {
-        let value = redact("D:/Servers/Build/server/paper.jar d:/servers/build/logs", &["D:/Servers/Build".into()]);
-        assert!(!value.to_ascii_lowercase().contains("d:/servers/build"));
-        assert!(value.contains("<WORKSPACE>"));
-    }
+    zip.write_all(redaction.redact(&text).as_bytes()).map_err(|error| error.to_string())
 }
