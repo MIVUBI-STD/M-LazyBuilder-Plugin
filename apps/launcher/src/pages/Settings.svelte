@@ -83,7 +83,7 @@
     <div class="group-copy"><h3>Memory</h3><p>LazyBuilder provides one conservative recommendation. Change it only when this server needs a different limit.</p></div>
     <div class="group-content">
       <button class="recommendation" class:selected={usingRecommended()} disabled={busy || !loaded} onclick={useRecommended}>
-        <div><strong>Recommended</strong><small>Simple default for running Paper alongside Minecraft and Windows.</small></div>
+        <div><strong>Recommended</strong><small>Balanced default for running the server alongside Minecraft and Windows.</small></div>
         <span>{gb(profile.recommendedMaxMemoryMb).toFixed(1)} GB</span>
       </button>
       <div class="memory-control">
@@ -98,7 +98,7 @@
 
   {#if diagnostics}
     <section class="settings-group diagnostics-group">
-      <div class="group-copy"><h3>Diagnostics</h3><p>Local runtime details for troubleshooting. Nothing is uploaded automatically.</p></div>
+      <div class="group-copy"><h3>Diagnostics</h3><p>Technical details for troubleshooting. Nothing is uploaded automatically.</p></div>
       <div class="diagnostic-card">
         <div><span>Launcher</span><strong>{diagnostics.launcherVersion}</strong></div>
         <div><span>Minecraft</span><strong>{diagnostics.minecraftVersion || 'Unknown'}</strong></div>
