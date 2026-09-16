@@ -381,7 +381,8 @@ def main() -> int:
         backup_panel,
         "BACKUP_PAGE_SIZE",
         "calculateEstimate",
-        "Storage sizing scans the full server and runs only when requested.",
+        "estimateBusy",
+        "onclick={calculateEstimate}",
         "visibleBackups",
     )
     forbid(backup_panel, "runtimeProduct.backups.estimate(workspace.id),")
