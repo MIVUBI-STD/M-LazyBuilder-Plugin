@@ -57,8 +57,10 @@ jobs:
           $installerName = python -c "import json,urllib.parse,pathlib; d=json.load(open(r'$manifest',encoding='utf-8')); print(pathlib.PurePosixPath(urllib.parse.urlparse(d['url']).path).name)"
           if ([string]::IsNullOrWhiteSpace($installerName)) { throw 'Updater manifest has no installer filename.' }
           $assets = @(gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
-          if ($assets -notcontains $installerName) {
-            throw "Updater manifest references installer '$installerName' but that asset is not present in $tag."
+          $requiredAssets = @($installerName, "$installerName.sig", 'latest.json', 'SHA256SUMS.txt')
+          $missingAssets = @($requiredAssets | Where-Object { $assets -notcontains $_ })
+          if ($missingAssets.Count -gt 0) {
+            throw "Immutable Launcher release $tag is incomplete. Missing asset(s): $($missingAssets -join ', ')."
           }
 
       - name: Republish stable channel metadata
