@@ -30,11 +30,12 @@ final class PaperTerraformPayloadAdapter implements PluginMessageListener {
             } else if (request instanceof TerraformWireProtocol.Undo undo) {
                 id=undo.operationId();
                 if (!player.hasPermission("lazybuilder.terraform.use")) { send(player,new TerraformWireProtocol.Error(id,"permission denied")); return; }
-                String finalId=id; if (!queue.submitUndo(player,id,(changed,isUndo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,true)))) send(player,new TerraformWireProtocol.Error(id,"nothing to undo"));
+                String finalId=id; if (!queue.submitUndo(player,id,(changed,isUndo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,true)))) send(player,new TerraformWireProtocol.Error(id,"nothing to undo or operation still queued"));
             }
         } catch (IOException | RuntimeException exception) { send(player,new TerraformWireProtocol.Error(id,exception.getMessage())); }
     }
     private void send(Player player, TerraformWireProtocol.Response response) {
+        if(!player.isOnline())return;
         try { player.sendPluginMessage(plugin, TerraformWireProtocol.CHANNEL, TerraformWireProtocol.encodeResponse(response)); }
         catch (IOException exception) { plugin.getLogger().warning("Failed to encode Terraform response: "+exception.getMessage()); }
     }
