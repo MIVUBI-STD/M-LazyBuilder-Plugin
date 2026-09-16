@@ -10,6 +10,7 @@ public record UtilityPreferences(
         boolean borderlessWindow,
         boolean extendedChatHistory,
         boolean keepChatDraft,
+        boolean chatSearch,
         boolean reconnectButton,
         boolean contextualScreenshotNames,
         boolean instantCreativeSearch,
@@ -18,6 +19,7 @@ public record UtilityPreferences(
     public static UtilityPreferences defaults() {
         return new UtilityPreferences(
                 false,
+                true,
                 true,
                 true,
                 true,
