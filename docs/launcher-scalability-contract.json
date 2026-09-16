@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "maxConcurrentServers": 3,
   "operationHistoryMax": 100,
   "activity": {
     "activePollMs": 2000,
