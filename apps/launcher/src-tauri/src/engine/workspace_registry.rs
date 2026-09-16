@@ -129,6 +129,23 @@ pub fn list() -> Result<Vec<WorkspaceEntry>, String> {
     Ok(registry.servers)
 }
 
+pub fn manifest(root: &Path) -> Result<WorkspaceManifest, String> {
+    read_manifest(root)?.ok_or_else(|| "LazyBuilder workspace manifest is missing".to_string())
+}
+
+pub fn update_paper_build(root: &Path, build: u64) -> Result<(), String> {
+    let mut manifest = manifest(root)?;
+    manifest.paper_build = Some(u32::try_from(build).map_err(|_| format!("Paper build {build} exceeds the supported workspace manifest range"))?);
+    write_manifest(root, manifest)
+}
+
+pub fn update_core_versions(root: &Path, world_manager_version: &str, utilities_manager_version: &str) -> Result<(), String> {
+    let mut manifest = manifest(root)?;
+    manifest.world_manager_version = Some(world_manager_version.to_string());
+    manifest.utilities_manager_version = Some(utilities_manager_version.to_string());
+    write_manifest(root, manifest)
+}
+
 pub fn create(parent: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     let safe_name = validate_workspace_name(name)?;
     let parent = parent.canonicalize().map_err(|error| format!("Could not resolve server location: {error}"))?;
@@ -166,7 +183,6 @@ pub fn open_with_display_name(root: &Path, requested_name: Option<&str>) -> Resu
     let requested_name = requested_name.map(validate_display_name).transpose()?;
     let name = match read_manifest(&root)? {
         Some(mut manifest) => {
-            validate_manifest(&manifest)?;
             if let Some(name) = requested_name.as_ref() { manifest.name = name.clone(); }
             manifest.last_opened_unix_seconds = now_unix_seconds();
             write_manifest(&root, manifest.clone())?;
@@ -202,8 +218,7 @@ pub fn activate(id: &str) -> Result<WorkspaceEntry, String> {
     let path = PathBuf::from(&entry.path);
     if !path.is_dir() { return Err(format!("Saved server workspace is currently unavailable: {}. Reconnect or restore that location and try again.", path.display())); }
     let canonical = path.canonicalize().map_err(|error| error.to_string())?;
-    let manifest = read_manifest(&canonical)?.ok_or_else(|| "Saved server workspace has no LazyBuilder manifest".to_string())?;
-    validate_manifest(&manifest)?;
+    let manifest = manifest(&canonical)?;
     if manifest.workspace_id != entry.id { return Err("Saved server workspace identity does not match its manifest. Use Locate only with the original workspace identity.".into()); }
     entry.last_opened_unix_seconds = now_unix_seconds();
     let result = entry.clone();
@@ -223,8 +238,7 @@ pub fn relocate(id: &str, selected_root: &Path) -> Result<WorkspaceEntry, String
     if is_unsafe_link_or_reparse(selected_root, &selected_metadata.file_type())? { return Err("LazyBuilder refused a symbolic link or Windows reparse point as a server location".into()); }
     let canonical = selected_root.canonicalize().map_err(|error| format!("Could not resolve selected server location: {error}"))?;
     if !canonical.is_dir() { return Err("Selected server location is not a directory".into()); }
-    let manifest = read_manifest(&canonical)?.ok_or_else(|| "Selected folder is not the missing LazyBuilder server: workspace.json is missing".to_string())?;
-    validate_manifest(&manifest)?;
+    let manifest = manifest(&canonical).map_err(|error| if error == "LazyBuilder workspace manifest is missing" { "Selected folder is not the missing LazyBuilder server: workspace.json is missing".to_string() } else { error })?;
     if manifest.workspace_id != id { return Err("Selected folder belongs to a different LazyBuilder server. Use Add existing for that server instead.".into()); }
     let canonical_text = canonical.display().to_string();
     let mut registry = load_registry()?;
@@ -288,8 +302,7 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
         copy_directory_filtered(&source, &staging, Path::new(""))?;
         let now = now_unix_seconds();
         let new_id = workspace_id(&final_root.display().to_string());
-        let mut manifest = read_manifest(&staging)?.ok_or_else(|| "Duplicate staging copy is missing its LazyBuilder workspace manifest".to_string())?;
-        validate_manifest(&manifest)?;
+        let mut manifest = manifest(&staging).map_err(|error| format!("Duplicate staging copy is missing or has invalid LazyBuilder workspace metadata: {error}"))?;
         manifest.workspace_id = new_id;
         manifest.name = safe_name.clone();
         manifest.created_unix_seconds = now;
@@ -304,8 +317,7 @@ pub fn duplicate(id: &str, destination_parent: &Path, name: &str) -> Result<Work
 
     let canonical = final_root.canonicalize().map_err(|error| duplicate_recovery_error(format!("Duplicated server was published but its final path could not be validated: {error}")))?;
     let canonical_id = workspace_id(&canonical.display().to_string());
-    let mut manifest = read_manifest(&canonical).map_err(|error| duplicate_recovery_error(format!("Published duplicate manifest could not be read: {error}")))?.ok_or_else(|| duplicate_recovery_error("Published duplicate is missing its LazyBuilder workspace manifest"))?;
-    validate_manifest(&manifest).map_err(|error| duplicate_recovery_error(format!("Published duplicate manifest is invalid: {error}")))?;
+    let mut manifest = manifest(&canonical).map_err(|error| duplicate_recovery_error(format!("Published duplicate manifest could not be read: {error}")))?;
     manifest.workspace_id = canonical_id;
     manifest.name = safe_name.clone();
     write_manifest(&canonical, manifest).map_err(|error| duplicate_recovery_error(format!("Could not finalize published duplicate identity: {error}")))?;
@@ -442,13 +454,7 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
 
 pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
     let root = active_workspace()?;
-    let workspace_created = match read_manifest(&root)? {
-        Some(manifest) => {
-            validate_manifest(&manifest)?;
-            true
-        }
-        None => false,
-    };
+    let workspace_created = manifest(&root).map(|_| true).or_else(|error| if error == "LazyBuilder workspace manifest is missing" { Ok(false) } else { Err(error) })?;
     let config_ready = root.join("tools").join("lazybuilder").join("config").is_dir() && root.join("server").is_dir() && root.join("server").join("plugins").is_dir();
     let paper_ready = root.join("server").join("paper.jar").is_file();
     let plugins = root.join("server").join("plugins");
@@ -503,17 +509,12 @@ fn safe_duplicate_paths(parent: &Path, staging: &Path, final_root: &Path, reques
 fn validated_registered_root(entry: &WorkspaceEntry) -> Result<PathBuf, String> {
     let root = PathBuf::from(&entry.path).canonicalize().map_err(|error| format!("Could not resolve registered server workspace: {error}"))?;
     if !root.is_dir() { return Err("Registered server workspace is not a directory".into()); }
-    let manifest = read_manifest(&root)?.ok_or_else(|| "Registered server workspace has no LazyBuilder manifest".to_string())?;
-    validate_manifest(&manifest)?;
+    let manifest = manifest(&root)?;
     if manifest.workspace_id != entry.id { return Err("Registered server identity does not match its workspace manifest".into()); }
     Ok(root)
 }
 
-fn registered_manifest(root: &Path) -> Result<WorkspaceManifest, String> {
-    let manifest = read_manifest(root)?.ok_or_else(|| "LazyBuilder workspace manifest is missing".to_string())?;
-    validate_manifest(&manifest)?;
-    Ok(manifest)
-}
+fn registered_manifest(root: &Path) -> Result<WorkspaceManifest, String> { manifest(root) }
 
 fn register_and_activate(root: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     let canonical = root.canonicalize().map_err(|error| error.to_string())?;
@@ -843,6 +844,7 @@ fn provision_layout(root: &Path) -> Result<(), String> {
 }
 fn manifest_path(root: &Path) -> PathBuf { root.join("tools").join("lazybuilder").join("config").join("workspace.json") }
 fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String> {
+    validate_manifest(&manifest)?;
     let path = manifest_path(root);
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     write_json_file(&path, text.as_bytes(), "workspace manifest")
@@ -853,7 +855,8 @@ fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
     if !metadata_entry_exists(&path, "workspace manifest")? { return Ok(None); }
     ensure_regular_metadata_file(&path, "workspace manifest")?;
     let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-    let manifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let manifest: WorkspaceManifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    validate_manifest(&manifest)?;
     cleanup_json_recovery_files(&path, "workspace manifest")?;
     Ok(Some(manifest))
 }
@@ -959,6 +962,12 @@ mod tests {
         directory.join("metadata.json")
     }
 
+    fn temp_workspace_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("lazybuilder-workspace-manifest-test-{}-{name}-{}", std::process::id(), now_unix_millis()));
+        fs::create_dir_all(root.join("tools").join("lazybuilder").join("config")).unwrap();
+        root
+    }
+
     #[test] fn duplicate_filter_excludes_transient_runtime_paths() {
         assert!(should_skip_duplicate_path(Path::new("world-system/work/job.tmp")));
         assert!(should_skip_duplicate_path(Path::new("tools/lazybuilder/logs/launcher.log")));
@@ -1030,5 +1039,30 @@ mod tests {
         assert!(previous.exists());
         assert!(incoming.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+    #[test] fn workspace_manifest_semantic_validation_preserves_recovery_evidence() {
+        let root = temp_workspace_root("semantic-invalid");
+        let path = manifest_path(&root);
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        let invalid = WorkspaceManifest {
+            schema_version: WORKSPACE_SCHEMA_VERSION + 1,
+            workspace_id: "test".into(),
+            name: "Test".into(),
+            minecraft_version: MINECRAFT_VERSION.into(),
+            server_platform: SERVER_PLATFORM.into(),
+            paper_build: None,
+            world_manager_version: None,
+            utilities_manager_version: None,
+            created_unix_seconds: 1,
+            last_opened_unix_seconds: 1,
+        };
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        fs::write(&previous, b"previous").unwrap();
+        fs::write(&incoming, b"incoming").unwrap();
+        assert!(read_manifest(&root).is_err());
+        assert!(previous.exists());
+        assert!(incoming.exists());
+        let _ = fs::remove_dir_all(root);
     }
 }
