@@ -5,9 +5,7 @@ description: Own LazyBuilder presentation, interaction, UI issue resolution, and
 
 # LazyBuilder UI
 
-Own presentation and user interaction only. Follow `docs/04-system/development-discipline.md`, `docs/04-system/skill-routing.md`, and the exact source/docs for the selected surface.
-
-General UI references are inputs, not product authority. Platform behavior must match the actual Desktop or Minecraft/Fabric surface.
+Own presentation and user interaction only. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; cross-owner selection/handoff comes from `docs/04-system/skill-routing.md`.
 
 ## Entry gate
 
@@ -25,69 +23,48 @@ renderer/cache invalidation caused by UI state
 visual proof of an already-correct semantic result
 ```
 
-Do not enter when the underlying canonical state/behavior is wrong. Route that first to:
+Do not enter when canonical semantics are wrong:
 
 ```text
-workspace/process/provisioning/runtime → lazybuilder-desktop-runtime
+runtime/workspace/process/provisioning → lazybuilder-desktop-runtime
 third-party plugin lifecycle           → lazybuilder-plugin-management
-Paper world behavior/import/export     → lazybuilder-world-management
-shared Paper/Fabric wire semantics     → lazybuilder-protocol
+Paper world behavior/import-export     → lazybuilder-world-management
+shared Paper↔Fabric wire semantics     → lazybuilder-protocol
 ```
 
 ## Surface selector
 
 Choose one primary lane per decision.
 
-### A — Launcher Desktop
-
 ```text
-apps/launcher/src/**
-Server Library presentation
-Plugin Manager presentation
-Client Setup presentation
-settings/world/runtime presentation
-confirmation/progress/error flows
+A Launcher Desktop
+→ apps/launcher/src/**
+→ Server Library / Plugin Manager / Client Setup / settings/world/runtime presentation
+
+B Fabric Client Mods
+→ mods/map-manager/**
+→ mods/utility-manager/**
+→ mods/performance-manager/** presentation only
+→ World Manager / Import-Export client screens
+
+C Plugin-facing presentation
+→ plugin inventory/detail/actions
+→ warning/status/progress/error presentation
+→ presentation-only in-game plugin messages
 ```
 
-### B — Fabric Client Mods
-
-```text
-mods/map-manager/**
-mods/utility-manager/**
-mods/performance-manager/** presentation only
-World Manager / Import-Export client screens
-```
-
-### C — Plugin-facing presentation
-
-```text
-plugin inventory/list/detail/actions
-plugin warning/status/progress/error presentation
-in-game plugin messages when presentation-only
-capability-driven action availability
-```
-
-If multiple lanes are affected, keep one primary lane and inspect siblings only for regression/synchronization.
+If multiple lanes consume the same canonical result, fix one primary lane and inspect siblings only for regression.
 
 ## Reference routing
 
-Load only the reference that can change the decision:
+Load only when material:
 
 ```text
-issue/state/flow/race diagnosis
-→ references/issue-resolution-playbook.md
-
-Launcher visual/layout proof
-→ references/launcher-visual-preview.md
-
-cross-surface / Minecraft visual proof
-→ references/visual-proof-system.md
-
-external platform/UI research needed
-→ references/ui-knowledge-source-policy.md
+issue/state/flow/race diagnosis      → references/issue-resolution-playbook.md
+Launcher visual/layout proof         → references/launcher-visual-preview.md
+cross-surface/Minecraft visual proof → references/visual-proof-system.md
+external platform/UI research        → references/ui-knowledge-source-policy.md
 ```
-
-Do not preload every reference for a small copy/spacing/state change.
 
 ## Failure taxonomy
 
@@ -98,24 +75,20 @@ INPUT      click/key/focus race, duplicate submit, input leak
 ASYNC      pending/retry/late-response/premature-transition bug
 LAYOUT     overlap/overflow/density/GUI-scale failure
 VISUAL     hierarchy/contrast/token/icon inconsistency
-COPY       consequence/recovery terminology is unclear
+COPY       consequence/recovery terminology unclear
 ACCESS     keyboard/focus/non-hover/readability issue
 PERF       UI state triggers unnecessary rebuild/cache/render churn
-OWNERSHIP  UI workaround is masking backend/plugin/world/protocol defect
-UNKNOWN    evidence cannot separate the above
+OWNERSHIP  semantic owner is wrong; UI must hand off
+UNKNOWN    next separating evidence required
 ```
 
-Local labels refine global classification while UI remains the first wrong owner. `OWNERSHIP` is not a UI failure to patch: translate it through global `ROUTING`, identify the real semantic owner, hand off, then stop UI semantic mutation. Runtime-only rendering/input defects may retain UI semantic ownership while the remaining proof class becomes `FABRIC_RUNTIME` or environment-specific. `UNKNOWN` must name the next separating evidence.
+`OWNERSHIP` is not patched in UI. Reclassify through global routing, emit the typed defect packet from `skill-routing.md`, and stop semantic UI mutation.
 
-Fix the dominant class first. For `OWNERSHIP`, hand off before adding UI-side guesses.
-
-## UI priority
-
-Work in this order:
+## Priority
 
 ```text
 1 safety + interaction correctness
-2 truthful state authority
+2 truthful state presentation
 3 navigation predictability
 4 information hierarchy
 5 accessibility/input parity
@@ -125,59 +98,50 @@ Work in this order:
 9 decorative polish
 ```
 
-P0/P1 interaction/state defects outrank polish.
-
-## Canonical preflight
+## Preflight
 
 Before mutation answer only what is material:
 
 ```text
-What user action/reproduction is failing?
+What user action reproduces the issue?
 Expected vs actual?
 What canonical state/result drives this surface?
-Which semantic owner produces it?
-Which existing screen/control/result can be reused?
-What happens on pending/failure/retry/empty/back-close/repeated input?
-What proof level can falsify the issue?
+Which semantic owner produced it?
+What existing screen/control/result can be reused?
+What happens on pending/failure/retry/back-close/repeated input?
+What proof can falsify the claim?
 ```
-
-If semantic ownership is unclear, stop and route first.
 
 ## Lane A — Launcher Desktop
 
-Procedure:
-
 ```text
-reproduce user decision/flow
-→ trace Svelte state to existing Tauri bridge/result
+reproduce
+→ trace Svelte state to existing Tauri result
 → verify Rust/runtime authority
 → classify UI failure
 → reuse existing component/bridge/control
-→ smallest presentation/lifecycle fix
+→ smallest presentation fix
 → check pending/error/empty + focus/keyboard + representative responsive constraint
-→ inspect sibling Launcher surface only when it consumes the same result
-→ source/typecheck proof
-→ Launcher visual proof when appearance/state presentation changed
-→ local native proof only for remaining Windows/runtime boundary
+→ inspect sibling Launcher consumer only when it uses the same result
+→ EXECUTED_SOURCE
+→ VISUAL_RENDERED when appearance/state presentation changed
+→ NATIVE_ACCEPTANCE only for remaining Windows-native boundary
 → STOP
 ```
 
 Invariants:
 
 - one production frontend runtime bridge;
-- Svelte never becomes durable server/process/plugin/world authority;
-- deterministic preview fixtures are proof infrastructure only;
+- Svelte never becomes durable runtime/plugin/world authority;
+- preview fixtures are proof infrastructure only;
 - repeated action cannot dispatch duplicate work;
-- late responses cannot update a different selected entity;
+- late response cannot update another selected entity;
 - important actions do not depend on hover alone;
-- focus remains visible and logical where keyboard navigation is supported;
-- errors stay near the affected workflow and expose recovery when practical;
-- preserve useful selection/search/filter/scroll/tab/server context unless invalidated by canonical data;
-- destructive target/consequence must be explicit; UI confirmation never replaces backend safety.
+- focus remains visible/logical where keyboard navigation is supported;
+- preserve useful selection/search/filter/scroll/tab/server context unless canonical data invalidates it;
+- destructive target/consequence is explicit; UI confirmation never replaces backend safety.
 
 ## Lane B — Fabric Client Mods
-
-Procedure:
 
 ```text
 reproduce player interaction
@@ -185,11 +149,11 @@ reproduce player interaction
 → verify Minecraft/Fabric API only when uncertain
 → classify UI/input/layout/render failure
 → reuse existing screen/keybind/controller/protocol
-→ smallest presentation/state fix
-→ inspect screen lifecycle + back/close + repeated input + representative GUI scale
-→ Fabric build/artifact proof
-→ real Minecraft-rendered visual proof when appearance matters and path exists
-→ local PC proof only for remaining native/performance/input-feel boundary
+→ smallest presentation fix
+→ inspect lifecycle/back-close/repeated input/representative GUI scale
+→ EXECUTED_SOURCE
+→ VISUAL_RENDERED when appearance matters
+→ NATIVE_ACCEPTANCE only for local GPU/input/environment residue
 → STOP
 ```
 
@@ -198,11 +162,10 @@ Invariants:
 - server remains authorization/mutation authority;
 - new neutral payload/validation routes to `lazybuilder-protocol` first;
 - presentation state never becomes a second registry/world/runtime authority;
-- one physical input does not dispatch through independent competing paths;
-- prefer immediate stable response over decorative animation;
+- one physical input cannot dispatch through competing paths;
 - GUI-scale behavior is correctness, not polish;
-- HTML recreation is never final Minecraft visual proof;
-- deterministic test hooks may open/feed a production screen but may not duplicate product semantics.
+- HTML recreation is never canonical Minecraft proof;
+- test hooks may feed/open production screens but may not duplicate product semantics.
 
 ### Map interaction lock
 
@@ -215,13 +178,11 @@ recenter    return to player
 right click contextual map actions
 ```
 
-Xaero is familiarity/interaction reference only; never a dependency, adapter, map authority, or asset/source donor.
-
-Map presentation keeps one canonical map/cache path. Current managed world + dimension defines scope. Hover/sidebar/favorite/context state must not reset terrain/cache unnecessarily.
+Xaero is interaction reference only, never dependency/adapter/authority/source donor. Current managed world + dimension defines map scope; hover/sidebar/favorite/context state must not reset terrain/cache unnecessarily.
 
 ### World presentation lock
 
-Navigation target:
+Navigation:
 
 ```text
 Search
@@ -232,7 +193,7 @@ Archived
 + Add World
 ```
 
-Manage target:
+Manage:
 
 ```text
 Teleport
@@ -243,20 +204,18 @@ Archive
 Delete
 ```
 
-Pinned/Recent are client preferences only. Do not expose manual Load/Unload, `autoLoad`, converter implementation names, protocol/job IDs, or internal folder identity as normal builder choices.
+Pinned/Recent are client preferences only. Do not expose manual Load/Unload, `autoLoad`, converter names, protocol/job IDs, or internal folder identity as normal builder choices.
 
 ## Lane C — Plugin-facing presentation
 
-Procedure:
-
 ```text
-reproduce plugin-facing issue
-→ consume canonical plugin-management state/result
+reproduce
+→ consume canonical plugin-management result
 → classify semantic vs presentation defect
-→ hand semantic defect to lazybuilder-plugin-management
+→ hand semantic defect to plugin-management
 → otherwise fix list/detail/action/status flow
-→ align pending/error/success on sibling plugin views using same result
-→ choose Launcher or Minecraft proof lane
+→ align sibling views using the same canonical result
+→ EXECUTED_SOURCE + matching visual proof when needed
 → STOP
 ```
 
@@ -264,31 +223,28 @@ Invariants:
 
 - UI never calculates compatibility/dependency/health independently;
 - action availability comes from canonical lifecycle/capability state;
-- list/detail/progress/notification do not invent different success criteria;
+- list/detail/progress/notification share one success criterion;
 - pending plugin actions block conflicting duplicates;
 - warning copy states consequence/recovery, not resolver jargon;
-- late response cannot update the wrong plugin after reorder/selection change;
-- native Minecraft rendering is visual authority for Minecraft-native surfaces.
+- late response cannot update the wrong plugin after reorder/selection change.
 
 ## Shared interaction invariants
 
-Every user-triggered async action follows:
+Every async user action follows:
 
 ```text
-idle
-→ pending
-→ success OR recoverable error
+idle → pending → success OR recoverable error
 ```
 
-Required properties:
+Required:
 
 - pending starts before duplicate dispatch is possible;
-- success/error clears pending correctly;
+- success/error clears pending;
 - disconnect/reset clears transient pending safely;
-- screen close does not pretend to cancel unsupported backend work;
-- reopen does not replay the previous request;
-- keep valid previous content visible during safe refresh when truthful and useful;
-- leaving a surface is not cancellation unless semantic owner supports cancellation.
+- screen close does not imply unsupported cancellation;
+- reopen does not replay the prior request;
+- keep valid previous content visible during safe refresh when truthful;
+- leaving a surface is not cancellation unless the semantic owner supports it.
 
 Preserve useful navigation state unless invalidated:
 
@@ -302,111 +258,59 @@ sidebar state
 current workspace/server context
 ```
 
-Do not rebuild/reset a heavy renderer for hover, selection, menu visibility, favorite state, or other small presentation-only changes.
+Do not rebuild a heavy renderer for hover/selection/menu/favorite-only changes.
 
-## Accessibility / layout / performance guardrails
-
-Apply platform-appropriate rules, not generic mobile heuristics.
+## Accessibility / layout / performance
 
 - important actions have non-hover access;
-- keyboard focus/order is coherent on Desktop;
+- desktop keyboard focus/order is coherent;
 - icon-only controls have labels/tooltips where supported;
-- state should not rely only on color when another cue is practical;
-- long names and max-content states are deliberate, not accidental overflow;
-- test representative minimum/normal/wide or GUI-scale constraints only when relevant;
-- avoid core horizontal scrolling where responsive restructuring is practical;
+- state should not rely on color alone when another cue is practical;
+- long names/max-content states are deliberate, not accidental overflow;
+- test representative constraints only when relevant;
+- avoid unnecessary core horizontal scrolling;
 - motion explains change/feedback or is omitted;
-- presentation state must not trigger heavy cache/render resets without visual-content change;
-- avoid polling every render/tick when event/revision state already exists.
-
-Detailed issue patterns and proof mechanics belong in the references, not duplicated here.
+- presentation state must not trigger heavy cache/render resets without content change;
+- avoid polling when event/revision state already exists.
 
 ## Visual proof
 
-Use `references/visual-proof-system.md` when appearance/state presentation matters. The L0–L5 ladder is UI-specific shorthand mapped to the canonical proof vocabulary in `development-discipline.md`.
+Detailed mechanics live in `references/visual-proof-system.md`. UI shorthand maps to the global proof vocabulary:
 
 ```text
-L0 source inspection
-→ STATIC_SOURCE
-
-L1 source-contract/typecheck/build/tests
-→ EXECUTED_SOURCE
-
-L2 deterministic simulated preview
-→ VISUAL_SIMULATED
-
-L3 real Launcher Svelte/CSS rendering
-→ VISUAL_RENDERED
-
-L4 real Minecraft production renderer
-→ VISUAL_RENDERED
-
-L5 Local-PC native interaction/integration
-→ NATIVE_ACCEPTANCE
+L0 → STATIC_SOURCE
+L1 → EXECUTED_SOURCE
+L2 → VISUAL_SIMULATED
+L3 → VISUAL_RENDERED (real Svelte/CSS)
+L4 → VISUAL_RENDERED (real Minecraft renderer)
+L5 → NATIVE_ACCEPTANCE
 ```
 
-Use the cheapest level that can falsify the issue; never claim a higher level than observed.
+`VISUAL_RENDERED` proves only the captured renderer/scenario. It does not prove backend mutation, Paper authorization, plugin-channel interoperability, filesystem safety, mouse feel, or network timing.
 
-`VISUAL_RENDERED` proves what the production renderer displayed for the captured scenario. It does **not** prove backend mutation, plugin-channel interoperability, Paper authorization, filesystem safety, mouse feel, or network timing. If those semantics changed, the owning Skill still requires `LIVE_RUNTIME`, `INTEGRATION_FIXTURE`, or another matching proof type independently.
+## External knowledge
 
-Visual evidence should be tied to exact source revision and identify renderer/scenario/viewport-or-GUI-scale/proof boundary where relevant. Prefer workflow artifacts over committed screenshot baselines.
+Use `references/ui-knowledge-source-policy.md` only when platform/API/version behavior is genuinely uncertain. LazyBuilder source/docs remain product authority; external sources are references only.
 
-Do not add visual SaaS, pixel-diff databases, golden-image repositories, second UI implementations, or exhaustive resolution matrices without repeated evidence they are needed.
+## Handoff / exit
 
-## External knowledge discipline
-
-Use `references/ui-knowledge-source-policy.md` only when platform/API/version behavior is genuinely uncertain.
-
-Authority order:
-
-```text
-LazyBuilder source/docs
-→ exact platform/API docs
-→ version-matched Minecraft/Fabric/Paper docs
-→ mature implementation reference
-→ general UX heuristics
-→ visual inspiration
-```
-
-Study behavior; implement independently. Stop research once ownership, platform behavior, smallest implementation, and proof plan are clear.
-
-## Handoff / exit contract
-
-When UI discovers the semantic owner is wrong, hand off only a defect packet:
+Use the canonical typed handoff rules in `skill-routing.md`. UI-specific semantic defect packet:
 
 ```text
 short reproduction
 expected vs actual
 selected canonical entity id
 canonical input/result observed by UI
-evidence that the defect survives beyond presentation
+evidence that defect survives beyond presentation
 ```
-
-Then STOP semantic UI patching until the owning Skill returns a corrected canonical result.
-
-```text
-runtime/workspace/process semantic defect
-→ lazybuilder-desktop-runtime
-
-plugin lifecycle semantic defect
-→ lazybuilder-plugin-management
-
-world-domain semantic defect
-→ lazybuilder-world-management
-
-neutral wire semantic defect
-→ lazybuilder-protocol
-```
-
-When the corrected result returns, UI may resume only to present it; do not keep the prior semantic owner active for the same decision.
 
 Finish when:
 
 - canonical semantic owner remains authoritative;
 - one primary UI lane is corrected;
 - async/input/navigation state cannot duplicate or mis-target work;
-- representative layout/accessibility/performance risks for the issue are covered;
-- matching visual/source proof is complete at the available context ceiling;
+- relevant layout/accessibility/performance risk is covered;
+- matching source/visual proof is complete;
 - remaining native/live residue is named precisely.
 
-Do not redesign unrelated surfaces, create a second state/workflow owner, or continue polishing after the reported interaction/presentation contract is satisfied.
+Do not redesign unrelated surfaces or continue decorative polish after the accepted interaction/presentation contract is satisfied.
