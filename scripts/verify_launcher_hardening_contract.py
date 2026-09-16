@@ -60,6 +60,7 @@ def main() -> int:
     server_commands = RUST / "commands" / "server_manager.rs"
     java_runtime = RUST / "engine" / "java_runtime.rs"
     world_manager = RUST / "engine" / "world_manager" / "mod.rs"
+    privacy_redaction = RUST / "engine" / "privacy_redaction.rs"
     support_bundle = RUST / "engine" / "support_bundle.rs"
     app = LAUNCHER / "src" / "App.svelte"
     close_guard = LAUNCHER / "src" / "app" / "closeGuard.ts"
@@ -77,6 +78,7 @@ def main() -> int:
         "pub mod app_instance;",
         "pub mod app_data_migrations;",
         "pub mod backup_recovery;",
+        "pub mod privacy_redaction;",
         "pub mod storage_health;",
         "pub mod plugin_ingress;",
     )
@@ -158,6 +160,9 @@ def main() -> int:
         "pub fn recover_pending(",
         "legacy_sweep_required",
         "mark_legacy_sweep_complete",
+        "read_pending_file",
+        "existing_regular_file",
+        "prefer the previous committed copy",
         "STAGING_PREFIX",
     )
     require(
@@ -206,13 +211,25 @@ def main() -> int:
     require(java_runtime, ".enclosed_name()", "failed SHA-256 verification")
     require(world_manager, '"X-LazyBuilder-Sha256"', "sha256_file(&path)?", '"Content-Length"')
     require(
+        privacy_redaction,
+        "pub struct RedactionPolicy",
+        "for_support_bundle",
+        "add_path_variants",
+        "serde_json::to_string(value)",
+        "json_escaped_windows_paths_are_redacted",
+    )
+    require(
         support_bundle,
+        "privacy_redaction::RedactionPolicy",
+        "RedactionPolicy::for_support_bundle",
+        "redaction.redact(&text)",
         '"diagnostics.json"',
         '"operations.json"',
         '"startup.json"',
         '"README.txt"',
         "MAX_LOG_FILE_BYTES",
     )
+    forbid(support_bundle, "fn redact(", "fn replace_case_insensitive(")
 
     require(
         close_guard,
