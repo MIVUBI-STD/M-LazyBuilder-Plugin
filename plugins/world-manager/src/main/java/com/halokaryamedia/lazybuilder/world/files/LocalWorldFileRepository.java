@@ -34,6 +34,10 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String DELETE_SUFFIX = ".delete";
     private static final String CREATE_SUFFIX = ".create";
     private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
+    private static final String PAPER_NETHER_SUFFIX = "_nether";
+    private static final String PAPER_END_SUFFIX = "_the_end";
+    private static final String JAVA_NETHER_DIRECTORY = "DIM-1";
+    private static final String JAVA_END_DIRECTORY = "DIM1";
     private static final long COPY_ENTRY_OVERHEAD_BYTES = 4L * 1024L;
     private static final long COPY_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
 
@@ -56,9 +60,22 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             throw new IOException("Managed world folder is missing or unsafe: " + source.folderName());
         }
 
+        Path netherSource = null;
+        Path endSource = null;
+        if (profile == WorldCopyProfile.SNAPSHOT) {
+            if (!Files.isDirectory(sourcePath.resolve(JAVA_NETHER_DIRECTORY))) {
+                netherSource = externalDimensionSource(source.folderName() + PAPER_NETHER_SUFFIX, JAVA_NETHER_DIRECTORY);
+            }
+            if (!Files.isDirectory(sourcePath.resolve(JAVA_END_DIRECTORY))) {
+                endSource = externalDimensionSource(source.folderName() + PAPER_END_SUFFIX, JAVA_END_DIRECTORY);
+            }
+        }
+
         Files.createDirectories(workspaceRoot);
         requireSafeWorkspaceRoot();
         long requiredBytes = estimateCopyBytes(sourcePath, profile);
+        if (netherSource != null) requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(netherSource, profile));
+        if (endSource != null) requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(endSource, profile));
         long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
         if (usableBytes < requiredBytes) {
             throw new IOException("Insufficient disk space for managed world copy; required="
@@ -68,6 +85,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         Path destination = reserveTypedWorkspace(operationId, COPY_SUFFIX);
         try {
             copyTree(sourcePath, destination, profile);
+            if (netherSource != null) copyTree(netherSource, destination.resolve(JAVA_NETHER_DIRECTORY), profile);
+            if (endSource != null) copyTree(endSource, destination.resolve(JAVA_END_DIRECTORY), profile);
             return destination;
         } catch (IOException | RuntimeException exception) {
             try { deleteTree(destination); }
@@ -401,7 +420,11 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     private long estimateCopyBytes(Path source, WorldCopyProfile profile) throws IOException {
-        long[] total = {COPY_SPACE_RESERVE_BYTES};
+        return addCopyBytes(COPY_SPACE_RESERVE_BYTES, estimateTreeBytes(source, profile));
+    }
+
+    private long estimateTreeBytes(Path source, WorldCopyProfile profile) throws IOException {
+        long[] total = {0L};
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
@@ -430,6 +453,23 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             }
         });
         return total[0];
+    }
+
+    private Path externalDimensionSource(String paperFolderName, String javaDimensionDirectory) throws IOException {
+        Path sibling = worldPath(paperFolderName);
+        if (Files.notExists(sibling)) return null;
+        if (!Files.isDirectory(sibling) || Files.isSymbolicLink(sibling)) {
+            throw new IOException("Paper dimension folder is unsafe: " + sibling.getFileName());
+        }
+        Path nested = sibling.resolve(javaDimensionDirectory).normalize();
+        if (!nested.startsWith(sibling)) throw new IOException("Paper dimension path escaped world folder");
+        if (Files.exists(nested)) {
+            if (!Files.isDirectory(nested) || Files.isSymbolicLink(nested)) {
+                throw new IOException("Paper dimension data is unsafe: " + nested);
+            }
+            return nested;
+        }
+        return sibling;
     }
 
     private static long addCopyBytes(long current, long increment) throws IOException {
