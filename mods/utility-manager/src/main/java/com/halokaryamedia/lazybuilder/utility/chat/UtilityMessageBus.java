@@ -27,8 +27,8 @@ public final class UtilityMessageBus {
         return new DispatchDecision(
                 message,
                 ChatRoutingPolicy.showInChat(message.type()),
-                shouldToast(message.type()) && !duplicate.duplicate(),
-                shouldWriteConsole(message.type()),
+                ChatRoutingPolicy.showToast(message.type()) && !duplicate.duplicate(),
+                ChatRoutingPolicy.writeConsole(message.type()),
                 duplicate.duplicate(),
                 duplicate.count()
         );
@@ -36,20 +36,6 @@ public final class UtilityMessageBus {
 
     public void clearSession() {
         deduplicator.clearSession();
-    }
-
-    private static boolean shouldToast(ChatMessageType type) {
-        return switch (type) {
-            case WARNING, ERROR -> true;
-            case CHAT, GAME, SYSTEM -> false;
-        };
-    }
-
-    private static boolean shouldWriteConsole(ChatMessageType type) {
-        return switch (type) {
-            case SYSTEM, WARNING, ERROR -> true;
-            case CHAT, GAME -> false;
-        };
     }
 
     public record DispatchDecision(
