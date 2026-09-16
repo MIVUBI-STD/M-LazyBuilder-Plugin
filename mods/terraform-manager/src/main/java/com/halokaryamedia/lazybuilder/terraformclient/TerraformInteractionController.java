@@ -55,7 +55,17 @@ public final class TerraformInteractionController {
     }
     static Vec3d previewFront(){return drawing?lockedFront:resolveFront(MinecraftClient.getInstance());}
     static long previewSeed(){return drawing?strokeSeed:0x4C42544552524149L;}
-    static long previewRevision(){return pathRevision*31L+TerraformManagerClient.state().revision();}
+    static long previewRevision(){
+        long revision=pathRevision*31L+TerraformManagerClient.state().revision();
+        if(!drawing){
+            MinecraftClient client=MinecraftClient.getInstance();
+            if(client.crosshairTarget instanceof BlockHitResult hit&&client.crosshairTarget.getType()==HitResult.Type.BLOCK){
+                revision=revision*31L+hit.getBlockPos().asLong();
+                revision=revision*31L+hit.getSide().getId();
+            }
+        }
+        return revision;
+    }
 
     private static void tick(MinecraftClient client){
         if(!TerraformManagerClient.state().editorOpen()){if(drawing)cancelStroke();return;}
