@@ -9,6 +9,8 @@ Remote GitHub work completed:
 - release-only Tauri overlay (`src-tauri/tauri.release.conf.json`);
 - immutable signed Launcher release workflow;
 - metadata-only stable update-channel publication;
+- single update-channel publication owner (`scripts/publish_launcher_update_channel.ps1`);
+- metadata-only channel repair workflow for an already-published immutable release;
 - updater manifest builder and validator;
 - updater tooling self-contract in `Launcher Verify` without signing secrets;
 - version synchronization verifier;
@@ -103,7 +105,7 @@ The workflow:
 7. creates and validates `latest.json` against the canonical repository release URL;
 8. writes SHA-256 checksums for installer/signature;
 9. publishes immutable release tag `launcher-vMAJOR.MINOR.PATCH`;
-10. creates/updates stable channel manifest at `launcher-update-channel/stable/latest.json`;
+10. calls the canonical channel publisher to create/update `launcher-update-channel/stable/latest.json`;
 11. downloads that published manifest through GitHub API and validates it again;
 12. verifies the update-channel branch has no unexpected source-tree entries.
 
@@ -121,6 +123,14 @@ Later releases update only `stable/latest.json` on that branch. Source files, bu
 
 The channel branch is a distribution pointer, not a development or rollback authority.
 
+Both normal release publication and repair publication must use:
+
+```text
+scripts/publish_launcher_update_channel.ps1
+```
+
+Do not reimplement channel Git/GitHub publication logic inside another workflow.
+
 ## Release failure and recovery
 
 ### Failure before immutable release creation
@@ -129,12 +139,23 @@ No release is visible to users. Fix the cause and rerun the workflow for the sam
 
 ### Immutable release exists but stable manifest publication failed
 
-Do **not** rebuild/replace the version artifacts. The signed release is immutable. Diagnose the channel publication step and republish the exact `latest.json` generated for that release.
+Do **not** rebuild or replace the version artifacts. The signed release is immutable.
 
-Before republishing, verify:
+Run the manual **Launcher Update Channel Repair** workflow from `main` and provide the existing `X.Y.Z` release version. The repair workflow:
+
+1. requires the immutable `launcher-vX.Y.Z` release to already exist;
+2. downloads the release-owned `latest.json` instead of regenerating it;
+3. validates that manifest against `X.Y.Z`;
+4. confirms the referenced installer is present in that same immutable release;
+5. republishes the exact manifest through the canonical publication script;
+6. reads the stable channel back and validates it again.
+
+The repair path intentionally does **not** receive `TAURI_SIGNING_PRIVATE_KEY`, run `tauri build`, create a new release, replace release assets, or resign anything.
+
+For local inspection of a release-owned manifest before publication:
 
 ```powershell
-python scripts/verify_launcher_update_manifest.py update-channel/stable/latest.json --version X.Y.Z
+python scripts/verify_launcher_update_manifest.py latest.json --version X.Y.Z
 ```
 
 ### Stable manifest points to a bad application release
