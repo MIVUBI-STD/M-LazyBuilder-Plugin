@@ -102,6 +102,12 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
     await capture(page, fileName);
   }
 
+  await open(page, '?preview=active&page=Activity');
+  await page.getByLabel('Launcher navigation').getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(heading(page, 'Recent')).toBeVisible();
+  await expect(page.getByText('Duplicate server', { exact: true })).toBeVisible();
+  await capture(page, '12-activity.png');
+
   const manifest = {
     generatedAt: new Date().toISOString(),
     source: 'real Svelte launcher UI with deterministic visual-preview runtime',
@@ -118,7 +124,8 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
       '08-overview-starting.png',
       '09-overview-stopping.png',
       '10-overview-detached.png',
-      '11-overview-crashed.png'
+      '11-overview-crashed.png',
+      '12-activity.png'
     ]
   };
   await fs.writeFile(path.join(outputDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
