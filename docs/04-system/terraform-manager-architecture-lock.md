@@ -14,8 +14,9 @@ Material/coloring is intentionally outside this milestone.
 
 - Axiom-familiar direct world manipulation.
 - LazyBuilder World/Map Manager visual language.
-- No Terraform keyboard shortcuts are registered in this milestone.
-- Tool/variation selection belongs to the Terraform UI surface rather than dedicated keybinds.
+- Exactly one Terraform keyboard shortcut is registered: **Right Shift** toggles the Terraform editor panel, matching Axiom's default Toggle Editor UI key.
+- No dedicated keyboard shortcuts exist for tool selection, variation, undo, size, height, or face direction.
+- Tool/variation selection belongs to the Terraform UI surface.
 - LMB drag draws/extends the active terrain form.
 - Mouse wheel adjusts size.
 - Shift + wheel adjusts height.
