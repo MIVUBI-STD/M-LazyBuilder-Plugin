@@ -1,10 +1,11 @@
 use crate::engine::server_manager::ServerManagerState;
-use crate::engine::server_process_guard;
+use crate::engine::server_process_guard::{self, MAX_CONCURRENT_SERVERS};
 use crate::engine::workspace_registry::{self, WorkspaceEntry};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use sysinfo::{Pid, System};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +15,19 @@ pub struct ServerRuntimeSummary {
     pub state: String,
     pub pid: Option<u32>,
     pub paper_port: Option<u16>,
+    pub used_memory_bytes: u64,
+    pub max_memory_bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerRuntimeFleet {
+    pub runtimes: Vec<ServerRuntimeSummary>,
+    pub active_count: usize,
+    pub capacity: usize,
+    pub managed_used_memory_bytes: u64,
+    pub total_memory_bytes: u64,
+    pub available_memory_bytes: u64,
 }
 
 struct RuntimeEntry {
@@ -70,7 +84,7 @@ impl ServerRuntimeRegistry {
         Ok(runtimes.get(&active.id).and_then(|entry| entry.paper_port))
     }
 
-    pub fn summaries(&self) -> Result<Vec<ServerRuntimeSummary>, String> {
+    pub fn fleet(&self) -> Result<ServerRuntimeFleet, String> {
         let entries = {
             let runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
             runtimes.iter().map(|(id, entry)| {
@@ -87,19 +101,29 @@ impl ServerRuntimeRegistry {
                 state: snapshot.state,
                 pid: snapshot.pid,
                 paper_port,
+                used_memory_bytes: snapshot.used_memory_bytes,
+                max_memory_bytes: snapshot.max_memory_bytes,
             });
         }
 
-        for detached in server_process_guard::running_registered_papers()? {
-            if summaries.iter().any(|entry| entry.workspace_id == detached.workspace_id) {
+        let detached = server_process_guard::running_registered_papers()?;
+        let mut system = System::new_all();
+        system.refresh_memory();
+        for process in detached {
+            if summaries.iter().any(|entry| entry.workspace_id == process.workspace_id) {
                 continue;
             }
+            let pid = Pid::from_u32(process.pid);
+            system.refresh_process(pid);
+            let used_memory_bytes = system.process(pid).map(|value| value.memory()).unwrap_or(0);
             summaries.push(ServerRuntimeSummary {
-                workspace_id: detached.workspace_id,
-                workspace_name: detached.workspace_name,
+                workspace_id: process.workspace_id,
+                workspace_name: process.workspace_name,
                 state: "Detached".into(),
-                pid: Some(detached.pid),
+                pid: Some(process.pid),
                 paper_port: None,
+                used_memory_bytes,
+                max_memory_bytes: 0,
             });
         }
 
@@ -109,7 +133,17 @@ impl ServerRuntimeRegistry {
                 .cmp(&right.workspace_name.to_ascii_lowercase())
                 .then_with(|| left.workspace_id.cmp(&right.workspace_id))
         });
-        Ok(summaries)
+
+        let active_count = summaries.iter().filter(|entry| is_active_state(&entry.state)).count();
+        let managed_used_memory_bytes = summaries.iter().map(|entry| entry.used_memory_bytes).sum();
+        Ok(ServerRuntimeFleet {
+            runtimes: summaries,
+            active_count,
+            capacity: MAX_CONCURRENT_SERVERS,
+            managed_used_memory_bytes,
+            total_memory_bytes: system.total_memory(),
+            available_memory_bytes: system.available_memory(),
+        })
     }
 
     pub fn remove(&self, workspace_id: &str) -> Result<(), String> {
@@ -140,13 +174,27 @@ impl ServerRuntimeRegistry {
     }
 }
 
+fn is_active_state(state: &str) -> bool {
+    matches!(state, "Starting" | "Online" | "Stopping" | "Detached")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ServerRuntimeRegistry;
+    use super::{is_active_state, ServerRuntimeRegistry};
 
     #[test]
     fn empty_registry_starts_without_attached_runtimes() {
         let registry = ServerRuntimeRegistry::default();
         assert_eq!(registry.attached_runtime_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn fleet_capacity_counts_only_live_runtime_states() {
+        for state in ["Starting", "Online", "Stopping", "Detached"] {
+            assert!(is_active_state(state));
+        }
+        for state in ["Offline", "Crashed"] {
+            assert!(!is_active_state(state));
+        }
     }
 }
