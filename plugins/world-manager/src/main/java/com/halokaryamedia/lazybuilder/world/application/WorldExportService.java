@@ -31,6 +31,11 @@ public final class WorldExportService {
     public static final String NATIVE_SERVER_FORMAT = "JAVA_1_21_4";
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
     private static final String PRUNING_FILE = "lazybuilder-export-area.json";
+    private static final List<String> VANILLA_DIMENSIONS = List.of(
+            "minecraft:overworld",
+            "minecraft:the_nether",
+            "minecraft:the_end"
+    );
 
     private final WorldRegistry registry;
     private final WorldRuntimeService runtimeService;
@@ -315,12 +320,16 @@ public final class WorldExportService {
                 + ",\"minChunkZ\":" + area.minChunkZ()
                 + ",\"maxChunkX\":" + area.maxChunkX()
                 + ",\"maxChunkZ\":" + area.maxChunkZ() + "}";
-        String json = "{\"configs\":{" +
-                "\"minecraft:overworld\":{\"include\":true,\"regions\":[" + region + "]}," +
-                "\"minecraft:the_nether\":{\"include\":true,\"regions\":[" + region + "]}," +
-                "\"minecraft:the_end\":{\"include\":true,\"regions\":[" + region + "]}" +
-                "}}";
-        Files.writeString(file, json, StandardCharsets.UTF_8);
+        StringBuilder json = new StringBuilder("{\"configs\":{");
+        for (int i = 0; i < VANILLA_DIMENSIONS.size(); i++) {
+            if (i > 0) json.append(',');
+            String dimension = VANILLA_DIMENSIONS.get(i);
+            json.append('\"').append(dimension).append("\":{\"include\":true,\"regions\":[");
+            if (dimension.equals(area.dimensionId())) json.append(region);
+            json.append("]}");
+        }
+        json.append("}}");
+        Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
         return file;
     }
 
