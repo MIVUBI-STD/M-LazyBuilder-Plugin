@@ -4,7 +4,8 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BRIDGE = ROOT / "apps" / "launcher" / "src" / "app" / "bridge"
+SRC = ROOT / "apps" / "launcher" / "src"
+BRIDGE = SRC / "app" / "bridge"
 RUNTIME_API = BRIDGE / "runtimeApi.ts"
 FACADE = BRIDGE / "runtimeProductFacade.ts"
 
@@ -42,6 +43,16 @@ def main() -> int:
     # names must be owned by runtimeApi rather than repeated in facade code.
     if "diagnostics_export_support_bundle" in facade:
         errors.append("support bundle command name is duplicated outside runtimeApi")
+
+    # Prevent future pages/components/helpers from creating a second Tauri command
+    # boundary. Window/event APIs can live in lifecycle helpers, but command invoke
+    # from @tauri-apps/api/core belongs only to runtimeApi.ts.
+    for path in SRC.rglob("*"):
+        if not path.is_file() or path.suffix not in {".ts", ".svelte"} or path == RUNTIME_API:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "@tauri-apps/api/core" in text:
+            errors.append(f"direct Tauri core import outside runtimeApi: {path.relative_to(ROOT)}")
 
     if errors:
         print("Launcher runtime bridge contract verification failed:")
