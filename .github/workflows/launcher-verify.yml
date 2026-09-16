@@ -69,6 +69,8 @@ jobs:
         run: python scripts/verify_launcher_command_surface.py
       - name: Verify Launcher tracked operation coverage
         run: python scripts/verify_launcher_operation_coverage.py
+      - name: Verify Launcher metadata durability
+        run: python scripts/verify_launcher_metadata_durability.py
       - name: Verify Launcher contract wiring
         run: python scripts/verify_launcher_contract_wiring.py
       - name: Verify updater tooling without signing secrets
@@ -91,6 +93,7 @@ jobs:
             scripts/verify_launcher_bridge_contract.py \
             scripts/verify_launcher_command_surface.py \
             scripts/verify_launcher_operation_coverage.py \
+            scripts/verify_launcher_metadata_durability.py \
             scripts/verify_launcher_contract_wiring.py
           mkdir -p .artifacts/updater-contract
           printf '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' > .artifacts/updater-contract/example.sig
