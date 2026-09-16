@@ -66,12 +66,17 @@ def main() -> int:
         if command not in owners:
             errors.append(f"runtimeApi.ts invokes unregistered Tauri command {command!r}")
 
-    # Frontend exposure may intentionally omit commands used only by startup/native UI,
-    # but every frontend command must map to exactly one registered Rust owner.
     for command in invoked:
         modules = owners.get(command, [])
         if len(modules) == 1 and (modules[0], command) not in registered_set:
             errors.append(f"runtimeApi.ts command {command!r} is owned by {modules[0]} but not exposed by generate_handler")
+
+    registered_names = {command for _, command in registered_set}
+    invoked_names = set(invoked_counts)
+    for command in sorted(registered_names - invoked_names):
+        errors.append(f"registered Tauri command {command!r} has no canonical runtimeApi frontend owner")
+    for command in sorted(invoked_names - registered_names):
+        errors.append(f"runtimeApi command {command!r} is not registered in generate_handler")
 
     if errors:
         print("Launcher command surface verification failed:")
