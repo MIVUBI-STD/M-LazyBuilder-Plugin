@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.control;
 
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -14,8 +16,8 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    /** V5 adds explicit cleanup for abandoned import-review artifacts. */
-    public static final int VERSION = 5;
+    /** V6 adds shared export-only settings to full-world export requests. */
+    public static final int VERSION = 6;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
@@ -103,11 +105,21 @@ public final class WorldControlWireProtocol {
         }
     }
 
-    public record ExportWorld(UUID worldId, String targetFormat, String artifactName) implements Request {
+    public record ExportWorld(
+            UUID worldId,
+            String targetFormat,
+            String artifactName,
+            ExportSettingsWire.Settings settings
+    ) implements Request {
+        public ExportWorld(UUID worldId, String targetFormat, String artifactName) {
+            this(worldId, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
+        }
+
         public ExportWorld {
             Objects.requireNonNull(worldId, "worldId");
             targetFormat = requireString(targetFormat, "targetFormat");
             artifactName = requireString(artifactName, "artifactName");
+            settings = Objects.requireNonNull(settings, "settings");
         }
     }
 
@@ -244,6 +256,7 @@ public final class WorldControlWireProtocol {
                     writeUuid(out, export.worldId());
                     writeString(out, export.targetFormat());
                     writeString(out, export.artifactName());
+                    ExportSettingsWire.write(out, export.settings());
                 }
                 case ImportWorld importWorld -> {
                     writeString(out, importWorld.artifactName());
@@ -271,7 +284,8 @@ public final class WorldControlWireProtocol {
                 case SET_PVP -> new SetPvp(readUuid(in), in.readBoolean());
                 case RESET_BUILD_READY -> new ResetBuildReady(readUuid(in));
                 case SET_SPAWN_HERE -> new SetSpawnHere(readUuid(in));
-                case EXPORT_WORLD -> new ExportWorld(readUuid(in), readString(in), readString(in));
+                case EXPORT_WORLD -> new ExportWorld(
+                        readUuid(in), readString(in), readString(in), ExportSettingsWire.read(in));
                 case IMPORT_WORLD -> new ImportWorld(readString(in), readString(in), readString(in));
                 case GET_EXPORT_FORMATS -> new GetExportFormats();
                 case INSPECT_IMPORT -> new InspectImport(readString(in));
