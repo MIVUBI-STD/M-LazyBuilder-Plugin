@@ -81,6 +81,14 @@ wire defect may actually be domain/presentation/desktop transport leakage
 
 Escalate only when exact shared types + producer + consumer cannot determine whether the first wrong owner is Protocol, adapter drift, domain leakage, presentation leakage, or transport leakage. Gather the next separating round-trip evidence before loading more context.
 
+## Temporal status
+
+The invariants in this Skill are `STABLE_RULE`. The named protocol versions and payload lists below are `CURRENT_CONTRACT`.
+
+Before changing or relying on a versioned contract, verify that this section still matches the exact current definitions under `shared/protocol` and `docs/04-system/networking.md`. If current source intentionally moved to a newer contract, source wins: update this Skill in the same bounded change and do not preserve the old version unless a real supported peer requires compatibility.
+
+Historical names such as `LoadWorld`, `UnloadWorld`, `SetAutoLoad`, `autoLoad`, or Clone terminology must not re-enter merely because older docs/history contain them.
+
 ## Canonical contracts
 
 ### World Control V5
