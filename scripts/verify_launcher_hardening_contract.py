@@ -283,6 +283,10 @@ def main() -> int:
         "sync_all()",
         'concat!("LazyBuilder/", env!("CARGO_PKG_VERSION"))',
         "managed_java_bounds_are_finite",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "ensure_safe_directory",
+        "is_reparse_point(&metadata)",
+        'ensure_regular_file(java, "managed Java executable")?',
     )
     require(
         paper_provider,
@@ -292,6 +296,10 @@ def main() -> int:
         "sync_all()",
         'env!("CARGO_PKG_VERSION")',
         "paper_download_bound_is_finite",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "ensure_safe_directory",
+        "is_reparse_point(&metadata)",
+        'ensure_regular_file(&cache, "Paper cache JAR")?',
     )
     require(world_manager, '"X-LazyBuilder-Sha256"', "sha256_file(&path)?", '"Content-Length"')
     require(
@@ -312,7 +320,11 @@ def main() -> int:
         '"startup.json"',
         '"README.txt"',
         "MAX_LOG_FILE_BYTES",
+        "create_new(true)",
         "sync_all()",
+        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "ensure_regular_file_if_exists",
+        "remove_regular_file_if_exists",
     )
     forbid(support_bundle, "fn redact(", "fn replace_case_insensitive(")
 
