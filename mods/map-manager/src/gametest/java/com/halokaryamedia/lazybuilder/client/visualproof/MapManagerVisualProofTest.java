@@ -15,15 +15,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
-/**
- * L4 visual proof for the production Map Manager screen.
- *
- * <p>The Minecraft client is the renderer. Only controller responses are deterministic fixtures;
- * the screen, font, widgets, terrain rendering, GUI scaling and framebuffer are production paths.</p>
- */
+/** L4 visual proof for the production Map Manager and Export workspace. */
 @SuppressWarnings("UnstableApiUsage")
 public final class MapManagerVisualProofTest implements FabricClientGameTest {
     private static final UUID TANA = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -137,15 +131,15 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 32.0,
                 72.0,
                 -48.0,
-                Map.of(
-                        "keepInventory", "false",
-                        "mobGriefing", "true",
-                        "doMobSpawning", "true",
-                        "doDaylightCycle", "true",
-                        "doWeatherCycle", "true",
-                        "doFireTick", "true",
-                        "naturalRegeneration", "true",
-                        "randomTickSpeed", "3"
+                List.of(
+                        rule("keepInventory", "BOOLEAN", "false"),
+                        rule("mobGriefing", "BOOLEAN", "true"),
+                        rule("doMobSpawning", "BOOLEAN", "true"),
+                        rule("doDaylightCycle", "BOOLEAN", "true"),
+                        rule("doWeatherCycle", "BOOLEAN", "true"),
+                        rule("doFireTick", "BOOLEAN", "true"),
+                        rule("naturalRegeneration", "BOOLEAN", "true"),
+                        rule("randomTickSpeed", "INTEGER", "3")
                 )
         ));
 
@@ -153,6 +147,10 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 new WorldId(TANA), "Tana Samawa", "tana_samawa"));
 
         return new PreviewState(worlds, transfers, maps);
+    }
+
+    private static WorldControlWireProtocol.GameRuleValue rule(String name, String type, String value) {
+        return new WorldControlWireProtocol.GameRuleValue(name, type, value);
     }
 
     private static WorldControlWireProtocol.WorldSummary world(
@@ -207,8 +205,6 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             Method method = WorldMapScreen.class.getDeclaredMethod("openExportWorkspaceForProof", boolean.class);
             method.setAccessible(true);
             method.invoke(screen, customArea);
-            // The deterministic fixture already supplied settings and formats. Stop proof-only
-            // capability refreshes from leaving the integrated vanilla test server.
             setBooleanField(screen, "requestedExportSettings", true,
                     "Export proof could not suppress test-only settings refresh");
             setBooleanField(screen, "requestedExportFormats", true,
