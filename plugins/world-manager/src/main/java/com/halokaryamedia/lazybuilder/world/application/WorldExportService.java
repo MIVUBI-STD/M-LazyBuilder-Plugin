@@ -309,12 +309,17 @@ public final class WorldExportService {
         return true;
     }
 
-    static Path writeAreaPruning(WorldAreaSelection area, Path directory) throws IOException {
+    static Path writeAreaPruning(WorldAreaSelection area, Path snapshotDirectory) throws IOException {
         Objects.requireNonNull(area, "area");
-        Path root = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
-        Files.createDirectories(root);
-        Path file = root.resolve(PRUNING_FILE).normalize();
-        if (!root.equals(file.getParent())) throw new IOException("Pruning path escaped workspace");
+        Path snapshot = Objects.requireNonNull(snapshotDirectory, "snapshotDirectory").toAbsolutePath().normalize();
+        if (!Files.isDirectory(snapshot)) throw new IOException("Export snapshot directory is missing");
+        Path controlRoot = snapshot.getParent();
+        if (controlRoot == null || !Files.isDirectory(controlRoot)) {
+            throw new IOException("Export snapshot has no safe control directory");
+        }
+        Path file = controlRoot.resolve(snapshot.getFileName().toString() + "." + PRUNING_FILE).normalize();
+        if (!controlRoot.equals(file.getParent())) throw new IOException("Pruning path escaped export control directory");
+        if (Files.exists(file)) throw new IOException("Pruning control file already exists");
 
         String selectedRegion = "{\"minChunkX\":" + area.minChunkX()
                 + ",\"minChunkZ\":" + area.minChunkZ()
