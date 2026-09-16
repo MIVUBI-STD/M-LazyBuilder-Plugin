@@ -58,6 +58,13 @@ public final class CompactDebugInteraction {
         }
     }
 
+    /** Clears both pointer ownership and the last rendered hit target. */
+    public static void invalidate(MinecraftClient client) {
+        end(client);
+        coordinateBounds = Bounds.empty();
+        lastRenderedAtNanos = 0L;
+    }
+
     public static boolean isCoordinateHovered(MinecraftClient client) {
         if (!interactionActive() || client == null) return false;
         double scaledX = client.mouse.getX() * client.getWindow().getScaledWidth() / client.getWindow().getWidth();
