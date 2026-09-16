@@ -1,0 +1,91 @@
+package com.halokaryamedia.lazybuilder.client;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.util.Identifier;
+
+/**
+ * Owns one nearest-filtered dynamic texture for the fullscreen map raster.
+ *
+ * <p>This class is intentionally presentation-only. It does not sample world
+ * data, own map persistence, or decide world scope. The caller supplies an ARGB
+ * raster and this class keeps the GPU texture stable until dimensions or pixels
+ * actually change.</p>
+ */
+final class ClientMapRasterTexture implements AutoCloseable {
+    private static final Identifier TEXTURE_ID = Identifier.of("lazybuilder", "map/runtime_raster");
+
+    private final MinecraftClient client;
+    private NativeImageBackedTexture texture;
+    private int width;
+    private int height;
+
+    ClientMapRasterTexture(MinecraftClient client) {
+        this.client = client;
+    }
+
+    Identifier id() {
+        return TEXTURE_ID;
+    }
+
+    int width() {
+        return width;
+    }
+
+    int height() {
+        return height;
+    }
+
+    boolean ready() {
+        return texture != null && width > 0 && height > 0;
+    }
+
+    /**
+     * Uploads a complete ARGB raster. Reuses the existing GL texture when its
+     * dimensions match so normal map refreshes do not churn texture objects.
+     */
+    void upload(int[] argb, int width, int height) {
+        if (width <= 0 || height <= 0 || argb == null || argb.length != width * height) {
+            throw new IllegalArgumentException("Map raster dimensions do not match pixel data");
+        }
+
+        ensureTexture(width, height);
+        NativeImage image = texture.getImage();
+        if (image == null) throw new IllegalStateException("Map raster texture has no backing image");
+
+        int index = 0;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                image.setColorArgb(x, y, argb[index++]);
+            }
+        }
+        texture.upload();
+    }
+
+    private void ensureTexture(int width, int height) {
+        if (texture != null && this.width == width && this.height == height) return;
+
+        destroyTexture();
+        NativeImageBackedTexture created = new NativeImageBackedTexture(width, height, false);
+        created.setFilter(false, false);
+        created.setClamp(true);
+        client.getTextureManager().registerTexture(TEXTURE_ID, created);
+        texture = created;
+        this.width = width;
+        this.height = height;
+    }
+
+    @Override
+    public void close() {
+        destroyTexture();
+    }
+
+    private void destroyTexture() {
+        if (texture == null) return;
+        client.getTextureManager().destroyTexture(TEXTURE_ID);
+        texture = null;
+        width = 0;
+        height = 0;
+    }
+}
