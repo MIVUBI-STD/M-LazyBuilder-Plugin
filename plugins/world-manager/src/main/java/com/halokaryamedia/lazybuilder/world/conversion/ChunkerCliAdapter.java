@@ -254,6 +254,9 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
     static void validateConversionDiagnostics(String output) throws IOException {
         String value = Objects.requireNonNull(output, "output");
+        if (value.contains("[stderr truncated]")) {
+            throw new IOException("Conversion diagnostics were truncated; export accuracy cannot be verified");
+        }
         Matcher missing = MISSING_MAPPING_PATTERN.matcher(value);
         if (missing.find()) {
             throw new IOException("Conversion reported unsupported data mapping: " + concise(missing.group()));
