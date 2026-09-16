@@ -27,7 +27,7 @@ public final class TerraformInteractionController {
 
     private TerraformInteractionController(){}
     public static void register(){ClientTickEvents.END_CLIENT_TICK.register(TerraformInteractionController::tick);TerraformPreviewRenderer.register();}
-    public static boolean active(){MinecraftClient client=MinecraftClient.getInstance();return TerraformManagerClient.state().editorOpen()&&client.currentScreen==null&&client.player!=null&&client.world!=null;}
+    public static boolean active(){MinecraftClient client=MinecraftClient.getInstance();return TerraformManagerClient.state().editorOpen()&&!TerraformManagerClient.state().busy()&&client.currentScreen==null&&client.player!=null&&client.world!=null;}
     public static boolean drawing(){return drawing;}
 
     public static void beginStroke(){
@@ -78,13 +78,14 @@ public final class TerraformInteractionController {
     }
 
     public static void cancelStroke(){drawing=false;continuingStroke=false;RAW_PATH.clear();pathRevision++;}
-    public static void resetRuntime(){drawing=false;continuingStroke=false;RAW_PATH.clear();lastOperationId=null;observedWorldKey=null;continuation=null;lastStateRevision=-1;pathRevision++;}
+    public static void resetRuntime(){drawing=false;continuingStroke=false;RAW_PATH.clear();lastOperationId=null;observedWorldKey=null;continuation=null;lastStateRevision=-1;TerraformManagerClient.state().clearOperationState();pathRevision++;}
     public static void flipFace(){if(active()){TerraformManagerClient.state().flipFace();lockedFront=lockedFront.multiply(-1.0);continuation=null;pathRevision++;showToolStatus("Face flipped");}}
     public static void adjustWheel(double vertical,boolean shift){if(!active()||vertical==0)return;double delta=Math.copySign(shift?2.0:1.0,vertical);if(shift)TerraformManagerClient.state().adjustHeight(delta);else TerraformManagerClient.state().adjustSize(delta);pathRevision++;showToolStatus(null);}
-    public static void undo(){if(lastOperationId!=null){continuation=null;TerraformClientNetworking.send(new TerraformWireProtocol.Undo(UUID.randomUUID().toString()));}}
+    public static void undo(){if(lastOperationId!=null&&TerraformManagerClient.state().undoAvailable()){continuation=null;TerraformClientNetworking.send(new TerraformWireProtocol.Undo(UUID.randomUUID().toString()));}}
 
     static List<Vec3d> previewPoints(){
         TerraformEditorState state=TerraformManagerClient.state();
+        if(state.busy())return List.of();
         if(drawing)return committablePoints(state.tool());
         MinecraftClient client=MinecraftClient.getInstance();
         Vec3d hit=hitPoint(client);
@@ -94,9 +95,7 @@ public final class TerraformInteractionController {
         Vec3d front=resolveFront(client);
         Vec3d tangent=new Vec3d(-front.z(),0,front.x());
         Vec3d previewEnd=hit.add(tangent.multiply(Math.max(6.0,state.size()*1.35)));
-        if(canContinue(state,hit)){
-            return List.of(continuation.previous(),continuation.end(),hit,previewEnd);
-        }
+        if(canContinue(state,hit))return List.of(continuation.previous(),continuation.end(),hit,previewEnd);
         return List.of(hit,previewEnd);
     }
 
@@ -132,9 +131,11 @@ public final class TerraformInteractionController {
             if(drawing)cancelStroke();
             lastOperationId=null;
             continuation=null;
+            TerraformManagerClient.state().clearOperationState();
             pathRevision++;
         }
         if(!TerraformManagerClient.state().editorOpen()){if(drawing)cancelStroke();return;}
+        if(TerraformManagerClient.state().busy()){if(drawing)cancelStroke();return;}
         if(drawing){
             Vec3d hit=hitPoint(client);
             if(hit!=null){
@@ -146,7 +147,7 @@ public final class TerraformInteractionController {
     }
 
     private static boolean canContinue(TerraformEditorState state,Vec3d hit){
-        if(continuation==null||state.tool()==TerrainTool.MOUNTAIN)return false;
+        if(state.busy()||continuation==null||state.tool()==TerrainTool.MOUNTAIN)return false;
         if(continuation.tool()!=state.tool()||continuation.variation()!=state.variation())return false;
         if(relativeDifference(continuation.size(),state.size())>0.30||relativeDifference(continuation.height(),state.height())>0.30)return false;
         double threshold=Math.max(3.0,Math.min(12.0,state.size()*0.60));
