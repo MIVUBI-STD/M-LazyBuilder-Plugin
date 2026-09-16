@@ -30,6 +30,7 @@ RAM        664 / 6144 MB
 
 WORLD
 XYZ        -11 71 -481
+Facing     North (-Z)
 Biome      Taiga
 Time       08:34
 ```
@@ -79,6 +80,7 @@ Show only:
 ```text
 WORLD
 XYZ
+Facing
 Biome
 Time
 ```
@@ -86,9 +88,10 @@ Time
 Rules:
 
 - XYZ uses integer block coordinates for builder readability.
+- Facing shows the player's current horizontal cardinal direction in a builder-readable form such as `North (-Z)`, `South (+Z)`, `West (-X)`, or `East (+X)`. Do not show yaw/pitch numbers, facing vectors, or other orientation internals in the default surface.
 - Biome is the biome at the player's current position. Prefer a readable display name; fall back to the registry identifier only when a readable name is unavailable.
 - Time is current in-game world time formatted for human reading. Do not expose raw tick counts in the default presentation.
-- Do not show chunk coordinates, region file, facing vector, velocity, light values, targeted block tags, entity details, packets, or world-generation internals.
+- Do not show chunk coordinates, region file, velocity, light values, targeted block tags, entity details, packets, or world-generation internals.
 
 ### Right — Server
 
@@ -253,7 +256,7 @@ Compact Debug is a HUD, not a profiler.
 Fast-changing presentation:
 
 ```text
-FPS / XYZ / biome / time
+FPS / XYZ / facing / biome / time
 → may consume current client state during normal render/update flow
 ```
 
@@ -311,6 +314,7 @@ CPU       bounded client machine metric source
 GPU       bounded supported GPU metric source
 RAM       JVM/client memory source
 XYZ       current player position
+Facing    current player horizontal facing direction
 Biome     current player world biome
 Time      current player world time
 World     canonical current server/world identity available to the client
@@ -343,7 +347,7 @@ hud.compact_debug=true
 
 The feature is opened/closed by F3; the preference controls whether LazyBuilder owns the compact F3 presentation at all.
 
-Do not expose individual toggles for FPS, CPU, GPU, RAM, XYZ, biome, time, world, server CPU, or server RAM in V1. The contract is intentionally opinionated so the F3 surface stays simple.
+Do not expose individual toggles for FPS, CPU, GPU, RAM, XYZ, facing, biome, time, world, server CPU, or server RAM in V1. The contract is intentionally opinionated so the F3 surface stays simple.
 
 If a metric is unsupported or unavailable, show the defined unavailable state rather than requiring a user preference to hide it.
 
@@ -354,7 +358,7 @@ A future implementation is accepted only when all of the following are true:
 ```text
 F3 opens one compact LazyBuilder debug presentation
 F3 closes it predictably
-left side contains only approved client/world rows
+left side contains only approved client/world rows, including Facing
 right side contains only approved server rows
 XYZ copies the exact integer coordinate triplet
 copy confirmation uses existing Utility notification presentation
