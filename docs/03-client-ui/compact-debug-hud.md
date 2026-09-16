@@ -22,7 +22,7 @@ Compact Debug is deliberately narrow. Coordinate is the highest-priority builder
 
 ```text
 COORDINATE
--11 71 -481
+X -11   Y 71   Z -481
 
 LEFT                                RIGHT
 CLIENT                              SERVER
@@ -69,12 +69,15 @@ Show:
 
 ```text
 COORDINATE
--11 71 -481
+X -11   Y 71   Z -481
 ```
 
 Rules:
 
 - Use the explicit label `COORDINATE`, not only `XYZ`, so the meaning is immediately obvious.
+- Keep `X`, `Y`, and `Z` visibly attached to their own values so builders cannot confuse axis order.
+- Default inline order is always `X`, then `Y`, then `Z`.
+- `X` is east/west position, `Y` is vertical/elevation position, and `Z` is north/south position; this axis meaning is the canonical interpretation behind the displayed values.
 - The coordinate value uses integer block coordinates for builder readability.
 - This block sits at the highest top-left priority position before the `CLIENT` section.
 - Give it slightly stronger visual emphasis than normal rows while remaining Minecraft-native and compact.
@@ -170,24 +173,26 @@ Normal state:
 
 ```text
 COORDINATE
--11 71 -481
+X -11   Y 71   Z -481
 ```
 
 Hover/focus affordance:
 
 ```text
 COORDINATE
--11 71 -481
+X -11   Y 71   Z -481
 Click to copy coordinates
 ```
 
-Click copies exactly:
+Clicking anywhere on the Coordinate block copies the complete coordinate triplet in canonical XYZ order:
 
 ```text
 -11 71 -481
 ```
 
-Default copy deliberately excludes commas, labels, dimension text, and `/tp` syntax so the value is easy to paste into chat, commands, notes, or external tools.
+The visible `X`, `Y`, and `Z` labels are presentation aids only and are intentionally omitted from the clipboard value. Default copy also excludes commas, dimension text, and `/tp` syntax so the result is easy to paste into chat, commands, notes, or external tools.
+
+Do not make the individual X, Y, or Z values separate copy targets in V1. One click copies the complete location to avoid partial or mixed-axis clipboard states.
 
 After a successful copy, use the existing Utility Manager native notification/toast path:
 
@@ -250,6 +255,7 @@ Coordinate emphasis:
 
 ```text
 COORDINATE label  clear section label
+X/Y/Z labels      compact axis identifiers attached to each value
 coordinate value strongest single value on the left
 copy hint         secondary and shown only when relevant
 ```
@@ -277,10 +283,11 @@ Required behavior:
 ```text
 wide screen
 → coordinate remains first at top-left
+→ X/Y/Z remain unambiguous at a glance
 → left and right stay at their respective edges
 
 narrow screen
-→ preserve coordinate priority
+→ preserve coordinate priority and explicit X/Y/Z labels
 → preserve both groups without overlap
 → reduce non-essential spacing before reducing text readability
 
@@ -351,7 +358,7 @@ Performance optimization engine
 Every displayed value must have one authoritative source and an explicit unavailable state.
 
 ```text
-Coordinate current player position
+Coordinate current player position, presented explicitly as X / Y / Z
 FPS        client render/game state
 CPU        bounded client machine metric source
 GPU        bounded supported GPU metric source
@@ -401,11 +408,14 @@ A future implementation is accepted only when all of the following are true:
 F3 opens one compact LazyBuilder debug presentation
 F3 closes it predictably
 Coordinate is the first and most prominent top-left datum
-Coordinate is labeled explicitly as COORDINATE rather than only XYZ
+Coordinate is labeled explicitly as COORDINATE
+X, Y, and Z are individually labeled beside their respective values
+axis order is always X → Y → Z
+coordinate interaction copies the complete integer triplet in XYZ order
+clipboard output is the raw triplet without X/Y/Z labels
 Coordinate is visually separated from CLIENT and WORLD
 left side contains only approved client/world rows, including Facing
 right side contains only approved server rows
-coordinate interaction copies the exact integer triplet
 copy confirmation uses existing Utility notification presentation
 unsupported server metrics are truthful and uncluttered
 server switch/disconnect cannot leak stale telemetry
