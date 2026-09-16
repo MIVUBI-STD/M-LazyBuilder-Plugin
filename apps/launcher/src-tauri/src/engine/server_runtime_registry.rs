@@ -84,6 +84,12 @@ impl ServerRuntimeRegistry {
         Ok(runtimes.get(&active.id).and_then(|entry| entry.paper_port))
     }
 
+    /// Preserves the existing frontend command surface while enriching each
+    /// runtime item with the resource data needed for aggregate presentation.
+    pub fn summaries(&self) -> Result<Vec<ServerRuntimeSummary>, String> {
+        Ok(self.fleet()?.runtimes)
+    }
+
     pub fn fleet(&self) -> Result<ServerRuntimeFleet, String> {
         let entries = {
             let runtimes = self.runtimes.lock().map_err(|_| "server runtime registry lock poisoned".to_string())?;
