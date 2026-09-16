@@ -41,27 +41,27 @@ pub fn plan(workspace_id: &str) -> Result<ServerRepairPlan, String> {
         }
         match check.key.as_str() {
             "workspace-location" => {
-                blocked_reason = "The server location is unavailable. Locate or reconnect the server folder before repair.".into();
+                blocked_reason = "The server folder is unavailable. Locate or reconnect it before running repair.".into();
                 manual_actions.push(item(&check.key, "Locate server folder", &check.details));
             }
             "workspace-manifest" => {
-                blocked_reason = "Workspace identity is missing or ambiguous. LazyBuilder will not regenerate server identity automatically.".into();
-                manual_actions.push(item(&check.key, "Review workspace identity", &check.details));
+                blocked_reason = "This server's identity needs attention. LazyBuilder will not change it automatically.".into();
+                manual_actions.push(item(&check.key, "Review server identity", &check.details));
             }
             "minecraft-eula" => {
-                manual_actions.push(item(&check.key, "Accept Minecraft EULA", "EULA acceptance always requires explicit user confirmation."));
+                manual_actions.push(item(&check.key, "Accept Minecraft EULA", "Review and accept the Minecraft EULA before starting this server."));
             }
-            "workspace-config" => repairs.push(item(&check.key, "Repair workspace configuration", "Recreate LazyBuilder-owned runtime/configuration layout without replacing user world data.")),
-            "java-runtime" => repairs.push(item(&check.key, "Repair Java 21 runtime", "Verify or reinstall the checksum-validated LazyBuilder-managed Java runtime.")),
-            "paper-runtime" => repairs.push(item(&check.key, "Repair Paper runtime", "Provision the supported Paper runtime only because paper.jar is missing.")),
-            "core-modules" => repairs.push(item(&check.key, "Repair LazyBuilder core modules", "Republish LazyBuilder-owned World Manager and Utilities Manager transactionally.")),
+            "workspace-config" => repairs.push(item(&check.key, "Repair server configuration", "Restore the LazyBuilder files needed to manage this server. Worlds and plugin data will be kept.")),
+            "java-runtime" => repairs.push(item(&check.key, "Repair Java 21", "Restore the Java 21 runtime used by this server.")),
+            "paper-runtime" => repairs.push(item(&check.key, "Repair Paper", "Restore the supported Paper server runtime.")),
+            "core-modules" => repairs.push(item(&check.key, "Repair LazyBuilder components", "Restore the LazyBuilder components required by this server.")),
             _ if check.repairable => repairs.push(item(&check.key, &check.summary, &check.details)),
             _ => manual_actions.push(item(&check.key, &check.summary, &check.details)),
         }
     }
 
     if health.running {
-        blocked_reason = "Stop the server before repairing runtime files.".into();
+        blocked_reason = "Stop the server before repairing its components.".into();
     }
 
     Ok(ServerRepairPlan {
@@ -84,13 +84,13 @@ where
         return Err(repair_plan.blocked_reason);
     }
     if repair_plan.repairs.is_empty() {
-        return Err("No LazyBuilder-owned repair is currently required for this server".into());
+        return Err("No automatic repair is currently needed for this server.".into());
     }
 
     let active = workspace_registry::current()?
         .ok_or_else(|| "Open this server before running repair.".to_string())?;
     if active.id != workspace_id {
-        return Err("Open the selected server before running repair so LazyBuilder has one authoritative workspace context.".into());
+        return Err("Open this server in LazyBuilder before running repair.".into());
     }
 
     let repaired_checks: Vec<String> = repair_plan.repairs.iter().map(|item| item.check_key.clone()).collect();
@@ -101,10 +101,10 @@ where
     let health = server_health::inspect(workspace_id)?;
     let unresolved_owned: Vec<&str> = health.checks.iter()
         .filter(|check| !check.ready && check.repairable)
-        .map(|check| check.key.as_str())
+        .map(|check| check.summary.as_str())
         .collect();
     if !unresolved_owned.is_empty() {
-        return Err(format!("Repair completed but these LazyBuilder-owned health checks still need attention: {}", unresolved_owned.join(", ")));
+        return Err(format!("Repair finished, but these items still need attention: {}", unresolved_owned.join(", ")));
     }
 
     Ok(ServerRepairResult { repaired_checks, health })
