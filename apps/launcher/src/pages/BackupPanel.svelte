@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ServerBackupEstimate, ServerBackupSummary, ServerSnapshot, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
   export let onRestored: (() => Promise<void> | void) | undefined = undefined;
@@ -17,14 +20,8 @@
   let creating = false;
   let restoringId = '';
   let deletingId = '';
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let notice = '';
-
-  function friendlyError(value: unknown) {
-    return value instanceof Error && value.message.trim()
-      ? value.message.trim()
-      : String(value ?? '').replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
-  }
 
   function formatBytes(bytes?: number | null) {
     if (bytes == null || !Number.isFinite(bytes)) return 'Not calculated';
@@ -58,24 +55,24 @@
   async function calculateEstimate() {
     if (!workspace || estimateBusy || mutationBusy) return;
     estimateBusy = true;
-    error = '';
+    error = null;
     try { estimate = await runtimeProduct.backups.estimate(workspace.id); }
-    catch (value) { error = friendlyError(value); estimate = null; }
+    catch (value) { error = presentRuntimeError(value, 'Could not calculate backup storage.'); estimate = null; }
     finally { estimateBusy = false; }
   }
 
   async function initialLoad() {
     loading = true;
-    error = '';
+    error = null;
     try { await refresh(); }
-    catch (value) { error = friendlyError(value); }
+    catch (value) { error = presentRuntimeError(value, 'Could not load server backups.'); }
     finally { loading = false; }
   }
 
   async function createBackup() {
     if (!workspace || creating || restoringId || deletingId) return;
     creating = true;
-    error = '';
+    error = null;
     notice = '';
     try {
       const backup = await runtimeProduct.backups.create(workspace.id);
@@ -83,7 +80,7 @@
       estimate = null;
       await refresh();
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not create server backup.');
     } finally {
       creating = false;
     }
@@ -97,7 +94,7 @@
     if (!confirmed) return;
 
     restoringId = backup.id;
-    error = '';
+    error = null;
     notice = '';
     try {
       const result = await runtimeProduct.backups.restore(workspace.id, backup.id);
@@ -108,7 +105,7 @@
       await refresh();
       await onRestored?.();
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not restore this server backup.');
     } finally {
       restoringId = '';
     }
@@ -118,14 +115,14 @@
     if (!workspace || deletingId || restoringId || creating) return;
     if (!window.confirm(`Delete this backup from ${formatDate(backup.createdUnixSeconds)}? The current server is not affected.`)) return;
     deletingId = backup.id;
-    error = '';
+    error = null;
     notice = '';
     try {
       await runtimeProduct.backups.delete(workspace.id, backup.id);
       notice = 'Backup deleted.';
       await refresh();
     } catch (value) {
-      error = friendlyError(value);
+      error = presentRuntimeError(value, 'Could not delete this server backup.');
     } finally {
       deletingId = '';
     }
@@ -149,7 +146,7 @@
     </button>
   </header>
 
-  {#if error}<div class="backup-notice danger" role="alert">{error}</div>{/if}
+  <RuntimeErrorNotice {error} />
   {#if notice}<div class="backup-notice success" aria-live="polite">{notice}</div>{/if}
 
   {#if loading}
@@ -205,7 +202,7 @@
   .backup-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.backup-heading h3{margin:0;font-size:14px}.backup-heading p{margin:3px 0 0;color:var(--muted);font-size:10px}
   .backup-button,.restore-button,.delete-button,.estimate-button,.show-more{min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.backup-button{padding:7px 12px;border:1px solid var(--accent-border);background:var(--accent-soft);color:#9ee8b9}.restore-button,.delete-button,.estimate-button,.show-more{padding:6px 10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-soft);font-size:10px}.restore-button{border-color:var(--accent-border);color:#b7f0cb}.backup-button:disabled,.restore-button:disabled,.delete-button:disabled,.estimate-button:disabled{opacity:.5;cursor:default}
   .backup-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.backup-summary>div{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.backup-summary span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.backup-summary strong{font-size:11px}.estimate-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.estimate-actions span{color:var(--muted);font-size:9px}.show-more{margin-top:10px}
-  .offline-note,.backup-notice{margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.offline-note{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}.backup-notice.danger{border:1px solid #62343a;background:var(--danger-bg);color:#ffd9dc}.backup-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}
+  .offline-note,.backup-notice{margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.offline-note{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}.backup-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}
   .backup-list{display:grid;margin-top:12px}.backup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-top:1px solid var(--border-soft)}.backup-row:first-child{border-top:0}.backup-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:var(--surface-2);color:var(--muted)}.backup-copy{display:grid;gap:2px;min-width:0}.backup-copy strong{font-size:11px}.backup-copy span{color:var(--muted);font-size:9px}.backup-actions{display:flex;gap:6px}
   .backup-empty{min-height:92px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px}.backup-empty.compact{min-height:84px;flex-direction:column;gap:3px}.backup-empty.compact strong{color:var(--text-soft);font-size:11px}
   @media(max-width:760px){.backup-heading,.estimate-actions{align-items:flex-start;flex-direction:column}.backup-summary{grid-template-columns:1fr}.backup-row{grid-template-columns:auto minmax(0,1fr)}.backup-actions{grid-column:2;justify-content:flex-start}}
