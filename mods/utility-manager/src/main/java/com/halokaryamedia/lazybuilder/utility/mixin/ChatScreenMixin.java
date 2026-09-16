@@ -1,10 +1,10 @@
 package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
+import com.halokaryamedia.lazybuilder.utility.chat.ChatContextText;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatHistoryEntry;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatSearchSession;
-import com.halokaryamedia.lazybuilder.utility.chat.ChatVisibleText;
 import com.halokaryamedia.lazybuilder.utility.clipboard.UtilityClipboard;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.ChatHud;
@@ -33,8 +33,8 @@ public abstract class ChatScreenMixin extends Screen {
     private static final int SEARCH_HEIGHT = 18;
     private static final int SEARCH_MARGIN = 6;
     private static final int SEARCH_COUNTER_WIDTH = 42;
-    private static final int CONTEXT_WIDTH = 110;
-    private static final int CONTEXT_HEIGHT = 18;
+    private static final int CONTEXT_WIDTH = 126;
+    private static final int CONTEXT_ROW_HEIGHT = 18;
 
     @Shadow
     protected TextFieldWidget chatField;
@@ -49,6 +49,7 @@ public abstract class ChatScreenMixin extends Screen {
     private int lazybuilder$contextX;
     private int lazybuilder$contextY;
     private String lazybuilder$contextMessage = "";
+    private String lazybuilder$contextSender = "";
 
     protected ChatScreenMixin(Text title) {
         super(title);
@@ -142,12 +143,13 @@ public abstract class ChatScreenMixin extends Screen {
             CallbackInfoReturnable<Boolean> cir
     ) {
         if (this.lazybuilder$contextOpen) {
-            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT
-                    && mouseX >= this.lazybuilder$contextX
-                    && mouseX <= this.lazybuilder$contextX + CONTEXT_WIDTH
-                    && mouseY >= this.lazybuilder$contextY
-                    && mouseY <= this.lazybuilder$contextY + CONTEXT_HEIGHT) {
-                UtilityClipboard.copy(this.lazybuilder$contextMessage, "Chat message copied.");
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && this.lazybuilder$isInsideContext(mouseX, mouseY)) {
+                int row = (int) ((mouseY - this.lazybuilder$contextY) / CONTEXT_ROW_HEIGHT);
+                if (row == 0) {
+                    UtilityClipboard.copy(this.lazybuilder$contextMessage, "Chat message copied.");
+                } else if (row == 1 && !this.lazybuilder$contextSender.isBlank()) {
+                    UtilityClipboard.copy(this.lazybuilder$contextSender, "Player name copied.");
+                }
                 this.lazybuilder$closeContextMenu();
                 cir.setReturnValue(true);
                 return;
@@ -165,12 +167,14 @@ public abstract class ChatScreenMixin extends Screen {
         List<ChatHudLine> messages = accessor.lazybuilder$getMessages();
         if (messageIndex < 0 || messageIndex >= messages.size()) return;
 
-        String text = ChatVisibleText.withoutTimestamp(messages.get(messageIndex).content().getString()).trim();
-        if (text.isEmpty()) return;
+        ChatContextText.Parsed parsed = ChatContextText.parse(messages.get(messageIndex).content().getString());
+        if (parsed.fullText().isBlank()) return;
 
-        this.lazybuilder$contextMessage = text;
+        this.lazybuilder$contextMessage = parsed.fullText();
+        this.lazybuilder$contextSender = parsed.sender();
+        int contextHeight = this.lazybuilder$contextHeight();
         this.lazybuilder$contextX = Math.max(SEARCH_MARGIN, Math.min((int) mouseX, this.width - CONTEXT_WIDTH - SEARCH_MARGIN));
-        this.lazybuilder$contextY = Math.max(SEARCH_MARGIN, Math.min((int) mouseY, this.height - CONTEXT_HEIGHT - SEARCH_MARGIN));
+        this.lazybuilder$contextY = Math.max(SEARCH_MARGIN, Math.min((int) mouseY, this.height - contextHeight - SEARCH_MARGIN));
         this.lazybuilder$contextOpen = true;
         cir.setReturnValue(true);
     }
@@ -210,20 +214,19 @@ public abstract class ChatScreenMixin extends Screen {
         }
 
         if (this.lazybuilder$contextOpen) {
+            int contextHeight = this.lazybuilder$contextHeight();
             context.fill(
                     this.lazybuilder$contextX,
                     this.lazybuilder$contextY,
                     this.lazybuilder$contextX + CONTEXT_WIDTH,
-                    this.lazybuilder$contextY + CONTEXT_HEIGHT,
+                    this.lazybuilder$contextY + contextHeight,
                     0xD0101010
             );
-            context.drawTextWithShadow(
-                    this.textRenderer,
-                    "Copy Message",
-                    this.lazybuilder$contextX + 6,
-                    this.lazybuilder$contextY + 5,
-                    0xFFFFFF
-            );
+
+            this.lazybuilder$renderContextRow(context, mouseX, mouseY, 0, "Copy Message");
+            if (!this.lazybuilder$contextSender.isBlank()) {
+                this.lazybuilder$renderContextRow(context, mouseX, mouseY, 1, "Copy Player Name");
+            }
         }
     }
 
@@ -276,8 +279,50 @@ public abstract class ChatScreenMixin extends Screen {
         this.lazybuilder$searchField.setFocused(true);
     }
 
+    private int lazybuilder$contextHeight() {
+        return CONTEXT_ROW_HEIGHT * (this.lazybuilder$contextSender.isBlank() ? 1 : 2);
+    }
+
+    private boolean lazybuilder$isInsideContext(double mouseX, double mouseY) {
+        return mouseX >= this.lazybuilder$contextX
+                && mouseX <= this.lazybuilder$contextX + CONTEXT_WIDTH
+                && mouseY >= this.lazybuilder$contextY
+                && mouseY <= this.lazybuilder$contextY + this.lazybuilder$contextHeight();
+    }
+
+    private void lazybuilder$renderContextRow(
+            DrawContext context,
+            int mouseX,
+            int mouseY,
+            int row,
+            String label
+    ) {
+        int top = this.lazybuilder$contextY + row * CONTEXT_ROW_HEIGHT;
+        boolean hovered = mouseX >= this.lazybuilder$contextX
+                && mouseX <= this.lazybuilder$contextX + CONTEXT_WIDTH
+                && mouseY >= top
+                && mouseY < top + CONTEXT_ROW_HEIGHT;
+        if (hovered) {
+            context.fill(
+                    this.lazybuilder$contextX + 1,
+                    top + 1,
+                    this.lazybuilder$contextX + CONTEXT_WIDTH - 1,
+                    top + CONTEXT_ROW_HEIGHT - 1,
+                    0x80404040
+            );
+        }
+        context.drawTextWithShadow(
+                this.textRenderer,
+                label,
+                this.lazybuilder$contextX + 6,
+                top + 5,
+                0xFFFFFF
+        );
+    }
+
     private void lazybuilder$closeContextMenu() {
         this.lazybuilder$contextOpen = false;
         this.lazybuilder$contextMessage = "";
+        this.lazybuilder$contextSender = "";
     }
 }
