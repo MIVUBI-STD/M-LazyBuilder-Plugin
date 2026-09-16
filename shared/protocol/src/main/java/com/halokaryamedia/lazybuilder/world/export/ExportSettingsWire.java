@@ -52,7 +52,8 @@ public final class ExportSettingsWire {
             }
 
             Map<String, String> normalizedRules = new LinkedHashMap<>();
-            for (Map.Entry<String, String> entry : Objects.requireNonNullElse(gameRules, Map.of()).entrySet()) {
+            Map<String, String> sourceRules = gameRules == null ? Map.of() : gameRules;
+            for (Map.Entry<String, String> entry : sourceRules.entrySet()) {
                 String name = requireRuleName(entry.getKey());
                 String value = requireRuleValue(entry.getValue(), name);
                 normalizedRules.put(name, value);
