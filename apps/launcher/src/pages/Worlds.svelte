@@ -5,6 +5,8 @@
   import type { ManagedWorldSummary, ServerState, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   const TASK_TIMEOUT_MS = 30 * 60 * 1000;
+  const TASK_POLL_VISIBLE_MS = 1000;
+  const TASK_POLL_HIDDEN_MS = 5000;
 
   let worlds: ManagedWorldSummary[] = [];
   let search = '';
@@ -14,6 +16,7 @@
   let serverOnline = false;
   let operationBusyWorldId: string | null = null;
   let operationTask: WorldTaskSnapshot | null = null;
+  let pageActive = false;
 
   let createOpen = false;
   let createName = '';
@@ -80,10 +83,11 @@
   }
 
   async function refresh() {
-    if (busy) return;
+    if (busy || !pageActive) return;
     busy = true;
     try {
       const snapshot = await runtimeProduct.server.snapshot();
+      if (!pageActive) return;
       serverState = snapshot.state;
       serverOnline = snapshot.state === 'Online';
       if (!serverOnline) {
@@ -93,9 +97,11 @@
         return;
       }
       const next = await runtimeProduct.worlds.list();
+      if (!pageActive) return;
       worlds = [...next].sort((a, b) => a.lifecycle.localeCompare(b.lifecycle) || a.displayName.localeCompare(b.displayName));
       error = '';
     } catch (e) {
+      if (!pageActive) return;
       worlds = [];
       error = friendlyError(e);
     } finally {
@@ -114,13 +120,14 @@
         displayName,
         kind: createType
       });
+      if (!pageActive) return;
       createOpen = false;
       createName = '';
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
       busy = false;
-      await refresh();
+      if (pageActive) await refresh();
     }
   }
 
@@ -128,13 +135,13 @@
     if (importBusy) return;
     try {
       const selected = await runtimeProduct.worlds.pickImport();
-      if (!selected) return;
+      if (!pageActive || !selected) return;
       importPath = selected;
       const fileName = selected.split(/[\\/]/).pop() || 'Imported World';
       importName = fileName.replace(/\.(zip|mcworld)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Imported World';
       error = '';
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     }
   }
 
@@ -145,34 +152,66 @@
     error = '';
     try {
       const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
+      if (!pageActive) return;
       operationTask = await runtimeProduct.worlds.import({
         artifactName,
         destinationFolder: folderName(displayName, 'imported-world'),
         displayName
       });
       importOpen = false;
-      await pollTask(operationTask.taskId);
+      const completedHere = await pollTask(operationTask.taskId);
+      if (!completedHere || !pageActive) return;
       importPath = '';
       importName = '';
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
       importBusy = false;
-      operationTask = null;
-      await refresh();
+      if (pageActive) {
+        operationTask = null;
+        await refresh();
+      }
     }
   }
 
-  async function pollTask(taskId: string) {
+  async function pollTask(taskId: string): Promise<boolean> {
     const startedAt = Date.now();
-    while (Date.now() - startedAt < TASK_TIMEOUT_MS) {
+    while (pageActive && Date.now() - startedAt < TASK_TIMEOUT_MS) {
       const task = await runtimeProduct.worlds.task(taskId);
+      if (!pageActive) return false;
       operationTask = task;
-      if (task.state === 'SUCCEEDED') return;
+      operationBusyWorldId = task.worldId ?? operationBusyWorldId ?? '__world-task__';
+      if (task.state === 'SUCCEEDED') return true;
       if (task.state === 'FAILED') throw new Error(task.error || task.message || 'World task failed.');
-      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      await new Promise((resolve) => window.setTimeout(resolve, document.hidden ? TASK_POLL_HIDDEN_MS : TASK_POLL_VISIBLE_MS));
     }
+    if (!pageActive) return false;
     throw new Error('This world operation is taking unusually long. Check the server status and logs before trying again.');
+  }
+
+  async function recoverActiveTask() {
+    if (!pageActive || !serverOnline || operationTask) return;
+    try {
+      const tasks = await runtimeProduct.worlds.tasks();
+      if (!pageActive) return;
+      const active = tasks
+        .filter((task) => task.state === 'QUEUED' || task.state === 'RUNNING')
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+      if (!active) return;
+      operationTask = active;
+      operationBusyWorldId = active.worldId ?? '__world-task__';
+      const completedHere = await pollTask(active.taskId);
+      if (!completedHere || !pageActive) return;
+      operationTask = null;
+      operationBusyWorldId = null;
+      await refresh();
+    } catch (e) {
+      if (!pageActive) return;
+      operationTask = null;
+      operationBusyWorldId = null;
+      error = friendlyError(e);
+      await refresh();
+    }
   }
 
   async function runWorldTask(world: ManagedWorldSummary, action: 'backup' | 'archive' | 'restore') {
@@ -187,11 +226,13 @@
           : await runtimeProduct.worlds.restore(world.id);
       await pollTask(operationTask.taskId);
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
-      operationBusyWorldId = null;
-      operationTask = null;
-      await refresh();
+      if (pageActive) {
+        operationBusyWorldId = null;
+        operationTask = null;
+        await refresh();
+      }
     }
   }
 
@@ -202,7 +243,7 @@
     try {
       settings = await runtimeProduct.worlds.settings(world.id);
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
       settingsBusy = false;
     }
@@ -226,10 +267,11 @@
         weatherCycle: settings.weatherCycle
       };
       await runtimeProduct.worlds.updateSettings(settings.id, request);
+      if (!pageActive) return;
       settings = null;
       await refresh();
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
       settingsBusy = false;
     }
@@ -245,14 +287,17 @@
         destinationFolder: folderName(duplicateName, 'world-copy'),
         displayName: duplicateName.trim()
       });
+      if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
-      operationBusyWorldId = null;
-      operationTask = null;
-      await refresh();
+      if (pageActive) {
+        operationBusyWorldId = null;
+        operationTask = null;
+        await refresh();
+      }
     }
   }
 
@@ -266,14 +311,17 @@
         targetFormat: 'JAVA_1_21_4',
         artifactName: exportName.trim()
       });
+      if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
-      operationBusyWorldId = null;
-      operationTask = null;
-      await refresh();
+      if (pageActive) {
+        operationBusyWorldId = null;
+        operationTask = null;
+        await refresh();
+      }
     }
   }
 
@@ -286,18 +334,28 @@
         worldId: deleteSource.id,
         typedDisplayName: deleteConfirmation.trim()
       });
+      if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
     } catch (e) {
-      error = friendlyError(e);
+      if (pageActive) error = friendlyError(e);
     } finally {
-      operationBusyWorldId = null;
-      operationTask = null;
-      await refresh();
+      if (pageActive) {
+        operationBusyWorldId = null;
+        operationTask = null;
+        await refresh();
+      }
     }
   }
 
-  onMount(() => void refresh());
+  onMount(() => {
+    pageActive = true;
+    void (async () => {
+      await refresh();
+      if (pageActive && serverOnline) await recoverActiveTask();
+    })();
+    return () => { pageActive = false; };
+  });
 </script>
 
 <section class="worlds-page">
