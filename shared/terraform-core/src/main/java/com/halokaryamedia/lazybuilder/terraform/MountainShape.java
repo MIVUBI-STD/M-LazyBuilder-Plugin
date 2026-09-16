@@ -16,6 +16,8 @@ public final class MountainShape implements BoundedShapeField {
         double forward = dx * spec.facing().x() + dz * spec.facing().z();
         double lateral = dx * side.x() + dz * side.z();
         double localY = y - spec.origin().y();
+        double rootDepth = spec.size() * (0.20 + 0.05 * spec.variation().macro());
+        double rootBlend = localY >= 0.0 ? 1.0 : TerrainMath.smooth(TerrainMath.clamp01((localY + rootDepth) / Math.max(1.0, rootDepth)));
 
         double macroWarp = SeededNoise.value2D(x / 38.0, z / 38.0, spec.seed() ^ 0x9B05688CL)
                 * spec.size() * 0.085 * spec.variation().macro();
@@ -37,8 +39,9 @@ public final class MountainShape implements BoundedShapeField {
         double hierarchy = body + mainCrest * body + branchA * body + branchB * body;
         double surfaceHeight = Math.max(spec.height() * 0.02,
                 spec.height() * hierarchy * (1.0 + meso * 0.05 - valleyCut) + micro);
-        double footprint = (radius - 1.14) * spec.size();
-        return Math.max(footprint, Math.max(-localY, localY - surfaceHeight));
+        double rootedRadius = 1.14 * (0.68 + 0.32 * rootBlend);
+        double footprint = (radius - rootedRadius) * spec.size();
+        return Math.max(footprint, Math.max(-rootDepth - localY, localY - surfaceHeight));
     }
 
     private static double ridge(double x, double z, double lengthScale, double widthScale) {
@@ -49,7 +52,8 @@ public final class MountainShape implements BoundedShapeField {
 
     @Override public ShapeBounds bounds() {
         double radius = spec.size() * 1.20 + 3.0;
-        return new ShapeBounds(spec.origin().x() - radius, spec.origin().y(), spec.origin().z() - radius,
+        double rootDepth = spec.size() * (0.20 + 0.05 * spec.variation().macro());
+        return new ShapeBounds(spec.origin().x() - radius, spec.origin().y() - rootDepth, spec.origin().z() - radius,
                 spec.origin().x() + radius, spec.origin().y() + spec.height() * 1.34 + 3.0, spec.origin().z() + radius);
     }
 }
