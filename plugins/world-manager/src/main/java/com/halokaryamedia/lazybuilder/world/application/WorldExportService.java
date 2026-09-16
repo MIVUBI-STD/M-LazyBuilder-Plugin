@@ -316,17 +316,24 @@ public final class WorldExportService {
         Path file = root.resolve(PRUNING_FILE).normalize();
         if (!root.equals(file.getParent())) throw new IOException("Pruning path escaped workspace");
 
-        String region = "{\"minChunkX\":" + area.minChunkX()
+        String selectedRegion = "{\"minChunkX\":" + area.minChunkX()
                 + ",\"minChunkZ\":" + area.minChunkZ()
                 + ",\"maxChunkX\":" + area.maxChunkX()
                 + ",\"maxChunkZ\":" + area.maxChunkZ() + "}";
+        String fullExclusion = "{\"minChunkX\":" + Integer.MIN_VALUE
+                + ",\"minChunkZ\":" + Integer.MIN_VALUE
+                + ",\"maxChunkX\":" + Integer.MAX_VALUE
+                + ",\"maxChunkZ\":" + Integer.MAX_VALUE + "}";
         StringBuilder json = new StringBuilder("{\"configs\":{");
         for (int i = 0; i < VANILLA_DIMENSIONS.size(); i++) {
             if (i > 0) json.append(',');
             String dimension = VANILLA_DIMENSIONS.get(i);
-            json.append('\"').append(dimension).append("\":{\"include\":true,\"regions\":[");
-            if (dimension.equals(area.dimensionId())) json.append(region);
-            json.append("]}");
+            json.append('\"').append(dimension).append("\":{");
+            if (dimension.equals(area.dimensionId())) {
+                json.append("\"include\":true,\"regions\":[").append(selectedRegion).append("]}");
+            } else {
+                json.append("\"include\":false,\"regions\":[").append(fullExclusion).append("]}");
+            }
         }
         json.append("}}");
         Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
