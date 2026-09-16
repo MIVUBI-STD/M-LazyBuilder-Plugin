@@ -4,6 +4,28 @@ Canonical execution discipline for LazyBuilder development. This is the repo-loc
 
 This document owns **how much to build and how to diagnose before mutation**. Domain Skills own **where and how to execute within their boundary**.
 
+## Consumer-neutral execution
+
+This discipline applies equally to **ChatGPT and Codex**. Semantic decisions do not change with the consumer; only the tools and execution context actually available in the current session may differ.
+
+```text
+same requirement
+→ same source precedence
+→ same owner
+→ same local Skill procedure
+→ same acceptance claim
+→ same proof type
+```
+
+Rules:
+
+- inspect actual tool/context capability before choosing execution steps;
+- never assume a local checkout, shell, GitHub write access, CI control, browser, or live server;
+- if a required proof cannot be produced in the current consumer/context, finish all lower-context work and state the exact remaining residue;
+- never convert unavailable execution into a simulated PASS;
+- prefer repository-relative paths, exact symbols, exact commands, and typed handoff data over instructions tied to one product UI;
+- a Skill should be readable as an operational contract by either consumer without needing consumer-specific interpretation.
+
 ## Core Rule
 
 ```text
