@@ -1,8 +1,12 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
 import com.halokaryamedia.lazybuilder.world.application.WorldAreaSelection;
+import com.halokaryamedia.lazybuilder.world.application.WorldDifficulty;
+import com.halokaryamedia.lazybuilder.world.application.WorldExportOptions;
 import com.halokaryamedia.lazybuilder.world.application.WorldExportService;
+import com.halokaryamedia.lazybuilder.world.application.WorldGameMode;
 import com.halokaryamedia.lazybuilder.world.application.WorldLocationTeleportService;
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
@@ -14,6 +18,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -160,7 +165,8 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             WorldAreaSelection area = WorldAreaSelection.ofCorners(
                     request.x1(), request.z1(), request.x2(), request.z2());
             task = exportService.prepareArea(
-                    request.worldId(), request.targetFormat(), request.artifactName(), area);
+                    request.worldId(), request.targetFormat(), request.artifactName(), area,
+                    exportOptions(request.settings()));
             activeExports.put(owner, task);
             send(player, MapActionWireProtocol.exportAccepted(request.worldId()));
         } catch (RuntimeException exception) {
@@ -262,6 +268,17 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         activeExports.remove(owner, task);
         exportInFlight.remove(owner);
         exportService.abandon(task);
+    }
+
+    private static WorldExportOptions exportOptions(ExportSettingsWire.Settings settings) {
+        Objects.requireNonNull(settings, "settings");
+        WorldGameMode gameMode = settings.gameMode().isEmpty()
+                ? null
+                : WorldGameMode.valueOf(settings.gameMode().toUpperCase(Locale.ROOT));
+        WorldDifficulty difficulty = settings.difficulty().isEmpty()
+                ? null
+                : WorldDifficulty.valueOf(settings.difficulty().toUpperCase(Locale.ROOT));
+        return new WorldExportOptions(gameMode, difficulty, settings.gameRules(), true);
     }
 
     private void deliverOrRemember(UUID owner, byte[] payload) {
