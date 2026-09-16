@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder-utility-manager-visual-proof",
+  "version": "1.0.0",
+  "name": "LazyBuilder Utility Manager Visual Proof",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "com.halokaryamedia.lazybuilder.utility.visualproof.UtilityManagerVisualProofTest"
+    ]
+  }
+}
