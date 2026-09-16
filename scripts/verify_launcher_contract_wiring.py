@@ -23,6 +23,7 @@ REQUIRED_DIRECT_CONTRACTS = (
     "verify_launcher_error_ux.py",
     "verify_launcher_accessibility_contract.py",
     "verify_launcher_notification_contract.py",
+    "verify_launcher_bridge_contract.py",
     "verify_launcher_contract_wiring.py",
 )
 
@@ -42,6 +43,7 @@ REQUIRED_PYCOMPILE = (
     "verify_launcher_error_ux.py",
     "verify_launcher_accessibility_contract.py",
     "verify_launcher_notification_contract.py",
+    "verify_launcher_bridge_contract.py",
     "verify_launcher_contract_wiring.py",
 )
 
