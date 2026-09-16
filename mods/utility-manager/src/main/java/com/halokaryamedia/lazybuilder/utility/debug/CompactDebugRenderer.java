@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.utility.debug;
 
-import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -42,15 +41,6 @@ public final class CompactDebugRenderer {
         int rightX = Math.max(MARGIN, client.getWindow().getScaledWidth() - MARGIN - rightWidth);
         int rightHeight = PADDING * 2 + ROW_HEIGHT * (snapshot.serverMetricsAvailable() ? 4 : 3);
         drawRightPanel(context, text, snapshot, rightX, MARGIN, rightWidth, rightHeight);
-    }
-
-    public static void copyCoordinates(MinecraftClient client) {
-        if (client == null || client.player == null) return;
-        int x = client.player.getBlockPos().getX();
-        int y = client.player.getBlockPos().getY();
-        int z = client.player.getBlockPos().getZ();
-        client.keyboard.setClipboard(x + " " + y + " " + z);
-        UtilityNotifications.show("Coordinates copied", x + " " + y + " " + z);
     }
 
     private static void drawCoordinatePanel(
