@@ -66,6 +66,13 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
   await expect(heading(page, 'MIVUBI Build Server')).toBeVisible();
   await capture(page, '02-overview-ready.png');
 
+  await page.getByLabel('More server actions').click();
+  await page.getByRole('button', { name: 'Open server console', exact: true }).click();
+  await expect(heading(page, 'Server console')).toBeVisible();
+  await expect(page.getByLabel('Server command')).toBeEnabled();
+  await capture(page, '02b-server-console.png');
+  await page.getByRole('button', { name: 'Close server console', exact: true }).click();
+
   await openServerPage(page, 'Worlds');
   await capture(page, '03-worlds.png');
 
@@ -116,6 +123,7 @@ test('capture canonical LazyBuilder launcher states', async ({ page }) => {
     screenshots: [
       '01-server-library.png',
       '02-overview-ready.png',
+      '02b-server-console.png',
       '03-worlds.png',
       '04-plugins.png',
       '05-settings.png',
