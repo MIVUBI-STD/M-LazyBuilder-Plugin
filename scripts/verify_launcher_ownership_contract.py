@@ -26,7 +26,7 @@ REQUIRED_OWNERS = [
     "apps/launcher/src-tauri/src/engine/privacy_redaction.rs",
     "apps/launcher/src-tauri/src/engine/support_bundle.rs",
     "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
-    "apps/launcher/src-tauri/src/engine/plugin_manager.rs",
+    "apps/launcher/src-tauri/src/engine/plugin_manager/mod.rs",
     "apps/launcher/src/app/closeGuard.ts",
     "apps/launcher/src/app/modalAccessibility.ts",
     "apps/launcher/src/pages/Worlds.svelte",
