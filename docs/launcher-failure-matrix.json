@@ -40,6 +40,12 @@
       "markers": ["finish_recovered_duplicate", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates"]
     },
     {
+      "id": "delete-crash-during-staging-or-cleanup",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
+      "markers": ["pending-deletions.json", "recover_pending_deletions", "is_safe_deletion_staging", "Recovery intent was preserved"],
+      "testMarkers": ["deletion_staging_guard_requires_same_parent_and_workspace_name"]
+    },
+    {
       "id": "restore-crash-during-workspace-swap",
       "owner": "apps/launcher/src-tauri/src/engine/server_restore.rs",
       "markers": ["pending-restores.json", "rollback_path", "recover_pending_restores"]
