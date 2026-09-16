@@ -9,6 +9,7 @@
   "entrypoints": {
     "client": ["com.halokaryamedia.lazybuilder.terraformclient.TerraformManagerClient"]
   },
+  "mixins": ["lazybuilder-terraform-manager.mixins.json"],
   "depends": {
     "fabricloader": ">=0.16.10",
     "fabric-api": "*",
