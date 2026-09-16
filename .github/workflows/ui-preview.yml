@@ -1,6 +1,16 @@
 name: Launcher UI Preview
 
 on:
+  push:
+    branches: [Local]
+    paths:
+      - 'apps/launcher/src/**'
+      - 'apps/launcher/ui-preview/**'
+      - 'apps/launcher/index.html'
+      - 'apps/launcher/vite.config.ts'
+      - 'apps/launcher/package.json'
+      - 'apps/launcher/package-lock.json'
+      - '.github/workflows/ui-preview.yml'
   pull_request:
     branches: [Local, main]
     paths:
