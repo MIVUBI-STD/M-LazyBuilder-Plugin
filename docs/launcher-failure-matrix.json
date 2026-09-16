@@ -8,6 +8,12 @@
       "testMarkers": ["interrupted_mutations_require_recovery_and_reconciliation_is_idempotent", "journal_round_trip_preserves_operation_history"]
     },
     {
+      "id": "workspace-library-overlaps-workspace-mutation",
+      "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
+      "markers": ["WORKSPACE_LIBRARY_RESOURCE", "WORKSPACE_RESOURCE_PREFIX", "resources_conflict"],
+      "testMarkers": ["workspace_library_conflicts_with_workspace_resources", "library_and_workspace_exclusive_operations_are_serialized"]
+    },
+    {
       "id": "create-crash-before-intent-identity-update",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
       "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"],
