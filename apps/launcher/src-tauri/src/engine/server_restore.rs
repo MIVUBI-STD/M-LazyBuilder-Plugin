@@ -1,6 +1,6 @@
 use crate::engine::{server_backups, workspace_registry};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -292,48 +292,106 @@ fn pending_restores_path() -> Result<PathBuf, String> {
 
 fn load_pending_restores() -> Result<Vec<PendingRestore>, String> {
     let path = pending_restores_path()?;
-    if !path.is_file() {
-        return Ok(Vec::new());
-    }
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read pending server restores: {error}"))?;
-    serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server restores: {error}"))
+    recover_pending_restore_file(&path)?;
+    if !metadata_entry_exists(&path, "pending server restore intent")? { return Ok(Vec::new()); }
+    ensure_regular_metadata_file(&path, "pending server restore intent")?;
+    let text = fs::read_to_string(&path).map_err(|error| format!("Could not read pending server restores: {error}"))?;
+    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server restores: {error}"))?;
+    cleanup_pending_restore_recovery_files(&path)?;
+    Ok(entries)
 }
 
 fn save_pending_restores(entries: &[PendingRestore]) -> Result<(), String> {
     let path = pending_restores_path()?;
     if entries.is_empty() {
-        if path.exists() {
-            fs::remove_file(path).map_err(|error| error.to_string())?;
-        }
+        remove_metadata_file_if_exists(&path, "pending server restore intent")?;
+        cleanup_pending_restore_recovery_files(&path)?;
         return Ok(());
     }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let incoming = path.with_extension("json.incoming");
-    let backup = path.with_extension("json.previous");
+    remove_metadata_file_if_exists(&incoming, "pending server restore staging metadata")?;
     let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
-    let mut file = fs::File::create(&incoming).map_err(|error| error.to_string())?;
-    file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| error.to_string())?;
-    drop(file);
+    {
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&incoming)
+            .map_err(|error| format!("Could not write pending server restore intent: {error}"))?;
+        file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| format!("Could not flush pending server restore intent: {error}"))?;
+    }
+    replace_pending_restore_file(&incoming, &path)
+}
 
-    if path.exists() {
-        let _ = fs::remove_file(&backup);
-        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(&incoming, &path) {
+fn recover_pending_restore_file(path: &Path) -> Result<(), String> {
+    let previous = path.with_extension("json.previous");
+    let incoming = path.with_extension("json.incoming");
+    if metadata_entry_exists(path, "pending server restore intent")? {
+        ensure_regular_metadata_file(path, "pending server restore intent")?;
+        return Ok(());
+    }
+    if metadata_entry_exists(&previous, "previous pending server restore intent")? {
+        ensure_regular_metadata_file(&previous, "previous pending server restore intent")?;
+        fs::rename(&previous, path).map_err(|error| format!("Could not restore previous pending server restore intent: {error}"))?;
+        return Ok(());
+    }
+    if metadata_entry_exists(&incoming, "pending server restore staging metadata")? {
+        ensure_regular_metadata_file(&incoming, "pending server restore staging metadata")?;
+        fs::rename(&incoming, path).map_err(|error| format!("Could not publish recovered pending server restore intent: {error}"))?;
+    }
+    Ok(())
+}
+
+fn cleanup_pending_restore_recovery_files(path: &Path) -> Result<(), String> {
+    remove_metadata_file_if_exists(&path.with_extension("json.previous"), "previous pending server restore intent")?;
+    remove_metadata_file_if_exists(&path.with_extension("json.incoming"), "pending server restore staging metadata")
+}
+
+fn replace_pending_restore_file(source: &Path, destination: &Path) -> Result<(), String> {
+    ensure_regular_metadata_file(source, "pending server restore staging metadata")?;
+    if metadata_entry_exists(destination, "pending server restore intent")? {
+        ensure_regular_metadata_file(destination, "pending server restore intent")?;
+        let previous = destination.with_extension("json.previous");
+        remove_metadata_file_if_exists(&previous, "previous pending server restore intent")?;
+        fs::rename(destination, &previous).map_err(|error| format!("Could not preserve previous pending server restore intent: {error}"))?;
+        match fs::rename(source, destination) {
             Ok(()) => {
-                let _ = fs::remove_file(backup);
+                let _ = fs::remove_file(previous);
                 Ok(())
             }
-            Err(error) => {
-                let _ = fs::rename(&backup, &path);
-                Err(error.to_string())
-            }
+            Err(publish_error) => match fs::rename(&previous, destination) {
+                Ok(()) => Err(format!("Could not publish pending server restore intent; previous intent was restored: {publish_error}")),
+                Err(rollback_error) => Err(format!("Could not publish pending server restore intent ({publish_error}) and could not restore previous intent ({rollback_error}). Recovery files were preserved.")),
+            },
         }
     } else {
-        fs::rename(incoming, path).map_err(|error| error.to_string())
+        fs::rename(source, destination).map_err(|error| format!("Could not publish pending server restore intent: {error}"))
     }
+}
+
+fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
+}
+
+fn ensure_regular_metadata_file(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+        return Err(format!("LazyBuilder refused a symbolic link or Windows reparse point as {label}"));
+    }
+    if !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    }
+    Ok(())
+}
+
+fn remove_metadata_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    if !metadata_entry_exists(path, label)? { return Ok(()); }
+    ensure_regular_metadata_file(path, label)?;
+    fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))
 }
 
 fn ensure_no_pending_restore(workspace_id: &str) -> Result<(), String> {
@@ -465,6 +523,14 @@ fn reject_reparse_point(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_metadata_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!("lazybuilder-restore-metadata-{label}-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        directory.join("pending-restores.json")
+    }
 
     #[test]
     fn restore_paths_must_share_the_workspace_parent_and_owned_prefixes() {
@@ -485,5 +551,45 @@ mod tests {
     fn backup_id_validation_rejects_path_traversal() {
         assert!(validate_backup_id("backup-123-4-1").is_ok());
         assert!(validate_backup_id("../backup-123").is_err());
+    }
+
+    #[test]
+    fn restore_intent_recovery_prefers_previous_committed_copy() {
+        let path = temp_metadata_path("previous");
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        fs::write(&previous, b"[]").unwrap();
+        fs::write(&incoming, b"[]").unwrap();
+        recover_pending_restore_file(&path).unwrap();
+        assert!(path.exists());
+        assert!(incoming.exists());
+        cleanup_pending_restore_recovery_files(&path).unwrap();
+        assert!(!incoming.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn restore_intent_incoming_recovers_without_committed_copy() {
+        let path = temp_metadata_path("incoming");
+        let incoming = path.with_extension("json.incoming");
+        fs::write(&incoming, b"[]").unwrap();
+        recover_pending_restore_file(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[]");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn malformed_restore_intent_preserves_recovery_evidence() {
+        let path = temp_metadata_path("malformed");
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        fs::write(&path, b"not-json").unwrap();
+        fs::write(&previous, b"[]").unwrap();
+        fs::write(&incoming, b"[]").unwrap();
+        recover_pending_restore_file(&path).unwrap();
+        assert!(serde_json::from_str::<Vec<PendingRestore>>(&fs::read_to_string(&path).unwrap()).is_err());
+        assert!(previous.exists());
+        assert!(incoming.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
