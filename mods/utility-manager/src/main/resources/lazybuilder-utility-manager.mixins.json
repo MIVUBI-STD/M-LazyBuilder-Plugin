@@ -6,6 +6,7 @@
     "ConnectScreenMixin",
     "ChatScreenMixin",
     "ChatHudMixin",
+    "ChatHudAccessor",
     "CompactDebugMouseMixin",
     "CreativeInventoryScreenMixin",
     "DebugHudMixin",
