@@ -98,12 +98,24 @@ def main() -> int:
         errors.append("runtime controller fallback must not read another active workspace config")
     if multi_server.get("workspaceBoundControllerRequiresRuntimeRoot") is not True:
         errors.append("workspace-bound runtime controllers must require an immutable runtime root")
+    if multi_server.get("lifecycleSerialization") != "global-server-lifecycle-lease":
+        errors.append("server lifecycle transitions and workspace selection must share one global lifecycle lease")
+    if multi_server.get("invalidProcessMarkersFailClosed") is not True:
+        errors.append("invalid managed Paper process markers must fail closed")
     if "impl Default for ServerManagerState" in server_engine:
         errors.append("ServerManagerState restored an unbound default constructor")
     if "if self.workspace_root.as_os_str().is_empty() { paths::workspace_root()" in server_engine:
         errors.append("ServerManagerState restored empty-root fallback to the active workspace")
     if "Server runtime controller is missing its immutable workspace root." not in server_engine:
         errors.append("ServerManagerState no longer fails closed when its immutable workspace root is missing")
+    if "fn ensure_no_running_paper_except" in process_guard:
+        errors.append("legacy single-server process guard was restored")
+    if "fn read_marker(path: &Path) -> Result<Option<ProcessMarker>, String>" not in process_guard:
+        errors.append("process guard no longer fails closed while reading managed Paper process markers")
+    if "Managed Paper process marker" not in server_engine or "requires recovery before another server lifecycle action" not in server_engine:
+        errors.append("ServerManagerState no longer preserves malformed process markers as recovery blockers")
+    if server_commands.count("let _lease = ServerStartLease::acquire()?;") < 4:
+        errors.append("Start, Stop, Restart, and Detached recovery must all hold the shared lifecycle lease")
 
     required_runtime_markers = [
         "HashMap<String, RuntimeEntry>",
