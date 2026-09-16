@@ -12,6 +12,7 @@ on:
       - 'scripts/verify_compatibility.py'
       - 'scripts/build_launcher_update_manifest.py'
       - 'scripts/set_launcher_version.py'
+      - 'docs/launcher/**'
       - 'docs/launcher-failure-matrix.json'
       - '.github/workflows/launcher-verify.yml'
 
@@ -38,6 +39,12 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/launcher/package-lock.json
+      - name: Select pinned Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          rustc --version
       - name: Install frontend dependencies
         run: npm ci
       - name: Verify Launcher source contract
