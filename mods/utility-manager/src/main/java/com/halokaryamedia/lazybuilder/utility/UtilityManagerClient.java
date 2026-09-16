@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility;
 
+import com.halokaryamedia.lazybuilder.utility.chat.ChatCollapseState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatSearchHistory;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatSessionPresentation;
@@ -28,6 +29,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Utility");
     private static final UtilityMessageBus MESSAGE_BUS = new UtilityMessageBus();
     private static final ChatSearchHistory CHAT_SEARCH_HISTORY = new ChatSearchHistory();
+    private static final ChatCollapseState CHAT_COLLAPSE_STATE = new ChatCollapseState();
     private static UtilityConfigStore configStore;
     private static UtilityPreferences preferences = UtilityPreferences.defaults();
 
@@ -61,6 +63,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
             LOGGER.debug("Client JOIN event received; refreshing reconnect target and compact telemetry");
             MESSAGE_BUS.clearSession();
             CHAT_SEARCH_HISTORY.clearSession();
+            CHAT_COLLAPSE_STATE.clear();
             CompactDebugInteraction.invalidate(client);
             CompactDebugServerState.clear();
             ReconnectState.capture(client.getCurrentServerEntry());
@@ -79,6 +82,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
             LOGGER.debug("Client DISCONNECT event received");
             MESSAGE_BUS.clearSession();
             CHAT_SEARCH_HISTORY.clearSession();
+            CHAT_COLLAPSE_STATE.clear();
             ChatDraftState.clear();
             CompactDebugInteraction.invalidate(client);
             CompactDebugServerState.clear();
@@ -95,6 +99,10 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
     public static ChatSearchHistory chatSearchHistory() {
         return CHAT_SEARCH_HISTORY;
+    }
+
+    public static ChatCollapseState chatCollapseState() {
+        return CHAT_COLLAPSE_STATE;
     }
 
     public static void updatePreferences(UtilityPreferences updated) {
