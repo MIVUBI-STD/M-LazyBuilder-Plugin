@@ -86,6 +86,7 @@ def main() -> int:
         "world-task-exceeds-frontend-duration",
         "plugin-input-changes-during-install",
         "plugin-mutation-races-server-start",
+        "server-config-crash-during-metadata-publish",
         "second-launcher-instance",
         "close-launcher-during-active-operation",
         "disk-pressure-before-heavy-write",
@@ -95,8 +96,8 @@ def main() -> int:
     if missing_required:
         errors.append(f"failure matrix is missing required scenarios: {missing_required}")
 
-    if scenarios_with_tests < 8:
-        errors.append(f"failure matrix must retain deterministic test evidence for at least 8 scenarios; found {scenarios_with_tests}")
+    if scenarios_with_tests < 9:
+        errors.append(f"failure matrix must retain deterministic test evidence for at least 9 scenarios; found {scenarios_with_tests}")
 
     if errors:
         print("Launcher failure matrix verification failed:")
