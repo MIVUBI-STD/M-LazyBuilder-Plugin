@@ -33,7 +33,14 @@ def main() -> int:
         'begin_exclusive("delete-server"',
         '"DELETE_RECOVERY_REQUIRED"',
     )
-    require(backups, 'begin_exclusive("backup-server"', 'begin_exclusive("restore-server"')
+    require(
+        backups,
+        'begin_exclusive("backup-server"',
+        'begin_exclusive("restore-server"',
+        'begin_exclusive("delete-backup"',
+        '"BACKUP_DELETE_FAILED"',
+        '"Backup deletion task ended unexpectedly"',
+    )
     require(repair, 'begin_exclusive("repair-server"')
     require(diagnostics, 'begin_exclusive("export-support-bundle"')
 
