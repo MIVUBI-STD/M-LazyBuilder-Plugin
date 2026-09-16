@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
+import net.minecraft.client.MinecraftClient;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -75,14 +76,19 @@ public final class ClientMapController {
         if (current == null) {
             throw new IllegalStateException("Current managed world is not available for area export");
         }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null) {
+            throw new IllegalStateException("Current dimension is not available for area export");
+        }
 
         WorldId worldId = current.worldId();
+        String dimensionId = client.world.getRegistryKey().getValue().toString();
         exportBusy = true;
         lastError = null;
         revision++;
         try {
             LazyBuilderClientNetworking.sendMap(MapActionWireProtocol.exportAreaRequest(
-                    worldId, x1, z1, x2, z2, targetFormat, artifactName,
+                    worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName,
                     Objects.requireNonNull(settings, "settings")));
         } catch (RuntimeException exception) {
             exportBusy = false;
