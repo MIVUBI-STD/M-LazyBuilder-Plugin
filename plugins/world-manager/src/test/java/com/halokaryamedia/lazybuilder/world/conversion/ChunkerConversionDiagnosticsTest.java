@@ -35,6 +35,22 @@ class ChunkerConversionDiagnosticsTest {
     }
 
     @Test
+    void truncatedStderrFailsBecauseAccuracyCanNoLongerBeVerified() {
+        IOException failure = assertThrows(IOException.class, () ->
+                ChunkerCliAdapter.validateConversionDiagnostics(
+                        "[stdout]\n100.00%\nConversion complete!\n"
+                                + "[stderr]\n[stderr truncated]\nlate diagnostic tail\n"));
+        assertTrue(failure.getMessage().contains("diagnostics were truncated"));
+    }
+
+    @Test
+    void truncatedStdoutDoesNotInvalidateCompleteStderrDiagnostics() {
+        assertDoesNotThrow(() -> ChunkerCliAdapter.validateConversionDiagnostics(
+                "[stdout]\n[stdout truncated]\n99.00%\n100.00%\n"
+                        + "[stderr]\n"));
+    }
+
+    @Test
     void cleanCliCompletionPassesDiagnosticGate() {
         assertDoesNotThrow(() -> ChunkerCliAdapter.validateConversionDiagnostics(
                 "Converting from JAVA 1.21.4 to BEDROCK 1.21.80\n50.00%\n100.00%\n"
