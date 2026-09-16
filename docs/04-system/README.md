@@ -74,6 +74,93 @@ This layout is current source authority. Do not recreate retired `EngineData`, `
 
 A package/module exists only when its responsibility exists in source. Do not create empty layers for symmetry.
 
+## Server runtime model
+
+LazyBuilder Desktop owns a bounded multi-server runtime. The current product standard is **up to three concurrently active Paper server workspaces per Launcher process**.
+
+```text
+LazyBuilder Desktop
+        │
+        ├── Workspace Registry
+        │    ├── Server A
+        │    ├── Server B
+        │    └── Server C
+        │
+        └── Runtime Registry
+             ├── Server A Runtime
+             ├── Server B Runtime
+             └── Server C Runtime
+```
+
+The hard concurrent-runtime limit is:
+
+```text
+MAX_CONCURRENT_SERVERS = 3
+```
+
+The fourth concurrent start must fail closed with a clear capacity error. The limit counts live managed Paper runtimes, including startup/shutdown ownership and any verified detached Paper process that still occupies a registered workspace runtime slot. Stale process markers do not consume capacity after reconciliation.
+
+Each runtime is owned by immutable workspace identity rather than by whichever workspace is currently selected in the UI. Switching the active workspace changes the Launcher command/UI target only; it must not discard, rebind, or stop other running runtime entries.
+
+Each runtime entry owns at minimum:
+
+```text
+workspace id + canonical root
+Paper process/PID + process start identity
+stdin / lifecycle ownership while attached
+runtime state + startup timestamp
+active log path
+Paper listen port
+World Manager loopback control port + token
+resource profile needed for startup/health diagnostics
+```
+
+One Paper process has exactly one runtime owner. Process markers remain workspace-local recovery evidence; they are not a second runtime registry.
+
+Required lifecycle states remain explicit and independently observable per runtime:
+
+```text
+Offline
+Starting
+Online
+Stopping
+Detached
+Crashed
+```
+
+A Launcher restart may turn a surviving Paper process into `Detached` when stdin ownership cannot be recovered. Detached recovery must continue validating PID, process start identity, and workspace command identity before termination or cleanup.
+
+Server starts may remain globally serialized to avoid provisioning/config races. Serializing **start operations** does not imply a single-server runtime: already-running servers remain independently owned and online while another server starts.
+
+### Multi-server safety rules
+
+- Never enable concurrency by only removing the existing single-server process guard.
+- Resolve runtime state by workspace id before start/stop/restart/console/snapshot operations.
+- A command targeting Server A must never fall through to Server B because the active workspace changed mid-operation.
+- Paper listen ports and World Manager control ports must be unique among concurrent runtimes.
+- Port ownership is workspace/runtime metadata and must be validated before Paper spawn.
+- World Manager control remains authenticated and loopback-only.
+- Startup RAM checks must evaluate current host availability before each start; runtime diagnostics must expose the aggregate load of concurrent LazyBuilder servers.
+- Capacity, port conflicts, lost workspace identity, and ambiguous process ownership fail closed.
+- No background heartbeat/polling loop is required merely to keep runtime ownership alive.
+
+### Connection reliability pattern
+
+LazyBuilder adopts the useful reliability pattern of a stable owner around replaceable connections without copying BuildIT/LazyDesigner MCP semantics or its one-gateway/one-runtime cardinality.
+
+```text
+stable Launcher runtime ownership
+        │
+        ├── explicit health / identity check
+        ├── disposable connection state
+        ├── bounded retry/backoff when a control connection is unavailable
+        └── fail-closed workspace affinity
+```
+
+Connection recovery must preserve server identity. A reachable port alone is never sufficient proof that the endpoint belongs to the intended workspace runtime.
+
+An optional player-facing gateway/proxy may be introduced after the three-runtime model, per-server port ownership, resource safety, console/log routing, and recovery behavior are proven. The gateway must not become the owner of Paper lifecycle or workspace state.
+
 ## World runtime model
 
 Persistent world lifecycle is only:
@@ -103,9 +190,11 @@ lazybuilder:map       → Map Action V2
 lazybuilder:transfer  → bounded file bytes only
 ```
 
-Desktop ↔ Paper uses a separate authenticated loopback protocol currently at version 2.
+Desktop ↔ Paper uses a separate authenticated loopback protocol currently at version 2. In the multi-server runtime, each active workspace receives a distinct loopback control endpoint; no two concurrent servers may share the same World Manager control port.
 
-Transport/provider layers never become authority for worlds, permissions, lifecycle, conversion, or persistence.
+Paper gameplay endpoints are also per-server resources. For the initial three-server standard, direct distinct Paper ports are the canonical baseline; a single player-facing gateway/proxy is optional later and must route to those independently owned backends rather than replace their identity or lifecycle ownership.
+
+Transport/provider layers never become authority for worlds, permissions, lifecycle, conversion, persistence, workspace selection, or Paper process ownership.
 
 ## Maintainability contract
 
