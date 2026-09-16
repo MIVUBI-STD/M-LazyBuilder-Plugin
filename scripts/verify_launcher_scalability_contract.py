@@ -68,6 +68,7 @@ def main() -> int:
     runtime_facade = read(LAUNCHER / "src/app/bridge/runtimeProductFacade.ts")
     preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
     close_guard = read(LAUNCHER / "src/app/closeGuard.ts")
+    server_console = read(LAUNCHER / "src/components/ServerConsole.svelte")
     app = read(LAUNCHER / "src/App.svelte")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
@@ -104,7 +105,8 @@ def main() -> int:
         errors.append("server start no longer passes current fleet load into RAM admission")
     if "active_runtime_count: usize" not in startup_guard or "system.available_memory()" not in startup_guard:
         errors.append("startup RAM admission no longer uses concurrency context plus current host availability")
-    if "registry.remove(&active.id)" in re.search(r"pub async fn server_start.*?\n}\n", server_commands, re.S).group(0):
+    start_match = re.search(r"pub async fn server_start.*?\n}\n", server_commands, re.S)
+    if start_match and "registry.remove(&active.id)" in start_match.group(0):
         errors.append("failed server start can still discard its controller before recovery")
     if '.arg("--port").arg(paper_port.to_string())' not in server_engine:
         errors.append("Paper runtime no longer receives its isolated listen-port override")
@@ -128,6 +130,32 @@ def main() -> int:
             errors.append(f"canonical runtimeApi no longer exposes {command_name}")
     if "const productionRuntimeProduct = runtimeApi;" not in runtime_facade:
         errors.append("production runtime product no longer uses the single canonical runtimeApi bridge")
+
+    targeted_server_markers = [
+        "workspace_id: Option<String>",
+        "resolve_runtime(&registry, workspace_id.as_deref())",
+        "registry.runtime_for_id(id)",
+    ]
+    for marker in targeted_server_markers:
+        if marker not in server_commands:
+            errors.append(f"targeted server controls are missing backend marker: {marker}")
+    if "workspace_id: Option<String>" not in server_tools or "workspace_registry::get(id.trim())" not in server_tools:
+        errors.append("targeted server log access no longer resolves the requested workspace explicitly")
+    for marker in (
+        "snapshot: (workspaceId?: string)",
+        "command: (command: string, workspaceId?: string)",
+        "recoverDetached: (workspaceId?: string)",
+        "logTail: (path: string, workspaceId?: string)",
+    ):
+        if marker not in runtime_api:
+            errors.append(f"runtimeApi targeted server surface is missing marker: {marker}")
+    for marker in (
+        "runtimeProduct.server.snapshot(workspaceId)",
+        "runtimeProduct.server.command(nextCommand, workspaceId)",
+        "runtimeProduct.server.logTail(snapshot.logPath || '', workspaceId)",
+    ):
+        if marker not in server_console:
+            errors.append(f"ServerConsole no longer routes through its explicit workspace target: {marker}")
 
     required_world_target_markers = [
         "active_world_target()",
