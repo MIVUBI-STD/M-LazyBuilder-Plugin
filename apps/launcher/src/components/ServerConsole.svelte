@@ -4,6 +4,8 @@
   import type { ServerLogTail, ServerSnapshot } from '../app/bridge/runtimeApi';
 
   export let open = false;
+  export let workspaceId: string | undefined = undefined;
+  export let serverName = 'Server';
   export let onClose: () => void = () => {};
 
   let snapshot: ServerSnapshot = { state: 'Offline', health: 'Offline', cpuLoadPercent: 0, usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: '' };
@@ -36,8 +38,8 @@
     refreshBusy = true;
     const followOutput = forceFollow || nearBottom();
     try {
-      snapshot = await runtimeProduct.server.snapshot();
-      logTail = await runtimeProduct.server.logTail(snapshot.logPath || '');
+      snapshot = await runtimeProduct.server.snapshot(workspaceId);
+      logTail = await runtimeProduct.server.logTail(snapshot.logPath || '', workspaceId);
       error = '';
       await tick();
       if (followOutput && outputElement) outputElement.scrollTop = outputElement.scrollHeight;
@@ -55,7 +57,7 @@
     error = '';
     notice = '';
     try {
-      await runtimeProduct.server.command(nextCommand);
+      await runtimeProduct.server.command(nextCommand, workspaceId);
       command = '';
       notice = 'Command sent.';
       await refreshConsole(true);
@@ -126,7 +128,7 @@
       <header>
         <div>
           <div class="title-row">
-            <h2 id="server-console-title">Server console</h2>
+            <h2 id="server-console-title">{serverName} console</h2>
             <span class:online={snapshot.state === 'Online'} class="state-chip">{snapshot.state}</span>
           </div>
           <p>Paper console output and direct server commands.</p>
