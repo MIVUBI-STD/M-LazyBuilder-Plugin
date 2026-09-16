@@ -8,8 +8,6 @@
 
   export let onRepaired: (() => Promise<void> | void) | undefined = undefined;
 
-  type RepairPlanWithHealth = ServerRepairPlan & { health?: ServerHealthSnapshot };
-
   let workspace: WorkspaceEntry | null = null;
   let health: ServerHealthSnapshot | null = null;
   let plan: ServerRepairPlan | null = null;
@@ -27,12 +25,11 @@
       return;
     }
 
-    // Runtime repair plans carry the exact health snapshot used to derive the plan,
-    // avoiding a second filesystem/process inspection on every Overview load. The
-    // fallback preserves compatibility with deterministic preview fixtures.
+    // The repair plan carries the exact health snapshot used to derive it, so one
+    // backend diagnosis produces a temporally consistent plan + health view.
     const nextPlan = await runtimeProduct.health.repairPlan(workspace.id);
     plan = nextPlan;
-    health = (nextPlan as RepairPlanWithHealth).health ?? await runtimeProduct.health.server(workspace.id);
+    health = nextPlan.health;
   }
 
   async function initialLoad() {
