@@ -34,7 +34,7 @@ public final class WorldMapScreen extends Screen {
     private static final int EXPORT_ADVANCED_TOP = 184;
     private static final int EXPORT_ROW_HEIGHT = 26;
     private static final int SAMPLE_BUDGET_PER_TICK = 4096;
-    private static final int RASTER_REFRESH_INTERVAL_FRAMES = 12;
+    private static final int RASTER_CONTENT_REFRESH_TICKS = 4;
     private static final int CHUNK_BLOCKS = 16;
     private static final int REGION_BLOCKS = 512;
     private static final int DEFAULT_SELECTION_CHUNKS = 8;
@@ -101,7 +101,6 @@ public final class WorldMapScreen extends Screen {
     private int rasterHalfCellsX;
     private int rasterHalfCellsZ;
     private int rasterPixel = -1;
-    private int rasterAgeFrames = RASTER_REFRESH_INTERVAL_FRAMES;
     private int rasterLeft;
     private int rasterTop;
     private int rasterRight;
@@ -110,6 +109,8 @@ public final class WorldMapScreen extends Screen {
     private double rasterCenterZ = Double.NaN;
     private double rasterZoom = Double.NaN;
     private String rasterScope = "";
+    private boolean rasterContentDirty = true;
+    private long rasterWorldTime = Long.MIN_VALUE;
 
     private boolean requestedCurrentWorld;
     private long observedWorldRevision;
@@ -313,20 +314,21 @@ public final class WorldMapScreen extends Screen {
             rasterColors = new int[0];
             rasterColumns = 0;
             rasterRows = 0;
+            rasterContentDirty = true;
+            rasterWorldTime = Long.MIN_VALUE;
         }
         SURFACE.useScope(scope, storage);
-        SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK);
+        if (SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK) > 0) rasterContentDirty = true;
 
         int pixel = mapPixelSize();
-        if (rasterNeedsRefresh(scope, bounds, pixel)) rebuildRaster(world, scope, bounds, pixel);
-        else rasterAgeFrames++;
+        long worldTime = world.getTime();
+        if (rasterNeedsRefresh(scope, bounds, pixel, worldTime)) rebuildRaster(world, scope, bounds, pixel, worldTime);
         drawRaster(context, bounds, pixel);
         renderPlayerMarker(context, bounds);
     }
 
-    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel) {
-        return rasterColors.length == 0
-                || rasterAgeFrames >= RASTER_REFRESH_INTERVAL_FRAMES
+    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel, long worldTime) {
+        boolean viewportChanged = rasterColors.length == 0
                 || rasterPixel != pixel
                 || rasterLeft != bounds.left
                 || rasterTop != bounds.top
@@ -336,9 +338,14 @@ public final class WorldMapScreen extends Screen {
                 || Double.compare(rasterCenterZ, centerZ) != 0
                 || Double.compare(rasterZoom, zoom) != 0
                 || !rasterScope.equals(scope);
+        if (viewportChanged) return true;
+        if (!rasterContentDirty) return false;
+        return rasterWorldTime == Long.MIN_VALUE
+                || worldTime < rasterWorldTime
+                || worldTime - rasterWorldTime >= RASTER_CONTENT_REFRESH_TICKS;
     }
 
-    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel) {
+    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel, long worldTime) {
         double blocksPerCell = zoom * pixel / 2.0;
         int sampleSpan = Math.max(1, (int) Math.ceil(blocksPerCell));
         int halfCellsX = Math.max(1, bounds.width() / pixel / 2);
@@ -371,7 +378,6 @@ public final class WorldMapScreen extends Screen {
         rasterHalfCellsX = halfCellsX;
         rasterHalfCellsZ = halfCellsZ;
         rasterPixel = pixel;
-        rasterAgeFrames = 0;
         rasterLeft = bounds.left;
         rasterTop = bounds.top;
         rasterRight = bounds.right;
@@ -380,6 +386,8 @@ public final class WorldMapScreen extends Screen {
         rasterCenterZ = centerZ;
         rasterZoom = zoom;
         rasterScope = scope;
+        rasterContentDirty = false;
+        rasterWorldTime = worldTime;
     }
 
     private void drawRaster(DrawContext context, Bounds bounds, int pixel) {
@@ -1317,9 +1325,9 @@ public final class WorldMapScreen extends Screen {
     }
 
     private int mapPixelSize() {
-        if (zoom <= 2.0) return 2;
-        if (zoom <= 8.0) return 3;
-        return 4;
+        if (zoom <= 2.0) return 1;
+        if (zoom <= 8.0) return 2;
+        return 3;
     }
 
     private double blocksPerPixel() { return zoom / 2.0; }
