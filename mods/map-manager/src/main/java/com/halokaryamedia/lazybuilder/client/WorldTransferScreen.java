@@ -134,7 +134,7 @@ public final class WorldTransferScreen extends Screen {
         }
         reconcileSelectedFormat();
 
-        int panelWidth = Math.max(320, Math.min(600, width - 40));
+        int panelWidth = Math.max(280, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
         int contentLeft = left + 30;
         int contentWidth = panelWidth - 60;
@@ -192,13 +192,13 @@ public final class WorldTransferScreen extends Screen {
         if (!advanced) return;
         y += 38;
         LbButtonWidget format = LbUi.button(contentLeft, y, contentWidth, 28,
-                "Target   " + friendlyFormat(selectedExportFormat),
+                "Version   " + friendlyFormat(selectedExportFormat),
                 LbButtonWidget.Style.SECONDARY, this::cycleExportFormat);
         format.active = !busy() && availableFormats().size() > 1;
         addDrawableChild(format);
 
         y += 48;
-        fileName = new TextFieldWidget(textRenderer, contentLeft, y + 18, contentWidth, 24, Text.literal("File Name"));
+        fileName = new TextFieldWidget(textRenderer, contentLeft, y + 18, contentWidth, 24, Text.literal("World Name"));
         fileName.setText(exportFileName == null ? "" : exportFileName);
         fileName.setMaxLength(96);
         fileName.setDrawsBackground(false);
@@ -209,7 +209,7 @@ public final class WorldTransferScreen extends Screen {
 
         y += 58;
         LbButtonWidget saveDefault = LbUi.button(contentLeft, y, contentWidth, 22,
-                isCurrentDefault() ? "This is your default" : "Use These as Default",
+                isCurrentDefault() ? "This is your default" : "Use as Default",
                 isCurrentDefault() ? LbButtonWidget.Style.GHOST : LbButtonWidget.Style.SECONDARY,
                 this::saveCurrentAsDefault);
         saveDefault.active = !busy() && !isCurrentDefault();
@@ -312,7 +312,7 @@ public final class WorldTransferScreen extends Screen {
         rememberFields();
         String artifact = exportFileName == null ? "" : exportFileName.strip();
         if (artifact.isEmpty()) {
-            validation = "Enter a file name before exporting.";
+            validation = "Enter a world name before exporting.";
             advanced = true;
             clearAndInit();
             return;
@@ -507,7 +507,7 @@ public final class WorldTransferScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         LbUi.background(context, width, height);
-        int panelWidth = Math.max(320, Math.min(600, width - 40));
+        int panelWidth = Math.max(280, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
         int panelHeight = Math.min(height - 70, panelHeight());
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
@@ -556,13 +556,13 @@ public final class WorldTransferScreen extends Screen {
 
         if (advanced) {
             int advancedY = exportPrimaryY() + 82;
-            context.drawTextWithShadow(textRenderer, Text.literal("TARGET EDITION / VERSION"),
+            context.drawTextWithShadow(textRenderer, Text.literal("VERSION"),
                     left + 30, advancedY - 16, LbUi.TEXT_MUTED);
-            context.drawTextWithShadow(textRenderer, Text.literal("FILE NAME"), left + 30, advancedY + 32, LbUi.TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, Text.literal("WORLD NAME"), left + 30, advancedY + 32, LbUi.TEXT_MUTED);
             if (fileName != null) LbUi.field(context, fileName, validation != null);
             String capability = availableFormats().size() > 1
-                    ? "Only verified server-supported targets are available."
-                    : "This server currently verifies Java Edition 1.21.4 only.";
+                    ? "Only verified export versions are shown."
+                    : "Available: Java Edition 1.21.4";
             context.drawTextWithShadow(textRenderer, Text.literal(capability), left + 30, advancedY + 79, LbUi.TEXT_MUTED);
         }
     }
