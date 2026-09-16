@@ -55,6 +55,7 @@ def main() -> int:
     health = RUST / "engine" / "server_health.rs"
     plugin_ingress = RUST / "engine" / "plugin_ingress.rs"
     plugin_commands = RUST / "commands" / "plugin_manager.rs"
+    server_commands = RUST / "commands" / "server_manager.rs"
     java_runtime = RUST / "engine" / "java_runtime.rs"
     world_manager = RUST / "engine" / "world_manager" / "mod.rs"
     support_bundle = RUST / "engine" / "support_bundle.rs"
@@ -161,6 +162,13 @@ def main() -> int:
         "plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;",
         "plugins.install(&staged_path)",
         "plugins.update(&plugin_id, &staged_path)",
+    )
+
+    require(
+        server_commands,
+        "ensure_world_control_port_available()?;",
+        "TcpListener::bind((\"127.0.0.1\", port))",
+        "occupied_world_control_port_is_rejected_before_paper_start",
     )
 
     require(java_runtime, ".enclosed_name()", "failed SHA-256 verification")
