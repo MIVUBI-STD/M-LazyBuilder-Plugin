@@ -131,6 +131,35 @@ symptom
 
 If evidence cannot yet distinguish owners, use global `UNKNOWN` and name the next separating evidence. Do not load several Skills "just in case".
 
+## Fast routing matrix
+
+Use this matrix only when the observed evidence matches the row directly. It is a shortcut to the same owner/taxonomy rules, not a second routing authority. If no row matches cleanly, return to the owner-selection rule above.
+
+| Observed evidence | Primary owner | Next context | Action | Proof / exit |
+|---|---|---|---|---|
+| Rust/runtime canonical state itself is wrong | desktop-runtime | exact runtime owner/service only | classify local runtime subtype and fix there | matching Desktop proof; STOP |
+| Rust/runtime result is correct but rendered Launcher state is stale/wrong | ui | canonical runtime result + exact UI consumer | fix presentation only | UI proof; STOP |
+| Third-party plugin metadata/dependency/compatibility result is wrong | plugin-management | exact plugin manager + affected JAR/metadata | fix plugin lifecycle truth | plugin proof; STOP |
+| Plugin lifecycle result is correct but warning/list/action presentation is wrong | ui | canonical plugin result + exact UI surface | fix presentation only | UI proof; STOP |
+| Shared Paper↔Fabric payload/default/bounds/version meaning disagrees | protocol | exact shared type + one producer + one consumer | fix neutral contract | contract proof; typed handoff if domain work remains |
+| Shared contract is correct but Paper world behavior/result is wrong | world-management | canonical payload/result + exact Paper world owner | fix world-domain implementation | world proof; STOP |
+| World lifecycle/registry/filesystem/import-publication truth is wrong | world-management | exact world id/service/registry/filesystem evidence | fix world semantics | matching world proof; STOP |
+| World result is correct but screen/map pending/back-close/layout state is wrong | ui | canonical world result + exact UI surface | fix presentation only | UI proof; STOP |
+| Desktop HTTP auth/session/request envelope is wrong | desktop-runtime | exact loopback route/session evidence | fix transport envelope | Desktop proof; STOP |
+| Desktop HTTP transport is correct but world-domain result is wrong | world-management | authenticated request context + exact world evidence | fix domain result | world proof; STOP |
+| Bundled LazyBuilder World/Utilities core is missing/incompatible | desktop-runtime | exact managed-core identity/provisioning evidence | fix provisioning/synchronization | Desktop proof; STOP |
+| Third-party plugin mutation is correct on disk but Paper rejects/load-enable state is wrong | plugin-management | exact plugin artifact + live Paper evidence when available | keep plugin semantic owner; classify `PAPER_RUNTIME` residue as needed | `LIVE_RUNTIME` for runtime claim |
+| UI click/key/pending race duplicates an otherwise-correct action | ui | exact UI controller + canonical action result | fix input/async presentation path | UI proof; STOP |
+| New world capability requires new shared Paper↔Fabric meaning | protocol first | exact domain requirement only | freeze neutral contract, prove, STOP Protocol | hand typed contract to world-management |
+
+Fast-path rules:
+
+- do not infer a row from a feature name alone;
+- `Next context` is a ceiling for the next read, not permission for a broad scan;
+- when a row ends in another owner, emit the minimum typed handoff and stop the current Skill;
+- proof type remains determined by the changed claim, not by the table row;
+- ChatGPT and Codex use the same matrix; only available execution tools may differ.
+
 ## Scenario probes
 
 These probes exist only for recurring ambiguous boundaries.
