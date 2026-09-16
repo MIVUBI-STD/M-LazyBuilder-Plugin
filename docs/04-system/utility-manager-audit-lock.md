@@ -12,6 +12,13 @@ Already implemented in Utility Manager:
 
 - extended chat history;
 - keep-chat-draft;
+- compact local `HH:mm` timestamps;
+- bounded session chat search with a native `Ctrl+F` overlay;
+- conservative in-place duplicate collapse for explicitly eligible machine messages;
+- compact right-click chat context menu with copy-message and conservative copy-player-name actions;
+- session separators;
+- message classification/routing foundation;
+- human-readable warning and command-error presentation foundation;
 - reconnect UX;
 - connection-detail copy;
 - shared native notifications;
@@ -47,23 +54,36 @@ Developer-only diagnostics must not be routed into normal chat.
 
 This matrix is intentionally behavior-oriented. Third-party source/JARs are references for requirements, not code to bundle into LazyBuilder.
 
-| Area | Decision | LazyBuilder action |
+| Area | Decision | Current status | LazyBuilder action |
+| --- | --- | --- | --- |
+| Extended chat history | `ALREADY OWNED` | implemented | keep current bounded implementation |
+| Keep unsent draft | `ALREADY OWNED` | implemented | keep current session-scoped behavior |
+| Chat timestamps | `REBUILD` | implemented | keep lightweight `HH:mm` presentation |
+| Duplicate system-message collapsing | `REBUILD` | implemented conservatively | collapse only explicitly eligible machine messages; never player chat |
+| Chat search | `REBUILD` | implemented | keep bounded in-memory search; no background index/database |
+| Chat context actions | `REBUILD` | implemented minimally | keep copy message; expose player-name copy only when sender parsing is unambiguous |
+| Session separator | `REBUILD` | implemented | preserve compact connection boundary marker |
+| Command-error presentation | `REBUILD` | implemented foundation | continue runtime verification against real Brigadier messages |
+| Signing/reporting compatibility | `REBUILD` | pending | isolate under `chat/signing`; verify protocol behavior independently |
+| Signing indicator hiding | `REBUILD` | pending | presentation-only behavior must not own packet logic |
+| Narrator suppression | `REBUILD` | pending | move to accessibility helper boundary; do not remove accessibility infrastructure |
+| Third-party config/UI duplication | `DROP` | migration-ready | use Utility Manager preferences and Minecraft-native surfaces |
+| Third-party background workers/indexers | `DROP` | locked | do not introduce unless a concrete verified requirement exists |
+| Plugin-specific chat prefixes as primary taxonomy | `DROP` | locked | classify by message purpose instead |
+| Repeated raw translation keys in user chat | `DROP` | implemented foundation | resolve human-readable names; retain raw key only in diagnostics |
+
+## External mod retirement status
+
+Retirement is based on behavior coverage, not on mod name. A third-party JAR is removable only after every behavior we intentionally retain from it has either been rebuilt or explicitly dropped and the replacement passes runtime verification.
+
+| External mod | Status | Reason |
 | --- | --- | --- |
-| Extended chat history | `ALREADY OWNED` | keep current bounded implementation |
-| Keep unsent draft | `ALREADY OWNED` | keep current session-scoped behavior |
-| Chat timestamps | `REBUILD` | implement lightweight presentation only if retained after UX verification; default `HH:mm` |
-| Duplicate system-message collapsing | `REBUILD` | add bounded fingerprint dedupe for `GAME`/`SYSTEM`/`WARNING` only |
-| Chat search | `REBUILD` | in-memory search over retained history; no background index/database |
-| Chat context actions | `REBUILD` | small contextual menu: copy message/name/raw text; optional safe coordinate action |
-| Session separator | `REBUILD` | represent connection boundaries compactly instead of repeated noise |
-| Command-error presentation | `REBUILD` | show human-readable summary; keep raw Brigadier detail in diagnostics |
-| Signing/reporting compatibility | `REBUILD` | isolate under `chat/signing`; verify protocol behavior independently |
-| Signing indicator hiding | `REBUILD` | presentation-only behavior must not own packet logic |
-| Narrator suppression | `REBUILD` | move to accessibility helper boundary; do not remove accessibility infrastructure |
-| Third-party config/UI duplication | `DROP` | use Utility Manager preferences and Minecraft-native surfaces |
-| Third-party background workers/indexers | `DROP` | do not introduce unless a concrete verified requirement exists |
-| Plugin-specific chat prefixes as primary taxonomy | `DROP` | classify by message purpose instead |
-| Repeated raw translation keys in user chat | `DROP` | resolve human-readable names; retain raw key only in diagnostics |
+| Chat Patches | `NEAR RETIREMENT` | approved core UX now has first-party coverage: history, draft, timestamps, search, context copy, session boundaries, compact presentation, and duplicate collapse. Runtime verification and final feature-gap review are still required before removal. Persistent chat-log/database-style behavior is not an approved requirement. |
+| Chat Signing Hider | `KEEP FOR NOW` | signing-indicator behavior has not yet been rebuilt independently. Do not remove until presentation-only signing compatibility is verified. |
+| No Chat Reports | `KEEP FOR NOW` | this mod changes substantially more than presentation and touches signing/reporting protocol behavior. Utility Manager does not yet provide an equivalent, and no packet-level behavior should be copied blindly. |
+| Narrus Yeetus | `KEEP FOR NOW` | narrator/accessibility suppression has not yet been rebuilt under the Utility accessibility boundary. |
+
+No external JAR should be shaded, unpacked, or source-copied into Utility Manager as a migration shortcut.
 
 ## Priority order
 
@@ -73,14 +93,14 @@ Implementation order is locked to reduce regression risk:
 2. warning/system deduplication;
 3. human-readable warning/error presentation;
 4. session boundary handling;
-5. optional timestamp presentation;
+5. timestamp presentation;
 6. chat search;
 7. contextual actions;
 8. signing compatibility migration;
 9. narrator/accessibility migration;
 10. remove external overlapping mods only after runtime verification.
 
-Signing and narrator work intentionally come after basic presentation cleanup so protocol/accessibility concerns do not block the visible UX cleanup.
+Steps 1-7 now have first-party implementations. Current development priority therefore moves to signing compatibility and narrator/accessibility migration, while continuing runtime verification of the completed chat UX.
 
 ## Keybind-warning rule
 
@@ -127,6 +147,8 @@ Only low-risk machine-generated categories are eligible for automatic collapse:
 - `WARNING`.
 
 `CHAT` is never automatically collapsed by default.
+
+The ChatHud adapter is stricter than the semantic policy: only messages explicitly marked by the classifier/Utility path are eligible for in-place replacement. Lookalike plugin text must not be collapsed by text shape alone.
 
 A dedupe fingerprint must be derived from stable semantic fields rather than rendered color/style so presentation changes do not alter grouping behavior.
 
