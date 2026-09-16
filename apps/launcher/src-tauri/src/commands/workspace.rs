@@ -245,14 +245,46 @@ pub fn workspace_remove_from_library(state: State<'_, ServerManagerState>, opera
 
 #[tauri::command]
 pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: String) -> CommandResult<()> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        let operations = app.state::<OperationRegistry>();
-        ensure_library_operation_idle(&operations)?;
-        ensure_workspace_operation_idle(&operations, &id)?;
-        ensure_workspace_mutation_allowed(&state, &id)?;
-        workspace_registry::delete(&id, &typed_display_name).map_err(CommandError::from)
-    }).await.map_err(|error| CommandError::new("TASK_FAILED", format!("Server deletion task failed: {error}")))?
+    let resource = format!("workspace:{id}");
+    let operation = app.state::<OperationRegistry>().begin_exclusive("delete-server", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let state = task_app.state::<ServerManagerState>();
+        let _ = operations.set_phase(&operation_id, "preflight", "Validating server deletion", "Confirming the server is offline and its workspace can be deleted safely.", None);
+        if let Err(error) = ensure_workspace_mutation_allowed(&state, &id) {
+            fail_operation(&operations, &operation_id, &error, true);
+            return Err(error);
+        }
+
+        let _ = operations.set_phase(&operation_id, "deleting", "Deleting server", "The server is staged under a durable deletion intent before it is removed from the library and filesystem.", None);
+        match workspace_registry::delete(&id, &typed_display_name) {
+            Ok(()) => {
+                let _ = operations.succeed(&operation_id, "Server deleted");
+                Ok(())
+            }
+            Err(message) if message.contains("Rollback also failed") || message.contains("final deletion cleanup is pending") => {
+                let error = CommandError::recoverable("DELETE_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+                let _ = operations.require_recovery(&operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true });
+                Err(error)
+            }
+            Err(message) => {
+                let error = CommandError::recoverable("DELETE_FAILED", message, "Retry server deletion");
+                fail_operation(&operations, &operation_id, &error, true);
+                Err(error)
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(&join_operation_id, OperationError { code: "TASK_FAILED".into(), message: "Server deletion task ended unexpectedly".into(), details: error.to_string(), recoverable: true });
+            Err(CommandError::new("TASK_FAILED", format!("Server deletion task failed: {error}")))
+        }
+    }
 }
 
 fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &CommandError, recoverable: bool) {
