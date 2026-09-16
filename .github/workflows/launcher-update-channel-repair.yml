@@ -9,7 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 # Share the release serialization lane so a repair cannot race normal publication.
 concurrency:
@@ -19,6 +19,8 @@ concurrency:
 jobs:
   repair-channel:
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     runs-on: windows-latest
     timeout-minutes: 10
     env:
