@@ -45,6 +45,7 @@ def main() -> int:
     startup = RUST / "engine" / "startup.rs"
     operations = RUST / "engine" / "operations.rs"
     instance = RUST / "engine" / "app_instance.rs"
+    launcher_settings = RUST / "engine" / "launcher_settings.rs"
     creation = RUST / "engine" / "workspace_creation.rs"
     creation_command = RUST / "commands" / "workspace_creation.rs"
     workspace_commands = RUST / "commands" / "workspace.rs"
@@ -136,6 +137,19 @@ def main() -> int:
         "RecoveryRequired",
     )
     require(instance, "launcher-instance.json", "previous_session_unclean")
+
+    require(
+        launcher_settings,
+        "SETTINGS_SCHEMA_VERSION: u32 = 2",
+        "auto_check_updates: false",
+        'update_channel: "stable".into()',
+        'object.insert("autoCheckUpdates".into(), serde_json::json!(false))',
+        'object.insert("updateChannel".into(), serde_json::json!("stable"))',
+        "Only the stable update channel is available until the in-app updater runtime is configured",
+        "Automatic update checks are unavailable until the signed in-app updater runtime is configured",
+        "legacy_update_preferences_migrate_to_supported_state",
+        "unavailable_update_preferences_are_rejected",
+    )
 
     require(
         creation,
