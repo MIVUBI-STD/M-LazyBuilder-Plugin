@@ -1,14 +1,21 @@
 use crate::commands::error::{CommandError, CommandResult};
-use crate::engine::{java_runtime, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
+use crate::engine::{java_runtime, paths, runtime_updates, server_config, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
+use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
+use std::fs;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
+
+const DEFAULT_PAPER_PORT: u16 = 25565;
+const PAPER_PORT_SCAN_LIMIT: u16 = 128;
 
 #[tauri::command]
 pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (_, state) = registry.active_runtime()?;
         Ok(state.preflight())
     })
     .await
@@ -16,7 +23,8 @@ pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String>
 }
 
 #[tauri::command]
-pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSnapshot, String> {
+pub fn server_snapshot(registry: State<'_, ServerRuntimeRegistry>) -> Result<ServerSnapshot, String> {
+    let (_, state) = registry.active_runtime()?;
     state.snapshot()
 }
 
@@ -24,7 +32,8 @@ pub fn server_snapshot(state: State<'_, ServerManagerState>) -> Result<ServerSna
 pub async fn server_console_command(app: AppHandle, command: String) -> CommandResult<()> {
     let command = normalize_console_command(&command)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (_, state) = registry.active_runtime().map_err(CommandError::runtime)?;
         let snapshot = state.snapshot().map_err(CommandError::runtime)?;
         match snapshot.state.as_str() {
             "Online" => {}
@@ -59,10 +68,19 @@ pub async fn server_console_command(app: AppHandle, command: String) -> CommandR
 #[tauri::command]
 pub async fn server_start(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (active, state) = registry.active_runtime()?;
+        let snapshot = state.snapshot()?;
+        if matches!(snapshot.state.as_str(), "Starting" | "Online") {
+            return Ok(());
+        }
         let _lease = ServerStartLease::acquire()?;
-        prepare_managed_start(&app)?;
-        state.start()
+        let paper_port = prepare_managed_start(&app, &active.id)?;
+        if let Err(error) = state.start(paper_port) {
+            let _ = registry.remove(&active.id);
+            return Err(error);
+        }
+        Ok(())
     })
     .await
     .map_err(|error| format!("Server start task failed: {error}"))?
@@ -71,8 +89,10 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn server_stop(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        stop_with_recovery(&state)
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (active, state) = registry.active_runtime()?;
+        stop_with_recovery(&state)?;
+        registry.remove(&active.id)
     })
     .await
     .map_err(|error| format!("Server stop task failed: {error}"))?
@@ -81,11 +101,12 @@ pub async fn server_stop(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn server_restart(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (active, state) = registry.active_runtime()?;
         stop_with_recovery(&state)?;
         let _lease = ServerStartLease::acquire()?;
-        prepare_managed_start(&app)?;
-        state.start()
+        let paper_port = prepare_managed_start(&app, &active.id)?;
+        state.start(paper_port)
     })
     .await
     .map_err(|error| format!("Server restart task failed: {error}"))?
@@ -94,8 +115,13 @@ pub async fn server_restart(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn server_recover_detached(app: AppHandle) -> Result<DetachedRecoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<ServerManagerState>();
-        state.recover_detached()
+        let registry = app.state::<ServerRuntimeRegistry>();
+        let (active, state) = registry.active_runtime()?;
+        let result = state.recover_detached()?;
+        if result.stopped {
+            let _ = registry.remove(&active.id);
+        }
+        Ok(result)
     })
     .await
     .map_err(|error| format!("Detached server recovery task failed: {error}"))?
@@ -145,20 +171,23 @@ fn normalize_console_command(raw: &str) -> CommandResult<String> {
 /// One canonical preparation path for both Start and Restart.
 /// Core synchronization may repair only LazyBuilder-owned bundled modules.
 /// Server behavior/performance configuration is never mutated as a side effect of Start.
-fn prepare_managed_start(app: &AppHandle) -> Result<(), String> {
+fn prepare_managed_start(app: &AppHandle, workspace_id: &str) -> Result<u16, String> {
     let active = workspace_registry::current()?
         .ok_or_else(|| "No LazyBuilder server workspace is active.".to_string())?;
+    if active.id != workspace_id {
+        return Err("Server start target changed while preparing the runtime. Re-open the server and retry.".into());
+    }
     let resource = format!("workspace:{}", active.id);
     if app.state::<OperationRegistry>().has_active_for_resource(&resource)? {
         return Err("A Launcher operation is still changing this server. Wait for it to finish before starting Paper.".into());
     }
-    server_process_guard::ensure_no_running_paper_except(Some(&active.id))?;
+    server_process_guard::ensure_concurrent_server_capacity(&active.id)?;
     ensure_base_provisioned()?;
     ensure_bundled_core(app)?;
     ensure_provisioned()?;
-    ensure_world_control_port_available()?;
+    world_manager::prepare_control_options_for_start()?;
     startup_guard::ensure_memory_headroom()?;
-    Ok(())
+    select_paper_port(configured_paper_port(&active.path)?)
 }
 
 fn ensure_bundled_core(app: &AppHandle) -> Result<(), String> {
@@ -166,19 +195,52 @@ fn ensure_bundled_core(app: &AppHandle) -> Result<(), String> {
     runtime_updates::ensure_core_current(resource_dir.as_deref())
 }
 
-fn ensure_world_control_port_available() -> Result<(), String> {
-    let options = world_manager::load_or_create_control_options()?;
-    ensure_loopback_port_available(options.port)
+fn configured_paper_port(workspace_path: &str) -> Result<u16, String> {
+    let options = server_config::load()?;
+    let server_relative = paths::safe_relative_path(&options.server_directory, "serverDirectory")?;
+    let properties_path = PathBuf::from(workspace_path).join(server_relative).join("server.properties");
+    if !properties_path.is_file() {
+        return Ok(DEFAULT_PAPER_PORT);
+    }
+    let text = fs::read_to_string(&properties_path)
+        .map_err(|error| format!("Could not read {}: {error}", properties_path.display()))?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue; };
+        if key.trim() != "server-port" {
+            continue;
+        }
+        let port = value.trim().parse::<u16>()
+            .map_err(|_| format!("Invalid server-port value in {}", properties_path.display()))?;
+        if port == 0 {
+            return Err(format!("server-port must be between 1 and 65535 in {}", properties_path.display()));
+        }
+        return Ok(port);
+    }
+    Ok(DEFAULT_PAPER_PORT)
 }
 
-fn ensure_loopback_port_available(port: u16) -> Result<(), String> {
-    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
-        format!(
-            "LazyBuilder world-control port {port} is already in use on 127.0.0.1 ({error}). Stop the process using this port or change the World Manager control port before starting Paper."
-        )
-    })?;
-    drop(listener);
-    Ok(())
+fn select_paper_port(preferred: u16) -> Result<u16, String> {
+    if paper_port_available(preferred) {
+        return Ok(preferred);
+    }
+    let mut candidate = preferred.saturating_add(1).max(1);
+    for _ in 0..PAPER_PORT_SCAN_LIMIT {
+        if paper_port_available(candidate) {
+            return Ok(candidate);
+        }
+        candidate = candidate.checked_add(1).unwrap_or(DEFAULT_PAPER_PORT);
+    }
+    Err(format!(
+        "LazyBuilder could not find a free Paper listen port after checking {PAPER_PORT_SCAN_LIMIT} candidates starting near {preferred}. Stop a conflicting server or local service and retry."
+    ))
+}
+
+fn paper_port_available(port: u16) -> bool {
+    TcpListener::bind(("0.0.0.0", port)).is_ok()
 }
 
 fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
@@ -189,11 +251,6 @@ fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
                 format!("{stop_error}; additionally failed to inspect stop recovery state: {snapshot_error}")
             })?;
 
-            // A controller-owned process may still be winding down (Stopping), while a
-            // process surviving a launcher restart/crash is represented as Detached.
-            // Both states are safe recovery candidates because recover_detached() also
-            // validates PID, process start time and the LazyBuilder Paper command line
-            // before terminating anything.
             if !is_recoverable_stop_snapshot(&snapshot) {
                 return Err(stop_error);
             }
@@ -217,7 +274,6 @@ fn is_recoverable_stop_snapshot(snapshot: &ServerSnapshot) -> bool {
     matches!(snapshot.state.as_str(), "Stopping" | "Detached") && snapshot.pid.is_some()
 }
 
-/// Validate the pieces that must already exist before start-time core self-healing.
 fn ensure_base_provisioned() -> Result<(), String> {
     let status = workspace_registry::provisioning_status()?;
     if !status.java_ready || !java_runtime::managed_java_ready() {
@@ -248,7 +304,7 @@ fn ensure_provisioned() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_loopback_port_available, is_recoverable_stop_snapshot, normalize_console_command};
+    use super::{is_recoverable_stop_snapshot, normalize_console_command, paper_port_available, select_paper_port};
     use crate::engine::server_manager::ServerSnapshot;
     use std::net::TcpListener;
 
@@ -281,13 +337,12 @@ mod tests {
     }
 
     #[test]
-    fn occupied_world_control_port_is_rejected_before_paper_start() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral test port");
+    fn occupied_paper_port_advances_to_next_available_port() {
+        let listener = TcpListener::bind(("0.0.0.0", 0)).expect("bind ephemeral test port");
         let port = listener.local_addr().expect("local address").port();
-        let error = ensure_loopback_port_available(port).expect_err("occupied port must be rejected");
-        assert!(error.contains(&port.to_string()));
-        drop(listener);
-        assert!(ensure_loopback_port_available(port).is_ok());
+        assert!(!paper_port_available(port));
+        let selected = select_paper_port(port).expect("a later port should be available");
+        assert_ne!(selected, port);
     }
 
     #[test]
