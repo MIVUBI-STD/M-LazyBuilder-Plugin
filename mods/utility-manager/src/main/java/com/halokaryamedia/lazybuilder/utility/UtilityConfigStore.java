@@ -37,6 +37,7 @@ public final class UtilityConfigStore {
                 readBoolean(properties, "window.borderless", defaults.borderlessWindow()),
                 readBoolean(properties, "chat.extended_history", defaults.extendedChatHistory()),
                 readBoolean(properties, "chat.keep_draft", defaults.keepChatDraft()),
+                readBoolean(properties, "chat.search", defaults.chatSearch()),
                 readBoolean(properties, "connection.reconnect_button", defaults.reconnectButton()),
                 readBooleanWithLegacyAlias(
                         properties,
@@ -54,6 +55,7 @@ public final class UtilityConfigStore {
         properties.setProperty("window.borderless", Boolean.toString(preferences.borderlessWindow()));
         properties.setProperty("chat.extended_history", Boolean.toString(preferences.extendedChatHistory()));
         properties.setProperty("chat.keep_draft", Boolean.toString(preferences.keepChatDraft()));
+        properties.setProperty("chat.search", Boolean.toString(preferences.chatSearch()));
         properties.setProperty("connection.reconnect_button", Boolean.toString(preferences.reconnectButton()));
         properties.setProperty(
                 "screenshots.contextual_names",
