@@ -1,7 +1,7 @@
 use crate::engine::workspace_registry;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 const RECOVERY_SCHEMA_VERSION: u32 = 1;
@@ -78,30 +78,23 @@ pub fn recover_pending() -> Result<BackupRecoveryReport, String> {
 
 pub fn legacy_sweep_required() -> Result<bool, String> {
     let path = legacy_sweep_marker_path()?;
-    if !path.exists() {
+    if !existing_regular_file(&path, "backup recovery migration marker")? {
         return Ok(true);
-    }
-    let metadata = fs::symlink_metadata(&path)
-        .map_err(|error| format!("Could not inspect backup recovery migration marker: {error}"))?;
-    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
-        return Err("Backup recovery migration marker is not a safe regular file".into());
     }
     let text = fs::read_to_string(&path)
         .map_err(|error| format!("Could not read backup recovery migration marker: {error}"))?;
-    let marker: LegacySweepMarker = serde_json::from_str(&text)
-        .map_err(|error| format!("Could not parse backup recovery migration marker: {error}"))?;
-    if marker.schema_version != LEGACY_SWEEP_SCHEMA_VERSION {
-        return Err(format!(
-            "Backup recovery migration marker schema {} is unsupported by this Launcher",
-            marker.schema_version
-        ));
-    }
-    Ok(false)
+    Ok(legacy_marker_requires_sweep(&text))
 }
 
 pub fn mark_legacy_sweep_complete() -> Result<(), String> {
     let path = legacy_sweep_marker_path()?;
     atomic_write_json(&path, &LegacySweepMarker { schema_version: LEGACY_SWEEP_SCHEMA_VERSION })
+}
+
+fn legacy_marker_requires_sweep(text: &str) -> bool {
+    serde_json::from_str::<LegacySweepMarker>(text)
+        .map(|marker| marker.schema_version != LEGACY_SWEEP_SCHEMA_VERSION)
+        .unwrap_or(true)
 }
 
 fn clear(workspace_id: &str) -> Result<(), String> {
@@ -155,7 +148,7 @@ fn cleanup_workspace_staging(workspace_id: &str) -> Result<u32, String> {
 
 fn load_pending() -> Result<PendingBackupRecovery, String> {
     let path = pending_path()?;
-    if !path.is_file() {
+    if !existing_regular_file(&path, "pending backup recovery index")? {
         return Ok(PendingBackupRecovery { schema_version: RECOVERY_SCHEMA_VERSION, workspace_ids: Vec::new() });
     }
     let text = fs::read_to_string(&path).map_err(|error| format!("Could not read pending backup recovery index: {error}"))?;
@@ -169,7 +162,7 @@ fn load_pending() -> Result<PendingBackupRecovery, String> {
 fn save_pending(pending: &PendingBackupRecovery) -> Result<(), String> {
     let path = pending_path()?;
     if pending.workspace_ids.is_empty() {
-        if path.exists() {
+        if existing_regular_file(&path, "pending backup recovery index")? {
             fs::remove_file(path).map_err(|error| format!("Could not clear pending backup recovery index: {error}"))?;
         }
         return Ok(());
@@ -180,28 +173,53 @@ fn save_pending(pending: &PendingBackupRecovery) -> Result<(), String> {
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        reject_link(parent)?;
     }
     let incoming = path.with_extension("json.incoming");
     let previous = path.with_extension("json.previous");
+
+    let path_exists = existing_regular_file(path, "backup recovery metadata")?;
+    if existing_regular_file(&incoming, "backup recovery incoming metadata")? {
+        fs::remove_file(&incoming).map_err(|error| format!("Could not clear stale backup recovery incoming metadata: {error}"))?;
+    }
+    if existing_regular_file(&previous, "backup recovery previous metadata")? {
+        fs::remove_file(&previous).map_err(|error| format!("Could not clear stale backup recovery previous metadata: {error}"))?;
+    }
+
     let text = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
     {
-        let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(&incoming)
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&incoming)
             .map_err(|error| format!("Could not write backup recovery staging metadata: {error}"))?;
         file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| format!("Could not flush backup recovery metadata: {error}"))?;
     }
-    if path.exists() {
-        let _ = fs::remove_file(&previous);
+    if path_exists {
         fs::rename(path, &previous).map_err(|error| error.to_string())?;
         match fs::rename(&incoming, path) {
             Ok(()) => { let _ = fs::remove_file(previous); Ok(()) }
             Err(error) => {
-                let _ = fs::rename(&previous, path);
+                let rollback = fs::rename(&previous, path);
+                if let Err(rollback_error) = rollback {
+                    return Err(format!("Could not publish backup recovery metadata ({error}) and could not restore previous metadata ({rollback_error}). Recovery files were preserved."));
+                }
                 Err(format!("Could not publish backup recovery metadata: {error}"))
             }
         }
     } else {
         fs::rename(incoming, path).map_err(|error| format!("Could not publish backup recovery metadata: {error}"))
+    }
+}
+
+fn existing_regular_file(path: &Path, label: &str) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
+                return Err(format!("{label} is not a safe regular file: {}", path.display()));
+            }
+            Ok(true)
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
     }
 }
 
@@ -259,5 +277,12 @@ mod tests {
         let marker = LegacySweepMarker { schema_version: LEGACY_SWEEP_SCHEMA_VERSION };
         let text = serde_json::to_string(&marker).unwrap();
         assert_eq!(text, r#"{"schemaVersion":1}"#);
+        assert!(!legacy_marker_requires_sweep(&text));
+    }
+
+    #[test]
+    fn malformed_or_future_legacy_marker_requires_a_sweep() {
+        assert!(legacy_marker_requires_sweep("not-json"));
+        assert!(legacy_marker_requires_sweep(r#"{"schemaVersion":2}"#));
     }
 }
