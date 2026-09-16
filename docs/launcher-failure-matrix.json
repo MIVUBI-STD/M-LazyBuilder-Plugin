@@ -14,6 +14,12 @@
       "testMarkers": ["workspace_library_conflicts_with_workspace_resources", "library_and_workspace_exclusive_operations_are_serialized"]
     },
     {
+      "id": "workspace-metadata-crash-during-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
+      "markers": ["recover_json_file", "write_json_file", "sync_all", "ambiguous {label} recovery staging files"],
+      "testMarkers": ["workspace_metadata_recovery_prefers_previous_committed_copy", "workspace_metadata_recovery_supports_legacy_tmp_staging", "workspace_metadata_recovery_preserves_ambiguous_staging"]
+    },
+    {
       "id": "create-crash-before-intent-identity-update",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
       "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"],
