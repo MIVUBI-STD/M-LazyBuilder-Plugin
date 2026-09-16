@@ -31,7 +31,7 @@ public final class WorldMapScreen extends Screen {
     private static final int EXPORT_SIDEBAR_MIN = 218;
     private static final int EXPORT_SIDEBAR_MAX = 254;
     private static final int EXPORT_FOOTER = 46;
-    private static final int EXPORT_ADVANCED_TOP = 242;
+    private static final int EXPORT_ADVANCED_TOP = 184;
     private static final int EXPORT_ROW_HEIGHT = 26;
     private static final int SAMPLE_BUDGET_PER_TICK = 4096;
     private static final int RASTER_REFRESH_INTERVAL_FRAMES = 12;
@@ -173,7 +173,7 @@ public final class WorldMapScreen extends Screen {
     private void initExportNameField() {
         Rect field = exportNameRect();
         exportNameField = new TextFieldWidget(
-                textRenderer, field.left, field.top, field.width(), field.height(), Text.literal("File Name"));
+                textRenderer, field.left, field.top, field.width(), field.height(), Text.literal("World Name"));
         exportNameField.setMaxLength(80);
         exportNameField.setText(exportWorkspace.artifactName());
         exportNameField.setChangedListener(exportWorkspace::artifactName);
@@ -542,13 +542,11 @@ public final class WorldMapScreen extends Screen {
             return;
         }
 
-        context.drawTextWithShadow(textRenderer, Text.literal("File Name"), panel.left + 12, 78, LbUi.TEXT_MUTED);
-        renderSettingRow(context, exportFormatRect(), "Format / Version", friendlyFormat(exportWorkspace.format()), mouseX, mouseY);
-        renderSettingRow(context, exportGameModeRect(), "Game Mode", MapExportWorkspaceState.titleCase(exportWorkspace.gameMode()), mouseX, mouseY);
-        renderSettingRow(context, exportDifficultyRect(), "Difficulty", MapExportWorkspaceState.titleCase(exportWorkspace.difficulty()), mouseX, mouseY);
+        context.drawTextWithShadow(textRenderer, Text.literal("World Name"), panel.left + 12, 78, LbUi.TEXT_MUTED);
+        renderSettingRow(context, exportFormatRect(), "Version", friendlyFormat(exportWorkspace.format()), mouseX, mouseY);
 
-        context.fill(panel.left + 10, 216, panel.right - 10, 217, LbUi.BORDER);
-        context.drawTextWithShadow(textRenderer, Text.literal("Advanced Settings"), panel.left + 12, 226, LbUi.TEXT_MUTED);
+        context.fill(panel.left + 10, 158, panel.right - 10, 159, LbUi.BORDER);
+        context.drawTextWithShadow(textRenderer, Text.literal("Advanced Settings"), panel.left + 12, 168, LbUi.TEXT_MUTED);
         renderExportAdvanced(context, mouseX, mouseY);
 
         Rect action = exportActionRect();
@@ -596,27 +594,7 @@ public final class WorldMapScreen extends Screen {
             String spawn = exportWorkspace.spawnX() + ", " + exportWorkspace.spawnY() + ", " + exportWorkspace.spawnZ();
             renderSettingRow(context, advancedRowRect(y), "Spawn Position", spawn, mouseX, mouseY);
             y += EXPORT_ROW_HEIGHT;
-            Rect currentSpawn = advancedRowRect(y);
-            renderSettingRow(context, currentSpawn, "Use Current Position", "Apply", mouseX, mouseY);
-            y += EXPORT_ROW_HEIGHT;
-            renderSettingRow(context, advancedRowRect(y), "Time", friendlyTime(exportWorkspace.timeOfDayTicks()), mouseX, mouseY);
-            y += EXPORT_ROW_HEIGHT;
-            renderSettingRow(context, advancedRowRect(y), "Weather", MapExportWorkspaceState.titleCase(exportWorkspace.weather()), mouseX, mouseY);
-            y += EXPORT_ROW_HEIGHT;
-        }
-
-        Rect rulesHeader = advancedRowRect(y);
-        renderAccordionRow(context, rulesHeader, "Game Rules", exportWorkspace.gameRulesExpanded(), mouseX, mouseY);
-        y += EXPORT_ROW_HEIGHT;
-        if (exportWorkspace.gameRulesExpanded()) {
-            for (String rule : MapExportWorkspaceState.COMMON_RULES) {
-                if (!exportWorkspace.hasRule(rule)) continue;
-                String value = exportWorkspace.ruleValue(rule);
-                String shown = value.equalsIgnoreCase("true") ? "On"
-                        : value.equalsIgnoreCase("false") ? "Off" : value;
-                renderSettingRow(context, advancedRowRect(y), MapExportWorkspaceState.ruleLabel(rule), shown, mouseX, mouseY);
-                y += EXPORT_ROW_HEIGHT;
-            }
+            renderSettingRow(context, advancedRowRect(y), "Use Current Position", "Apply", mouseX, mouseY);
         }
         context.disableScissor();
     }
@@ -885,14 +863,6 @@ public final class WorldMapScreen extends Screen {
             exportWorkspace.cycleFormat(worlds.exportFormats());
             return true;
         }
-        if (exportGameModeRect().contains(mouseX, mouseY)) {
-            exportWorkspace.cycleGameMode();
-            return true;
-        }
-        if (exportDifficultyRect().contains(mouseX, mouseY)) {
-            exportWorkspace.cycleDifficulty();
-            return true;
-        }
         if (exportActionRect().contains(mouseX, mouseY)) {
             submitExport();
             return true;
@@ -915,38 +885,6 @@ public final class WorldMapScreen extends Screen {
                             client.player.getBlockX(), client.player.getBlockY(), client.player.getBlockZ());
                 }
                 return true;
-            }
-            y += EXPORT_ROW_HEIGHT;
-            Rect time = advancedRowRect(y);
-            if (time.contains(mouseX, mouseY)) {
-                exportWorkspace.cycleTime();
-                return true;
-            }
-            y += EXPORT_ROW_HEIGHT;
-            Rect weather = advancedRowRect(y);
-            if (weather.contains(mouseX, mouseY)) {
-                exportWorkspace.cycleWeather();
-                return true;
-            }
-            y += EXPORT_ROW_HEIGHT;
-        }
-
-        Rect rulesHeader = advancedRowRect(y);
-        if (rulesHeader.contains(mouseX, mouseY)) {
-            exportWorkspace.toggleGameRules();
-            clampExportScroll();
-            return true;
-        }
-        y += EXPORT_ROW_HEIGHT;
-        if (exportWorkspace.gameRulesExpanded()) {
-            for (String rule : MapExportWorkspaceState.COMMON_RULES) {
-                if (!exportWorkspace.hasRule(rule)) continue;
-                Rect row = advancedRowRect(y);
-                if (row.contains(mouseX, mouseY)) {
-                    exportWorkspace.toggleBooleanRule(rule);
-                    return true;
-                }
-                y += EXPORT_ROW_HEIGHT;
             }
         }
         return true;
@@ -1120,7 +1058,7 @@ public final class WorldMapScreen extends Screen {
         String artifact = exportNameField == null ? exportWorkspace.artifactName() : exportNameField.getText();
         artifact = artifact == null ? "" : artifact.strip();
         if (artifact.isEmpty()) {
-            LazyBuilderClientNetworking.notifyPlayer("Choose a file name before exporting.");
+            LazyBuilderClientNetworking.notifyPlayer("Choose a world name before exporting.");
             return;
         }
         exportWorkspace.artifactName(artifact);
@@ -1483,8 +1421,6 @@ public final class WorldMapScreen extends Screen {
     }
     private Rect exportNameRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 91, p.right - 12, 113); }
     private Rect exportFormatRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 122, p.right - 12, 147); }
-    private Rect exportGameModeRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 153, p.right - 12, 178); }
-    private Rect exportDifficultyRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 184, p.right - 12, 209); }
     private Rect exportAdvancedViewport() {
         Rect p = exportSidebarRect();
         return new Rect(p.left + 8, EXPORT_ADVANCED_TOP, p.right - 8, Math.max(EXPORT_ADVANCED_TOP, height - EXPORT_FOOTER - 16));
@@ -1493,11 +1429,8 @@ public final class WorldMapScreen extends Screen {
     private Rect exportActionRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, height - 38, p.right - 12, height - 10); }
 
     private int exportAdvancedContentHeight() {
-        int rows = 2;
-        if (exportWorkspace.worldSettingsExpanded()) rows += 4;
-        if (exportWorkspace.gameRulesExpanded()) {
-            for (String rule : MapExportWorkspaceState.COMMON_RULES) if (exportWorkspace.hasRule(rule)) rows++;
-        }
+        int rows = 1;
+        if (exportWorkspace.worldSettingsExpanded()) rows += 2;
         return rows * EXPORT_ROW_HEIGHT;
     }
     private int maxExportScroll() {
@@ -1586,17 +1519,9 @@ public final class WorldMapScreen extends Screen {
 
     private static String friendlyFormat(String raw) {
         String value = raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT);
-        if (value.startsWith("JAVA_")) return "Java Edition " + value.substring(5).replace('_', '.');
-        if (value.startsWith("BEDROCK_")) return "Bedrock Edition " + value.substring(8).replace('_', '.');
+        if (value.startsWith("JAVA_")) return "Java " + value.substring(5).replace('_', '.');
+        if (value.startsWith("BEDROCK_")) return "Bedrock " + value.substring(8).replace('_', '.');
         return MapExportWorkspaceState.titleCase(value);
-    }
-
-    private static String friendlyTime(long ticks) {
-        if (ticks == 1000L) return "Day";
-        if (ticks == 6000L) return "Noon";
-        if (ticks == 13000L) return "Night";
-        if (ticks == 18000L) return "Midnight";
-        return Long.toString(ticks);
     }
 
     private void invalidateRasterViewport() {
