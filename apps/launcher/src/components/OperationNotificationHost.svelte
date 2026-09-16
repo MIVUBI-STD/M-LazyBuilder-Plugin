@@ -47,7 +47,15 @@
   }
 
   async function refresh() {
-    if (disposed || refreshInFlight || document.querySelector('.activity-page')) return [] as LauncherOperationSnapshot[];
+    if (disposed || refreshInFlight) return [] as LauncherOperationSnapshot[];
+    if (document.querySelector('.activity-page')) {
+      // Activity already presents the canonical snapshots. Reset the presentation
+      // baseline so leaving Activity never produces stale duplicate completion toasts.
+      knownStates.clear();
+      seeded = false;
+      return [] as LauncherOperationSnapshot[];
+    }
+
     refreshInFlight = true;
     try {
       const operations = await runtimeProduct.operations.list();
