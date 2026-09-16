@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.terraformserver;
 
 import com.halokaryamedia.lazybuilder.terraform.BoundedShapeField;
 import com.halokaryamedia.lazybuilder.terraform.ShapeBounds;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -12,9 +13,10 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.*;
 import java.util.function.BiConsumer;
 
-/** Main-thread bounded world writer. Geometry evaluation is deterministic and chunk-local work is tick-budgeted. */
+/** Main-thread bounded world writer with tick budgeting and reversible per-player history. */
 final class TerraformApplyQueue {
     private static final int BLOCKS_PER_TICK = 4096;
+    private static final int HISTORY_LIMIT = 32;
     private static final long MAX_CANDIDATES = 2_500_000L;
     private final JavaPlugin plugin;
     private final Deque<Job> queue = new ArrayDeque<>();
@@ -42,7 +44,7 @@ final class TerraformApplyQueue {
         if (history == null || history.isEmpty()) return false;
         UndoRecord record = history.removeLast();
         if (!record.worldUid.equals(player.getWorld().getUID())) return false;
-        queue.addFirst(Job.undo(player.getUniqueId(), player.getWorld(), id, record.positions, done));
+        queue.addFirst(Job.undo(player.getUniqueId(), player.getWorld(), id, record.changes, done));
         return true;
     }
 
@@ -52,31 +54,42 @@ final class TerraformApplyQueue {
         while (budget-- > 0 && !job.finished()) job.step();
         if (job.finished()) {
             queue.removeFirst();
-            if (!job.undoMode && !job.changed.isEmpty()) undo.computeIfAbsent(job.owner, k -> new ArrayDeque<>()).addLast(new UndoRecord(job.world.getUID(), List.copyOf(job.changed)));
+            if (!job.undoMode && !job.changed.isEmpty()) {
+                Deque<UndoRecord> history = undo.computeIfAbsent(job.owner, k -> new ArrayDeque<>());
+                history.addLast(new UndoRecord(job.world.getUID(), List.copyOf(job.changed)));
+                while (history.size() > HISTORY_LIMIT) history.removeFirst();
+            }
             job.done.accept(job.changed.size(), job.undoMode);
         }
     }
 
     private record Pos(int x,int y,int z) {}
-    private record UndoRecord(UUID worldUid, List<Pos> positions) {}
+    private record Change(Pos pos, String previousBlockData) {}
+    private record UndoRecord(UUID worldUid, List<Change> changes) {}
 
     private static final class Job {
         final UUID owner; final World world; final String id; final BoundedShapeField field; final BiConsumer<Integer,Boolean> done;
-        final int minX,maxX,minY,maxY,minZ,maxZ; final boolean undoMode; final List<Pos> undoPositions; final List<Pos> changed = new ArrayList<>();
+        final int minX,maxX,minY,maxY,minZ,maxZ; final boolean undoMode; final List<Change> undoChanges; final List<Change> changed = new ArrayList<>();
         int x,y,z,index;
         Job(UUID owner, World world, String id, BoundedShapeField field, int minX,int maxX,int minY,int maxY,int minZ,int maxZ,BiConsumer<Integer,Boolean> done) {
-            this.owner=owner;this.world=world;this.id=id;this.field=field;this.minX=minX;this.maxX=maxX;this.minY=minY;this.maxY=maxY;this.minZ=minZ;this.maxZ=maxZ;this.done=done;this.undoMode=false;this.undoPositions=null;
+            this.owner=owner;this.world=world;this.id=id;this.field=field;this.minX=minX;this.maxX=maxX;this.minY=minY;this.maxY=maxY;this.minZ=minZ;this.maxZ=maxZ;this.done=done;this.undoMode=false;this.undoChanges=null;
             x=minX;y=minY;z=minZ;
         }
-        private Job(UUID owner, World world, String id, List<Pos> positions, BiConsumer<Integer,Boolean> done) {
-            this.owner=owner;this.world=world;this.id=id;this.field=null;this.minX=this.maxX=this.minY=this.maxY=this.minZ=this.maxZ=0;this.done=done;this.undoMode=true;this.undoPositions=positions;
+        private Job(UUID owner, World world, String id, List<Change> changes, BiConsumer<Integer,Boolean> done) {
+            this.owner=owner;this.world=world;this.id=id;this.field=null;this.minX=this.maxX=this.minY=this.maxY=this.minZ=this.maxZ=0;this.done=done;this.undoMode=true;this.undoChanges=changes;
         }
-        static Job undo(UUID owner, World world, String id, List<Pos> positions, BiConsumer<Integer,Boolean> done) { return new Job(owner,world,id,positions,done); }
-        boolean finished() { return undoMode ? index >= undoPositions.size() : y > maxY; }
+        static Job undo(UUID owner, World world, String id, List<Change> changes, BiConsumer<Integer,Boolean> done) { return new Job(owner,world,id,changes,done); }
+        boolean finished() { return undoMode ? index >= undoChanges.size() : y > maxY; }
         void step() {
-            if (undoMode) { Pos p=undoPositions.get(index++); Block b=world.getBlockAt(p.x,p.y,p.z); if (b.getType()==Material.STONE) { b.setType(Material.AIR,false); changed.add(p); } return; }
+            if (undoMode) {
+                Change change=undoChanges.get(index++); Pos p=change.pos(); Block b=world.getBlockAt(p.x,p.y,p.z);
+                b.setBlockData(Bukkit.createBlockData(change.previousBlockData()), false); changed.add(change); return;
+            }
             Block block=world.getBlockAt(x,y,z);
-            if (block.getType().isAir() && field.contains(x+0.5,y+0.5,z+0.5)) { block.setType(Material.STONE,false); changed.add(new Pos(x,y,z)); }
+            if (block.getType().isAir() && field.contains(x+0.5,y+0.5,z+0.5)) {
+                changed.add(new Change(new Pos(x,y,z), block.getBlockData().getAsString()));
+                block.setType(Material.STONE,false);
+            }
             if (++x>maxX) { x=minX; if (++z>maxZ) { z=minZ; y++; } }
         }
     }
