@@ -100,7 +100,15 @@ def main() -> int:
         "ensure_no_running_paper_except(None)",
     )
 
-    require(adoption, "pending-adoptions.json", "ADOPTION_RECOVERY_REQUIRED", "recover_pending_adoptions")
+    require(
+        adoption,
+        "pending-adoptions.json",
+        "ADOPTION_RECOVERY_REQUIRED",
+        "recover_pending_adoptions",
+        "reject_adoption_source_trees(&intent)?",
+        "fn reject_tree_links(",
+        "is_reparse_point(&metadata)",
+    )
     require(registry, "pending-duplicates.json", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates")
     require(restore, "pending-restores.json", "recover_pending_restores")
 
