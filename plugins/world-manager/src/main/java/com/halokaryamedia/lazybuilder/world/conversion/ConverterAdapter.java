@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /** Converter-specific boundary. Only this adapter may know CLI/runtime details. */
 public interface ConverterAdapter {
-    int ADAPTER_CONTRACT = 3;
+    int ADAPTER_CONTRACT = 2;
 
     ConverterProbe probe(Path runtimeArtifact) throws IOException;
 
