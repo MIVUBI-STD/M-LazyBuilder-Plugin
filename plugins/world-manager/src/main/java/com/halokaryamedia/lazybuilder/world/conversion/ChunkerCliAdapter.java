@@ -163,7 +163,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         Path metadataInput = parent.resolve("native-metadata-input-" + token);
         Path metadataOutput = parent.resolve("native-metadata-output-" + token);
         try {
-            seedSameFormatOutput(request.inputDirectory(), metadataInput);
+            seedMetadataOnlyInput(request.inputDirectory(), metadataInput);
             ConversionRequest metadataRequest = new ConversionRequest(
                     metadataInput,
                     metadataOutput,
@@ -213,7 +213,9 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         requireOptionalSettingsFile(request.pruningSettings(), "Pruning settings");
         requireOptionalSettingsFile(request.worldSettings(), "World settings");
         requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
-        requireSupportedCustomDimensionShape(request);
+        if (!(request.preserveNativeInput() && request.canonicalNativeOutput())) {
+            requireSupportedCustomDimensionShape(request);
+        }
     }
 
     static boolean canUseLosslessNativeAreaPath(ConversionRequest request) {
@@ -339,6 +341,27 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
             }
         }
         return false;
+    }
+
+    static void seedMetadataOnlyInput(Path inputDirectory, Path outputDirectory) throws IOException {
+        Path input = Objects.requireNonNull(inputDirectory, "inputDirectory").toAbsolutePath().normalize();
+        Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
+        if (!Files.isDirectory(input) || Files.isSymbolicLink(input)) {
+            throw new IOException("Metadata input world is missing or unsafe: " + input);
+        }
+        if (Files.exists(output)) {
+            throw new IOException("Metadata output seed must not already exist: " + output);
+        }
+        Path levelDat = input.resolve("level.dat");
+        if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat) || Files.size(levelDat) == 0L) {
+            throw new IOException("Metadata input world has no safe level.dat");
+        }
+        Files.createDirectories(output);
+        Files.copy(levelDat, output.resolve("level.dat"), StandardCopyOption.COPY_ATTRIBUTES);
+        Path levelDatOld = input.resolve("level.dat_old");
+        if (Files.isRegularFile(levelDatOld) && !Files.isSymbolicLink(levelDatOld)) {
+            Files.copy(levelDatOld, output.resolve("level.dat_old"), StandardCopyOption.COPY_ATTRIBUTES);
+        }
     }
 
     static void seedSameFormatOutput(Path inputDirectory, Path outputDirectory) throws IOException {
