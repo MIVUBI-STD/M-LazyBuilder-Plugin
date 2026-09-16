@@ -69,8 +69,10 @@ public final class CompactDebugInteraction {
         if (!isCoordinateHovered(client) || client.player == null) return false;
 
         BlockPos pos = client.player.getBlockPos();
-        String coordinate = pos.getX() + " " + pos.getY() + " " + pos.getZ();
-        UtilityClipboard.copy(coordinate, "Coordinates copied");
+        UtilityClipboard.copy(
+                CompactDebugCoordinateText.clipboard(pos.getX(), pos.getY(), pos.getZ()),
+                "Coordinates copied"
+        );
         return true;
     }
 
