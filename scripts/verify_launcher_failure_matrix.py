@@ -76,6 +76,8 @@ def main() -> int:
         "workspace-metadata-crash-during-publish",
         "app-data-crash-during-metadata-publish",
         "launcher-settings-crash-during-metadata-publish",
+        "creation-intent-crash-during-metadata-publish",
+        "adoption-intent-crash-during-metadata-publish",
         "create-crash-before-intent-identity-update",
         "adoption-crash-mid-move",
         "duplicate-crash-after-publish-before-register",

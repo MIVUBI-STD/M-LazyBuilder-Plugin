@@ -21,6 +21,8 @@ def main() -> int:
     server_config = RUST / "server_config.rs"
     launcher_settings = RUST / "launcher_settings.rs"
     workspace_registry = RUST / "workspace_registry.rs"
+    workspace_creation = RUST / "workspace_creation.rs"
+    adoption = RUST / "adoption.rs"
 
     require(
         app_data,
@@ -93,6 +95,38 @@ def main() -> int:
         "workspace_metadata_recovery_preserves_ambiguous_staging",
         "workspace_metadata_preserves_recovery_evidence_until_validation",
         "let workspace_created = match read_manifest(&root)?",
+    )
+
+    require(
+        workspace_creation,
+        "recover_pending_creation_file(&path)?",
+        "cleanup_pending_creation_recovery_files(&path)?",
+        "replace_pending_creation_file",
+        "create_new(true)",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.incoming")',
+        "metadata_entry_exists",
+        "ensure_regular_metadata_file",
+        "creation_intent_recovery_prefers_previous_committed_copy",
+        "creation_intent_incoming_recovers_without_committed_copy",
+        "malformed_creation_intent_preserves_recovery_evidence",
+    )
+
+    require(
+        adoption,
+        "recover_pending_adoption_file(&path)?",
+        "cleanup_pending_adoption_recovery_files(&path)?",
+        "replace_pending_adoption_file",
+        "create_new(true)",
+        "file.sync_all()",
+        'with_extension("json.previous")',
+        'with_extension("json.incoming")',
+        "metadata_entry_exists",
+        "ensure_regular_metadata_file",
+        "adoption_intent_recovery_prefers_previous_committed_copy",
+        "adoption_intent_incoming_recovers_without_committed_copy",
+        "malformed_adoption_intent_preserves_recovery_evidence",
     )
 
     print("Launcher metadata durability contract OK")
