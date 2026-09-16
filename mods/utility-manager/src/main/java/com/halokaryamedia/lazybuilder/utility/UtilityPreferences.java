@@ -11,6 +11,7 @@ public record UtilityPreferences(
         boolean extendedChatHistory,
         boolean keepChatDraft,
         boolean chatSearch,
+        boolean chatTimestamps,
         boolean reconnectButton,
         boolean contextualScreenshotNames,
         boolean instantCreativeSearch,
@@ -19,6 +20,7 @@ public record UtilityPreferences(
     public static UtilityPreferences defaults() {
         return new UtilityPreferences(
                 false,
+                true,
                 true,
                 true,
                 true,
