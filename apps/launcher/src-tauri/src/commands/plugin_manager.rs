@@ -1,6 +1,10 @@
+use crate::commands::error::{CommandError, CommandResult};
+use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::plugin_ingress;
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
 use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_start_lock::ServerStartLease;
+use crate::engine::workspace_registry;
 use serde::Serialize;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
@@ -55,15 +59,20 @@ pub fn plugin_pick_jar() -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn plugin_install(app: AppHandle, jar_path: String) -> Result<PluginInstallResult, String> {
-    run_blocking("Plugin install", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
-        let staged_path = ingress.path().to_string_lossy().into_owned();
-        plugins.install(&staged_path)
-    })
+pub async fn plugin_install(app: AppHandle, jar_path: String) -> CommandResult<PluginInstallResult> {
+    run_plugin_mutation(
+        app,
+        "install-plugin",
+        "installing",
+        "Installing plugin",
+        "PLUGIN_INSTALL_FAILED",
+        "Review Plugins and retry",
+        move |plugins| {
+            let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
+            let staged_path = ingress.path().to_string_lossy().into_owned();
+            plugins.install(&staged_path)
+        },
+    )
     .await
 }
 
@@ -72,15 +81,20 @@ pub async fn plugin_update(
     app: AppHandle,
     plugin_id: String,
     jar_path: String,
-) -> Result<PluginInstallResult, String> {
-    run_blocking("Plugin update", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
-        let staged_path = ingress.path().to_string_lossy().into_owned();
-        plugins.update(&plugin_id, &staged_path)
-    })
+) -> CommandResult<PluginInstallResult> {
+    run_plugin_mutation(
+        app,
+        "update-plugin",
+        "updating",
+        "Updating plugin",
+        "PLUGIN_UPDATE_FAILED",
+        "Review Plugins and retry",
+        move |plugins| {
+            let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
+            let staged_path = ingress.path().to_string_lossy().into_owned();
+            plugins.update(&plugin_id, &staged_path)
+        },
+    )
     .await
 }
 
@@ -89,24 +103,30 @@ pub async fn plugin_set_enabled(
     app: AppHandle,
     plugin_id: String,
     enabled: bool,
-) -> Result<(), String> {
-    run_blocking("Plugin state change", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        plugins.set_enabled(&plugin_id, enabled)
-    })
+) -> CommandResult<()> {
+    run_plugin_mutation(
+        app,
+        "change-plugin-state",
+        "updating",
+        "Changing plugin state",
+        "PLUGIN_STATE_FAILED",
+        "Review Plugins and retry",
+        move |plugins| plugins.set_enabled(&plugin_id, enabled),
+    )
     .await
 }
 
 #[tauri::command]
-pub async fn plugin_remove(app: AppHandle, plugin_id: String) -> Result<(), String> {
-    run_blocking("Plugin removal", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        plugins.remove(&plugin_id)
-    })
+pub async fn plugin_remove(app: AppHandle, plugin_id: String) -> CommandResult<()> {
+    run_plugin_mutation(
+        app,
+        "remove-plugin",
+        "removing",
+        "Removing plugin",
+        "PLUGIN_REMOVE_FAILED",
+        "Review Plugins and retry",
+        move |plugins| plugins.remove(&plugin_id),
+    )
     .await
 }
 
@@ -115,13 +135,16 @@ pub async fn plugin_remove_problem(
     app: AppHandle,
     plugin_id: String,
     jar_file_name: String,
-) -> Result<(), String> {
-    run_blocking("Broken plugin cleanup", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        plugins.remove_problem(&plugin_id, &jar_file_name)
-    })
+) -> CommandResult<()> {
+    run_plugin_mutation(
+        app,
+        "remove-problem-plugin",
+        "removing",
+        "Removing broken plugin file",
+        "PLUGIN_REMOVE_FAILED",
+        "Review Plugins and retry",
+        move |plugins| plugins.remove_problem(&plugin_id, &jar_file_name),
+    )
     .await
 }
 
@@ -130,13 +153,16 @@ pub async fn plugin_resolve_duplicates(
     app: AppHandle,
     plugin_id: String,
     keep_jar_file_name: String,
-) -> Result<PluginInstallResult, String> {
-    run_blocking("Plugin duplicate resolution", move || {
-        let plugins = app.state::<PluginManagerState>();
-        let server = app.state::<ServerManagerState>();
-        ensure_plugin_mutation_allowed(&server)?;
-        plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name)
-    })
+) -> CommandResult<PluginInstallResult> {
+    run_plugin_mutation(
+        app,
+        "resolve-plugin-duplicates",
+        "resolving",
+        "Resolving duplicate plugin files",
+        "PLUGIN_DUPLICATE_RESOLUTION_FAILED",
+        "Review Plugins and retry",
+        move |plugins| plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name),
+    )
     .await
 }
 
@@ -152,6 +178,88 @@ fn is_lazybuilder_managed(plugin: &PluginSummary) -> bool {
     })
 }
 
+async fn run_plugin_mutation<T, F>(
+    app: AppHandle,
+    kind: &'static str,
+    phase: &'static str,
+    status: &'static str,
+    failure_code: &'static str,
+    failure_action: &'static str,
+    work: F,
+) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&PluginManagerState) -> Result<T, String> + Send + 'static,
+{
+    let active = workspace_registry::current()
+        .map_err(CommandError::from)?
+        .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before changing plugins."))?;
+    let resource = format!("workspace:{}", active.id);
+    let operation = app
+        .state::<OperationRegistry>()
+        .begin_exclusive(kind, &resource, false)
+        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+    let operation_id = operation.id.clone();
+    let join_operation_id = operation.id.clone();
+    let task_app = app.clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let operations = task_app.state::<OperationRegistry>();
+        let _start_lease = match ServerStartLease::acquire() {
+            Ok(value) => value,
+            Err(message) => {
+                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                fail_operation(&operations, &operation_id, &error);
+                return Err(error);
+            }
+        };
+
+        let server = task_app.state::<ServerManagerState>();
+        let _ = operations.set_phase(
+            &operation_id,
+            "preflight",
+            "Checking plugin mutation safety",
+            "Confirming the server remains offline while plugin files are changed.",
+            None,
+        );
+        if let Err(message) = ensure_plugin_mutation_allowed(&server) {
+            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop server");
+            fail_operation(&operations, &operation_id, &error);
+            return Err(error);
+        }
+
+        let _ = operations.set_phase(&operation_id, phase, status, "Plugin file changes are staged and validated by the canonical Plugin Manager owner.", None);
+        let plugins = task_app.state::<PluginManagerState>();
+        match work(plugins.inner()) {
+            Ok(result) => {
+                let _ = operations.succeed(&operation_id, status);
+                Ok(result)
+            }
+            Err(message) => {
+                let error = CommandError::recoverable(failure_code, message, failure_action);
+                fail_operation(&operations, &operation_id, &error);
+                Err(error)
+            }
+        }
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = app.state::<OperationRegistry>().require_recovery(
+                &join_operation_id,
+                OperationError {
+                    code: "TASK_FAILED".into(),
+                    message: "Plugin mutation task ended unexpectedly".into(),
+                    details: error.to_string(),
+                    recoverable: true,
+                },
+            );
+            Err(CommandError::new("TASK_FAILED", format!("Plugin mutation task failed: {error}")))
+        }
+    }
+}
+
 fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), String> {
     let snapshot = server.snapshot()?;
     match snapshot.state.as_str() {
@@ -164,6 +272,18 @@ fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), Str
             "Stop the server before changing plugins. Current server state: {other}."
         )),
     }
+}
+
+fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &CommandError) {
+    let _ = operations.fail(
+        operation_id,
+        OperationError {
+            code: error.code.to_string(),
+            message: error.message.clone(),
+            details: error.details.clone(),
+            recoverable: error.recoverable,
+        },
+    );
 }
 
 async fn run_blocking<T, F>(label: &'static str, work: F) -> Result<T, String>
