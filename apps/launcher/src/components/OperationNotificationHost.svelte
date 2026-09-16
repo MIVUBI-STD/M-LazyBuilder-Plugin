@@ -3,7 +3,7 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import type { LauncherOperationSnapshot, LauncherOperationState } from '../app/bridge/runtimeApi';
 
-  type Notice = { id: string; title: string; detail: string; state: LauncherOperationState };
+  type Notice = { id: string; title: string; detail: string; state: LauncherOperationState; reference: string };
 
   const ACTIVE = new Set<LauncherOperationState>(['QUEUED', 'RUNNING', 'CANCELLING']);
   const TERMINAL = new Set<LauncherOperationState>(['SUCCEEDED', 'FAILED', 'CANCELLED', 'RECOVERY_REQUIRED']);
@@ -40,7 +40,8 @@
       id: operation.id,
       title: labelKind(operation.kind),
       detail: terminalDetail(operation),
-      state: operation.state
+      state: operation.state,
+      reference: operation.state === 'FAILED' || operation.state === 'RECOVERY_REQUIRED' ? operation.correlationId ?? '' : ''
     };
     notices = [notice, ...notices.filter((item) => item.id !== notice.id)].slice(0, MAX_NOTICES);
     window.setTimeout(() => dismiss(notice.id), NOTICE_LIFETIME_MS);
@@ -118,6 +119,7 @@
       <div>
         <strong>{notice.title}</strong>
         <span>{notice.detail}</span>
+        {#if notice.reference}<small>Reference: {notice.reference}</small>{/if}
       </div>
       <button aria-label={`Dismiss ${notice.title} notification`} onclick={() => dismiss(notice.id)}>×</button>
     </article>
@@ -126,6 +128,6 @@
 
 <style>
   .operation-notifications{position:fixed;z-index:180;right:18px;bottom:18px;width:min(360px,calc(100vw - 36px));display:grid;gap:8px;pointer-events:none}
-  .operation-notice{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:11px 12px;border:1px solid var(--accent-border);border-radius:9px;background:var(--surface);box-shadow:var(--shadow-popover);pointer-events:auto}.operation-notice.danger{border-color:#713940}.operation-notice>div{display:grid;gap:3px}.operation-notice strong{font-size:11px}.operation-notice span{color:var(--muted);font-size:9px;line-height:1.45}.operation-notice button{width:28px;height:28px;border-radius:7px;background:transparent;color:var(--muted);font-size:18px;cursor:pointer}.operation-notice button:hover{background:var(--surface-2);color:var(--text)}
+  .operation-notice{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;padding:11px 12px;border:1px solid var(--accent-border);border-radius:9px;background:var(--surface);box-shadow:var(--shadow-popover);pointer-events:auto}.operation-notice.danger{border-color:#713940}.operation-notice>div{display:grid;gap:3px}.operation-notice strong{font-size:11px}.operation-notice span{color:var(--muted);font-size:9px;line-height:1.45}.operation-notice small{color:var(--muted-2);font-size:8px;overflow-wrap:anywhere}.operation-notice button{width:28px;height:28px;border-radius:7px;background:transparent;color:var(--muted);font-size:18px;cursor:pointer}.operation-notice button:hover{background:var(--surface-2);color:var(--text)}
   @media(max-width:760px){.operation-notifications{right:12px;bottom:12px;width:calc(100vw - 24px)}}
 </style>
