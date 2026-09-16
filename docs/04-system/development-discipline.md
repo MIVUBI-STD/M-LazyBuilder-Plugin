@@ -79,6 +79,60 @@ UNKNOWN                = available evidence cannot yet distinguish the owner
 
 The classification is diagnostic routing, not a new durable state system. Do not store issue taxonomies, duplicate status databases, or parallel review records merely to preserve it.
 
+## Global ↔ Specialist Taxonomy Bridge
+
+Global classes above identify the **repository boundary/owner**. A Skill may use a narrower local taxonomy to describe the failure **inside that owner**.
+
+```text
+global class
+→ choose primary owner / execution context
+→ specialist local subtype
+→ fix/prove inside that owner
+```
+
+A local label never creates a second global taxonomy. When a local label proves that another owner is actually wrong, translate it back to the matching global class and hand off.
+
+Canonical cross-owner mappings:
+
+```text
+local PRESENTATION
+→ UI_PRESENTATION
+→ lazybuilder-ui
+
+local PROTOCOL
+→ PROTOCOL
+→ lazybuilder-protocol
+
+local ENVIRONMENT
+→ INSTALL_ENVIRONMENT, PAPER_RUNTIME, or FABRIC_RUNTIME
+→ choose the narrowest class supported by evidence
+
+local OWNERSHIP
+→ ROUTING while the wrong semantic owner is being resolved
+→ then reclassify to the actual domain class
+
+local PAPER_RUNTIME
+→ PAPER_RUNTIME
+→ live Paper proof/owner residue only; do not rewrite a correct source contract to avoid live proof
+
+local ADAPTER_DRIFT
+→ shared contract stays unchanged
+→ reclassify by the stale adapter owner (usually WORLD_RUNTIME for Paper/domain adapter or UI_PRESENTATION/FABRIC_RUNTIME for Fabric presentation/runtime adapter)
+
+local UNKNOWN
+→ UNKNOWN
+→ name the next separating evidence before mutation
+```
+
+Rules:
+
+- use the global class for cross-Skill routing/reporting;
+- use the local subtype only after a primary Skill is selected;
+- do not keep both the old and new Skill active after reclassification;
+- one observed defect gets one first material class at a time;
+- runtime-only proof classes (`PAPER_RUNTIME`, `FABRIC_RUNTIME`) describe the evidence ceiling, not permission to move semantic ownership into runtime code;
+- `RECOVERY` may coexist as a proof concern, but the semantic owner remains Desktop Runtime, Plugin Lifecycle, or World Runtime depending on the affected state.
+
 ## Before Editing
 
 Answer only what can change the implementation decision:
