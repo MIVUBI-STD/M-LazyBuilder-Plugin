@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 /** Starts one child process for one request and never keeps an idle daemon. */
 public final class OnDemandProcessRunner {
     private static final long MAX_CAPTURE_BYTES = 1024L * 1024L;
+    private static final String TRUNCATED_MARKER = "[output truncated to last 1 MiB]";
     private static final Duration TERMINATION_GRACE = Duration.ofSeconds(2);
 
     public ProcessResult run(List<String> command, Path workingDirectory, Duration timeout) throws IOException, InterruptedException {
@@ -63,11 +64,16 @@ public final class OnDemandProcessRunner {
     }
 
     private static String readCombined(Path stdoutLog, Path stderrLog) throws IOException {
-        String stdout = readTail(stdoutLog);
-        String stderr = readTail(stderrLog);
+        String stdout = identifyTruncation(readTail(stdoutLog), "stdout");
+        String stderr = identifyTruncation(readTail(stderrLog), "stderr");
         if (stderr.isBlank()) return stdout;
-        if (stdout.isBlank()) return stderr;
-        return stdout + (stdout.endsWith("\n") ? "" : "\n") + "[stderr]\n" + stderr;
+        if (stdout.isBlank()) return "[stderr]\n" + stderr;
+        return "[stdout]\n" + stdout + (stdout.endsWith("\n") ? "" : "\n") + "[stderr]\n" + stderr;
+    }
+
+    private static String identifyTruncation(String value, String stream) {
+        if (!value.startsWith(TRUNCATED_MARKER)) return value;
+        return "[" + stream + " truncated]\n" + value.substring(TRUNCATED_MARKER.length()).stripLeading();
     }
 
     private static void terminateProcessTree(Process process) throws InterruptedException {
@@ -111,7 +117,7 @@ public final class OnDemandProcessRunner {
                 // Read only the bounded tail.
             }
             String text = new String(bytes, StandardCharsets.UTF_8);
-            return start == 0L ? text : "[output truncated to last 1 MiB]\n" + text;
+            return start == 0L ? text : TRUNCATED_MARKER + "\n" + text;
         }
     }
 
