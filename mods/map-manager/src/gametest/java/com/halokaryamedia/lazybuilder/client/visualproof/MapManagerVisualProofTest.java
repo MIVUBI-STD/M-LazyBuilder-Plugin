@@ -5,7 +5,6 @@ import com.halokaryamedia.lazybuilder.client.ClientTransferController;
 import com.halokaryamedia.lazybuilder.client.ClientWorldController;
 import com.halokaryamedia.lazybuilder.client.WorldMapScreen;
 import com.halokaryamedia.lazybuilder.client.WorldNavigationPreferences;
-import com.halokaryamedia.lazybuilder.client.WorldTransferScreen;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
@@ -14,7 +13,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -22,9 +23,6 @@ import java.util.UUID;
  *
  * <p>The Minecraft client is the renderer. Only controller responses are deterministic fixtures;
  * the screen, font, widgets, terrain rendering, GUI scaling and framebuffer are production paths.</p>
- *
- * <p>Menu-background blur is disabled only while proof screenshots are captured. This keeps text,
- * spacing and hard UI edges inspectable without changing production Map Manager behavior.</p>
  */
 @SuppressWarnings("UnstableApiUsage")
 public final class MapManagerVisualProofTest implements FabricClientGameTest {
@@ -54,8 +52,13 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                         "map-manager-narrow-620x480-gui2");
                 captureScenario(context, state, 1440, 900, 3,
                         "map-manager-wide-1440x900-gui3");
-                captureAreaExportReview(context, state, 1440, 900, 2,
-                        "map-manager-area-export-review-1440x900-gui2");
+
+                captureExportWorkspace(context, state, 1440, 900, 2, false, false,
+                        "map-manager-export-full-world-1440x900-gui2");
+                captureExportWorkspace(context, state, 1440, 900, 2, true, true,
+                        "map-manager-export-custom-area-1440x900-gui2");
+                captureExportWorkspace(context, state, 620, 480, 2, true, false,
+                        "map-manager-export-custom-area-620x480-gui2");
             } finally {
                 context.runOnClient(client -> client.options.getMenuBackgroundBlurriness().setValue(previousBlur));
             }
@@ -82,26 +85,26 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         context.waitTicks(4);
     }
 
-    private static void captureAreaExportReview(
+    private static void captureExportWorkspace(
             ClientGameTestContext context,
             PreviewState state,
             int width,
             int height,
             int guiScale,
+            boolean customArea,
+            boolean expandAdvanced,
             String screenshotName
     ) {
         context.setScreen(() -> null);
         configureViewport(context, width, height, guiScale);
-        context.setScreen(() -> {
-            WorldMapScreen parent = new WorldMapScreen(state.worlds, state.transfers, state.maps);
-            suppressInitialNetworkRefresh(parent);
-            WorldTransferScreen screen = WorldTransferScreen.forArea(
-                    parent, state.worlds, state.transfers, state.maps, state.maps.currentWorld(),
-                    -128, -64, 127, 191);
-            suppressInitialTransferFormatRefresh(screen);
-            return screen;
+        openMap(context, state);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof WorldMapScreen screen)) {
+                throw new IllegalStateException("Map visual proof screen is not open");
+            }
+            invokeExportWorkspace(screen, customArea);
+            if (expandAdvanced) expandAdvancedSections(screen);
         });
-        context.waitForScreen(WorldTransferScreen.class);
         context.waitTicks(18);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
@@ -121,6 +124,30 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 world(MOSAIC, "mosaic_of_us", "Mosaic of Us — Long Managed World Name", "IMPORTED", "ACTIVE"),
                 world(PIRATES, "pirates_global_south", "Pirates of Global South", "IMPORTED", "ACTIVE")
         ), true, true));
+
+        worlds.accept(new WorldControlWireProtocol.ExportFormats(List.of(
+                "JAVA_1_21_4", "BEDROCK_1_21_80")));
+        worlds.accept(new WorldControlWireProtocol.SettingsSnapshot(
+                TANA,
+                "CREATIVE",
+                "NORMAL",
+                false,
+                "CLEAR",
+                6000L,
+                32.0,
+                72.0,
+                -48.0,
+                Map.of(
+                        "keepInventory", "false",
+                        "mobGriefing", "true",
+                        "doMobSpawning", "true",
+                        "doDaylightCycle", "true",
+                        "doWeatherCycle", "true",
+                        "doFireTick", "true",
+                        "naturalRegeneration", "true",
+                        "randomTickSpeed", "3"
+                )
+        ));
 
         maps.accept(new MapActionWireProtocol.CurrentWorldResult(
                 new WorldId(TANA), "Tana Samawa", "tana_samawa"));
@@ -170,22 +197,41 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
         context.waitTicks(10);
     }
 
-    /**
-     * The proof already injects an authoritative CurrentWorldResult. Prevent the screen's normal
-     * first-open refresh from attempting a LazyBuilder payload against the integrated vanilla server.
-     */
     private static void suppressInitialNetworkRefresh(WorldMapScreen screen) {
         setBooleanField(screen, "requestedCurrentWorld", true,
                 "Map visual proof could not suppress test-only network refresh");
     }
 
-    /**
-     * The proof uses the native default export format and does not need a live Paper capability
-     * request. Suppress that request while keeping the production WorldTransferScreen renderer.
-     */
-    private static void suppressInitialTransferFormatRefresh(WorldTransferScreen screen) {
-        setBooleanField(screen, "requestedFormats", true,
-                "Transfer visual proof could not suppress test-only format refresh");
+    private static void invokeExportWorkspace(WorldMapScreen screen, boolean customArea) {
+        try {
+            Method method = WorldMapScreen.class.getDeclaredMethod("openExportWorkspaceForProof", boolean.class);
+            method.setAccessible(true);
+            method.invoke(screen, customArea);
+            // The deterministic fixture already supplied settings and formats. Stop proof-only
+            // capability refreshes from leaving the integrated vanilla test server.
+            setBooleanField(screen, "requestedExportSettings", true,
+                    "Export proof could not suppress test-only settings refresh");
+            setBooleanField(screen, "requestedExportFormats", true,
+                    "Export proof could not suppress test-only format refresh");
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Could not open production Export workspace for visual proof", exception);
+        }
+    }
+
+    private static void expandAdvancedSections(WorldMapScreen screen) {
+        try {
+            Field stateField = WorldMapScreen.class.getDeclaredField("exportWorkspace");
+            stateField.setAccessible(true);
+            Object state = stateField.get(screen);
+            Method worldSettings = state.getClass().getDeclaredMethod("toggleWorldSettings");
+            Method gameRules = state.getClass().getDeclaredMethod("toggleGameRules");
+            worldSettings.setAccessible(true);
+            gameRules.setAccessible(true);
+            worldSettings.invoke(state);
+            gameRules.invoke(state);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Could not expand production Export settings for visual proof", exception);
+        }
     }
 
     private static void setBooleanField(Object target, String name, boolean value, String message) {
