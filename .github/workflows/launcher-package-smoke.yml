@@ -49,6 +49,8 @@ jobs:
           rustc --version
       - name: Install exact Launcher dependencies
         run: npm ci
+      - name: Prepare generated Launcher icons
+        run: npm run prepare:icons
       - name: Build unsigned NSIS package smoke artifact
         run: npx tauri build --bundles nsis
       - name: Validate package smoke artifact
