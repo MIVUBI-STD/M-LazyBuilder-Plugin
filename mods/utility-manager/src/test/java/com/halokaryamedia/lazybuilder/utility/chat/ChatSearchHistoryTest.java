@@ -31,6 +31,19 @@ class ChatSearchHistoryTest {
     }
 
     @Test
+    void latestEntryCanBeReplacedWithoutGrowingHistory() {
+        ChatSearchHistory history = new ChatSearchHistory(10);
+        history.record("Berchman joined", 1000);
+
+        history.replaceLatest("Berchman joined ×3");
+
+        assertEquals(1, history.size());
+        ChatHistoryEntry result = history.search("×3").getFirst();
+        assertEquals(1000, result.timestampMillis());
+        assertEquals("Berchman joined ×3", result.text());
+    }
+
+    @Test
     void sessionClearRemovesEntries() {
         ChatSearchHistory history = new ChatSearchHistory();
         history.record("hello", 1);
