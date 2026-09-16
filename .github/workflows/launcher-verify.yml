@@ -55,6 +55,8 @@ jobs:
         run: python scripts/verify_launcher_failure_matrix.py
       - name: Verify Launcher scalability contract
         run: python scripts/verify_launcher_scalability_contract.py
+      - name: Verify Launcher production ownership contract
+        run: python scripts/verify_launcher_ownership_contract.py
       - name: Verify updater tooling without signing secrets
         shell: bash
         run: |
@@ -67,7 +69,8 @@ jobs:
             scripts/verify_compatibility.py \
             scripts/verify_launcher_data_preservation_contract.py \
             scripts/verify_launcher_failure_matrix.py \
-            scripts/verify_launcher_scalability_contract.py
+            scripts/verify_launcher_scalability_contract.py \
+            scripts/verify_launcher_ownership_contract.py
           mkdir -p .artifacts/updater-contract
           printf '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' > .artifacts/updater-contract/example.sig
           VERSION=$(python - <<'PY'
