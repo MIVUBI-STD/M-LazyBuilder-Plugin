@@ -36,16 +36,17 @@ pub fn initialize() -> Result<AppDataMigrationReport, String> {
     let from_schema = if metadata_entry_exists(&path, "application-data manifest")? {
         let manifest = read_manifest(&path)?;
         validate_identity(&manifest)?;
+        if manifest.schema_version > APP_DATA_SCHEMA_VERSION {
+            return Err(format!(
+                "LazyBuilder application data schema {} is newer than this Launcher supports ({}). Install a newer Launcher instead of opening this data with an older build.",
+                manifest.schema_version, APP_DATA_SCHEMA_VERSION
+            ));
+        }
+        cleanup_manifest_recovery_files(&path)?;
         manifest.schema_version
     } else {
         0
     };
-
-    if from_schema > APP_DATA_SCHEMA_VERSION {
-        return Err(format!(
-            "LazyBuilder application data schema {from_schema} is newer than this Launcher supports ({APP_DATA_SCHEMA_VERSION}). Install a newer Launcher instead of opening this data with an older build."
-        ));
-    }
 
     let mut current = from_schema;
     while current < APP_DATA_SCHEMA_VERSION {
@@ -137,15 +138,12 @@ fn recover_manifest_file(path: &Path) -> Result<(), String> {
 
     if metadata_entry_exists(path, "application-data manifest")? {
         ensure_regular_metadata_file(path, "application-data manifest")?;
-        remove_metadata_file_if_exists(&previous, "previous application-data manifest")?;
-        remove_metadata_file_if_exists(&incoming, "application-data manifest staging file")?;
         return Ok(());
     }
 
     if metadata_entry_exists(&previous, "previous application-data manifest")? {
         ensure_regular_metadata_file(&previous, "previous application-data manifest")?;
         fs::rename(&previous, path).map_err(|error| format!("Could not restore previous application-data manifest: {error}"))?;
-        remove_metadata_file_if_exists(&incoming, "application-data manifest staging file")?;
         return Ok(());
     }
 
@@ -154,6 +152,11 @@ fn recover_manifest_file(path: &Path) -> Result<(), String> {
         fs::rename(&incoming, path).map_err(|error| format!("Could not publish recovered application-data manifest: {error}"))?;
     }
     Ok(())
+}
+
+fn cleanup_manifest_recovery_files(path: &Path) -> Result<(), String> {
+    remove_metadata_file_if_exists(&path.with_extension("json.previous"), "previous application-data manifest")?;
+    remove_metadata_file_if_exists(&path.with_extension("json.incoming"), "application-data manifest staging file")
 }
 
 fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
@@ -238,6 +241,8 @@ mod tests {
         fs::write(&incoming, b"incoming").unwrap();
         recover_manifest_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "previous");
+        assert!(incoming.exists());
+        cleanup_manifest_recovery_files(&path).unwrap();
         assert!(!incoming.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -249,6 +254,21 @@ mod tests {
         fs::write(&incoming, b"incoming").unwrap();
         recover_manifest_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "incoming");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn existing_manifest_preserves_recovery_evidence_until_validation() {
+        let path = temp_manifest_path();
+        let previous = path.with_extension("json.previous");
+        let incoming = path.with_extension("json.incoming");
+        fs::write(&path, b"malformed-main").unwrap();
+        fs::write(&previous, b"previous").unwrap();
+        fs::write(&incoming, b"incoming").unwrap();
+        recover_manifest_file(&path).unwrap();
+        assert!(read_manifest(&path).is_err());
+        assert!(previous.exists());
+        assert!(incoming.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

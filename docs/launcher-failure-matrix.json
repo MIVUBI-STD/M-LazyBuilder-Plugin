@@ -20,6 +20,18 @@
       "testMarkers": ["workspace_metadata_recovery_prefers_previous_committed_copy", "workspace_metadata_recovery_supports_legacy_tmp_staging", "workspace_metadata_recovery_preserves_ambiguous_staging"]
     },
     {
+      "id": "app-data-crash-during-metadata-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/app_data_migrations.rs",
+      "markers": ["recover_manifest_file", "cleanup_manifest_recovery_files", "create_new(true)", "sync_all"],
+      "testMarkers": ["app_data_manifest_recovery_prefers_previous_committed_copy", "app_data_manifest_staging_recovers_when_no_committed_copy_exists", "existing_manifest_preserves_recovery_evidence_until_validation"]
+    },
+    {
+      "id": "launcher-settings-crash-during-metadata-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/launcher_settings.rs",
+      "markers": ["recover_atomic_file", "cleanup_recovery_files", "metadata_entry_exists", "sync_all"],
+      "testMarkers": ["interrupted_settings_publish_prefers_previous_committed_copy", "settings_staging_recovers_when_no_committed_copy_exists", "malformed_main_settings_preserve_recovery_evidence"]
+    },
+    {
       "id": "create-crash-before-intent-identity-update",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
       "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"],
@@ -121,8 +133,8 @@
     {
       "id": "server-config-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/server_config.rs",
-      "markers": ["recover_atomic_file", "write_staging_file", "sync_all", "json.previous"],
-      "testMarkers": ["interrupted_publish_prefers_previous_committed_config", "staging_config_recovers_when_no_committed_copy_exists"]
+      "markers": ["recover_atomic_file", "cleanup_recovery_files", "metadata_entry_exists", "write_staging_file", "sync_all", "json.previous"],
+      "testMarkers": ["interrupted_publish_prefers_previous_committed_config", "staging_config_recovers_when_no_committed_copy_exists", "malformed_main_config_preserves_recovery_evidence"]
     },
     {
       "id": "second-launcher-instance",

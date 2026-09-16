@@ -38,7 +38,7 @@ impl Default for ServerConfig {
 pub fn load() -> Result<ServerConfig, String> {
     let path = config_path()?;
     recover_atomic_file(&path)?;
-    if !path.is_file() {
+    if !metadata_entry_exists(&path, "server configuration")? {
         let legacy = legacy_config_path()?;
         let config = if legacy.is_file() {
             read_from(&legacy)?
@@ -48,7 +48,9 @@ pub fn load() -> Result<ServerConfig, String> {
         save(&config)?;
         return Ok(config);
     }
-    read_from(&path)
+    let config = read_from(&path)?;
+    cleanup_recovery_files(&path)?;
+    Ok(config)
 }
 
 pub fn save(config: &ServerConfig) -> Result<(), String> {
@@ -107,7 +109,7 @@ fn legacy_config_path() -> Result<PathBuf, String> {
 }
 
 fn write_staging_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if path.exists() {
+    if metadata_entry_exists(path, "server configuration staging file")? {
         ensure_regular_metadata_file(path, "server configuration staging file")?;
         fs::remove_file(path).map_err(|error| format!("Could not clear stale server configuration staging file: {error}"))?;
     }
@@ -124,22 +126,19 @@ fn recover_atomic_file(destination: &Path) -> Result<(), String> {
     let previous = destination.with_extension("json.previous");
     let temporary = destination.with_extension("json.tmp");
 
-    if destination.exists() {
+    if metadata_entry_exists(destination, "server configuration")? {
         ensure_regular_metadata_file(destination, "server configuration")?;
-        remove_stale_metadata_file(&previous, "previous server configuration")?;
-        remove_stale_metadata_file(&temporary, "server configuration staging file")?;
         return Ok(());
     }
 
-    if previous.exists() {
+    if metadata_entry_exists(&previous, "previous server configuration")? {
         ensure_regular_metadata_file(&previous, "previous server configuration")?;
         fs::rename(&previous, destination)
             .map_err(|error| format!("Could not restore previous server configuration: {error}"))?;
-        remove_stale_metadata_file(&temporary, "server configuration staging file")?;
         return Ok(());
     }
 
-    if temporary.exists() {
+    if metadata_entry_exists(&temporary, "server configuration staging file")? {
         ensure_regular_metadata_file(&temporary, "server configuration staging file")?;
         fs::rename(&temporary, destination)
             .map_err(|error| format!("Could not publish recovered server configuration: {error}"))?;
@@ -147,9 +146,14 @@ fn recover_atomic_file(destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn cleanup_recovery_files(destination: &Path) -> Result<(), String> {
+    remove_stale_metadata_file(&destination.with_extension("json.previous"), "previous server configuration")?;
+    remove_stale_metadata_file(&destination.with_extension("json.tmp"), "server configuration staging file")
+}
+
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     ensure_regular_metadata_file(source, "server configuration staging file")?;
-    if destination.exists() {
+    if metadata_entry_exists(destination, "server configuration")? {
         ensure_regular_metadata_file(destination, "server configuration")?;
         let backup = destination.with_extension("json.previous");
         remove_stale_metadata_file(&backup, "previous server configuration")?;
@@ -173,8 +177,16 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
+fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
+}
+
 fn remove_stale_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    if !path.exists() {
+    if !metadata_entry_exists(path, label)? {
         return Ok(());
     }
     ensure_regular_metadata_file(path, label)?;
@@ -220,6 +232,8 @@ mod tests {
 
         recover_atomic_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "previous");
+        assert!(temporary.exists());
+        cleanup_recovery_files(&path).unwrap();
         assert!(!temporary.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -232,6 +246,21 @@ mod tests {
 
         recover_atomic_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "incoming");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn malformed_main_config_preserves_recovery_evidence() {
+        let path = temp_config_path();
+        let previous = path.with_extension("json.previous");
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&path, b"not-json").unwrap();
+        fs::write(&previous, b"previous").unwrap();
+        fs::write(&temporary, b"incoming").unwrap();
+        recover_atomic_file(&path).unwrap();
+        assert!(read_from(&path).is_err());
+        assert!(previous.exists());
+        assert!(temporary.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

@@ -442,7 +442,13 @@ pub fn delete(id: &str, typed_display_name: &str) -> Result<(), String> {
 
 pub fn provisioning_status() -> Result<ProvisioningStatus, String> {
     let root = active_workspace()?;
-    let workspace_created = manifest_path(&root).is_file();
+    let workspace_created = match read_manifest(&root)? {
+        Some(manifest) => {
+            validate_manifest(&manifest)?;
+            true
+        }
+        None => false,
+    };
     let config_ready = root.join("tools").join("lazybuilder").join("config").is_dir() && root.join("server").is_dir() && root.join("server").join("plugins").is_dir();
     let paper_ready = root.join("server").join("paper.jar").is_file();
     let plugins = root.join("server").join("plugins");

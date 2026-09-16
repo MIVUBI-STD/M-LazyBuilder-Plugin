@@ -36,7 +36,7 @@ pub fn initialize() -> Result<LauncherSettings, String> { load() }
 pub fn load() -> Result<LauncherSettings, String> {
     let path = settings_path()?;
     recover_atomic_file(&path)?;
-    if !path.is_file() {
+    if !metadata_entry_exists(&path, "launcher settings")? {
         let settings = LauncherSettings::default();
         save(&settings)?;
         return Ok(settings);
@@ -56,6 +56,7 @@ pub fn load() -> Result<LauncherSettings, String> {
     if previous_schema != SETTINGS_SCHEMA_VERSION as u64 {
         return save(&settings);
     }
+    cleanup_recovery_files(&path)?;
     Ok(settings)
 }
 
@@ -104,7 +105,7 @@ fn settings_path() -> Result<PathBuf, String> {
 }
 
 fn write_staging_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if path.exists() {
+    if metadata_entry_exists(path, "launcher settings staging file")? {
         ensure_regular_metadata_file(path, "launcher settings staging file")?;
         fs::remove_file(path).map_err(|error| format!("Could not clear stale launcher settings staging file: {error}"))?;
     }
@@ -121,22 +122,19 @@ fn recover_atomic_file(destination: &Path) -> Result<(), String> {
     let previous = destination.with_extension("json.previous");
     let temporary = destination.with_extension("json.tmp");
 
-    if destination.exists() {
+    if metadata_entry_exists(destination, "launcher settings")? {
         ensure_regular_metadata_file(destination, "launcher settings")?;
-        remove_stale_metadata_file(&previous, "previous launcher settings")?;
-        remove_stale_metadata_file(&temporary, "launcher settings staging file")?;
         return Ok(());
     }
 
-    if previous.exists() {
+    if metadata_entry_exists(&previous, "previous launcher settings")? {
         ensure_regular_metadata_file(&previous, "previous launcher settings")?;
         fs::rename(&previous, destination)
             .map_err(|error| format!("Could not restore previous launcher settings: {error}"))?;
-        remove_stale_metadata_file(&temporary, "launcher settings staging file")?;
         return Ok(());
     }
 
-    if temporary.exists() {
+    if metadata_entry_exists(&temporary, "launcher settings staging file")? {
         ensure_regular_metadata_file(&temporary, "launcher settings staging file")?;
         fs::rename(&temporary, destination)
             .map_err(|error| format!("Could not publish recovered launcher settings: {error}"))?;
@@ -144,9 +142,14 @@ fn recover_atomic_file(destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn cleanup_recovery_files(destination: &Path) -> Result<(), String> {
+    remove_stale_metadata_file(&destination.with_extension("json.previous"), "previous launcher settings")?;
+    remove_stale_metadata_file(&destination.with_extension("json.tmp"), "launcher settings staging file")
+}
+
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     ensure_regular_metadata_file(source, "launcher settings staging file")?;
-    if destination.exists() {
+    if metadata_entry_exists(destination, "launcher settings")? {
         ensure_regular_metadata_file(destination, "launcher settings")?;
         let backup = destination.with_extension("json.previous");
         remove_stale_metadata_file(&backup, "previous launcher settings")?;
@@ -168,8 +171,16 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
+fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
+}
+
 fn remove_stale_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    if !path.exists() {
+    if !metadata_entry_exists(path, label)? {
         return Ok(());
     }
     ensure_regular_metadata_file(path, label)?;
@@ -228,6 +239,8 @@ mod tests {
         fs::write(&temporary, b"incoming").unwrap();
         recover_atomic_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "previous");
+        assert!(temporary.exists());
+        cleanup_recovery_files(&path).unwrap();
         assert!(!temporary.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -239,6 +252,21 @@ mod tests {
         fs::write(&temporary, b"incoming").unwrap();
         recover_atomic_file(&path).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "incoming");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn malformed_main_settings_preserve_recovery_evidence() {
+        let path = temp_settings_path();
+        let previous = path.with_extension("json.previous");
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&path, b"not-json").unwrap();
+        fs::write(&previous, b"previous").unwrap();
+        fs::write(&temporary, b"incoming").unwrap();
+        recover_atomic_file(&path).unwrap();
+        assert!(serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path).unwrap()).is_err());
+        assert!(previous.exists());
+        assert!(temporary.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
