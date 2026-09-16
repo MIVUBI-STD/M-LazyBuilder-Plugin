@@ -3,11 +3,15 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 
 const PAPER_VERSION: &str = "1.21.4";
 const USER_AGENT: &str = concat!("LazyBuilder/", env!("CARGO_PKG_VERSION"), " (https://github.com/halokaryamedia-source/LazyBuilder-Plugin)");
 const BUILDS_URL: &str = "https://fill.papermc.io/v3/projects/paper/versions/1.21.4/builds";
 const MAX_PAPER_JAR_BYTES: u64 = 256 * 1024 * 1024;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
 #[derive(Clone, Debug)]
 pub struct PaperRelease {
@@ -30,6 +34,7 @@ pub fn ensure_release_for_workspace(workspace: &Path, release: &PaperRelease) ->
 
     let server_dir = workspace.join("server");
     fs::create_dir_all(&server_dir).map_err(|e| e.to_string())?;
+    ensure_safe_directory(&server_dir, "Paper server directory")?;
     let target = server_dir.join("paper.jar");
     if target.is_file() && sha256_file(&target)? == release.sha256 {
         return Ok(());
@@ -37,6 +42,7 @@ pub fn ensure_release_for_workspace(workspace: &Path, release: &PaperRelease) ->
 
     let temporary = target.with_extension("jar.tmp");
     remove_regular_file_if_exists(&temporary, "Paper publish staging file")?;
+    ensure_regular_file(&cache, "Paper cache JAR")?;
     let mut source = fs::File::open(&cache).map_err(|e| e.to_string())?;
     let mut output = OpenOptions::new().create_new(true).write(true).open(&temporary).map_err(|e| e.to_string())?;
     std::io::copy(&mut source, &mut output).map_err(|e| e.to_string())?;
@@ -75,6 +81,7 @@ pub fn latest_stable() -> Result<PaperRelease, String> {
 fn cache_path(release: &PaperRelease) -> Result<PathBuf, String> {
     let base = app_data_root()?.join("cache").join("paper").join(PAPER_VERSION);
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    ensure_safe_directory(&base, "Paper cache directory")?;
     Ok(base.join(format!("paper-{PAPER_VERSION}-{}.jar", release.build)))
 }
 
@@ -89,6 +96,7 @@ fn app_data_root() -> Result<PathBuf, String> {
 fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<(), String> {
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        ensure_safe_directory(parent, "Paper cache directory")?;
     }
     let temp = destination.with_extension("download");
     remove_regular_file_if_exists(&temp, "Paper download staging file")?;
@@ -120,6 +128,7 @@ fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<()
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
+    ensure_regular_file(path, "Paper JAR")?;
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
@@ -133,7 +142,7 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     ensure_regular_file(source, "Paper staging file")?;
-    if destination.exists() {
+    if metadata_entry_exists(destination)? {
         ensure_regular_file(destination, "Paper JAR")?;
         let backup = destination.with_extension("previous");
         remove_regular_file_if_exists(&backup, "previous Paper JAR")?;
@@ -147,13 +156,36 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
+fn metadata_entry_exists(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
-    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular non-reparse file"));
     }
     Ok(())
 }
+
+fn ensure_safe_directory(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_dir() {
+        return Err(format!("LazyBuilder expected {label} to be a directory without symbolic-link or reparse indirection"));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &fs::Metadata) -> bool { false }
 
 fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
     match fs::symlink_metadata(path) {
