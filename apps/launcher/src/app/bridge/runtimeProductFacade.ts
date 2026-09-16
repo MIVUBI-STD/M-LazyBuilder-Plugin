@@ -25,6 +25,7 @@ const previewRuntimeProduct = {
     ...runtimePreviewProduct.server,
     snapshot: async (_workspaceId?: string) => runtimePreviewProduct.server.snapshot(),
     command: async (_command: string, _workspaceId?: string) => undefined,
+    stop: async (_workspaceId?: string) => runtimePreviewProduct.server.stop(),
     recoverDetached: async (_workspaceId?: string) => runtimePreviewProduct.server.recoverDetached(),
     logTail: async (path: string, _workspaceId?: string) => runtimePreviewProduct.server.logTail(path),
     runtimes: async (): Promise<ServerRuntimeSummary[]> => [{
