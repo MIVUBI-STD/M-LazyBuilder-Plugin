@@ -53,10 +53,12 @@ def main() -> int:
     operations = read(LAUNCHER / "src-tauri/src/engine/operations.rs")
     server_tools = read(LAUNCHER / "src-tauri/src/commands/server_tools.rs")
     backup_commands = read(LAUNCHER / "src-tauri/src/commands/server_backups.rs")
+    server_repair = read(LAUNCHER / "src-tauri/src/engine/server_repair.rs")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
     worlds = read(LAUNCHER / "src/pages/Worlds.svelte")
     backup_panel = read(LAUNCHER / "src/pages/BackupPanel.svelte")
+    health_panel = read(LAUNCHER / "src/pages/HealthPanel.svelte")
     app_css = read(LAUNCHER / "src/styles/app.css")
 
     expected = contract["operationHistoryMax"]
@@ -85,6 +87,14 @@ def main() -> int:
     if contract["backups"].get("estimateMode") == "on-demand":
         if "calculateEstimate" not in backup_panel or "runtimeProduct.backups.estimate(workspace.id)," in backup_panel:
             errors.append("backup sizing is no longer explicitly on-demand")
+
+    if contract["overview"].get("repairPlanReusesHealthSnapshot"):
+        if "pub health: server_health::ServerHealthSnapshot" not in server_repair:
+            errors.append("repair plan no longer carries the health snapshot used to derive it")
+        if "(nextPlan as RepairPlanWithHealth).health" not in health_panel:
+            errors.append("HealthPanel no longer reuses the repair-plan health snapshot")
+        if "Promise.all([" in health_panel and "runtimeProduct.health.server" in health_panel:
+            errors.append("HealthPanel restored duplicate parallel health/repair-plan inspection")
 
     if contract["rendering"].get("offscreenContentVisibility"):
         if "content-visibility: auto" not in app_css:
