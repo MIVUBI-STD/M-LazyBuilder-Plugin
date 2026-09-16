@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.client;
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.RotationAxis;
@@ -16,19 +17,22 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Fullscreen LazyBuilder world map and lightweight managed-world navigator.
+ * Fullscreen LazyBuilder world map, managed-world navigator, and single-screen export workspace.
  *
- * <p>World administration remains in {@link WorldManagerScreen}. This screen owns only
- * spatial presentation, quick navigation, and map-local actions. UI state never becomes
- * authoritative world state, and presentation changes do not reset the terrain cache.</p>
+ * <p>The terrain renderer/cache remains singular. Export is a presentation mode over the same
+ * map authority; server controllers remain authoritative for world state and file operations.</p>
  */
 public final class WorldMapScreen extends Screen {
     private static final int BOTTOM_BAR = 24;
-    private static final int SELECTION_BOTTOM_BAR = 64;
     private static final int COLLAPSED_SIDEBAR = 34;
     private static final int MIN_SIDEBAR = 152;
     private static final int MAX_SIDEBAR = 176;
     private static final int SIDEBAR_GAP = 1;
+    private static final int EXPORT_SIDEBAR_MIN = 218;
+    private static final int EXPORT_SIDEBAR_MAX = 254;
+    private static final int EXPORT_FOOTER = 46;
+    private static final int EXPORT_ADVANCED_TOP = 242;
+    private static final int EXPORT_ROW_HEIGHT = 26;
     private static final int SAMPLE_BUDGET_PER_TICK = 4096;
     private static final int RASTER_REFRESH_INTERVAL_FRAMES = 12;
     private static final int CHUNK_BLOCKS = 16;
@@ -50,6 +54,7 @@ public final class WorldMapScreen extends Screen {
     private final ClientWorldController worlds;
     private final ClientTransferController transfers;
     private final ClientMapController maps;
+    private final MapExportWorkspaceState exportWorkspace = new MapExportWorkspaceState();
 
     private double centerX;
     private double centerZ;
@@ -62,6 +67,13 @@ public final class WorldMapScreen extends Screen {
     private boolean showAllWorlds;
     private int worldListOffset;
     private UUID selectedWorldId;
+
+    private boolean exportMode;
+    private boolean requestedExportSettings;
+    private boolean requestedExportFormats;
+    private boolean exportControlsReady;
+    private int exportScroll;
+    private TextFieldWidget exportNameField;
 
     private boolean areaMode;
     private UUID selectionWorldId;
@@ -125,17 +137,21 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             centeredOnce = true;
         }
-        boolean autoCollapsed = shouldAutoCollapseSidebar();
-        if (!initialLayoutApplied) {
-            sidebarCollapsed = autoCollapsed;
-            initialLayoutApplied = true;
-        } else if (!sidebarManuallyToggled || mustCollapseSidebar()) {
-            if (sidebarCollapsed != autoCollapsed) {
+
+        if (!exportMode) {
+            boolean autoCollapsed = shouldAutoCollapseSidebar();
+            if (!initialLayoutApplied) {
                 sidebarCollapsed = autoCollapsed;
-                contextOpen = false;
-                invalidateRasterViewport();
+                initialLayoutApplied = true;
+            } else if (!sidebarManuallyToggled || mustCollapseSidebar()) {
+                if (sidebarCollapsed != autoCollapsed) {
+                    sidebarCollapsed = autoCollapsed;
+                    contextOpen = false;
+                    invalidateRasterViewport();
+                }
             }
         }
+
         NAVIGATION.reload();
         if (!worlds.worldListReady() && !worlds.worldListPending()) worlds.refresh();
         if (!requestedCurrentWorld) {
@@ -143,9 +159,25 @@ public final class WorldMapScreen extends Screen {
             maps.refreshCurrentWorld();
         }
         observeCurrentWorld();
-        normalizeSelectionForSection();
+        if (!exportMode) normalizeSelectionForSection();
+        else ensureExportData(false);
         observedWorldRevision = worlds.revision();
         observedMapRevision = maps.revision();
+
+        if (exportMode && exportWorkspace.initializedFor(currentWorldId())) {
+            initExportNameField();
+            exportControlsReady = true;
+        }
+    }
+
+    private void initExportNameField() {
+        Rect field = exportNameRect();
+        exportNameField = new TextFieldWidget(
+                textRenderer, field.left, field.top, field.width(), field.height(), Text.literal("File Name"));
+        exportNameField.setMaxLength(80);
+        exportNameField.setText(exportWorkspace.artifactName());
+        exportNameField.setChangedListener(exportWorkspace::artifactName);
+        addDrawableChild(exportNameField);
     }
 
     @Override
@@ -156,7 +188,18 @@ public final class WorldMapScreen extends Screen {
         }
         if (observedWorldRevision != worlds.revision()) {
             observedWorldRevision = worlds.revision();
-            clampSelectedWorld();
+            if (exportMode) {
+                ensureExportData(true);
+            } else {
+                clampSelectedWorld();
+            }
+        }
+
+        if (exportMode && exportWorkspace.initializedFor(observedCurrentWorldId)
+                && !exportWorkspace.initializedFor(currentWorldId())) {
+            exitExportWorkspace();
+            LazyBuilderClientNetworking.notifyPlayer("Export closed because the current world changed.");
+            return;
         }
 
         if (closeAfterMapTeleport && !maps.teleportPending()) {
@@ -178,9 +221,36 @@ public final class WorldMapScreen extends Screen {
             var current = maps.currentWorld();
             if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
                 clearAreaSelection();
+                if (exportMode) exportWorkspace.scope(MapExportWorkspaceState.Scope.FULL_WORLD);
                 LazyBuilderClientNetworking.notifyPlayer(
-                        "LazyBuilder: area selection cleared because the current world changed.");
+                        "Area selection cleared because the current world changed.");
             }
+        }
+    }
+
+    private void ensureExportData(boolean rebuildIfReady) {
+        UUID currentId = currentWorldId();
+        var current = maps.currentWorld();
+        if (!exportMode || currentId == null || current == null) return;
+
+        if (!requestedExportFormats) {
+            requestedExportFormats = true;
+            worlds.requestExportFormats();
+        }
+        WorldControlWireProtocol.SettingsSnapshot settings = worlds.settings(currentId);
+        if (settings == null) {
+            if (!requestedExportSettings) {
+                requestedExportSettings = true;
+                worlds.requestSettings(currentId);
+            }
+            return;
+        }
+
+        boolean wasInitialized = exportWorkspace.initializedFor(currentId);
+        exportWorkspace.initialize(currentId, current.displayName(), settings, worlds.exportFormats());
+        if (!wasInitialized && rebuildIfReady && !exportControlsReady) {
+            exportControlsReady = true;
+            clearAndInit();
         }
     }
 
@@ -208,9 +278,10 @@ public final class WorldMapScreen extends Screen {
             renderSelection(context, mouseX, mouseY);
         }
         renderCursor(context, mouseX, mouseY);
-        renderSidebar(context, mouseX, mouseY);
+        if (exportMode) renderExportSidebar(context, mouseX, mouseY);
+        else renderSidebar(context, mouseX, mouseY);
         renderBottomStatus(context, mouseX, mouseY);
-        renderContextMenu(context, mouseX, mouseY);
+        if (!exportMode) renderContextMenu(context, mouseX, mouseY);
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -242,11 +313,8 @@ public final class WorldMapScreen extends Screen {
         SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK);
 
         int pixel = mapPixelSize();
-        if (rasterNeedsRefresh(scope, bounds, pixel)) {
-            rebuildRaster(world, scope, bounds, pixel);
-        } else {
-            rasterAgeFrames++;
-        }
+        if (rasterNeedsRefresh(scope, bounds, pixel)) rebuildRaster(world, scope, bounds, pixel);
+        else rasterAgeFrames++;
         drawRaster(context, bounds, pixel);
         renderPlayerMarker(context, bounds);
     }
@@ -359,8 +427,9 @@ public final class WorldMapScreen extends Screen {
 
         context.drawTextWithShadow(textRenderer, Text.literal("Current world"), 12, 39, LbUi.TEXT_MUTED);
         Rect currentRect = currentWorldRect();
-        boolean currentHover = currentRect.contains(mouseX, mouseY);
-        if (currentHover) context.fill(currentRect.left, currentRect.top, currentRect.right, currentRect.bottom, LbUi.SURFACE_2);
+        if (currentRect.contains(mouseX, mouseY)) {
+            context.fill(currentRect.left, currentRect.top, currentRect.right, currentRect.bottom, LbUi.SURFACE_2);
+        }
         UUID currentId = currentWorldId();
         String currentName = maps.currentWorld() == null ? "Loading…" : maps.currentWorld().displayName();
         context.drawTextWithShadow(textRenderer, Text.literal("●"), 12, currentRect.top + 8,
@@ -448,27 +517,123 @@ public final class WorldMapScreen extends Screen {
                 enabled ? LbUi.TEXT_PRIMARY : LbUi.TEXT_MUTED);
     }
 
-    private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
-        int bottom = areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR;
-        int left = sidebarWidth();
-        context.fill(left, height - bottom, width, height, 0xE314181E);
-        context.fill(left, height - bottom, width, height - bottom + 1, LbUi.BORDER);
+    private void renderExportSidebar(DrawContext context, int mouseX, int mouseY) {
+        Rect panel = exportSidebarRect();
+        context.fill(panel.left, panel.top, panel.right, panel.bottom, 0xF514181E);
+        context.fill(panel.left, 0, panel.left + 1, height, LbUi.BORDER);
 
-        if (areaMode) {
-            int chunksX = maxChunkX - minChunkX + 1;
-            int chunksZ = maxChunkZ - minChunkZ + 1;
-            context.drawTextWithShadow(textRenderer, Text.literal("Export area"), left + 10, height - 49, LbUi.ACCENT_BRIGHT);
-            String detail = chunksX + " × " + chunksZ + " chunks  •  X " + minChunkX + " → " + maxChunkX
-                    + "  Z " + minChunkZ + " → " + maxChunkZ;
-            int detailWidth = Math.max(0, areaCancelRect().left - left - 24);
-            if (detailWidth > 24) {
-                context.drawTextWithShadow(textRenderer, Text.literal(trim(detail, detailWidth)),
-                        left + 10, height - 33, LbUi.TEXT_SECONDARY);
+        Rect back = exportBackRect();
+        if (back.contains(mouseX, mouseY)) context.fill(back.left, back.top, back.right, back.bottom, LbUi.SURFACE_2);
+        context.drawTextWithShadow(textRenderer, Text.literal("‹ Back to Map"), back.left + 2, back.top + 6, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("EXPORT WORLD"), panel.left + 12, 38, LbUi.TEXT_MUTED);
+
+        Rect full = exportFullScopeRect();
+        Rect area = exportAreaScopeRect();
+        renderScopeTab(context, full, "Full World", exportWorkspace.scope() == MapExportWorkspaceState.Scope.FULL_WORLD, mouseX, mouseY);
+        renderScopeTab(context, area, "Custom Area", exportWorkspace.scope() == MapExportWorkspaceState.Scope.CUSTOM_AREA, mouseX, mouseY);
+
+        if (!exportWorkspace.initializedFor(currentWorldId())) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Loading export settings…"),
+                    panel.left + panel.width() / 2, 104, LbUi.TEXT_SECONDARY);
+            if (worlds.lastError() != null) {
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal(trim(worlds.lastError(), panel.width() - 24)),
+                        panel.left + panel.width() / 2, 124, LbUi.DANGER_BRIGHT);
             }
-            renderCompactAction(context, areaCancelRect(), "Cancel", false, mouseX, mouseY);
-            renderCompactAction(context, areaContinueRect(), "Continue", true, mouseX, mouseY);
             return;
         }
+
+        context.drawTextWithShadow(textRenderer, Text.literal("File Name"), panel.left + 12, 78, LbUi.TEXT_MUTED);
+        renderSettingRow(context, exportFormatRect(), "Format / Version", friendlyFormat(exportWorkspace.format()), mouseX, mouseY);
+        renderSettingRow(context, exportGameModeRect(), "Game Mode", MapExportWorkspaceState.titleCase(exportWorkspace.gameMode()), mouseX, mouseY);
+        renderSettingRow(context, exportDifficultyRect(), "Difficulty", MapExportWorkspaceState.titleCase(exportWorkspace.difficulty()), mouseX, mouseY);
+
+        context.fill(panel.left + 10, 216, panel.right - 10, 217, LbUi.BORDER);
+        context.drawTextWithShadow(textRenderer, Text.literal("Advanced Settings"), panel.left + 12, 226, LbUi.TEXT_MUTED);
+        renderExportAdvanced(context, mouseX, mouseY);
+
+        Rect action = exportActionRect();
+        boolean busy = exportBusy();
+        int actionColor = busy ? LbUi.SURFACE_1
+                : action.contains(mouseX, mouseY) ? LbUi.ACCENT_HOVER : LbUi.ACCENT_FILL;
+        context.fill(action.left, action.top, action.right, action.bottom, actionColor);
+        String label = busy ? "Exporting…"
+                : exportWorkspace.scope() == MapExportWorkspaceState.Scope.CUSTOM_AREA ? "Export Area" : "Export World";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
+                action.left + action.width() / 2, action.top + 7, busy ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
+
+        String error = maps.lastError() != null ? maps.lastError() : worlds.lastError();
+        if (error != null && !error.isBlank()) {
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal(trim(error, panel.width() - 24)),
+                    panel.left + panel.width() / 2, action.top - 15, LbUi.DANGER_BRIGHT);
+        }
+    }
+
+    private void renderScopeTab(DrawContext context, Rect rect, String label, boolean selected, int mouseX, int mouseY) {
+        int color = selected ? LbUi.ACCENT_FILL : rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;
+        context.fill(rect.left, rect.top, rect.right, rect.bottom, color);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
+                rect.left + rect.width() / 2, rect.top + 6, selected ? LbUi.TEXT_PRIMARY : LbUi.TEXT_SECONDARY);
+    }
+
+    private void renderSettingRow(DrawContext context, Rect rect, String label, String value, int mouseX, int mouseY) {
+        context.fill(rect.left, rect.top, rect.right, rect.bottom,
+                rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 5, LbUi.TEXT_SECONDARY);
+        String shown = trim(value, Math.max(20, rect.width() / 2));
+        context.drawTextWithShadow(textRenderer, Text.literal(shown),
+                rect.right - 7 - textRenderer.getWidth(shown), rect.top + 5, LbUi.TEXT_PRIMARY);
+    }
+
+    private void renderExportAdvanced(DrawContext context, int mouseX, int mouseY) {
+        Rect viewport = exportAdvancedViewport();
+        context.enableScissor(viewport.left, viewport.top, viewport.right, viewport.bottom);
+        int y = EXPORT_ADVANCED_TOP - exportScroll;
+
+        Rect worldHeader = advancedRowRect(y);
+        renderAccordionRow(context, worldHeader, "World Settings", exportWorkspace.worldSettingsExpanded(), mouseX, mouseY);
+        y += EXPORT_ROW_HEIGHT;
+        if (exportWorkspace.worldSettingsExpanded()) {
+            String spawn = exportWorkspace.spawnX() + ", " + exportWorkspace.spawnY() + ", " + exportWorkspace.spawnZ();
+            renderSettingRow(context, advancedRowRect(y), "Spawn Position", spawn, mouseX, mouseY);
+            y += EXPORT_ROW_HEIGHT;
+            Rect currentSpawn = advancedRowRect(y);
+            renderSettingRow(context, currentSpawn, "Use Current Position", "Apply", mouseX, mouseY);
+            y += EXPORT_ROW_HEIGHT;
+            renderSettingRow(context, advancedRowRect(y), "Time", friendlyTime(exportWorkspace.timeOfDayTicks()), mouseX, mouseY);
+            y += EXPORT_ROW_HEIGHT;
+            renderSettingRow(context, advancedRowRect(y), "Weather", MapExportWorkspaceState.titleCase(exportWorkspace.weather()), mouseX, mouseY);
+            y += EXPORT_ROW_HEIGHT;
+        }
+
+        Rect rulesHeader = advancedRowRect(y);
+        renderAccordionRow(context, rulesHeader, "Game Rules", exportWorkspace.gameRulesExpanded(), mouseX, mouseY);
+        y += EXPORT_ROW_HEIGHT;
+        if (exportWorkspace.gameRulesExpanded()) {
+            for (String rule : MapExportWorkspaceState.COMMON_RULES) {
+                if (!exportWorkspace.hasRule(rule)) continue;
+                String value = exportWorkspace.ruleValue(rule);
+                String shown = value.equalsIgnoreCase("true") ? "On"
+                        : value.equalsIgnoreCase("false") ? "Off" : value;
+                renderSettingRow(context, advancedRowRect(y), MapExportWorkspaceState.ruleLabel(rule), shown, mouseX, mouseY);
+                y += EXPORT_ROW_HEIGHT;
+            }
+        }
+        context.disableScissor();
+    }
+
+    private void renderAccordionRow(DrawContext context, Rect rect, String label, boolean expanded, int mouseX, int mouseY) {
+        context.fill(rect.left, rect.top, rect.right, rect.bottom,
+                rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_1);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 6, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal(expanded ? "⌄" : "›"), rect.right - 14, rect.top + 6, LbUi.TEXT_MUTED);
+    }
+
+    private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
+        Bounds map = mapBounds();
+        int left = map.left;
+        int right = map.right;
+        context.fill(left, height - BOTTOM_BAR, right, height, 0xE314181E);
+        context.fill(left, height - BOTTOM_BAR, right, height - BOTTOM_BAR + 1, LbUi.BORDER);
 
         int[] hovered = screenToWorld(mouseX, mouseY);
         String coordinates = hovered == null ? "" : "Cursor  X " + hovered[0] + "   Z " + hovered[1];
@@ -479,10 +644,18 @@ public final class WorldMapScreen extends Screen {
         renderZoomControl(context, mouseX, mouseY);
         renderCompactAction(context, recenterMapRect(), "Recenter", false, mouseX, mouseY);
 
-        int mapCenterX = left + (width - left) / 2;
+        if (exportMode && areaMode) {
+            int chunksX = maxChunkX - minChunkX + 1;
+            int chunksZ = maxChunkZ - minChunkZ + 1;
+            String summary = chunksX + " × " + chunksZ + " chunks  ·  "
+                    + chunksX * CHUNK_BLOCKS + " × " + chunksZ * CHUNK_BLOCKS + " blocks";
+            context.drawTextWithShadow(textRenderer, Text.literal(trim(summary, Math.max(0, map.width() / 3))),
+                    left + 8, height - 16, LbUi.ACCENT_BRIGHT);
+        }
+
         if (!coordinates.isBlank()) {
             context.drawCenteredTextWithShadow(textRenderer, Text.literal(coordinates),
-                    mapCenterX, height - 16, LbUi.TEXT_SECONDARY);
+                    map.centerX(), height - 16, LbUi.TEXT_SECONDARY);
         }
 
         if (!status.isBlank()) {
@@ -490,8 +663,7 @@ public final class WorldMapScreen extends Screen {
             int statusRight = zoomLabelRect().left - 10;
             int statusX = statusRight - statusWidth;
             if (statusX > recenterMapRect().right + 10) {
-                context.drawTextWithShadow(textRenderer, Text.literal(status),
-                        statusX, height - 16, LbUi.TEXT_MUTED);
+                context.drawTextWithShadow(textRenderer, Text.literal(status), statusX, height - 16, LbUi.TEXT_MUTED);
             }
         }
     }
@@ -519,7 +691,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderContextMenu(DrawContext context, int mouseX, int mouseY) {
-        if (!contextOpen || areaMode) return;
+        if (!contextOpen || areaMode || exportMode) return;
         Rect menu = contextMenuRect();
         context.fill(menu.left - 2, menu.top - 2, menu.right + 2, menu.bottom + 2, 0x77000000);
         LbUi.elevatedPanel(context, menu.left, menu.top, menu.width(), menu.height());
@@ -543,92 +715,82 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
-            if (mustCollapseSidebar()) return true;
-            sidebarCollapsed = false;
-            sidebarManuallyToggled = true;
-            invalidateRasterViewport();
-            return true;
-        }
-
-        if (!sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
-            if (mouseY < 31 && mouseX > sidebarWidth() - 32) {
-                sidebarCollapsed = true;
+        if (exportMode) {
+            if (exportNameField != null && exportNameField.mouseClicked(mouseX, mouseY, button)) return true;
+            if (button == 0 && handleExportSidebarClick(mouseX, mouseY)) return true;
+            if (mouseX >= exportSidebarRect().left) return true;
+        } else {
+            if (sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
+                if (mustCollapseSidebar()) return true;
+                sidebarCollapsed = false;
                 sidebarManuallyToggled = true;
-                contextOpen = false;
                 invalidateRasterViewport();
                 return true;
             }
-            if (currentWorldRect().contains(mouseX, mouseY)) {
-                UUID currentId = currentWorldId();
-                if (currentId != null && mouseX >= sidebarWidth() - 32) {
-                    NAVIGATION.togglePinned(currentId);
-                } else {
-                    selectedWorldId = currentId;
-                }
-                return true;
-            }
-            if (favoritesTabRect().contains(mouseX, mouseY)) {
-                if (showAllWorlds) {
-                    showAllWorlds = false;
-                    worldListOffset = 0;
-                    normalizeSelectionForSection();
-                }
-                return true;
-            }
-            if (allWorldsTabRect().contains(mouseX, mouseY)) {
-                if (!showAllWorlds) {
-                    showAllWorlds = true;
-                    worldListOffset = 0;
-                }
-                return true;
-            }
 
-            List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
-            int rowY = 108;
-            for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
-                Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
-                if (rect.contains(mouseX, mouseY)) {
-                    WorldControlWireProtocol.WorldSummary world = rows.get(i);
-                    if (mouseX < 27) {
-                        NAVIGATION.togglePinned(world.worldId());
-                        if (!showAllWorlds) normalizeSelectionForSection();
-                    } else {
-                        selectedWorldId = world.worldId();
+            if (!sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
+                if (mouseY < 31 && mouseX > sidebarWidth() - 32) {
+                    sidebarCollapsed = true;
+                    sidebarManuallyToggled = true;
+                    contextOpen = false;
+                    invalidateRasterViewport();
+                    return true;
+                }
+                if (currentWorldRect().contains(mouseX, mouseY)) {
+                    UUID currentId = currentWorldId();
+                    if (currentId != null && mouseX >= sidebarWidth() - 32) NAVIGATION.togglePinned(currentId);
+                    else selectedWorldId = currentId;
+                    return true;
+                }
+                if (favoritesTabRect().contains(mouseX, mouseY)) {
+                    if (showAllWorlds) {
+                        showAllWorlds = false;
+                        worldListOffset = 0;
+                        normalizeSelectionForSection();
                     }
                     return true;
                 }
-                rowY += SIDEBAR_ROW_HEIGHT;
-            }
+                if (allWorldsTabRect().contains(mouseX, mouseY)) {
+                    if (!showAllWorlds) {
+                        showAllWorlds = true;
+                        worldListOffset = 0;
+                    }
+                    return true;
+                }
 
-            if (selectedActionRect().contains(mouseX, mouseY)) {
-                WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
-                if (selected != null && !isCurrentWorld(selected.worldId())
-                        && worlds.canTeleport() && !teleportBusy()) {
-                    closeAfterWorldTeleport = true;
-                    worlds.teleport(selected.worldId());
+                List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
+                int rowY = 108;
+                for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
+                    Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
+                    if (rect.contains(mouseX, mouseY)) {
+                        WorldControlWireProtocol.WorldSummary world = rows.get(i);
+                        if (mouseX < 27) {
+                            NAVIGATION.togglePinned(world.worldId());
+                            if (!showAllWorlds) normalizeSelectionForSection();
+                        } else selectedWorldId = world.worldId();
+                        return true;
+                    }
+                    rowY += SIDEBAR_ROW_HEIGHT;
+                }
+
+                if (selectedActionRect().contains(mouseX, mouseY)) {
+                    WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
+                    if (selected != null && !isCurrentWorld(selected.worldId())
+                            && worlds.canTeleport() && !teleportBusy()) {
+                        closeAfterWorldTeleport = true;
+                        worlds.teleport(selected.worldId());
+                    }
+                    return true;
+                }
+                if (manageWorldsRect().contains(mouseX, mouseY)) {
+                    if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
+                    return true;
                 }
                 return true;
             }
-            if (manageWorldsRect().contains(mouseX, mouseY)) {
-                if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
-                return true;
-            }
-            return true;
         }
 
-        if (areaMode) {
-            if (button == 0 && areaContinueRect().contains(mouseX, mouseY)) {
-                continueAreaExport();
-                return true;
-            }
-            if (button == 0 && areaCancelRect().contains(mouseX, mouseY)) {
-                clearAreaSelection();
-                return true;
-            }
-        }
-
-        if (contextOpen) {
+        if (!exportMode && contextOpen) {
             if (button == 0 && contextTeleportRect().contains(mouseX, mouseY)) {
                 if (maps.currentWorld() != null && worlds.canTeleport() && !teleportBusy()) {
                     closeAfterMapTeleport = true;
@@ -638,7 +800,9 @@ public final class WorldMapScreen extends Screen {
                 return true;
             }
             if (button == 0 && contextExportRect().contains(mouseX, mouseY)) {
-                if (maps.currentWorld() != null && worlds.canManage()) beginAreaSelection(contextBlockX, contextBlockZ);
+                if (maps.currentWorld() != null && worlds.canManage()) {
+                    enterExportWorkspace(MapExportWorkspaceState.Scope.CUSTOM_AREA, contextBlockX, contextBlockZ);
+                }
                 return true;
             }
             if (button == 0 && contextCopyRect().contains(mouseX, mouseY)) {
@@ -652,7 +816,7 @@ public final class WorldMapScreen extends Screen {
             }
         }
 
-        if (!areaMode && recenterMapRect().contains(mouseX, mouseY) && button == 0) {
+        if (recenterMapRect().contains(mouseX, mouseY) && button == 0) {
             centerOnPlayer();
             return true;
         }
@@ -666,7 +830,6 @@ public final class WorldMapScreen extends Screen {
         }
 
         if (!mapBounds().contains(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
-
         if (button == 2) {
             centerOnPlayer();
             return true;
@@ -683,7 +846,7 @@ public final class WorldMapScreen extends Screen {
             }
             return true;
         }
-        if (button == 1) {
+        if (!exportMode && button == 1) {
             int[] world = screenToWorld(mouseX, mouseY);
             if (world == null) return true;
             contextBlockX = world[0];
@@ -699,6 +862,91 @@ public final class WorldMapScreen extends Screen {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean handleExportSidebarClick(double mouseX, double mouseY) {
+        if (exportBackRect().contains(mouseX, mouseY)) {
+            exitExportWorkspace();
+            return true;
+        }
+        if (!exportWorkspace.initializedFor(currentWorldId())) return true;
+        if (exportFullScopeRect().contains(mouseX, mouseY)) {
+            setExportScope(MapExportWorkspaceState.Scope.FULL_WORLD);
+            return true;
+        }
+        if (exportAreaScopeRect().contains(mouseX, mouseY)) {
+            setExportScope(MapExportWorkspaceState.Scope.CUSTOM_AREA);
+            return true;
+        }
+        if (exportFormatRect().contains(mouseX, mouseY)) {
+            exportWorkspace.cycleFormat(worlds.exportFormats());
+            return true;
+        }
+        if (exportGameModeRect().contains(mouseX, mouseY)) {
+            exportWorkspace.cycleGameMode();
+            return true;
+        }
+        if (exportDifficultyRect().contains(mouseX, mouseY)) {
+            exportWorkspace.cycleDifficulty();
+            return true;
+        }
+        if (exportActionRect().contains(mouseX, mouseY)) {
+            submitExport();
+            return true;
+        }
+
+        int y = EXPORT_ADVANCED_TOP - exportScroll;
+        Rect worldHeader = advancedRowRect(y);
+        if (worldHeader.contains(mouseX, mouseY)) {
+            exportWorkspace.toggleWorldSettings();
+            clampExportScroll();
+            return true;
+        }
+        y += EXPORT_ROW_HEIGHT;
+        if (exportWorkspace.worldSettingsExpanded()) {
+            y += EXPORT_ROW_HEIGHT; // Spawn display row.
+            Rect useCurrent = advancedRowRect(y);
+            if (useCurrent.contains(mouseX, mouseY)) {
+                if (client != null && client.player != null) {
+                    exportWorkspace.useSpawn(
+                            client.player.getBlockX(), client.player.getBlockY(), client.player.getBlockZ());
+                }
+                return true;
+            }
+            y += EXPORT_ROW_HEIGHT;
+            Rect time = advancedRowRect(y);
+            if (time.contains(mouseX, mouseY)) {
+                exportWorkspace.cycleTime();
+                return true;
+            }
+            y += EXPORT_ROW_HEIGHT;
+            Rect weather = advancedRowRect(y);
+            if (weather.contains(mouseX, mouseY)) {
+                exportWorkspace.cycleWeather();
+                return true;
+            }
+            y += EXPORT_ROW_HEIGHT;
+        }
+
+        Rect rulesHeader = advancedRowRect(y);
+        if (rulesHeader.contains(mouseX, mouseY)) {
+            exportWorkspace.toggleGameRules();
+            clampExportScroll();
+            return true;
+        }
+        y += EXPORT_ROW_HEIGHT;
+        if (exportWorkspace.gameRulesExpanded()) {
+            for (String rule : MapExportWorkspaceState.COMMON_RULES) {
+                if (!exportWorkspace.hasRule(rule)) continue;
+                Rect row = advancedRowRect(y);
+                if (row.contains(mouseX, mouseY)) {
+                    exportWorkspace.toggleBooleanRule(rule);
+                    return true;
+                }
+                y += EXPORT_ROW_HEIGHT;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -730,7 +978,12 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (!sidebarCollapsed && mouseX < sidebarWidth() && showAllWorlds && verticalAmount != 0) {
+        if (exportMode && exportAdvancedViewport().contains(mouseX, mouseY) && verticalAmount != 0) {
+            exportScroll = Math.max(0, Math.min(maxExportScroll(),
+                    exportScroll - (int) Math.signum(verticalAmount) * EXPORT_ROW_HEIGHT));
+            return true;
+        }
+        if (!exportMode && !sidebarCollapsed && mouseX < sidebarWidth() && showAllWorlds && verticalAmount != 0) {
             int maxOffset = Math.max(0, activeWorlds().size() - visibleSidebarRows());
             worldListOffset = Math.max(0, Math.min(maxOffset,
                     worldListOffset - (int) Math.signum(verticalAmount)));
@@ -746,7 +999,18 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_M || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+        if (exportMode && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            exitExportWorkspace();
+            return true;
+        }
+        if (exportMode && exportNameField != null && exportNameField.isFocused()) {
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+        if (keyCode == GLFW.GLFW_KEY_M) {
+            closeFromToggle();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             closeFromToggle();
             return true;
         }
@@ -754,8 +1018,8 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             return true;
         }
-        if (areaMode && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
-            continueAreaExport();
+        if (exportMode && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+            submitExport();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_C && hasShiftDown()) {
@@ -765,9 +1029,67 @@ public final class WorldMapScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    private void beginAreaSelection(int blockX, int blockZ) {
+    private void enterExportWorkspace(MapExportWorkspaceState.Scope scope, int blockX, int blockZ) {
+        if (maps.currentWorld() == null || !worlds.canManage()) return;
+        exportMode = true;
+        exportWorkspace.scope(scope);
+        requestedExportSettings = false;
+        requestedExportFormats = false;
+        exportControlsReady = false;
+        exportScroll = 0;
+        contextOpen = false;
+        if (scope == MapExportWorkspaceState.Scope.CUSTOM_AREA) initializeAreaSelection(blockX, blockZ);
+        else areaMode = false;
+        invalidateRasterViewport();
+        ensureExportData(false);
+        clearAndInit();
+    }
+
+    /** Test/proof hook that opens the production Export workspace without duplicating product semantics. */
+    void openExportWorkspaceForProof(boolean customArea) {
+        int blockX = client != null && client.player != null ? client.player.getBlockX() : 0;
+        int blockZ = client != null && client.player != null ? client.player.getBlockZ() : 0;
+        enterExportWorkspace(customArea
+                ? MapExportWorkspaceState.Scope.CUSTOM_AREA
+                : MapExportWorkspaceState.Scope.FULL_WORLD, blockX, blockZ);
+    }
+
+    private void exitExportWorkspace() {
+        if (exportNameField != null) exportWorkspace.artifactName(exportNameField.getText());
+        exportMode = false;
+        exportNameField = null;
+        requestedExportSettings = false;
+        requestedExportFormats = false;
+        exportControlsReady = false;
+        exportScroll = 0;
+        clearAreaSelection();
+        invalidateRasterViewport();
+        clearAndInit();
+    }
+
+    private void setExportScope(MapExportWorkspaceState.Scope scope) {
+        exportWorkspace.scope(scope);
+        if (scope == MapExportWorkspaceState.Scope.FULL_WORLD) {
+            areaMode = false;
+            selectionDrag = DragMode.NONE;
+            draggingMap = false;
+            invalidateRasterViewport();
+            return;
+        }
+        UUID currentId = currentWorldId();
+        if (selectionWorldId != null && selectionWorldId.equals(currentId)) {
+            areaMode = true;
+            invalidateRasterViewport();
+            return;
+        }
+        int blockX = client != null && client.player != null ? client.player.getBlockX() : (int) Math.floor(centerX);
+        int blockZ = client != null && client.player != null ? client.player.getBlockZ() : (int) Math.floor(centerZ);
+        initializeAreaSelection(blockX, blockZ);
+    }
+
+    private void initializeAreaSelection(int blockX, int blockZ) {
         var current = maps.currentWorld();
-        if (current == null || !worlds.canManage()) return;
+        if (current == null) return;
         int centerChunkX = Math.floorDiv(blockX, CHUNK_BLOCKS);
         int centerChunkZ = Math.floorDiv(blockZ, CHUNK_BLOCKS);
         int before = DEFAULT_SELECTION_CHUNKS / 2;
@@ -778,23 +1100,39 @@ public final class WorldMapScreen extends Screen {
         maxChunkZ = centerChunkZ + after;
         selectionWorldId = current.worldId().value();
         areaMode = true;
-        contextOpen = false;
         selectionDrag = DragMode.NONE;
+        draggingMap = false;
+        contextOpen = false;
         invalidateRasterViewport();
     }
 
-    private void continueAreaExport() {
-        if (!areaMode || client == null) return;
-        var current = maps.currentWorld();
-        if (current == null || selectionWorldId == null || !selectionWorldId.equals(current.worldId().value())) {
-            clearAreaSelection();
-            LazyBuilderClientNetworking.notifyPlayer(
-                    "LazyBuilder: the selected area no longer belongs to the current world.");
+    private void submitExport() {
+        UUID currentId = currentWorldId();
+        if (!exportMode || currentId == null || !exportWorkspace.initializedFor(currentId) || exportBusy()) return;
+        String artifact = exportNameField == null ? exportWorkspace.artifactName() : exportNameField.getText();
+        artifact = artifact == null ? "" : artifact.strip();
+        if (artifact.isEmpty()) {
+            LazyBuilderClientNetworking.notifyPlayer("Choose a file name before exporting.");
             return;
         }
-        client.setScreen(WorldTransferScreen.forArea(
-                this, worlds, transfers, maps, current,
-                minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ()));
+        exportWorkspace.artifactName(artifact);
+        if (exportNameField != null && !exportNameField.getText().equals(artifact)) exportNameField.setText(artifact);
+
+        if (exportWorkspace.scope() == MapExportWorkspaceState.Scope.CUSTOM_AREA) {
+            if (!areaMode || selectionWorldId == null || !selectionWorldId.equals(currentId)) {
+                LazyBuilderClientNetworking.notifyPlayer("Choose an area in the current world before exporting.");
+                return;
+            }
+            maps.exportAreaCurrent(
+                    minBlockX(), minBlockZ(), maxBlockX(), maxBlockZ(),
+                    exportWorkspace.format(), artifact, exportWorkspace.toWire());
+            return;
+        }
+        worlds.exportWorld(currentId, exportWorkspace.format(), artifact, exportWorkspace.toWire());
+    }
+
+    private boolean exportBusy() {
+        return maps.exportBusy() || worlds.exportPending();
     }
 
     void finishAreaExport() {
@@ -1066,19 +1404,12 @@ public final class WorldMapScreen extends Screen {
     }
 
     private String zoomLabel() {
-        if (Math.abs(zoom - Math.rint(zoom)) < 0.01) {
-            return "Zoom " + (int) Math.rint(zoom) + "×";
-        }
+        if (Math.abs(zoom - Math.rint(zoom)) < 0.01) return "Zoom " + (int) Math.rint(zoom) + "×";
         return String.format(Locale.ROOT, "Zoom %.1f×", zoom);
     }
 
-    private boolean shouldAutoCollapseSidebar() {
-        return width < 520 || height < 260;
-    }
-
-    private boolean mustCollapseSidebar() {
-        return width < 400 || height < 220;
-    }
+    private boolean shouldAutoCollapseSidebar() { return width < 520 || height < 260; }
+    private boolean mustCollapseSidebar() { return width < 400 || height < 220; }
 
     private int sidebarWidth() {
         if (sidebarCollapsed) return COLLAPSED_SIDEBAR;
@@ -1086,9 +1417,14 @@ public final class WorldMapScreen extends Screen {
         return Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, width / 6));
     }
 
+    private int exportSidebarWidth() {
+        int responsive = Math.max(EXPORT_SIDEBAR_MIN, width / 4);
+        return Math.min(EXPORT_SIDEBAR_MAX, Math.min(responsive, Math.max(EXPORT_SIDEBAR_MIN, width - 300)));
+    }
+
     private Bounds mapBounds() {
-        return new Bounds(sidebarWidth() + SIDEBAR_GAP, 0, width,
-                height - (areaMode ? SELECTION_BOTTOM_BAR : BOTTOM_BAR));
+        if (exportMode) return new Bounds(0, 0, Math.max(1, width - exportSidebarWidth() - 1), height - BOTTOM_BAR);
+        return new Bounds(sidebarWidth() + SIDEBAR_GAP, 0, width, height - BOTTOM_BAR);
     }
 
     private Rect currentWorldRect() { return new Rect(8, 50, sidebarWidth() - 8, 82); }
@@ -1102,8 +1438,6 @@ public final class WorldMapScreen extends Screen {
     }
     private Rect manageWorldsRect() { return new Rect(8, height - 34, sidebarWidth() - 8, height - 7); }
     private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
-    private Rect areaCancelRect() { return new Rect(width - 166, height - 50, width - 94, height - 27); }
-    private Rect areaContinueRect() { return new Rect(width - 88, height - 50, width - 10, height - 27); }
     private Rect recenterMapRect() {
         Bounds map = mapBounds();
         int center = map.centerX();
@@ -1111,23 +1445,66 @@ public final class WorldMapScreen extends Screen {
         int bottom = map.bottom - 20;
         return new Rect(center - buttonWidth / 2, bottom - 22, center + buttonWidth / 2, bottom);
     }
-    private Rect zoomPlusRect() { return new Rect(width - 28, height - 22, width - 8, height - 3); }
-    private Rect zoomMinusRect() { return new Rect(width - 51, height - 22, width - 31, height - 3); }
+    private Rect zoomPlusRect() {
+        int right = mapBounds().right - 8;
+        return new Rect(right - 20, height - 22, right, height - 3);
+    }
+    private Rect zoomMinusRect() {
+        int right = zoomPlusRect().left - 3;
+        return new Rect(right - 20, height - 22, right, height - 3);
+    }
     private Rect zoomLabelRect() {
         int labelWidth = 58;
         int right = zoomMinusRect().left - 6;
         return new Rect(right - labelWidth, height - 22, right, height - 3);
     }
 
+    private Rect exportSidebarRect() { return new Rect(width - exportSidebarWidth(), 0, width, height); }
+    private Rect exportBackRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 10, 8, p.right - 10, 31); }
+    private Rect exportFullScopeRect() {
+        Rect p = exportSidebarRect();
+        int gap = 4;
+        int available = p.width() - 24 - gap;
+        int half = available / 2;
+        return new Rect(p.left + 12, 54, p.left + 12 + half, 78);
+    }
+    private Rect exportAreaScopeRect() {
+        Rect first = exportFullScopeRect();
+        Rect p = exportSidebarRect();
+        return new Rect(first.right + 4, first.top, p.right - 12, first.bottom);
+    }
+    private Rect exportNameRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 91, p.right - 12, 113); }
+    private Rect exportFormatRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 122, p.right - 12, 147); }
+    private Rect exportGameModeRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 153, p.right - 12, 178); }
+    private Rect exportDifficultyRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, 184, p.right - 12, 209); }
+    private Rect exportAdvancedViewport() {
+        Rect p = exportSidebarRect();
+        return new Rect(p.left + 8, EXPORT_ADVANCED_TOP, p.right - 8, Math.max(EXPORT_ADVANCED_TOP, height - EXPORT_FOOTER - 16));
+    }
+    private Rect advancedRowRect(int y) { Rect p = exportSidebarRect(); return new Rect(p.left + 12, y, p.right - 12, y + 23); }
+    private Rect exportActionRect() { Rect p = exportSidebarRect(); return new Rect(p.left + 12, height - 38, p.right - 12, height - 10); }
+
+    private int exportAdvancedContentHeight() {
+        int rows = 2;
+        if (exportWorkspace.worldSettingsExpanded()) rows += 4;
+        if (exportWorkspace.gameRulesExpanded()) {
+            for (String rule : MapExportWorkspaceState.COMMON_RULES) if (exportWorkspace.hasRule(rule)) rows++;
+        }
+        return rows * EXPORT_ROW_HEIGHT;
+    }
+    private int maxExportScroll() {
+        return Math.max(0, exportAdvancedContentHeight() - Math.max(1, exportAdvancedViewport().height()));
+    }
+    private void clampExportScroll() { exportScroll = Math.max(0, Math.min(exportScroll, maxExportScroll())); }
+
     private Rect contextMenuRect() {
         int menuWidth = 150;
         int menuHeight = 102;
         Bounds bounds = mapBounds();
-        int x = Math.max(bounds.left + 4, Math.min(width - menuWidth - 5, contextScreenX));
+        int x = Math.max(bounds.left + 4, Math.min(bounds.right - menuWidth - 5, contextScreenX));
         int y = Math.max(5, Math.min(bounds.bottom - menuHeight - 5, contextScreenY));
         return new Rect(x, y, x + menuWidth, y + menuHeight);
     }
-
     private Rect contextTeleportRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 34, m.right - 5, m.top + 56); }
     private Rect contextExportRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 57, m.right - 5, m.top + 79); }
     private Rect contextCopyRect() { Rect m = contextMenuRect(); return new Rect(m.left + 5, m.top + 80, m.right - 5, m.top + 101); }
@@ -1159,8 +1536,7 @@ public final class WorldMapScreen extends Screen {
 
     private void normalizeSelectionForSection() {
         if (selectedWorldId == null || isCurrentWorld(selectedWorldId) || showAllWorlds) return;
-        boolean available = sidebarWorlds().stream()
-                .anyMatch(world -> world.worldId().equals(selectedWorldId));
+        boolean available = sidebarWorlds().stream().anyMatch(world -> world.worldId().equals(selectedWorldId));
         if (!available) selectedWorldId = currentWorldId();
     }
 
@@ -1175,31 +1551,19 @@ public final class WorldMapScreen extends Screen {
         return find(activeWorlds(), id);
     }
 
-    private static WorldControlWireProtocol.WorldSummary find(
-            List<WorldControlWireProtocol.WorldSummary> source, UUID id) {
+    private static WorldControlWireProtocol.WorldSummary find(List<WorldControlWireProtocol.WorldSummary> source, UUID id) {
         return source.stream().filter(world -> world.worldId().equals(id)).findFirst().orElse(null);
     }
 
-    private UUID currentWorldId() {
-        return maps.currentWorld() == null ? null : maps.currentWorld().worldId().value();
-    }
-
-    private boolean teleportBusy() {
-        return maps.teleportPending() || worlds.teleportPending();
-    }
-
-    private boolean isCurrentWorld(UUID id) {
-        UUID current = currentWorldId();
-        return current != null && current.equals(id);
-    }
+    private UUID currentWorldId() { return maps.currentWorld() == null ? null : maps.currentWorld().worldId().value(); }
+    private boolean teleportBusy() { return maps.teleportPending() || worlds.teleportPending(); }
+    private boolean isCurrentWorld(UUID id) { UUID current = currentWorldId(); return current != null && current.equals(id); }
 
     private String trim(String value, int maxWidth) {
         if (value == null || maxWidth <= 0) return "";
         if (textRenderer.getWidth(value) <= maxWidth) return value;
         String base = value;
-        while (base.length() > 1 && textRenderer.getWidth(base + "…") > maxWidth) {
-            base = base.substring(0, base.length() - 1);
-        }
+        while (base.length() > 1 && textRenderer.getWidth(base + "…") > maxWidth) base = base.substring(0, base.length() - 1);
         return textRenderer.getWidth(base + "…") <= maxWidth ? base + "…" : "";
     }
 
@@ -1212,6 +1576,21 @@ public final class WorldMapScreen extends Screen {
         };
     }
 
+    private static String friendlyFormat(String raw) {
+        String value = raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT);
+        if (value.startsWith("JAVA_")) return "Java Edition " + value.substring(5).replace('_', '.');
+        if (value.startsWith("BEDROCK_")) return "Bedrock Edition " + value.substring(8).replace('_', '.');
+        return MapExportWorkspaceState.titleCase(value);
+    }
+
+    private static String friendlyTime(long ticks) {
+        if (ticks == 1000L) return "Day";
+        if (ticks == 6000L) return "Noon";
+        if (ticks == 13000L) return "Night";
+        if (ticks == 18000L) return "Midnight";
+        return Long.toString(ticks);
+    }
+
     private void invalidateRasterViewport() {
         rasterLeft = Integer.MIN_VALUE;
         rasterRight = Integer.MIN_VALUE;
@@ -1219,12 +1598,12 @@ public final class WorldMapScreen extends Screen {
         rasterBottom = Integer.MIN_VALUE;
     }
 
-    @Override
-    public boolean shouldPause() { return false; }
+    @Override public boolean shouldPause() { return false; }
 
     @Override
     public void close() {
-        closeFromToggle();
+        if (exportMode) exitExportWorkspace();
+        else closeFromToggle();
     }
 
     void closeFromToggle() {
