@@ -4,7 +4,7 @@ LazyBuilder Utility Manager is the passive, non-building Fabric client convenien
 
 ## Boundary
 
-Approved scope includes window/client behavior, loading and reload UX, chat convenience, reconnect behavior, preference persistence, notifications, screenshot convenience, creative-inventory convenience, and small contextual clipboard actions.
+Approved scope includes window/client behavior, loading and reload UX, chat convenience, reconnect behavior, preference persistence, notifications, screenshot convenience, creative-inventory convenience, compact builder-facing debug presentation, and small contextual clipboard actions.
 
 It must not own building/editing tools, palettes, measurement, placement helpers, camera build tools, renderer internals, performance engines, or generic clipboard/history systems.
 
@@ -29,7 +29,8 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Shared Notifications: Utility features use Minecraft's native system-toast surface instead of creating separate HUD or popup systems;
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
 - Contextual Screenshot Names: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots;
-- Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched.
+- Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched;
+- Compact Debug: enabled by default and replaces the vanilla F3 information wall with a small Minecraft-native builder HUD. Coordinate is the first top-left block with explicit `X`, `Y`, and `Z`; client FPS/CPU/GPU/RAM and world Facing/Biome/Time remain on the left; server world/telemetry presentation stays on the right. Unsupported metrics are shown as unavailable rather than estimated.
 
 Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
 
@@ -39,6 +40,10 @@ Screenshot naming does not depend on Map Manager and does not create a replaceme
 
 Instant Creative Search does not replace the creative inventory or its search implementation. It only enters the existing vanilla search path earlier, and it adds no keybind or background tick loop.
 
+Compact Debug observes a bounded metric set only. Client process CPU is cached at a low frequency, RAM uses the JVM runtime, and GPU/server machine metrics remain unavailable until a truthful supported source exists. The HUD does not add a performance optimizer, graphics controller, profiler history, worker thread, or polling loop.
+
+Coordinate copy reuses the familiar debug chord `F3+C` while Compact Debug is active. It copies only the raw integer triplet (`X Y Z`) and confirms through the shared Utility toast surface.
+
 Clipboard helpers are contextual actions only. World/project copy actions belong in the Map Manager UI that owns those values; block, structure, NBT, and other build-data clipboard behavior remains outside Utility Manager.
 
 ## Maintenance notes
@@ -47,7 +52,9 @@ Extended Chat History intentionally stays a minimal vanilla patch rather than re
 
 Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existing `searchBox`, and private `setSelectedTab` path for Yarn 1.21.4. Treat Minecraft-version upgrades as a verification point for this mixin rather than introducing a replacement inventory/search controller.
 
-Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, instant creative search, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Compact Debug targets `DebugHud.render` and the existing `Keyboard.onKey` debug-input path for Yarn 1.21.4. Treat Minecraft-version upgrades as verification points for these mixins. Keep the renderer thin and keep metric/telemetry state outside the mixin classes.
+
+Keep Chat Draft, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
@@ -62,8 +69,9 @@ chat.keep_draft=true
 connection.reconnect_button=true
 screenshots.contextual_names=false
 inventory.instant_creative_search=true
+hud.compact_debug=true
 ```
 
 The previous `screenshots.organize_by_project` key is accepted as a read-only migration alias so existing local configs continue to work. New saves use `screenshots.contextual_names`.
 
-Dormant options for Compact Info, Chat Timestamps, and Auto Reconnect were removed from the active config surface. They may only return if a later audit proves that the feature itself is worth implementing.
+Dormant options for Chat Timestamps and Auto Reconnect remain out of the active product surface. They may only return if a later audit proves that the feature itself is worth implementing.
