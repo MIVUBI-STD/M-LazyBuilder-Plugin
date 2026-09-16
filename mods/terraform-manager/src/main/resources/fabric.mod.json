@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder-terraform-manager",
+  "version": "${version}",
+  "name": "LazyBuilder Terraform Manager",
+  "description": "Standalone Axiom-familiar terrain composition tools for LazyBuilder.",
+  "authors": ["Halo Karya Media"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.halokaryamedia.lazybuilder.terraformclient.TerraformManagerClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "fabric-api": "*",
+    "minecraft": "1.21.4",
+    "java": ">=21"
+  }
+}

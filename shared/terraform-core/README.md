@@ -1,40 +1,70 @@
 # Terraform Core
 
-`terraform-core` is the platform-neutral deterministic geometry kernel shared by the future Paper terraforming executor and Fabric preview/editor.
+`terraform-core` is the platform-neutral deterministic geometry kernel for LazyBuilder Terraform.
 
-## Phase 1 scope
+## Product boundary
 
-Only **Cliff** geometry exists in this phase. Ridge, Mountain, coloring/materials, vegetation, world placement, networking, UI, undo, blending with existing terrain, and performance batching are intentionally out of scope.
+LazyBuilder Terraform is standalone. Axiom, ezEdits, WorldEdit/FAWE and other build tools are research references only and are not runtime dependencies.
 
-The purpose of this phase is to prove one rule before runtime integration:
-
-> The same input parameters and seed must produce the same terrain shape for both preview and server execution.
-
-## Shape contract
-
-A cliff is defined by:
-
-- origin;
-- horizontal direction;
-- length;
-- height;
-- width/depth;
-- deterministic seed.
-
-The field is intentionally asymmetric: it has a steep front face and a receding back profile. Controlled low-frequency deformation breaks up the silhouette without allowing noise to become the primary shape generator.
+The public terrain vocabulary is intentionally small:
 
 ```text
-intentional cliff profile
-+ bounded seeded deformation
-= final geometry field
+Cliff
+Ridge
+Mountain
 ```
 
-`ShapeField.sample(x, y, z) <= 0` means the point belongs to the generated solid shape. The field is continuous enough for preview sampling but makes no claim to be an exact Euclidean signed-distance field.
+Coloring, materials and vegetation remain outside the geometry milestone.
 
-## Ownership
+## Geometry model
 
-This module has no Paper, Fabric, Minecraft, rendering, protocol, or material dependency. Platform adapters must consume this kernel rather than copy its formulas.
+The kernel follows a hierarchical terrain model:
 
-## Next gate
+```text
+user intent
+→ cleaned path / footprint
+→ stable local frame
+→ macro landform
+→ sparse meso structure
+→ bounded micro deformation
+→ shape field
+→ voxelization / world adapter
+```
 
-Do not add Ridge or Mountain until Cliff can be rendered/inspected as a preview and its silhouette is accepted. The next implementation step is a Fabric-side diagnostic preview adapter that samples this exact field without modifying the world.
+Noise deforms an intentional form; noise does not define the macro terrain.
+
+### Cliff
+
+Path-driven asymmetric terrain mass with an exposed front wall, crest, back mass, endpoint taper and controlled wall breakup. The path implementation is continuous and does not place repeated prefab segments.
+
+### Ridge
+
+Path-driven symmetric crest with two coherent slopes. It shares path cleanup and stable frames with Cliff.
+
+### Mountain
+
+Footprint-driven mass with deliberate asymmetry and a secondary ridge bias. It is not a cone distorted by unrestricted noise.
+
+## Public controls
+
+The editor should expose only:
+
+```text
+Tool: Cliff | Ridge | Mountain
+Size
+Height
+Variation: Soft | Natural | Dramatic
+```
+
+Orientation, spline frames, macro sections, falloff and deformation are engine responsibilities.
+
+## Runtime ownership
+
+```text
+shared/terraform-core   deterministic geometry only
+mods/terraform-manager  Fabric editor/input/preview adapter
+shared/protocol         neutral Paper↔Fabric operation contract
+plugins/terraform-manager Paper validation, batching, history and world apply
+```
+
+Do not place Terraform implementation back into Utility Manager. UI behavior may be familiar to Axiom users, while visual design must follow the existing LazyBuilder UI language.

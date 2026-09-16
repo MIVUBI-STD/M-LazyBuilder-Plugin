@@ -1,0 +1,15 @@
+name: Terraform-Manager
+version: ${project.version}
+main: com.halokaryamedia.lazybuilder.terraformserver.TerraformManagerPlugin
+api-version: '1.21'
+author: Halo Karya Media
+description: Standalone LazyBuilder terrain composition authority.
+permissions:
+  lazybuilder.terraform.use:
+    description: Use LazyBuilder Terraform tools.
+    default: op
+  lazybuilder.terraform.admin:
+    description: Administer LazyBuilder Terraform runtime.
+    default: op
+    children:
+      lazybuilder.terraform.use: true

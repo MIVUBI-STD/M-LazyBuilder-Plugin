@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.utility;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
-import com.halokaryamedia.lazybuilder.utility.terraform.CliffPreviewController;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -34,7 +33,6 @@ public final class UtilityManagerClient implements ClientModInitializer {
         );
 
         ResourceReloadNotifier.register();
-        CliffPreviewController.register();
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             ResourceReloadNotifier.markClientStarted();
