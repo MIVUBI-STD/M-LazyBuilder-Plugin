@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.utility;
 
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
+import com.halokaryamedia.lazybuilder.utility.chat.MinecraftMessageBridge;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageBus;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
@@ -40,6 +41,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
         ResourceReloadNotifier.register();
         CompactDebugNetworking.register();
+        MinecraftMessageBridge.register();
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             ResourceReloadNotifier.markClientStarted();
