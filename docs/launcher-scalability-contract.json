@@ -7,7 +7,17 @@
     "startSerialization": "global-server-start-lease",
     "paperPortAssignment": "runtime-dynamic-visible",
     "worldControlPortAssignment": "workspace-persistent-loopback",
-    "detachedProcessesConsumeCapacity": true
+    "detachedProcessesConsumeCapacity": true,
+    "targetedControls": [
+      "snapshot",
+      "console",
+      "stop",
+      "detached-recovery",
+      "log-tail"
+    ],
+    "targetIdentity": "workspace-id",
+    "targetedControlsRequireActiveWorkspace": false,
+    "runtimeFallbackMayReadAnotherActiveWorkspaceConfig": false
   },
   "operationHistoryMax": 100,
   "activity": {
