@@ -19,6 +19,7 @@ pub struct ServerRepairPlan {
     pub blocked_reason: String,
     pub repairs: Vec<ServerRepairItem>,
     pub manual_actions: Vec<ServerRepairItem>,
+    pub health: server_health::ServerHealthSnapshot,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,12 +65,13 @@ pub fn plan(workspace_id: &str) -> Result<ServerRepairPlan, String> {
     }
 
     Ok(ServerRepairPlan {
-        workspace_id: health.workspace_id,
-        workspace_name: health.workspace_name,
+        workspace_id: health.workspace_id.clone(),
+        workspace_name: health.workspace_name.clone(),
         can_repair: !health.running && blocked_reason.is_empty() && !repairs.is_empty(),
         blocked_reason,
         repairs,
         manual_actions,
+        health,
     })
 }
 
