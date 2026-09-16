@@ -327,6 +327,95 @@ security-only policy          → SECURITY.md / exact boundary
 
 Do not create Skills for Rust, Java, TypeScript, Maven, Gradle, Tauri, Svelte, Playwright, screenshots, testing, ChatGPT, Codex, or implementation mechanics alone.
 
+## Skill maintenance / change triggers
+
+Skills are operational contracts, not changelogs. Update them only when a repository change alters reusable agent behavior, semantic ownership, or a copied current contract.
+
+### MUST update
+
+Update the directly affected Skill and/or routing contract in the same bounded change when any of these change:
+
+```text
+semantic responsibility / owner boundary
+entry trigger or explicit exclusion
+reusable canonical procedure
+stable invariant / safety rule
+required proof boundary
+cross-owner handoff payload or sequencing
+CURRENT_CONTRACT version / required payload / capability semantics
+reference purpose/path when the Skill routes to it
+```
+
+A repeated execution failure that is caused by the instruction itself is also a `SKILL_INSTRUCTION` trigger: fix the smallest canonical instruction that caused the wrong behavior.
+
+### MAY update
+
+Update only when it materially improves future decisions:
+
+```text
+IMPLEMENTATION_SNAPSHOT that a reference intentionally documents
+external pattern/provenance after an adopted rule materially changes
+clarification that removes recurring ambiguity without duplicating another authority
+new recurring failure mode that changes diagnosis or proof selection
+```
+
+Prefer updating an existing paragraph/table over adding a new maintenance layer.
+
+### DO NOT update
+
+Do not edit Skills merely because code changed. Normal examples that stay source/test-only include:
+
+```text
+ordinary bug fix inside existing semantics
+internal refactor with same owner/contract/procedure
+additional regression test for an existing rule
+private helper/internal symbol rename not referenced by the Skill
+performance optimization that preserves accepted behavior and proof boundary
+one-off implementation detail that is not reusable agent guidance
+commit/status/history information
+```
+
+If an internal rename makes an `IMPLEMENTATION_SNAPSHOT` reference factually stale, update only that exact reference/snapshot; do not rewrite the Skill unless routing/procedure also changed.
+
+### Sync matrix
+
+```text
+semantic owner/routing boundary changed
+→ skill-routing.md + affected SKILL.md + durable domain doc if product semantics changed
+
+CURRENT_CONTRACT version/shape changed
+→ canonical source + canonical contract/domain doc + affected SKILL copy + direct adapters/tests
+
+stable invariant/procedure/proof rule changed
+→ affected SKILL.md + only references whose deeper guidance is now wrong
+
+IMPLEMENTATION_SNAPSHOT changed
+→ exact snapshot/reference only when that fact is intentionally documented
+
+external reference changed
+→ no LazyBuilder mutation unless the adopted rule/provenance materially changes
+
+presentation copy/layout implementation changed
+→ UI Skill only if reusable interaction/accessibility/proof guidance changed
+```
+
+Maintenance is semantic, not file-based. Editing a Rust/Java/TypeScript file does not by itself trigger a Skill update; changing the reusable decision contract does.
+
+### Maintenance completion check
+
+Before STOP on a change that touched a Skill-owned boundary, ask:
+
+```text
+Did semantic ownership change?
+Did a CURRENT_CONTRACT copy change?
+Did the reusable procedure/invariant/proof/handoff change?
+Did a routed reference become factually wrong?
+```
+
+If all are no, leave the Skill unchanged. If any are yes, synchronize only the directly affected canonical instruction before STOP.
+
+Never add timestamps, per-commit status, migration diary entries, or historical decision logs to a Skill. Git history remains the archive.
+
 ## Skill creation gate
 
 A new Skill is justified only when all are true:
