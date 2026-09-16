@@ -29,6 +29,7 @@ final class UtilityConfigStoreTest {
         assertFalse(preferences.borderlessWindow());
         assertFalse(preferences.contextualScreenshotNames());
         assertTrue(preferences.instantCreativeSearch());
+        assertTrue(preferences.compactDebugHud());
     }
 
     @Test
@@ -40,6 +41,7 @@ final class UtilityConfigStoreTest {
                 false,
                 false,
                 true,
+                false,
                 false
         );
 
@@ -59,6 +61,7 @@ final class UtilityConfigStoreTest {
                         + "connection.reconnect_button=not-a-boolean\n"
                         + "screenshots.contextual_names=TRUE\n"
                         + "inventory.instant_creative_search=not-a-boolean\n"
+                        + "hud.compact_debug=not-a-boolean\n"
         );
 
         UtilityPreferences preferences = store.load();
@@ -69,6 +72,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.reconnectButton());
         assertTrue(preferences.contextualScreenshotNames());
         assertTrue(preferences.instantCreativeSearch());
+        assertTrue(preferences.compactDebugHud());
     }
 
     @Test
