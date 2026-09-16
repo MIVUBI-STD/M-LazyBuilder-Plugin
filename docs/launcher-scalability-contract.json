@@ -8,7 +8,8 @@
   },
   "overview": {
     "activePollMs": 3000,
-    "idlePollMs": 15000
+    "idlePollMs": 15000,
+    "repairPlanReusesHealthSnapshot": true
   },
   "worldTasks": {
     "visiblePollMs": 1000,
