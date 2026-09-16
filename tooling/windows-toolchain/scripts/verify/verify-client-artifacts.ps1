@@ -16,9 +16,9 @@ $SnapshotVersion = "$ProductVersion-SNAPSHOT"
 $Expected = @(
     [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
-    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
-    [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
+    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' }
 )
+$Terraform = [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
 
 function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
 
@@ -100,9 +100,12 @@ function Verify-Jar($Spec) {
 $actual = @(Get-ChildItem $ClientModsDir -Filter '*.jar' -File | ForEach-Object Name | Sort-Object)
 $expectedNames = @($Expected | ForEach-Object File | Sort-Object)
 $missing = @($expectedNames | Where-Object { $_ -notin $actual })
-$unexpected = @($actual | Where-Object { $_ -notin $expectedNames })
+$allowed = @($expectedNames + $Terraform.File)
+$unexpected = @($actual | Where-Object { $_ -notin $allowed })
 if ($missing.Count -gt 0) { Fail "missing required JARs: $($missing -join ', ')" }
 if ($unexpected.Count -gt 0) { Fail "unexpected client JARs: $($unexpected -join ', ')" }
 
 foreach ($spec in $Expected) { Verify-Jar $spec }
-Write-Host "Client artifacts OK: $($Expected.Count) Fabric managers for LazyBuilder $ProductVersion" -ForegroundColor Green
+$terraformPath = Join-Path $ClientModsDir $Terraform.File
+if (Test-Path $terraformPath) { Verify-Jar $Terraform }
+Write-Host "Client artifacts OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
