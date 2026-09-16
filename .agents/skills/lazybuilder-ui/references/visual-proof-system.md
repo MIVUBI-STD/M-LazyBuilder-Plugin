@@ -6,18 +6,20 @@ This is one proof architecture with multiple real renderers. It is not a second 
 
 ## Proof ladder
 
-Choose the cheapest level that can genuinely falsify the claim.
+Choose the cheapest level that can genuinely falsify the claim. The L0–L5 labels are UI shorthand over the canonical proof vocabulary in `docs/04-system/development-discipline.md`.
 
-| Level | Evidence | Proves | Does not prove |
-|---|---|---|---|
-| L0 | source inspection | ownership / intended flow | appearance |
-| L1 | typecheck/build/tests | source/API/contracts | visual correctness |
-| L2 | deterministic simulated preview | early composition/state ideation | native renderer behavior |
-| L3 | real Launcher Svelte/CSS preview | Launcher layout/state presentation | native Windows/Tauri behavior |
-| L4 | real Minecraft client rendering | Fabric/plugin-facing Minecraft appearance | local GPU/input/network feel |
-| L5 | Local-PC native acceptance | installed native interaction/runtime boundary | — |
+| Level | Canonical proof type | Evidence | Proves | Does not prove |
+|---|---|---|---|---|
+| L0 | `STATIC_SOURCE` | source inspection | ownership / intended flow | appearance |
+| L1 | `EXECUTED_SOURCE` | typecheck/build/tests | source/API/contracts | visual correctness |
+| L2 | `VISUAL_SIMULATED` | deterministic simulated preview | early composition/state ideation | native renderer behavior |
+| L3 | `VISUAL_RENDERED` | real Launcher Svelte/CSS preview | Launcher layout/state presentation | native Windows/Tauri behavior |
+| L4 | `VISUAL_RENDERED` | real Minecraft client rendering | Fabric/plugin-facing Minecraft appearance | semantic client-server runtime or local GPU/input/network feel |
+| L5 | `NATIVE_ACCEPTANCE` | Local-PC native acceptance | installed native interaction/environment boundary | unrelated semantic/runtime paths not exercised |
 
-Never report a higher proof level than observed.
+Never report a higher level or stronger canonical proof type than observed.
+
+`VISUAL_RENDERED` is not automatically `LIVE_RUNTIME`. A real Minecraft screenshot proves what the production renderer displayed for that scenario; protocol ordering, Paper authorization, world mutation, plugin lifecycle, filesystem safety, and networking require their own matching semantic proof.
 
 ## Renderer selection
 
@@ -232,7 +234,7 @@ native dialogs
 installed modpack/resource-pack interactions
 ```
 
-Use Local-PC proof for those boundaries, not as the first place to discover obvious layout defects.
+Use `NATIVE_ACCEPTANCE` for those boundaries. Use `LIVE_RUNTIME` separately when the claim is about actual Paper/Fabric/client-server semantics rather than appearance.
 
 ## Stop rule
 
