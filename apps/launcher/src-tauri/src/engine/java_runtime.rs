@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const JAVA_MAJOR: u32 = 21;
@@ -15,6 +17,8 @@ const MAX_JAVA_ARCHIVE_ENTRIES: usize = 20_000;
 const MAX_JAVA_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
 #[derive(Clone, Debug)]
 struct JavaRelease {
@@ -43,6 +47,7 @@ pub fn ensure_managed_java() -> Result<PathBuf, String> {
     let root = app_data_root()?;
     let cache_dir = root.join("cache").join("java");
     fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    ensure_safe_directory(&cache_dir, "managed Java cache directory")?;
     let archive = cache_dir.join("temurin-21-windows-x64-jre.zip");
     if !archive.is_file() || sha256_file(&archive)? != release.checksum {
         download_verified(&release.link, &release.checksum, &archive)?;
@@ -50,8 +55,12 @@ pub fn ensure_managed_java() -> Result<PathBuf, String> {
 
     let target = runtime_root()?;
     let staging = root.join("runtimes").join("java-21.staging");
-    if staging.exists() {
+    if metadata_entry_exists(&staging)? {
+        ensure_safe_directory(&staging, "managed Java staging directory")?;
         fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+    }
+    if metadata_entry_exists(&target)? {
+        ensure_safe_directory(&target, "managed Java runtime directory")?;
     }
     fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
     extract_zip_stripping_root(&archive, &staging)?;
@@ -60,14 +69,18 @@ pub fn ensure_managed_java() -> Result<PathBuf, String> {
         let _ = fs::remove_dir_all(&staging);
         return Err("Managed Java archive did not contain bin/java.exe".into());
     }
+    ensure_regular_file(&staged_java, "managed Java executable")?;
     if let Err(error) = validate_java_21(&staged_java) {
         let _ = fs::remove_dir_all(&staging);
         return Err(error);
     }
 
-    if target.exists() {
+    if metadata_entry_exists(&target)? {
         let backup = root.join("runtimes").join("java-21.previous");
-        let _ = fs::remove_dir_all(&backup);
+        if metadata_entry_exists(&backup)? {
+            ensure_safe_directory(&backup, "previous managed Java runtime directory")?;
+            fs::remove_dir_all(&backup).map_err(|e| e.to_string())?;
+        }
         fs::rename(&target, &backup).map_err(|e| e.to_string())?;
         match fs::rename(&staging, &target) {
             Ok(()) => {
@@ -159,7 +172,7 @@ fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<()
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     ensure_regular_file(source, "managed Java staging file")?;
-    if destination.exists() {
+    if metadata_entry_exists(destination)? {
         ensure_regular_file(destination, "managed Java archive")?;
         let previous = destination.with_extension("previous");
         remove_regular_file_if_exists(&previous, "previous managed Java archive")?;
@@ -180,6 +193,8 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), String> {
+    ensure_regular_file(archive, "managed Java archive")?;
+    ensure_safe_directory(target, "managed Java extraction directory")?;
     let file = fs::File::open(archive).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     if zip.len() > MAX_JAVA_ARCHIVE_ENTRIES {
@@ -204,9 +219,11 @@ fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), Strin
         let output = target.join(relative);
         if entry.is_dir() {
             fs::create_dir_all(&output).map_err(|e| e.to_string())?;
+            ensure_safe_directory(&output, "managed Java extracted directory")?;
         } else {
             if let Some(parent) = output.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                ensure_safe_directory(parent, "managed Java extracted parent directory")?;
             }
             let mut out = OpenOptions::new().create_new(true).write(true).open(&output).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
@@ -216,13 +233,36 @@ fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), Strin
     Ok(())
 }
 
+fn metadata_entry_exists(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
-    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular non-reparse file"));
     }
     Ok(())
 }
+
+fn ensure_safe_directory(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_dir() {
+        return Err(format!("LazyBuilder expected {label} to be a directory without symbolic-link or reparse indirection"));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &fs::Metadata) -> bool { false }
 
 fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
     match fs::symlink_metadata(path) {
@@ -236,6 +276,7 @@ fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String>
 }
 
 fn validate_java_21(java: &Path) -> Result<(), String> {
+    ensure_regular_file(java, "managed Java executable")?;
     let mut command = Command::new(java);
     hide_windows_console(&mut command);
     let output = command
@@ -261,6 +302,7 @@ fn hide_windows_console(command: &mut Command) {
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
+    ensure_regular_file(path, "managed Java archive")?;
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
