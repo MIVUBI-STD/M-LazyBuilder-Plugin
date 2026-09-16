@@ -74,7 +74,6 @@ def main() -> int:
         ("overview idle poll", ts_int_expr(dashboard, "IDLE_RUNTIME_POLL_MS"), contract["overview"]["idlePollMs"]),
         ("world task visible poll", ts_int_expr(worlds, "TASK_POLL_VISIBLE_MS"), contract["worldTasks"]["visiblePollMs"]),
         ("world task hidden poll", ts_int_expr(worlds, "TASK_POLL_HIDDEN_MS"), contract["worldTasks"]["hiddenPollMs"]),
-        ("world task timeout", ts_int_expr(worlds, "TASK_TIMEOUT_MS"), contract["worldTasks"]["timeoutMs"]),
         ("backup initial rows", ts_int_expr(backup_panel, "BACKUP_PAGE_SIZE"), contract["backups"]["initialRows"]),
         ("backup journal progress step", rust_u64_expr(backup_commands, "MIN_PROGRESS_JOURNAL_STEP_BYTES"), contract["backups"]["minimumProgressJournalStepBytes"]),
         ("server log tail bytes", rust_u64_expr(server_tools, "MAX_LOG_TAIL_BYTES"), contract["serverLogs"]["tailBytesMax"]),
@@ -83,6 +82,18 @@ def main() -> int:
     for label, actual_value, expected_value in checks:
         if actual_value != expected_value:
             errors.append(f"{label}: expected {expected_value}, found {actual_value}")
+
+    world_contract = contract["worldTasks"]
+    if world_contract.get("lifetimeAuthority") == "world-manager":
+        if "TASK_TIMEOUT_MS" in worlds or "Date.now() - startedAt" in worlds:
+            errors.append("Worlds restored a frontend-owned world task lifetime timeout")
+        if "while (pageActive)" not in worlds:
+            errors.append("World task polling no longer observes until backend terminal state or page detach")
+    if world_contract.get("frontendTimeoutMs") is not None:
+        errors.append("world task frontendTimeoutMs must remain null while World Manager owns task lifetime")
+    if world_contract.get("reattachFromTaskList"):
+        if "runtimeProduct.worlds.tasks()" not in worlds or "recoverActiveTask" not in worlds:
+            errors.append("World task observation no longer re-attaches from backend task snapshots")
 
     if contract["backups"].get("estimateMode") == "on-demand":
         if "calculateEstimate" not in backup_panel or "runtimeProduct.backups.estimate(workspace.id)," in backup_panel:
@@ -105,9 +116,6 @@ def main() -> int:
             errors.append(f"{label} restored fixed setInterval polling")
         if "document.hidden" not in source:
             errors.append(f"{label} does not pause polling while hidden")
-
-    if "runtimeProduct.worlds.tasks()" not in worlds or "pageActive" not in worlds:
-        errors.append("World task observation is not restartable/lifecycle-aware")
 
     if errors:
         print("Launcher scalability contract verification failed:")
