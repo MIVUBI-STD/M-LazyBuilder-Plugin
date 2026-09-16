@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -92,6 +93,42 @@ class WorldRuntimeServiceTest {
         }
     }
 
+    @Test
+    void runtimeFamilyPresenceCountsAsManagedWorldOccupancy() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        runtime.loaded = true;
+        runtime.familyHasPlayers = true;
+        WorldRecord world = world(WorldLifecycle.ACTIVE);
+        registry.register(world);
+        WorldRuntimeService service = new WorldRuntimeService(registry, runtime);
+
+        assertTrue(service.hasPlayers(world.id()));
+        assertThrows(IllegalStateException.class, () -> service.unload(world.id()));
+        assertEquals(0, runtime.unloadCount);
+    }
+
+    @Test
+    void liveSnapshotStateRoundTripsWithoutCollapsingDimensionAutosave() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        runtime.loaded = true;
+        runtime.snapshotState = new WorldRuntimeGateway.LiveSnapshotState(Map.of(
+                "Build", true,
+                "Build_nether", false,
+                "Build_the_end", true
+        ));
+        WorldRecord world = world(WorldLifecycle.ACTIVE);
+        registry.register(world);
+        WorldRuntimeService service = new WorldRuntimeService(registry, runtime);
+
+        WorldRuntimeGateway.LiveSnapshotState state = service.beginLiveSnapshotDuringOperation(world.id());
+        assertEquals(runtime.snapshotState, state);
+
+        service.endLiveSnapshotDuringOperation(world.id(), state);
+        assertEquals(state, runtime.restoredSnapshotState);
+    }
+
     private static WorldRecord world(WorldLifecycle lifecycle) {
         return new WorldRecord(WorldId.create(), "Build", "Build", WorldKind.FLAT, lifecycle);
     }
@@ -102,10 +139,14 @@ class WorldRuntimeServiceTest {
         private boolean loaded;
         private boolean failLoad;
         private boolean failUnload;
+        private boolean familyHasPlayers;
+        private LiveSnapshotState snapshotState = LiveSnapshotState.single(true);
+        private LiveSnapshotState restoredSnapshotState;
 
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {}
         @Override public void rollbackCreatedWorld(WorldRecord world) {}
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
+        @Override public boolean hasPlayers(WorldRecord world) { return familyHasPlayers; }
 
         @Override
         public void loadWorld(WorldRecord world) {
@@ -121,6 +162,8 @@ class WorldRuntimeServiceTest {
             loaded = false;
         }
 
+        @Override public LiveSnapshotState beginManagedLiveSnapshot(WorldRecord world) { return snapshotState; }
+        @Override public void endManagedLiveSnapshot(WorldRecord world, LiveSnapshotState state) { restoredSnapshotState = state; }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) {}
     }
 }
