@@ -110,6 +110,12 @@ def main() -> int:
         operations,
         "MAX_OPERATION_HISTORY: usize = 100",
         "OPERATION_JOURNAL_SCHEMA_VERSION",
+        'WORKSPACE_LIBRARY_RESOURCE: &str = "workspace-library"',
+        'WORKSPACE_RESOURCE_PREFIX: &str = "workspace:"',
+        "resources_conflict(resource, &entry.resource)",
+        "fn resources_conflict(",
+        "workspace_library_conflicts_with_workspace_resources",
+        "library_and_workspace_exclusive_operations_are_serialized",
         "operations.json",
         "persist_journal",
         "INTERRUPTED_LAUNCHER_OPERATION",
@@ -228,6 +234,7 @@ def main() -> int:
         '"startup.json"',
         '"README.txt"',
         "MAX_LOG_FILE_BYTES",
+        "sync_all()",
     )
     forbid(support_bundle, "fn redact(", "fn replace_case_insensitive(")
 
