@@ -25,12 +25,13 @@ final class PaperTerraformPayloadAdapter implements PluginMessageListener {
                 id = apply.operationId();
                 if (!player.hasPermission("lazybuilder.terraform.use")) { send(player,new TerraformWireProtocol.Error(id,"permission denied")); return; }
                 BoundedShapeField shape = TerraformShapeMapper.shape(apply);
+                String finalId=id;queue.submit(player,id,shape,(changed,undo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,false)));
                 send(player,new TerraformWireProtocol.Accepted(id));
-                String finalId=id; queue.submit(player,id,shape,(changed,undo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,false)));
             } else if (request instanceof TerraformWireProtocol.Undo undo) {
                 id=undo.operationId();
                 if (!player.hasPermission("lazybuilder.terraform.use")) { send(player,new TerraformWireProtocol.Error(id,"permission denied")); return; }
-                String finalId=id; if (!queue.submitUndo(player,id,(changed,isUndo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,true)))) send(player,new TerraformWireProtocol.Error(id,"nothing to undo or operation still queued"));
+                String finalId=id;if(queue.submitUndo(player,id,(changed,isUndo)->send(player,new TerraformWireProtocol.Finished(finalId,changed,true)))) send(player,new TerraformWireProtocol.Accepted(id));
+                else send(player,new TerraformWireProtocol.Error(id,"nothing to undo or operation still queued"));
             }
         } catch (IOException | RuntimeException exception) { send(player,new TerraformWireProtocol.Error(id,exception.getMessage())); }
     }
