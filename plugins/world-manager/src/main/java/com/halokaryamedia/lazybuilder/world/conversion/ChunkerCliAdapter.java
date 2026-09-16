@@ -100,7 +100,6 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
 
     @Override
     public ConversionResult convert(Path runtimeArtifact, ConversionRequest request) throws IOException {
-        Path artifact = requireRuntimeArtifact(runtimeArtifact);
         Objects.requireNonNull(request, "request");
         if (!Files.isDirectory(request.inputDirectory())) {
             throw new IOException("Conversion input directory does not exist: " + request.inputDirectory());
@@ -112,6 +111,15 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         requireOptionalSettingsFile(request.worldSettings(), "World settings");
         requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
         requireSupportedCustomDimensionShape(request);
+
+        if (canUseLosslessNativeAreaPath(request)) {
+            NativeJavaAreaPruner.exportSelectedArea(
+                    request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+            validateOutputDirectory(request.outputDirectory(), request.outputFormat());
+            return new ConversionResult("LazyBuilder lossless native Java Selected Area export");
+        }
+
+        Path artifact = requireRuntimeArtifact(runtimeArtifact);
         if (request.keepOriginalNbt()) {
             seedSameFormatOutput(request.inputDirectory(), request.outputDirectory());
         }
@@ -123,6 +131,11 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         }
         validateOutputDirectory(request.outputDirectory(), request.outputFormat());
         return new ConversionResult(result.output());
+    }
+
+    static boolean canUseLosslessNativeAreaPath(ConversionRequest request) {
+        Objects.requireNonNull(request, "request");
+        return request.keepOriginalNbt() && request.worldSettings() == null;
     }
 
     List<String> buildConversionCommand(Path runtimeArtifact, ConversionRequest request) {
