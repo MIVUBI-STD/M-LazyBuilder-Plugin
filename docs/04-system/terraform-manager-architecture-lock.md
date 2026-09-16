@@ -22,6 +22,8 @@ Material/coloring is intentionally outside this milestone.
 - Ctrl+Z requests operation undo.
 - Preview uses the same platform-neutral shape reconstruction path as the Paper executor.
 - Hover preview must invalidate when the cursor target changes; it may not remain pinned to a stale block.
+- Size/height/front changes surface immediate HUD feedback without opening a blocking screen.
+- Accepted/finished operations use concise overlay feedback; errors remain visible chat messages.
 
 ## Geometry pipeline
 
@@ -99,12 +101,17 @@ No Terraform implementation belongs in Utility Manager or World Manager. Shared 
 - server-authoritative request validation
 - bounded candidate volume
 - tick-budgeted mutation queue
+- bounded global queue and bounded per-player queued operations
+- operation acknowledgement occurs only after successful queue admission
+- undo is rejected while that builder still has queued work, avoiding history races
 - per-player bounded history
+- offline players do not retain completed-operation undo history
+- client editor/stroke state resets on disconnect
 - undo stores original BlockData rather than assuming generated material
 - no whole-world scans
 - no unbounded per-frame shape generation
 - context sampling remains bounded to a small neighborhood
-- large preview fields use reduced sampling density
+- preview sampling density scales with affected volume and surface output has a hard cap
 
 ## Deferred until after geometry milestone
 
