@@ -110,12 +110,18 @@ def main() -> int:
         "ServerManagerState::for_workspace",
         "set_paper_port",
         "pub fn summaries",
+        "pub fn active_count",
         "used_memory_bytes",
         "max_memory_bytes",
     ]
     for marker in required_runtime_markers:
         if marker not in runtime_registry:
             errors.append(f"multi-server runtime registry is missing marker: {marker}")
+    for marker in ("ServerRuntimeFleet", "managed_used_memory_bytes", "total_memory_bytes", "available_memory_bytes", "attached_runtime_count"):
+        if marker in runtime_registry:
+            errors.append(f"runtime registry restored redundant fleet surface: {marker}")
+    if ".fleet()?.active_count" in server_commands or ".active_count()?" not in server_commands:
+        errors.append("server start must consume the registry active_count directly without a duplicate fleet aggregate")
 
     if "ensure_concurrent_server_capacity(&active.id)" not in server_commands:
         errors.append("server start no longer enforces the concurrent runtime ceiling")
