@@ -5,7 +5,7 @@ description: Own neutral shared Paper/Fabric contracts under shared/protocol: re
 
 # LazyBuilder Shared Protocol
 
-Own neutral Paper/Fabric wire semantics only. Follow `docs/04-system/development-discipline.md` and `docs/04-system/networking.md`.
+Own neutral Paper↔Fabric wire semantics only. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; networking/product boundaries come from `docs/04-system/networking.md`; cross-owner handoff comes from `docs/04-system/skill-routing.md`.
 
 ## Entry gate
 
@@ -20,9 +20,9 @@ capability advertisement
 bounded shared transfer contract
 ```
 
-Do not enter merely because two modules are involved. Desktop loopback HTTP belongs to `lazybuilder-desktop-runtime`; Paper domain behavior belongs to `lazybuilder-world-management`; presentation belongs to `lazybuilder-ui`.
+Do not enter merely because two modules are involved. Desktop loopback HTTP is Desktop Runtime; Paper domain behavior is World Management; presentation is UI.
 
-Before mutation, identify at least one direct producer and one direct consumer plus one concrete failing/mismatched round trip or contract example.
+Before mutation identify one direct producer, one direct consumer, and one concrete failing/mismatched contract example.
 
 ## Owns
 
@@ -34,22 +34,12 @@ World Control contract
 Map Action contract
 shared transfer framing/bounds
 Paper/Fabric compatibility/version semantics
-neutral source ownership under shared/protocol
+neutral source under shared/protocol
 ```
 
-## Does not own
-
-```text
-Paper implementation/domain behavior → lazybuilder-world-management
-Desktop/Fabric presentation          → lazybuilder-ui
-desktop loopback HTTP/control        → lazybuilder-desktop-runtime
-```
-
-## Current canonical contracts
+## Canonical contracts
 
 ### World Control V5
-
-Current general managed-world contract includes:
 
 ```text
 ListWorlds + canManage/canTeleport
@@ -65,20 +55,9 @@ InspectImport
 DiscardImport
 ```
 
-`WorldSummary` carries durable/presentation metadata only.
+`WorldSummary` carries durable/presentation metadata only. Do not reintroduce `LoadWorld`, `UnloadWorld`, `SetAutoLoad`, runtime-state product metadata, `autoLoad`, or Clone terminology.
 
-Do not reintroduce:
-
-```text
-LoadWorld
-UnloadWorld
-SetAutoLoad
-runtimeState in WorldSummary
-autoLoad in WorldSummary
-CloneWorld
-```
-
-Import inspection is a read-only review step after upload completion. Final Import is a separate explicit mutation and must re-run authoritative validation. `DiscardImport` cleans only the requesting player's currently owned reviewed artifact.
+Import inspection is read-only review after upload completion; final Import is a separate explicit mutation and revalidates. `DiscardImport` cleans only the requesting player's owned reviewed artifact.
 
 ### Map Action V2
 
@@ -90,11 +69,11 @@ CurrentWorldResult
 CurrentWorldCleared
 ```
 
-Entering an unmanaged world explicitly clears previous managed-world presentation state.
+Entering an unmanaged world clears prior managed-world presentation state.
 
 ### Transfer
 
-`lazybuilder:transfer` owns file bytes only.
+`lazybuilder:transfer` owns file bytes only:
 
 ```text
 BEGIN
@@ -104,125 +83,94 @@ BEGIN
 → FINISH / ABORT
 ```
 
-Do not tunnel files through World/Map payloads and do not create a second HTTP/WebSocket/cloud transfer plane for in-game world transfer.
+Do not tunnel files through World/Map payloads or create a second in-game transfer plane.
 
 ## Failure taxonomy
 
 ```text
-SHAPE             producer/consumer disagree on payload structure
-VALIDATION        malformed/oversized input rules are wrong
+SHAPE             producer/consumer payload structure differs
+VALIDATION        malformed/oversized input rule wrong
 DEFAULT_OPTIONAL  absence/default semantics diverge
-IDENTIFIER        world/request/entity identifiers are unstable/ambiguous
-VERSIONING        breaking compatibility is hidden or version churn is unnecessary
-CAPABILITY        advertised capability differs from verified backend support
-ADAPTER_DRIFT     neutral contract is correct; Paper/Fabric adapter is stale
-TRANSPORT_LEAK    implementation/transport detail entered neutral contract
-DOMAIN_LEAK       Paper/world business rule entered neutral contract
-PRESENTATION_LEAK UI-only state entered neutral contract
-TRANSFER_BOUND    chunk/window/order/integrity/session rule is unsafe
-UNKNOWN           evidence cannot separate the above
+IDENTIFIER        identifiers unstable/ambiguous
+VERSIONING        compatibility change hidden or version churn unnecessary
+CAPABILITY        advertised capability differs from backend support
+ADAPTER_DRIFT     neutral contract correct; direct adapter stale
+TRANSPORT_LEAK    non-neutral transport detail entered shared contract
+DOMAIN_LEAK       Paper/world business rule entered shared contract
+PRESENTATION_LEAK UI-only state entered shared contract
+TRANSFER_BOUND    chunk/window/order/integrity/session rule unsafe
+UNKNOWN           next separating round-trip evidence required
 ```
 
-Local labels refine global classification while Protocol remains the first wrong owner. `ADAPTER_DRIFT` means the shared contract stays unchanged and the issue must be reclassified to the stale adapter owner; `DOMAIN_LEAK` routes to `WORLD_RUNTIME`; `PRESENTATION_LEAK` routes to `UI_PRESENTATION`; `TRANSPORT_LEAK` routes to the actual transport owner such as Desktop Runtime when loopback/IPC is involved; `UNKNOWN` must name the next separating round-trip evidence.
-
-`ADAPTER_DRIFT` never justifies changing shared types merely to fit a stale adapter.
+`ADAPTER_DRIFT` never justifies changing correct shared types. Cross-owner labels route through the global bridge in `development-discipline.md`.
 
 ## Versioning rules
 
-- bump protocol compatibility only for an actual incompatible wire contract;
-- additive optional data does not automatically justify a version bump when old/new peers can still interoperate safely;
+- bump compatibility only for an actually incompatible wire contract;
+- additive optional data does not require a bump when old/new peers interoperate safely;
 - removed/renamed required fields or changed semantics require explicit compatibility reasoning;
-- compatibility shims exist only for a supported real consumer and must have a retirement condition;
-- do not maintain parallel active protocol versions for hypothetical future compatibility.
+- compatibility shims exist only for a supported real consumer and have a retirement condition;
+- do not keep parallel protocol versions for hypothetical future compatibility.
 
 ## Canonical procedure
 
 ```text
 name exact caller-visible contract
-→ identify direct producer + consumer
-→ capture one failing/mismatched round trip
-→ classify failure
-→ prove shared protocol is the first wrong owner
+→ identify producer + consumer
+→ capture failing/mismatched round trip
+→ classify local subtype
+→ confirm Protocol remains first wrong owner
 → reuse existing neutral type/validation
-→ change smallest payload/semantic surface
-→ change version only when compatibility requires it
-→ update direct Paper/Fabric adapters lockstep
-→ update focused round-trip/validation tests
-→ targeted build/contract proof
-→ hand domain/presentation residue to its owner
+→ smallest payload/semantic change
+→ change version only if compatibility requires it
+→ update direct adapters lockstep
+→ focused contract proof
+→ typed handoff if ownership changes
 → STOP
 ```
 
 ## Invariants
 
-- neutral contracts never depend on Paper implementation classes;
-- shared types are not duplicated inside World Manager or Fabric;
-- payloads stay small, typed, bounded, and transport-neutral;
-- Paper remains authorization/domain authority even when capability flags are sent for presentation;
-- capability catalogs contain only verified backend-supported values;
+- shared contracts never depend on Paper implementation classes;
+- shared types are not duplicated in World Manager/Fabric;
+- payloads stay small, typed, bounded, transport-neutral;
+- Paper remains authorization/domain authority;
+- capability catalogs advertise verified backend-supported values only;
 - optional/default semantics are defined once and tested at both ends;
 - malformed/oversized data fails deterministically at the wire boundary;
-- desktop loopback and Minecraft client/server data planes remain separate;
-- implementation-language/build mechanics are not protocol changes;
-- file transfer ownership handoff is explicit; completed bytes never become an unowned inbox;
+- desktop loopback and Minecraft client/server data planes stay separate;
+- file-transfer ownership handoff is explicit; completed bytes never become an unowned inbox;
 - no fallback formats, command-string tunneling, second transport, or generic compatibility framework without a supported requirement;
-- protocol fields do not exist solely to simplify one renderer or implementation class.
+- protocol fields do not exist solely to simplify one renderer/implementation class.
 
 ## Proof matrix
 
-Use the canonical proof vocabulary from `development-discipline.md`.
-
 ```text
-shape / encode-decode / validation / defaults
-→ EXECUTED_SOURCE with focused shared round-trip/contract tests
-
-Paper + Fabric adapter compile/alignment
-→ EXECUTED_SOURCE for both direct consumers
-
-capability catalog against deterministic authoritative values
-→ EXECUTED_SOURCE
-→ use INTEGRATION_FIXTURE only when multiple real owners/services must be exercised together
-
-compatibility migration / supported old-new contract behavior
-→ EXECUTED_SOURCE or INTEGRATION_FIXTURE, whichever actually exercises the supported boundary
-
-real plugin-channel ordering / disconnect / reconnect / client-server interoperability
-→ LIVE_RUNTIME using exact Paper + Fabric artifacts and the changed round-trip path
+shape / encode-decode / validation / defaults → EXECUTED_SOURCE
+Paper + Fabric adapter compile/alignment       → EXECUTED_SOURCE
+capability catalog deterministic contract      → EXECUTED_SOURCE
+multi-owner deterministic integration          → INTEGRATION_FIXTURE
+supported old-new compatibility boundary       → EXECUTED_SOURCE or INTEGRATION_FIXTURE
+real plugin-channel ordering/reconnect/interoperability → LIVE_RUNTIME
 ```
 
-Compile success does not prove a round trip. A unit round trip does not prove plugin-channel timing. `VISUAL_RENDERED` proof from a Fabric screen does not prove protocol interoperability, and `LIVE_RUNTIME` must exercise both ends of the changed contract.
+Compile success does not prove a round trip. Unit round trip does not prove plugin-channel timing. `VISUAL_RENDERED` does not prove protocol interoperability.
 
-## Handoff / exit contract
+## Handoff / exit
 
-Protocol hands off a frozen neutral contract, not a partially decided feature.
+Use canonical typed handoffs from `skill-routing.md`.
 
 ```text
-neutral payload/validation/version/capability contract correct
-→ lazybuilder-world-management
-handoff: exact neutral types + identifiers + defaults/bounds + compatibility/version semantics
-World Management must not redefine wire meaning while implementing Paper/domain behavior
+to world-management
+→ exact neutral types + identifiers + defaults/bounds + compatibility/version semantics
 
-neutral result already correct but only rendering/interaction is wrong
-→ lazybuilder-ui
-handoff: exact canonical payload/result/capability meaning only
-UI must not reinterpret permission/domain semantics
+to ui
+→ canonical payload/result/capability meaning when semantics are already correct
 
 adapter drift
-→ route to the adapter's semantic owner
-Paper/domain adapter → lazybuilder-world-management
-Fabric presentation/input adapter → lazybuilder-ui
-runtime-only Minecraft client behavior → preserve semantic owner and mark FABRIC_RUNTIME proof residue
+→ hand to stale adapter owner without modifying shared contract
 ```
 
-Desktop HTTP remains outside this chain and routes to `lazybuilder-desktop-runtime`.
+Desktop HTTP remains outside this chain.
 
-Finish when:
-
-- one neutral shared definition exists;
-- direct producer and consumer agree with it;
-- version/default/bounds/capability semantics are explicit;
-- matching round-trip/build proof is complete for the available context;
-- any stale adapter is handed to its owner without modifying a correct shared contract;
-- remaining domain/UI/live interoperability residue is named precisely.
-
-Do not create a second protocol namespace, transport, compatibility framework, or speculative payload surface.
+Finish when one neutral shared definition exists, producer/consumer agree, version/default/bounds/capability semantics are explicit, and matching proof covers the changed contract. Stop before second protocol namespaces, transports, generic compatibility frameworks, or speculative payloads.
