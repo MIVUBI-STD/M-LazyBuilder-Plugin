@@ -76,6 +76,8 @@ PRESENTATION       lifecycle result is correct; UI is stale/misleading
 UNKNOWN            evidence cannot separate the above
 ```
 
+Local labels refine global classification only while Plugin Management remains the first wrong owner. `PRESENTATION` reclassifies to `UI_PRESENTATION`; `PAPER_RUNTIME` maps to the global live-runtime proof class without changing plugin semantic ownership; `ROLLBACK` may additionally require global `RECOVERY`; `UNKNOWN` must name the next separating evidence.
+
 For `UNKNOWN`, gather the smallest separating evidence; never add fallback resolution logic just to continue.
 
 ## Mutation contract
@@ -156,17 +158,15 @@ visual/list/detail/action state only
 
 ## Handoff / exit contract
 
-Handoff to presentation carries canonical plugin truth, not raw files for UI re-interpretation.
-
 ```text
-canonical plugin result
+canonical plugin lifecycle result/capability
 → lazybuilder-ui
-handoff: canonical plugin id/name/version + lifecycle state + capabilities/actions + dependency/compatibility summary + restartRequired + stable result/error
-UI must not parse JAR metadata, resolve dependencies, select duplicate winners, or infer compatibility independently
+handoff: canonical plugin identity + version + lifecycle/capability + dependency/compatibility summary + restartRequired + stable result/error
+UI must not parse JAR metadata, resolve dependencies, choose duplicate winners, or decide compatibility again
 
 bundled LazyBuilder core compatibility/synchronization
 → lazybuilder-desktop-runtime
-handoff: exact bundled-core mismatch/result only; do not broaden third-party plugin rules into core maintenance
+handoff only the workspace/server identity + observed bundled-core mismatch; bundled core is not treated as a third-party plugin
 ```
 
 Finish when:
@@ -175,7 +175,7 @@ Finish when:
 - destructive/replacing work has the required rollback boundary;
 - dependency/duplicate/restart semantics have one owner;
 - matching proof is complete at the available context ceiling;
-- the next owner can consume the canonical result without rescanning plugin files or recomputing lifecycle truth;
+- next owner can consume the canonical result without rescanning plugin truth;
 - remaining Paper live proof or UI residue is named precisely.
 
 Do not continue into unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
