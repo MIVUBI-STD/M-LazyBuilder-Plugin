@@ -1,5 +1,5 @@
 use crate::commands;
-use crate::engine::{app_data_migrations, app_instance, diagnostics};
+use crate::engine::{app_data_migrations, app_instance, diagnostics, plugin_ingress};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_manager::ServerManagerState;
@@ -30,6 +30,12 @@ pub fn run() {
             "LazyBuilder application data migrated from schema {} to {}.",
             app_data_report.from_schema, app_data_report.to_schema
         ));
+    }
+
+    match plugin_ingress::recover_stale_ingress() {
+        Ok(removed) if removed > 0 => diagnostics::info(&format!("Cleaned {removed} stale plugin ingress snapshot(s) from the previous Launcher session.")),
+        Ok(_) => {}
+        Err(error) => diagnostics::error(&format!("Plugin ingress startup cleanup needs attention: {error}")),
     }
 
     let (operation_registry, operation_recovery) = match OperationRegistry::initialize() {
