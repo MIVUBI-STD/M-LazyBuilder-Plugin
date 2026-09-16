@@ -86,7 +86,7 @@ public final class CompactDebugMetrics {
         return cachedProcessCpuPercent;
     }
 
-    private static String formatCpuPercent(double value) {
+    static String formatCpuPercent(double value) {
         return Double.isFinite(value) ? formatPercent(value) : "Unavailable";
     }
 
@@ -100,8 +100,8 @@ public final class CompactDebugMetrics {
         return formatMemory(used, runtime.maxMemory());
     }
 
-    private static String formatMemory(long usedBytes, long maxBytes) {
-        if (maxBytes <= 0L) return "Unavailable";
+    static String formatMemory(long usedBytes, long maxBytes) {
+        if (usedBytes < 0L || maxBytes <= 0L || usedBytes > maxBytes) return "Unavailable";
         return String.format(
                 Locale.ROOT,
                 "%.0f / %.0f MiB",
