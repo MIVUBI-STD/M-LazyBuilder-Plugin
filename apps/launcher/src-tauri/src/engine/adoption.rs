@@ -107,6 +107,7 @@ pub fn execute(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEnt
         moves: planned_moves(&root, &plan),
     };
     validate_intent_paths(&intent)?;
+    reject_adoption_source_trees(&intent)?;
     add_pending_adoption(intent.clone())?;
 
     if let Err(error) = prepare_layout(&server, &worlds_root, &disabled_plugins) {
@@ -287,6 +288,35 @@ fn reject_unsafe_root(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn reject_adoption_source_trees(intent: &PendingAdoption) -> Result<(), String> {
+    let mut checked = Vec::<PathBuf>::new();
+    for movement in &intent.moves {
+        let source = PathBuf::from(&movement.source);
+        if !source.exists() { continue; }
+        // A parent source tree already covers descendants (for example the root
+        // plugins directory covers legacy plugin JARs that will later move again).
+        if checked.iter().any(|parent| source.starts_with(parent)) { continue; }
+        reject_tree_links(&source)?;
+        checked.push(source);
+    }
+    Ok(())
+}
+
+fn reject_tree_links(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("Could not inspect adoption source {}: {error}", path.display()))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+        return Err(format!("Adoption source contains a symbolic link or Windows reparse point: {}", path.display()));
+    }
+    if metadata.file_type().is_dir() {
+        for item in fs::read_dir(path).map_err(|error| format!("Could not inspect adoption source directory {}: {error}", path.display()))? {
+            let item = item.map_err(|error| error.to_string())?;
+            reject_tree_links(&item.path())?;
+        }
+    }
+    Ok(())
+}
+
 fn reject_existing_reparse_points(root: &Path, intent: &PendingAdoption) -> Result<(), String> {
     if root.exists() { reject_unsafe_root(root)?; }
     for movement in &intent.moves {
@@ -343,7 +373,7 @@ fn save_pending_adoptions(entries: &[PendingAdoption]) -> Result<(), String> {
 fn add_pending_adoption(intent: PendingAdoption) -> Result<(), String> {
     let mut entries = load_pending_adoptions()?;
     if entries.iter().any(|item| paths_equal(&item.root, &intent.root)) { return Err("A previous adoption for this server still requires recovery".into()); }
-    entries.push(intent);
+    entries.push(intent;
     save_pending_adoptions(&entries)
 }
 
