@@ -118,20 +118,30 @@ public final class WorldExportService {
         if (source.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Restore " + source.displayName() + " before exporting it");
         }
-        if (runtimeService.hasPlayers(worldId)) {
-            throw new IllegalStateException("Cannot export " + source.displayName()
-                    + " while builders are inside the world");
-        }
 
         String format = normalizeFormat(targetFormat);
         String safeArtifact = validateArtifactName(artifactName);
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
         boolean wasLoaded = runtimeService.isLoaded(worldId);
+        boolean liveSnapshot = false;
+        boolean previousAutoSave = false;
         try {
-            runtimeService.unloadDuringOperation(worldId);
+            if (wasLoaded && runtimeService.hasPlayers(worldId)) {
+                previousAutoSave = runtimeService.beginLiveSnapshotDuringOperation(worldId);
+                liveSnapshot = true;
+            } else {
+                runtimeService.unloadDuringOperation(worldId);
+            }
             return new ExportTask(UUID.randomUUID(), source, format, safeArtifact,
-                    area, options, wasLoaded, lease);
+                    area, options, wasLoaded, liveSnapshot, previousAutoSave, lease);
         } catch (RuntimeException exception) {
+            if (liveSnapshot) {
+                try {
+                    runtimeService.endLiveSnapshotDuringOperation(worldId, previousAutoSave);
+                } catch (RuntimeException restoreFailure) {
+                    exception.addSuppressed(restoreFailure);
+                }
+            }
             lease.close();
             throw exception;
         }
@@ -140,7 +150,7 @@ public final class WorldExportService {
     public void captureSnapshot(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
-        requireQuiescentSnapshotSource(task);
+        requireSnapshotSource(task);
         Path snapshot = null;
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
@@ -156,7 +166,7 @@ public final class WorldExportService {
         task.requireOpen();
         task.requireSnapshot();
         if (task.sourceRestoreResolved) return;
-        task.sourceRestored = restoreSourceIfStillActive(task);
+        task.sourceRestored = restoreSourceAfterSnapshot(task);
         task.sourceRestoreResolved = true;
     }
 
@@ -236,7 +246,7 @@ public final class WorldExportService {
         RuntimeException failure = null;
         if (!task.sourceRestoreResolved) {
             try {
-                task.sourceRestored = restoreSourceIfStillActive(task);
+                task.sourceRestored = restoreSourceAfterSnapshot(task);
                 task.sourceRestoreResolved = true;
             } catch (RuntimeException exception) {
                 failure = exception;
@@ -252,7 +262,7 @@ public final class WorldExportService {
         finish(Objects.requireNonNull(task, "task"));
     }
 
-    private void requireQuiescentSnapshotSource(ExportTask task) {
+    private void requireSnapshotSource(ExportTask task) {
         WorldId id = task.source.id();
         if (operations.activeOperation(id) != WorldOperationType.EXPORT) {
             throw new IllegalStateException("Export snapshot no longer owns the world operation: " + task.source.displayName());
@@ -262,9 +272,15 @@ public final class WorldExportService {
         if (current.lifecycle() != WorldLifecycle.ACTIVE) {
             throw new IllegalStateException("Export source is no longer active: " + current.displayName());
         }
+        if (task.liveSnapshot) {
+            if (!runtimeService.isLoaded(id)) {
+                throw new IllegalStateException("Live export source is no longer loaded: " + current.displayName());
+            }
+            return;
+        }
         if (runtimeService.hasPlayers(id)) {
             throw new IllegalStateException("Cannot snapshot " + current.displayName()
-                    + " while builders are inside the world");
+                    + " because builders entered the world during export preparation");
         }
         if (runtimeService.isLoaded(id)) {
             throw new IllegalStateException("Cannot snapshot " + current.displayName()
@@ -272,11 +288,18 @@ public final class WorldExportService {
         }
     }
 
-    private boolean restoreSourceIfStillActive(ExportTask task) {
-        if (!task.wasLoaded) return false;
+    private boolean restoreSourceAfterSnapshot(ExportTask task) {
         WorldId id = task.source.id();
         WorldRecord current = registry.find(id).orElse(null);
         if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return false;
+        if (task.liveSnapshot) {
+            if (!runtimeService.isLoaded(id)) {
+                throw new IllegalStateException("Live export source is no longer loaded: " + current.displayName());
+            }
+            runtimeService.endLiveSnapshotDuringOperation(id, task.previousAutoSave);
+            return true;
+        }
+        if (!task.wasLoaded) return false;
         if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
         return true;
     }
@@ -425,6 +448,8 @@ public final class WorldExportService {
         private final WorldAreaSelection area;
         private final WorldExportOptions options;
         private final boolean wasLoaded;
+        private final boolean liveSnapshot;
+        private final boolean previousAutoSave;
         private final WorldOperationCoordinator.Lease lease;
         private volatile boolean sourceRestoreResolved;
         private volatile boolean sourceRestored;
@@ -441,6 +466,8 @@ public final class WorldExportService {
                 WorldAreaSelection area,
                 WorldExportOptions options,
                 boolean wasLoaded,
+                boolean liveSnapshot,
+                boolean previousAutoSave,
                 WorldOperationCoordinator.Lease lease
         ) {
             this.operationId = operationId;
@@ -450,6 +477,8 @@ public final class WorldExportService {
             this.area = area;
             this.options = options;
             this.wasLoaded = wasLoaded;
+            this.liveSnapshot = liveSnapshot;
+            this.previousAutoSave = previousAutoSave;
             this.lease = lease;
         }
 
@@ -459,6 +488,7 @@ public final class WorldExportService {
         public WorldExportOptions options() { return options; }
         public boolean completed() { return completed; }
         public boolean sourceRestored() { return sourceRestored; }
+        public boolean liveSnapshot() { return liveSnapshot; }
 
         private synchronized void requireOpen() {
             if (closed) throw new IllegalStateException("Export task is already closed");
