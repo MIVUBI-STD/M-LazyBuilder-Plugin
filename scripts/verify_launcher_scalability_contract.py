@@ -96,6 +96,14 @@ def main() -> int:
         errors.append("targeted server controls must not require the selected workspace to match the target")
     if multi_server.get("runtimeFallbackMayReadAnotherActiveWorkspaceConfig") is not False:
         errors.append("runtime controller fallback must not read another active workspace config")
+    if multi_server.get("workspaceBoundControllerRequiresRuntimeRoot") is not True:
+        errors.append("workspace-bound runtime controllers must require an immutable runtime root")
+    if "impl Default for ServerManagerState" in server_engine:
+        errors.append("ServerManagerState restored an unbound default constructor")
+    if "if self.workspace_root.as_os_str().is_empty() { paths::workspace_root()" in server_engine:
+        errors.append("ServerManagerState restored empty-root fallback to the active workspace")
+    if "Server runtime controller is missing its immutable workspace root." not in server_engine:
+        errors.append("ServerManagerState no longer fails closed when its immutable workspace root is missing")
 
     required_runtime_markers = [
         "HashMap<String, RuntimeEntry>",
