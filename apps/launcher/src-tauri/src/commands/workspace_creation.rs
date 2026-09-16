@@ -1,6 +1,6 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationRegistry};
-use crate::engine::{server_process_guard, workspace_creation, workspace_registry};
+use crate::engine::{workspace_creation, workspace_registry};
 use crate::engine::workspace_registry::WorkspaceEntry;
 use std::path::PathBuf;
 use tauri::State;
@@ -13,9 +13,9 @@ pub fn workspace_create(
     parent_path: String,
     name: String,
 ) -> CommandResult<WorkspaceEntry> {
-    // Creating a workspace changes server-library truth. Keep this deliberately
-    // conservative: do not create while any other Launcher mutation is active or
-    // while any registered Paper process is still running.
+    // Creating a workspace changes server-library truth, but it does not mutate
+    // any existing server runtime. Keep library mutations serialized without
+    // forcing unrelated running Paper servers to stop.
     if operations
         .list()
         .map_err(CommandError::from)?
@@ -28,7 +28,6 @@ pub fn workspace_create(
             "Open Activity",
         ));
     }
-    server_process_guard::ensure_no_running_paper_except(None).map_err(CommandError::from)?;
 
     let operation = operations
         .begin_exclusive("create-server", WORKSPACE_LIBRARY_RESOURCE, false)
@@ -80,9 +79,6 @@ pub fn workspace_create(
                     recoverable: true,
                 },
             );
-            // A failed staged create can leave a registry entry only if recovery
-            // metadata is also preserved. Normal failures are expected to have
-            // rolled back their staging before reaching this boundary.
             let _ = workspace_registry::deactivate();
             Err(error)
         }
