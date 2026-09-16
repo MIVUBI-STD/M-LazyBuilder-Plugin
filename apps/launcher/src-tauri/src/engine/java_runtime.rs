@@ -1,6 +1,6 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,8 +8,11 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 
 const JAVA_MAJOR: u32 = 21;
-const USER_AGENT: &str = "LazyBuilder/0.1.0";
+const USER_AGENT: &str = concat!("LazyBuilder/", env!("CARGO_PKG_VERSION"));
 const ASSETS_URL: &str = "https://api.adoptium.net/v3/assets/feature_releases/21/ga?architecture=x64&heap_size=normal&image_type=jre&jvm_impl=hotspot&os=windows&page=0&page_size=1&project=jdk&sort_method=DEFAULT&sort_order=DESC&vendor=eclipse";
+const MAX_JAVA_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_JAVA_ARCHIVE_ENTRIES: usize = 20_000;
+const MAX_JAVA_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -126,14 +129,26 @@ fn app_data_root() -> Result<PathBuf, String> {
 
 fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<(), String> {
     let temp = destination.with_extension("download");
+    remove_regular_file_if_exists(&temp, "managed Java download staging file")?;
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .call()
         .map_err(|e| format!("Temurin Java download failed: {e}"))?;
-    let mut reader = response.into_reader();
-    let mut output = fs::File::create(&temp).map_err(|e| e.to_string())?;
-    std::io::copy(&mut reader, &mut output).map_err(|e| e.to_string())?;
-    output.flush().map_err(|e| e.to_string())?;
+    if let Some(length) = response.header("Content-Length").and_then(|value| value.parse::<u64>().ok()) {
+        if length > MAX_JAVA_ARCHIVE_BYTES {
+            return Err(format!("Temurin Java archive is unexpectedly large ({length} bytes)"));
+        }
+    }
+    let mut reader = response.into_reader().take(MAX_JAVA_ARCHIVE_BYTES.saturating_add(1));
+    let mut output = OpenOptions::new().create_new(true).write(true).open(&temp).map_err(|e| e.to_string())?;
+    let copied = std::io::copy(&mut reader, &mut output).map_err(|e| e.to_string())?;
+    if copied > MAX_JAVA_ARCHIVE_BYTES {
+        drop(output);
+        let _ = fs::remove_file(&temp);
+        return Err("Temurin Java download exceeded the maximum allowed archive size".into());
+    }
+    output.sync_all().map_err(|e| e.to_string())?;
+    drop(output);
     let actual = sha256_file(&temp)?;
     if actual != expected {
         let _ = fs::remove_file(&temp);
@@ -143,9 +158,11 @@ fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<()
 }
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+    ensure_regular_file(source, "managed Java staging file")?;
     if destination.exists() {
+        ensure_regular_file(destination, "managed Java archive")?;
         let previous = destination.with_extension("previous");
-        let _ = fs::remove_file(&previous);
+        remove_regular_file_if_exists(&previous, "previous managed Java archive")?;
         fs::rename(destination, &previous).map_err(|e| e.to_string())?;
         match fs::rename(source, destination) {
             Ok(()) => {
@@ -165,8 +182,16 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), String> {
     let file = fs::File::open(archive).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    if zip.len() > MAX_JAVA_ARCHIVE_ENTRIES {
+        return Err(format!("Managed Java archive contains too many entries: {}", zip.len()));
+    }
+    let mut extracted_bytes = 0u64;
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index).map_err(|e| e.to_string())?;
+        extracted_bytes = extracted_bytes.saturating_add(entry.size());
+        if extracted_bytes > MAX_JAVA_EXTRACTED_BYTES {
+            return Err("Managed Java archive exceeds the maximum extracted size".into());
+        }
         let enclosed = entry
             .enclosed_name()
             .ok_or_else(|| "Java archive contains an unsafe path".to_string())?;
@@ -183,11 +208,31 @@ fn extract_zip_stripping_root(archive: &Path, target: &Path) -> Result<(), Strin
             if let Some(parent) = output.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            let mut out = fs::File::create(&output).map_err(|e| e.to_string())?;
+            let mut out = OpenOptions::new().create_new(true).write(true).open(&output).map_err(|e| e.to_string())?;
             std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+            out.sync_all().map_err(|e| e.to_string())?;
         }
     }
     Ok(())
+}
+
+fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| format!("Could not inspect {label}: {e}"))?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("LazyBuilder expected {label} to be a regular file"));
+    }
+    Ok(())
+}
+
+fn remove_regular_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            ensure_regular_file(path, label)?;
+            fs::remove_file(path).map_err(|e| format!("Could not remove {label}: {e}"))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Could not inspect {label}: {error}")),
+    }
 }
 
 fn validate_java_21(java: &Path) -> Result<(), String> {
@@ -227,4 +272,21 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         digest.update(&buffer[..count]);
     }
     Ok(format!("{:x}", digest.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_java_bounds_are_finite() {
+        assert!(MAX_JAVA_ARCHIVE_BYTES > 0);
+        assert!(MAX_JAVA_ARCHIVE_ENTRIES > 0);
+        assert!(MAX_JAVA_EXTRACTED_BYTES >= MAX_JAVA_ARCHIVE_BYTES);
+    }
+
+    #[test]
+    fn user_agent_tracks_launcher_version() {
+        assert!(USER_AGENT.ends_with(env!("CARGO_PKG_VERSION")));
+    }
 }
