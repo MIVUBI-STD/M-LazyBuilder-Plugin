@@ -28,6 +28,15 @@ Material/coloring is intentionally outside this milestone.
 - Tool or variation changes cancel an in-progress stroke instead of silently changing semantics mid-gesture.
 - Accepted/finished operations use concise overlay feedback; errors remain visible chat messages.
 
+### UI style lock
+
+- Behavior follows Axiom's editor model: open a compact editor panel, configure the tool, close the panel, then perform the actual terrain gesture directly in the world.
+- Visual styling follows LazyBuilder Map Manager rather than Axiom: the same dark surfaces, borders, accent blue, text hierarchy, elevated-panel treatment, hover states, and disabled-state language are mirrored locally inside Terraform Manager.
+- The panel is configuration-first rather than menu-first. It exposes only Tool, Size, Height, Variation, operation status, Undo, and concise mouse help.
+- Tool and Variation use compact segmented controls; Size and Height use Map-Manager-like bordered rows with small steppers.
+- Status is visually separated from settings and uses a narrow state accent: green for ready, blue while applying.
+- The panel must remain visually compact so the world stays the primary work surface.
+
 ## Operation lifecycle lock
 
 ```text
