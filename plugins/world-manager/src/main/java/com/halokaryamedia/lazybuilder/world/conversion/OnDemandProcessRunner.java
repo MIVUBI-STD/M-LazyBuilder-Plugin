@@ -24,20 +24,23 @@ public final class OnDemandProcessRunner {
         if (timeout.isZero() || timeout.isNegative()) throw new IllegalArgumentException("timeout must be positive");
         if (!Files.isDirectory(work)) throw new IOException("Process working directory does not exist: " + work);
 
-        Path log = work.resolve(".lazybuilder-process-" + UUID.randomUUID() + ".log");
+        String token = UUID.randomUUID().toString();
+        Path stdoutLog = work.resolve(".lazybuilder-process-" + token + ".out.log");
+        Path stderrLog = work.resolve(".lazybuilder-process-" + token + ".err.log");
         Process process = new ProcessBuilder(command)
                 .directory(work.toFile())
-                .redirectErrorStream(true)
-                .redirectOutput(log.toFile())
+                .redirectErrorStream(false)
+                .redirectOutput(stdoutLog.toFile())
+                .redirectError(stderrLog.toFile())
                 .start();
         try {
             boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
             if (!finished) {
-                String output = readTail(log);
                 terminateProcessTree(process);
+                String output = readCombined(stdoutLog, stderrLog);
                 throw new IOException("Conversion worker timed out after " + timeout + ": " + output);
             }
-            return new ProcessResult(process.exitValue(), readTail(log));
+            return new ProcessResult(process.exitValue(), readCombined(stdoutLog, stderrLog));
         } catch (InterruptedException interrupted) {
             try {
                 terminateProcessTree(process);
@@ -54,8 +57,17 @@ public final class OnDemandProcessRunner {
                     Thread.currentThread().interrupt();
                 }
             }
-            Files.deleteIfExists(log);
+            Files.deleteIfExists(stdoutLog);
+            Files.deleteIfExists(stderrLog);
         }
+    }
+
+    private static String readCombined(Path stdoutLog, Path stderrLog) throws IOException {
+        String stdout = readTail(stdoutLog);
+        String stderr = readTail(stderrLog);
+        if (stderr.isBlank()) return stdout;
+        if (stdout.isBlank()) return stderr;
+        return stdout + (stdout.endsWith("\n") ? "" : "\n") + "[stderr]\n" + stderr;
     }
 
     private static void terminateProcessTree(Process process) throws InterruptedException {
