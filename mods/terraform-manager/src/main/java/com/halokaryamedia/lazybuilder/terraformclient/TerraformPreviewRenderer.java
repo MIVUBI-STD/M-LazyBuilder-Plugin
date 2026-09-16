@@ -30,17 +30,27 @@ final class TerraformPreviewRenderer {
         TerraformEditorState s=TerraformManagerClient.state();
         try{
             BoundedShapeField field=TerrainShapeFactory.create(s.tool(),points,TerraformInteractionController.previewFront(),s.size(),s.height(),s.variation(),TerraformInteractionController.previewSeed());
-            surface=sample(field);
+            surface=sample(client,field);
         }catch(RuntimeException ignored){surface=List.of();}
     }
-    private static List<BlockPos> sample(BoundedShapeField field){
+    private static List<BlockPos> sample(MinecraftClient client,BoundedShapeField field){
         ShapeBounds b=field.bounds();int minX=(int)Math.floor(b.minX()),maxX=(int)Math.ceil(b.maxX()),minY=(int)Math.floor(b.minY()),maxY=(int)Math.ceil(b.maxY()),minZ=(int)Math.floor(b.minZ()),maxZ=(int)Math.ceil(b.maxZ());
         long volume=(long)(maxX-minX+1)*(maxY-minY+1)*(maxZ-minZ+1);int step=volume>600_000?2:1;List<BlockPos> result=new ArrayList<>();
         for(int x=minX;x<=maxX;x+=step)for(int y=minY;y<=maxY;y+=step)for(int z=minZ;z<=maxZ;z+=step){
             double px=x+0.5*step,py=y+0.5*step,pz=z+0.5*step;if(!field.contains(px,py,pz))continue;
-            if(!field.contains(px+step,py,pz)||!field.contains(px-step,py,pz)||!field.contains(px,py+step,pz)||!field.contains(px,py-step,pz)||!field.contains(px,py,pz+step)||!field.contains(px,py,pz-step))result.add(new BlockPos(x,y,z));
+            BlockPos pos=new BlockPos(x,y,z);if(!client.world.getBlockState(pos).isAir())continue;
+            if(exposedAddition(client,field,pos,px,py,pz,step))result.add(pos);
         }
         return List.copyOf(result);
+    }
+    private static boolean exposedAddition(MinecraftClient client,BoundedShapeField field,BlockPos pos,double px,double py,double pz,int step){
+        int[][] dirs={{step,0,0},{-step,0,0},{0,step,0},{0,-step,0},{0,0,step},{0,0,-step}};
+        for(int[] d:dirs){
+            if(!field.contains(px+d[0],py+d[1],pz+d[2]))return true;
+            BlockPos neighbor=pos.add(d[0],d[1],d[2]);
+            if(client.world.getBlockState(neighbor).isAir())return true;
+        }
+        return false;
     }
     private static void render(WorldRenderContext context){
         if(surface.isEmpty())return;MatrixStack matrices=context.matrixStack();VertexConsumerProvider consumers=context.consumers();if(matrices==null||consumers==null)return;
