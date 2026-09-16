@@ -86,6 +86,11 @@
       "testMarkers": ["progress_journal_updates_are_bounded_for_large_copies", "progress_journal_uses_minimum_step_for_smaller_copies"]
     },
     {
+      "id": "backup-delete-interrupted-mid-remove",
+      "owner": "apps/launcher/src-tauri/src/commands/server_backups.rs",
+      "markers": ["begin_exclusive(\"delete-backup\"", "BACKUP_DELETE_FAILED", "Backup deletion task ended unexpectedly", "require_recovery"]
+    },
+    {
       "id": "world-task-exceeds-frontend-duration",
       "owner": "apps/launcher/src/pages/Worlds.svelte",
       "markers": ["World Manager owns task lifetime", "while (pageActive)", "runtimeProduct.worlds.tasks()", "recoverActiveTask"],
@@ -96,6 +101,11 @@
       "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
       "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"],
       "testMarkers": ["plugin_ingress_limits_are_bounded"]
+    },
+    {
+      "id": "plugin-mutation-races-server-start",
+      "owner": "apps/launcher/src-tauri/src/commands/plugin_manager.rs",
+      "markers": ["ServerStartLease::acquire()", "begin_exclusive(kind, &resource, false)", "install-plugin", "Plugin mutation task ended unexpectedly"]
     },
     {
       "id": "plugin-ingress-left-after-hard-kill",
@@ -125,7 +135,7 @@
     {
       "id": "world-control-port-conflict-before-paper-start",
       "owner": "apps/launcher/src-tauri/src/commands/server_manager.rs",
-      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"],
+      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper-start"],
       "testMarkers": ["occupied_world_control_port_is_rejected_before_paper_start"]
     }
   ]
