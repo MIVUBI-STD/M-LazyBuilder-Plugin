@@ -19,6 +19,7 @@ public final class TerraformInteractionController {
     private static long strokeSeed;
     private static Vec3d lockedFront=new Vec3d(0,0,1);
     private static String lastOperationId;
+    private static String observedWorldKey;
     private static long lastStateRevision=-1;
     private static long pathRevision;
 
@@ -43,7 +44,7 @@ public final class TerraformInteractionController {
         TerraformClientNetworking.send(request);RAW_PATH.clear();pathRevision++;
     }
     public static void cancelStroke(){drawing=false;RAW_PATH.clear();pathRevision++;}
-    public static void resetRuntime(){drawing=false;RAW_PATH.clear();lastOperationId=null;lastStateRevision=-1;pathRevision++;}
+    public static void resetRuntime(){drawing=false;RAW_PATH.clear();lastOperationId=null;observedWorldKey=null;lastStateRevision=-1;pathRevision++;}
     public static void flipFace(){if(active()){TerraformManagerClient.state().flipFace();lockedFront=lockedFront.multiply(-1.0);pathRevision++;showToolStatus("Face flipped");}}
     public static void adjustWheel(double vertical,boolean shift){if(!active()||vertical==0)return;double delta=Math.copySign(shift?2.0:1.0,vertical);if(shift)TerraformManagerClient.state().adjustHeight(delta);else TerraformManagerClient.state().adjustSize(delta);pathRevision++;showToolStatus(null);}
     public static void undo(){if(lastOperationId!=null)TerraformClientNetworking.send(new TerraformWireProtocol.Undo(UUID.randomUUID().toString()));}
@@ -70,6 +71,13 @@ public final class TerraformInteractionController {
     }
 
     private static void tick(MinecraftClient client){
+        String worldKey=currentWorldKey(client);
+        if(!java.util.Objects.equals(worldKey,observedWorldKey)){
+            observedWorldKey=worldKey;
+            if(drawing)cancelStroke();
+            lastOperationId=null;
+            pathRevision++;
+        }
         if(!TerraformManagerClient.state().editorOpen()){if(drawing)cancelStroke();return;}
         if(drawing){Vec3d hit=hitPoint(client);if(hit!=null){double min=Math.max(1.0,TerraformManagerClient.state().size()*0.08);if(RAW_PATH.getLast().distanceTo(hit)>=min){RAW_PATH.add(hit);pathRevision++;}}}
         long rev=TerraformManagerClient.state().revision();if(rev!=lastStateRevision){lastStateRevision=rev;pathRevision++;}
@@ -83,6 +91,7 @@ public final class TerraformInteractionController {
         HitResult target=client.crosshairTarget;if(!(target instanceof BlockHitResult hit)||target.getType()!=HitResult.Type.BLOCK)return null;
         net.minecraft.util.math.Vec3d p=hit.getPos();return new Vec3d(p.x,p.y,p.z);
     }
+    private static String currentWorldKey(MinecraftClient client){return client.world==null?null:client.world.getRegistryKey().getValue().toString();}
     private static Vec3d resolveFront(MinecraftClient client){return TerrainContextResolver.resolveFront(client, TerraformManagerClient.state().faceFlipped());}
     private static void showToolStatus(String prefix){
         MinecraftClient client=MinecraftClient.getInstance();if(client.player==null)return;TerraformEditorState s=TerraformManagerClient.state();
