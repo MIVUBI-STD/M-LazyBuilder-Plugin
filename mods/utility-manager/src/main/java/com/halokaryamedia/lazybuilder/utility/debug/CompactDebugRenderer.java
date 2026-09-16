@@ -47,11 +47,16 @@ public final class CompactDebugRenderer {
 
         // On narrow GUI widths, preserve readability by stacking SERVER below the left column.
         int occupiedLeftWidth = Math.max(coordinateWidth, leftWidth);
-        if (rightX < MARGIN + occupiedLeftWidth + SECTION_GAP) {
+        if (shouldStackServer(client.getWindow().getScaledWidth(), occupiedLeftWidth, rightWidth)) {
             rightX = MARGIN;
             rightY = leftY + leftHeight + SECTION_GAP;
         }
         drawRightPanel(context, text, snapshot, rightX, rightY, rightWidth, rightHeight);
+    }
+
+    static boolean shouldStackServer(int scaledWidth, int occupiedLeftWidth, int rightWidth) {
+        int rightX = scaledWidth - MARGIN - rightWidth;
+        return rightX < MARGIN + occupiedLeftWidth + SECTION_GAP;
     }
 
     private static void drawCoordinatePanel(
