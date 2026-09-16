@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_OPERATION_HISTORY: usize = 100;
 const OPERATION_JOURNAL_SCHEMA_VERSION: u32 = 1;
+const WORKSPACE_LIBRARY_RESOURCE: &str = "workspace-library";
+const WORKSPACE_RESOURCE_PREFIX: &str = "workspace:";
 static NEXT_OPERATION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,8 +113,8 @@ impl OperationRegistry {
         if resource.is_empty() { return Err("Operation resource is required".into()); }
 
         let mut guard = self.entries.write().map_err(|_| "operation registry lock poisoned".to_string())?;
-        if exclusive && guard.iter().any(|entry| entry.resource == resource && !entry.state.is_terminal()) {
-            return Err(format!("Another launcher operation is already active for {resource}"));
+        if exclusive && guard.iter().any(|entry| !entry.state.is_terminal() && resources_conflict(resource, &entry.resource)) {
+            return Err(format!("Another launcher operation is already active for a conflicting resource: {resource}"));
         }
 
         let now = now_unix_seconds();
@@ -278,6 +280,16 @@ impl OperationRegistry {
         let Some(path) = self.journal_path.as_ref() else { return Ok(()); };
         persist_journal(path, entries)
     }
+}
+
+fn resources_conflict(requested: &str, existing: &str) -> bool {
+    if requested == existing {
+        return true;
+    }
+    let requested_workspace = requested.starts_with(WORKSPACE_RESOURCE_PREFIX);
+    let existing_workspace = existing.starts_with(WORKSPACE_RESOURCE_PREFIX);
+    (requested == WORKSPACE_LIBRARY_RESOURCE && existing_workspace)
+        || (existing == WORKSPACE_LIBRARY_RESOURCE && requested_workspace)
 }
 
 fn reconcile_interrupted_entries(entries: &mut VecDeque<OperationSnapshot>, now: u64) -> OperationRecoveryReport {
@@ -466,6 +478,28 @@ mod tests {
         registry.succeed(&first.id, "done").unwrap();
         assert!(!registry.has_active_for_resource("workspace:test").unwrap());
         assert!(registry.begin_exclusive("backup-server", "workspace:test", true).is_ok());
+    }
+
+    #[test]
+    fn workspace_library_conflicts_with_workspace_resources() {
+        assert!(resources_conflict("workspace-library", "workspace:one"));
+        assert!(resources_conflict("workspace:one", "workspace-library"));
+        assert!(resources_conflict("workspace:one", "workspace:one"));
+        assert!(!resources_conflict("workspace:one", "workspace:two"));
+        assert!(!resources_conflict("launcher:support-bundle", "workspace:one"));
+    }
+
+    #[test]
+    fn library_and_workspace_exclusive_operations_are_serialized() {
+        let registry = OperationRegistry::default();
+        let library = registry.begin_exclusive("adopt-server", "workspace-library", false).unwrap();
+        assert!(registry.begin_exclusive("backup-server", "workspace:one", false).is_err());
+        registry.succeed(&library.id, "done").unwrap();
+
+        let workspace = registry.begin_exclusive("backup-server", "workspace:one", false).unwrap();
+        assert!(registry.begin_exclusive("create-server", "workspace-library", false).is_err());
+        assert!(registry.begin_exclusive("backup-server", "workspace:two", false).is_ok());
+        registry.succeed(&workspace.id, "done").unwrap();
     }
 
     #[test]
