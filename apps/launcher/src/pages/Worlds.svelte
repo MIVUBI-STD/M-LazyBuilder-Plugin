@@ -4,7 +4,6 @@
   import { RuntimeError } from '../app/bridge/runtimeApi';
   import type { ManagedWorldSummary, ServerState, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
-  const TASK_TIMEOUT_MS = 30 * 60 * 1000;
   const TASK_POLL_VISIBLE_MS = 1000;
   const TASK_POLL_HIDDEN_MS = 5000;
 
@@ -175,8 +174,9 @@
   }
 
   async function pollTask(taskId: string): Promise<boolean> {
-    const startedAt = Date.now();
-    while (pageActive && Date.now() - startedAt < TASK_TIMEOUT_MS) {
+    // World Manager owns task lifetime and terminal state. The Launcher only observes
+    // while this page is mounted; long-running world work is never failed by a UI timer.
+    while (pageActive) {
       const task = await runtimeProduct.worlds.task(taskId);
       if (!pageActive) return false;
       operationTask = task;
@@ -185,8 +185,7 @@
       if (task.state === 'FAILED') throw new Error(task.error || task.message || 'World task failed.');
       await new Promise((resolve) => window.setTimeout(resolve, document.hidden ? TASK_POLL_HIDDEN_MS : TASK_POLL_VISIBLE_MS));
     }
-    if (!pageActive) return false;
-    throw new Error('This world operation is taking unusually long. Check the server status and logs before trying again.');
+    return false;
   }
 
   async function recoverActiveTask() {
