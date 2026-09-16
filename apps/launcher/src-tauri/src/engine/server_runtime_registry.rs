@@ -103,6 +103,12 @@ impl ServerRuntimeRegistry {
             });
         }
 
+        summaries.sort_by(|left, right| {
+            left.workspace_name
+                .to_ascii_lowercase()
+                .cmp(&right.workspace_name.to_ascii_lowercase())
+                .then_with(|| left.workspace_id.cmp(&right.workspace_id))
+        });
         Ok(summaries)
     }
 
