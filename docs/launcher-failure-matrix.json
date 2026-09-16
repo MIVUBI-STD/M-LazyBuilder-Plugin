@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "operation-interrupted-by-launcher-exit",
+      "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
+      "markers": ["reconcile_interrupted_entries", "INTERRUPTED_LAUNCHER_OPERATION", "journal_round_trip_preserves_operation_history"]
+    },
+    {
+      "id": "create-crash-before-intent-identity-update",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
+      "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"]
+    },
+    {
+      "id": "create-crash-after-publish-before-relocate",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
+      "markers": ["finish_forward", "CREATE_RECOVERY_REQUIRED", "recover_pending_creations"]
+    },
+    {
+      "id": "adoption-crash-mid-move",
+      "owner": "apps/launcher/src-tauri/src/engine/adoption.rs",
+      "markers": ["pending-adoptions.json", "rollback_intent", "recover_pending_adoptions"]
+    },
+    {
+      "id": "duplicate-crash-before-publish",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
+      "markers": ["pending-duplicates.json", "remove_owned_duplicate_staging", "recover_pending_duplicates"]
+    },
+    {
+      "id": "duplicate-crash-after-publish-before-register",
+      "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
+      "markers": ["finish_recovered_duplicate", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates"]
+    },
+    {
+      "id": "restore-crash-during-workspace-swap",
+      "owner": "apps/launcher/src-tauri/src/engine/server_restore.rs",
+      "markers": ["pending-restores.json", "rollback_path", "recover_pending_restores"]
+    },
+    {
+      "id": "backup-crash-during-staging-copy",
+      "owner": "apps/launcher/src-tauri/src/engine/server_backups.rs",
+      "markers": [".creating-backup-", "recover_staging", "BACKUP_SCHEMA_VERSION"]
+    },
+    {
+      "id": "backup-corruption-before-restore",
+      "owner": "apps/launcher/src-tauri/src/engine/server_backups.rs",
+      "markers": ["verify_snapshot_integrity", "sha256", "BackupIntegrityStatus"]
+    },
+    {
+      "id": "plugin-input-changes-during-install",
+      "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
+      "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"]
+    },
+    {
+      "id": "plugin-ingress-left-after-hard-kill",
+      "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
+      "markers": ["recover_stale_ingress", "INGRESS_FILE_PREFIX"]
+    },
+    {
+      "id": "second-launcher-instance",
+      "owner": "apps/launcher/src-tauri/src/engine/app_instance.rs",
+      "markers": ["launcher-instance.json", "process_start_time", "instance_owner_is_alive"]
+    },
+    {
+      "id": "future-app-data-schema-opened-by-old-launcher",
+      "owner": "apps/launcher/src-tauri/src/engine/app_data_migrations.rs",
+      "markers": ["schema", "unsupported", "initialize"]
+    },
+    {
+      "id": "close-launcher-during-active-operation",
+      "owner": "apps/launcher/src/app/closeGuard.ts",
+      "markers": ["runtimeProduct.operations.list()", "ACTIVE_OPERATION_STATES", "may require recovery"]
+    },
+    {
+      "id": "disk-pressure-before-heavy-write",
+      "owner": "apps/launcher/src-tauri/src/engine/storage_health.rs",
+      "markers": ["CRITICAL_AVAILABLE_BYTES", "WARNING_MIN_AVAILABLE_BYTES", "StoragePressure"]
+    }
+  ]
+}
