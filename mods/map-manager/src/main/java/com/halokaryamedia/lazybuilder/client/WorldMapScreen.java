@@ -111,6 +111,7 @@ public final class WorldMapScreen extends Screen {
     private String rasterScope = "";
     private boolean rasterContentDirty = true;
     private long rasterWorldTime = Long.MIN_VALUE;
+    private ClientMapRasterTexture rasterTexture;
 
     private boolean requestedCurrentWorld;
     private long observedWorldRevision;
@@ -139,6 +140,7 @@ public final class WorldMapScreen extends Screen {
             previousMenuBlur = client.options.getMenuBackgroundBlurriness().getValue();
             client.options.getMenuBackgroundBlurriness().setValue(0);
         }
+        ensureRasterTexture();
         if (!centeredOnce) {
             centerOnPlayer();
             centeredOnce = true;
@@ -173,6 +175,14 @@ public final class WorldMapScreen extends Screen {
         if (exportMode && exportWorkspace.initializedFor(currentWorldId())) {
             initExportNameField();
             exportControlsReady = true;
+        }
+    }
+
+    private void ensureRasterTexture() {
+        if (rasterTexture != null || client == null) return;
+        rasterTexture = new ClientMapRasterTexture(client);
+        if (rasterColumns > 0 && rasterRows > 0 && rasterColors.length == rasterColumns * rasterRows) {
+            rasterTexture.upload(rasterColors, rasterColumns, rasterRows);
         }
     }
 
@@ -388,23 +398,26 @@ public final class WorldMapScreen extends Screen {
         rasterScope = scope;
         rasterContentDirty = false;
         rasterWorldTime = worldTime;
+
+        ensureRasterTexture();
+        if (rasterTexture != null) {
+            rasterTexture.upload(rasterColors, rasterColumns, rasterRows);
+        }
     }
 
     private void drawRaster(DrawContext context, Bounds bounds, int pixel) {
         if (rasterColumns <= 0 || rasterRows <= 0 || rasterColors.length == 0) return;
-        int index = 0;
-        for (int row = 0; row < rasterRows; row++) {
-            int cz = row - rasterHalfCellsZ - 2;
-            int screenY = bounds.centerY() + cz * pixel;
-            for (int column = 0; column < rasterColumns; column++) {
-                int cx = column - rasterHalfCellsX - 2;
-                int screenX = bounds.centerX() + cx * pixel;
-                int color = rasterColors[index++];
-                if (screenY + pixel < bounds.top || screenY >= bounds.bottom
-                        || screenX + pixel < bounds.left || screenX >= bounds.right) continue;
-                context.fill(screenX, screenY, screenX + pixel, screenY + pixel, color);
-            }
-        }
+        ensureRasterTexture();
+        if (rasterTexture == null || !rasterTexture.ready()) return;
+
+        int rasterX = bounds.centerX() + (-rasterHalfCellsX - 2) * pixel;
+        int rasterY = bounds.centerY() + (-rasterHalfCellsZ - 2) * pixel;
+        int drawWidth = rasterColumns * pixel;
+        int drawHeight = rasterRows * pixel;
+
+        context.enableScissor(bounds.left, bounds.top, bounds.right, bounds.bottom);
+        rasterTexture.draw(context, rasterX, rasterY, drawWidth, drawHeight);
+        context.disableScissor();
     }
 
     private void renderPlayerMarker(DrawContext context, Bounds bounds) {
@@ -890,7 +903,7 @@ public final class WorldMapScreen extends Screen {
         }
         y += EXPORT_ROW_HEIGHT;
         if (exportWorkspace.worldSettingsExpanded()) {
-            y += EXPORT_ROW_HEIGHT; // Spawn display row.
+            y += EXPORT_ROW_HEIGHT;
             Rect useCurrent = advancedRowRect(y);
             if (useCurrent.contains(mouseX, mouseY)) {
                 if (client != null && client.player != null) {
@@ -999,7 +1012,6 @@ public final class WorldMapScreen extends Screen {
         clearAndInit();
     }
 
-    /** Opens the production Export workspace from another Map Manager surface. */
     void openExportWorkspace(boolean customArea) {
         int blockX = client != null && client.player != null ? client.player.getBlockX() : 0;
         int blockZ = client != null && client.player != null ? client.player.getBlockZ() : 0;
@@ -1008,7 +1020,6 @@ public final class WorldMapScreen extends Screen {
                 : MapExportWorkspaceState.Scope.FULL_WORLD, blockX, blockZ);
     }
 
-    /** Test/proof hook retained as a thin alias over the production entry point. */
     void openExportWorkspaceForProof(boolean customArea) {
         openExportWorkspace(customArea);
     }
@@ -1545,6 +1556,15 @@ public final class WorldMapScreen extends Screen {
     }
 
     @Override public boolean shouldPause() { return false; }
+
+    @Override
+    public void removed() {
+        super.removed();
+        if (rasterTexture != null) {
+            rasterTexture.close();
+            rasterTexture = null;
+        }
+    }
 
     @Override
     public void close() {
