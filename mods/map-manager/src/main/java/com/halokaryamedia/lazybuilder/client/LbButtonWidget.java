@@ -52,8 +52,20 @@ public final class LbButtonWidget extends PressableWidget {
         context.fill(x + 1, y + 1, right - 1, bottom - 1, fill);
 
         var renderer = MinecraftClient.getInstance().textRenderer;
+        Text visibleMessage = fittedMessage(renderer);
         int textY = y + (getHeight() - 8) / 2;
-        context.drawCenteredTextWithShadow(renderer, getMessage(), x + getWidth() / 2, textY, text);
+        context.drawCenteredTextWithShadow(renderer, visibleMessage, x + getWidth() / 2, textY, text);
+    }
+
+    private Text fittedMessage(net.minecraft.client.font.TextRenderer renderer) {
+        int availableWidth = Math.max(0, getWidth() - 8);
+        Text message = getMessage();
+        if (renderer.getWidth(message) <= availableWidth) return message;
+
+        String ellipsis = "…";
+        int labelWidth = Math.max(0, availableWidth - renderer.getWidth(ellipsis));
+        String clipped = renderer.trimToWidth(message.getString(), labelWidth);
+        return Text.literal(clipped + ellipsis);
     }
 
     @Override
