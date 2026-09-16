@@ -23,6 +23,7 @@ def main() -> int:
     repair = RUST / "commands" / "server_health.rs"
     diagnostics = RUST / "commands" / "diagnostics.rs"
     plugins = RUST / "commands" / "plugin_manager.rs"
+    resources = RUST / "commands" / "resource_settings.rs"
 
     require(creation, 'begin_exclusive("create-server"')
     require(
@@ -54,6 +55,13 @@ def main() -> int:
         "ServerStartLease::acquire()",
         'begin_exclusive(kind, &resource, false)',
         '"Plugin mutation task ended unexpectedly"',
+    )
+    require(
+        resources,
+        'begin_exclusive("save-server-resources"',
+        "ServerStartLease::acquire()",
+        '"RESOURCE_SETTINGS_SAVE_FAILED"',
+        '"Server resource settings task ended unexpectedly"',
     )
     require(repair, 'begin_exclusive("repair-server"')
     require(diagnostics, 'begin_exclusive("export-support-bundle"')
