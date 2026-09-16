@@ -85,6 +85,17 @@ def main() -> int:
     if ui_server_limit != expected_servers:
         errors.append(f"Overview server-capacity label: expected {expected_servers}, found {ui_server_limit}")
 
+    multi_server = contract.get("multiServer", {})
+    expected_targeted_controls = ["snapshot", "console", "stop", "detached-recovery", "log-tail"]
+    if multi_server.get("targetedControls") != expected_targeted_controls:
+        errors.append(f"targeted server controls contract must remain {expected_targeted_controls}")
+    if multi_server.get("targetIdentity") != "workspace-id":
+        errors.append("targeted server controls must remain keyed by workspace-id")
+    if multi_server.get("targetedControlsRequireActiveWorkspace") is not False:
+        errors.append("targeted server controls must not require the selected workspace to match the target")
+    if multi_server.get("runtimeFallbackMayReadAnotherActiveWorkspaceConfig") is not False:
+        errors.append("runtime controller fallback must not read another active workspace config")
+
     required_runtime_markers = [
         "HashMap<String, RuntimeEntry>",
         "ServerManagerState::for_workspace",
@@ -139,11 +150,15 @@ def main() -> int:
     for marker in targeted_server_markers:
         if marker not in server_commands:
             errors.append(f"targeted server controls are missing backend marker: {marker}")
+    stop_match = re.search(r"pub async fn server_stop.*?\n}\n", server_commands, re.S)
+    if not stop_match or "workspace_id: Option<String>" not in stop_match.group(0) or "resolve_runtime(&registry, workspace_id.as_deref())" not in stop_match.group(0):
+        errors.append("server_stop is no longer workspace-targetable")
     if "workspace_id: Option<String>" not in server_tools or "workspace_registry::get(id.trim())" not in server_tools:
         errors.append("targeted server log access no longer resolves the requested workspace explicitly")
     for marker in (
         "snapshot: (workspaceId?: string)",
         "command: (command: string, workspaceId?: string)",
+        "stop: (workspaceId?: string)",
         "recoverDetached: (workspaceId?: string)",
         "logTail: (path: string, workspaceId?: string)",
     ):
@@ -156,6 +171,15 @@ def main() -> int:
     ):
         if marker not in server_console:
             errors.append(f"ServerConsole no longer routes through its explicit workspace target: {marker}")
+
+    forbidden_runtime_fallbacks = (
+        "resource_settings::runtime_resources().map(",
+        "load_options().map(|value| value.startup_timeout_seconds)",
+        "load_options().map(|value| value.graceful_stop_timeout_seconds)",
+    )
+    for marker in forbidden_runtime_fallbacks:
+        if marker in server_engine:
+            errors.append(f"workspace-bound runtime restored an active-workspace config fallback: {marker}")
 
     required_world_target_markers = [
         "active_world_target()",
