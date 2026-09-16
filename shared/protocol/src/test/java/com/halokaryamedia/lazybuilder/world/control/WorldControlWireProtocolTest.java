@@ -1,10 +1,12 @@
 package com.halokaryamedia.lazybuilder.world.control;
 
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,6 +43,16 @@ class WorldControlWireProtocolTest {
                 roundTrip(new WorldControlWireProtocol.ExportWorld(id, "JAVA_1_21_4", "build-export")));
         assertEquals(new WorldControlWireProtocol.ImportWorld("incoming.zip", "incoming", "Incoming"),
                 roundTrip(new WorldControlWireProtocol.ImportWorld("incoming.zip", "incoming", "Incoming")));
+    }
+
+    @Test
+    void customizedExportWorldCarriesSharedSettings() throws Exception {
+        UUID id = UUID.randomUUID();
+        var settings = new ExportSettingsWire.Settings(
+                "CREATIVE", "HARD", Map.of("keepinventory", "true", "randomTickSpeed", "3"));
+        var request = new WorldControlWireProtocol.ExportWorld(
+                id, "BEDROCK_1_21_80", "build-export", settings);
+        assertEquals(request, roundTrip(request));
     }
 
     @Test
