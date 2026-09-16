@@ -113,7 +113,7 @@ local OWNERSHIP
 
 local PAPER_RUNTIME
 → PAPER_RUNTIME
-→ live Paper proof/owner residue only; do not rewrite a correct source contract to avoid live proof
+→ live Paper evidence is required for the remaining claim; do not rewrite a correct source contract to avoid runtime proof
 
 local ADAPTER_DRIFT
 → shared contract stays unchanged
@@ -130,8 +130,8 @@ Rules:
 - use the local subtype only after a primary Skill is selected;
 - do not keep both the old and new Skill active after reclassification;
 - one observed defect gets one first material class at a time;
-- runtime-only proof classes (`PAPER_RUNTIME`, `FABRIC_RUNTIME`) describe the evidence ceiling, not permission to move semantic ownership into runtime code;
-- `RECOVERY` may coexist as a proof concern, but the semantic owner remains Desktop Runtime, Plugin Lifecycle, or World Runtime depending on the affected state.
+- runtime-only failure classes (`PAPER_RUNTIME`, `FABRIC_RUNTIME`) indicate that the remaining claim requires runtime evidence; they are not proof types and do not move semantic ownership into runtime code;
+- `RECOVERY` is a cross-cutting failure class, not a proof type; the semantic owner remains Desktop Runtime, Plugin Lifecycle, or World Runtime depending on the affected state, and proof still uses the canonical proof vocabulary below.
 
 ## Before Editing
 
@@ -334,7 +334,7 @@ artifact paths + content hashes
 which verification stages passed
 ```
 
-Provenance records evidence; it does not upgrade a test into a stronger proof class. For example, a compiled JAR with provenance is still not live gameplay proof unless the matching runtime gate also passed.
+Provenance records evidence; it does not upgrade a test into a stronger proof type. For example, a compiled JAR with provenance is still not live gameplay proof unless the matching runtime gate also passed.
 
 ## Never Simplify Away
 
