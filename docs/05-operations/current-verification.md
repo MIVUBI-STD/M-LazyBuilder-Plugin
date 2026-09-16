@@ -137,6 +137,24 @@ for the exact candidate revision
 
 A successful focused workflow proves only its named boundary. It does not make the whole repository/package candidate green.
 
+For the Launcher three-server work specifically, source inspection and the scalability verifier may establish only the following `REMOTE_GITHUB` source/static claims:
+
+```text
+MAX_CONCURRENT_SERVERS = 3 exists as canonical source policy
+workspace-keyed runtime registry is the lifecycle owner
+runtime controllers require immutable workspace roots
+targeted snapshot/console/stop/recovery/log paths carry workspace identity
+Paper and World Manager port ownership are per runtime/workspace
+RAM admission checks current host availability before spawn
+lifecycle + workspace selection use one serialization lease
+verified detached runtimes consume capacity
+malformed/ambiguous process markers fail closed
+server-library mutations remain backend-guarded while runtime is active
+legacy single-runtime guard is not part of the production command path
+```
+
+These source claims do **not** mean that three real Paper processes have already been proven simultaneously on the target PC. The installed-product three-server claim is promoted only after Phase 3 of `local-pc-validation-plan.md` passes on the exact candidate artifact.
+
 ## Current target product scope
 
 ```text
@@ -182,6 +200,10 @@ Remote GitHub still does **not** prove:
 
 - installer UX on the actual target Windows PC;
 - installed Launcher first-run behavior under that PC's software/security environment;
+- simultaneous 1→2→3 Paper runtime coexistence on the target PC unless an exact dedicated proof explicitly executes that matrix;
+- fourth-start rejection under the target PC's real process/port/memory conditions;
+- cross-workspace console/log/port isolation against three live Paper JVMs;
+- target-PC lifecycle contention, Launcher close/relaunch, and detached recovery with several live servers;
 - long-lived persistent server workspace behavior;
 - representative third-party plugin compatibility;
 - real Modrinth profile behavior under the user's installation;
@@ -211,7 +233,14 @@ Current source must continue to satisfy:
 - Maven and Gradle build paths remain repository-owned;
 - installed runtime and developer Java build paths use the LazyBuilder-owned Windows temp policy where relevant;
 - developer commands route through the canonical `DEV.cmd` / `dev.ps1` control plane;
-- Local distributables use one canonical `dist/Local` layout.
+- Local distributables use one canonical `dist/Local` layout;
+- Launcher Paper runtime ownership remains keyed by immutable workspace identity rather than selected UI state;
+- at most three active registered Paper workspaces may consume runtime capacity;
+- runtime lifecycle state is resolved per workspace and cannot silently fall through to another active workspace;
+- Start/Stop/Restart/detached recovery and workspace selection share one lifecycle serialization authority;
+- process-marker corruption or ambiguous ownership blocks unsafe capacity/start decisions rather than being treated as absence;
+- Paper and World Manager endpoint identity remain distinct per concurrent workspace;
+- workspace duplicate/remove/delete/relocate operations remain backend-blocked whenever live runtime ownership makes mutation unsafe.
 
 ## Reopening Local PC validation
 
@@ -229,6 +258,8 @@ remediation source items resolved
 Then follow only:
 
 [`local-pc-validation-plan.md`](local-pc-validation-plan.md)
+
+Phase 3 of that plan is the canonical installed-product proof for the current three-server runtime standard. Do not replace it with an ad-hoc local test checklist.
 
 ## Historical reports
 
