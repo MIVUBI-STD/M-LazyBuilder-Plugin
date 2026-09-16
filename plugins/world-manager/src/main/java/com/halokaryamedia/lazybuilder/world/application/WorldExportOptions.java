@@ -8,9 +8,9 @@ import java.util.regex.Pattern;
 /**
  * Export-only settings applied to the staged copy, never to the managed source world.
  *
- * <p>The legacy/default option preserves the historical direct native-export path.
- * The Map Export workspace uses {@link #workspaceDefaults()} so empty-chunk cleanup is
- * automatic without exposing converter internals as a builder-facing setting.</p>
+ * <p>Default export behavior is preservation-first. Empty-chunk removal remains an
+ * explicit converter option, but the builder-facing workspace does not enable it
+ * automatically because apparently empty chunks may still carry meaningful metadata.</p>
  */
 public record WorldExportOptions(
         WorldGameMode gameMode,
@@ -66,9 +66,9 @@ public record WorldExportOptions(
         return new WorldExportOptions(null, null, null, null, null, null, null, Map.of(), false);
     }
 
-    /** Builder-facing Export workspace defaults: cleanup is automatic. */
+    /** Builder-facing Export workspace defaults: preserve source chunk data by default. */
     public static WorldExportOptions workspaceDefaults() {
-        return new WorldExportOptions(null, null, null, null, null, null, null, Map.of(), true);
+        return new WorldExportOptions(null, null, null, null, null, null, null, Map.of(), false);
     }
 
     public boolean hasSpawnOverride() {
