@@ -7,7 +7,9 @@
     "ChatScreenMixin",
     "ChatHudMixin",
     "CreativeInventoryScreenMixin",
+    "DebugHudMixin",
     "DisconnectedScreenMixin",
+    "KeyboardMixin",
     "MultiplayerScreenMixin",
     "ScreenshotRecorderMixin"
   ],
