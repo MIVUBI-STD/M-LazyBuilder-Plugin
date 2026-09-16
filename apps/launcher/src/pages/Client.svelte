@@ -30,7 +30,7 @@
     busy = true; error = null; message = '';
     try {
       apply(await runtimeProduct.client.selectProfile(selectedPath));
-      message = 'Profile saved. LazyBuilder will revalidate this exact folder before every sync.';
+      message = 'Profile saved. LazyBuilder will check this profile before each sync.';
     } catch (e) { error = presentRuntimeError(e, 'Could not select this Modrinth profile.'); }
     finally { busy = false; }
   }
@@ -41,7 +41,7 @@
     try {
       const next = await runtimeProduct.client.pickProfile();
       apply(next);
-      if (next.selectedProfile) message = 'Profile location saved. The mods folder was derived automatically.';
+      if (next.selectedProfile) message = 'Profile location saved.';
     } catch (e) { error = presentRuntimeError(e, 'Could not select a Modrinth profile.'); }
     finally { busy = false; }
   }
@@ -73,7 +73,7 @@
   {:else}
     <section class="card">
       <div class="card-head">
-        <div><span class="eyebrow">Minecraft launcher</span><strong>Modrinth App</strong><small>Modrinth remains the owner of profiles, modpacks, Fabric and game launching.</small></div>
+        <div><span class="eyebrow">Minecraft launcher</span><strong>Modrinth App</strong><small>Your Modrinth profile continues to manage Minecraft, Fabric, and modpacks.</small></div>
         <span class:ready={status.ready} class="status-pill">{status.ready ? 'Ready' : 'Setup required'}</span>
       </div>
 
@@ -97,12 +97,12 @@
           <div><span>Profile</span><strong>{status.selectedProfile.name}</strong></div>
           <div><span>Profile location</span><code>{status.selectedProfile.path}</code></div>
           <div><span>Mods location</span><code>{status.selectedProfile.modsPath}</code></div>
-          <div><span>Modrinth data root</span><code>{status.selectedProfile.modrinthRoot}</code></div>
+          <div><span>Modrinth data folder</span><code>{status.selectedProfile.modrinthRoot}</code></div>
         </div>
         <div class="meta">
           <span>Minecraft {status.selectedProfile.gameVersion ?? 'Unknown'}</span>
           <span>{status.selectedProfile.loader ?? 'Unknown loader'}</span>
-          <span>Verified from: {status.selectedProfile.verification}</span>
+          <span>Verified using: {status.selectedProfile.verification}</span>
         </div>
       {/if}
 
@@ -122,8 +122,8 @@
       </div>
 
       <footer>
-        <p>Select the exact Modrinth profile. LazyBuilder only manages its own client components inside that profile.</p>
-        <button class="primary" disabled={busy || !status.selectedProfile?.compatible} onclick={syncClient}>{busy ? 'Working…' : 'Sync Client'}</button>
+        <p>Select the Modrinth profile you use with LazyBuilder. Only LazyBuilder client components are managed here.</p>
+        <button class="primary" disabled={busy || !status.selectedProfile?.compatible} onclick={syncClient}>{busy ? 'Syncing…' : 'Sync client'}</button>
       </footer>
     </section>
   {/if}
