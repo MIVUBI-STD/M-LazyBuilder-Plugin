@@ -14,7 +14,9 @@
   "worldTasks": {
     "visiblePollMs": 1000,
     "hiddenPollMs": 5000,
-    "timeoutMs": 1800000
+    "lifetimeAuthority": "world-manager",
+    "frontendTimeoutMs": null,
+    "reattachFromTaskList": true
   },
   "backups": {
     "initialRows": 20,
