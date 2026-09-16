@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use sysinfo::{Pid, System};
 
 const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
-const START_IN_PROGRESS_MESSAGE: &str = "A LazyBuilder server start is currently in progress. Wait for it to finish before changing the active server or starting another server.";
+const START_IN_PROGRESS_MESSAGE: &str = "A LazyBuilder server lifecycle change is currently in progress. Wait for it to finish before changing the active server or starting, stopping, or recovering another server.";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +14,11 @@ struct StartLockMarker {
     process_start_time: u64,
 }
 
+/// Global lifecycle/selection lease for the bounded three-server runtime.
+///
+/// Running Paper processes still coexist independently. The lease serializes
+/// lifecycle transitions and active-workspace selection so a controller cannot
+/// be removed or rebound midway through Start/Stop/Restart/Recovery.
 pub struct ServerStartLease {
     path: PathBuf,
     marker: StartLockMarker,
@@ -51,15 +56,15 @@ impl ServerStartLease {
                             if lock_owner_is_alive(&path)? {
                                 return Err(START_IN_PROGRESS_MESSAGE.into());
                             }
-                            return Err(format!("Could not retire stale server-start lock: {rename_error}"));
+                            return Err(format!("Could not retire stale server lifecycle lock: {rename_error}"));
                         }
                     }
                 }
-                Err(error) => return Err(format!("Could not acquire server-start lock: {error}")),
+                Err(error) => return Err(format!("Could not acquire server lifecycle lock: {error}")),
             }
         }
 
-        Err("Could not acquire the server-start lock after repeated concurrent changes. Try starting the server again.".into())
+        Err("Could not acquire the server lifecycle lock after repeated concurrent changes. Retry the server action.".into())
     }
 }
 
@@ -106,7 +111,7 @@ fn current_launcher_marker() -> Result<StartLockMarker, String> {
     let process_start_time = system
         .process(pid)
         .map(|process| process.start_time())
-        .ok_or_else(|| "Could not inspect the LazyBuilder launcher process for start coordination.".to_string())?;
+        .ok_or_else(|| "Could not inspect the LazyBuilder launcher process for lifecycle coordination.".to_string())?;
     Ok(StartLockMarker {
         launcher_pid,
         process_start_time,
