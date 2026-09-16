@@ -22,6 +22,7 @@ def main() -> int:
     backups = RUST / "commands" / "server_backups.rs"
     repair = RUST / "commands" / "server_health.rs"
     diagnostics = RUST / "commands" / "diagnostics.rs"
+    plugins = RUST / "commands" / "plugin_manager.rs"
 
     require(creation, 'begin_exclusive("create-server"')
     require(
@@ -40,6 +41,19 @@ def main() -> int:
         'begin_exclusive("delete-backup"',
         '"BACKUP_DELETE_FAILED"',
         '"Backup deletion task ended unexpectedly"',
+    )
+    require(
+        plugins,
+        "run_plugin_mutation(",
+        '"install-plugin"',
+        '"update-plugin"',
+        '"change-plugin-state"',
+        '"remove-plugin"',
+        '"remove-problem-plugin"',
+        '"resolve-plugin-duplicates"',
+        "ServerStartLease::acquire()",
+        'begin_exclusive(kind, &resource, false)',
+        '"Plugin mutation task ended unexpectedly"',
     )
     require(repair, 'begin_exclusive("repair-server"')
     require(diagnostics, 'begin_exclusive("export-support-bundle"')
