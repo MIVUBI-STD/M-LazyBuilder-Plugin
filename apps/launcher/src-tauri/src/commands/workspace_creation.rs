@@ -1,5 +1,6 @@
 use crate::commands::error::{CommandError, CommandResult};
 use crate::engine::operations::{OperationError, OperationRegistry};
+use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{workspace_creation, workspace_registry};
 use crate::engine::workspace_registry::WorkspaceEntry;
 use std::path::PathBuf;
@@ -13,6 +14,13 @@ pub fn workspace_create(
     parent_path: String,
     name: String,
 ) -> CommandResult<WorkspaceEntry> {
+    // Creating a workspace publishes and activates new workspace identity. Reuse
+    // the canonical server-start lease so active-workspace selection cannot move
+    // while another server is reading its start-time configuration.
+    let _selection_lease = ServerStartLease::acquire().map_err(|message| {
+        CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start")
+    })?;
+
     // Creating a workspace changes server-library truth, but it does not mutate
     // any existing server runtime. Keep library mutations serialized without
     // forcing unrelated running Paper servers to stop.
