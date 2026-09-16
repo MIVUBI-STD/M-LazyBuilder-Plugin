@@ -53,6 +53,8 @@ def main() -> int:
     operations = read(LAUNCHER / "src-tauri/src/engine/operations.rs")
     server_tools = read(LAUNCHER / "src-tauri/src/commands/server_tools.rs")
     backup_commands = read(LAUNCHER / "src-tauri/src/commands/server_backups.rs")
+    backup_recovery = read(LAUNCHER / "src-tauri/src/engine/backup_recovery.rs")
+    startup = read(LAUNCHER / "src-tauri/src/engine/startup.rs")
     server_repair = read(LAUNCHER / "src-tauri/src/engine/server_repair.rs")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
@@ -95,9 +97,25 @@ def main() -> int:
         if "runtimeProduct.worlds.tasks()" not in worlds or "recoverActiveTask" not in worlds:
             errors.append("World task observation no longer re-attaches from backend task snapshots")
 
-    if contract["backups"].get("estimateMode") == "on-demand":
+    backup_contract = contract["backups"]
+    if backup_contract.get("estimateMode") == "on-demand":
         if "calculateEstimate" not in backup_panel or "runtimeProduct.backups.estimate(workspace.id)," in backup_panel:
             errors.append("backup sizing is no longer explicitly on-demand")
+    if backup_contract.get("startupRecoveryMode") == "indexed-after-one-legacy-sweep":
+        required_index_markers = [
+            backup_contract.get("recoveryIndexFile", "pending-backups.json"),
+            "recover_pending",
+            "legacy_sweep_required",
+            "mark_legacy_sweep_complete",
+        ]
+        missing = [marker for marker in required_index_markers if marker not in backup_recovery]
+        if missing:
+            errors.append(f"backup indexed recovery is missing markers: {missing}")
+        for marker in ("backup_recovery::recover_pending()", "backup_recovery::legacy_sweep_required()", "server_backups::recover_staging()", "backup_recovery::mark_legacy_sweep_complete()"):
+            if marker not in startup:
+                errors.append(f"startup backup recovery migration is missing {marker}")
+        if "backup_recovery::begin(&workspace_id)" not in backup_commands:
+            errors.append("backup/restore commands no longer register pending backup recovery by workspace")
 
     if contract["overview"].get("repairPlanReusesHealthSnapshot"):
         if "pub health: server_health::ServerHealthSnapshot" not in server_repair:
