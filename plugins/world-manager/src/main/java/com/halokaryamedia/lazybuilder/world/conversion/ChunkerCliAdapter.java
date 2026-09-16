@@ -129,6 +129,7 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         addSettingsArgument(command, "-s", request.worldSettings());
         addSettingsArgument(command, "-p", request.pruningSettings());
         addSettingsArgument(command, "-c", request.converterSettings());
+        if (request.keepOriginalNbt()) command.add("-k");
         return List.copyOf(command);
     }
 
@@ -152,7 +153,8 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
                 && value.contains("--outputDirectory")
                 && value.contains("--worldSettings")
                 && value.contains("--pruning")
-                && value.contains("--converterSettings");
+                && value.contains("--converterSettings")
+                && value.contains("--keepOriginalNBT");
     }
 
     private static void requireOptionalSettingsFile(Path path, String label) throws IOException {
