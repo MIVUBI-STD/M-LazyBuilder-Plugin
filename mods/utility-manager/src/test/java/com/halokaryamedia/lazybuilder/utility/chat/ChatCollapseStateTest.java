@@ -9,12 +9,15 @@ import org.junit.jupiter.api.Test;
 
 class ChatCollapseStateTest {
     @Test
-    void consecutiveJoinMessagesCollapseInsideWindow() {
+    void consecutivePreparedJoinMessagesCollapseInsideWindow() {
         ChatCollapseState state = new ChatCollapseState(Duration.ofSeconds(8));
 
+        state.prepareEligible("Berchman joined");
         ChatCollapseState.Decision first = state.accept("02:10  Berchman joined", 1000);
+        state.prepareEligible("Berchman joined");
         ChatCollapseState.Decision second = state.accept("02:10  Berchman joined", 1500);
-        ChatCollapseState.Decision third = state.accept("02:10  Berchman joined", 2000);
+        state.prepareEligible("Berchman joined ×2");
+        ChatCollapseState.Decision third = state.accept("02:10  Berchman joined ×2", 2000);
 
         assertFalse(first.collapse());
         assertTrue(second.collapse());
@@ -23,7 +26,7 @@ class ChatCollapseStateTest {
     }
 
     @Test
-    void playerChatNeverCollapses() {
+    void unpreparedPlayerChatNeverCollapses() {
         ChatCollapseState state = new ChatCollapseState(Duration.ofSeconds(8));
 
         assertFalse(state.accept("02:10  Marcel  hello", 1000).eligible());
@@ -31,11 +34,21 @@ class ChatCollapseStateTest {
     }
 
     @Test
+    void lookalikeSystemTextIsNotEligibleWithoutMarker() {
+        ChatCollapseState state = new ChatCollapseState(Duration.ofSeconds(8));
+
+        assertFalse(state.accept("Plugin joined", 1000).eligible());
+        assertFalse(state.accept("Plugin joined", 1100).collapse());
+    }
+
+    @Test
     void unrelatedMessageBreaksConsecutiveSequence() {
         ChatCollapseState state = new ChatCollapseState(Duration.ofSeconds(8));
 
+        state.prepareEligible("Berchman joined");
         state.accept("Berchman joined", 1000);
         state.accept("Marcel  hello", 1100);
+        state.prepareEligible("Berchman joined");
         assertFalse(state.accept("Berchman joined", 1200).collapse());
     }
 
@@ -50,7 +63,9 @@ class ChatCollapseStateTest {
     @Test
     void duplicateWindowExpires() {
         ChatCollapseState state = new ChatCollapseState(Duration.ofSeconds(1));
+        state.prepareEligible("Gamemode → Spectator");
         state.accept("Gamemode → Spectator", 1000);
+        state.prepareEligible("Gamemode → Spectator");
         assertFalse(state.accept("Gamemode → Spectator", 2101).collapse());
     }
 }
