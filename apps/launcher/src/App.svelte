@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
   import Dashboard from './pages/Dashboard.svelte';
   import Worlds from './pages/Worlds.svelte';
   import Plugins from './pages/Plugins.svelte';
@@ -8,6 +7,7 @@
   import LauncherSettingsPage from './pages/LauncherSettings.svelte';
   import Client from './pages/Client.svelte';
   import Activity from './pages/Activity.svelte';
+  import { installLauncherCloseGuard } from './app/closeGuard';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { AdoptionPlan, DiagnosticSummary, RuntimeUpdateStatus, WorkspaceDuplicateEstimate, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
@@ -126,29 +126,8 @@
   }
 
   async function installCloseGuard() {
-    if (import.meta.env.MODE === 'visual-preview') return;
-    try {
-      const appWindow = getCurrentWindow();
-      closeGuardUnlisten = await appWindow.onCloseRequested(async (event) => {
-        event.preventDefault();
-        try {
-          const settings = await runtimeProduct.settings.get();
-          if (!settings.confirmCloseWhileServerRunning) {
-            await appWindow.destroy();
-            return;
-          }
-          const snapshot = await runtimeProduct.server.snapshot();
-          const running = ['Online', 'Starting', 'Stopping', 'Detached'].includes(snapshot.state);
-          if (!running || window.confirm('A Minecraft server is still running. Close LazyBuilder anyway? The server process may continue outside this Launcher session.')) {
-            await appWindow.destroy();
-          }
-        } catch {
-          if (window.confirm('LazyBuilder could not verify the current server state. Close the Launcher anyway?')) await appWindow.destroy();
-        }
-      });
-    } catch {
-      closeGuardUnlisten = null;
-    }
+    try { closeGuardUnlisten = await installLauncherCloseGuard(); }
+    catch { closeGuardUnlisten = null; }
   }
 
   async function chooseCreateLocation() {
@@ -234,7 +213,7 @@
     try {
       const result = await runtimeProduct.workspace.provision();
       provisioning = result.status; runtimeUpdates = null; void loadDiagnostics();
-      if (provisioning.ready) void loadRuntimeUpdates();
+      if (provisioning?.ready) void loadRuntimeUpdates();
     } catch (error) {
       workspaceError = friendlyError(error);
       try { provisioning = await runtimeProduct.workspace.provisioningStatus(); } catch {}
