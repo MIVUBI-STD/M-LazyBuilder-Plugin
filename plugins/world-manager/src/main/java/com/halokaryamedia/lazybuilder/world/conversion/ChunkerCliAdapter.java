@@ -98,9 +98,9 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         if (Files.exists(request.outputDirectory())) {
             throw new IOException("Conversion output must not already exist: " + request.outputDirectory());
         }
-        if (request.pruningSettings() != null && !Files.isRegularFile(request.pruningSettings())) {
-            throw new IOException("Pruning settings file does not exist: " + request.pruningSettings());
-        }
+        requireOptionalSettingsFile(request.pruningSettings(), "Pruning settings");
+        requireOptionalSettingsFile(request.worldSettings(), "World settings");
+        requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
 
         List<String> command = buildConversionCommand(artifact, request);
         OnDemandProcessRunner.ProcessResult result = run(command, artifact.getParent(), conversionTimeout);
@@ -126,10 +126,9 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         command.add(request.outputFormat());
         command.add("-o");
         command.add(request.outputDirectory().toString());
-        if (request.pruningSettings() != null) {
-            command.add("-p");
-            command.add(request.pruningSettings().toString());
-        }
+        addSettingsArgument(command, "-s", request.worldSettings());
+        addSettingsArgument(command, "-p", request.pruningSettings());
+        addSettingsArgument(command, "-c", request.converterSettings());
         return List.copyOf(command);
     }
 
@@ -151,7 +150,21 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         return value.contains("--inputDirectory")
                 && value.contains("--outputFormat")
                 && value.contains("--outputDirectory")
-                && value.contains("--pruning");
+                && value.contains("--worldSettings")
+                && value.contains("--pruning")
+                && value.contains("--converterSettings");
+    }
+
+    private static void requireOptionalSettingsFile(Path path, String label) throws IOException {
+        if (path != null && !Files.isRegularFile(path)) {
+            throw new IOException(label + " file does not exist: " + path);
+        }
+    }
+
+    private static void addSettingsArgument(List<String> command, String option, Path path) {
+        if (path == null) return;
+        command.add(option);
+        command.add(path.toString());
     }
 
     private Path requireRuntimeArtifact(Path runtimeArtifact) throws IOException {
