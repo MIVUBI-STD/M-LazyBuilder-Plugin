@@ -18,24 +18,30 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def eval_int_expression(expression: str) -> int | None:
+    expression = expression.strip().replace("_", "")
+    if not re.fullmatch(r"[0-9\s*+/-]+", expression):
+        return None
+    try:
+        value = eval(expression, {"__builtins__": {}}, {})
+    except Exception:
+        return None
+    return int(value) if isinstance(value, int) else None
+
+
 def rust_usize(source: str, name: str) -> int | None:
-    match = re.search(rf"const\s+{re.escape(name)}:\s*usize\s*=\s*(\d+)\s*;", source)
-    return int(match.group(1)) if match else None
+    match = re.search(rf"const\s+{re.escape(name)}:\s*usize\s*=\s*([^;]+);", source)
+    return eval_int_expression(match.group(1)) if match else None
 
 
 def rust_u64_expr(source: str, name: str) -> int | None:
     match = re.search(rf"const\s+{re.escape(name)}:\s*u64\s*=\s*([^;]+);", source)
-    if not match:
-        return None
-    expression = match.group(1).strip()
-    if not re.fullmatch(r"[0-9\s*+_-]+", expression):
-        return None
-    return int(eval(expression, {"__builtins__": {}}, {}))
+    return eval_int_expression(match.group(1)) if match else None
 
 
-def ts_number(source: str, name: str) -> int | None:
-    match = re.search(rf"const\s+{re.escape(name)}\s*=\s*(\d+)\s*;", source)
-    return int(match.group(1)) if match else None
+def ts_int_expr(source: str, name: str) -> int | None:
+    match = re.search(rf"const\s+{re.escape(name)}\s*=\s*([^;]+);", source)
+    return eval_int_expression(match.group(1)) if match else None
 
 
 def main() -> int:
@@ -59,15 +65,15 @@ def main() -> int:
         errors.append(f"operation history: expected {expected}, found {actual}")
 
     checks = [
-        ("activity active poll", ts_number(activity, "ACTIVE_POLL_MS"), contract["activity"]["activePollMs"]),
-        ("activity idle poll", ts_number(activity, "IDLE_POLL_MS"), contract["activity"]["idlePollMs"]),
-        ("activity initial history rows", ts_number(activity, "HISTORY_PAGE_SIZE"), contract["activity"]["initialHistoryRows"]),
-        ("overview active poll", ts_number(dashboard, "ACTIVE_RUNTIME_POLL_MS"), contract["overview"]["activePollMs"]),
-        ("overview idle poll", ts_number(dashboard, "IDLE_RUNTIME_POLL_MS"), contract["overview"]["idlePollMs"]),
-        ("world task visible poll", ts_number(worlds, "TASK_POLL_VISIBLE_MS"), contract["worldTasks"]["visiblePollMs"]),
-        ("world task hidden poll", ts_number(worlds, "TASK_POLL_HIDDEN_MS"), contract["worldTasks"]["hiddenPollMs"]),
-        ("world task timeout", ts_number(worlds, "TASK_TIMEOUT_MS"), contract["worldTasks"]["timeoutMs"]),
-        ("backup initial rows", ts_number(backup_panel, "BACKUP_PAGE_SIZE"), contract["backups"]["initialRows"]),
+        ("activity active poll", ts_int_expr(activity, "ACTIVE_POLL_MS"), contract["activity"]["activePollMs"]),
+        ("activity idle poll", ts_int_expr(activity, "IDLE_POLL_MS"), contract["activity"]["idlePollMs"]),
+        ("activity initial history rows", ts_int_expr(activity, "HISTORY_PAGE_SIZE"), contract["activity"]["initialHistoryRows"]),
+        ("overview active poll", ts_int_expr(dashboard, "ACTIVE_RUNTIME_POLL_MS"), contract["overview"]["activePollMs"]),
+        ("overview idle poll", ts_int_expr(dashboard, "IDLE_RUNTIME_POLL_MS"), contract["overview"]["idlePollMs"]),
+        ("world task visible poll", ts_int_expr(worlds, "TASK_POLL_VISIBLE_MS"), contract["worldTasks"]["visiblePollMs"]),
+        ("world task hidden poll", ts_int_expr(worlds, "TASK_POLL_HIDDEN_MS"), contract["worldTasks"]["hiddenPollMs"]),
+        ("world task timeout", ts_int_expr(worlds, "TASK_TIMEOUT_MS"), contract["worldTasks"]["timeoutMs"]),
+        ("backup initial rows", ts_int_expr(backup_panel, "BACKUP_PAGE_SIZE"), contract["backups"]["initialRows"]),
         ("backup journal progress step", rust_u64_expr(backup_commands, "MIN_PROGRESS_JOURNAL_STEP_BYTES"), contract["backups"]["minimumProgressJournalStepBytes"]),
         ("server log tail bytes", rust_u64_expr(server_tools, "MAX_LOG_TAIL_BYTES"), contract["serverLogs"]["tailBytesMax"]),
         ("server log tail lines", rust_usize(server_tools, "MAX_LOG_LINES"), contract["serverLogs"]["tailLinesMax"]),
