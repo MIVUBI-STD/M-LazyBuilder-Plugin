@@ -2,21 +2,6 @@ name: Launcher Package Smoke
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - Local
-    paths:
-      - '.github/workflows/launcher-package-smoke.yml'
-      - 'apps/launcher/package.json'
-      - 'apps/launcher/package-lock.json'
-      - 'apps/launcher/src-tauri/Cargo.toml'
-      - 'apps/launcher/src-tauri/Cargo.lock'
-      - 'apps/launcher/src-tauri/build.rs'
-      - 'apps/launcher/src-tauri/tauri.conf.json'
-      - 'apps/launcher/src-tauri/tauri.release.conf.json'
-      - 'apps/launcher/src-tauri/app-icon.svg'
-      - 'apps/launcher/src-tauri/icons/**'
-      - 'apps/launcher/src-tauri/resources/**'
 
 permissions:
   contents: read
