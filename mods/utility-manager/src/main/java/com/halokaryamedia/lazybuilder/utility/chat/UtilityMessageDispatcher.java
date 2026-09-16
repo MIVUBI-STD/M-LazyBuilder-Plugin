@@ -12,9 +12,9 @@ import java.util.Objects;
 /**
  * Minecraft-facing bridge for normalized Utility messages.
  *
- * Keeps routing/presentation outside producers. Duplicate chat messages continue
- * through the HUD so ChatHud can replace the newest eligible line with a compact
- * ×N presentation; duplicate toasts remain suppressed by UtilityMessageBus.
+ * Keeps routing/presentation outside producers. Duplicate GAME/WARNING chat
+ * messages continue through the HUD so ChatHud can replace the newest eligible
+ * line with a compact ×N presentation; duplicate toasts remain suppressed.
  */
 public final class UtilityMessageDispatcher {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/UtilityMessages");
@@ -34,9 +34,11 @@ public final class UtilityMessageDispatcher {
         UtilityMessageBus.DispatchDecision decision = UtilityManagerClient.messageBus().publish(message, nowMillis);
 
         if (decision.showInChat() && client.inGameHud != null) {
-            client.inGameHud.getChatHud().addMessage(Text.literal(
-                    ChatPresentationFormatter.chatLine(message, decision.duplicateCount())
-            ));
+            String line = ChatPresentationFormatter.chatLine(message, decision.duplicateCount());
+            if (eligibleForCollapse(message.type())) {
+                UtilityManagerClient.chatCollapseState().prepareEligible(line);
+            }
+            client.inGameHud.getChatHud().addMessage(Text.literal(line));
         }
 
         if (decision.showToast()) {
@@ -55,5 +57,12 @@ public final class UtilityMessageDispatcher {
                 case CHAT, GAME -> LOGGER.debug(line);
             }
         }
+    }
+
+    private static boolean eligibleForCollapse(ChatMessageType type) {
+        return switch (type) {
+            case GAME, WARNING -> true;
+            case CHAT, SYSTEM, ERROR -> false;
+        };
     }
 }
