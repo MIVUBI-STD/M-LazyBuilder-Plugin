@@ -129,20 +129,20 @@ public final class WorldExportService {
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
         boolean wasLoaded = runtimeService.isLoaded(worldId);
         boolean liveSnapshot = false;
-        boolean previousAutoSave = false;
+        WorldRuntimeGateway.LiveSnapshotState snapshotState = null;
         try {
             if (wasLoaded && runtimeService.hasPlayers(worldId)) {
-                previousAutoSave = runtimeService.beginLiveSnapshotDuringOperation(worldId);
+                snapshotState = runtimeService.beginLiveSnapshotDuringOperation(worldId);
                 liveSnapshot = true;
             } else {
                 runtimeService.unloadDuringOperation(worldId);
             }
             return new ExportTask(UUID.randomUUID(), source, format, safeArtifact,
-                    area, options, wasLoaded, liveSnapshot, previousAutoSave, lease);
+                    area, options, wasLoaded, liveSnapshot, snapshotState, lease);
         } catch (RuntimeException exception) {
-            if (liveSnapshot) {
+            if (liveSnapshot && snapshotState != null) {
                 try {
-                    runtimeService.endLiveSnapshotDuringOperation(worldId, previousAutoSave);
+                    runtimeService.endLiveSnapshotDuringOperation(worldId, snapshotState);
                 } catch (RuntimeException restoreFailure) {
                     exception.addSuppressed(restoreFailure);
                 }
@@ -301,7 +301,7 @@ public final class WorldExportService {
             if (!runtimeService.isLoaded(id)) {
                 throw new IllegalStateException("Live export source is no longer loaded: " + current.displayName());
             }
-            runtimeService.endLiveSnapshotDuringOperation(id, task.previousAutoSave);
+            runtimeService.endLiveSnapshotDuringOperation(id, task.snapshotState);
             return true;
         }
         if (!task.wasLoaded) return false;
@@ -458,7 +458,7 @@ public final class WorldExportService {
         private final WorldExportOptions options;
         private final boolean wasLoaded;
         private final boolean liveSnapshot;
-        private final boolean previousAutoSave;
+        private final WorldRuntimeGateway.LiveSnapshotState snapshotState;
         private final WorldOperationCoordinator.Lease lease;
         private volatile boolean sourceRestoreResolved;
         private volatile boolean sourceRestored;
@@ -476,7 +476,7 @@ public final class WorldExportService {
                 WorldExportOptions options,
                 boolean wasLoaded,
                 boolean liveSnapshot,
-                boolean previousAutoSave,
+                WorldRuntimeGateway.LiveSnapshotState snapshotState,
                 WorldOperationCoordinator.Lease lease
         ) {
             this.operationId = operationId;
@@ -487,7 +487,7 @@ public final class WorldExportService {
             this.options = options;
             this.wasLoaded = wasLoaded;
             this.liveSnapshot = liveSnapshot;
-            this.previousAutoSave = previousAutoSave;
+            this.snapshotState = snapshotState;
             this.lease = lease;
         }
 
