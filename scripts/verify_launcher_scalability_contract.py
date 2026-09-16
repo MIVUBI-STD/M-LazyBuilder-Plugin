@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify bounded Launcher polling, rendering and history budgets."""
+"""Verify bounded Launcher polling, rendering, history, and server-runtime budgets."""
 
 from __future__ import annotations
 
@@ -51,19 +51,58 @@ def main() -> int:
         errors.append("launcher scalability contract schemaVersion must be 1")
 
     operations = read(LAUNCHER / "src-tauri/src/engine/operations.rs")
+    process_guard = read(LAUNCHER / "src-tauri/src/engine/server_process_guard.rs")
+    runtime_registry = read(LAUNCHER / "src-tauri/src/engine/server_runtime_registry.rs")
+    server_commands = read(LAUNCHER / "src-tauri/src/commands/server_manager.rs")
+    workspace_commands = read(LAUNCHER / "src-tauri/src/commands/workspace.rs")
+    workspace_creation = read(LAUNCHER / "src-tauri/src/commands/workspace_creation.rs")
     server_tools = read(LAUNCHER / "src-tauri/src/commands/server_tools.rs")
     backup_commands = read(LAUNCHER / "src-tauri/src/commands/server_backups.rs")
     backup_recovery = read(LAUNCHER / "src-tauri/src/engine/backup_recovery.rs")
     startup = read(LAUNCHER / "src-tauri/src/engine/startup.rs")
     server_repair = read(LAUNCHER / "src-tauri/src/engine/server_repair.rs")
     runtime_api = read(LAUNCHER / "src/app/bridge/runtimeApi.ts")
+    runtime_facade = read(LAUNCHER / "src/app/bridge/runtimeProductFacade.ts")
+    runtime_status = read(LAUNCHER / "src/app/bridge/runtimeServerStatus.ts")
     preview_runtime = read(LAUNCHER / "src/app/bridge/runtimePreviewProduct.ts")
+    close_guard = read(LAUNCHER / "src/app/closeGuard.ts")
     activity = read(LAUNCHER / "src/pages/Activity.svelte")
     dashboard = read(LAUNCHER / "src/pages/Dashboard.svelte")
     worlds = read(LAUNCHER / "src/pages/Worlds.svelte")
     backup_panel = read(LAUNCHER / "src/pages/BackupPanel.svelte")
     health_panel = read(LAUNCHER / "src/pages/HealthPanel.svelte")
     app_css = read(LAUNCHER / "src/styles/app.css")
+
+    expected_servers = contract.get("maxConcurrentServers")
+    actual_servers = rust_usize(process_guard, "MAX_CONCURRENT_SERVERS")
+    if actual_servers != expected_servers:
+        errors.append(f"concurrent server limit: expected {expected_servers}, found {actual_servers}")
+
+    required_runtime_markers = [
+        "HashMap<String, RuntimeEntry>",
+        "ServerManagerState::for_workspace",
+        "set_paper_port",
+        "pub fn summaries",
+    ]
+    for marker in required_runtime_markers:
+        if marker not in runtime_registry:
+            errors.append(f"multi-server runtime registry is missing marker: {marker}")
+
+    if "ensure_concurrent_server_capacity(&active.id)" not in server_commands:
+        errors.append("server start no longer enforces the concurrent runtime ceiling")
+    if "prepare_control_options_for_start" not in server_commands:
+        errors.append("server start no longer allocates a workspace-safe World Manager control port")
+    if '.arg("--port").arg(paper_port.to_string())' not in read(LAUNCHER / "src-tauri/src/engine/server_manager/mod.rs"):
+        errors.append("Paper runtime no longer receives its isolated listen-port override")
+    for label, source in (("server commands", server_commands), ("workspace commands", workspace_commands), ("workspace creation", workspace_creation)):
+        if "ensure_no_running_paper_except" in source:
+            errors.append(f"{label} restored the legacy global single-server guard")
+    if "runtimeProduct.server.runtimes()" not in close_guard:
+        errors.append("close guard no longer checks all attached server runtimes")
+    if "runtimeProduct.server.connectionPort()" not in dashboard or "localhost:{connectionPort}" not in dashboard:
+        errors.append("Overview no longer exposes the actual active Paper connection port")
+    if "...runtimeServerStatus" not in runtime_facade or "server_runtime_list" not in runtime_status:
+        errors.append("typed product bridge no longer exposes multi-runtime status")
 
     expected = contract["operationHistoryMax"]
     actual = rust_usize(operations, "MAX_OPERATION_HISTORY")
