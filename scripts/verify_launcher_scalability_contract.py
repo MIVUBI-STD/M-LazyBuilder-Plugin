@@ -57,6 +57,7 @@ def main() -> int:
     server_commands = read(LAUNCHER / "src-tauri/src/commands/server_manager.rs")
     workspace_commands = read(LAUNCHER / "src-tauri/src/commands/workspace.rs")
     workspace_creation = read(LAUNCHER / "src-tauri/src/commands/workspace_creation.rs")
+    world_commands = read(LAUNCHER / "src-tauri/src/commands/world_manager.rs")
     server_tools = read(LAUNCHER / "src-tauri/src/commands/server_tools.rs")
     backup_commands = read(LAUNCHER / "src-tauri/src/commands/server_backups.rs")
     backup_recovery = read(LAUNCHER / "src-tauri/src/engine/backup_recovery.rs")
@@ -77,12 +78,17 @@ def main() -> int:
     actual_servers = rust_usize(process_guard, "MAX_CONCURRENT_SERVERS")
     if actual_servers != expected_servers:
         errors.append(f"concurrent server limit: expected {expected_servers}, found {actual_servers}")
+    ui_server_limit = ts_int_expr(dashboard, "MAX_CONCURRENT_SERVERS")
+    if ui_server_limit != expected_servers:
+        errors.append(f"Overview server-capacity label: expected {expected_servers}, found {ui_server_limit}")
 
     required_runtime_markers = [
         "HashMap<String, RuntimeEntry>",
         "ServerManagerState::for_workspace",
         "set_paper_port",
         "pub fn summaries",
+        "used_memory_bytes",
+        "max_memory_bytes",
     ]
     for marker in required_runtime_markers:
         if marker not in runtime_registry:
@@ -101,11 +107,27 @@ def main() -> int:
         errors.append("close guard no longer checks all attached server runtimes")
     if "runtimeProduct.server.connectionPort()" not in dashboard or "localhost:{connectionPort}" not in dashboard:
         errors.append("Overview no longer exposes the actual active Paper connection port")
+    if "runtimeProduct.server.runtimes()" not in dashboard or "managedMemoryBytes()" not in dashboard:
+        errors.append("Overview no longer presents aggregate multi-server runtime status")
+    if "usedMemoryBytes: number; maxMemoryBytes: number" not in runtime_api:
+        errors.append("runtimeApi no longer types per-runtime resource usage")
     for command_name in ("server_runtime_list", "server_connection_port"):
         if command_name not in runtime_api:
             errors.append(f"canonical runtimeApi no longer exposes {command_name}")
     if "const productionRuntimeProduct = runtimeApi;" not in runtime_facade:
         errors.append("production runtime product no longer uses the single canonical runtimeApi bridge")
+
+    required_world_target_markers = [
+        "active_world_target()",
+        "run_targeted_read",
+        "run_targeted_mutation",
+        "ensure_world_target(&target)",
+        "ServerStartLease::acquire()",
+        '"WORLD_TARGET_CHANGED"',
+    ]
+    for marker in required_world_target_markers:
+        if marker not in world_commands:
+            errors.append(f"World Manager target isolation is missing marker: {marker}")
 
     expected = contract["operationHistoryMax"]
     actual = rust_usize(operations, "MAX_OPERATION_HISTORY")
