@@ -2,15 +2,6 @@ name: Minecraft UI Preview
 
 # Native visual-regression proof for Fabric client presentation using real Minecraft 1.21.4 rendering.
 on:
-  push:
-    branches: [Local]
-    paths:
-      - 'mods/map-manager/**'
-      - 'mods/utility-manager/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/**'
-      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/registry/**'
-      - '.github/workflows/minecraft-ui-preview.yml'
   pull_request:
     branches: [Local, main]
     paths:
