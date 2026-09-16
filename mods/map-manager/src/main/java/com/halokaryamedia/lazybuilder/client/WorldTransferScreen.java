@@ -1,7 +1,6 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
-import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -12,24 +11,20 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 
-/** Shared transfer implementation that can render dedicated Import or Export flows. */
+/** Dedicated Import or non-current-world Export transfer surface. */
 public final class WorldTransferScreen extends Screen {
-    public enum Tab { EXPORT, IMPORT }
+    private enum Tab { EXPORT, IMPORT }
 
     private static final String NATIVE_FORMAT = "JAVA_1_21_4";
-    private static final int CHUNK_BLOCKS = 16;
     private static final DateTimeFormatter EXPORT_SUFFIX = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final WorldTransferPreferences PREFERENCES = new WorldTransferPreferences();
 
     private final Screen parent;
     private final ClientWorldController worlds;
     private final ClientTransferController transfers;
-    private final ClientMapController maps;
     private final WorldControlWireProtocol.WorldSummary world;
-    private final AreaSelection area;
-    private final boolean dedicatedFlow;
+    private final Tab tab;
 
-    private Tab tab;
     private boolean advanced;
     private boolean requestedFormats;
     private TextFieldWidget fileName;
@@ -48,46 +43,25 @@ public final class WorldTransferScreen extends Screen {
     private boolean exportTransferStarted;
     private long observedWorldRevision;
     private long observedTransferRevision;
-    private long observedMapRevision;
-
-    public WorldTransferScreen(
-            Screen parent,
-            ClientWorldController worlds,
-            ClientTransferController transfers,
-            WorldControlWireProtocol.WorldSummary world,
-            Tab initialTab
-    ) {
-        this(parent, worlds, transfers, null, world, initialTab, null, false);
-    }
 
     private WorldTransferScreen(
             Screen parent,
             ClientWorldController worlds,
             ClientTransferController transfers,
-            ClientMapController maps,
             WorldControlWireProtocol.WorldSummary world,
-            Tab initialTab,
-            AreaSelection area,
-            boolean dedicatedFlow
+            Tab tab
     ) {
-        super(Text.literal(dedicatedFlow
-                ? initialTab == Tab.IMPORT ? "Import World" : "Export World"
-                : "Import / Export"));
+        super(Text.literal(tab == Tab.IMPORT ? "Import World" : "Export World"));
         this.parent = parent;
         this.worlds = worlds;
         this.transfers = transfers;
-        this.maps = maps;
         this.world = world;
-        this.area = area;
-        this.dedicatedFlow = dedicatedFlow;
-        this.tab = world == null ? Tab.IMPORT : initialTab;
+        this.tab = tab;
         this.observedWorldRevision = worlds.revision();
         this.observedTransferRevision = transfers.revision();
-        this.observedMapRevision = maps == null ? 0L : maps.revision();
         this.selectedExportFormat = PREFERENCES.exportFormat();
         if (world != null) {
-            String suffix = area == null ? "" : "-area";
-            this.exportFileName = fileStem(world.displayName()) + suffix + "-" + EXPORT_SUFFIX.format(LocalDateTime.now());
+            this.exportFileName = fileStem(world.displayName()) + "-" + EXPORT_SUFFIX.format(LocalDateTime.now());
         }
     }
 
@@ -96,7 +70,7 @@ public final class WorldTransferScreen extends Screen {
             ClientWorldController worlds,
             ClientTransferController transfers
     ) {
-        return new WorldTransferScreen(parent, worlds, transfers, null, null, Tab.IMPORT, null, true);
+        return new WorldTransferScreen(parent, worlds, transfers, null, Tab.IMPORT);
     }
 
     public static WorldTransferScreen forWorldExport(
@@ -105,25 +79,7 @@ public final class WorldTransferScreen extends Screen {
             ClientTransferController transfers,
             WorldControlWireProtocol.WorldSummary world
     ) {
-        return new WorldTransferScreen(parent, worlds, transfers, null, world, Tab.EXPORT, null, true);
-    }
-
-    public static WorldTransferScreen forArea(
-            Screen parent,
-            ClientWorldController worlds,
-            ClientTransferController transfers,
-            ClientMapController maps,
-            MapActionWireProtocol.CurrentWorldResult current,
-            int x1,
-            int z1,
-            int x2,
-            int z2
-    ) {
-        WorldControlWireProtocol.WorldSummary summary = new WorldControlWireProtocol.WorldSummary(
-                current.worldId().value(), current.folderName(), current.displayName(),
-                "IMPORTED", "ACTIVE", "CREATIVE");
-        return new WorldTransferScreen(parent, worlds, transfers, maps, summary, Tab.EXPORT,
-                new AreaSelection(x1, z1, x2, z2), true);
+        return new WorldTransferScreen(parent, worlds, transfers, world, Tab.EXPORT);
     }
 
     @Override
@@ -139,21 +95,6 @@ public final class WorldTransferScreen extends Screen {
         int contentLeft = left + 30;
         int contentWidth = panelWidth - 60;
 
-        if (area == null && !dedicatedFlow) {
-            int tabWidth = (contentWidth - 8) / 2;
-            LbButtonWidget exportTab = LbUi.button(contentLeft, 72, tabWidth, 24,
-                    "Export", tab == Tab.EXPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
-                    () -> switchTab(Tab.EXPORT));
-            exportTab.active = world != null && !busy();
-            addDrawableChild(exportTab);
-
-            LbButtonWidget importTab = LbUi.button(contentLeft + tabWidth + 8, 72, tabWidth, 24,
-                    "Import", tab == Tab.IMPORT ? LbButtonWidget.Style.PRIMARY : LbButtonWidget.Style.GHOST,
-                    () -> switchTab(Tab.IMPORT));
-            importTab.active = !busy();
-            addDrawableChild(importTab);
-        }
-
         if (tab == Tab.EXPORT && world != null) initExport(contentLeft, contentWidth);
         else initImport(contentLeft, contentWidth);
 
@@ -161,33 +102,22 @@ public final class WorldTransferScreen extends Screen {
                 closeButtonLabel(), LbButtonWidget.Style.GHOST, this::close));
     }
 
-    private int exportPrimaryY() {
-        return area == null ? 174 : 210;
+    private static int exportPrimaryY() {
+        return 174;
     }
 
     private void initExport(int contentLeft, int contentWidth) {
         int y = exportPrimaryY();
         LbButtonWidget export = LbUi.button(contentLeft, y, contentWidth, 30,
-                exporting ? "Exporting…" : area == null ? "Export World" : "Export Area",
+                exporting ? "Exporting…" : "Export World",
                 LbButtonWidget.Style.PRIMARY, this::submitExport);
         export.active = !busy();
         addDrawableChild(export);
 
         y += 42;
-        if (area != null) {
-            int half = (contentWidth - 8) / 2;
-            LbButtonWidget edit = LbUi.button(contentLeft, y, half, 22,
-                    "Edit Selection", LbButtonWidget.Style.GHOST, this::editSelection);
-            edit.active = !busy();
-            addDrawableChild(edit);
-            addDrawableChild(LbUi.button(contentLeft + half + 8, y, half, 22,
-                    advanced ? "Advanced  ▾" : "Advanced  ▸",
-                    LbButtonWidget.Style.GHOST, this::toggleAdvanced));
-        } else {
-            addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
-                    advanced ? "Advanced options  ▾" : "Advanced options  ▸",
-                    LbButtonWidget.Style.GHOST, this::toggleAdvanced));
-        }
+        addDrawableChild(LbUi.button(contentLeft, y, contentWidth, 22,
+                advanced ? "Advanced options  ▾" : "Advanced options  ▸",
+                LbButtonWidget.Style.GHOST, this::toggleAdvanced));
 
         if (!advanced) return;
         y += 38;
@@ -214,11 +144,6 @@ public final class WorldTransferScreen extends Screen {
                 this::saveCurrentAsDefault);
         saveDefault.active = !busy() && !isCurrentDefault();
         addDrawableChild(saveDefault);
-    }
-
-    private void editSelection() {
-        if (area == null || busy() || client == null) return;
-        client.setScreen(parent);
     }
 
     private void initImport(int contentLeft, int contentWidth) {
@@ -279,17 +204,6 @@ public final class WorldTransferScreen extends Screen {
         clearAndInit();
     }
 
-    private void switchTab(Tab next) {
-        if (dedicatedFlow || busy() || next == tab || (area != null && next == Tab.IMPORT)) return;
-        if (next == Tab.EXPORT && world == null) return;
-        rememberFields();
-        if (tab == Tab.IMPORT && next != Tab.IMPORT) discardPendingImportReview();
-        tab = next;
-        advanced = false;
-        validation = null;
-        clearAndInit();
-    }
-
     private void cycleExportFormat() {
         List<String> formats = availableFormats();
         if (busy() || formats.size() < 2) return;
@@ -322,13 +236,8 @@ public final class WorldTransferScreen extends Screen {
         validation = null;
         exporting = true;
         try {
-            if (area == null) {
-                worlds.exportWorld(world.worldId(), selectedExportFormat, artifact);
-                observedWorldRevision = worlds.revision();
-            } else {
-                maps.exportAreaCurrent(area.x1, area.z1, area.x2, area.z2, selectedExportFormat, artifact);
-                observedMapRevision = maps.revision();
-            }
+            worlds.exportWorld(world.worldId(), selectedExportFormat, artifact);
+            observedWorldRevision = worlds.revision();
             clearAndInit();
         } catch (RuntimeException exception) {
             exporting = false;
@@ -439,19 +348,11 @@ public final class WorldTransferScreen extends Screen {
             return;
         }
 
-        if (exporting && area == null && observedWorldRevision != worlds.revision()) {
+        if (exporting && observedWorldRevision != worlds.revision()) {
             observedWorldRevision = worlds.revision();
             if (worlds.lastError() != null) failExport(worlds.lastError());
             else if (worlds.activityMessage() == null
                     && transfers.status().phase() != ClientTransferController.TransferPhase.IDLE) exportTransferStarted = true;
-        }
-
-        if (exporting && area != null && observedMapRevision != maps.revision()) {
-            observedMapRevision = maps.revision();
-            if (maps.lastError() != null) failExport(maps.lastError());
-            else if (!maps.exportBusy() && transfers.status().phase() != ClientTransferController.TransferPhase.IDLE) {
-                exportTransferStarted = true;
-            }
         }
 
         if (observedTransferRevision != transfers.revision()) {
@@ -473,7 +374,6 @@ public final class WorldTransferScreen extends Screen {
                     && transfer.phase() == ClientTransferController.TransferPhase.IDLE) {
                 exporting = false;
                 exportTransferStarted = false;
-                finishAreaSelectionIfNeeded();
                 if (client != null && client.currentScreen == this) client.setScreen(parent);
                 return;
             }
@@ -493,10 +393,6 @@ public final class WorldTransferScreen extends Screen {
         }
     }
 
-    private void finishAreaSelectionIfNeeded() {
-        if (area != null && parent instanceof WorldMapScreen mapParent) mapParent.finishAreaExport();
-    }
-
     private void failExport(String message) {
         exporting = false;
         exportTransferStarted = false;
@@ -512,9 +408,7 @@ public final class WorldTransferScreen extends Screen {
         int panelHeight = Math.min(height - 70, panelHeight());
         LbUi.elevatedPanel(context, left, 24, panelWidth, panelHeight);
 
-        String heading = area != null ? "EXPORT AREA"
-                : dedicatedFlow ? tab == Tab.IMPORT ? "IMPORT WORLD" : "EXPORT WORLD"
-                : "IMPORT / EXPORT";
+        String heading = tab == Tab.IMPORT ? "IMPORT WORLD" : "EXPORT WORLD";
         context.drawTextWithShadow(textRenderer, Text.literal(heading), left + 24, 40, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(world == null ? "Import World" : world.displayName()),
                 left + 24, 56, LbUi.TEXT_PRIMARY);
@@ -527,32 +421,21 @@ public final class WorldTransferScreen extends Screen {
 
     private int panelHeight() {
         if (tab == Tab.IMPORT && importInspection != null) return advanced ? 390 : 350;
-        return advanced ? 450 : area == null ? 292 : 332;
+        return advanced ? 450 : 292;
     }
 
     private void renderExport(DrawContext context, int left, int panelWidth) {
         int cardX = left + 22;
         int cardY = 106;
         int cardWidth = panelWidth - 44;
-        int cardHeight = area == null ? 52 : 88;
-        LbUi.panel(context, cardX, cardY, cardWidth, cardHeight);
+        LbUi.panel(context, cardX, cardY, cardWidth, 52);
         context.drawTextWithShadow(textRenderer,
                 Text.literal(isCurrentDefault() ? "USING DEFAULT SETTINGS" : "USING CUSTOM SETTINGS"),
                 cardX + 12, cardY + 10, LbUi.TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal(friendlyFormat(selectedExportFormat)),
                 cardX + 12, cardY + 26, LbUi.TEXT_PRIMARY);
-        if (area == null) {
-            context.drawTextWithShadow(textRenderer, Text.literal("Entire world"), cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
-        } else {
-            context.drawTextWithShadow(textRenderer, Text.literal("Selected area"), cardX + 12, cardY + 42, LbUi.TEXT_SECONDARY);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(area.chunkWidth() + " × " + area.chunkHeight() + " chunks   ·   "
-                            + area.blockWidth() + " × " + area.blockHeight() + " blocks"),
-                    cardX + 12, cardY + 57, LbUi.TEXT_PRIMARY);
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal("X " + area.minX() + " → " + area.maxX() + "   Z " + area.minZ() + " → " + area.maxZ()),
-                    cardX + 12, cardY + 72, LbUi.TEXT_MUTED);
-        }
+        context.drawTextWithShadow(textRenderer, Text.literal("Entire world"),
+                cardX + 12, cardY + 39, LbUi.TEXT_SECONDARY);
 
         if (advanced) {
             int advancedY = exportPrimaryY() + 82;
@@ -621,9 +504,8 @@ public final class WorldTransferScreen extends Screen {
             percent = transfer.percent();
         } else if ((inspectingImport || processingImport) && worlds.activityMessage() != null) {
             status = worlds.activityMessage();
-        } else if (exporting) {
-            if (area != null && maps.exportBusy()) status = "Preparing selected area…";
-            else if (worlds.activityMessage() != null) status = worlds.activityMessage();
+        } else if (exporting && worlds.activityMessage() != null) {
+            status = worlds.activityMessage();
         }
 
         if (status != null) {
@@ -655,7 +537,6 @@ public final class WorldTransferScreen extends Screen {
     private String closeButtonLabel() {
         if (choosing || inspectingImport) return "Cancel";
         if (continuesInBackground()) return "Continue in Background";
-        if (area != null) return "Cancel Area Export";
         return "Close";
     }
 
@@ -762,22 +643,10 @@ public final class WorldTransferScreen extends Screen {
 
     @Override
     public void close() {
-        if (area != null) finishAreaSelectionIfNeeded();
         if (tab == Tab.IMPORT && !processingImport) {
             abandonImportReview = choosing || inspectingImport;
             discardPendingImportReview();
         }
         if (client != null) client.setScreen(parent);
-    }
-
-    private record AreaSelection(int x1, int z1, int x2, int z2) {
-        int minX() { return Math.min(x1, x2); }
-        int maxX() { return Math.max(x1, x2); }
-        int minZ() { return Math.min(z1, z2); }
-        int maxZ() { return Math.max(z1, z2); }
-        int chunkWidth() { return Math.floorDiv(maxX(), CHUNK_BLOCKS) - Math.floorDiv(minX(), CHUNK_BLOCKS) + 1; }
-        int chunkHeight() { return Math.floorDiv(maxZ(), CHUNK_BLOCKS) - Math.floorDiv(minZ(), CHUNK_BLOCKS) + 1; }
-        int blockWidth() { return maxX() - minX() + 1; }
-        int blockHeight() { return maxZ() - minZ() + 1; }
     }
 }
