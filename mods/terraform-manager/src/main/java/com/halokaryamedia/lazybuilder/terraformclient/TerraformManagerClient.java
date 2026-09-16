@@ -4,15 +4,11 @@ import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Client bootstrap. Input/render/network adapters are registered here as the editor is completed. */
+/** Client lifecycle owner for the standalone Terraform editor. */
 public final class TerraformManagerClient implements ClientModInitializer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Terraform");
-    private static final TerraformEditorState STATE = new TerraformEditorState();
-
-    @Override
-    public void onInitializeClient() {
-        LOGGER.info("Terraform Manager loaded; standalone geometry tools: Cliff, Ridge, Mountain");
-    }
-
-    public static TerraformEditorState state() { return STATE; }
+    private static final Logger LOGGER=LoggerFactory.getLogger("LazyBuilder/Terraform");
+    private static final TerraformEditorState STATE=new TerraformEditorState();
+    private final TerraformClientNetworking networking=new TerraformClientNetworking();
+    @Override public void onInitializeClient(){networking.register();LOGGER.info("Terraform Manager loaded; standalone Cliff, Ridge, Mountain editor backend ready.");}
+    public static TerraformEditorState state(){return STATE;}
 }

@@ -1,39 +1,24 @@
-plugins {
-    id 'fabric-loom' version '1.9.2'
-    id 'maven-publish'
-}
-
-if (gradle.gradleVersion != '8.12') {
-    throw new GradleException("LazyBuilder Terraform Manager requires Gradle 8.12; found ${gradle.gradleVersion}")
-}
-
-version = project.mod_version
-group = project.maven_group
-
-base { archivesName = project.archives_base_name }
+plugins { id 'fabric-loom' version '1.9.2'; id 'maven-publish' }
+if (gradle.gradleVersion != '8.12') throw new GradleException("LazyBuilder Terraform Manager requires Gradle 8.12; found ${gradle.gradleVersion}")
+version=project.mod_version; group=project.maven_group
+base { archivesName=project.archives_base_name }
 repositories { mavenCentral() }
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
-
 sourceSets {
     main {
         java {
-            srcDirs = ['src/main/java', '../../shared/terraform-core/src/main/java']
+            srcDirs=['src/main/java','../../shared/terraform-core/src/main/java','../../shared/protocol/src/main/java']
             include 'com/halokaryamedia/lazybuilder/terraform/**'
+            include 'com/halokaryamedia/lazybuilder/terraform/wire/TerraformWireProtocol.java'
             include 'com/halokaryamedia/lazybuilder/terraformclient/**'
         }
     }
 }
-
-processResources {
-    inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') { expand 'version': project.version }
-}
-
-tasks.withType(JavaCompile).configureEach { options.release = 21 }
-java { toolchain.languageVersion = JavaLanguageVersion.of(21); withSourcesJar() }
+processResources { inputs.property 'version',project.version; filesMatching('fabric.mod.json'){ expand 'version':project.version } }
+tasks.withType(JavaCompile).configureEach { options.release=21 }
+java { toolchain.languageVersion=JavaLanguageVersion.of(21); withSourcesJar() }
