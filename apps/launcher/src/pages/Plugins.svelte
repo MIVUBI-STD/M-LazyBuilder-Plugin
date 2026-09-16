@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { PluginInstallResult, PluginSummary, ServerState } from '../app/bridge/runtimeApi';
 
   let plugins: PluginSummary[] = [];
   let search = '';
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let message = '';
   let busy = false;
   let serverState: ServerState = 'Offline';
@@ -26,8 +29,8 @@
     visiblePluginList = extraPluginList.filter((plugin) => !query || `${plugin.displayName} ${plugin.version}`.toLowerCase().includes(query));
   }
 
-  function friendlyError(value: unknown) {
-    return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Plugin operation failed. Try again.';
+  function localError(code: string, message: string, action = ''): RuntimeErrorPresentation {
+    return { code, message, details: '', recoverable: Boolean(action), action, correlationId: '' };
   }
 
   async function refresh() {
@@ -35,30 +38,36 @@
       const [nextPlugins, snapshot] = await Promise.all([runtimeProduct.plugins.list(), runtimeProduct.server.snapshot()]);
       plugins = nextPlugins;
       serverState = snapshot.state;
-      error = '';
+      error = null;
       duplicateSelection = Object.fromEntries(
         nextPlugins.filter((plugin) => plugin.mutable && !isInvalid(plugin) && plugin.candidateFiles?.length).map((plugin) => [plugin.id, plugin.candidateFiles?.[0] ?? ''])
       );
-    } catch (e) {
+    } catch (value) {
       plugins = [];
-      error = friendlyError(e);
+      error = presentRuntimeError(value, 'Could not inspect installed plugins.');
     }
   }
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
     if (!canMutatePlugins) {
-      error = serverState === 'Detached' ? 'The server is running externally. Stop it before changing plugins.' : 'Stop the server before changing plugins.';
+      error = localError(
+        'SERVER_BUSY',
+        serverState === 'Detached'
+          ? 'The server is running externally. Stop it before changing plugins.'
+          : 'Stop the server before changing plugins.',
+        'Stop the server and retry'
+      );
       return;
     }
     busy = true;
-    error = '';
+    error = null;
     message = '';
     try {
       await action();
       await refresh();
-    } catch (e) {
-      error = friendlyError(e);
+    } catch (value) {
+      error = presentRuntimeError(value, 'Plugin operation failed. Try again.');
     } finally {
       busy = false;
     }
@@ -107,7 +116,7 @@
     if (!plugin.mutable) return;
     const jar = plugin.candidateFiles?.[0];
     if (!jar) {
-      error = 'LazyBuilder could not identify the broken JAR safely.';
+      error = localError('PLUGIN_FILE_AMBIGUOUS', 'LazyBuilder could not identify the broken JAR safely.', 'Refresh plugins and review the affected files');
       return;
     }
     if (!window.confirm(`Remove broken plugin file ${jar}?`)) return;
@@ -137,7 +146,7 @@
     <div class="notice warning"><strong>Stop the server to edit plugins</strong><span>{serverState === 'Detached' ? 'The server is currently running outside LazyBuilder.' : 'Installed plugins stay visible while the server is running.'}</span></div>
   {/if}
   {#if message}<div class="notice success">{message}</div>{/if}
-  {#if error}<div class="notice error" role="alert">{error}</div>{/if}
+  <RuntimeErrorNotice {error} />
 
   {#if extraPluginList.length > 4}
     <label class="search-field" aria-label="Search plugins"><span aria-hidden="true">⌕</span><input bind:value={search} placeholder="Search plugins" /></label>
@@ -214,7 +223,7 @@
   .plugins-page{width:min(920px,100%)}
   .page-header{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:18px}.page-header h2{margin:0;font-size:18px}.page-header p{margin:4px 0 0;color:var(--muted);font-size:12px}
   .primary{min-height:var(--control-height);border:1px solid var(--accent);border-radius:8px;padding:8px 13px;background:var(--accent);color:var(--accent-ink);font-weight:700;cursor:pointer}.primary:hover:not(:disabled){background:var(--accent-hover)}
-  .notice{display:grid;gap:2px;margin-bottom:12px;padding:10px 12px;border-radius:8px;font-size:11px}.notice strong{font-size:11px}.notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b9e5c7}.notice.warning{border:1px solid #655626;background:var(--warning-bg);color:#e3cf8d}.notice.error{border:1px solid #70343a;background:var(--danger-bg);color:#ffd9dc}
+  .notice{display:grid;gap:2px;margin-bottom:12px;padding:10px 12px;border-radius:8px;font-size:11px}.notice strong{font-size:11px}.notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b9e5c7}.notice.warning{border:1px solid #655626;background:var(--warning-bg);color:#e3cf8d}
   .search-field{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-height:var(--control-height);padding:0 11px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--muted)}.search-field:focus-within{border-color:var(--accent-border);box-shadow:0 0 0 3px var(--accent-soft)}.search-field input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text);padding:0}
 
   .plugin-list{border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.plugin-row{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:62px;padding:10px 12px;border-bottom:1px solid var(--border-soft);transition:background 120ms ease}.plugin-row:last-child{border-bottom:0}.plugin-row:hover{background:var(--surface-2)}.plugin-row.has-problem{background:color-mix(in srgb,var(--danger-bg) 48%,var(--surface))}.plugin-icon{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text-soft);font-size:11px;font-weight:800}.plugin-icon.core{border-color:var(--accent-border);background:var(--accent-soft);color:var(--accent)}.plugin-main{min-width:0;display:grid;gap:2px}.plugin-main>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.plugin-main>span{color:var(--muted);font-size:10px}.problem-text{margin-top:4px;color:#ff9ba3;font-size:10px}
