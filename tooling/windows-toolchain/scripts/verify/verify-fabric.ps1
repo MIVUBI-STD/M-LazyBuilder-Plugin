@@ -20,7 +20,8 @@ if (-not (Test-Path -LiteralPath $GradleWrapper -PathType Leaf)) {
 $Managers = @(
     @{ Name = 'Map Manager'; Path = 'mods/map-manager' },
     @{ Name = 'Utility Manager'; Path = 'mods/utility-manager' },
-    @{ Name = 'Performance Manager'; Path = 'mods/performance-manager' }
+    @{ Name = 'Performance Manager'; Path = 'mods/performance-manager' },
+    @{ Name = 'Terraform Manager'; Path = 'mods/terraform-manager' }
 )
 
 Push-Location $RepoRoot
