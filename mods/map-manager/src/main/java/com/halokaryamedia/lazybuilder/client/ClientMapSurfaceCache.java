@@ -128,16 +128,26 @@ public final class ClientMapSurfaceCache {
     }
 
     /**
-     * Returns one canonical surface sample for a raster cell.
+     * Returns one stable representative surface sample for a raster footprint.
      *
-     * <p>The previous implementation blended several progressively arriving
-     * samples for far zoom. That made the same map cell change colour multiple
-     * times while loading and produced a soft/blinking preview. The retained
-     * renderer now owns level-of-detail policy; this cache supplies stable base
-     * terrain data only.</p>
+     * <p>Far-zoom sampling is anchored to a world-space grid instead of the moving
+     * screen center. Panning inside the same footprint therefore resolves the same
+     * sample coordinate and does not make terrain colours crawl or blink. This is
+     * the cache-side half of retained-tile behaviour; the screen renderer remains
+     * responsible for retaining and drawing the visible raster/tile.</p>
      */
     public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
-        return sample(world, blockX, blockZ);
+        int stableSpan = Math.max(1, span);
+        if (stableSpan == 1) return sample(world, blockX, blockZ);
+        int anchorX = stableSampleCoordinate(blockX, stableSpan);
+        int anchorZ = stableSampleCoordinate(blockZ, stableSpan);
+        return sample(world, anchorX, anchorZ);
+    }
+
+    static int stableSampleCoordinate(int coordinate, int span) {
+        int stableSpan = Math.max(1, span);
+        int cell = Math.floorDiv(coordinate, stableSpan);
+        return cell * stableSpan + stableSpan / 2;
     }
 
     /**
