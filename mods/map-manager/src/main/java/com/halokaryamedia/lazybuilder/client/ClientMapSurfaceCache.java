@@ -128,29 +128,26 @@ public final class ClientMapSurfaceCache {
     }
 
     /**
-     * Produces a stable far-zoom pixel from the same canonical base-column data.
-     * The aggregate is used only after most of its footprint is known so newly
-     * discovered terrain does not flicker through several intermediate colours.
+     * Returns one canonical surface sample for a raster cell.
+     *
+     * <p>The previous implementation blended several progressively arriving
+     * samples for far zoom. That made the same map cell change colour multiple
+     * times while loading and produced a soft/blinking preview. The retained
+     * renderer now owns level-of-detail policy; this cache supplies stable base
+     * terrain data only.</p>
      */
     public SurfaceSample sampleArea(ClientWorld world, int blockX, int blockZ, int span) {
-        if (span <= 2) return sample(world, blockX, blockZ);
-
-        int offset = Math.max(1, span / 3);
-        SurfaceSample center = sample(world, blockX, blockZ);
-        SurfaceSample nw = sample(world, blockX - offset, blockZ - offset);
-        SurfaceSample ne = sample(world, blockX + offset, blockZ - offset);
-        SurfaceSample sw = sample(world, blockX - offset, blockZ + offset);
-        SurfaceSample se = sample(world, blockX + offset, blockZ + offset);
-
-        int explored = explored(center) + explored(nw) + explored(ne) + explored(sw) + explored(se);
-        if (explored < 3) return center.explored() ? center : SurfaceSample.UNEXPLORED;
-        return blendFive(center, nw, ne, sw, se);
+        return sample(world, blockX, blockZ);
     }
 
     /**
      * Uses one shared per-client-tick work budget for completed-cache merging and
      * live terrain sampling. Calls from multiple render frames in the same world
      * tick do not multiply terrain work on high-refresh-rate clients.
+     *
+     * @return number of surface entries that were merged or sampled this tick;
+     *         callers can use this as a content-change signal instead of polling
+     *         or periodically rebuilding the map viewport.
      */
     public int processPending(ClientWorld world, int budget) {
         drainCompletedWrites();
@@ -169,10 +166,11 @@ public final class ClientMapSurfaceCache {
         int sampleBudget = Math.min(remainingWork / LIVE_SAMPLE_WORK_COST, MAX_LIVE_SAMPLES_PER_TICK);
         if (sampleBudget <= 0 || pending.isEmpty()) {
             pruneRegions();
-            return 0;
+            return merged;
         }
 
         int processed = 0;
+        int changed = merged;
         while (!pending.isEmpty() && processed < sampleBudget) {
             long key = pending.removeFirstLong();
             int x = unpackX(key);
@@ -180,14 +178,16 @@ public final class ClientMapSurfaceCache {
             if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
 
             RegionData region = regionFor(x, z, true);
+            long revisionBefore = region.revision();
             long packedSample = readSurfacePacked(world, x, z);
             if (region.put(localIndex(x, z), unpackSampleColor(packedSample), unpackSampleHeight(packedSample))) {
                 residentSampleCount++;
             }
+            if (region.revision() != revisionBefore) changed++;
             processed++;
         }
         pruneRegions();
-        return processed;
+        return changed;
     }
 
     public int pendingCount() {
@@ -505,72 +505,6 @@ public final class ClientMapSurfaceCache {
         int localX = Math.floorMod(x, REGION_SIZE);
         int localZ = Math.floorMod(z, REGION_SIZE);
         return localZ * REGION_SIZE + localX;
-    }
-
-    private static int explored(SurfaceSample value) {
-        return value != null && value.explored() ? 1 : 0;
-    }
-
-    private static SurfaceSample blendFive(
-            SurfaceSample center,
-            SurfaceSample nw,
-            SurfaceSample ne,
-            SurfaceSample sw,
-            SurfaceSample se
-    ) {
-        long red = 0;
-        long green = 0;
-        long blue = 0;
-        long height = 0;
-        int count = 0;
-
-        if (center != null && center.explored()) {
-            int color = center.color();
-            red += (color >>> 16) & 0xFF;
-            green += (color >>> 8) & 0xFF;
-            blue += color & 0xFF;
-            height += center.height();
-            count++;
-        }
-        if (nw != null && nw.explored()) {
-            int color = nw.color();
-            red += (color >>> 16) & 0xFF;
-            green += (color >>> 8) & 0xFF;
-            blue += color & 0xFF;
-            height += nw.height();
-            count++;
-        }
-        if (ne != null && ne.explored()) {
-            int color = ne.color();
-            red += (color >>> 16) & 0xFF;
-            green += (color >>> 8) & 0xFF;
-            blue += color & 0xFF;
-            height += ne.height();
-            count++;
-        }
-        if (sw != null && sw.explored()) {
-            int color = sw.color();
-            red += (color >>> 16) & 0xFF;
-            green += (color >>> 8) & 0xFF;
-            blue += color & 0xFF;
-            height += sw.height();
-            count++;
-        }
-        if (se != null && se.explored()) {
-            int color = se.color();
-            red += (color >>> 16) & 0xFF;
-            green += (color >>> 8) & 0xFF;
-            blue += color & 0xFF;
-            height += se.height();
-            count++;
-        }
-
-        if (count == 0) return SurfaceSample.UNEXPLORED;
-        int color = 0xFF000000
-                | ((int) (red / count) << 16)
-                | ((int) (green / count) << 8)
-                | (int) (blue / count);
-        return new SurfaceSample(color, (int) (height / count), true);
     }
 
     private static long readSurfacePacked(ClientWorld world, int x, int z) {
