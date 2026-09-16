@@ -39,6 +39,48 @@ Paper/Fabric compatibility/version semantics
 neutral source under shared/protocol
 ```
 
+## Context loading
+
+### Default load
+
+```text
+this SKILL.md
+→ exact shared/protocol type or validator involved
+→ one direct producer
+→ one direct consumer
+→ one concrete mismatched/failing round-trip example
+```
+
+For a localized wire defect, do not preload World/UI/Desktop docs.
+
+### Required if
+
+```text
+current canonical World/Map/Transfer contract scope or networking boundary is uncertain
+→ docs/04-system/networking.md
+
+version compatibility semantics are material
+→ exact supported producer/consumer versions + focused compatibility evidence
+
+capability advertisement is disputed
+→ authoritative backend capability source + direct consumer
+
+wire defect may actually be domain/presentation/desktop transport leakage
+→ skill-routing.md to resolve owner before changing shared types
+```
+
+### Do not load if
+
+- do not load world-management docs merely because the payload concerns worlds;
+- do not load UI docs merely because Fabric renders the result;
+- do not load Desktop Runtime docs for Paper↔Fabric contracts unless the issue is actually desktop loopback/Tauri IPC leakage;
+- do not scan unrelated protocol namespaces when one producer/consumer pair can decide the contract;
+- do not load historical versions unless a currently supported peer requires compatibility reasoning.
+
+### Escalate when
+
+Escalate only when exact shared types + producer + consumer cannot determine whether the first wrong owner is Protocol, adapter drift, domain leakage, presentation leakage, or transport leakage. Gather the next separating round-trip evidence before loading more context.
+
 ## Canonical contracts
 
 ### World Control V5
