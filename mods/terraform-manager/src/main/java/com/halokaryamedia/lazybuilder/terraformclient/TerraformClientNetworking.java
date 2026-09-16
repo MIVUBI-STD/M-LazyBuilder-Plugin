@@ -15,16 +15,19 @@ final class TerraformClientNetworking {
         ClientPlayNetworking.registerGlobalReceiver(TerraformPayload.ID,(payload,context)->context.client().execute(()->accept(payload.bytes())));
     }
     static void send(TerraformWireProtocol.Request request) {
+        TerraformEditorState state=TerraformManagerClient.state();
+        state.operationSent();
         try { ClientPlayNetworking.send(new TerraformPayload(TerraformWireProtocol.encodeRequest(request))); }
-        catch(IOException exception){ notifyPlayer("Terraform request failed: "+exception.getMessage(),false); }
+        catch(IOException|RuntimeException exception){state.operationFailed();notifyPlayer("Terraform request failed: "+exception.getMessage(),false);}
     }
     private void accept(byte[] bytes) {
+        TerraformEditorState state=TerraformManagerClient.state();
         try {
             TerraformWireProtocol.Response response=TerraformWireProtocol.decodeResponse(bytes);
-            if(response instanceof TerraformWireProtocol.Error e) notifyPlayer("Terraform: "+e.message(),false);
+            if(response instanceof TerraformWireProtocol.Error e){state.operationFailed();notifyPlayer("Terraform: "+e.message(),false);}
             else if(response instanceof TerraformWireProtocol.Accepted) notifyPlayer("Terraform queued",true);
-            else if(response instanceof TerraformWireProtocol.Finished f) notifyPlayer("Terraform "+(f.undo()?"undo":"operation")+" complete · "+f.changedBlocks()+" blocks",true);
-        } catch(IOException|RuntimeException exception){ notifyPlayer("Terraform response rejected: "+exception.getMessage(),false); }
+            else if(response instanceof TerraformWireProtocol.Finished f){state.operationFinished(f.undo());notifyPlayer("Terraform "+(f.undo()?"undo":"operation")+" complete · "+f.changedBlocks()+" blocks",true);}
+        } catch(IOException|RuntimeException exception){state.operationFailed();notifyPlayer("Terraform response rejected: "+exception.getMessage(),false);}
     }
     private static void notifyPlayer(String text,boolean overlay){MinecraftClient client=MinecraftClient.getInstance();if(client.player!=null)client.player.sendMessage(Text.literal(text),overlay);}
 }
