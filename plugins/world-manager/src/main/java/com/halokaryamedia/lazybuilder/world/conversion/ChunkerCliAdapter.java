@@ -99,24 +99,28 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     }
 
     @Override
+    public boolean canConvertWithoutRuntime(ConversionRequest request) {
+        return canUseLosslessNativeAreaPath(Objects.requireNonNull(request, "request"));
+    }
+
+    @Override
+    public ConversionResult convertWithoutRuntime(ConversionRequest request) throws IOException {
+        validateRequest(request);
+        if (!canUseLosslessNativeAreaPath(request)) {
+            throw new IOException("Conversion request requires the verified external runtime");
+        }
+        NativeJavaAreaPruner.exportSelectedArea(
+                request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
+        validateOutputDirectory(request.outputDirectory(), request.outputFormat());
+        return new ConversionResult("LazyBuilder lossless native Java Selected Area export");
+    }
+
+    @Override
     public ConversionResult convert(Path runtimeArtifact, ConversionRequest request) throws IOException {
-        Objects.requireNonNull(request, "request");
-        if (!Files.isDirectory(request.inputDirectory())) {
-            throw new IOException("Conversion input directory does not exist: " + request.inputDirectory());
-        }
-        if (Files.exists(request.outputDirectory())) {
-            throw new IOException("Conversion output must not already exist: " + request.outputDirectory());
-        }
-        requireOptionalSettingsFile(request.pruningSettings(), "Pruning settings");
-        requireOptionalSettingsFile(request.worldSettings(), "World settings");
-        requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
-        requireSupportedCustomDimensionShape(request);
+        validateRequest(request);
 
         if (canUseLosslessNativeAreaPath(request)) {
-            NativeJavaAreaPruner.exportSelectedArea(
-                    request.inputDirectory(), request.outputDirectory(), request.pruningSettings());
-            validateOutputDirectory(request.outputDirectory(), request.outputFormat());
-            return new ConversionResult("LazyBuilder lossless native Java Selected Area export");
+            return convertWithoutRuntime(request);
         }
 
         Path artifact = requireRuntimeArtifact(runtimeArtifact);
@@ -131,6 +135,20 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         }
         validateOutputDirectory(request.outputDirectory(), request.outputFormat());
         return new ConversionResult(result.output());
+    }
+
+    private static void validateRequest(ConversionRequest request) throws IOException {
+        Objects.requireNonNull(request, "request");
+        if (!Files.isDirectory(request.inputDirectory())) {
+            throw new IOException("Conversion input directory does not exist: " + request.inputDirectory());
+        }
+        if (Files.exists(request.outputDirectory())) {
+            throw new IOException("Conversion output must not already exist: " + request.outputDirectory());
+        }
+        requireOptionalSettingsFile(request.pruningSettings(), "Pruning settings");
+        requireOptionalSettingsFile(request.worldSettings(), "World settings");
+        requireOptionalSettingsFile(request.converterSettings(), "Converter settings");
+        requireSupportedCustomDimensionShape(request);
     }
 
     static boolean canUseLosslessNativeAreaPath(ConversionRequest request) {
