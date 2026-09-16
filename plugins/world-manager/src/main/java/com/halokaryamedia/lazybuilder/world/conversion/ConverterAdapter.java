@@ -32,6 +32,8 @@ public interface ConverterAdapter {
             Path worldSettings,
             Path converterSettings
     ) {
+        private static final String CANONICAL_NATIVE_FORMAT = "JAVA_1_21_4";
+
         public ConversionRequest(
                 Path inputDirectory,
                 Path outputDirectory,
@@ -49,6 +51,16 @@ public interface ConverterAdapter {
             if (pruningSettings != null) pruningSettings = pruningSettings.toAbsolutePath().normalize();
             if (worldSettings != null) worldSettings = worldSettings.toAbsolutePath().normalize();
             if (converterSettings != null) converterSettings = converterSettings.toAbsolutePath().normalize();
+        }
+
+        /**
+         * Managed LazyBuilder worlds are canonical Java 1.21.4. A pruning request targeting
+         * that same format is therefore a same-format area export and can safely ask Chunker
+         * to retain original NBT for processed data. Cross-version/cross-edition conversions
+         * must not enable this flag.
+         */
+        public boolean keepOriginalNbt() {
+            return pruningSettings != null && CANONICAL_NATIVE_FORMAT.equals(outputFormat);
         }
     }
 
