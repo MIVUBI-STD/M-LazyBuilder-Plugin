@@ -19,7 +19,16 @@ public final class ExportSettingsWire {
     private ExportSettingsWire() {}
 
     /** Empty gameMode/difficulty means inherit the staged source value. */
-    public record Settings(String gameMode, String difficulty, Map<String, String> gameRules) {
+    public record Settings(
+            String gameMode,
+            String difficulty,
+            Map<String, String> gameRules,
+            boolean optimizeOutput
+    ) {
+        public Settings(String gameMode, String difficulty, Map<String, String> gameRules) {
+            this(gameMode, difficulty, gameRules, false);
+        }
+
         public Settings {
             gameMode = normalizeOptional(gameMode, "gameMode");
             difficulty = normalizeOptional(difficulty, "difficulty");
@@ -33,14 +42,21 @@ public final class ExportSettingsWire {
             gameRules = Map.copyOf(normalizedRules);
         }
 
+        /** Legacy client behavior: inherit settings and do not force a converter pass. */
         public static Settings inherit() {
-            return new Settings("", "", Map.of());
+            return new Settings("", "", Map.of(), false);
+        }
+
+        /** Export workspace behavior: inherit by default while enabling automatic output cleanup. */
+        public static Settings workspaceDefaults() {
+            return new Settings("", "", Map.of(), true);
         }
     }
 
     public static void write(DataOutputStream out, Settings settings) throws IOException {
         Objects.requireNonNull(out, "out");
         Settings value = Objects.requireNonNull(settings, "settings");
+        out.writeBoolean(value.optimizeOutput());
         writeOptionalString(out, value.gameMode());
         writeOptionalString(out, value.difficulty());
         out.writeShort(value.gameRules().size());
@@ -52,6 +68,7 @@ public final class ExportSettingsWire {
 
     public static Settings read(DataInputStream in) throws IOException {
         Objects.requireNonNull(in, "in");
+        boolean optimizeOutput = in.readBoolean();
         String gameMode = readOptionalString(in);
         String difficulty = readOptionalString(in);
         int ruleCount = in.readUnsignedShort();
@@ -63,7 +80,7 @@ public final class ExportSettingsWire {
             if (rules.put(name, value) != null) throw new IOException("Duplicate export game rule: " + name);
         }
         try {
-            return new Settings(gameMode, difficulty, rules);
+            return new Settings(gameMode, difficulty, rules, optimizeOutput);
         } catch (IllegalArgumentException exception) {
             throw new IOException("Invalid export settings: " + exception.getMessage(), exception);
         }
