@@ -1,6 +1,14 @@
 {
   "schemaVersion": 1,
   "maxConcurrentServers": 3,
+  "multiServer": {
+    "runtimeAuthority": "workspace-keyed-server-runtime-registry",
+    "workspaceSwitchKeepsRunningServers": true,
+    "startSerialization": "global-server-start-lease",
+    "paperPortAssignment": "runtime-dynamic-visible",
+    "worldControlPortAssignment": "workspace-persistent-loopback",
+    "detachedProcessesConsumeCapacity": true
+  },
   "operationHistoryMax": 100,
   "activity": {
     "activePollMs": 2000,
