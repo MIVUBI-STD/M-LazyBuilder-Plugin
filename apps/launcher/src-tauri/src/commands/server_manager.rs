@@ -6,6 +6,7 @@ use crate::engine::server_runtime_registry::{ServerRuntimeRegistry, ServerRuntim
 use std::fs;
 use std::net::TcpListener;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 const DEFAULT_PAPER_PORT: u16 = 25565;
@@ -23,8 +24,11 @@ pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String>
 }
 
 #[tauri::command]
-pub fn server_snapshot(registry: State<'_, ServerRuntimeRegistry>) -> Result<ServerSnapshot, String> {
-    let (_, state) = registry.active_runtime()?;
+pub fn server_snapshot(
+    registry: State<'_, ServerRuntimeRegistry>,
+    workspace_id: Option<String>,
+) -> Result<ServerSnapshot, String> {
+    let (_, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
     state.snapshot()
 }
 
@@ -39,11 +43,15 @@ pub fn server_connection_port(registry: State<'_, ServerRuntimeRegistry>) -> Res
 }
 
 #[tauri::command]
-pub async fn server_console_command(app: AppHandle, command: String) -> CommandResult<()> {
+pub async fn server_console_command(
+    app: AppHandle,
+    command: String,
+    workspace_id: Option<String>,
+) -> CommandResult<()> {
     let command = normalize_console_command(&command)?;
     tauri::async_runtime::spawn_blocking(move || {
         let registry = app.state::<ServerRuntimeRegistry>();
-        let (_, state) = registry.active_runtime().map_err(CommandError::runtime)?;
+        let (_, state) = resolve_runtime(&registry, workspace_id.as_deref()).map_err(CommandError::runtime)?;
         let snapshot = state.snapshot().map_err(CommandError::runtime)?;
         match snapshot.state.as_str() {
             "Online" => {}
@@ -125,18 +133,37 @@ pub async fn server_restart(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn server_recover_detached(app: AppHandle) -> Result<DetachedRecoveryResult, String> {
+pub async fn server_recover_detached(
+    app: AppHandle,
+    workspace_id: Option<String>,
+) -> Result<DetachedRecoveryResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let registry = app.state::<ServerRuntimeRegistry>();
-        let (active, state) = registry.active_runtime()?;
+        let (target_id, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
         let result = state.recover_detached()?;
         if result.stopped {
-            let _ = registry.remove(&active.id);
+            let _ = registry.remove(&target_id);
         }
         Ok(result)
     })
     .await
     .map_err(|error| format!("Detached server recovery task failed: {error}"))?
+}
+
+fn resolve_runtime(
+    registry: &ServerRuntimeRegistry,
+    workspace_id: Option<&str>,
+) -> Result<(String, Arc<ServerManagerState>), String> {
+    if let Some(workspace_id) = workspace_id {
+        let id = workspace_id.trim();
+        if id.is_empty() {
+            return Err("Workspace id is required for targeted server control.".into());
+        }
+        return Ok((id.to_string(), registry.runtime_for_id(id)?));
+    }
+
+    let (active, state) = registry.active_runtime()?;
+    Ok((active.id, state))
 }
 
 fn normalize_console_command(raw: &str) -> CommandResult<String> {
