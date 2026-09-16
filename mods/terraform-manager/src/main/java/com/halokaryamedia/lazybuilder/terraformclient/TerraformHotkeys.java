@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.terraform.TerrainTool;
 import com.halokaryamedia.lazybuilder.terraform.TerrainVariation;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
@@ -17,6 +18,7 @@ final class TerraformHotkeys {
         KeyBinding previousTool=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.lazybuilder.terraform.previous_tool",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_LEFT_BRACKET,"key.categories.lazybuilder"));
         KeyBinding nextTool=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.lazybuilder.terraform.next_tool",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_RIGHT_BRACKET,"key.categories.lazybuilder"));
         KeyBinding variation=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.lazybuilder.terraform.variation",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_V,"key.categories.lazybuilder"));
+        KeyBinding undo=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.lazybuilder.terraform.undo",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_Z,"key.categories.lazybuilder"));
         ClientTickEvents.END_CLIENT_TICK.register(client->{
             while(toggle.wasPressed()){
                 TerraformEditorState state=TerraformManagerClient.state();
@@ -34,6 +36,7 @@ final class TerraformHotkeys {
             while(previousTool.wasPressed())cycleTool(client,-1);
             while(nextTool.wasPressed())cycleTool(client,1);
             while(variation.wasPressed())cycleVariation(client);
+            while(undo.wasPressed())if(Screen.hasControlDown())TerraformInteractionController.undo();
         });
     }
     private static void cycleTool(net.minecraft.client.MinecraftClient client,int delta){
