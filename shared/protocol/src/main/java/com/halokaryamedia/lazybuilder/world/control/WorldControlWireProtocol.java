@@ -16,12 +16,13 @@ import java.util.UUID;
 
 /** Shared bounded protocol for the general World Manager client surface. */
 public final class WorldControlWireProtocol {
-    /** V6 adds shared export-only settings to full-world export requests. */
-    public static final int VERSION = 6;
+    /** V7 exposes source gamerules in settings snapshots for export customization. */
+    public static final int VERSION = 7;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
     private static final int MAX_WORLDS = 4096;
     private static final int MAX_FORMATS = 256;
+    private static final int MAX_GAME_RULES = 512;
 
     private static final int LIST = 1;
     private static final int CREATE = 2;
@@ -162,6 +163,14 @@ public final class WorldControlWireProtocol {
         }
     }
 
+    public record GameRuleValue(String name, String type, String value) {
+        public GameRuleValue {
+            name = requireString(name, "gameRuleName");
+            type = requireString(type, "gameRuleType");
+            value = requireString(value, "gameRuleValue");
+        }
+    }
+
     public record SettingsSnapshot(
             UUID worldId,
             String defaultGameMode,
@@ -171,13 +180,31 @@ public final class WorldControlWireProtocol {
             long timeOfDayTicks,
             double spawnX,
             double spawnY,
-            double spawnZ
+            double spawnZ,
+            List<GameRuleValue> gameRules
     ) implements Response {
+        public SettingsSnapshot(
+                UUID worldId,
+                String defaultGameMode,
+                String difficulty,
+                boolean pvpEnabled,
+                String weather,
+                long timeOfDayTicks,
+                double spawnX,
+                double spawnY,
+                double spawnZ
+        ) {
+            this(worldId, defaultGameMode, difficulty, pvpEnabled, weather, timeOfDayTicks,
+                    spawnX, spawnY, spawnZ, List.of());
+        }
+
         public SettingsSnapshot {
             Objects.requireNonNull(worldId, "worldId");
             defaultGameMode = requireString(defaultGameMode, "defaultGameMode");
             difficulty = requireString(difficulty, "difficulty");
             weather = requireString(weather, "weather");
+            gameRules = List.copyOf(Objects.requireNonNull(gameRules, "gameRules"));
+            if (gameRules.size() > MAX_GAME_RULES) throw new IllegalArgumentException("Too many game rules");
         }
     }
 
@@ -433,12 +460,32 @@ public final class WorldControlWireProtocol {
         out.writeDouble(settings.spawnX());
         out.writeDouble(settings.spawnY());
         out.writeDouble(settings.spawnZ());
+        out.writeShort(settings.gameRules().size());
+        for (GameRuleValue rule : settings.gameRules()) {
+            writeString(out, rule.name());
+            writeString(out, rule.type());
+            writeString(out, rule.value());
+        }
     }
 
     private static SettingsSnapshot readSettings(DataInputStream in) throws IOException {
-        return new SettingsSnapshot(
-                readUuid(in), readString(in), readString(in), in.readBoolean(),
-                readString(in), in.readLong(), in.readDouble(), in.readDouble(), in.readDouble());
+        UUID worldId = readUuid(in);
+        String gameMode = readString(in);
+        String difficulty = readString(in);
+        boolean pvp = in.readBoolean();
+        String weather = readString(in);
+        long time = in.readLong();
+        double spawnX = in.readDouble();
+        double spawnY = in.readDouble();
+        double spawnZ = in.readDouble();
+        int count = in.readUnsignedShort();
+        if (count > MAX_GAME_RULES) throw new IOException("Game rule count is invalid");
+        List<GameRuleValue> rules = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            rules.add(new GameRuleValue(readString(in), readString(in), readString(in)));
+        }
+        return new SettingsSnapshot(worldId, gameMode, difficulty, pvp, weather, time,
+                spawnX, spawnY, spawnZ, rules);
     }
 
     private static DataInputStream input(byte[] payload) throws IOException {
