@@ -11,7 +11,7 @@ public final class TerraformManagerClient implements ClientModInitializer {
     private static final TerraformEditorState STATE=new TerraformEditorState();
     private final TerraformClientNetworking networking=new TerraformClientNetworking();
     @Override public void onInitializeClient(){
-        networking.register();TerraformInteractionController.register();
+        networking.register();TerraformInteractionController.register();TerraformHotkeys.register();
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->client.execute(()->{
             STATE.setEditorOpen(false);TerraformInteractionController.resetRuntime();
             if(client.currentScreen instanceof TerraformPaletteScreen)client.setScreen(null);
