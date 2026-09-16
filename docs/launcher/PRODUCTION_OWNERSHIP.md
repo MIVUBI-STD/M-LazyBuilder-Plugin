@@ -31,7 +31,7 @@ Frontend state may cache what is currently displayed. It must not become the dur
 | Full server backup content/integrity | `engine/server_backups.rs` | restore point + `backup.json` | backup owner | alternate backup format without migration |
 | Interrupted backup staging index | `engine/backup_recovery.rs` | `pending-backups.json` | indexed recovery; one-time legacy sweep | per-start full-library recovery scan after migration |
 | Full server restore transaction | `engine/server_restore.rs` | `pending-restores.json` | `recover_pending_restores` | file-by-file overwrite restore |
-| Paper process ownership | `engine/server_manager` + `server_process_guard.rs` | workspace process marker | process reconciliation | process-name-only ownership checks |
+| Paper process ownership | `engine/server_manager` + `engine/server_process_guard.rs` | workspace process marker | `engine/server_process_guard.rs` process reconciliation | process-name-only ownership checks |
 | Start/Restart serialization | `engine/server_start_lock.rs` | runtime lease/lock | canonical Start preparation | separate UI start lock |
 | Server health | `engine/server_health.rs` | derived snapshot | Health/Repair flow | frontend-derived health truth |
 | Repair plan/execution | `engine/server_repair.rs` | derived from one health snapshot | repair operation | “repair everything” side path |
@@ -41,7 +41,7 @@ Frontend state may cache what is currently displayed. It must not become the dur
 | Support-bundle redaction | `engine/privacy_redaction.rs` | export-time policy + tests | same policy | page/command-specific redactors |
 | Support bundle packaging | `engine/support_bundle.rs` | local ZIP only | staged publish | automatic upload |
 | Plugin user-file ingress | `engine/plugin_ingress.rs` | LazyBuilder-owned immutable staging snapshot | startup stale-ingress cleanup | semantic parsing from mutable user path |
-| Plugin semantics/install | `engine/plugin_manager.rs` | server plugin files | plugin manager transaction/rollback | plugin rules in ingress/UI |
+| Plugin semantics/install | `engine/plugin_manager/mod.rs` | server plugin files | plugin manager transaction/rollback | plugin rules in ingress/UI |
 | World task lifetime | World Manager backend | `world_task_list` / task snapshots | World Manager | frontend task timeout/terminal state |
 | World task observation | `pages/Worlds.svelte` presentation only | none | reattach from backend task list | frontend durable task registry |
 | Runtime compatibility target | repository `toolchain.json` | repository source | compatibility verifier | second compatibility/version file |
