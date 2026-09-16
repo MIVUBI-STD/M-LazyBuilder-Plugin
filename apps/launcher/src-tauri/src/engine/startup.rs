@@ -26,6 +26,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
     diagnostics::info("LazyBuilder startup coordinator beginning");
     let mut steps = Vec::new();
     let mut degraded = false;
+    let mut ready = true;
 
     let runtime_temp = match runtime_environment::prepare() {
         Ok(temp) => {
@@ -34,6 +35,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
             Some(temp)
         }
         Err(error) => {
+            ready = false;
             degraded = true;
             diagnostics::error(&format!("Runtime environment preparation failed: {error}"));
             steps.push(warning_step("runtime-environment", "Runtime environment needs attention", &error));
@@ -53,11 +55,13 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
         Ok(report) if report.interrupted == 0 => steps.push(ready_step("operation-recovery", "Launcher operations reconciled", "No interrupted Launcher operation was found in the durable operation journal.")),
         Ok(report) => {
             degraded = true;
+            if report.recovery_required > 0 { ready = false; }
             let details = format!("Reconciled {} interrupted operation(s): {} require recovery review and {} low-risk operation(s) were marked failed/interrupted.", report.interrupted, report.recovery_required, report.failed);
             diagnostics::info(&format!("Launcher operation reconciliation: {details}"));
             steps.push(warning_step("operation-recovery", "Interrupted Launcher operations recovered", &details));
         }
         Err(error) => {
+            ready = false;
             degraded = true;
             diagnostics::error(&format!("Launcher operation journal initialization failed: {error}"));
             steps.push(warning_step("operation-recovery", "Launcher operation journal needs attention", &format!("{error}. Long-running Launcher mutations are disabled until the journal can be opened safely.")));
@@ -83,6 +87,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
             true
         }
         Err(error) => {
+            ready = false;
             degraded = true;
             diagnostics::error(&format!("Workspace registry initialization failed: {error}"));
             steps.push(warning_step("workspace-registry", "Server library needs attention", &error));
@@ -102,12 +107,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if report.issues.is_empty() {
                     steps.push(ready_step("creation-recovery", "Server creation state reconciled", &details));
                 } else {
+                    ready = false;
                     degraded = true;
                     diagnostics::error(&format!("Server creation recovery needs attention: {details}"));
                     steps.push(warning_step("creation-recovery", "Server creation needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Server creation recovery failed: {error}"));
                 steps.push(warning_step("creation-recovery", "Server creation recovery could not run", &error));
@@ -125,12 +132,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if report.issues.is_empty() {
                     steps.push(ready_step("adoption-recovery", "Server adoption state reconciled", &details));
                 } else {
+                    ready = false;
                     degraded = true;
                     diagnostics::error(&format!("Server adoption recovery needs attention: {details}"));
                     steps.push(warning_step("adoption-recovery", "Server adoption needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Server adoption recovery failed: {error}"));
                 steps.push(warning_step("adoption-recovery", "Server adoption recovery could not run", &error));
@@ -148,12 +157,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if report.issues.is_empty() {
                     steps.push(ready_step("duplicate-recovery", "Server duplicate state reconciled", &details));
                 } else {
+                    ready = false;
                     degraded = true;
                     diagnostics::error(&format!("Server duplicate recovery needs attention: {details}"));
                     steps.push(warning_step("duplicate-recovery", "Server duplicate needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Server duplicate recovery failed: {error}"));
                 steps.push(warning_step("duplicate-recovery", "Server duplicate recovery could not run", &error));
@@ -170,12 +181,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if report.issues.is_empty() {
                     steps.push(ready_step("server-restore-recovery", "Server restore state reconciled", &details));
                 } else {
+                    ready = false;
                     degraded = true;
                     diagnostics::error(&format!("Server restore recovery needs attention: {details}"));
                     steps.push(warning_step("server-restore-recovery", "Server restore needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Server restore recovery failed: {error}"));
                 steps.push(warning_step("server-restore-recovery", "Server restore recovery could not run", &error));
@@ -217,12 +230,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if issues.is_empty() {
                     steps.push(ready_step("backup-recovery", "Backup staging reconciled", &details));
                 } else {
+                    ready = false;
                     degraded = true;
                     diagnostics::error(&format!("Server backup staging recovery needs attention: {details}"));
                     steps.push(warning_step("backup-recovery", "Backup staging needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Indexed server backup staging recovery failed: {error}"));
                 steps.push(warning_step("backup-recovery", "Backup staging needs attention", &error));
@@ -240,12 +255,14 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
                 if result.running_servers.is_empty() && result.issues.is_empty() {
                     steps.push(ready_step("server-process-reconciliation", "Background server state reconciled", &details));
                 } else {
+                    if !result.issues.is_empty() { ready = false; }
                     degraded = true;
                     diagnostics::info(&format!("Startup process reconciliation needs attention: {details}"));
                     steps.push(warning_step("server-process-reconciliation", "Background server state needs attention", &details));
                 }
             }
             Err(error) => {
+                ready = false;
                 degraded = true;
                 diagnostics::error(&format!("Server process reconciliation failed: {error}"));
                 steps.push(warning_step("server-process-reconciliation", "Background server state could not be checked", &error));
@@ -266,6 +283,7 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
             None => steps.push(warning_step("remember-last-server", "Automatic server reopen unavailable", "Launcher settings were unavailable during startup.")),
         }
     } else {
+        ready = false;
         degraded = true;
         steps.push(warning_step("creation-recovery", "Server creation recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted creations."));
         steps.push(warning_step("adoption-recovery", "Server adoption recovery could not be checked", "The server library was unavailable, so LazyBuilder could not safely reconcile interrupted adoptions."));
@@ -276,8 +294,8 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
         steps.push(warning_step("remember-last-server", "Last server could not be reopened", "The server library was unavailable."));
     }
 
-    let report = StartupReport { ready: true, degraded, started_at_unix_seconds: started_at, completed_at_unix_seconds: now_unix_seconds(), runtime_temp_path: runtime_temp.as_ref().map(|path| path.display().to_string()), steps };
-    diagnostics::info(if report.degraded { "LazyBuilder startup coordinator completed in degraded mode" } else { "LazyBuilder startup coordinator completed" });
+    let report = StartupReport { ready, degraded, started_at_unix_seconds: started_at, completed_at_unix_seconds: now_unix_seconds(), runtime_temp_path: runtime_temp.as_ref().map(|path| path.display().to_string()), steps };
+    diagnostics::info(if !report.ready { "LazyBuilder startup coordinator completed with recovery blockers" } else if report.degraded { "LazyBuilder startup coordinator completed in degraded mode" } else { "LazyBuilder startup coordinator completed" });
     report
 }
 
