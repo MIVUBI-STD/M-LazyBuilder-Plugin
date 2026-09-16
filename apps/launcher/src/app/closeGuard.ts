@@ -1,12 +1,17 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { runtimeProduct } from './bridge/runtimeProductFacade';
 import type { LauncherOperationSnapshot } from './bridge/runtimeApi';
+import type { ServerRuntimeSummary } from './bridge/runtimeServerStatus';
 
 const ACTIVE_OPERATION_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
 const RUNNING_SERVER_STATES = new Set(['Online', 'Starting', 'Stopping', 'Detached']);
 
 function activeOperations(operations: LauncherOperationSnapshot[]) {
   return operations.filter((operation) => ACTIVE_OPERATION_STATES.has(operation.state));
+}
+
+function runningServers(runtimes: ServerRuntimeSummary[]) {
+  return runtimes.filter((runtime) => RUNNING_SERVER_STATES.has(runtime.state));
 }
 
 function operationCloseMessage(operations: LauncherOperationSnapshot[]) {
@@ -17,6 +22,12 @@ function operationCloseMessage(operations: LauncherOperationSnapshot[]) {
     .join(', ');
   const remainder = count > 3 ? ` and ${count - 3} more` : '';
   return `${count} Launcher operation${count === 1 ? ' is' : 's are'} still running (${names}${remainder}). Closing now will interrupt the operation and may require recovery on the next start. Close LazyBuilder anyway?`;
+}
+
+function serverCloseMessage(runtimes: ServerRuntimeSummary[]) {
+  const count = runtimes.length;
+  const names = runtimes.map((runtime) => runtime.workspaceName).join(', ');
+  return `${count} Minecraft server${count === 1 ? ' is' : 's are'} still running (${names}). Close LazyBuilder anyway? Attached servers will be asked to stop; detached processes may continue outside this Launcher session.`;
 }
 
 export async function installLauncherCloseGuard(): Promise<() => void> {
@@ -38,9 +49,8 @@ export async function installLauncherCloseGuard(): Promise<() => void> {
         return;
       }
 
-      const snapshot = await runtimeProduct.server.snapshot();
-      const running = RUNNING_SERVER_STATES.has(snapshot.state);
-      if (!running || window.confirm('A Minecraft server is still running. Close LazyBuilder anyway? The server process may continue outside this Launcher session.')) {
+      const runtimes = runningServers(await runtimeProduct.server.runtimes());
+      if (runtimes.length === 0 || window.confirm(serverCloseMessage(runtimes))) {
         await appWindow.destroy();
       }
     } catch {
