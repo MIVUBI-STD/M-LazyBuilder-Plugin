@@ -135,7 +135,7 @@
     {
       "id": "world-control-port-conflict-before-paper-start",
       "owner": "apps/launcher/src-tauri/src/commands/server_manager.rs",
-      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper-start"],
+      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"],
       "testMarkers": ["occupied_world_control_port_is_rejected_before_paper_start"]
     }
   ]
