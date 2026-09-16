@@ -79,6 +79,16 @@ public final class WorldManagerScreen extends Screen {
         int maxOffset = Math.max(0, currentEntries.size() - maxVisibleEntries(l));
         scrollOffset = Math.max(0, Math.min(scrollOffset, maxOffset));
 
+        addDrawableChild(LbUi.button(l.left, 8, 100, 22, "‹ Back to Map",
+                LbButtonWidget.Style.GHOST, this::returnToMap));
+        if (controller.canManage()) {
+            LbButtonWidget add = LbUi.button(l.right - 118, 8, 118, 22, "+ Add World",
+                    LbButtonWidget.Style.PRIMARY,
+                    () -> { if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers)); });
+            add.active = !operationBusy();
+            addDrawableChild(add);
+        }
+
         if (controller.worldListReady()) {
             if (!l.compact || !compactDetail) addListControls(l);
             WorldControlWireProtocol.WorldSummary selected = selected();
@@ -92,17 +102,14 @@ public final class WorldManagerScreen extends Screen {
                         clearAndInit();
                     }));
         }
-        addDrawableChild(LbUi.button(l.right - 104, l.bottom + 8, 94, 20, "Back to Map",
-                LbButtonWidget.Style.GHOST, this::returnToMap));
     }
 
     private void addListControls(Layout l) {
         int left = l.listLeft();
         int width = l.listPaneWidth();
         boolean busy = operationBusy();
-        int trailing = controller.canManage() ? 156 : 28;
 
-        search = new TextFieldWidget(textRenderer, left + 14, 58, Math.max(90, width - trailing), 22,
+        search = new TextFieldWidget(textRenderer, left + 14, 58, Math.max(90, width - 28), 22,
                 Text.literal("Search worlds"));
         search.setPlaceholder(Text.literal("Search worlds…"));
         search.setText(query);
@@ -118,14 +125,6 @@ public final class WorldManagerScreen extends Screen {
         });
         addDrawableChild(search);
         if (searchEditing) setInitialFocus(search);
-
-        if (controller.canManage()) {
-            LbButtonWidget add = LbUi.button(left + width - 132, 58, 118, 22, "+ Add World",
-                    LbButtonWidget.Style.PRIMARY,
-                    () -> { if (client != null) client.setScreen(new AddWorldScreen(this, controller, transfers)); });
-            add.active = !busy;
-            addDrawableChild(add);
-        }
 
         int y = 98;
         int shown = 0;
@@ -419,7 +418,7 @@ public final class WorldManagerScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         LbUi.background(context, width, height);
         Layout l = layout();
-        context.drawTextWithShadow(textRenderer, Text.literal("LAZYBUILDER"), l.left, 14, LbUi.TEXT_MUTED);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal("WORLD MANAGER"), width / 2, 14, LbUi.TEXT_MUTED);
 
         if (!l.compact || !compactDetail) renderWorldListPane(context, l);
         if (controller.worldListReady() && (!l.compact || compactDetail)) renderManagePane(context, l);
