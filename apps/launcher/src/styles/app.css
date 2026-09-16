@@ -69,6 +69,16 @@ h2 { letter-spacing: -.015em; }
   background-clip: padding-box;
 }
 
+/* WebView2 can skip layout/paint for large off-screen collections while keeping
+   DOM semantics and keyboard navigation intact. Intrinsic sizes prevent scroll jumps. */
+.server-tile,
+.world-row,
+.history-row,
+.operation-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
