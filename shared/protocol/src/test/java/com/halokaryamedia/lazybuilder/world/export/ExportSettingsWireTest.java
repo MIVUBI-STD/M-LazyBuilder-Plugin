@@ -11,13 +11,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExportSettingsWireTest {
     @Test
-    void settingsRoundTripWithoutExposingConverterSettings() throws Exception {
+    void settingsRoundTripWithoutExposingConverterDetails() throws Exception {
         var expected = new ExportSettingsWire.Settings(
-                "CREATIVE", "HARD", Map.of("keepinventory", "true", "randomTickSpeed", "3"));
+                "CREATIVE", "HARD", Map.of("keepinventory", "true", "randomTickSpeed", "3"), true);
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(buffer)) {
             ExportSettingsWire.write(out, expected);
@@ -29,15 +31,25 @@ class ExportSettingsWireTest {
     }
 
     @Test
-    void inheritRoundTripsAsEmptyOverrides() throws Exception {
-        var expected = ExportSettingsWire.Settings.inherit();
+    void legacyAndWorkspaceDefaultsKeepDifferentCapabilityPaths() throws Exception {
+        var legacy = ExportSettingsWire.Settings.inherit();
+        var workspace = ExportSettingsWire.Settings.workspaceDefaults();
+        assertFalse(legacy.optimizeOutput());
+        assertTrue(workspace.optimizeOutput());
+
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(buffer)) {
-            ExportSettingsWire.write(out, expected);
+            ExportSettingsWire.write(out, workspace);
         }
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(buffer.toByteArray()))) {
-            assertEquals(expected, ExportSettingsWire.read(in));
+            assertEquals(workspace, ExportSettingsWire.read(in));
         }
+    }
+
+    @Test
+    void threeArgumentConstructorRemainsLegacyCompatible() {
+        var settings = new ExportSettingsWire.Settings("CREATIVE", "HARD", Map.of());
+        assertFalse(settings.optimizeOutput());
     }
 
     @Test
@@ -52,7 +64,7 @@ class ExportSettingsWireTest {
 
     @Test
     void rejectsTruncatedPayload() throws Exception {
-        byte[] truncated = {0, 1};
+        byte[] truncated = {1, 0};
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(truncated))) {
             assertThrows(IOException.class, () -> ExportSettingsWire.read(in));
         }
