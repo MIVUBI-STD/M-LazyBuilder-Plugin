@@ -5,7 +5,7 @@ description: Own LazyBuilder-managed third-party Paper plugin lifecycle: discove
 
 # LazyBuilder Plugin Management
 
-Own third-party Paper plugin lifecycle semantics. Follow `docs/04-system/development-discipline.md` and `docs/04-system/skill-routing.md`.
+Own third-party Paper plugin lifecycle semantics. Global diagnosis/proof rules come from `docs/04-system/development-discipline.md`; cross-owner selection/handoff comes from `docs/04-system/skill-routing.md`.
 
 ## Entry gate
 
@@ -21,14 +21,12 @@ restart-required lifecycle state
 rollback of a plugin mutation
 ```
 
-Do not enter because a Launcher page displays plugins or Java/Paper files are touched. Presentation stays with `lazybuilder-ui`; bundled LazyBuilder core stays with `lazybuilder-desktop-runtime`.
-
-Before mutation, identify exact plugin identity plus the smallest filesystem/metadata evidence that separates source artifact, resolver, mutation sequencing, runtime, and UI failure.
+Do not enter because a Launcher page displays plugins or Java/Paper files are touched. Bundled LazyBuilder core belongs to `lazybuilder-desktop-runtime`.
 
 ## Owns
 
 ```text
-plugin discovery and canonical identity
+plugin discovery + canonical identity
 metadata/version/dependency/compatibility interpretation
 install/update/enable/disable/remove semantics
 duplicate detection/resolution
@@ -37,25 +35,14 @@ safe JAR replacement/removal with plugin data preserved
 one previous-valid rollback snapshot per replacing mutation
 ```
 
-## Does not own
-
-```text
-bundled World/Utilities core synchronization → lazybuilder-desktop-runtime
-plugin presentation/UI                     → lazybuilder-ui
-Paper world behavior                       → lazybuilder-world-management
-shared Paper/Fabric protocol               → lazybuilder-protocol
-```
+Does not own bundled core synchronization, presentation, Paper world behavior, or shared Paper↔Fabric protocol.
 
 ## Minimal context
 
-Use only:
-
 ```text
-development-discipline.md
-→ skill-routing.md when ownership is unclear
-→ exact plugin-manager source
+exact plugin-manager source
 → exact JAR/metadata/filesystem evidence
-→ Paper live evidence only when source cannot decide load/enable behavior
+→ Paper live evidence only when load/enable behavior cannot be decided from source
 ```
 
 Do not scan unrelated plugins, Launcher surfaces, or server history for reassurance.
@@ -63,124 +50,100 @@ Do not scan unrelated plugins, Launcher surfaces, or server history for reassura
 ## Failure taxonomy
 
 ```text
-DISCOVERY          JAR missed, duplicated, or grouped incorrectly
-IDENTITY           canonical plugin identity/version/source is wrong
-DEPENDENCY         required/optional dependency semantics are wrong
-COMPATIBILITY      supported runtime/API state is wrong
-MUTATION           install/update/enable/disable/remove sequencing is unsafe
-DUPLICATE          competing candidates coexist or winner selection is unsafe
-ROLLBACK           previous-valid artifact cannot be restored safely
-RESTART_STATE      source/UI claims an active state that requires restart
-PAPER_RUNTIME      source contract is correct but Paper rejects/fails the plugin
-PRESENTATION       lifecycle result is correct; UI is stale/misleading
-UNKNOWN            evidence cannot separate the above
+DISCOVERY      JAR missed/duplicated/grouped incorrectly
+IDENTITY       canonical identity/version/source wrong
+DEPENDENCY     required/optional dependency semantics wrong
+COMPATIBILITY  runtime/API support state wrong
+MUTATION       lifecycle mutation sequencing unsafe
+DUPLICATE      competing candidates coexist/winner selection unsafe
+ROLLBACK       previous-valid artifact cannot be restored safely
+RESTART_STATE  claimed active state requires restart
+PAPER_RUNTIME  source contract correct but Paper rejects/fails plugin
+PRESENTATION   canonical lifecycle result correct; UI wrong
+UNKNOWN        next separating evidence required
 ```
 
-Local labels refine global classification only while Plugin Management remains the first wrong owner. `PRESENTATION` reclassifies to `UI_PRESENTATION`; `PAPER_RUNTIME` maps to the global live-runtime proof class without changing plugin semantic ownership; `ROLLBACK` may additionally require global `RECOVERY`; `UNKNOWN` must name the next separating evidence.
-
-For `UNKNOWN`, gather the smallest separating evidence; never add fallback resolution logic just to continue.
+Cross-owner labels follow the global bridge in `development-discipline.md`. `PAPER_RUNTIME` changes the proof requirement, not plugin semantic ownership.
 
 ## Mutation contract
 
-Replacing/destructive plugin operations follow one transaction owner:
-
 ```text
 PRECHECK
-→ resolve canonical identity, target, dependency/conflict state
+→ canonical identity + target + dependency/conflict state
 
 STAGE
 → preserve one previous-valid JAR when replacement/removal needs rollback
 
 APPLY
-→ perform one bounded filesystem mutation path
+→ one bounded filesystem mutation path
 
 VERIFY
 → rescan authoritative filesystem/metadata state
 
 COMMIT
-→ report canonical result + restart requirement
+→ canonical result + restart requirement
 
 or ROLLBACK
-→ restore previous-valid state when mutation did not commit safely
+→ restore previous-valid state
 ```
 
-Do not report a committed mutation as failed only because a later optional refresh/UI update fails.
+A later optional refresh/UI failure must not relabel a committed mutation as failed.
 
 ## Canonical procedure
 
 ```text
 name requested lifecycle result
-→ capture exact plugin identity + current filesystem/metadata evidence
-→ classify failure
-→ find first wrong lifecycle owner
-→ validate target/dependencies/conflicts/restart semantics
-→ stage rollback state only when replacement/removal requires it
-→ perform smallest complete mutation through one path
-→ rescan authoritative post-mutation state
-→ prove changed lifecycle claim at the cheapest sufficient level
-→ hand presentation residue to lazybuilder-ui
+→ capture exact plugin identity + evidence
+→ classify local subtype
+→ confirm Plugin Management remains first wrong owner
+→ validate dependency/conflict/restart semantics
+→ stage rollback only when required
+→ smallest complete mutation through one path
+→ rescan canonical post-mutation state
+→ matching proof
+→ typed handoff if ownership changes
 → STOP
 ```
 
 ## Invariants
 
-- filesystem + canonical plugin metadata are primary truth; no plugin database without proven need;
+- filesystem + canonical plugin metadata are primary truth;
 - display filename alone is not identity when canonical metadata exists;
 - no hot reload; restart-required behavior stays explicit;
 - plugin data is preserved on ordinary remove/disable flows;
-- categories are presentation metadata, never lifecycle authority;
-- duplicate resolution must be recoverable and cannot partially delete competing candidates;
+- categories are presentation metadata only;
+- duplicate resolution is recoverable and never partially deletes candidates;
 - one mutation has one transaction/rollback owner;
 - rollback stores one previous-valid artifact, not unlimited history;
-- action availability derives from canonical lifecycle/capability state, not button-local assumptions;
-- late refresh failure cannot rewrite an already committed lifecycle result;
-- install/update/remove must not silently mutate unrelated plugin files;
-- plugin discovery/load success and plugin runtime correctness are distinct proof levels.
+- action availability derives from canonical lifecycle/capability state;
+- install/update/remove cannot silently mutate unrelated plugin files;
+- discovery/load success and runtime correctness are distinct proof claims.
 
 ## Proof matrix
 
-Use the canonical proof vocabulary from `development-discipline.md`.
-
 ```text
-identity / metadata / dependency / compatibility rule
-→ EXECUTED_SOURCE
-
-mutation ordering / rollback / duplicate resolution
-→ INTEGRATION_FIXTURE
-
-JAR build/package structure or compile compatibility
-→ EXECUTED_SOURCE
-→ add PACKAGE_SMOKE only when artifact identity/contents are part of acceptance
-
-Paper discovery/load/enable/restart behavior
-→ LIVE_RUNTIME using the exact tested JAR/runtime and the changed lifecycle path
-
-visual/list/detail/action state only
-→ lazybuilder-ui proof lane
+identity / metadata / dependency / compatibility → EXECUTED_SOURCE
+mutation ordering / rollback / duplicate         → INTEGRATION_FIXTURE
+JAR compile/package structure                    → EXECUTED_SOURCE
+artifact identity/contents when required         → PACKAGE_SMOKE
+Paper discovery/load/enable/restart              → LIVE_RUNTIME
+presentation-only state                          → lazybuilder-ui
 ```
 
-A built JAR does not prove Paper discovery or enable behavior. A server restart does not prove the plugin path unless the exact mutation/load state is exercised. `PACKAGE_SMOKE` must not be reported as `LIVE_RUNTIME`.
+A built JAR does not prove Paper discovery/enable. A restart is not proof unless the exact changed lifecycle path is exercised.
 
-## Handoff / exit contract
+## Handoff / exit
+
+Use canonical typed handoffs from `skill-routing.md`.
 
 ```text
-canonical plugin lifecycle result/capability
-→ lazybuilder-ui
-handoff: canonical plugin identity + version + lifecycle/capability + dependency/compatibility summary + restartRequired + stable result/error
-UI must not parse JAR metadata, resolve dependencies, choose duplicate winners, or decide compatibility again
+to ui
+→ canonical plugin identity + version + lifecycle/capability + dependency/compatibility summary + restartRequired + stable result/error
 
-bundled LazyBuilder core compatibility/synchronization
-→ lazybuilder-desktop-runtime
-handoff only the workspace/server identity + observed bundled-core mismatch; bundled core is not treated as a third-party plugin
+to desktop-runtime
+→ workspace/server identity + bundled-core mismatch only when the artifact is LazyBuilder-managed core
 ```
 
-Finish when:
+UI must not parse JAR metadata, resolve dependencies, choose duplicate winners, or decide compatibility again.
 
-- canonical plugin identity and lifecycle result are correct;
-- destructive/replacing work has the required rollback boundary;
-- dependency/duplicate/restart semantics have one owner;
-- matching proof is complete at the available context ceiling;
-- next owner can consume the canonical result without rescanning plugin truth;
-- remaining Paper live proof or UI residue is named precisely.
-
-Do not continue into unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
+Finish when canonical identity/lifecycle are correct, replacing work has required rollback, dependency/duplicate/restart semantics have one owner, and matching proof covers the claim. Stop before unrelated plugin cleanup, generic plugin-framework design, or new persistence layers.
