@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ManagedWorldFamilyRepositoryTest {
@@ -44,6 +45,25 @@ class ManagedWorldFamilyRepositoryTest {
         assertFalse(Files.exists(worlds.resolve("Imported/.lazybuilder-publish-pending")));
         assertFalse(Files.exists(worlds.resolve("Imported_nether/.lazybuilder-family-publish-pending")));
         assertFalse(Files.exists(worlds.resolve("Imported_the_end/.lazybuilder-family-publish-pending")));
+    }
+
+    @Test
+    void familyCollisionFailsBeforeMovingStagedSource() throws Exception {
+        Path worlds = tempDir.resolve("collision-worlds");
+        Path work = tempDir.resolve("collision-work");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.reserveWorkspace(UUID.randomUUID());
+        Files.createDirectories(staged.resolve("DIM-1/region"));
+        Files.write(staged.resolve("level.dat"), new byte[]{1});
+        Files.createDirectories(worlds.resolve("Imported_nether/DIM-1"));
+        Files.write(worlds.resolve("Imported_nether/level.dat"), new byte[]{9});
+
+        assertThrows(java.io.IOException.class, () -> repository.publishStagedWorld(staged, "Imported"));
+
+        assertTrue(Files.isDirectory(staged));
+        assertTrue(Files.isRegularFile(staged.resolve("level.dat")));
+        assertFalse(Files.exists(worlds.resolve("Imported")));
+        assertTrue(Files.isDirectory(worlds.resolve("Imported_nether")));
     }
 
     @Test
