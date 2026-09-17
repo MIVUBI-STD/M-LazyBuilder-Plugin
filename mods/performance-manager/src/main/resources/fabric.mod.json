@@ -11,6 +11,9 @@
       "com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient"
     ]
   },
+  "mixins": [
+    "lazybuilder-performance-manager.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.16.10",
     "minecraft": "1.21.4",
