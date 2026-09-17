@@ -8,6 +8,7 @@
   import ActivityNavStatus from './components/ActivityNavStatus.svelte';
   import { installLauncherCloseGuard } from './app/closeGuard';
   import type { LauncherCloseRequest } from './app/closeGuard';
+  import { dialogFocus } from './app/dialogFocus';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { ServerRuntimeSummary, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
@@ -184,7 +185,14 @@
 
 {#if closeRequest}
   <div class="close-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelCloseRequest()}>
-    <section class:dangerous={closeRequest.dangerous} class="close-dialog" role="dialog" aria-modal="true" aria-labelledby="launcher-close-heading">
+    <section
+      use:dialogFocus={{ onEscape: cancelCloseRequest, initialFocusSelector: '.close-secondary', escapeDisabled: closeBusy }}
+      class:dangerous={closeRequest.dangerous}
+      class="close-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="launcher-close-heading"
+    >
       <header>
         <div><h2 id="launcher-close-heading">{closeRequest.title}</h2><p>{closeRequest.message}</p></div>
         <button class="close-icon" aria-label="Cancel closing LazyBuilder" disabled={closeBusy} onclick={cancelCloseRequest}>×</button>
