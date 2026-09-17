@@ -26,7 +26,3 @@ pub fn cleanup_recovery_files(destination: &Path, label: &str) -> Result<(), Str
 pub fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
     safe_path::entry_exists(path, label)
 }
-
-pub fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
-    safe_path::ensure_regular_file(path, label)
-}
