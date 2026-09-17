@@ -51,6 +51,7 @@ public final class PerformanceSnapshotReader {
                 chunksToUpload,
                 freeChunkBuffers,
                 ChunkPipelineMetrics.coalescedRebuildRequests(),
+                ChunkPipelineMetrics.bufferAcquireMisses(),
                 chunkDebug,
                 entityDebug,
                 particleDebug

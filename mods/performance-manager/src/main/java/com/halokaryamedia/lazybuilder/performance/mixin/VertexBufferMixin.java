@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuBufferGrowthPolicy;
 import net.minecraft.client.gl.GlUsage;
 import net.minecraft.client.gl.GpuBuffer;
 import net.minecraft.client.gl.VertexBuffer;
@@ -10,7 +11,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-/** Avoids shrinking writable non-static GPU buffers when the existing allocation already fits. */
+/** Reuses writable GPU allocations and grows them with bounded headroom when capacity is exhausted. */
 @Mixin(VertexBuffer.class)
 abstract class VertexBufferMixin {
     @Shadow
@@ -26,9 +27,13 @@ abstract class VertexBufferMixin {
     )
     private void lazybuilder$resizeOnlyWhenNeeded(GpuBuffer buffer, int newSize) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()
-                || this.usage == GlUsage.STATIC_WRITE
-                || newSize > buffer.size) {
+                || this.usage == GlUsage.STATIC_WRITE) {
             buffer.resize(newSize);
+            return;
+        }
+
+        if (newSize > buffer.size) {
+            buffer.resize(GpuBufferGrowthPolicy.capacityFor(buffer.size, newSize));
         }
     }
 }

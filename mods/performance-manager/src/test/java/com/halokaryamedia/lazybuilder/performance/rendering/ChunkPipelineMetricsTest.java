@@ -20,4 +20,15 @@ final class ChunkPipelineMetricsTest {
 
         assertEquals(2L, ChunkPipelineMetrics.coalescedRebuildRequests());
     }
+
+    @Test
+    void countsChunkBufferAcquireMisses() {
+        assertEquals(0L, ChunkPipelineMetrics.bufferAcquireMisses());
+
+        ChunkPipelineMetrics.recordBufferAcquireMiss();
+        ChunkPipelineMetrics.recordBufferAcquireMiss();
+        ChunkPipelineMetrics.recordBufferAcquireMiss();
+
+        assertEquals(3L, ChunkPipelineMetrics.bufferAcquireMisses());
+    }
 }

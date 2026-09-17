@@ -18,6 +18,7 @@ public record PerformanceSnapshot(
         int chunksToUpload,
         int freeChunkBuffers,
         long coalescedChunkRebuildRequests,
+        long chunkBufferAcquireMisses,
         String chunkDebug,
         String entityDebug,
         String particleDebug
