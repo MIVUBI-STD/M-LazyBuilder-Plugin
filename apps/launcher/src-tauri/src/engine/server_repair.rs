@@ -19,14 +19,14 @@ pub struct ServerRepairPlan {
     pub blocked_reason: String,
     pub repairs: Vec<ServerRepairItem>,
     pub manual_actions: Vec<ServerRepairItem>,
-    pub health: server_health::ServerHealthSnapshot,
+    pub health: server_health::ServerReadinessSnapshot,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerRepairResult {
     pub repaired_checks: Vec<String>,
-    pub health: server_health::ServerHealthSnapshot,
+    pub health: server_health::ServerReadinessSnapshot,
 }
 
 pub fn plan(workspace_id: &str) -> Result<ServerRepairPlan, String> {
@@ -117,10 +117,9 @@ fn item(key: &str, title: &str, details: &str) -> ServerRepairItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn repair_item_keeps_machine_readable_health_key() {
-        let item = item("paper-runtime", "Repair Paper", "missing");
-        assert_eq!(item.check_key, "paper-runtime");
+    fn repair_item_keeps_check_identity() {
+        let value = item("paper-runtime", "Repair Paper", "details");
+        assert_eq!(value.check_key, "paper-runtime");
     }
 }
