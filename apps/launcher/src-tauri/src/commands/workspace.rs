@@ -23,6 +23,7 @@ pub fn workspace_state() -> CommandResult<WorkspaceState> {
 
 #[tauri::command]
 pub async fn workspace_provisioning_status() -> CommandResult<ProvisioningStatus> {
+    require_available_active_workspace("Open a server before checking its readiness.")?;
     tauri::async_runtime::spawn_blocking(workspace_registry::provisioning_status)
         .await
         .map_err(|error| CommandError::new("TASK_FAILED", format!("Server readiness check failed: {error}")))?
@@ -31,7 +32,7 @@ pub async fn workspace_provisioning_status() -> CommandResult<ProvisioningStatus
 
 #[tauri::command]
 pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::ProvisionResult> {
-    let active = workspace_registry::current().map_err(CommandError::from)?.ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before preparing it."))?;
+    let active = require_available_active_workspace("Open a server before preparing it.")?;
     let resource = format!("workspace:{}", active.id);
     let operation = app.state::<OperationRegistry>().begin_exclusive("provision-server", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
     let operation_id = operation.id.clone();
@@ -61,12 +62,13 @@ pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::
 
 #[tauri::command]
 pub async fn workspace_runtime_update_status() -> CommandResult<runtime_updates::RuntimeUpdateStatus> {
+    require_available_active_workspace("Open a server before checking for Paper updates.")?;
     tauri::async_runtime::spawn_blocking(runtime_updates::status).await.map_err(|error| CommandError::new("TASK_FAILED", format!("Paper update check task failed: {error}")))?.map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_updates::RuntimeUpdateStatus> {
-    let active = workspace_registry::current().map_err(CommandError::from)?.ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before updating Paper."))?;
+    let active = require_available_active_workspace("Open a server before updating Paper.")?;
     let resource = format!("workspace:{}", active.id);
     let operation = app.state::<OperationRegistry>().begin_exclusive("update-paper", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
     let operation_id = operation.id.clone();
@@ -105,6 +107,7 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
 
 #[tauri::command]
 pub async fn workspace_accept_eula(operations: State<'_, OperationRegistry>) -> CommandResult<ProvisioningStatus> {
+    require_available_active_workspace("Open a server before accepting its EULA.")?;
     ensure_current_workspace_operation_idle(&operations)?;
     tauri::async_runtime::spawn_blocking(|| { workspace_registry::accept_eula().map_err(CommandError::from)?; workspace_registry::provisioning_status().map_err(CommandError::from) }).await.map_err(|error| CommandError::new("TASK_FAILED", format!("EULA acceptance task failed: {error}")))?
 }
@@ -172,14 +175,7 @@ pub fn workspace_activate(operations: State<'_, OperationRegistry>, id: String) 
     let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_activation_allowed(&operations, &id)?;
     let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
-    let path = PathBuf::from(&entry.path);
-    if !path.is_dir() {
-        return Err(CommandError::recoverable_action(
-            "WORKSPACE_UNAVAILABLE",
-            format!("Server location is currently unavailable: {}", path.display()),
-            RecoveryAction::LocateWorkspace,
-        ));
-    }
+    ensure_workspace_entry_available(&entry)?;
     workspace_registry::activate(&id).map_err(CommandError::from)
 }
 
@@ -193,15 +189,8 @@ pub fn workspace_close(operations: State<'_, OperationRegistry>) -> CommandResul
 #[tauri::command]
 pub fn workspace_open_folder(id: String) -> CommandResult<()> {
     let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
-    let path = PathBuf::from(&entry.path);
-    if !path.is_dir() {
-        return Err(CommandError::recoverable_action(
-            "WORKSPACE_UNAVAILABLE",
-            format!("Server location is currently unavailable: {}", path.display()),
-            RecoveryAction::LocateWorkspace,
-        ));
-    }
-    Command::new("explorer.exe").arg(&path).spawn().map_err(|error| CommandError::new("OPEN_FOLDER_FAILED", format!("Could not open server folder: {error}")))?;
+    ensure_workspace_entry_available(&entry)?;
+    Command::new("explorer.exe").arg(PathBuf::from(&entry.path)).spawn().map_err(|error| CommandError::new("OPEN_FOLDER_FAILED", format!("Could not open server folder: {error}")))?;
     Ok(())
 }
 
@@ -316,6 +305,25 @@ fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &Co
     let _ = operations.fail(operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable });
 }
 
+fn require_available_active_workspace(required_message: &'static str) -> CommandResult<WorkspaceEntry> {
+    let active = workspace_registry::current().map_err(CommandError::from)?
+        .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", required_message))?;
+    ensure_workspace_entry_available(&active)?;
+    Ok(active)
+}
+
+fn ensure_workspace_entry_available(entry: &WorkspaceEntry) -> CommandResult<()> {
+    let path = PathBuf::from(&entry.path);
+    if !path.is_dir() {
+        return Err(CommandError::recoverable_action(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", path.display()),
+            RecoveryAction::LocateWorkspace,
+        ));
+    }
+    Ok(())
+}
+
 fn acquire_workspace_selection_lease() -> CommandResult<ServerStartLease> {
     ServerStartLease::acquire().map_err(|message| CommandError::recoverable_action(
         "SERVER_START_BUSY",
@@ -365,14 +373,8 @@ fn ensure_switch_allowed(operations: &OperationRegistry) -> CommandResult<()> {
 
 fn ensure_workspace_mutation_allowed(runtimes: &ServerRuntimeRegistry, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
+    ensure_workspace_entry_available(&entry)?;
     let root = PathBuf::from(&entry.path);
-    if !root.is_dir() {
-        return Err(CommandError::recoverable_action(
-            "WORKSPACE_UNAVAILABLE",
-            format!("Server location is currently unavailable: {}", root.display()),
-            RecoveryAction::LocateWorkspace,
-        ));
-    }
     ensure_runtime_update_allowed(runtimes, target_id)?;
     server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)
 }
