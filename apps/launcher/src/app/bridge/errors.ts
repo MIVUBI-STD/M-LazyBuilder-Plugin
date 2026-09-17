@@ -34,8 +34,26 @@ const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
   'WAIT_FOR_SERVER_START'
 ]);
 
+const RECOVERY_ACTION_LABELS: Record<RecoveryAction, string> = {
+  ACCEPT_EULA: 'Accept EULA',
+  LOCATE_WORKSPACE: 'Locate server folder',
+  OPEN_ACTIVITY: 'Open Activity',
+  OPEN_LOGS: 'Open logs',
+  RECONNECT_CLIENT_PROFILE: 'Reconnect client profile',
+  REPAIR_SERVER: 'Repair server',
+  RESTART_LAUNCHER: 'Restart LazyBuilder',
+  RETRY_OPERATION: 'Try again',
+  REVIEW_SERVER_HEALTH: 'Review server readiness',
+  STOP_SERVER: 'Stop server',
+  WAIT_FOR_SERVER_START: 'Wait for server start'
+};
+
 function recoveryAction(value: unknown): RecoveryAction | null {
   return typeof value === 'string' && RECOVERY_ACTIONS.has(value) ? (value as RecoveryAction) : null;
+}
+
+export function recoveryActionLabel(action: RecoveryAction): string {
+  return RECOVERY_ACTION_LABELS[action];
 }
 
 export class RuntimeError extends Error {
