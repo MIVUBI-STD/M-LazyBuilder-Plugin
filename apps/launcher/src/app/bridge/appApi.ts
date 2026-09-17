@@ -9,6 +9,12 @@ import type {
   StartupReport
 } from './runtimeTypes';
 
+const readinessApi = {
+  server: (id: string) => invokeRuntime<ServerReadinessSnapshot>('launcher_server_health', { id }),
+  repairPlan: (id: string) => invokeRuntime<ServerRepairPlan>('launcher_server_repair_plan', { id }),
+  repair: (id: string) => invokeRuntime<ServerRepairResult>('launcher_server_repair', { id })
+};
+
 export const appApi = {
   diagnostics: {
     summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary'),
@@ -21,11 +27,9 @@ export const appApi = {
     get: () => invokeRuntime<LauncherSettings>('launcher_settings_get'),
     save: (settings: LauncherSettings) => invokeRuntime<LauncherSettings>('launcher_settings_save', { settings })
   },
-  health: {
-    server: (id: string) => invokeRuntime<ServerReadinessSnapshot>('launcher_server_health', { id }),
-    repairPlan: (id: string) => invokeRuntime<ServerRepairPlan>('launcher_server_repair_plan', { id }),
-    repair: (id: string) => invokeRuntime<ServerRepairResult>('launcher_server_repair', { id })
-  },
+  readiness: readinessApi,
+  /** Compatibility alias while product surfaces migrate from the overloaded health name. */
+  health: readinessApi,
   operations: {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
     get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
