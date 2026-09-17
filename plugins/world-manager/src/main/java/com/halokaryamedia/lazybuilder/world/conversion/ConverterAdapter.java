@@ -51,7 +51,10 @@ public interface ConverterAdapter {
     ) {
         private static final String CANONICAL_NATIVE_FORMAT = "JAVA_1_21_4";
 
-        /** Compatibility constructor used by normal converter-backed requests. */
+        /**
+         * Generic converter-backed request. Native-input preservation is intentionally false:
+         * format names alone cannot prove the input is a canonical managed LazyBuilder world.
+         */
         public ConversionRequest(
                 Path inputDirectory,
                 Path outputDirectory,
@@ -61,18 +64,17 @@ public interface ConverterAdapter {
                 Path converterSettings
         ) {
             this(inputDirectory, outputDirectory, outputFormat, pruningSettings,
-                    worldSettings, converterSettings,
-                    pruningSettings != null && CANONICAL_NATIVE_FORMAT.equalsIgnoreCase(outputFormat));
+                    worldSettings, converterSettings, false);
         }
 
+        /** Generic converter-backed request with no export overrides. */
         public ConversionRequest(
                 Path inputDirectory,
                 Path outputDirectory,
                 String outputFormat,
                 Path pruningSettings
         ) {
-            this(inputDirectory, outputDirectory, outputFormat, pruningSettings, null, null,
-                    pruningSettings != null && CANONICAL_NATIVE_FORMAT.equalsIgnoreCase(outputFormat));
+            this(inputDirectory, outputDirectory, outputFormat, pruningSettings, null, null, false);
         }
 
         public ConversionRequest {
