@@ -28,6 +28,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.chatSearch());
         assertTrue(preferences.chatTimestamps());
         assertTrue(preferences.hideChatSigningIndicators());
+        assertTrue(preferences.hideChatReportButton());
         assertTrue(preferences.suppressNarrator());
         assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
@@ -41,6 +42,7 @@ final class UtilityConfigStoreTest {
         UtilityConfigStore store = new UtilityConfigStore(tempDir);
         UtilityPreferences expected = new UtilityPreferences(
                 true,
+                false,
                 false,
                 false,
                 false,
@@ -69,6 +71,7 @@ final class UtilityConfigStoreTest {
                         + "chat.search=not-a-boolean\n"
                         + "chat.timestamps=not-a-boolean\n"
                         + "chat.hide_signing_indicators=not-a-boolean\n"
+                        + "chat.hide_report_button=not-a-boolean\n"
                         + "accessibility.suppress_narrator=not-a-boolean\n"
                         + "connection.reconnect_button=not-a-boolean\n"
                         + "screenshots.contextual_names=TRUE\n"
@@ -84,6 +87,7 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.chatSearch());
         assertTrue(preferences.chatTimestamps());
         assertTrue(preferences.hideChatSigningIndicators());
+        assertTrue(preferences.hideChatReportButton());
         assertTrue(preferences.suppressNarrator());
         assertTrue(preferences.reconnectButton());
         assertTrue(preferences.contextualScreenshotNames());
