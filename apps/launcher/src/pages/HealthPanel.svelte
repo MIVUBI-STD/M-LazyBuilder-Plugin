@@ -4,12 +4,12 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
-  import type { ServerHealthSnapshot, ServerRepairPlan, WorkspaceEntry } from '../app/bridge/runtimeApi';
+  import type { ServerReadinessSnapshot, ServerRepairPlan, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
   export let onRepaired: (() => Promise<void> | void) | undefined = undefined;
 
   let workspace: WorkspaceEntry | null = null;
-  let health: ServerHealthSnapshot | null = null;
+  let readiness: ServerReadinessSnapshot | null = null;
   let plan: ServerRepairPlan | null = null;
   let loading = true;
   let repairing = false;
@@ -20,23 +20,23 @@
     const state = await runtimeProduct.workspace.state();
     workspace = state.active ?? null;
     if (!workspace) {
-      health = null;
+      readiness = null;
       plan = null;
       return;
     }
 
-    // The repair plan carries the exact health snapshot used to derive it, so one
-    // backend diagnosis produces a temporally consistent plan + health view.
-    const nextPlan = await runtimeProduct.health.repairPlan(workspace.id);
+    // The repair plan carries the exact readiness snapshot used to derive it, so one
+    // backend diagnosis produces a temporally consistent plan + readiness view.
+    const nextPlan = await runtimeProduct.readiness.repairPlan(workspace.id);
     plan = nextPlan;
-    health = nextPlan.health;
+    readiness = nextPlan.health;
   }
 
   async function initialLoad() {
     loading = true;
     error = null;
     try { await refresh(); }
-    catch (value) { error = presentRuntimeError(value, 'Could not inspect server health.'); }
+    catch (value) { error = presentRuntimeError(value, 'Could not inspect server readiness.'); }
     finally { loading = false; }
   }
 
@@ -46,7 +46,7 @@
     error = null;
     notice = '';
     try {
-      const result = await runtimeProduct.health.repair(workspace.id);
+      const result = await runtimeProduct.readiness.repair(workspace.id);
       notice = result.health.ready
         ? 'Server components were repaired and the server setup is ready.'
         : 'Repairs completed. Your attention is still required for the remaining items.';
@@ -62,14 +62,14 @@
 
   onMount(() => { void initialLoad(); });
 
-  $: failedChecks = health?.checks.filter((check) => !check.ready) ?? [];
+  $: failedChecks = readiness?.checks.filter((check) => !check.ready) ?? [];
 </script>
 
-<section class="health-panel" aria-labelledby="health-heading">
+<section class="health-panel" aria-labelledby="readiness-heading">
   <header class="health-heading">
     <div>
-      <h3 id="health-heading">Server health</h3>
-      <p>Checks that determine whether this server can start and run correctly.</p>
+      <h3 id="readiness-heading">Server readiness</h3>
+      <p>Checks that determine whether this server is complete and safe to start.</p>
     </div>
     {#if plan?.canRepair}
       <button class="repair-button" disabled={repairing} onclick={repair}>{repairing ? 'Repairing…' : `Repair ${plan.repairs.length} item${plan.repairs.length === 1 ? '' : 's'}`}</button>
@@ -80,10 +80,10 @@
   {#if notice}<div class="health-notice success" aria-live="polite">{notice}</div>{/if}
 
   {#if loading}
-    <div class="health-empty">Checking server health…</div>
-  {:else if !workspace || !health || !plan}
-    <div class="health-empty">Open a server to inspect its health.</div>
-  {:else if health.ready}
+    <div class="health-empty">Checking server readiness…</div>
+  {:else if !workspace || !readiness || !plan}
+    <div class="health-empty">Open a server to inspect its readiness.</div>
+  {:else if readiness.ready}
     <div class="ready-state"><span aria-hidden="true">✓</span><div><strong>Server setup is ready</strong><small>Everything required to start this server is available.</small></div></div>
   {:else}
     {#if plan.blockedReason}<div class="health-notice warning"><strong>Automatic repair isn't available</strong><span>{plan.blockedReason}</span></div>{/if}
