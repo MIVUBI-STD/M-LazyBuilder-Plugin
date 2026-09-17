@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { detailsMenu } from '../app/detailsMenu';
   import { dialogFocus } from '../app/dialogFocus';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
@@ -197,7 +198,7 @@
 
           <div class="row-tools">
             <span class="state-pill" class:disabled={!isInvalid(plugin) && plugin.state !== 'Enabled'} class:problem={isInvalid(plugin) || plugin.state === 'Problem'}>{isInvalid(plugin) ? 'Needs attention' : plugin.state}</span>
-            <details class="row-menu">
+            <details use:detailsMenu class="row-menu">
               <summary aria-label={`Manage ${plugin.displayName}`} title="Manage plugin">•••</summary>
               <div class="menu-popover">
                 {#if !isInvalid(plugin)}
