@@ -21,6 +21,7 @@ def main() -> int:
     operations = RUST / "operations.rs"
     server_config = RUST / "server_config.rs"
     launcher_settings = RUST / "launcher_settings.rs"
+    atomic_json = RUST / "persistence" / "atomic_json.rs"
     workspace_registry = RUST / "workspace_registry.rs"
     workspace_creation = RUST / "workspace_creation.rs"
     adoption = RUST / "adoption.rs"
@@ -76,21 +77,29 @@ def main() -> int:
         "malformed_main_config_preserves_recovery_evidence",
     )
 
+    # Launcher settings deliberately delegate atomic publication to the canonical
+    # persistence owner rather than carrying a second JSON writer implementation.
     require(
         launcher_settings,
-        "recover_atomic_file(&path)?",
-        "cleanup_recovery_files(&path)?",
-        "write_staging_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.tmp")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
-        "FILE_ATTRIBUTE_REPARSE_POINT",
+        "persistence::recover_atomic_file(&path, SETTINGS_LABEL)?",
+        "persistence::cleanup_recovery_files(&path, SETTINGS_LABEL)?",
+        "persistence::metadata_entry_exists(&path, SETTINGS_LABEL)?",
+        "persistence::write_json_atomically(&path, &normalized, SETTINGS_LABEL)?",
         "interrupted_settings_publish_prefers_previous_committed_copy",
         "settings_staging_recovers_when_no_committed_copy_exists",
         "malformed_main_settings_preserve_recovery_evidence",
+    )
+    require(
+        atomic_json,
+        "OpenOptions::new()",
+        ".create_new(true)",
+        "file.sync_all()",
+        "safe_path::entry_exists",
+        "safe_path::ensure_regular_file",
+        "safe_path::remove_regular_file_if_present",
+        'path.with_extension("json.tmp")',
+        'path.with_extension("json.previous")',
+        "Recovery files were preserved",
     )
 
     require(
