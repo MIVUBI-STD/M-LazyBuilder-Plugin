@@ -58,6 +58,7 @@ public final class ClientMapSurfaceCache {
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
+    private static final int MAX_FAILED_REGION_LOADS = 4096;
     private static final int MAX_PENDING = 262_144;
     private static final int MAX_REGION_LOADS_IN_FLIGHT = 32;
     private static final int MAX_LIVE_SAMPLES_PER_TICK = 1024;
@@ -73,6 +74,7 @@ public final class ClientMapSurfaceCache {
     /** Access-order LRU; all mutation happens on the Minecraft client thread. */
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LongLinkedOpenHashSet pending = new LongLinkedOpenHashSet();
+    private final LongLinkedOpenHashSet failedRegionLoads = new LongLinkedOpenHashSet();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<RegionWriteCompletion> completedWrites = new ConcurrentLinkedQueue<>();
     private final AtomicInteger regionLoadsInFlight = new AtomicInteger();
@@ -122,6 +124,7 @@ public final class ClientMapSurfaceCache {
     private void clearResidentState() {
         regions.clear();
         pending.clear();
+        failedRegionLoads.clear();
         completedLoads.clear();
         activeCompletedSnapshot = null;
         activeCompletedRegion = null;
@@ -325,7 +328,8 @@ public final class ClientMapSurfaceCache {
         RegionData existing = regions.get(regionKey);
         Path directory = scopeDirectory;
         if (existing != null) {
-            if (scheduleLoad && directory != null && !existing.loaded && !existing.loadScheduled) {
+            if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)
+                    && !existing.loaded && !existing.loadScheduled) {
                 scheduleRegionLoad(directory, regionKey, existing, scopeGeneration);
             }
             return existing;
@@ -333,7 +337,9 @@ public final class ClientMapSurfaceCache {
 
         RegionData created = new RegionData();
         regions.put(regionKey, created);
-        if (scheduleLoad && directory != null) scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)) {
+            scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        }
         return created;
     }
 
@@ -352,7 +358,7 @@ public final class ClientMapSurfaceCache {
                         regionLoadsInFlight.decrementAndGet();
                         if (generation != scopeGeneration) return;
                         if (failure != null) {
-                            LOGGER.warn("Ignoring unreadable LazyBuilder map cache region for this session: {}", file, failure);
+                            LOGGER.warn("Suppressing unreadable LazyBuilder map cache region reload: {}", file, failure);
                         }
                         completedLoads.add(new LoadedRegion(
                                 generation,
@@ -379,6 +385,7 @@ public final class ClientMapSurfaceCache {
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
+                    rememberFailedRegionLoad(loaded.regionKey);
                     if (region != null) {
                         region.loaded = true;
                         region.loadScheduled = false;
@@ -413,6 +420,14 @@ public final class ClientMapSurfaceCache {
             if (activeCompletedIndex >= activeCompletedSnapshot.size()) finishActiveCompletedLoad();
         }
         return processed;
+    }
+
+    private void rememberFailedRegionLoad(long regionKey) {
+        failedRegionLoads.remove(regionKey);
+        failedRegionLoads.add(regionKey);
+        while (failedRegionLoads.size() > MAX_FAILED_REGION_LOADS) {
+            failedRegionLoads.removeFirstLong();
+        }
     }
 
     private void finishActiveCompletedLoad() {
