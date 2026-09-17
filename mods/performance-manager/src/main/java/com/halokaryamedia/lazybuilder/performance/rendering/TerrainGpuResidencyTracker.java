@@ -1,12 +1,14 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
 import net.minecraft.client.gl.VertexBuffer;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.util.math.ChunkSectionPos;
 
-/** Runtime bridge from Minecraft terrain buffers into residency and arena-planning state. */
+/** Runtime bridge from Minecraft terrain buffers into residency, arena, and draw-state ownership. */
 public final class TerrainGpuResidencyTracker {
     private static final TerrainGpuResidencyLedger<VertexBuffer> LEDGER = new TerrainGpuResidencyLedger<>();
     private static final TerrainRegionAllocationRegistry<VertexBuffer> ARENAS = new TerrainRegionAllocationRegistry<>();
+    private static final TerrainArenaDrawStateRegistry DRAW_STATES = new TerrainArenaDrawStateRegistry();
 
     private TerrainGpuResidencyTracker() {
     }
@@ -24,8 +26,9 @@ public final class TerrainGpuResidencyTracker {
         LEDGER.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
         ARENAS.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
 
-        long payload = LEDGER.payloadBytes(buffer);
-        if (payload > 0L) ARENAS.recordPayload(buffer, payload);
+        long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
+        if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
+        if (arenaPayload > 0L) ARENAS.recordPayload(buffer, arenaPayload);
     }
 
     public static void recordCapacity(VertexBuffer buffer, int vertexCapacityBytes, int indexCapacityBytes) {
@@ -36,16 +39,35 @@ public final class TerrainGpuResidencyTracker {
         LEDGER.recordCapacity(buffer, vertexCapacityBytes, indexCapacityBytes);
     }
 
+    public static void recordDrawState(
+            VertexBuffer buffer,
+            BuiltBuffer.DrawParameters parameters,
+            int vertexPayloadBytes,
+            int indexPayloadBytes
+    ) {
+        if (buffer == null || buffer.isClosed()) return;
+        DRAW_STATES.recordVertexUpload(buffer, parameters, vertexPayloadBytes, indexPayloadBytes);
+    }
+
     public static void recordPayload(VertexBuffer buffer, int vertexPayloadBytes, int indexPayloadBytes) {
         if (buffer == null || buffer.isClosed()) return;
         LEDGER.recordPayload(buffer, vertexPayloadBytes, indexPayloadBytes);
-        ARENAS.recordPayload(buffer, LEDGER.payloadBytes(buffer));
+        long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
+        if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
+        ARENAS.recordPayload(buffer, arenaPayload);
+    }
+
+    public static void recordIndexDrawState(VertexBuffer buffer, int indexPayloadBytes) {
+        if (buffer == null || buffer.isClosed()) return;
+        DRAW_STATES.recordIndexUpload(buffer, indexPayloadBytes);
     }
 
     public static void recordIndexPayload(VertexBuffer buffer, int indexPayloadBytes) {
         if (buffer == null || buffer.isClosed()) return;
         LEDGER.recordIndexPayload(buffer, indexPayloadBytes);
-        ARENAS.recordPayload(buffer, LEDGER.payloadBytes(buffer));
+        long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
+        if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
+        ARENAS.recordPayload(buffer, arenaPayload);
     }
 
     public static long capacityBytes(VertexBuffer buffer) {
@@ -56,15 +78,26 @@ public final class TerrainGpuResidencyTracker {
         return buffer == null ? null : ARENAS.handle(buffer);
     }
 
+    public static TerrainArenaDrawStateRegistry.DrawState drawState(VertexBuffer buffer) {
+        return buffer == null ? null : DRAW_STATES.state(buffer);
+    }
+
+    public static TerrainArenaDrawPlanner.Command drawCommand(VertexBuffer buffer) {
+        if (buffer == null) return null;
+        return new TerrainArenaDrawPlanner.Command(ARENAS.handle(buffer), DRAW_STATES.state(buffer));
+    }
+
     public static void release(VertexBuffer buffer) {
         if (buffer == null) return;
         LEDGER.release(buffer);
         ARENAS.release(buffer);
+        DRAW_STATES.release(buffer);
     }
 
     public static void clear() {
         LEDGER.clear();
         ARENAS.clear();
+        DRAW_STATES.clear();
     }
 
     public static TerrainGpuResidencyLedger.Snapshot snapshot() {

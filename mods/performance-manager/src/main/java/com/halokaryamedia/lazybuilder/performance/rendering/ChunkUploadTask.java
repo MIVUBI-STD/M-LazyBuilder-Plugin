@@ -59,9 +59,16 @@ public final class ChunkUploadTask implements Runnable {
         try {
             if (vertexData != null) {
                 buffer.upload(vertexData);
+                TerrainGpuResidencyTracker.recordDrawState(
+                        buffer,
+                        vertexData.getDrawParameters(),
+                        vertexPayloadBytes,
+                        indexPayloadBytes
+                );
                 TerrainGpuResidencyTracker.recordPayload(buffer, vertexPayloadBytes, indexPayloadBytes);
             } else if (indexData != null) {
                 buffer.uploadIndexBuffer(indexData);
+                TerrainGpuResidencyTracker.recordIndexDrawState(buffer, indexPayloadBytes);
                 TerrainGpuResidencyTracker.recordIndexPayload(buffer, indexPayloadBytes);
             }
             future.complete(null);

@@ -1,46 +1,47 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import net.minecraft.client.render.VertexFormat;
+
 import java.util.List;
 
 /**
- * Builds a draw-order-preserving plan over live terrain arena allocation handles.
+ * Builds a draw-order-preserving plan over live arena handles plus captured vanilla draw state.
  *
- * Only consecutive commands in the same logical region/layer arena may share one future arena
- * binding. Missing, empty, undersized, or wrong-layer handles remain vanilla fallback commands.
+ * Future shared-buffer draws may batch only consecutive commands with the same arena and compatible
+ * format/mode/index state. Any incomplete command remains an explicit vanilla fallback boundary.
  */
 public final class TerrainArenaDrawPlanner {
     private TerrainArenaDrawPlanner() {
     }
 
-    public static Plan plan(List<TerrainRegionAllocationRegistry.Handle> handles, int expectedLayerSlot) {
-        if (handles == null || handles.isEmpty()) return Plan.EMPTY;
+    public static Plan plan(List<Command> commands, int expectedLayerSlot) {
+        if (commands == null || commands.isEmpty()) return Plan.EMPTY;
 
         int eligible = 0;
         int fallback = 0;
         int batches = 0;
         long bindReductions = 0L;
-        TerrainRegionAllocationRegistry.ArenaKey previousArena = null;
+        Command previous = null;
         int currentBatchSize = 0;
 
-        for (TerrainRegionAllocationRegistry.Handle handle : handles) {
-            if (!eligible(handle, expectedLayerSlot)) {
+        for (Command command : commands) {
+            if (!eligible(command, expectedLayerSlot)) {
                 fallback++;
                 if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
                 currentBatchSize = 0;
-                previousArena = null;
+                previous = null;
                 continue;
             }
 
             eligible++;
-            TerrainRegionAllocationRegistry.ArenaKey arena = handle.arenaKey();
-            if (!arena.equals(previousArena)) {
+            if (previous == null || !sameBatch(previous, command)) {
                 if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
                 batches++;
                 currentBatchSize = 1;
-                previousArena = arena;
             } else {
                 currentBatchSize++;
             }
+            previous = command;
         }
 
         if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
@@ -58,11 +59,57 @@ public final class TerrainArenaDrawPlanner {
         );
     }
 
-    private static boolean eligible(TerrainRegionAllocationRegistry.Handle handle, int expectedLayerSlot) {
-        if (handle == null || handle.arenaKey() == null) return false;
-        if (handle.arenaKey().layerSlot() != expectedLayerSlot) return false;
-        if (handle.payloadBytes() <= 0L || handle.sizeBytes() <= 0L) return false;
-        return handle.sizeBytes() >= TerrainRegionArenaPolicy.alignedSize(handle.payloadBytes());
+    private static boolean eligible(Command command, int expectedLayerSlot) {
+        if (command == null || command.handle == null || command.state == null) return false;
+        TerrainRegionAllocationRegistry.Handle handle = command.handle;
+        TerrainArenaDrawStateRegistry.DrawState state = command.state;
+        if (handle.arenaKey() == null || handle.arenaKey().layerSlot() != expectedLayerSlot) return false;
+        if (!state.drawable()) return false;
+
+        long required = state.requiredAllocationBytes();
+        if (required <= 0L || handle.payloadBytes() < required || handle.sizeBytes() < required) return false;
+        if (handle.offsetBytes() < 0L || handle.offsetBytes() > Long.MAX_VALUE - required) return false;
+
+        long indexOffset = command.indexByteOffset();
+        int indexSize = state.indexType().size;
+        return indexSize > 0 && indexOffset % indexSize == 0L;
+    }
+
+    private static boolean sameBatch(Command left, Command right) {
+        TerrainArenaDrawStateRegistry.DrawState leftState = left.state;
+        TerrainArenaDrawStateRegistry.DrawState rightState = right.state;
+        return left.handle.arenaKey().equals(right.handle.arenaKey())
+                && leftState.format() == rightState.format()
+                && leftState.mode() == rightState.mode()
+                && leftState.indexType() == rightState.indexType();
+    }
+
+    public record Command(
+            TerrainRegionAllocationRegistry.Handle handle,
+            TerrainArenaDrawStateRegistry.DrawState state
+    ) {
+        public long vertexByteOffset() {
+            return handle == null ? -1L : handle.offsetBytes();
+        }
+
+        public long indexByteOffset() {
+            if (handle == null || state == null) return -1L;
+            long inner = state.indexOffsetWithinAllocation();
+            return handle.offsetBytes() > Long.MAX_VALUE - inner ? -1L : handle.offsetBytes() + inner;
+        }
+
+        public int vertexStrideBytes() {
+            VertexFormat format = state == null ? null : state.format();
+            return format == null ? 0 : format.getVertexSizeByte();
+        }
+
+        public int vertexCount() {
+            return state == null ? 0 : state.vertexCount();
+        }
+
+        public int indexCount() {
+            return state == null ? 0 : state.indexCount();
+        }
     }
 
     public record Plan(

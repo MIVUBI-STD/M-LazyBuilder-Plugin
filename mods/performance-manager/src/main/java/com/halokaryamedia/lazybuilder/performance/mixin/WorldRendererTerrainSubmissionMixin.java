@@ -5,10 +5,10 @@ import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
-import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
+import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.WorldRenderer;
@@ -169,11 +169,12 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         if (chunks.isEmpty()) return TerrainArenaDrawPlanner.Plan.EMPTY;
 
-        List<TerrainRegionAllocationRegistry.Handle> handles = new ArrayList<>(chunks.size());
+        List<TerrainArenaDrawPlanner.Command> commands = new ArrayList<>(chunks.size());
         for (ChunkBuilder.BuiltChunk chunk : chunks) {
-            handles.add(TerrainGpuResidencyTracker.allocationHandle(chunk.getBuffer(layer)));
+            VertexBuffer buffer = chunk.getBuffer(layer);
+            commands.add(TerrainGpuResidencyTracker.drawCommand(buffer));
         }
-        return TerrainArenaDrawPlanner.plan(handles, layerSlot);
+        return TerrainArenaDrawPlanner.plan(commands, layerSlot);
     }
 
     @Unique

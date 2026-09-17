@@ -14,7 +14,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, arena-aware draw planning, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
@@ -66,7 +66,9 @@ allocation failures
 
 ## Arena-aware draw planning
 
-`TerrainArenaDrawPlanner` consumes the live allocation handles while preserving the exact visible-section order already used by the vanilla terrain path. Only consecutive commands in the same region/layer arena are considered one future arena batch. Missing, empty, undersized, or wrong-layer handles remain explicit vanilla fallback commands and break the batch boundary.
+`TerrainArenaDrawStateRegistry` now captures the exact vanilla draw parameters when a `BuiltBuffer` is uploaded: vertex format, vertex/index counts, draw mode, index type, and the separate vertex/index payload sizes. Arena allocation sizing uses separately aligned vertex and index ranges, so future physical backing has deterministic byte offsets instead of treating both streams as one opaque payload.
+
+`TerrainArenaDrawPlanner` consumes the live allocation handle plus this captured draw state while preserving the exact visible-section order already used by the vanilla terrain path. A future arena command now has explicit vertex byte offset, index byte offset, vertex stride, vertex count, and index count. Only consecutive commands in the same region/layer arena with the same vertex format, draw mode, and index type are considered one future arena batch. Missing, stale, undersized, wrong-layer, or incomplete draw state remains an explicit vanilla fallback boundary.
 
 Current diagnostics expose:
 
@@ -77,9 +79,9 @@ ordered arena batches
 potential arena-buffer bind reductions
 ```
 
-This closes the ownership gap between live suballocations and physical draw submission without changing rendering yet. Minecraft 1.21.4 exposes `GpuBuffer.copyFrom(ByteBuffer, offset)`, so subrange upload is technically available, but vanilla `VertexBuffer` still owns VAO/index draw state and assumes its own buffer offsets. Physical shared VBO/EBO draw therefore remains deferred until that draw-state ownership is replaced coherently rather than patched around.
+Minecraft 1.21.4 exposes `GpuBuffer.copyFrom(ByteBuffer, offset)`, so subrange upload is technically available. The remaining physical-arena work is now specifically to own the shared VBO/EBO plus VAO/base-offset draw state coherently; the byte addressing and draw metadata are already represented. Vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged until that ownership is taken as one complete step.
 
-Vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged. Full physical shared GPU arenas and terrain multi-draw remain separate ownership steps.
+Full physical shared GPU arenas and terrain multi-draw remain separate ownership steps.
 
 ## FRAPI and shader compatibility boundary
 
@@ -95,7 +97,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, arena-aware draw-plan coverage, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware arena draw-plan coverage, and the detected renderer pipeline owner.
 
 ## Migration rule
 
