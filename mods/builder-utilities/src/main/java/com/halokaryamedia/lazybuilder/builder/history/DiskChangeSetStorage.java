@@ -101,16 +101,25 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         }
 
         @Override
+        public void appendExtension(HistoryExtensionFrame frame) throws IOException {
+            ensureOpen();
+            codec.appendExtension(frame);
+        }
+
+        @Override
         public StoredChangeSet commit() throws IOException {
             ensureOpen();
             long changes = codec.commit();
+            long extensions = codec.extensionCount();
             channel.force(true);
             channel.close();
             finished = true;
 
             try (InputStream input = Files.newInputStream(staging)) {
                 ChangeSetCodec.Header header = ChangeSetCodec.inspect(input);
-                if (!header.operationId().equals(operationId) || header.changeCount() != changes) {
+                if (!header.operationId().equals(operationId)
+                        || header.changeCount() != changes
+                        || header.extensionCount() != extensions) {
                     throw new IOException("Staged History metadata mismatch");
                 }
             }
@@ -120,7 +129,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             } catch (AtomicMoveNotSupportedException e) {
                 throw new IOException("History directory does not support atomic commit", e);
             }
-            return new DiskStoredChangeSet(operationId, changes, committed);
+            return new DiskStoredChangeSet(operationId, changes, extensions, committed);
         }
 
         @Override
@@ -141,7 +150,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         }
     }
 
-    private record DiskStoredChangeSet(String operationId, long changeCount, Path path)
+    private record DiskStoredChangeSet(String operationId, long changeCount, long extensionCount, Path path)
             implements StoredChangeSet {
         private DiskStoredChangeSet {
             Objects.requireNonNull(operationId, "operationId");
@@ -154,10 +163,12 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         }
 
         @Override
-        public void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException {
+        public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (InputStream input = Files.newInputStream(path)) {
                 ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                if (!header.operationId().equals(operationId) || header.changeCount() != changeCount) {
+                if (!header.operationId().equals(operationId)
+                        || header.changeCount() != changeCount
+                        || header.extensionCount() != extensionCount) {
                     throw new IOException("Stored History metadata mismatch");
                 }
             }

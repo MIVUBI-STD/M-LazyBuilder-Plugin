@@ -9,7 +9,13 @@ public interface StoredChangeSet extends AutoCloseable {
 
     long changeCount();
 
-    void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException;
+    long extensionCount();
+
+    void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException;
+
+    default void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException {
+        replayAll(direction, HistoryReplayConsumer.blocksOnly(consumer));
+    }
 
     @Override
     default void close() throws IOException {

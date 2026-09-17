@@ -74,13 +74,20 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
         }
 
         @Override
+        public void appendExtension(HistoryExtensionFrame frame) throws IOException {
+            ensureOpen();
+            codec.appendExtension(frame);
+        }
+
+        @Override
         public StoredChangeSet commit() throws IOException {
             ensureOpen();
             long changes = codec.commit();
+            long extensions = codec.extensionCount();
             output.close();
             finished = true;
             byte[] bytes = buffer.toByteArray();
-            return new MemoryStoredChangeSet(operationId, tier, changes, bytes, inputFactory);
+            return new MemoryStoredChangeSet(operationId, tier, changes, extensions, bytes, inputFactory);
         }
 
         @Override
@@ -104,6 +111,7 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
             String operationId,
             HistoryStorageTier storageTier,
             long changeCount,
+            long extensionCount,
             byte[] bytes,
             Function<byte[], java.io.InputStream> inputFactory
     ) implements StoredChangeSet {
@@ -115,10 +123,12 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
         }
 
         @Override
-        public void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException {
+        public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (java.io.InputStream input = inputFactory.apply(bytes)) {
                 ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                if (!header.operationId().equals(operationId) || header.changeCount() != changeCount) {
+                if (!header.operationId().equals(operationId)
+                        || header.changeCount() != changeCount
+                        || header.extensionCount() != extensionCount) {
                     throw new IOException("Stored History metadata mismatch");
                 }
             } catch (HistoryReadException e) {

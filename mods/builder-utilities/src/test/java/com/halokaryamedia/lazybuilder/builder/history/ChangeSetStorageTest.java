@@ -36,6 +36,30 @@ class ChangeSetStorageTest {
     }
 
     @Test
+    void extensionFramesReplayDirectionSpecificPayload() throws IOException {
+        StoredChangeSet stored;
+        try (ChangeSetWriter writer = new MemoryChangeSetStorage().begin("extension-op")) {
+            writer.appendExtension(new HistoryExtensionFrame(
+                    "lazybuilder:block_entity", 0, 0, 12L, new byte[]{1}, new byte[]{2}));
+            stored = writer.commit();
+        }
+        assertEquals(1, stored.extensionCount());
+
+        List<Byte> undo = new ArrayList<>();
+        stored.replayAll(ReplayDirection.UNDO, new HistoryReplayConsumer() {
+            @Override
+            public void acceptBlock(int chunkX, int chunkZ, int localX, int y, int localZ, String state) {
+            }
+
+            @Override
+            public void acceptExtension(HistoryExtensionFrame frame, byte[] payload) {
+                undo.add(payload[0]);
+            }
+        });
+        assertEquals(List.of((byte) 1), undo);
+    }
+
+    @Test
     void codecRejectsStreamWithoutCommitFooter() throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ChangeSetCodec.StreamWriter writer = ChangeSetCodec.openWriter(output, "op-truncated");
@@ -48,11 +72,51 @@ class ChangeSetStorageTest {
     }
 
     @Test
+    void codecRejectsUnknownFrameMarker() throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ChangeSetCodec.StreamWriter writer = ChangeSetCodec.openWriter(output, "corrupt");
+        writer.append(sampleChunk());
+        writer.commit();
+        byte[] bytes = output.toByteArray();
+        int firstFrameOffset = 4 + 4 + 2 + "corrupt".length();
+        bytes[firstFrameOffset] = 99;
+        IOException error = assertThrows(IOException.class,
+                () -> ChangeSetCodec.inspect(new ByteArrayInputStream(bytes)));
+        assertTrue(error.getMessage().contains("Unknown History v2 frame marker"));
+    }
+
+    @Test
     void abortedWriterCannotProduceHistory() throws IOException {
         ChangeSetWriter writer = new MemoryChangeSetStorage().begin("op-abort");
         writer.append(sampleChunk());
         writer.abort();
         assertThrows(IllegalStateException.class, writer::commit);
+    }
+
+    @Test
+    void largeSyntheticStreamPreservesExactCountAndReplay() throws IOException {
+        int chunks = 100;
+        int changesPerChunk = 1_024;
+        StoredChangeSet stored;
+        try (ChangeSetWriter writer = new CompressedMemoryChangeSetStorage().begin("large")) {
+            for (int chunkX = 0; chunkX < chunks; chunkX++) {
+                long[] positions = new long[changesPerChunk];
+                int[] before = new int[changesPerChunk];
+                int[] after = new int[changesPerChunk];
+                for (int i = 0; i < changesPerChunk; i++) {
+                    positions[i] = LocalBlockPosition.pack(i & 15, i / 256, (i >>> 4) & 15);
+                    after[i] = 1;
+                }
+                writer.append(new ChunkChangeSet(chunkX, 0,
+                        List.of("minecraft:stone", "minecraft:air"), positions, before, after));
+            }
+            stored = writer.commit();
+        }
+
+        assertEquals((long) chunks * changesPerChunk, stored.changeCount());
+        long[] replayed = {0};
+        stored.replay(ReplayDirection.REDO, (cx, cz, x, y, z, state) -> replayed[0]++);
+        assertEquals(stored.changeCount(), replayed[0]);
     }
 
     private static void assertRoundTrip(ChangeSetStorage storage, HistoryStorageTier expectedTier) throws IOException {
@@ -64,6 +128,7 @@ class ChangeSetStorageTest {
         assertEquals("op-1", stored.operationId());
         assertEquals(expectedTier, stored.storageTier());
         assertEquals(2, stored.changeCount());
+        assertEquals(0, stored.extensionCount());
 
         List<String> redo = new ArrayList<>();
         stored.replay(ReplayDirection.REDO, (cx, cz, x, y, z, state) ->

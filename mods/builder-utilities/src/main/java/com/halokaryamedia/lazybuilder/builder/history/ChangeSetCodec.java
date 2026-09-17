@@ -20,9 +20,11 @@ public final class ChangeSetCodec {
     private static final int MAGIC = 0x4c424832; // LBH2
     private static final int VERSION = 1;
     private static final int CHUNK_MARKER = 1;
+    private static final int EXTENSION_MARKER = 2;
     private static final int COMMIT_MARKER = 127;
     private static final int MAX_PALETTE_SIZE = 1_000_000;
     private static final int MAX_CHANGES_PER_CHUNK = 16_777_216;
+    private static final int MAX_EXTENSION_PAYLOAD_BYTES = 16 * 1024 * 1024;
 
     private ChangeSetCodec() {
     }
@@ -42,18 +44,18 @@ public final class ChangeSetCodec {
     public static Header inspect(InputStream input) throws IOException {
         DataInputStream data = new DataInputStream(Objects.requireNonNull(input, "input"));
         Header header = readHeader(data);
-        long changes = scan(data, null, null);
-        return new Header(header.operationId(), changes);
+        Counts counts = scan(data, null, null);
+        return new Header(header.operationId(), counts.changes(), counts.extensions());
     }
 
-    public static Header replay(InputStream input, ReplayDirection direction, BlockChangeConsumer consumer)
+    public static Header replay(InputStream input, ReplayDirection direction, HistoryReplayConsumer consumer)
             throws IOException {
         Objects.requireNonNull(direction, "direction");
         Objects.requireNonNull(consumer, "consumer");
         DataInputStream data = new DataInputStream(Objects.requireNonNull(input, "input"));
         Header header = readHeader(data);
-        long changes = scan(data, direction, consumer);
-        return new Header(header.operationId(), changes);
+        Counts counts = scan(data, direction, consumer);
+        return new Header(header.operationId(), counts.changes(), counts.extensions());
     }
 
     private static Header readHeader(DataInputStream data) throws IOException {
@@ -69,43 +71,53 @@ public final class ChangeSetCodec {
             if (operationId.isBlank()) {
                 throw new IOException("History operation id is blank");
             }
-            return new Header(operationId, -1);
+            return new Header(operationId, -1, -1);
         } catch (EOFException e) {
             throw incomplete(e);
         }
     }
 
-    private static long scan(DataInputStream data, ReplayDirection direction, BlockChangeConsumer consumer)
+    private static Counts scan(DataInputStream data, ReplayDirection direction, HistoryReplayConsumer consumer)
             throws IOException {
         long observedChanges = 0;
+        long observedExtensions = 0;
         try {
             while (true) {
                 int marker = data.readUnsignedByte();
                 if (marker == COMMIT_MARKER) {
                     long committedChanges = data.readLong();
-                    if (committedChanges != observedChanges) {
-                        throw new IOException("History change count mismatch: expected "
-                                + committedChanges + " but decoded " + observedChanges);
+                    long committedExtensions = data.readLong();
+                    if (committedChanges != observedChanges || committedExtensions != observedExtensions) {
+                        throw new IOException("History footer count mismatch");
                     }
-                    return observedChanges;
+                    return new Counts(observedChanges, observedExtensions);
                 }
-                if (marker != CHUNK_MARKER) {
-                    throw new IOException("Unknown History v2 frame marker: " + marker);
+                if (marker == CHUNK_MARKER) {
+                    ChunkChangeSet chunk = readChunk(data);
+                    observedChanges = Math.addExact(observedChanges, chunk.size());
+                    if (consumer != null) {
+                        replayChunk(chunk, direction, consumer);
+                    }
+                    continue;
                 }
-                ChunkChangeSet chunk = readChunk(data);
-                observedChanges = Math.addExact(observedChanges, chunk.size());
-                if (consumer != null) {
-                    replayChunk(chunk, direction, consumer);
+                if (marker == EXTENSION_MARKER) {
+                    HistoryExtensionFrame frame = readExtension(data);
+                    observedExtensions = Math.addExact(observedExtensions, 1);
+                    if (consumer != null) {
+                        consumer.acceptExtension(frame, frame.payload(direction));
+                    }
+                    continue;
                 }
+                throw new IOException("Unknown History v2 frame marker: " + marker);
             }
         } catch (EOFException e) {
             throw incomplete(e);
         } catch (ArithmeticException e) {
-            throw new IOException("History change count overflow", e);
+            throw new IOException("History count overflow", e);
         }
     }
 
-    private static void replayChunk(ChunkChangeSet chunk, ReplayDirection direction, BlockChangeConsumer consumer) {
+    private static void replayChunk(ChunkChangeSet chunk, ReplayDirection direction, HistoryReplayConsumer consumer) {
         long[] positions = chunk.positions();
         if (direction == ReplayDirection.REDO) {
             for (int i = 0; i < positions.length; i++) {
@@ -119,8 +131,8 @@ public final class ChangeSetCodec {
     }
 
     private static void emit(ChunkChangeSet chunk, long packed, int index, boolean before,
-                             BlockChangeConsumer consumer) {
-        consumer.accept(
+                             HistoryReplayConsumer consumer) {
+        consumer.acceptBlock(
                 chunk.chunkX(),
                 chunk.chunkZ(),
                 LocalBlockPosition.localX(packed),
@@ -158,6 +170,27 @@ public final class ChangeSetCodec {
         }
     }
 
+    private static HistoryExtensionFrame readExtension(DataInputStream data) throws IOException {
+        String typeId = data.readUTF();
+        int chunkX = data.readInt();
+        int chunkZ = data.readInt();
+        long localKey = data.readLong();
+        byte[] before = readPayload(data);
+        byte[] after = readPayload(data);
+        try {
+            return new HistoryExtensionFrame(typeId, chunkX, chunkZ, localKey, before, after);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid History extension frame", e);
+        }
+    }
+
+    private static byte[] readPayload(DataInputStream data) throws IOException {
+        int length = readBoundedCount(data, "extension payload", MAX_EXTENSION_PAYLOAD_BYTES);
+        byte[] payload = new byte[length];
+        data.readFully(payload);
+        return payload;
+    }
+
     private static int readBoundedCount(DataInputStream data, String label, int max) throws IOException {
         int value = data.readInt();
         if (value < 0 || value > max) {
@@ -170,13 +203,17 @@ public final class ChangeSetCodec {
         return new IOException("Incomplete History v2 changeset: commit footer is missing", cause);
     }
 
-    public record Header(String operationId, long changeCount) {
+    private record Counts(long changes, long extensions) {
+    }
+
+    public record Header(String operationId, long changeCount, long extensionCount) {
     }
 
     public static final class StreamWriter {
         private final DataOutputStream data;
         private final String operationId;
         private long changeCount;
+        private long extensionCount;
         private boolean finished;
 
         private StreamWriter(DataOutputStream data, String operationId) {
@@ -190,6 +227,10 @@ public final class ChangeSetCodec {
 
         public long changeCount() {
             return changeCount;
+        }
+
+        public long extensionCount() {
+            return extensionCount;
         }
 
         public void append(ChunkChangeSet chunk) throws IOException {
@@ -218,10 +259,39 @@ public final class ChangeSetCodec {
             }
         }
 
+        public void appendExtension(HistoryExtensionFrame frame) throws IOException {
+            Objects.requireNonNull(frame, "frame");
+            ensureOpen();
+            byte[] before = frame.beforePayload();
+            byte[] after = frame.afterPayload();
+            if (before.length > MAX_EXTENSION_PAYLOAD_BYTES || after.length > MAX_EXTENSION_PAYLOAD_BYTES) {
+                throw new IllegalArgumentException("History extension payload exceeds "
+                        + MAX_EXTENSION_PAYLOAD_BYTES + " bytes");
+            }
+            data.writeByte(EXTENSION_MARKER);
+            data.writeUTF(frame.typeId());
+            data.writeInt(frame.chunkX());
+            data.writeInt(frame.chunkZ());
+            data.writeLong(frame.localKey());
+            writePayload(before);
+            writePayload(after);
+            try {
+                extensionCount = Math.addExact(extensionCount, 1);
+            } catch (ArithmeticException e) {
+                throw new IOException("History extension count overflow", e);
+            }
+        }
+
+        private void writePayload(byte[] payload) throws IOException {
+            data.writeInt(payload.length);
+            data.write(payload);
+        }
+
         public long commit() throws IOException {
             ensureOpen();
             data.writeByte(COMMIT_MARKER);
             data.writeLong(changeCount);
+            data.writeLong(extensionCount);
             data.flush();
             finished = true;
             return changeCount;
