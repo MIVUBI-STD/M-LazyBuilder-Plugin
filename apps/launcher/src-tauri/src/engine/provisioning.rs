@@ -12,10 +12,6 @@ pub struct ProvisionResult {
     pub status: workspace_registry::ProvisioningStatus,
 }
 
-pub fn provision_active(resource_dir: Option<&Path>) -> Result<ProvisionResult, String> {
-    provision_active_tracked(resource_dir, |_, _, _| {})
-}
-
 /// Provision the active workspace while exposing semantic stage boundaries to the
 /// desktop operation layer. The observer is presentation/diagnostic plumbing only;
 /// provisioning owners remain authoritative and the observer cannot alter results.
