@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::{java_runtime, paths, runtime_updates, server_config, server_process_guard, server_start_lock::ServerStartLease, startup_guard, workspace_registry, world_manager};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::server_manager::{DetachedRecoveryResult, ServerManagerState, ServerPreflight, ServerSnapshot};
@@ -56,26 +56,26 @@ pub async fn server_console_command(
         match snapshot.state.as_str() {
             "Online" => {}
             "Detached" => {
-                return Err(CommandError::recoverable(
+                return Err(CommandError::recoverable_action(
                     "SERVER_CONSOLE_DETACHED",
                     "This Paper process is still running, but LazyBuilder no longer owns its console input after the previous launcher session ended.",
-                    "Stop the external server and start it from LazyBuilder again",
+                    RecoveryAction::StopServer,
                 ));
             }
             current => {
-                return Err(CommandError::recoverable(
+                return Err(CommandError::recoverable_action(
                     "SERVER_CONSOLE_UNAVAILABLE",
                     format!("Server console is available only while Paper is Online; current state is {current}."),
-                    "Start the server and wait until it is Running",
+                    RecoveryAction::StartServer,
                 ));
             }
         }
 
         state.send_console_command(&command).map_err(|error| {
-            CommandError::recoverable(
+            CommandError::recoverable_action(
                 "SERVER_COMMAND_WRITE_FAILED",
                 error,
-                "Refresh server state and retry",
+                RecoveryAction::RetryOperation,
             )
         })
     })
@@ -175,34 +175,34 @@ fn normalize_console_command(raw: &str) -> CommandResult<String> {
     }
 
     if command.is_empty() {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "SERVER_COMMAND_EMPTY",
             "Enter a Paper command before sending.",
-            "Enter a command",
+            RecoveryAction::EditCommand,
         ));
     }
     if command.len() > 4096 {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "SERVER_COMMAND_TOO_LONG",
             "Server commands are limited to 4096 characters per submission.",
-            "Shorten the command",
+            RecoveryAction::EditCommand,
         ));
     }
     if command.contains('\n') || command.contains('\r') {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "SERVER_COMMAND_MULTILINE",
             "Send one server command at a time.",
-            "Remove line breaks and retry",
+            RecoveryAction::EditCommand,
         ));
     }
 
     let label = command.split_whitespace().next().unwrap_or_default();
     let base_label = label.rsplit(':').next().unwrap_or(label).to_ascii_lowercase();
     if matches!(base_label.as_str(), "stop" | "restart") {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "SERVER_COMMAND_LIFECYCLE_BLOCKED",
             format!("The '{base_label}' lifecycle command must use LazyBuilder's server controls so process state and recovery remain correct."),
-            "Use the Stop server or Restart server control",
+            RecoveryAction::UseServerControls,
         ));
     }
 
