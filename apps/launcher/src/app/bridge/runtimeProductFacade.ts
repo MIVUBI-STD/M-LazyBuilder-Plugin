@@ -33,7 +33,12 @@ const previewRuntimeProduct = {
   ...runtimePreviewProduct,
   readiness: runtimePreviewProduct.health,
   diagnostics: {
-    ...runtimePreviewProduct.diagnostics,
+    summary: async () => ({
+      ...(await runtimePreviewProduct.diagnostics.summary()),
+      buildCommit: 'preview',
+      buildChannel: 'stable',
+      buildTarget: 'windows-x86_64'
+    }),
     exportSupportBundle: async () => 'C:\\Users\\Builder\\Desktop\\LazyBuilder-Support.zip'
   },
   workspace: {
