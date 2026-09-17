@@ -207,7 +207,7 @@
   </div>
 {/if}
 
-<OperationAttention onOpenActivity={openActivityFromAttention} />
+<OperationAttention onOpenActivity={openActivityFromAttention} suppressed={globalPage === 'Activity'} />
 
 {#if closeRequest}
   <div class="close-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelCloseRequest()}>
