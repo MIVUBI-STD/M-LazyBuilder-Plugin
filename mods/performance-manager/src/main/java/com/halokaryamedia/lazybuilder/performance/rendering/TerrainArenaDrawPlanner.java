@@ -24,28 +24,63 @@ public final class TerrainArenaDrawPlanner {
         Command previous = null;
         int currentBatchSize = 0;
 
+        int baseVertexReady = 0;
+        int baseVertexBatches = 0;
+        long baseVertexBindReductions = 0L;
+        Command previousBaseVertex = null;
+        int currentBaseVertexBatchSize = 0;
+
         for (Command command : commands) {
             if (!eligible(command, expectedLayerSlot)) {
                 fallback++;
-                if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
+                bindReductions += completedBatchReduction(currentBatchSize);
+                baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
                 currentBatchSize = 0;
+                currentBaseVertexBatchSize = 0;
                 previous = null;
+                previousBaseVertex = null;
                 continue;
             }
 
             eligible++;
             if (previous == null || !sameBatch(previous, command)) {
-                if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
+                bindReductions += completedBatchReduction(currentBatchSize);
                 batches++;
                 currentBatchSize = 1;
             } else {
                 currentBatchSize++;
             }
             previous = command;
+
+            if (!TerrainArenaBaseVertexPolicy.isReady(command)) {
+                baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
+                currentBaseVertexBatchSize = 0;
+                previousBaseVertex = null;
+                continue;
+            }
+
+            baseVertexReady++;
+            if (previousBaseVertex == null || !sameBatch(previousBaseVertex, command)) {
+                baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
+                baseVertexBatches++;
+                currentBaseVertexBatchSize = 1;
+            } else {
+                currentBaseVertexBatchSize++;
+            }
+            previousBaseVertex = command;
         }
 
-        if (currentBatchSize > 1) bindReductions += currentBatchSize - 1L;
-        return new Plan(eligible, fallback, batches, bindReductions);
+        bindReductions += completedBatchReduction(currentBatchSize);
+        baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
+        return new Plan(
+                eligible,
+                fallback,
+                batches,
+                bindReductions,
+                baseVertexReady,
+                baseVertexBatches,
+                baseVertexBindReductions
+        );
     }
 
     public static Plan combine(Plan left, Plan right) {
@@ -55,8 +90,15 @@ public final class TerrainArenaDrawPlanner {
                 left.eligibleCommands + right.eligibleCommands,
                 left.fallbackCommands + right.fallbackCommands,
                 left.arenaBatches + right.arenaBatches,
-                left.potentialBindReductions + right.potentialBindReductions
+                left.potentialBindReductions + right.potentialBindReductions,
+                left.baseVertexReadyCommands + right.baseVertexReadyCommands,
+                left.baseVertexBatches + right.baseVertexBatches,
+                left.potentialBaseVertexBindReductions + right.potentialBaseVertexBindReductions
         );
+    }
+
+    private static long completedBatchReduction(int batchSize) {
+        return batchSize > 1 ? batchSize - 1L : 0L;
     }
 
     private static boolean eligible(Command command, int expectedLayerSlot) {
@@ -110,14 +152,21 @@ public final class TerrainArenaDrawPlanner {
         public int indexCount() {
             return state == null ? 0 : state.indexCount();
         }
+
+        public int baseVertex() {
+            return TerrainArenaBaseVertexPolicy.baseVertex(this);
+        }
     }
 
     public record Plan(
             int eligibleCommands,
             int fallbackCommands,
             int arenaBatches,
-            long potentialBindReductions
+            long potentialBindReductions,
+            int baseVertexReadyCommands,
+            int baseVertexBatches,
+            long potentialBaseVertexBindReductions
     ) {
-        public static final Plan EMPTY = new Plan(0, 0, 0, 0L);
+        public static final Plan EMPTY = new Plan(0, 0, 0, 0L, 0, 0, 0L);
     }
 }

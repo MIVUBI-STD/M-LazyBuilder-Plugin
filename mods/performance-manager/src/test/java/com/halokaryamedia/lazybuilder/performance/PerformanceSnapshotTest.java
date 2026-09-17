@@ -60,9 +60,12 @@ final class PerformanceSnapshotTest {
                 13L,
                 17L,
                 37,
-                4,
-                9,
-                28L,
+                5,
+                12,
+                25L,
+                29,
+                7,
+                22L,
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -110,9 +113,12 @@ final class PerformanceSnapshotTest {
         assertEquals(13L, snapshot.terrainArenaGrowths());
         assertEquals(17L, snapshot.terrainArenaAllocationFailures());
         assertEquals(37, snapshot.terrainArenaEligibleDrawCommands());
-        assertEquals(4, snapshot.terrainArenaFallbackDrawCommands());
-        assertEquals(9, snapshot.terrainArenaDrawBatches());
-        assertEquals(28L, snapshot.potentialTerrainArenaBindReductions());
+        assertEquals(5, snapshot.terrainArenaFallbackDrawCommands());
+        assertEquals(12, snapshot.terrainArenaDrawBatches());
+        assertEquals(25L, snapshot.potentialTerrainArenaBindReductions());
+        assertEquals(29, snapshot.terrainArenaBaseVertexReadyDrawCommands());
+        assertEquals(7, snapshot.terrainArenaBaseVertexDrawBatches());
+        assertEquals(22L, snapshot.potentialTerrainArenaBaseVertexBindReductions());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }

@@ -27,6 +27,8 @@ final class TerrainArenaDrawPlannerTest {
         assertEquals(0, plan.fallbackCommands());
         assertEquals(2, plan.arenaBatches());
         assertEquals(2L, plan.potentialBindReductions());
+        assertEquals(0, plan.baseVertexReadyCommands());
+        assertEquals(0, plan.baseVertexBatches());
     }
 
     @Test
@@ -103,16 +105,54 @@ final class TerrainArenaDrawPlannerTest {
     }
 
     @Test
+    void marksSequentialIndexCommandsReadyForBaseVertexDraw() {
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+        var state = sequentialState(320);
+        int stride = state.format().getVertexSizeByte();
+        long secondOffset = 256L;
+        assertEquals(0L, secondOffset % stride);
+
+        TerrainArenaDrawPlanner.Command first = command(arena, 0L, state, 1L);
+        TerrainArenaDrawPlanner.Command second = command(arena, secondOffset, state, 2L);
+        TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.plan(List.of(first, second), 0);
+
+        assertEquals(2, plan.baseVertexReadyCommands());
+        assertEquals(1, plan.baseVertexBatches());
+        assertEquals(1L, plan.potentialBaseVertexBindReductions());
+        assertEquals(0, first.baseVertex());
+        assertEquals((int) (secondOffset / stride), second.baseVertex());
+    }
+
+    @Test
+    void customIndicesOrMisalignedVertexOffsetRemainOutsideBaseVertexSubset() {
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+        var sequential = sequentialState(320);
+        var sorted = state(320, 64);
+
+        TerrainArenaDrawPlanner.Command misaligned = command(arena, 257L, sequential, 1L);
+        TerrainArenaDrawPlanner.Command customIndices = command(arena, 512L, sorted, 2L);
+        TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.plan(List.of(misaligned, customIndices), 0);
+
+        assertEquals(2, plan.eligibleCommands());
+        assertEquals(0, plan.baseVertexReadyCommands());
+        assertEquals(-1, misaligned.baseVertex());
+        assertEquals(-1, customIndices.baseVertex());
+    }
+
+    @Test
     void combinesLayerPlansWithoutInventingCrossLayerBatches() {
         TerrainArenaDrawPlanner.Plan combined = TerrainArenaDrawPlanner.combine(
-                new TerrainArenaDrawPlanner.Plan(8, 1, 3, 5L),
-                new TerrainArenaDrawPlanner.Plan(4, 2, 2, 2L)
+                new TerrainArenaDrawPlanner.Plan(8, 1, 3, 5L, 6, 2, 4L),
+                new TerrainArenaDrawPlanner.Plan(4, 2, 2, 2L, 3, 1, 2L)
         );
 
         assertEquals(12, combined.eligibleCommands());
         assertEquals(3, combined.fallbackCommands());
         assertEquals(5, combined.arenaBatches());
         assertEquals(7L, combined.potentialBindReductions());
+        assertEquals(9, combined.baseVertexReadyCommands());
+        assertEquals(3, combined.baseVertexBatches());
+        assertEquals(6L, combined.potentialBaseVertexBindReductions());
     }
 
     private static TerrainArenaDrawStateRegistry.DrawState state(int vertexBytes, int indexBytes) {
@@ -125,6 +165,10 @@ final class TerrainArenaDrawPlannerTest {
                 vertexBytes,
                 indexBytes
         );
+    }
+
+    private static TerrainArenaDrawStateRegistry.DrawState sequentialState(int vertexBytes) {
+        return state(vertexBytes, 0);
     }
 
     private static TerrainArenaDrawPlanner.Command command(
