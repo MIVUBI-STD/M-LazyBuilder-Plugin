@@ -115,8 +115,13 @@ public final class UtilityManagerClient implements ClientModInitializer {
         boolean compactDebugDisabled = preferences.compactDebugHud() && !updated.compactDebugHud();
         boolean compactDebugEnabled = !preferences.compactDebugHud() && updated.compactDebugHud();
         boolean narratorSuppressionEnabled = !preferences.suppressNarrator() && updated.suppressNarrator();
+        boolean chatSearchDisabled = preferences.chatSearch() && !updated.chatSearch();
+        boolean keepChatDraftDisabled = preferences.keepChatDraft() && !updated.keepChatDraft();
         preferences = updated;
         if (configStore != null) configStore.save(updated);
+
+        if (chatSearchDisabled) CHAT_SEARCH_HISTORY.clearSession();
+        if (keepChatDraftDisabled) ChatDraftState.clear();
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;

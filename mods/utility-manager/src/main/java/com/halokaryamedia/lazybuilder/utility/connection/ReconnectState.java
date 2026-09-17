@@ -20,9 +20,15 @@ public final class ReconnectState {
         if (serverInfo != null && serverInfo.address != null && !serverInfo.address.isBlank()) {
             lastServer = serverInfo;
             LOGGER.debug("Captured reconnect target for the current client session");
-        } else {
-            LOGGER.debug("Reconnect target capture skipped because ServerInfo/address was unavailable");
+            return;
         }
+
+        clear();
+        LOGGER.debug("Cleared reconnect target because the current client context has no multiplayer target");
+    }
+
+    public static void clear() {
+        lastServer = null;
     }
 
     public static boolean canReconnect() {

@@ -82,7 +82,9 @@ public abstract class ChatHudMixin {
 
                 if (collapse.collapse() && this.lazybuilder$removeNewestEntry()) {
                     String collapsedText = collapse.collapsedText();
-                    UtilityManagerClient.chatSearchHistory().replaceLatest(collapsedText);
+                    if (UtilityManagerClient.preferences().chatSearch()) {
+                        UtilityManagerClient.chatSearchHistory().replaceLatest(collapsedText);
+                    }
 
                     this.lazybuilder$readdingCollapsedLine = true;
                     try {
@@ -97,7 +99,9 @@ public abstract class ChatHudMixin {
                 UtilityManagerClient.chatCollapseState().clear();
             }
 
-            UtilityManagerClient.chatSearchHistory().record(message.getString(), nowMillis);
+            if (UtilityManagerClient.preferences().chatSearch()) {
+                UtilityManagerClient.chatSearchHistory().record(message.getString(), nowMillis);
+            }
         }
     }
 
