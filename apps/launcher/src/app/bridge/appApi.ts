@@ -28,8 +28,6 @@ export const appApi = {
     save: (settings: LauncherSettings) => invokeRuntime<LauncherSettings>('launcher_settings_save', { settings })
   },
   readiness: readinessApi,
-  /** Compatibility alias while product surfaces migrate from the overloaded health name. */
-  health: readinessApi,
   operations: {
     list: () => invokeRuntime<LauncherOperationSnapshot[]>('launcher_operation_list'),
     get: (id: string) => invokeRuntime<LauncherOperationSnapshot>('launcher_operation', { id }),
