@@ -76,7 +76,7 @@
     deleteConfirmation = '';
   }
 
-  async function refresh() {
+  async function refresh(clearError = true) {
     if (busy || !pageActive) return;
     busy = true;
     try {
@@ -93,7 +93,7 @@
       const next = await runtimeProduct.worlds.list();
       if (!pageActive) return;
       worlds = [...next].sort((a, b) => a.lifecycle.localeCompare(b.lifecycle) || a.displayName.localeCompare(b.displayName));
-      error = null;
+      if (clearError) error = null;
     } catch (value) {
       if (!pageActive) return;
       worlds = [];
@@ -121,7 +121,7 @@
       if (pageActive) error = presentRuntimeError(value, 'Could not create this world.');
     } finally {
       busy = false;
-      if (pageActive) await refresh();
+      if (pageActive) await refresh(false);
     }
   }
 
@@ -163,7 +163,7 @@
       importBusy = false;
       if (pageActive) {
         operationTask = null;
-        await refresh();
+        await refresh(false);
       }
     }
   }
@@ -226,7 +226,7 @@
       if (pageActive) {
         operationBusyWorldId = null;
         operationTask = null;
-        await refresh();
+        await refresh(false);
       }
     }
   }
@@ -291,7 +291,7 @@
       if (pageActive) {
         operationBusyWorldId = null;
         operationTask = null;
-        await refresh();
+        await refresh(false);
       }
     }
   }
@@ -315,7 +315,7 @@
       if (pageActive) {
         operationBusyWorldId = null;
         operationTask = null;
-        await refresh();
+        await refresh(false);
       }
     }
   }
@@ -338,7 +338,7 @@
       if (pageActive) {
         operationBusyWorldId = null;
         operationTask = null;
-        await refresh();
+        await refresh(false);
       }
     }
   }
