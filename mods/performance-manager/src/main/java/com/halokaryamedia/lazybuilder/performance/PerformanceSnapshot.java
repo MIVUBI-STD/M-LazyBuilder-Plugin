@@ -79,12 +79,17 @@ public record PerformanceSnapshot(
         int terrainMultiDrawCandidateRuns,
         long potentialTerrainMultiDrawDrawReductions,
         long terrainTransformStreamBytes,
+        int terrainMultiDrawPackedCommands,
+        long terrainMultiDrawPackedCommandBytes,
+        long terrainMultiDrawPackedTransformBytes,
+        String terrainMultiDrawCapability,
         String rendererPipelineOwner,
         String chunkDebug,
         String entityDebug,
         String particleDebug
 ) {
     public PerformanceSnapshot {
+        terrainMultiDrawCapability = terrainMultiDrawCapability == null ? "" : terrainMultiDrawCapability;
         rendererPipelineOwner = rendererPipelineOwner == null ? "" : rendererPipelineOwner;
         chunkDebug = chunkDebug == null ? "" : chunkDebug;
         entityDebug = entityDebug == null ? "" : entityDebug;

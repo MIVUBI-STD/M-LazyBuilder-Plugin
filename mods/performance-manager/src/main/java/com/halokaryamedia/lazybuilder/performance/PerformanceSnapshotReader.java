@@ -7,6 +7,8 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlan
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyLedger;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCapability;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import net.minecraft.client.MinecraftClient;
@@ -46,6 +48,9 @@ public final class PerformanceSnapshotReader {
         TerrainArenaDrawPlanner.Plan drawPlan = TerrainArenaDrawDiagnostics.snapshot();
         TerrainPhysicalArenaManager.Snapshot physicalArenas = TerrainGpuResidencyTracker.physicalArenaSnapshot();
         TerrainDrawTransformStream.Snapshot transforms = TerrainDrawTransformStream.snapshot();
+        TerrainMultiDrawCommandStream.Snapshot multiDraw = TerrainMultiDrawCommandStream.snapshot();
+        TerrainMultiDrawCapability.Snapshot multiDrawCapability = TerrainMultiDrawCapability.current();
+        RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
 
         return new PerformanceSnapshot(
                 fps,
@@ -125,7 +130,11 @@ public final class PerformanceSnapshotReader {
                 transforms.multiDrawCandidateRuns(),
                 transforms.potentialDrawCallReduction(),
                 transforms.packedTransformBytes(),
-                RendererCompatibility.detect().ownerSummary(),
+                multiDraw.commands(),
+                multiDraw.packedCommandBytes(),
+                multiDraw.packedTransformBytes(),
+                multiDrawCapability.status(),
+                renderer.ownerSummary(),
                 chunkDebug,
                 entityDebug,
                 particleDebug

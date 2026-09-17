@@ -85,6 +85,10 @@ final class PerformanceSnapshotTest {
                 9,
                 25L,
                 504L,
+                31,
+                744L,
+                496L,
+                "model-offset-uniform",
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -157,6 +161,10 @@ final class PerformanceSnapshotTest {
         assertEquals(9, snapshot.terrainMultiDrawCandidateRuns());
         assertEquals(25L, snapshot.potentialTerrainMultiDrawDrawReductions());
         assertEquals(504L, snapshot.terrainTransformStreamBytes());
+        assertEquals(31, snapshot.terrainMultiDrawPackedCommands());
+        assertEquals(744L, snapshot.terrainMultiDrawPackedCommandBytes());
+        assertEquals(496L, snapshot.terrainMultiDrawPackedTransformBytes());
+        assertEquals("model-offset-uniform", snapshot.terrainMultiDrawCapability());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }

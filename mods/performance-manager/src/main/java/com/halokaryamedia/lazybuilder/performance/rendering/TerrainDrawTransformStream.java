@@ -89,6 +89,7 @@ public final class TerrainDrawTransformStream {
         LayerSnapshot[] next = current.clone();
         next[snapshot.layerSlot()] = snapshot;
         current = next;
+        TerrainMultiDrawCommandStream.publish(snapshot);
     }
 
     public static LayerSnapshot layer(int layerSlot) {
@@ -126,6 +127,7 @@ public final class TerrainDrawTransformStream {
 
     public static synchronized void clear() {
         current = emptyLayers();
+        TerrainMultiDrawCommandStream.clear();
     }
 
     private static boolean sameFutureMultiDrawState(Command left, Command right) {
