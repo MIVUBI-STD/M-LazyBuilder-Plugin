@@ -11,13 +11,13 @@ import java.nio.ByteBuffer;
 /**
  * Render-thread backend for shader programs that explicitly expose LazyBuilder per-draw transforms.
  *
- * Vanilla terrain shaders do not expose this contract, so prepare() fails open and normal ModelOffset
- * rendering remains authoritative. A compatible shader must provide the std140 uniform block named
- * {@value #TRANSFORM_BLOCK_NAME}, the integer uniform {@value #DRAW_BASE_UNIFORM}, and draw-id support.
+ * Vanilla terrain shaders are augmented only when the built-in source is active. Custom resource
+ * packs, Iris, and custom FRAPI renderer owners fail open before this backend becomes authoritative.
  */
 public final class TerrainPerDrawShaderBackend {
     public static final String TRANSFORM_BLOCK_NAME = "LazyBuilderDrawTransforms";
     public static final String DRAW_BASE_UNIFORM = "LazyBuilderDrawBase";
+    public static final String DRAW_ENABLED_UNIFORM = "LazyBuilderMultiDrawEnabled";
     private static final int TRANSFORM_BINDING_POINT = 7;
     private static final int CAPACITY_QUANTUM = 4096;
 
@@ -25,6 +25,7 @@ public final class TerrainPerDrawShaderBackend {
     private static volatile String status = "model-offset-uniform";
     private static volatile int activeProgramRef = -1;
     private static volatile int activeDrawBaseLocation = -1;
+    private static volatile int activeDrawEnabledLocation = -1;
     private static volatile long prepareAttempts;
     private static volatile long successfulPrepares;
     private static volatile long uploadedBytes;
@@ -34,17 +35,17 @@ public final class TerrainPerDrawShaderBackend {
     }
 
     public static Probe probe(ShaderProgram program, int requiredBytes) {
-        if (program == null) return new Probe(false, "missing-shader", -1, 0, -1);
-        if (!RenderSystem.isOnRenderThread()) return new Probe(false, "wrong-thread", -1, 0, -1);
+        if (program == null) return new Probe(false, "missing-shader", -1, 0, -1, -1);
+        if (!RenderSystem.isOnRenderThread()) return new Probe(false, "wrong-thread", -1, 0, -1, -1);
 
         var capabilities = GL.getCapabilities();
-        if (!(capabilities.OpenGL46 || capabilities.GL_ARB_shader_draw_parameters)) {
-            return new Probe(false, "draw-id-unsupported", -1, 0, -1);
+        if (!capabilities.GL_ARB_shader_draw_parameters) {
+            return new Probe(false, "draw-id-unsupported", -1, 0, -1, -1);
         }
 
         int programRef = program.getGlRef();
         int blockIndex = GL31C.glGetUniformBlockIndex(programRef, TRANSFORM_BLOCK_NAME);
-        if (blockIndex == -1) return new Probe(false, "transform-block-missing", -1, 0, -1);
+        if (blockIndex == -1) return new Probe(false, "transform-block-missing", -1, 0, -1, -1);
 
         int blockBytes = GL31C.glGetActiveUniformBlocki(
                 programRef,
@@ -52,15 +53,20 @@ public final class TerrainPerDrawShaderBackend {
                 GL31C.GL_UNIFORM_BLOCK_DATA_SIZE
         );
         if (requiredBytes > 0 && blockBytes < requiredBytes) {
-            return new Probe(false, "transform-block-too-small", blockIndex, blockBytes, -1);
+            return new Probe(false, "transform-block-too-small", blockIndex, blockBytes, -1, -1);
         }
 
         int drawBaseLocation = GL20C.glGetUniformLocation(programRef, DRAW_BASE_UNIFORM);
         if (drawBaseLocation < 0) {
-            return new Probe(false, "draw-base-uniform-missing", blockIndex, blockBytes, -1);
+            return new Probe(false, "draw-base-uniform-missing", blockIndex, blockBytes, -1, -1);
         }
 
-        return new Probe(true, "ready", blockIndex, blockBytes, drawBaseLocation);
+        int drawEnabledLocation = GL20C.glGetUniformLocation(programRef, DRAW_ENABLED_UNIFORM);
+        if (drawEnabledLocation < 0) {
+            return new Probe(false, "draw-enabled-uniform-missing", blockIndex, blockBytes, drawBaseLocation, -1);
+        }
+
+        return new Probe(true, "ready", blockIndex, blockBytes, drawBaseLocation, drawEnabledLocation);
     }
 
     /** Upload and bind the current layer transform payload for a compatible first-party shader. */
@@ -68,6 +74,7 @@ public final class TerrainPerDrawShaderBackend {
         prepareAttempts++;
         activeProgramRef = -1;
         activeDrawBaseLocation = -1;
+        activeDrawEnabledLocation = -1;
 
         if (packet == null || packet.commands().isEmpty()) {
             status = "empty-command-stream";
@@ -87,30 +94,46 @@ public final class TerrainPerDrawShaderBackend {
         transformBuffer.upload(transforms, 0);
         GL31C.glUniformBlockBinding(program.getGlRef(), probe.blockIndex(), TRANSFORM_BINDING_POINT);
         transformBuffer.bindBase(TRANSFORM_BINDING_POINT);
+        GL20C.glUniform1i(probe.drawEnabledLocation(), 0);
 
         activeProgramRef = program.getGlRef();
         activeDrawBaseLocation = probe.drawBaseLocation();
+        activeDrawEnabledLocation = probe.drawEnabledLocation();
         uploadedBytes += transforms.remaining();
         successfulPrepares++;
         status = "ready";
         return true;
     }
 
-    /** Set the packet-relative first transform used by gl_DrawID for one multi-draw run. */
+    /** Enable per-draw transform addressing only for the duration of one guarded multi-draw call. */
+    public static boolean beginMultiDraw(ShaderProgram program, int transformBase) {
+        if (!preparedFor(program) || transformBase < 0) return false;
+        GL20C.glUniform1i(activeDrawBaseLocation, transformBase);
+        GL20C.glUniform1i(activeDrawEnabledLocation, 1);
+        return true;
+    }
+
+    /** Restore vanilla ModelOffset semantics before any single draw can execute. */
+    public static void endMultiDraw(ShaderProgram program) {
+        if (!RenderSystem.isOnRenderThread() || program == null) return;
+        if (program.getGlRef() != activeProgramRef || activeDrawEnabledLocation < 0) return;
+        GL20C.glUniform1i(activeDrawEnabledLocation, 0);
+    }
+
+    /** Backward-compatible base setter used by diagnostics/tests; does not enable multi-draw. */
     public static boolean bindDrawBase(ShaderProgram program, int transformBase) {
-        if (!RenderSystem.isOnRenderThread() || program == null || transformBase < 0) return false;
-        if (program.getGlRef() != activeProgramRef || activeDrawBaseLocation < 0 || !"ready".equals(status)) {
-            return false;
-        }
+        if (!preparedFor(program) || transformBase < 0) return false;
         GL20C.glUniform1i(activeDrawBaseLocation, transformBase);
         return true;
     }
 
     public static boolean preparedFor(ShaderProgram program) {
-        return program != null
+        return RenderSystem.isOnRenderThread()
+                && program != null
                 && "ready".equals(status)
                 && activeProgramRef == program.getGlRef()
-                && activeDrawBaseLocation >= 0;
+                && activeDrawBaseLocation >= 0
+                && activeDrawEnabledLocation >= 0;
     }
 
     public static Snapshot snapshot() {
@@ -136,6 +159,7 @@ public final class TerrainPerDrawShaderBackend {
         status = "model-offset-uniform";
         activeProgramRef = -1;
         activeDrawBaseLocation = -1;
+        activeDrawEnabledLocation = -1;
         prepareAttempts = 0L;
         successfulPrepares = 0L;
         uploadedBytes = 0L;
@@ -161,7 +185,14 @@ public final class TerrainPerDrawShaderBackend {
         bufferGrowths++;
     }
 
-    public record Probe(boolean ready, String status, int blockIndex, int blockBytes, int drawBaseLocation) {
+    public record Probe(
+            boolean ready,
+            String status,
+            int blockIndex,
+            int blockBytes,
+            int drawBaseLocation,
+            int drawEnabledLocation
+    ) {
     }
 
     public record Snapshot(

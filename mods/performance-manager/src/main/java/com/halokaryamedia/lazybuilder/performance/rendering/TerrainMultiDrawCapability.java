@@ -3,7 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import net.minecraft.client.gl.ShaderProgram;
 
-/** Explicit gate for the shader/input ownership required by true terrain multi-draw. */
+/** Explicit gate for shader/input ownership required by true terrain multi-draw. */
 public final class TerrainMultiDrawCapability {
     private TerrainMultiDrawCapability() {
     }
@@ -26,6 +26,7 @@ public final class TerrainMultiDrawCapability {
             case "transform-block-missing" -> new Snapshot(false, Reason.TRANSFORM_BLOCK_MISSING);
             case "transform-block-too-small" -> new Snapshot(false, Reason.TRANSFORM_BLOCK_TOO_SMALL);
             case "draw-base-uniform-missing" -> new Snapshot(false, Reason.DRAW_BASE_UNIFORM_MISSING);
+            case "draw-enabled-uniform-missing" -> new Snapshot(false, Reason.DRAW_ENABLED_UNIFORM_MISSING);
             default -> new Snapshot(false, Reason.MODEL_OFFSET_UNIFORM);
         };
     }
@@ -50,6 +51,7 @@ public final class TerrainMultiDrawCapability {
         TRANSFORM_BLOCK_MISSING("transform-block-missing"),
         TRANSFORM_BLOCK_TOO_SMALL("transform-block-too-small"),
         DRAW_BASE_UNIFORM_MISSING("draw-base-uniform-missing"),
+        DRAW_ENABLED_UNIFORM_MISSING("draw-enabled-uniform-missing"),
         IRIS_SHADER_OWNER("iris-shader-owner"),
         CUSTOM_RENDERER_OWNER("custom-renderer-owner"),
         COMPATIBILITY_UNCERTAIN("compatibility-uncertain");

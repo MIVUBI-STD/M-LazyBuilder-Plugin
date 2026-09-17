@@ -13,10 +13,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 
-/**
- * Guarded true multi-draw submission for shaders that satisfy the explicit LazyBuilder per-draw
- * transform contract. Vanilla/Iris/custom-renderer paths never enter this backend.
- */
+/** Guarded true multi-draw submission for shaders satisfying the LazyBuilder transform contract. */
 public final class TerrainMultiDrawSubmissionBackend {
     private static final IdentityHashMap<VertexBuffer, Run> STARTS = new IdentityHashMap<>();
     private static final IdentityHashMap<VertexBuffer, Run> MEMBERS = new IdentityHashMap<>();
@@ -69,7 +66,6 @@ public final class TerrainMultiDrawSubmissionBackend {
         return true;
     }
 
-    /** Called from the redirected VertexBuffer.bind() in exact vanilla traversal order. */
     public static BindAction onBind(VertexBuffer source) {
         if (source == null || activeProgram == null || !RenderSystem.isOnRenderThread()) return BindAction.NONE;
         Run memberRun = MEMBERS.get(source);
@@ -79,8 +75,6 @@ public final class TerrainMultiDrawSubmissionBackend {
         Run startRun = STARTS.get(source);
         if (startRun == null || startRun.failed) return BindAction.NONE;
 
-        // Validate every physical resident before suppressing any vanilla draw. Calling bind() for the
-        // complete run also grows Minecraft's shared sequential index buffer to the largest command.
         for (TerrainMultiDrawCommandStream.PackedCommand command : startRun.commands()) {
             if (command.source() == null || !TerrainPhysicalArenaManager.bind(command.source())) {
                 startRun.failed = true;
@@ -98,7 +92,6 @@ public final class TerrainMultiDrawSubmissionBackend {
         return BindAction.START;
     }
 
-    /** Called from the redirected VertexBuffer.draw() matching {@link #onBind(VertexBuffer)}. */
     public static DrawAction onDraw(VertexBuffer source) {
         if (source == null || activeProgram == null || !RenderSystem.isOnRenderThread()) return DrawAction.NONE;
         Run memberRun = MEMBERS.get(source);
@@ -148,7 +141,7 @@ public final class TerrainMultiDrawSubmissionBackend {
         if (run == null || activeProgram == null || run.commands().size() < 2) return false;
         TerrainMultiDrawCommandStream.PackedCommand first = run.commands().get(0);
         TerrainArenaDrawStateRegistry.DrawState state = first.arenaCommand().state();
-        if (state == null || !TerrainPerDrawShaderBackend.bindDrawBase(activeProgram, first.transformIndex())) {
+        if (state == null || !TerrainPerDrawShaderBackend.beginMultiDraw(activeProgram, first.transformIndex())) {
             return false;
         }
 
@@ -185,6 +178,8 @@ public final class TerrainMultiDrawSubmissionBackend {
             return true;
         } catch (RuntimeException ex) {
             return false;
+        } finally {
+            TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         }
     }
 
@@ -234,11 +229,13 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     public static void finishLayer() {
+        if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
         if ("active".equals(status) || "ready".equals(status)) status = "inactive";
     }
 
     public static void clear() {
+        if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
         status = "inactive";
         prepareAttempts = 0L;

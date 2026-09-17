@@ -22,6 +22,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN = MIXIN_PACKAGE + "ChunkDataLayerMembershipMixin";
     private static final String BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN = MIXIN_PACKAGE + "BuiltChunkTranslucentSortMixin";
     private static final String WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN = MIXIN_PACKAGE + "WorldRendererTerrainSubmissionMixin";
+    private static final String SHADER_LOADER_SOURCE_MIXIN = MIXIN_PACKAGE + "ShaderLoaderSourceMixin";
+    private static final String COMPILED_SHADER_MIXIN = MIXIN_PACKAGE + "CompiledShaderMixin";
     private static final String BLOCK_BUFFER_ALLOCATOR_STORAGE_MIXIN = MIXIN_PACKAGE + "BlockBufferAllocatorStorageMixin";
     private static final String SECTION_BUILDER_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "SectionBuilderBufferLookupMixin";
     private static final String BLOCK_BUFFER_POOL_MIXIN = MIXIN_PACKAGE + "BlockBufferBuilderPoolMixin";
@@ -57,7 +59,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
                 && (immediatelyFast || !renderer.firstPartyChunkPipelineSafe())) {
             return false;
         }
-        if (WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName)
+        if ((WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName)
+                || SHADER_LOADER_SOURCE_MIXIN.equals(mixinClassName)
+                || COMPILED_SHADER_MIXIN.equals(mixinClassName))
                 && !renderer.terrainSubmissionSafe()) {
             return false;
         }
