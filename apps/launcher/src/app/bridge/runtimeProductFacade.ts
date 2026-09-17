@@ -1,4 +1,4 @@
-import { runtimeApi } from './runtimeApi';
+import { runtimeApi, RuntimeError } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
 import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary } from './runtimeApi';
 
@@ -15,11 +15,46 @@ let previewBackups: ServerBackupSummary[] = [previewBackup];
 
 const productionRuntimeProduct = runtimeApi;
 
+async function previewRuntimeSummaries(): Promise<ServerRuntimeSummary[]> {
+  const snapshot = await runtimePreviewProduct.server.snapshot();
+  if (snapshot.state === 'Offline' || snapshot.state === 'Crashed') return [];
+  return [{
+    workspaceId: 'preview-build-server',
+    workspaceName: 'MIVUBI Build Server',
+    state: snapshot.state,
+    pid: snapshot.pid,
+    paperPort: snapshot.state === 'Online' ? 25565 : null,
+    usedMemoryBytes: snapshot.usedMemoryBytes,
+    maxMemoryBytes: snapshot.maxMemoryBytes
+  }];
+}
+
 const previewRuntimeProduct = {
   ...runtimePreviewProduct,
+  readiness: runtimePreviewProduct.health,
   diagnostics: {
     ...runtimePreviewProduct.diagnostics,
     exportSupportBundle: async () => 'C:\\Users\\Builder\\Desktop\\LazyBuilder-Support.zip'
+  },
+  workspace: {
+    ...runtimePreviewProduct.workspace,
+    activate: async (id: string) => {
+      try {
+        return await runtimePreviewProduct.workspace.activate(id);
+      } catch (value) {
+        const message = value instanceof Error ? value.message : String(value ?? '');
+        if (message.startsWith('Saved server workspace is currently unavailable:')) {
+          throw new RuntimeError({
+            code: 'WORKSPACE_UNAVAILABLE',
+            message,
+            recoverable: true,
+            action: 'LOCATE_WORKSPACE',
+            correlationId: 'preview-workspace-unavailable'
+          });
+        }
+        throw value;
+      }
+    }
   },
   server: {
     ...runtimePreviewProduct.server,
@@ -28,16 +63,11 @@ const previewRuntimeProduct = {
     stop: async (_workspaceId?: string) => runtimePreviewProduct.server.stop(),
     recoverDetached: async (_workspaceId?: string) => runtimePreviewProduct.server.recoverDetached(),
     logTail: async (path: string, _workspaceId?: string) => runtimePreviewProduct.server.logTail(path),
-    runtimes: async (): Promise<ServerRuntimeSummary[]> => [{
-      workspaceId: 'preview-build-server',
-      workspaceName: 'MIVUBI Build Server',
-      state: 'Online',
-      pid: 14872,
-      paperPort: 25565,
-      usedMemoryBytes: 3.1 * 1024 ** 3,
-      maxMemoryBytes: 6 * 1024 ** 3
-    }],
-    connectionPort: async () => 25565
+    runtimes: previewRuntimeSummaries,
+    connectionPort: async () => {
+      const snapshot = await runtimePreviewProduct.server.snapshot();
+      return snapshot.state === 'Online' ? 25565 : null;
+    }
   },
   backups: {
     list: async (_workspaceId: string) => previewBackups,
