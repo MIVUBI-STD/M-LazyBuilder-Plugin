@@ -1,3 +1,4 @@
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::{paths, workspace_registry};
 use serde::Serialize;
 use std::fs::File;
@@ -16,14 +17,14 @@ pub struct ServerLogTail {
 }
 
 #[tauri::command]
-pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<ServerLogTail, String> {
+pub fn server_log_tail(path: String, workspace_id: Option<String>) -> CommandResult<ServerLogTail> {
     let workspace = match workspace_id.as_deref() {
         Some(id) if !id.trim().is_empty() => {
-            let entry = workspace_registry::get(id.trim())?;
+            let entry = workspace_registry::get(id.trim()).map_err(CommandError::from)?;
             canonical_or_normalized(PathBuf::from(entry.path))
         }
-        Some(_) => return Err("Workspace id is required for targeted log access.".into()),
-        None => canonical_or_normalized(paths::workspace_root()?),
+        Some(_) => return Err(CommandError::new("WORKSPACE_REQUIRED", "Workspace id is required for targeted log access.")),
+        None => canonical_or_normalized(paths::workspace_root().map_err(CommandError::from)?),
     };
     let default_log = workspace.join("server").join("logs").join("latest.log");
     let requested = if path.trim().is_empty() {
@@ -43,7 +44,10 @@ pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<Ser
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("logs")) == Some(true);
     if !requested.starts_with(&workspace) || !has_log_parent || !is_log {
-        return Err("Refusing to read a log outside this server's managed workspace log directories.".into());
+        return Err(CommandError::new(
+            "LOG_PATH_REJECTED",
+            "Refusing to read a log outside this server's managed workspace log directories.",
+        ));
     }
     if !requested.is_file() {
         return Ok(ServerLogTail {
@@ -53,12 +57,36 @@ pub fn server_log_tail(path: String, workspace_id: Option<String>) -> Result<Ser
         });
     }
 
-    let mut file = File::open(&requested).map_err(|error| error.to_string())?;
-    let length = file.metadata().map_err(|error| error.to_string())?.len();
+    let mut file = File::open(&requested).map_err(|error| {
+        CommandError::recoverable_action(
+            "LOG_READ_FAILED",
+            format!("Could not open server log: {error}"),
+            RecoveryAction::RetryOperation,
+        )
+    })?;
+    let length = file.metadata().map_err(|error| {
+        CommandError::recoverable_action(
+            "LOG_READ_FAILED",
+            format!("Could not inspect server log: {error}"),
+            RecoveryAction::RetryOperation,
+        )
+    })?.len();
     let start = length.saturating_sub(MAX_LOG_TAIL_BYTES);
-    file.seek(SeekFrom::Start(start)).map_err(|error| error.to_string())?;
+    file.seek(SeekFrom::Start(start)).map_err(|error| {
+        CommandError::recoverable_action(
+            "LOG_READ_FAILED",
+            format!("Could not seek server log: {error}"),
+            RecoveryAction::RetryOperation,
+        )
+    })?;
     let mut bytes = Vec::with_capacity((length - start) as usize);
-    file.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    file.read_to_end(&mut bytes).map_err(|error| {
+        CommandError::recoverable_action(
+            "LOG_READ_FAILED",
+            format!("Could not read server log: {error}"),
+            RecoveryAction::RetryOperation,
+        )
+    })?;
     let text = String::from_utf8_lossy(&bytes);
     let mut lines = text.lines().collect::<Vec<_>>();
     let truncated_by_lines = lines.len() > MAX_LOG_LINES;
