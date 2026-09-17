@@ -10,16 +10,16 @@ PUBLISHER = ROOT / "tooling" / "windows-toolchain" / "scripts" / "distribution" 
 FABRIC_VERIFIER = ROOT / "tooling" / "windows-toolchain" / "scripts" / "verify" / "verify-fabric.ps1"
 TAURI_CONFIG = ROOT / "apps" / "launcher" / "src-tauri" / "tauri.conf.json"
 BOOTSTRAP = ROOT / "apps" / "launcher" / "src-tauri" / "src" / "app_bootstrap.rs"
-RUNTIME_API = ROOT / "apps" / "launcher" / "src" / "app" / "bridge" / "runtimeApi.ts"
-APP = ROOT / "apps" / "launcher" / "src" / "App.svelte"
+WORKSPACE_API = ROOT / "apps" / "launcher" / "src" / "app" / "bridge" / "workspaceApi.ts"
+SERVERS_LIBRARY = ROOT / "apps" / "launcher" / "src" / "pages" / "ServersLibrary.svelte"
 
 text = BUILD_SCRIPT.read_text(encoding="utf-8")
 publisher = PUBLISHER.read_text(encoding="utf-8")
 fabric_verifier = FABRIC_VERIFIER.read_text(encoding="utf-8")
 config = json.loads(TAURI_CONFIG.read_text(encoding="utf-8"))
 bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
-runtime_api = RUNTIME_API.read_text(encoding="utf-8")
-app = APP.read_text(encoding="utf-8")
+workspace_api = WORKSPACE_API.read_text(encoding="utf-8")
+servers_library = SERVERS_LIBRARY.read_text(encoding="utf-8")
 errors: list[str] = []
 
 for marker in (
@@ -88,8 +88,8 @@ for command in (
 ):
     if f"commands::workspace::{command}" not in bootstrap:
         errors.append(f"Launcher command registry is missing: {command}")
-    if f"'{command}'" not in runtime_api:
-        errors.append(f"runtimeApi is missing: {command}")
+    if f"'{command}'" not in workspace_api:
+        errors.append(f"workspaceApi is missing: {command}")
 
 for ui_marker in (
     "Duplicate server",
@@ -98,7 +98,7 @@ for ui_marker in (
     "Delete permanently",
     "Your files will remain on this computer.",
 ):
-    if ui_marker not in app:
+    if ui_marker not in servers_library:
         errors.append(f"Server Library UI is missing required wording: {ui_marker}")
 
 if errors:
