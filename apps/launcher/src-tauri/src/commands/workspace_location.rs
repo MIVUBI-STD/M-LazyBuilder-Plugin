@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::OperationRegistry;
 use crate::engine::workspace_registry;
 use std::path::PathBuf;
@@ -28,10 +28,10 @@ pub fn workspace_location_reconnect(
 ) -> CommandResult<workspace_registry::WorkspaceEntry> {
     let resource = format!("workspace:{id}");
     if operations.has_active_for_resource(&resource).map_err(CommandError::from)? {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "OPERATION_BUSY",
             "Wait for the active server operation to finish before changing its registered location.",
-            "Open Activity",
+            RecoveryAction::OpenActivity,
         ));
     }
 
@@ -43,6 +43,11 @@ pub fn workspace_location_reconnect(
         ));
     }
 
-    workspace_registry::relocate(&id, &PathBuf::from(root_path))
-        .map_err(|message| CommandError::recoverable("WORKSPACE_RECONNECT_FAILED", message, "Choose original server folder"))
+    workspace_registry::relocate(&id, &PathBuf::from(root_path)).map_err(|message| {
+        CommandError::recoverable_action(
+            "WORKSPACE_RECONNECT_FAILED",
+            message,
+            RecoveryAction::LocateWorkspace,
+        )
+    })
 }
