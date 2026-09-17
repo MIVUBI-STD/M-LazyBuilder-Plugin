@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::plugin_ingress;
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
@@ -66,7 +66,6 @@ pub async fn plugin_install(app: AppHandle, jar_path: String) -> CommandResult<P
         "installing",
         "Installing plugin",
         "PLUGIN_INSTALL_FAILED",
-        "Review Plugins and retry",
         move |plugins| {
             let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
             let staged_path = ingress.path().to_string_lossy().into_owned();
@@ -88,7 +87,6 @@ pub async fn plugin_update(
         "updating",
         "Updating plugin",
         "PLUGIN_UPDATE_FAILED",
-        "Review Plugins and retry",
         move |plugins| {
             let ingress = plugin_ingress::stage_selected_jar(Path::new(&jar_path))?;
             let staged_path = ingress.path().to_string_lossy().into_owned();
@@ -110,7 +108,6 @@ pub async fn plugin_set_enabled(
         "updating",
         "Changing plugin state",
         "PLUGIN_STATE_FAILED",
-        "Review Plugins and retry",
         move |plugins| plugins.set_enabled(&plugin_id, enabled),
     )
     .await
@@ -124,7 +121,6 @@ pub async fn plugin_remove(app: AppHandle, plugin_id: String) -> CommandResult<(
         "removing",
         "Removing plugin",
         "PLUGIN_REMOVE_FAILED",
-        "Review Plugins and retry",
         move |plugins| plugins.remove(&plugin_id),
     )
     .await
@@ -142,7 +138,6 @@ pub async fn plugin_remove_problem(
         "removing",
         "Removing broken plugin file",
         "PLUGIN_REMOVE_FAILED",
-        "Review Plugins and retry",
         move |plugins| plugins.remove_problem(&plugin_id, &jar_file_name),
     )
     .await
@@ -160,7 +155,6 @@ pub async fn plugin_resolve_duplicates(
         "resolving",
         "Resolving duplicate plugin files",
         "PLUGIN_DUPLICATE_RESOLUTION_FAILED",
-        "Review Plugins and retry",
         move |plugins| plugins.resolve_duplicates(&plugin_id, &keep_jar_file_name),
     )
     .await
@@ -184,7 +178,6 @@ async fn run_plugin_mutation<T, F>(
     phase: &'static str,
     status: &'static str,
     failure_code: &'static str,
-    failure_action: &'static str,
     work: F,
 ) -> CommandResult<T>
 where
@@ -198,7 +191,7 @@ where
     let operation = app
         .state::<OperationRegistry>()
         .begin_exclusive(kind, &resource, false)
-        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -208,7 +201,7 @@ where
         let _start_lease = match ServerStartLease::acquire() {
             Ok(value) => value,
             Err(message) => {
-                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                let error = CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
                 fail_operation(&operations, &operation_id, &error);
                 return Err(error);
             }
@@ -223,7 +216,7 @@ where
             None,
         );
         if let Err(message) = ensure_plugin_mutation_allowed(&server) {
-            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop server");
+            let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error);
             return Err(error);
         }
@@ -236,7 +229,7 @@ where
                 Ok(result)
             }
             Err(message) => {
-                let error = CommandError::recoverable(failure_code, message, failure_action);
+                let error = CommandError::recoverable_action(failure_code, message, RecoveryAction::ReviewPlugins);
                 fail_operation(&operations, &operation_id, &error);
                 Err(error)
             }
