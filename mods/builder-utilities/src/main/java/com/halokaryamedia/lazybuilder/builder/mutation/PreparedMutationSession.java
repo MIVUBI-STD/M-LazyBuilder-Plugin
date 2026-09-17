@@ -64,23 +64,20 @@ public final class PreparedMutationSession implements AutoCloseable {
         return report;
     }
 
-    /** Finalizes a CANCELLING operation by preserving only the subset actually applied. */
     public synchronized void finalizeKeepChanges(AppliedMutationCompaction compaction) throws IOException {
         Objects.requireNonNull(compaction, "compaction");
-        ensureOwned();
-        if (lifecycle.state() != OperationState.CANCELLING) {
-            throw new IllegalStateException("KEEP_CHANGES finalization requires CANCELLING lifecycle");
-        }
+        ensureCancelling();
         switch (compaction.state()) {
             case CONFLICT -> lifecycle = lifecycle.fail("Cancellation compaction conflicts with current world state");
-            case EMPTY -> {
-                prepared.close();
-                disposed = true;
-                setProcessedWork(0);
-                lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
-            }
+            case EMPTY -> cancelAfterDisposingOriginal(0);
             case COMPACTED -> finalizeCompactedCancellation(compaction);
         }
+    }
+
+    /** Marks a successfully reconciled rollback cancellation terminal with no undo entry. */
+    public synchronized void completeRollbackCancellation() throws IOException {
+        ensureCancelling();
+        cancelAfterDisposingOriginal(0);
     }
 
     private void finalizeCompactedCancellation(AppliedMutationCompaction compaction) throws IOException {
@@ -92,7 +89,6 @@ public final class PreparedMutationSession implements AutoCloseable {
             lifecycle = lifecycle.fail("Failed to publish partial cancellation history: " + e.getMessage());
             throw e;
         }
-
         try {
             prepared.close();
             disposed = true;
@@ -101,6 +97,18 @@ public final class PreparedMutationSession implements AutoCloseable {
             throw e;
         }
         setProcessedWork(compaction.appliedChanges());
+        lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
+    }
+
+    private void cancelAfterDisposingOriginal(long processedWork) throws IOException {
+        try {
+            prepared.close();
+            disposed = true;
+        } catch (IOException e) {
+            lifecycle = lifecycle.fail("Cancellation cleanup failed: " + e.getMessage());
+            throw e;
+        }
+        setProcessedWork(processedWork);
         lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
     }
 
@@ -127,6 +135,13 @@ public final class PreparedMutationSession implements AutoCloseable {
 
     private void setProcessedWork(long processedWork) {
         lifecycle = new OperationLifecycle(lifecycle.state(), processedWork, lifecycle.totalWork(), null);
+    }
+
+    private void ensureCancelling() {
+        ensureOwned();
+        if (lifecycle.state() != OperationState.CANCELLING) {
+            throw new IllegalStateException("Cancellation finalization requires CANCELLING lifecycle");
+        }
     }
 
     private void ensureOwned() {

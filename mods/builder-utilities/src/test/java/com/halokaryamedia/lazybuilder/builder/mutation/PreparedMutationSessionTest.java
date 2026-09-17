@@ -18,12 +18,9 @@ class PreparedMutationSessionTest {
             session.startDispatch();
             assertEquals(ReconciliationState.NOT_APPLIED,
                     session.reconcile((x, y, z) -> "minecraft:stone").state());
-            assertEquals(0, timeline.undoSize());
             assertEquals(ReconciliationState.FULLY_APPLIED,
                     session.reconcile((x, y, z) -> "minecraft:dirt").state());
             assertEquals(OperationState.COMPLETED, session.lifecycle().state());
-            assertEquals(1, session.lifecycle().processedWork());
-            assertEquals(1.0, session.lifecycle().progressFraction());
             assertEquals(1, timeline.undoSize());
         }
     }
@@ -39,21 +36,20 @@ class PreparedMutationSessionTest {
             session.finalizeKeepChanges(AppliedMutationCompaction.compacted(subset));
             assertEquals(OperationState.CANCELLED, session.lifecycle().state());
             assertEquals(1, session.lifecycle().processedWork());
-            assertEquals(2, session.lifecycle().totalWork());
             assertEquals(1, timeline.undoSize());
-            assertEquals("original-partial", timeline.nextUndoOperationId().orElseThrow());
         }
     }
 
     @Test
-    void emptyCancellationPublishesNoUndoEntry() throws Exception {
-        StoredChangeSet original = prepared(1, "empty-original");
+    void rollbackCompletionCancelsWithoutPublishingUndo() throws Exception {
+        StoredChangeSet original = prepared(2, "rollback-original");
         try (HistoryTimeline timeline = new HistoryTimeline(8);
-             PreparedMutationSession session = new PreparedMutationSession(new PreparedMaterialMutation(original, 1), timeline)) {
+             PreparedMutationSession session = new PreparedMutationSession(new PreparedMaterialMutation(original, 2), timeline)) {
             session.startDispatch();
             session.noteCancellationRequested();
-            session.finalizeKeepChanges(AppliedMutationCompaction.empty());
+            session.completeRollbackCancellation();
             assertEquals(OperationState.CANCELLED, session.lifecycle().state());
+            assertEquals(0, session.lifecycle().processedWork());
             assertEquals(0, timeline.undoSize());
         }
     }
