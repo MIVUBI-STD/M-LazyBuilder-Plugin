@@ -13,7 +13,7 @@
     WorkspaceProvisioningStatus
   } from '../app/bridge/runtimeApi';
 
-  export type ActiveServerPage = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
+  type ActiveServerPage = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
   type ManagementMode = 'active-actions' | 'duplicate' | 'remove' | 'delete-review' | 'delete-confirm' | null;
 
   let {
