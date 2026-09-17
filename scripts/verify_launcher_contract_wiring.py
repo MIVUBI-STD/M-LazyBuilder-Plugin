@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Ensure every canonical Launcher source contract is actually wired into Launcher Verify."""
+"""Ensure every canonical Launcher source contract is wired into both verification workflows."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "launcher-verify.yml"
+WORKFLOWS = {
+    "Launcher Verify": ROOT / ".github" / "workflows" / "launcher-verify.yml",
+    "Verify": ROOT / ".github" / "workflows" / "verify.yml",
+}
 
 # These are the canonical source-level contracts for the Launcher. Keep this list
-# explicit: updater manifest validation is invoked inside the updater tooling step,
-# while these contracts must each have their own direct workflow invocation.
+# explicit so the focused/manual Launcher Verify and the integrated Verify gate
+# cannot drift apart.
 REQUIRED_DIRECT_CONTRACTS = (
     "verify_local_launcher_contract.py",
     "verify_launcher_release_contract.py",
@@ -30,9 +33,10 @@ REQUIRED_DIRECT_CONTRACTS = (
     "verify_launcher_contract_wiring.py",
 )
 
-# Python contract/tooling scripts that should be syntax-checked in the secretless
-# tooling step. Local packaging/release verifiers run directly and do not need to be
-# duplicated in this list merely for coverage.
+# Python contract/tooling scripts that should be syntax-checked in the focused
+# Launcher Verify secretless tooling step. The integrated Verify workflow executes
+# the canonical contract scripts directly, so a second py_compile block is not
+# required there.
 REQUIRED_PYCOMPILE = (
     "build_launcher_update_manifest.py",
     "verify_launcher_update_manifest.py",
@@ -55,19 +59,21 @@ REQUIRED_PYCOMPILE = (
 
 
 def main() -> int:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflows = {name: path.read_text(encoding="utf-8") for name, path in WORKFLOWS.items()}
     errors: list[str] = []
 
-    for name in REQUIRED_DIRECT_CONTRACTS:
-        path = ROOT / "scripts" / name
+    for contract in REQUIRED_DIRECT_CONTRACTS:
+        path = ROOT / "scripts" / contract
         if not path.is_file():
-            errors.append(f"required Launcher contract script is missing: scripts/{name}")
+            errors.append(f"required Launcher contract script is missing: scripts/{contract}")
             continue
-        marker = f"python scripts/{name}"
-        if marker not in workflow:
-            errors.append(f"Launcher Verify does not invoke scripts/{name}")
+        marker = f"python scripts/{contract}"
+        for workflow_name, workflow in workflows.items():
+            if marker not in workflow:
+                errors.append(f"{workflow_name} does not invoke scripts/{contract}")
 
-    pycompile_block = workflow.split("python -m py_compile", 1)
+    launcher_verify = workflows["Launcher Verify"]
+    pycompile_block = launcher_verify.split("python -m py_compile", 1)
     if len(pycompile_block) != 2:
         errors.append("Launcher Verify has no python -m py_compile tooling block")
     else:
@@ -82,7 +88,10 @@ def main() -> int:
             print(f" - {error}")
         return 1
 
-    print(f"Launcher contract wiring OK ({len(REQUIRED_DIRECT_CONTRACTS)} direct contracts)")
+    print(
+        "Launcher contract wiring OK "
+        f"({len(REQUIRED_DIRECT_CONTRACTS)} direct contracts across {len(WORKFLOWS)} workflows)"
+    )
     return 0
 
 
