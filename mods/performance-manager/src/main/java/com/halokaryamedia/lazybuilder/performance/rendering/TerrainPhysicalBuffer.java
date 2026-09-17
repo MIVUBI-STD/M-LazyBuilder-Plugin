@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL31C;
 
 import java.nio.ByteBuffer;
@@ -10,6 +11,7 @@ import java.nio.ByteBuffer;
 final class TerrainPhysicalBuffer implements AutoCloseable {
     static final int VERTICES = 34962;
     static final int INDICES = 34963;
+    static final int UNIFORM = 35345;
     private static final int COPY_READ = 36662;
     private static final int COPY_WRITE = 36663;
     private static final int DYNAMIC_DRAW = 35048;
@@ -35,6 +37,12 @@ final class TerrainPhysicalBuffer implements AutoCloseable {
         RenderSystem.assertOnRenderThread();
         ensureOpen();
         GlStateManager._glBindBuffer(target, handle);
+    }
+
+    void bindBase(int bindingIndex) {
+        RenderSystem.assertOnRenderThread();
+        ensureOpen();
+        GL30C.glBindBufferBase(target, bindingIndex, handle);
     }
 
     void upload(ByteBuffer source, int offset) {

@@ -5,10 +5,7 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Packs physical-ready terrain draws into the exact command/transform payload shape needed by a
- * future shader-aware multi-draw backend. This does not submit GL multi-draw yet.
- */
+/** Packs physical-ready terrain draws into GPU-ready command and transform payloads. */
 public final class TerrainMultiDrawCommandStream {
     private static final int LAYER_COUNT = 5;
     private static final int COMMAND_BYTES = 24;
@@ -91,8 +88,8 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static ByteBuffer packCommands(LayerPacket packet) {
-        if (packet == null || packet.commands().isEmpty()) return ByteBuffer.allocate(0).asReadOnlyBuffer();
-        ByteBuffer buffer = ByteBuffer.allocate(packet.commands().size() * COMMAND_BYTES).order(ByteOrder.nativeOrder());
+        if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
+        ByteBuffer buffer = ByteBuffer.allocateDirect(packet.commands().size() * COMMAND_BYTES).order(ByteOrder.nativeOrder());
         for (PackedCommand command : packet.commands()) {
             buffer.putInt(command.indexCount());
             buffer.putInt(command.baseVertex());
@@ -105,8 +102,8 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static ByteBuffer packTransforms(LayerPacket packet) {
-        if (packet == null || packet.commands().isEmpty()) return ByteBuffer.allocate(0).asReadOnlyBuffer();
-        ByteBuffer buffer = ByteBuffer.allocate(packet.commands().size() * TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
+        if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
+        ByteBuffer buffer = ByteBuffer.allocateDirect(packet.commands().size() * TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
         for (PackedCommand command : packet.commands()) {
             buffer.putFloat(command.modelOffsetX());
             buffer.putFloat(command.modelOffsetY());
@@ -119,6 +116,10 @@ public final class TerrainMultiDrawCommandStream {
 
     public static synchronized void clear() {
         current = emptyLayers();
+    }
+
+    private static ByteBuffer emptyBuffer() {
+        return ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
     }
 
     private static LayerPacket[] emptyLayers() {

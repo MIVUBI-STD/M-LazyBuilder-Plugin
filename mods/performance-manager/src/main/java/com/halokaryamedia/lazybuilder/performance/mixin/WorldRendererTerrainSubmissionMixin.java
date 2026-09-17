@@ -6,10 +6,14 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiag
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPerDrawShaderBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
+import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
+import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.RenderLayer;
@@ -73,6 +77,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             this.lazybuilder$submissionIndexActive = false;
             TerrainArenaDrawDiagnostics.clear();
             TerrainDrawTransformStream.clear();
+            TerrainPerDrawShaderBackend.clear();
             TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
@@ -90,6 +95,29 @@ abstract class WorldRendererTerrainSubmissionMixin {
             this.lazybuilder$rebuildSubmissionIndex();
         }
         this.lazybuilder$publishTransformStream(layer, x, y, z);
+    }
+
+    @Inject(
+            method = "renderLayer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gl/ShaderProgram;bind()V",
+                    shift = At.Shift.AFTER
+            )
+    )
+    private void lazybuilder$preparePerDrawShaderData(
+            RenderLayer layer,
+            double x,
+            double y,
+            double z,
+            Matrix4f matrix,
+            Matrix4f positionMatrix,
+            CallbackInfo ci
+    ) {
+        int layerSlot = lazybuilder$layerSlot(layer);
+        if (layerSlot < 0 || !PerformanceManagerClient.preferences().renderingOptimizations()) return;
+        ShaderProgram shader = RenderSystem.getShader();
+        TerrainPerDrawShaderBackend.prepare(shader, TerrainMultiDrawCommandStream.layer(layerSlot));
     }
 
     @Inject(method = "renderLayer", at = @At("RETURN"))
