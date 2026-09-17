@@ -5,8 +5,9 @@
   import { dialogFocus } from '../app/dialogFocus';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
-  import type { ServerBackupEstimate, ServerBackupSummary, ServerSnapshot, WorkspaceEntry } from '../app/bridge/runtimeApi';
+  import type { ServerBackupEstimate, ServerBackupSummary, ServerState, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
+  export let serverState: ServerState = 'Offline';
   export let onRestored: (() => Promise<void> | void) | undefined = undefined;
 
   const BACKUP_PAGE_SIZE = 20;
@@ -19,7 +20,6 @@
   let estimate: ServerBackupEstimate | null = null;
   let estimateBusy = false;
   let visibleLimit = BACKUP_PAGE_SIZE;
-  let snapshot: ServerSnapshot | null = null;
   let loading = true;
   let creating = false;
   let restoringId = '';
@@ -71,19 +71,14 @@
     if (!workspace) {
       backups = [];
       estimate = null;
-      snapshot = null;
       visibleLimit = BACKUP_PAGE_SIZE;
       restoreCandidate = null;
       deleteCandidate = null;
       return;
     }
-    const [items, runtime] = await Promise.all([
-      runtimeProduct.backups.list(workspace.id),
-      runtimeProduct.server.snapshot()
-    ]);
+    const items = await runtimeProduct.backups.list(workspace.id);
     backups = items;
-    snapshot = runtime;
-    if (!['Offline', 'Crashed'].includes(runtime.state)) estimate = null;
+    if (!serverOffline) estimate = null;
     visibleLimit = Math.max(BACKUP_PAGE_SIZE, Math.min(visibleLimit, Math.max(items.length, BACKUP_PAGE_SIZE)));
   }
 
@@ -163,7 +158,8 @@
 
   onMount(() => { void initialLoad(); });
 
-  $: serverOffline = snapshot ? ['Offline', 'Crashed'].includes(snapshot.state) : false;
+  $: serverOffline = ['Offline', 'Crashed'].includes(serverState);
+  $: if (!serverOffline && estimate) estimate = null;
   $: mutationBusy = creating || !!restoringId || !!deletingId;
   $: visibleBackups = backups.slice(0, visibleLimit);
   $: totalBackupBytes = backups.reduce((total, backup) => total + Math.max(0, backup.sourceBytes || 0), 0);
