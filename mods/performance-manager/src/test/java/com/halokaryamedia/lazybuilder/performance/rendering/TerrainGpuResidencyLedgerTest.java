@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class TerrainGpuResidencyLedgerTest {
     @Test
-    void aggregatesCapacityPayloadAndHeadroomByRegion() {
+    void aggregatesCapacityPayloadHeadroomAndArenaProjectionByRegion() {
         TerrainGpuResidencyLedger<Object> ledger = new TerrainGpuResidencyLedger<>();
         Object a = new Object();
         Object b = new Object();
@@ -32,6 +32,10 @@ final class TerrainGpuResidencyLedgerTest {
         assertEquals(330L, snapshot.largestRegionBytes());
         assertEquals(100L, snapshot.largestRegionHeadroomBytes());
         assertEquals(0L, snapshot.regionRelocations());
+        assertEquals(2L << 20, snapshot.projectedArenaBytes());
+        assertEquals((2L << 20) - 480L, snapshot.projectedArenaSlackBytes());
+        assertEquals(0, snapshot.arenaCompactionCandidateRegions());
+        assertEquals(0L, snapshot.potentialArenaReclaimBytes());
         assertEquals(330L, ledger.capacityBytes(c));
 
         ledger.release(c);
@@ -42,6 +46,7 @@ final class TerrainGpuResidencyLedgerTest {
         assertEquals(650L, afterRelease.peakResidentBytes());
         assertEquals(2, afterRelease.residentBuffers());
         assertEquals(1, afterRelease.residentRegions());
+        assertEquals(1L << 20, afterRelease.projectedArenaBytes());
     }
 
     @Test
@@ -60,6 +65,21 @@ final class TerrainGpuResidencyLedgerTest {
         assertEquals(1L, moved.regionRelocations());
         assertEquals(640L, moved.residentBytes());
         assertEquals(500L, moved.payloadBytes());
+    }
+
+    @Test
+    void flagsRegionWhenSharedArenaCouldRecoverMeaningfulCapacity() {
+        TerrainGpuResidencyLedger<Object> ledger = new TerrainGpuResidencyLedger<>();
+        Object buffer = new Object();
+
+        ledger.associate(buffer, 0, 0, 0, 0);
+        ledger.recordCapacity(buffer, 8 << 20, 0);
+        ledger.recordPayload(buffer, 2 << 20, 0);
+
+        TerrainGpuResidencyLedger.Snapshot snapshot = ledger.snapshot();
+        assertEquals(3L << 20, snapshot.projectedArenaBytes());
+        assertEquals(1, snapshot.arenaCompactionCandidateRegions());
+        assertEquals(5L << 20, snapshot.potentialArenaReclaimBytes());
     }
 
     @Test
@@ -96,5 +116,9 @@ final class TerrainGpuResidencyLedgerTest {
         assertEquals(0, cleared.residentBuffers());
         assertEquals(0, cleared.residentRegions());
         assertEquals(0L, cleared.regionRelocations());
+        assertEquals(0L, cleared.projectedArenaBytes());
+        assertEquals(0L, cleared.projectedArenaSlackBytes());
+        assertEquals(0, cleared.arenaCompactionCandidateRegions());
+        assertEquals(0L, cleared.potentialArenaReclaimBytes());
     }
 }

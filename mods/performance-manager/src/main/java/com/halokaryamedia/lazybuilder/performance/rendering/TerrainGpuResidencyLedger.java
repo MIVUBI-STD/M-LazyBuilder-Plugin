@@ -114,16 +114,33 @@ public final class TerrainGpuResidencyLedger<K> {
             );
             totals.capacityBytes += bytes;
             totals.payloadBytes += entry.totalPayloadBytes();
+            totals.alignedPayloadBytes += TerrainRegionArenaPolicy.alignedSize(entry.totalPayloadBytes());
         }
 
         long largestRegionBytes = 0L;
         long largestRegionHeadroomBytes = 0L;
+        long projectedArenaBytes = 0L;
+        long projectedArenaSlackBytes = 0L;
+        long potentialArenaReclaimBytes = 0L;
+        int compactionCandidateRegions = 0;
+
         for (RegionTotals totals : regionTotals.values()) {
             largestRegionBytes = Math.max(largestRegionBytes, totals.capacityBytes);
             largestRegionHeadroomBytes = Math.max(
                     largestRegionHeadroomBytes,
                     Math.max(0L, totals.capacityBytes - totals.payloadBytes)
             );
+
+            long plannedCapacity = TerrainRegionArenaPolicy.plannedCapacity(totals.alignedPayloadBytes);
+            projectedArenaBytes += plannedCapacity;
+            projectedArenaSlackBytes += Math.max(0L, plannedCapacity - totals.payloadBytes);
+            if (TerrainRegionArenaPolicy.shouldCompact(totals.capacityBytes, totals.payloadBytes)) {
+                compactionCandidateRegions++;
+                potentialArenaReclaimBytes += TerrainRegionArenaPolicy.potentialReclaim(
+                        totals.capacityBytes,
+                        totals.payloadBytes
+                );
+            }
         }
 
         long headroomBytes = Math.max(0L, currentBytes - currentPayloadBytes);
@@ -136,7 +153,11 @@ public final class TerrainGpuResidencyLedger<K> {
                 regionTotals.size(),
                 largestRegionBytes,
                 largestRegionHeadroomBytes,
-                regionRelocations
+                regionRelocations,
+                projectedArenaBytes,
+                projectedArenaSlackBytes,
+                compactionCandidateRegions,
+                potentialArenaReclaimBytes
         );
     }
 
@@ -177,6 +198,7 @@ public final class TerrainGpuResidencyLedger<K> {
     private static final class RegionTotals {
         private long capacityBytes;
         private long payloadBytes;
+        private long alignedPayloadBytes;
     }
 
     private record RegionKey(int x, int y, int z) {
@@ -191,7 +213,11 @@ public final class TerrainGpuResidencyLedger<K> {
             int residentRegions,
             long largestRegionBytes,
             long largestRegionHeadroomBytes,
-            long regionRelocations
+            long regionRelocations,
+            long projectedArenaBytes,
+            long projectedArenaSlackBytes,
+            int arenaCompactionCandidateRegions,
+            long potentialArenaReclaimBytes
     ) {
     }
 }

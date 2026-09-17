@@ -14,39 +14,42 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, oversized stale-buffer reclamation, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, shared-region arena planning, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
-## Terrain GPU residency and reclamation
+## Terrain GPU residency, reclamation, and arena model
 
 Terrain GPU residency is tracked at the existing `VertexBuffer` ownership boundary. Each buffer is associated with its section and one of the five fixed terrain layers. Successful uploads sample actual `GpuBuffer.size` capacities while upload tasks also record mesh payload bytes. Accounting regions are fixed 8x4x8 section groups.
 
-Diagnostics therefore distinguish:
+Diagnostics distinguish resident GPU capacity, uploaded payload, headroom/fragmentation, peak residency, region footprint, relocation churn, and reclaimed capacity.
 
-```text
-resident GPU capacity
-uploaded mesh payload
-capacity headroom / fragmentation
-peak residency
-resident buffers and regions
-largest region footprint/headroom
-cross-region relocations
-reclaimed bytes and reclaimed buffers
-```
-
-When a toroidal `BuiltChunk` slot moves into a different accounting region, LazyBuilder may reclaim stale terrain capacity. Reclamation is deliberately conservative:
+When a toroidal `BuiltChunk` slot moves into a different accounting region, LazyBuilder may reclaim stale terrain capacity. Reclamation remains conservative:
 
 ```text
 capacity < 2 MiB       -> keep buffer
 same 8x4x8 region      -> keep buffer
 not on render thread   -> keep buffer
-large + cross-region   -> close old VertexBuffer and replace it with a fresh STATIC_WRITE buffer
+large + cross-region   -> replace stale VertexBuffer with a fresh STATIC_WRITE buffer
 ```
 
-Replacement happens only from `setSectionPos(long)` after vanilla has moved the section ownership. The map entry remains a normal vanilla `VertexBuffer`, so `BuiltChunk#getBuffer`, upload, draw order, mesh format, shaders, and FRAPI semantics stay unchanged. Pending uploads targeting a reclaimed closed buffer fail open through the existing upload task discard path.
+The next shared-region model is now represented by two pure components:
 
-This is real retained-capacity reclamation, but it is still not a physical shared GPU arena. Full render-region suballocation/multi-draw remains a later ownership step.
+- `TerrainRegionArenaPolicy`: 256-byte suballocation alignment, 1 MiB arena capacity quanta, 25% sizing headroom, and a 2 MiB minimum recoverable-capacity threshold before a region becomes a compaction candidate.
+- `TerrainRegionSuballocator`: aligned first-fit suballocation with coalescing free spans and fragmentation accounting.
+
+The residency ledger applies the same arena sizing policy to current 8x4x8 region payloads and exposes:
+
+```text
+projected shared-arena bytes
+projected arena slack bytes
+compaction-candidate region count
+potential arena reclaim bytes
+```
+
+This makes arena sizing and compaction measurable before physical shared VBO/EBO ownership is introduced. The allocator model owns no GPU objects yet, so vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged.
+
+Full physical shared GPU arenas and terrain multi-draw are still separate ownership steps.
 
 ## FRAPI and shader compatibility boundary
 
@@ -62,7 +65,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, and the detected renderer pipeline owner.
 
 ## Migration rule
 
@@ -80,4 +83,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, buffer growth, and allocator internals are not user-facing knobs.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, buffer growth, and allocator details are not user-facing knobs.

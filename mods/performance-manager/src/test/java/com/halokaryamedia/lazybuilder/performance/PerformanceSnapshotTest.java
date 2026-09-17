@@ -43,6 +43,10 @@ final class PerformanceSnapshotTest {
                 5L,
                 6144L,
                 2L,
+                12288L,
+                4096L,
+                2,
+                7168L,
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -73,6 +77,10 @@ final class PerformanceSnapshotTest {
         assertEquals(5L, snapshot.terrainBufferRegionRelocations());
         assertEquals(6144L, snapshot.terrainGpuReclaimedBytes());
         assertEquals(2L, snapshot.terrainGpuReclaimedBuffers());
+        assertEquals(12288L, snapshot.projectedTerrainArenaBytes());
+        assertEquals(4096L, snapshot.projectedTerrainArenaSlackBytes());
+        assertEquals(2, snapshot.terrainArenaCompactionCandidateRegions());
+        assertEquals(7168L, snapshot.potentialTerrainArenaReclaimBytes());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }
