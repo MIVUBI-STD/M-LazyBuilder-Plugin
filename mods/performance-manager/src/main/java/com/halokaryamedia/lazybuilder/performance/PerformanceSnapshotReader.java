@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiag
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyLedger;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.chunk.ChunkBuilder;
@@ -42,6 +43,7 @@ public final class PerformanceSnapshotReader {
         TerrainGpuResidencyLedger.Snapshot residency = TerrainGpuResidencyTracker.snapshot();
         TerrainRegionAllocationRegistry.Snapshot arenas = TerrainGpuResidencyTracker.arenaSnapshot();
         TerrainArenaDrawPlanner.Plan drawPlan = TerrainArenaDrawDiagnostics.snapshot();
+        TerrainPhysicalArenaManager.Snapshot physicalArenas = TerrainGpuResidencyTracker.physicalArenaSnapshot();
 
         return new PerformanceSnapshot(
                 fps,
@@ -102,6 +104,15 @@ public final class PerformanceSnapshotReader {
                 drawPlan.baseVertexReadyCommands(),
                 drawPlan.baseVertexBatches(),
                 drawPlan.potentialBaseVertexBindReductions(),
+                physicalArenas.residentBytes(),
+                physicalArenas.activeArenas(),
+                physicalArenas.residentBuffers(),
+                physicalArenas.uploadedBytes(),
+                physicalArenas.physicalDraws(),
+                physicalArenas.bufferBinds(),
+                physicalArenas.bindReuses(),
+                physicalArenas.arenaResizes(),
+                physicalArenas.invalidations(),
                 RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,

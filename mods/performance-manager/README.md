@@ -14,7 +14,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, base-vertex physical-draw eligibility, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared-VBO/base-vertex drawing for the safe sequential-index subset, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
@@ -68,7 +68,7 @@ allocation failures
 
 `TerrainArenaDrawStateRegistry` captures the exact vanilla draw parameters when a `BuiltBuffer` is uploaded: vertex format, vertex/index counts, draw mode, index type, and separate vertex/index payload sizes. Arena allocation sizing therefore has deterministic vertex and index byte ranges.
 
-`TerrainArenaDrawPlanner` consumes the live allocation handle plus this draw state while preserving exact visible-section order. A future arena command has explicit vertex byte offset, index byte offset, vertex stride, vertex count, and index count. Only consecutive commands in the same region/layer arena with compatible format/mode/index state can share a future arena binding. Missing, stale, undersized, wrong-layer, or incomplete draw state remains an explicit vanilla fallback boundary.
+`TerrainArenaDrawPlanner` consumes the live allocation handle plus this draw state while preserving exact visible-section order. An arena command has explicit vertex byte offset, index byte offset, vertex stride, vertex count, and index count. Only consecutive commands in the same region/layer arena with compatible format/mode/index state can share an arena binding. Missing, stale, undersized, wrong-layer, or incomplete draw state remains an explicit vanilla fallback boundary.
 
 Current diagnostics expose:
 
@@ -79,31 +79,37 @@ ordered arena batches
 potential arena-buffer bind reductions
 ```
 
-### First physical shared-VBO subset
+### Mirrored physical shared-VBO subset
 
-Minecraft 1.21.4 exposes `GpuBuffer.copyFrom(ByteBuffer, offset)`, so subrange upload is available. The first physical arena path is now narrowed to commands that can reuse Minecraft's shared sequential index buffer and use a base-vertex draw safely.
+Minecraft 1.21.4 exposes `GpuBuffer.copyFrom(ByteBuffer, offset)`, so subrange upload is available. LazyBuilder now mirrors the first safe terrain subset into a render-thread-owned `GpuBuffer` per region/layer and draws it with Minecraft's shared sequential index buffer plus `glDrawElementsBaseVertex`.
 
 `TerrainArenaBaseVertexPolicy` requires:
 
 ```text
 no custom/sorted index payload
+vertex payload exactly matches vertexCount * stride
 vertex byte offset aligned to vertex stride
-base vertex representable as a signed int
+base vertex and end vertex representable as signed ints
 complete vanilla draw state
 valid arena allocation
 ```
 
-The draw plan additionally reports:
+`TerrainPhysicalArenaManager` owns physical VBO/VAO state for this subset. It creates per-format VAOs over the shared region VBO, copies vertex payloads to logical allocation offsets before the normal vanilla upload closes the source buffer, and validates allocation generation/arena epoch before every physical draw. Arena resize discards mirrored residency for affected entries; those entries immediately fall back to their normal vanilla `VertexBuffer` until they upload again.
+
+The physical path is intentionally mirrored rather than exclusive: the vanilla per-section `VertexBuffer` is still uploaded and retained as a correctness fallback. This means the current stage can reduce repeated terrain VAO/VBO binds for stable eligible batches, but it does not yet claim final VRAM reduction because shared and vanilla copies coexist until runtime correctness/compatibility is proven.
+
+Commands with custom sorted indices, including translucent cases that require their own index data, stay on the vanilla path. Shared custom-index EBO ownership and multi-draw remain later steps.
+
+Physical diagnostics include:
 
 ```text
-base-vertex-ready draw commands
-base-vertex-ready ordered batches
-potential bind reductions inside that safe subset
+physical arena resident bytes
+physical arena count / mirrored resident buffers
+total mirrored upload bytes
+physical draw count
+physical VBO/VAO binds and bind reuses
+arena resize invalidations
 ```
-
-Commands with custom sorted indices, including the translucent cases that require their own index data, remain outside this first physical subset. This avoids inventing an index-offset path before shared EBO/VAO ownership is complete.
-
-Physical shared VBO upload/draw is still not enabled in this commit: the remaining step must own the shared GPU buffer plus VAO binding and base-vertex submission as one coherent render-thread path. Vanilla `VertexBuffer`, shaders, mesh formats, and FRAPI semantics remain the fallback until that path is complete.
 
 ## FRAPI and shader compatibility boundary
 
@@ -119,7 +125,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware arena draw coverage, base-vertex-ready coverage, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware arena draw coverage, base-vertex-ready coverage, physical shared-VBO usage, and the detected renderer pipeline owner.
 
 ## Migration rule
 
@@ -137,4 +143,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, draw-plan batching, base-vertex eligibility, buffer growth, and allocator details are not user-facing knobs.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, base-vertex eligibility, buffer growth, and allocator details are not user-facing knobs.

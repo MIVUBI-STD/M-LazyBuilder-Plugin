@@ -107,7 +107,7 @@ final class TerrainArenaDrawPlannerTest {
     @Test
     void marksSequentialIndexCommandsReadyForBaseVertexDraw() {
         var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
-        var state = sequentialState(320);
+        var state = sequentialState();
         int stride = state.format().getVertexSizeByte();
         long secondOffset = 256L;
         assertEquals(0L, secondOffset % stride);
@@ -126,8 +126,8 @@ final class TerrainArenaDrawPlannerTest {
     @Test
     void customIndicesOrMisalignedVertexOffsetRemainOutsideBaseVertexSubset() {
         var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
-        var sequential = sequentialState(320);
-        var sorted = state(320, 64);
+        var sequential = sequentialState();
+        var sorted = state(sequential.vertexPayloadBytes(), 64);
 
         TerrainArenaDrawPlanner.Command misaligned = command(arena, 257L, sequential, 1L);
         TerrainArenaDrawPlanner.Command customIndices = command(arena, 512L, sorted, 2L);
@@ -137,6 +137,20 @@ final class TerrainArenaDrawPlannerTest {
         assertEquals(0, plan.baseVertexReadyCommands());
         assertEquals(-1, misaligned.baseVertex());
         assertEquals(-1, customIndices.baseVertex());
+    }
+
+    @Test
+    void mismatchedVertexPayloadStaysOutsideBaseVertexSubset() {
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+        int expected = VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL.getVertexSizeByte() * 16;
+        var mismatched = state(expected - 1, 0);
+        TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.plan(
+                List.of(command(arena, 0L, mismatched, 1L)),
+                0
+        );
+
+        assertEquals(1, plan.eligibleCommands());
+        assertEquals(0, plan.baseVertexReadyCommands());
     }
 
     @Test
@@ -167,8 +181,9 @@ final class TerrainArenaDrawPlannerTest {
         );
     }
 
-    private static TerrainArenaDrawStateRegistry.DrawState sequentialState(int vertexBytes) {
-        return state(vertexBytes, 0);
+    private static TerrainArenaDrawStateRegistry.DrawState sequentialState() {
+        int bytes = VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL.getVertexSizeByte() * 16;
+        return state(bytes, 0);
     }
 
     private static TerrainArenaDrawPlanner.Command command(

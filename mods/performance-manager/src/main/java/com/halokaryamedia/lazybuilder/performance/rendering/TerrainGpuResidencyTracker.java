@@ -89,12 +89,14 @@ public final class TerrainGpuResidencyTracker {
 
     public static void release(VertexBuffer buffer) {
         if (buffer == null) return;
+        TerrainPhysicalArenaManager.release(buffer);
         LEDGER.release(buffer);
         ARENAS.release(buffer);
         DRAW_STATES.release(buffer);
     }
 
     public static void clear() {
+        TerrainPhysicalArenaManager.clear();
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
@@ -106,5 +108,9 @@ public final class TerrainGpuResidencyTracker {
 
     public static TerrainRegionAllocationRegistry.Snapshot arenaSnapshot() {
         return ARENAS.snapshot();
+    }
+
+    public static TerrainPhysicalArenaManager.Snapshot physicalArenaSnapshot() {
+        return TerrainPhysicalArenaManager.snapshot();
     }
 }

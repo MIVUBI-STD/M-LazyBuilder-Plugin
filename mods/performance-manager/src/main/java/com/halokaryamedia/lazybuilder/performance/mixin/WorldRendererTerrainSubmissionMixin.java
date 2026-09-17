@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
@@ -26,7 +27,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Builds reusable per-layer submission lists and a draw-order-preserving arena command plan. */
+/** Builds reusable per-layer submission lists and safely switches ready draws to shared region VBOs. */
 @Mixin(WorldRenderer.class)
 abstract class WorldRendererTerrainSubmissionMixin {
     @Shadow @Final private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
@@ -41,6 +42,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private boolean lazybuilder$submissionIndexActive;
     @Unique private int lazybuilder$cachedVisibleCount = -1;
     @Unique private RenderLayer lazybuilder$currentLayer;
+    @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -63,14 +65,17 @@ abstract class WorldRendererTerrainSubmissionMixin {
             CallbackInfo ci
     ) {
         this.lazybuilder$currentLayer = layer;
+        this.lazybuilder$physicalPreparedBuffer = null;
 
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
             this.lazybuilder$submissionIndexActive = false;
             TerrainArenaDrawDiagnostics.clear();
+            TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
         if (!lazybuilder$isBlockLayer(layer)) {
             this.lazybuilder$submissionIndexActive = false;
+            TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
 
@@ -81,6 +86,20 @@ abstract class WorldRendererTerrainSubmissionMixin {
         if (this.lazybuilder$submissionIndexDirty) {
             this.lazybuilder$rebuildSubmissionIndex();
         }
+    }
+
+    @Inject(method = "renderLayer", at = @At("RETURN"))
+    private void lazybuilder$finishTerrainArenaPass(
+            RenderLayer layer,
+            double x,
+            double y,
+            double z,
+            Matrix4f matrix,
+            Matrix4f positionMatrix,
+            CallbackInfo ci
+    ) {
+        this.lazybuilder$physicalPreparedBuffer = null;
+        TerrainPhysicalArenaManager.noteExternalBind();
     }
 
     @Redirect(
@@ -110,6 +129,41 @@ abstract class WorldRendererTerrainSubmissionMixin {
 
         int mappedIndex = TerrainSubmissionPolicy.mappedIteratorIndex(index, source.size(), filtered.size());
         return filtered.listIterator(mappedIndex);
+    }
+
+    @Redirect(
+            method = "renderLayer",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gl/VertexBuffer;bind()V")
+    )
+    private void lazybuilder$bindPhysicalArenaOrVanilla(VertexBuffer buffer) {
+        if (PerformanceManagerClient.preferences().renderingOptimizations()
+                && TerrainPhysicalArenaManager.bind(buffer)) {
+            this.lazybuilder$physicalPreparedBuffer = buffer;
+            return;
+        }
+
+        this.lazybuilder$physicalPreparedBuffer = null;
+        TerrainPhysicalArenaManager.noteExternalBind();
+        buffer.bind();
+    }
+
+    @Redirect(
+            method = "renderLayer",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gl/VertexBuffer;draw()V")
+    )
+    private void lazybuilder$drawPhysicalArenaOrVanilla(VertexBuffer buffer) {
+        boolean expectedPhysical = this.lazybuilder$physicalPreparedBuffer == buffer;
+        this.lazybuilder$physicalPreparedBuffer = null;
+
+        if (expectedPhysical && TerrainPhysicalArenaManager.draw(buffer)) {
+            return;
+        }
+
+        if (expectedPhysical) {
+            TerrainPhysicalArenaManager.noteExternalBind();
+            buffer.bind();
+        }
+        buffer.draw();
     }
 
     @Unique
