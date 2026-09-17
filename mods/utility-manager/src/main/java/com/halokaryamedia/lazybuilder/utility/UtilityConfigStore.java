@@ -40,6 +40,7 @@ public final class UtilityConfigStore {
                 readBoolean(properties, "chat.search", defaults.chatSearch()),
                 readBoolean(properties, "chat.timestamps", defaults.chatTimestamps()),
                 readBoolean(properties, "chat.hide_signing_indicators", defaults.hideChatSigningIndicators()),
+                readBoolean(properties, "chat.hide_report_button", defaults.hideChatReportButton()),
                 readBoolean(properties, "accessibility.suppress_narrator", defaults.suppressNarrator()),
                 readBoolean(properties, "connection.reconnect_button", defaults.reconnectButton()),
                 readBooleanWithLegacyAlias(
@@ -63,6 +64,10 @@ public final class UtilityConfigStore {
         properties.setProperty(
                 "chat.hide_signing_indicators",
                 Boolean.toString(preferences.hideChatSigningIndicators())
+        );
+        properties.setProperty(
+                "chat.hide_report_button",
+                Boolean.toString(preferences.hideChatReportButton())
         );
         properties.setProperty(
                 "accessibility.suppress_narrator",
