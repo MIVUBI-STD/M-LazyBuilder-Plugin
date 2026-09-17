@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import RuntimeErrorNotice from './RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { dialogFocus } from '../app/dialogFocus';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ServerLogTail, ServerSnapshot } from '../app/bridge/runtimeApi';
@@ -121,7 +122,13 @@
 
 {#if open}
   <div class="console-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConsole()}>
-    <section class="console-dialog" role="dialog" aria-modal="true" aria-labelledby="server-console-title">
+    <section
+      use:dialogFocus={{ onEscape: closeConsole, initialFocusSelector: '.command-row input:not([disabled])', escapeDisabled: commandBusy }}
+      class="console-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="server-console-title"
+    >
       <header>
         <div>
           <div class="title-row">
