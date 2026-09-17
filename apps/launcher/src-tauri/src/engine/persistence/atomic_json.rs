@@ -16,6 +16,12 @@ pub fn load<T: DeserializeOwned>(path: &Path, label: &str) -> Result<Option<T>, 
         .map_err(|error| format!("Could not parse {label}: {error}"))
 }
 
+pub fn read<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, String> {
+    safe_path::ensure_regular_file(path, label)?;
+    let text = fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))?;
+    serde_json::from_str(&text).map_err(|error| format!("Could not parse {label}: {error}"))
+}
+
 pub fn save<T: Serialize>(path: &Path, label: &str, value: &T) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("Could not create {label} directory: {error}"))?;
@@ -50,6 +56,11 @@ pub fn recover(path: &Path, label: &str) -> Result<(), String> {
         fs::rename(&temporary, path).map_err(|error| format!("Could not publish recovered {label}: {error}"))?;
     }
     Ok(())
+}
+
+pub fn cleanup_recovery_files(path: &Path, label: &str) -> Result<(), String> {
+    safe_path::remove_regular_file_if_present(&previous_path(path), &format!("previous {label}"))?;
+    safe_path::remove_regular_file_if_present(&temporary_path(path), &format!("{label} staging file"))
 }
 
 fn replace(source: &Path, destination: &Path, label: &str) -> Result<(), String> {
