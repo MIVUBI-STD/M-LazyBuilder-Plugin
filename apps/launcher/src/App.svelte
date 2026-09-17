@@ -109,7 +109,7 @@
       return;
     }
     globalPage = 'Servers';
-    page = target === 'plugins' ? 'Plugins' : target === 'settings' ? 'Settings' : 'Overview';
+    page = target === 'plugins' ? 'Plugins' : 'Overview';
   }
 
   function openActivityFromAttention() {
