@@ -7,8 +7,10 @@ export type LauncherSettings = {
   schemaVersion: number;
   rememberLastServer: boolean;
   confirmCloseWhileServerRunning: boolean;
-  autoCheckUpdates: boolean;
-  updateChannel: 'stable' | 'preview';
+  /** Signed in-app update checks are not enabled in the current runtime. */
+  autoCheckUpdates: false;
+  /** Only the stable channel is accepted until the signed updater runtime is enabled. */
+  updateChannel: 'stable';
 };
 
 export type LauncherOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLING' | 'CANCELLED' | 'RECOVERY_REQUIRED';
