@@ -18,7 +18,7 @@ Performance Manager owns only client performance behavior:
 - conservative model/face culling where visual correctness is provable;
 - immediate-mode/HUD/screen rendering efficiency;
 - targeted memory reductions and deduplication;
-- chunk rebuild, mesh, render-region, color-provider, and buffer efficiency as renderer ownership grows;
+- chunk rebuild, mesh, render-region, color-provider, visibility, and buffer efficiency as renderer ownership grows;
 - compatibility policy for builder-critical render consumers.
 
 Performance Manager does not own shader loading or shader-pack UX, building/editing behavior, map/world management, screenshot/chat/window convenience, automatic graphics-quality reduction, or speculative background schedulers.
@@ -62,7 +62,7 @@ Current culling compatibility policy is deliberately narrow:
 
 Rendering-efficiency mixins are migration-aware. When the external `immediatelyfast` mod is installed, the first-party text-buffer and GPU-buffer mixins are not applied at all, avoiding redirect conflicts while migration is incomplete.
 
-Chunk-pipeline optimizations are migration-aware. When Sodium is installed, first-party chunk rebuild and block-color-provider mixins are not applied so Sodium remains the sole chunk-render owner during migration.
+Chunk-pipeline optimizations are migration-aware. When Sodium is installed, first-party chunk rebuild, block-color-provider, and block-side-visibility mixins are not applied so Sodium remains the sole chunk-render owner during migration.
 
 Memory-dedup mixins are also migration-aware. When `ferritecore` is present, the first-party baked-quad accessor and builder mixin are not applied so only one memory owner canonicalizes baked quad storage.
 
@@ -84,7 +84,8 @@ PerformanceManagerClient
     ├── rendering/
     │   ├── ChunkRebuildPolicy
     │   ├── ChunkPipelineMetrics
-    │   └── IdentityProviderCache
+    │   ├── IdentityProviderCache
+    │   └── BlockSideVisibilityCache
     ├── memory/
     │   └── MemoryDeduplicator
     ├── compatibility/    # explicit bypass/integration policy
@@ -110,8 +111,10 @@ The currently implemented first-party behavior is production-owned:
 - writable non-static GPU vertex buffers are not shrunk and reallocated when the current allocation already fits the upload; static-write buffers retain vanilla resize behavior;
 - duplicate vanilla chunk rebuild requests are coalesced when they cannot strengthen the already-pending rebuild state; an incoming important rebuild still upgrades a pending normal rebuild;
 - block-color provider lookup uses a copy-on-write identity cache so the hot color-tint path avoids repeated provider-list lookup while registration semantics remain authoritative;
+- pure `Block.shouldDrawSide(state, otherState, direction)` visibility decisions are cached with both block states and direction as identity-based keys;
+- block-side visibility cache is bounded and falls through to vanilla on cache miss; the original vanilla return value populates the cache;
 - chunk-pipeline diagnostics expose pending batch work, upload backlog, free chunk buffers, and first-party rebuild coalescing impact on demand;
-- Sodium disables the first-party chunk rebuild and block-color-provider mixins during migration;
+- Sodium disables the first-party chunk rebuild, block-color-provider, and block-side-visibility mixins during migration;
 - rendering-efficiency mixins are disabled while ImmediatelyFast is present to keep one active owner during migration;
 - identical vanilla `BakedQuad` vertex arrays are canonicalized during `BasicBakedModel.Builder` assembly so duplicate quads can share backing storage;
 - baked-quad canonicalization cache is concurrent and cleared on every client resource reload so old model arrays are not retained across reload generations;
@@ -163,8 +166,10 @@ The production rendering subset deliberately targets low-risk redundant work bef
 - a pending normal rebuild still accepts an incoming important request so rebuild priority semantics are preserved;
 - block color providers are cached by block identity using rare copy-on-write registration and lock-free hot-path reads; later provider registration for the same block replaces the cached provider;
 - a missing cached provider falls through to vanilla `BlockColors#getColor` unchanged;
+- block-side visibility decisions cache only the exact vanilla pure-input tuple `(state identity, neighbor-state identity, direction)` and preserve vanilla as the authoritative miss path;
+- the block-side cache is bounded to avoid unbounded retention during long builder sessions;
 - when ImmediatelyFast is installed, the text/GPU redirect mixins are rejected by the mixin plugin;
-- when Sodium is installed, the chunk-rebuild and block-color-provider mixins are rejected by the mixin plugin.
+- when Sodium is installed, the chunk-rebuild, block-color-provider, and block-side-visibility mixins are rejected by the mixin plugin.
 
 HUD batching, screen batching, sign atlas buffering, map atlas generation, GL error-check changes, full chunk mesh replacement, render-region management, translucent sorting, and Fabric Renderer API implementation are not assumed equivalent merely because the reference mods contain them. They require separate correctness/compatibility proof before adoption.
 
@@ -223,7 +228,7 @@ External performance mods are migration references, not the architecture.
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
 | ImmediatelyFast immediate rendering efficiency | `rendering/` | first low-risk text lookup and GPU resize subset exists; keep external-owner mixin gate until runtime proof is complete |
 | FerriteCore memory reductions | `memory/` | first baked-quad vertex dedup subset exists; keep FerriteCore-owner gate until runtime proof is complete |
-| Sodium chunk/render pipeline | `rendering/` | chunk rebuild coalescing, chunk diagnostics, and block-color lookup cache foundations exist; Sodium remains owner until mesh/region/buffer/FRAPI parity is implemented and proven |
+| Sodium chunk/render pipeline | `rendering/` | chunk rebuild coalescing, chunk diagnostics, block-color lookup, and pure block-side visibility cache foundations exist; Sodium remains owner until mesh/region/buffer/FRAPI parity is implemented and proven |
 | Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
 | Sodium Extra | capability-by-capability | retain only performance behavior that fits this contract; cosmetic convenience is out of scope |
 | Chunks Fade In | none | visual effect; not a Performance Manager requirement |
@@ -260,7 +265,7 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Future settings should remain high-level. Buffer strategies, chunk rebuild coalescing, provider caches, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
+Future settings should remain high-level. Buffer strategies, chunk rebuild coalescing, provider caches, visibility-cache internals, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
 
 ## External-source policy
 

@@ -15,6 +15,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String VERTEX_BUFFER_MIXIN = MIXIN_PACKAGE + "VertexBufferMixin";
     private static final String CHUNK_REBUILD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBuiltChunkMixin";
     private static final String BLOCK_COLORS_MIXIN = MIXIN_PACKAGE + "BlockColorsMixin";
+    private static final String BLOCK_SIDE_VISIBILITY_MIXIN = MIXIN_PACKAGE + "BlockSideVisibilityMixin";
     private static final String BAKED_QUAD_ACCESSOR = MIXIN_PACKAGE + "BakedQuadAccessor";
     private static final String BAKED_MODEL_BUILDER_MIXIN = MIXIN_PACKAGE + "BasicBakedModelBuilderMixin";
 
@@ -33,7 +34,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
                 && FabricLoader.getInstance().isModLoaded("immediatelyfast")) {
             return false;
         }
-        if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName) || BLOCK_COLORS_MIXIN.equals(mixinClassName))
+        if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)
+                || BLOCK_COLORS_MIXIN.equals(mixinClassName)
+                || BLOCK_SIDE_VISIBILITY_MIXIN.equals(mixinClassName))
                 && FabricLoader.getInstance().isModLoaded("sodium")) {
             return false;
         }
