@@ -1,8 +1,12 @@
 package com.halokaryamedia.lazybuilder.utility;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -10,6 +14,7 @@ import java.util.Properties;
 
 /** Owns Utility Manager preference persistence and no feature behavior. */
 public final class UtilityConfigStore {
+    private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Utility/Config");
     private static final String FILE_NAME = "lazybuilder-utility-manager.properties";
     private static final String HEADER = "LazyBuilder Utility Manager preferences";
 
@@ -29,7 +34,8 @@ public final class UtilityConfigStore {
         Properties properties = new Properties();
         try (Reader reader = Files.newBufferedReader(configFile)) {
             properties.load(reader);
-        } catch (IOException ignored) {
+        } catch (IOException exception) {
+            LOGGER.warn("Unable to read Utility Manager preferences from {}; using safe defaults", configFile, exception);
             return defaults;
         }
 
@@ -98,14 +104,15 @@ public final class UtilityConfigStore {
                         StandardCopyOption.REPLACE_EXISTING,
                         StandardCopyOption.ATOMIC_MOVE
                 );
-            } catch (IOException atomicMoveFailure) {
+            } catch (AtomicMoveNotSupportedException unsupported) {
                 Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ignored) {
+        } catch (IOException exception) {
+            LOGGER.warn("Unable to persist Utility Manager preferences to {}; keeping runtime preferences active", configFile, exception);
             try {
                 Files.deleteIfExists(temporary);
-            } catch (IOException ignoredCleanup) {
-                // Preference persistence failure must never block Minecraft startup.
+            } catch (IOException cleanupFailure) {
+                LOGGER.debug("Unable to remove temporary Utility Manager preference file {}", temporary, cleanupFailure);
             }
         }
     }

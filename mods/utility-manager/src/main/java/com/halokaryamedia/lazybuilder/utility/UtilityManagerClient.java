@@ -113,6 +113,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     public static void updatePreferences(UtilityPreferences updated) {
         Objects.requireNonNull(updated, "updated");
         boolean compactDebugDisabled = preferences.compactDebugHud() && !updated.compactDebugHud();
+        boolean compactDebugEnabled = !preferences.compactDebugHud() && updated.compactDebugHud();
         boolean narratorSuppressionEnabled = !preferences.suppressNarrator() && updated.suppressNarrator();
         preferences = updated;
         if (configStore != null) configStore.save(updated);
@@ -125,6 +126,8 @@ public final class UtilityManagerClient implements ClientModInitializer {
                 CompactDebugInteraction.invalidate(client);
                 CompactDebugServerState.clear();
             });
+        } else if (compactDebugEnabled) {
+            client.execute(CompactDebugNetworking::requestSnapshot);
         }
         if (narratorSuppressionEnabled) {
             client.execute(() -> NarratorSuppressionController.applyIfEnabled(client, true));

@@ -43,6 +43,6 @@ public abstract class MultiplayerScreenMixin extends Screen {
                         .dimensions(x, y, buttonWidth, buttonHeight)
                         .build()
         );
-        LOGGER.info("Reconnect fallback added to MultiplayerScreen for {}", ReconnectState.serverAddress());
+        LOGGER.debug("Reconnect fallback added to MultiplayerScreen");
     }
 }
