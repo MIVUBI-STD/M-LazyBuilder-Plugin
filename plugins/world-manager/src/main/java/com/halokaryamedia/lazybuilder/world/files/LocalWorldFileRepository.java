@@ -62,13 +62,11 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
         Path netherSource = null;
         Path endSource = null;
-        if (profile == WorldCopyProfile.SNAPSHOT) {
-            if (!Files.isDirectory(sourcePath.resolve(JAVA_NETHER_DIRECTORY))) {
-                netherSource = externalDimensionSource(source.folderName() + PAPER_NETHER_SUFFIX, JAVA_NETHER_DIRECTORY);
-            }
-            if (!Files.isDirectory(sourcePath.resolve(JAVA_END_DIRECTORY))) {
-                endSource = externalDimensionSource(source.folderName() + PAPER_END_SUFFIX, JAVA_END_DIRECTORY);
-            }
+        if (!Files.isDirectory(sourcePath.resolve(JAVA_NETHER_DIRECTORY))) {
+            netherSource = externalDimensionSource(source.folderName() + PAPER_NETHER_SUFFIX, JAVA_NETHER_DIRECTORY);
+        }
+        if (!Files.isDirectory(sourcePath.resolve(JAVA_END_DIRECTORY))) {
+            endSource = externalDimensionSource(source.folderName() + PAPER_END_SUFFIX, JAVA_END_DIRECTORY);
         }
 
         Files.createDirectories(workspaceRoot);
@@ -105,7 +103,18 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
         Path destination = reserveDeleteWorkspace(operationId, world.folderName());
         moveDirectory(source, destination);
-        return destination;
+        try {
+            PaperWorldFamilyLayout.consolidateSiblingsForStaging(worldRoot, world.folderName(), destination);
+            return destination;
+        } catch (IOException | RuntimeException failure) {
+            try {
+                moveDirectory(destination, source);
+                PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, world.folderName(), false);
+            } catch (IOException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            throw failure;
+        }
     }
 
     @Override
@@ -179,6 +188,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
 
                 deleteTree(world);
+                PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
                 Files.delete(marker);
                 rolledBack++;
             }
@@ -234,6 +244,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                         continue;
                     }
                     moveDirectory(staged, destination);
+                    PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, false);
                     restored++;
                 } else {
                     deleteTree(staged);
@@ -266,10 +277,14 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
                 String folderName = child.getFileName().toString();
                 if (managedFolders.contains(folderName)) {
+                    PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
                     Files.delete(marker);
+                    PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
                     finalized++;
                 } else {
+                    boolean familyPending = PaperWorldFamilyLayout.hasPendingSibling(worldRoot, folderName);
                     deleteTree(child);
+                    if (familyPending) PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
                     discarded++;
                 }
             }
@@ -288,6 +303,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             throw new IOException("Pending publication marker is unsafe in " + destinationFolder);
         }
         Files.deleteIfExists(marker);
+        PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, destinationFolder);
     }
 
     @Override
@@ -322,17 +338,31 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             Files.createFile(marker);
         }
         moveDirectory(source, destination);
+        PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, destinationFolder, transactionalPublish);
     }
 
     @Override
     public void deleteWorld(WorldRecord world) throws IOException {
         Objects.requireNonNull(world, "world");
         Path target = worldPath(world.folderName());
-        if (Files.notExists(target)) return;
-        if (Files.isSymbolicLink(target)) {
-            throw new IOException("Refusing to recursively delete symbolic-link world root: " + world.folderName());
+        IOException failure = null;
+        if (Files.exists(target)) {
+            try {
+                if (Files.isSymbolicLink(target)) {
+                    throw new IOException("Refusing to recursively delete symbolic-link world root: " + world.folderName());
+                }
+                deleteTree(target);
+            } catch (IOException exception) {
+                failure = exception;
+            }
         }
-        deleteTree(target);
+        try {
+            PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, world.folderName());
+        } catch (IOException exception) {
+            if (failure == null) failure = exception;
+            else failure.addSuppressed(exception);
+        }
+        if (failure != null) throw failure;
     }
 
     @Override
@@ -503,7 +533,10 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
                 Path relative = source.relativize(file);
                 if (shouldSkipFile(relative, profile)) return FileVisitResult.CONTINUE;
-                Files.copy(file, destination.resolve(relative), StandardCopyOption.COPY_ATTRIBUTES);
+                Path target = destination.resolve(relative);
+                Path parent = target.getParent();
+                if (parent != null) Files.createDirectories(parent);
+                Files.copy(file, target, StandardCopyOption.COPY_ATTRIBUTES);
                 return FileVisitResult.CONTINUE;
             }
         });
