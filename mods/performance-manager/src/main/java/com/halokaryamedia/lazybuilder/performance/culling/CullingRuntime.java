@@ -33,6 +33,8 @@ import java.util.WeakHashMap;
 public final class CullingRuntime {
     private static final int ENTITY_BUDGET_PER_TICK = 8;
     private static final int BLOCK_ENTITY_BUDGET_PER_TICK = 4;
+    private static final int MAX_ENTITY_QUEUE = 64;
+    private static final int MAX_BLOCK_ENTITY_QUEUE = 32;
     private static final int MAX_TRANSPARENT_PASSES = 8;
     private static final long MAX_AGE_NANOS = 250_000_000L;
     private static final double MAX_CAMERA_MOVE_SQ = 0.75D * 0.75D;
@@ -250,10 +252,12 @@ public final class CullingRuntime {
     }
 
     private void enqueue(Entity entity) {
+        if (queuedEntities.contains(entity) || entityQueue.size() >= MAX_ENTITY_QUEUE) return;
         if (queuedEntities.add(entity)) entityQueue.add(entity);
     }
 
     private void enqueue(BlockEntity blockEntity) {
+        if (queuedBlockEntities.contains(blockEntity) || blockEntityQueue.size() >= MAX_BLOCK_ENTITY_QUEUE) return;
         if (queuedBlockEntities.add(blockEntity)) blockEntityQueue.add(blockEntity);
     }
 
