@@ -47,7 +47,9 @@ Frontend state may cache what is currently displayed. It must not become the dur
 | Runtime compatibility target | repository `toolchain.json` | repository source | compatibility verifier | second compatibility/version file |
 | Self-update release authority | Launcher release workflow + Tauri signed updater contract | signed artifacts + update-channel metadata | updater runtime once U2 is enabled | ad-hoc EXE download/update path |
 | Close-window safety | `src/app/closeGuard.ts` presentation policy over backend snapshots | none | Operation journal/domain recovery after forced close | independent close handlers |
-| Modal keyboard/focus lifecycle | `src/app/modalAccessibility.ts` | none | presentation lifecycle | per-dialog focus-trap implementations |
+| Modal keyboard/focus lifecycle | `src/app/dialogFocus.ts` | none | presentation lifecycle | second/global modal focus system |
+| Native `<details>` action menus | `src/app/detailsMenu.ts` | none | presentation lifecycle | generic menu framework/event bus |
+| Controlled Server Library menu | `src/app/controlledMenu.ts` + `menuServerId` owner | none | presentation lifecycle | second durable menu state/store |
 
 ## Recovery order
 
