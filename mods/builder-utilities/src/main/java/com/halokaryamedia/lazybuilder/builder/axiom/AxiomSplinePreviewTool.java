@@ -10,6 +10,7 @@ import com.halokaryamedia.lazybuilder.builder.spline.SplineSample;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSampler;
 import com.halokaryamedia.lazybuilder.builder.spline.StructureChainSplinePayload;
 import com.moulberry.axiomclientapi.CustomTool;
+import imgui.moulberry92.ImGui;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.hit.BlockHitResult;
@@ -26,18 +27,12 @@ import java.util.Objects;
  * owns no world-mutation path while operation recovery semantics are unfinished.
  */
 public final class AxiomSplinePreviewTool implements CustomTool {
-    private static final int SAMPLES_PER_SEGMENT = 16;
-    private static final double DEFAULT_RADIUS = 2.0;
-    private static final double DEFAULT_SPACING = 4.0;
-
     private final AxiomClientServices services;
     private final List<SplineControlPoint> controlPoints = new ArrayList<>();
-    private final StructureChainSplinePayload payload = new StructureChainSplinePayload(
-            DEFAULT_SPACING,
-            (point, seed) -> "lazybuilder:preview-segment",
-            new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L)
-    );
-    private final OperationSeed seed = new OperationSeed(0x4c4253504c494e45L);
+    private final float[] spacing = {4.0f};
+    private final float[] radius = {2.0f};
+    private final int[] quality = {16};
+    private final int[] seedValue = {424242};
 
     private AxiomSplinePreviewRegion preview;
     private List<SplinePlacementPlanEntry> lastPlan = List.of();
@@ -61,7 +56,7 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         BlockPos pointPos = hitPos.offset(hit.getSide());
         controlPoints.add(new SplineControlPoint(
                 new BuilderVec3(pointPos.getX() + 0.5, pointPos.getY() + 0.5, pointPos.getZ() + 0.5),
-                DEFAULT_RADIUS,
+                radius[0],
                 0.0
         ));
         rebuildPreview();
@@ -84,6 +79,28 @@ public final class AxiomSplinePreviewTool implements CustomTool {
             throw new IllegalStateException("Spline preview tool mutation contract was enabled without an executor");
         }
         return false;
+    }
+
+    @Override
+    public void displayImguiOptions() {
+        ImGui.textWrapped("Right-click block faces to add spline control points. Delete removes the latest point. Build confirmation remains disabled until LazyBuilder recovery-safe execution is available.");
+        ImGui.separator();
+        boolean changed = false;
+        changed |= ImGui.sliderFloat("Spacing", spacing, 0.5f, 32.0f);
+        boolean radiusChanged = ImGui.sliderFloat("Radius", radius, 0.5f, 16.0f);
+        changed |= radiusChanged;
+        changed |= ImGui.sliderInt("Preview Quality", quality, 4, 64);
+        changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
+        if (ImGui.button("Clear Spline")) {
+            reset();
+            return;
+        }
+        if (radiusChanged) {
+            applyRadiusToControlPoints();
+        }
+        if (changed) {
+            rebuildPreview();
+        }
     }
 
     @Override
@@ -110,6 +127,13 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         return lastPlan;
     }
 
+    private void applyRadiusToControlPoints() {
+        for (int i = 0; i < controlPoints.size(); i++) {
+            SplineControlPoint point = controlPoints.get(i);
+            controlPoints.set(i, new SplineControlPoint(point.position(), radius[0], point.rollDegrees()));
+        }
+    }
+
     private void rebuildPreview() {
         if (controlPoints.size() < 2) {
             lastPlan = List.of();
@@ -119,8 +143,13 @@ public final class AxiomSplinePreviewTool implements CustomTool {
             return;
         }
         CatmullRomSpline spline = new CatmullRomSpline(controlPoints);
-        List<SplineSample> samples = SplineSampler.sample(spline, SAMPLES_PER_SEGMENT);
-        lastPlan = payload.plan(samples, seed);
+        List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
+        StructureChainSplinePayload payload = new StructureChainSplinePayload(
+                spacing[0],
+                (point, seed) -> "lazybuilder:preview-segment",
+                new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L)
+        );
+        lastPlan = payload.plan(samples, new OperationSeed(seedValue[0]));
         ensurePreview().update(lastPlan);
     }
 
