@@ -14,6 +14,7 @@
 
   let previous = new Map<string, LauncherOperationState>();
   let initialized = false;
+  let initializedAtUnixSeconds = 0;
   let notice: LauncherOperationSnapshot | null = null;
   let dismissTimer: number | null = null;
   let refreshInFlight = false;
@@ -54,15 +55,18 @@
   function inspect(next: LauncherOperationSnapshot[]) {
     if (!initialized) {
       previous = new Map(next.map((operation) => [operation.id, operation.state]));
+      initializedAtUnixSeconds = Math.floor(Date.now() / 1000);
       initialized = true;
       return;
     }
 
     for (const operation of next) {
       const before = previous.get(operation.id);
-      if (before && ACTIVE_STATES.has(before) && TERMINAL_STATES.has(operation.state)) {
-        show(operation);
-      }
+      const transitionedToTerminal = Boolean(before && ACTIVE_STATES.has(before) && TERMINAL_STATES.has(operation.state));
+      const completedBetweenPolls = before === undefined
+        && TERMINAL_STATES.has(operation.state)
+        && operation.createdAtUnixSeconds >= initializedAtUnixSeconds;
+      if (transitionedToTerminal || completedBetweenPolls) show(operation);
       previous.set(operation.id, operation.state);
     }
   }
