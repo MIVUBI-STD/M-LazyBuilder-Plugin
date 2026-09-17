@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.utility.chat.ChatCollapseState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatTimestampFormatter;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.gui.hud.ChatHudLine;
+import net.minecraft.client.gui.hud.MessageIndicator;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Final;
@@ -22,7 +23,7 @@ import java.util.List;
 
 /**
  * Thin vanilla ChatHud adapter for bounded history, timestamps, search indexing,
- * and conservative in-place collapse of consecutive GAME/WARNING messages.
+ * signing-indicator presentation, and conservative in-place duplicate collapse.
  */
 @Mixin(ChatHud.class)
 public abstract class ChatHudMixin {
@@ -56,6 +57,15 @@ public abstract class ChatHudMixin {
                 .append(message.copy());
     }
 
+    @ModifyVariable(
+            method = "addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
+            at = @At("HEAD"),
+            argsOnly = true
+    )
+    private MessageIndicator lazybuilder$hideSigningIndicator(MessageIndicator indicator) {
+        return UtilityManagerClient.preferences().hideChatSigningIndicators() ? null : indicator;
+    }
+
     @Inject(method = "addMessage(Lnet/minecraft/text/Text;)V", at = @At("HEAD"), cancellable = true)
     private void lazybuilder$collapseAndIndexVisibleMessage(Text message, CallbackInfo ci) {
         if (message == null) return;
@@ -80,7 +90,6 @@ public abstract class ChatHudMixin {
                     return;
                 }
             } else {
-                // Never rewrite lines while the user is reading older chat.
                 UtilityManagerClient.chatCollapseState().clear();
             }
 
