@@ -4,6 +4,7 @@
   import type { ServerBackupEstimate, ServerBackupSummary, ServerResourceProfile, ServerRuntimeSummary, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
   const MAX_CONCURRENT_SERVERS = 3;
+  const ACTIVE_RUNTIME_STATES = new Set(['Starting', 'Online', 'Stopping', 'Detached']);
 
   let workspace: WorkspaceEntry | null = null;
   let runtimes: ServerRuntimeSummary[] = [];
@@ -11,6 +12,7 @@
   let backupEstimate: ServerBackupEstimate | null = null;
   let latestBackup: ServerBackupSummary | null = null;
   let backupCount = 0;
+  let workspaceRuntimeActive = false;
   let loading = true;
   let loadError = '';
   let updatedAt: Date | null = null;
@@ -32,11 +34,25 @@
   }
 
   function activeRuntimes() {
-    return runtimes.filter((runtime) => ['Starting', 'Online', 'Stopping', 'Detached'].includes(runtime.state));
+    return runtimes.filter((runtime) => ACTIVE_RUNTIME_STATES.has(runtime.state));
   }
 
   function managedRamBytes() {
     return activeRuntimes().reduce((total, runtime) => total + runtime.usedMemoryBytes, 0);
+  }
+
+  function serverSizeLabel() {
+    if (backupEstimate) return formatBytes(backupEstimate.sourceBytes);
+    if (workspaceRuntimeActive && latestBackup) return formatBytes(latestBackup.sourceBytes);
+    return 'Unavailable';
+  }
+
+  function serverSizeHint() {
+    if (!workspace) return 'No server open';
+    if (backupEstimate) return workspace.name;
+    if (workspaceRuntimeActive && latestBackup) return 'Last restore-point size; stop server for a current estimate';
+    if (workspaceRuntimeActive) return 'Stop server to calculate current size';
+    return workspace.name;
   }
 
   async function refresh() {
@@ -56,17 +72,19 @@
         backupEstimate = null;
         latestBackup = null;
         backupCount = 0;
+        workspaceRuntimeActive = false;
         updatedAt = new Date();
         return;
       }
 
-      const [estimate, backups] = await Promise.all([
-        runtimeProduct.backups.estimate(workspace.id).catch(() => null),
-        runtimeProduct.backups.list(workspace.id).catch(() => [])
-      ]);
-      backupEstimate = estimate;
+      const currentRuntime = nextRuntimes.find((runtime) => runtime.workspaceId === workspace?.id);
+      workspaceRuntimeActive = Boolean(currentRuntime && ACTIVE_RUNTIME_STATES.has(currentRuntime.state));
+      const backups = await runtimeProduct.backups.list(workspace.id).catch(() => []);
       backupCount = backups.length;
       latestBackup = backups[0] ?? null;
+      backupEstimate = workspaceRuntimeActive
+        ? null
+        : await runtimeProduct.backups.estimate(workspace.id).catch(() => null);
       updatedAt = new Date();
     } catch (value) {
       loadError = value instanceof Error ? value.message : 'Resource information is unavailable.';
@@ -92,9 +110,9 @@
     <div class="resource-grid">
       <div><span>Running servers</span><strong>{activeRuntimes().length} / {MAX_CONCURRENT_SERVERS}</strong><small>LazyBuilder runtime limit</small></div>
       <div><span>Managed RAM</span><strong>{formatBytes(managedRamBytes())}</strong><small>{resources ? `${Math.round(resources.totalMemoryMb / 1024)} GB system memory` : 'Current managed usage'}</small></div>
-      <div><span>This server</span><strong>{formatBytes(backupEstimate?.sourceBytes)}</strong><small>{workspace ? workspace.name : 'No server open'}</small></div>
+      <div><span>This server</span><strong>{serverSizeLabel()}</strong><small title={serverSizeHint()}>{serverSizeHint()}</small></div>
       <div><span>Restore points</span><strong>{workspace ? backupCount : '—'}</strong><small>{workspace ? `Last backup: ${formatBackupDate(latestBackup?.createdUnixSeconds)}` : 'Open a server to inspect'}</small></div>
-      <div><span>Disk available</span><strong>{formatBytes(backupEstimate?.availableBytes)}</strong><small>{backupEstimate ? `Backup needs about ${formatBytes(backupEstimate.requiredBytes)}` : 'Storage estimate unavailable'}</small></div>
+      <div><span>Disk available</span><strong>{workspaceRuntimeActive ? 'Check offline' : formatBytes(backupEstimate?.availableBytes)}</strong><small>{workspaceRuntimeActive ? 'Stop this server for a safe backup estimate' : backupEstimate ? `Backup needs about ${formatBytes(backupEstimate.requiredBytes)}` : 'Storage estimate unavailable'}</small></div>
       <div><span>Server RAM limit</span><strong>{resources ? `${(resources.currentMaxMemoryMb / 1024).toFixed(1)} GB` : 'Unavailable'}</strong><small>{resources ? `Safe max ${(resources.safeMaxMemoryMb / 1024).toFixed(1)} GB` : 'Open server settings for details'}</small></div>
     </div>
   {/if}
