@@ -18,16 +18,18 @@ Performance Manager owns only client performance behavior:
 - conservative model/face culling where visual correctness is provable;
 - immediate-mode/HUD/screen rendering efficiency;
 - targeted memory reductions and deduplication;
-- chunk rebuild, mesh, render-region, upload, visibility, terrain submission, translucent sorting, color-provider, and buffer efficiency as renderer ownership grows;
+- chunk rebuild, mesh, render-region, upload, visibility, terrain submission, translucent sorting, color-provider, allocator, and buffer efficiency as renderer ownership grows;
 - compatibility policy for builder-critical render consumers.
 
 Performance Manager does not own shader loading or shader-pack UX, building/editing behavior, map/world management, screenshot/chat/window convenience, automatic graphics-quality reduction, or speculative background schedulers.
 
 ## Current renderer ownership
 
-The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
+The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
 
 The terrain submission index preserves vanilla draw order inside each render layer. It is rebuilt only when the visible built-chunk set or published chunk data changes, and it is enabled only for sufficiently large sparse layer populations where the indexed traversal is estimated to visit fewer sections than five vanilla full scans. Sodium or Iris keeps ownership of this draw path while installed.
+
+Block-layer allocator lookup caching keeps the original `BlockBufferAllocatorStorage` instances and lifecycle intact; it only reuses the resolved allocator reference for the five fixed vanilla block render-layer identities. Sodium remains owner for this meshing path while installed.
 
 Translucent sort coalescing mirrors vanilla cancellation semantics: sections without a translucent layer do not enqueue a sort task, and an unchanged normalized camera-relative position is skipped only when vanilla would also cancel it. Camera-axis cases still sort. Sodium remains the active owner for this path while installed.
 
@@ -39,7 +41,7 @@ Full mesh replacement, GPU render-region arenas, terrain multi-draw submission, 
 
 ## Migration rule
 
-External performance mods remain migration references until the matching first-party behavior is implemented and proven in representative builder workloads. In particular, Sodium-owned chunk/render mixins are rejected while Sodium is installed, Iris owns terrain draw submission while Iris is installed, ImmediatelyFast-owned overlapping render/upload hooks are rejected while ImmediatelyFast is installed, and FerriteCore-owned baked-quad deduplication is rejected while FerriteCore is installed.
+External performance mods remain migration references until the matching first-party behavior is implemented and proven in representative builder workloads. In particular, Sodium-owned chunk/render/allocator mixins are rejected while Sodium is installed, Iris owns terrain draw submission while Iris is installed, ImmediatelyFast-owned overlapping render/upload hooks are rejected while ImmediatelyFast is installed, and FerriteCore-owned baked-quad deduplication is rejected while FerriteCore is installed.
 
 ## Configuration
 
@@ -55,4 +57,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Implementation details such as visibility masks, layer submission indexing, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.
+Implementation details such as visibility masks, layer submission indexing, allocator lookup caching, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.

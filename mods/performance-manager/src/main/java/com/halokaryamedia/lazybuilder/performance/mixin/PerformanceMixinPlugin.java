@@ -21,6 +21,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN = MIXIN_PACKAGE + "ChunkDataLayerMembershipMixin";
     private static final String BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN = MIXIN_PACKAGE + "BuiltChunkTranslucentSortMixin";
     private static final String WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN = MIXIN_PACKAGE + "WorldRendererTerrainSubmissionMixin";
+    private static final String BLOCK_BUFFER_ALLOCATOR_STORAGE_MIXIN = MIXIN_PACKAGE + "BlockBufferAllocatorStorageMixin";
     private static final String BLOCK_BUFFER_POOL_MIXIN = MIXIN_PACKAGE + "BlockBufferBuilderPoolMixin";
     private static final String BLOCK_COLORS_MIXIN = MIXIN_PACKAGE + "BlockColorsMixin";
     private static final String BLOCK_SIDE_VISIBILITY_MIXIN = MIXIN_PACKAGE + "BlockSideVisibilityMixin";
@@ -58,6 +59,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
                 || BUILT_CHUNK_BUFFER_LOOKUP_MIXIN.equals(mixinClassName)
                 || CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN.equals(mixinClassName)
                 || BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN.equals(mixinClassName)
+                || BLOCK_BUFFER_ALLOCATOR_STORAGE_MIXIN.equals(mixinClassName)
                 || BLOCK_BUFFER_POOL_MIXIN.equals(mixinClassName)
                 || BLOCK_COLORS_MIXIN.equals(mixinClassName)
                 || BLOCK_SIDE_VISIBILITY_MIXIN.equals(mixinClassName))

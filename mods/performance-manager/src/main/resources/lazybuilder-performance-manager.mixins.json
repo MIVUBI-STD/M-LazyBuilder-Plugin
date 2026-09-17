@@ -17,6 +17,7 @@
     "BuiltChunkBufferLookupMixin",
     "ChunkDataLayerMembershipMixin",
     "BuiltChunkTranslucentSortMixin",
+    "BlockBufferAllocatorStorageMixin",
     "BlockBufferBuilderPoolMixin",
     "BlockColorsMixin",
     "BlockSideVisibilityMixin",
