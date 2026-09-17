@@ -4,7 +4,30 @@
 
 This audit locks the current cleanup target for passive client utilities, with chat as the immediate priority.
 
-Utilities Manager is the consolidation destination for small passive Fabric utilities that fit its boundary. Consolidation means one maintained product surface and one client JAR, while internal source remains modular.
+Utilities Manager is the consolidation destination for small passive Fabric utilities that fit its boundary. Consolidation means one maintained product surface, one mod id, one preference surface, and one output client JAR, while internal source remains modular.
+
+## Single-mod consolidation rule
+
+The final Utility architecture is intentionally **one Fabric mod**, not a collection of small utility mods.
+
+Target runtime artifact:
+
+```text
+lazybuilder-utility-manager.jar
+```
+
+The following external utility JARs are migration sources only:
+
+- Chat Patches;
+- Chat Signing Hider;
+- Narrus Yeetus;
+- No Chat Reports.
+
+Their retained behavior must be independently rebuilt inside Utility Manager, verified, and then the external JAR retired. They must not be shaded, nested, unpacked, or copied into the LazyBuilder JAR.
+
+Internal modularity remains required. One JAR does **not** mean one implementation class. Chat, signing, accessibility, connection, notification, inventory, debug, screenshot, and window behavior remain separate source domains under Utility Manager.
+
+New third-party passive utility JARs should not become permanent dependencies when the behavior fits this boundary. The default workflow is audit -> retain/drop decision -> first-party implementation -> verification -> Utility ownership.
 
 ## Current baseline
 
@@ -19,8 +42,8 @@ Already implemented in Utility Manager:
 - session separators;
 - message classification/routing foundation;
 - human-readable warning and command-error presentation foundation;
-- presentation-only chat-signing indicator suppression;
-- narrator suppression through Minecraft's own narrator options/hotkey;
+- presentation-only signing indicator suppression;
+- narrator suppression through Minecraft accessibility options;
 - reconnect UX;
 - connection-detail copy;
 - shared native notifications;
@@ -30,7 +53,7 @@ Already implemented in Utility Manager:
 - compact debug HUD;
 - borderless window behavior.
 
-These features are not migration work and must not be reimplemented under new names.
+These features are not migration work and must not be reimplemented under new names or split back into separate mods.
 
 ## Chat cleanup target
 
@@ -40,11 +63,13 @@ The cleanup target is not a full chat replacement. It is a bounded routing and p
 
 ### Message classes
 
+The approved classes are:
+
 | Class | Purpose | Default destination |
 | --- | --- | --- |
 | `CHAT` | player communication | chat |
 | `GAME` | join/advancement/gameplay feedback | compact chat |
-| `SYSTEM` | concise player-relevant LazyBuilder/server state | compact chat or toast |
+| `SYSTEM` | concise LazyBuilder/server state relevant to player | compact chat or toast |
 | `WARNING` | actionable conflict/degraded behavior | compact chat/toast + detailed log |
 | `ERROR` | actionable failure | chat/toast + detailed log |
 
@@ -52,7 +77,7 @@ Developer-only diagnostics must not be routed into normal chat.
 
 ## External utility migration matrix
 
-Third-party source/JARs are references for requirements, not code to bundle into LazyBuilder.
+This matrix is behavior-oriented. Third-party source/JARs are requirements references, not code to bundle into LazyBuilder.
 
 | Area | Decision | Current status | LazyBuilder action |
 | --- | --- | --- | --- |
@@ -64,28 +89,30 @@ Third-party source/JARs are references for requirements, not code to bundle into
 | Chat context actions | `REBUILD` | implemented minimally | keep copy message; expose player-name copy only when sender parsing is unambiguous |
 | Session separator | `REBUILD` | implemented | preserve compact connection boundary marker |
 | Command-error presentation | `REBUILD` | implemented foundation | continue runtime verification against real Brigadier messages |
-| Signing/reporting protocol compatibility | `REBUILD` | intentionally not implemented | keep isolated from presentation; do not alter packets/reports without a separately verified requirement |
-| Signing indicator hiding | `REBUILD` | implemented | suppress only `MessageIndicator` presentation; preserve signatures and packet behavior |
-| Narrator suppression | `REBUILD` | implemented | set Minecraft narrator mode `OFF` and disable narrator hotkey when Utility suppression is enabled; keep accessibility infrastructure intact |
-| Third-party config/UI duplication | `DROP` | migration-ready | use Utility Manager preferences and Minecraft-native surfaces |
+| Signing-indicator hiding | `REBUILD` | implemented presentation-only | keep UI suppression isolated from protocol logic |
+| Narrator suppression | `REBUILD` | implemented | keep inside accessibility boundary using Minecraft-native options |
+| Signing/reporting compatibility | `REBUILD` | pending | isolate under `chat/signing`; verify protocol behavior independently |
+| Third-party config/UI duplication | `DROP` | migration-ready | use one Utility Manager preference surface and Minecraft-native UI |
 | Third-party background workers/indexers | `DROP` | locked | do not introduce unless a concrete verified requirement exists |
 | Plugin-specific chat prefixes as primary taxonomy | `DROP` | locked | classify by message purpose instead |
 | Repeated raw translation keys in user chat | `DROP` | implemented foundation | resolve human-readable names; retain raw key only in diagnostics |
 
 ## External mod retirement status
 
-Retirement is based on behavior coverage, not on mod name. A third-party JAR is removable only after every behavior intentionally retained from it has either been rebuilt or explicitly dropped and the replacement passes runtime verification.
+Retirement is based on retained behavior coverage, not mod name. A JAR is removable only after every retained behavior has first-party coverage or has been explicitly dropped, and runtime verification passes.
 
 | External mod | Status | Reason |
 | --- | --- | --- |
-| Chat Patches | `NEAR RETIREMENT` | approved core UX now has first-party coverage: history, draft, timestamps, search, context copy, session boundaries, compact presentation, and duplicate collapse. Runtime verification and final feature-gap review remain. |
-| Chat Signing Hider | `NEAR RETIREMENT` | Utility Manager now suppresses the vanilla `MessageIndicator` at presentation time without altering message signatures or packets. Runtime verification with signed/unsigned chat remains before removal. |
-| No Chat Reports | `KEEP FOR NOW` | it changes substantially more than presentation and touches signing/reporting protocol behavior. Utility Manager deliberately does not claim equivalence. Packet/reporting behavior requires an independent requirement and compatibility audit. |
-| Narrus Yeetus | `NEAR RETIREMENT` | Utility Manager now has first-party narrator suppression using Minecraft's own narrator mode/hotkey. Runtime verification must confirm this also eliminates the specific unwanted narrator behavior/errors before removing the external mod. |
+| Chat Patches | `NEAR RETIREMENT` | retained core UX has first-party coverage: history, draft, timestamps, search, context copy, session boundaries, compact presentation, and duplicate collapse. Runtime verification and final gap review are still required. Persistent chat-log/database behavior is not an approved requirement. |
+| Chat Signing Hider | `NEAR RETIREMENT` | presentation-only signing indicator suppression now exists first-party. Runtime verification is still required before removal. |
+| Narrus Yeetus | `NEAR RETIREMENT` | narrator suppression now exists first-party under Utility accessibility ownership. Runtime verification is still required before removal. |
+| No Chat Reports | `KEEP FOR NOW` | protocol/reporting behavior is broader than presentation. Utility Manager will only replace retained portions through an independent `chat/signing` implementation after protocol verification. |
 
-No external JAR should be shaded, unpacked, decompiled into, or source-copied into Utility Manager as a migration shortcut.
+The end state remains one `lazybuilder-utility-manager.jar`; `KEEP FOR NOW` means migration is incomplete, not that a permanent second utility mod is accepted.
 
 ## Priority order
+
+Implementation order is locked to reduce regression risk:
 
 1. message classification and routing contract;
 2. warning/system deduplication;
@@ -94,39 +121,121 @@ No external JAR should be shaded, unpacked, decompiled into, or source-copied in
 5. timestamp presentation;
 6. chat search;
 7. contextual actions;
-8. presentation-only signing compatibility;
+8. signing compatibility migration;
 9. narrator/accessibility migration;
-10. runtime verification and external-mod retirement;
-11. separately decide whether No Chat Reports protocol behavior is still a product requirement.
+10. remove external overlapping mods only after runtime verification.
 
-Steps 1-9 now have first-party implementations. Current priority is runtime verification, then removal of external mods whose retained behavior is fully covered. No Chat Reports stays separate from this retirement decision because its packet/reporting scope is materially broader.
-
-## Keybind-warning rule
-
-A conflict should produce at most one concise user-facing warning per stable conflict fingerprint in a session. Human-readable action names should be shown. Raw translation keys and subsystem implementation identifiers belong in diagnostics.
-
-## Command-error rule
-
-Command errors must preserve correctness while reducing Brigadier noise. The original command and detailed parser context remain available in diagnostics/logging when needed.
-
-## Dedupe rule
-
-`CHAT` is never automatically collapsed. The ChatHud adapter only collapses messages explicitly marked by the classifier/Utility path. Lookalike plugin text must not be collapsed by text shape alone.
+Steps 1-7 and narrator/signing-presentation ownership now have first-party implementations. The remaining high-risk migration item is retained No Chat Reports-equivalent signing/reporting behavior plus runtime verification.
 
 ## Signing boundary
 
-Signing presentation and signing protocol are separate concerns.
+Signing presentation and signing/reporting protocol logic are separate responsibilities.
 
-Utility Manager may hide a vanilla chat signing indicator when configured, but must not strip signatures, rewrite signing packets, disable reporting protocol, or claim No Chat Reports equivalence as a side effect of UI cleanup. Any future protocol-level change requires its own compatibility/security audit.
+Presentation layer may:
+
+- hide or simplify signing indicators;
+- keep normal chat readable;
+- expose no packet/signature internals to ordinary chat.
+
+Protocol layer may only be implemented under `utility/chat/signing/` after its required behavior is explicitly documented and independently verified against Minecraft 1.21.4. Packet mutation must never be introduced casually into `ChatHud` or `ChatScreen` mixins.
 
 ## Accessibility boundary
 
-Narrator suppression must use Minecraft's supported narrator options where possible. Utility Manager must not remove accessibility classes, screens, or APIs. Disabling the narrator hotkey is part of suppression so accidental toggles do not restore narration during normal builder use.
+Narrator handling belongs under Utility accessibility ownership, not inside chat rendering. Suppression may set Minecraft narrator options to disabled while preserving accessibility infrastructure so it remains available when suppression is turned off.
+
+## Keybind-warning rule
+
+Keybind conflicts are not chat spam.
+
+A conflict should produce at most one concise user-facing warning per stable conflict fingerprint in a session. Human-readable action names should be shown. Raw translation keys and subsystem implementation identifiers belong in diagnostics.
+
+Example target presentation:
+
+```text
+Keybind conflict: Terraform Panel ↔ Axion Editor UI
+```
+
+not:
+
+```text
+key.lazybuilder.terraform.toggle_panel
+```
+
+## Command-error rule
+
+Command errors must preserve correctness while reducing Brigadier noise.
+
+Preferred user-facing forms:
+
+```text
+Unknown command: /games
+```
+
+or:
+
+```text
+Invalid argument: expected radius
+```
+
+The original command and detailed parser context remain available in diagnostics/logging when needed.
+
+## Dedupe rule
+
+Only low-risk machine-generated categories are eligible for automatic collapse:
+
+- `GAME`;
+- `SYSTEM`;
+- `WARNING`.
+
+`CHAT` is never automatically collapsed by default.
+
+The ChatHud adapter is stricter than the semantic policy: only messages explicitly marked by the classifier/Utility path are eligible for in-place replacement. Lookalike plugin text must not be collapsed by text shape alone.
+
+A dedupe fingerprint must be derived from stable semantic fields rather than rendered color/style so presentation changes do not alter grouping behavior.
+
+## Notification routing rule
+
+Use existing Minecraft-native Utility notifications instead of creating another popup system.
+
+| Event | Chat | Toast | Detailed log/console |
+| --- | :---: | :---: | :---: |
+| player message | yes | no | no |
+| join/gameplay event | compact | no | optional |
+| screenshot saved | no | yes | no |
+| resource reload complete | no | yes | yes |
+| keybind conflict | compact once | yes once | yes |
+| developer-only internal warning | no | no | yes |
+| invalid command | yes | no | yes |
+| reconnect failure | compact | yes | yes |
 
 ## Rejected directions
 
-Do not introduce Discord-style replacement chat, avatars, custom fonts as a requirement, animated cards, database-backed chat indexing, chat background workers, large replacement `ChatHud`/`ChatScreen`, duplicate notification systems, or shaded third-party chat mods.
+Do not introduce:
+
+- Discord-style replacement chat;
+- avatars or social-profile UI;
+- custom fonts as a requirement;
+- animated message cards;
+- database-backed chat indexing;
+- chat-specific background worker threads;
+- large replacement `ChatHud`/`ChatScreen` without a proven need;
+- one configuration switch per external plugin/source mod;
+- duplicate notification systems;
+- shaded or nested third-party chat mods inside Utility Manager;
+- permanent split-out LazyBuilder utility mods for functionality that belongs to Utility Manager.
 
 ## Completion criteria
 
-The cleanup phase is complete only when source ownership is non-overlapping, the chat UX has one LazyBuilder owner, existing Utility behavior remains intact, external replacements pass Minecraft Java 1.21.4 runtime verification, and any still-retained protocol/security mod has an explicit documented reason to remain.
+The cleanup phase is complete only when:
+
+- one Utility Manager mod owns the retained passive utility behavior;
+- source ownership is documented and internally modular;
+- one preference surface replaces overlapping external configs;
+- the chat UX has one LazyBuilder owner;
+- existing Utility behavior remains intact;
+- noisy repeated warnings are suppressed safely;
+- user-facing messages contain human-readable labels;
+- developer details remain available outside normal chat;
+- retained signing/reporting behavior has a verified first-party implementation or is explicitly dropped;
+- Chat Patches, Chat Signing Hider, Narrus Yeetus, and No Chat Reports are no longer required at runtime;
+- runtime verification passes on Minecraft Java 1.21.4.
