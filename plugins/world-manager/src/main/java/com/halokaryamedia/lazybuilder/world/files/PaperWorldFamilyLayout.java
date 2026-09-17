@@ -30,6 +30,16 @@ final class PaperWorldFamilyLayout {
 
     private PaperWorldFamilyLayout() { }
 
+    /** Fails before root publication if a sibling name is already owned by unrelated data. */
+    static void requireFreshFamilyDestinations(Path worldRoot, String baseFolder) throws IOException {
+        for (DimensionLayout layout : DIMENSIONS) {
+            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
+            if (Files.exists(sibling)) {
+                throw new IOException("Paper dimension destination already exists: " + sibling.getFileName());
+            }
+        }
+    }
+
     static void publishCanonicalDimensions(
             Path worldRoot,
             String baseFolder,
