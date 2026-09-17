@@ -154,15 +154,50 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     public void loadWorld(WorldRecord record) {
         requirePrimaryThread();
         Objects.requireNonNull(record, "record");
-        if (isLoaded(record)) return;
         Path target = worldPath(record.folderName());
         if (!Files.isDirectory(target)) {
             throw new IllegalStateException("Managed world folder is missing: " + record.folderName());
         }
-        WorldCreator creator = new WorldCreator(record.folderName());
-        if (record.kind() == WorldKind.VOID) creator.generator(VoidChunkGenerator.INSTANCE);
-        World loaded = server.createWorld(creator);
-        if (loaded == null) throw new IllegalStateException("Paper failed to load world: " + record.folderName());
+
+        World root = server.getWorld(record.folderName());
+        if (root == null) {
+            WorldCreator creator = new WorldCreator(record.folderName());
+            if (record.kind() == WorldKind.VOID) creator.generator(VoidChunkGenerator.INSTANCE);
+            root = server.createWorld(creator);
+            if (root == null) throw new IllegalStateException("Paper failed to load world: " + record.folderName());
+        } else if (root.getEnvironment() != World.Environment.NORMAL) {
+            throw new IllegalStateException("Managed root world has unexpected environment: " + root.getEnvironment());
+        }
+
+        loadFamilyDimensionIfPresent(record.folderName(), PAPER_NETHER_SUFFIX, World.Environment.NETHER);
+        loadFamilyDimensionIfPresent(record.folderName(), PAPER_END_SUFFIX, World.Environment.THE_END);
+    }
+
+    private void loadFamilyDimensionIfPresent(String baseFolder, String suffix, World.Environment environment) {
+        String folderName = baseFolder + suffix;
+        Path folder = worldPath(folderName);
+        if (Files.notExists(folder)) return;
+        if (!Files.isDirectory(folder) || Files.isSymbolicLink(folder)) {
+            throw new IllegalStateException("Managed dimension folder is unsafe: " + folderName);
+        }
+
+        World existing = server.getWorld(folderName);
+        if (existing != null) {
+            if (existing.getEnvironment() != environment) {
+                throw new IllegalStateException("Managed dimension " + folderName
+                        + " has unexpected environment: " + existing.getEnvironment());
+            }
+            return;
+        }
+
+        World loaded = server.createWorld(new WorldCreator(folderName).environment(environment));
+        if (loaded == null) {
+            throw new IllegalStateException("Paper failed to load managed dimension: " + folderName);
+        }
+        if (loaded.getEnvironment() != environment) {
+            throw new IllegalStateException("Paper loaded " + folderName
+                    + " with unexpected environment: " + loaded.getEnvironment());
+        }
     }
 
     @Override
