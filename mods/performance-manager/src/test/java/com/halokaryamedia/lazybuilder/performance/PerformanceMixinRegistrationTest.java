@@ -19,6 +19,8 @@ final class PerformanceMixinRegistrationTest {
             assertTrue(json.contains("BlockEntityRenderDispatcherMixin"), "block entity culling mixin must stay registered");
             assertTrue(json.contains("TextRendererDrawerMixin"), "text render lookup mixin must stay registered");
             assertTrue(json.contains("VertexBufferMixin"), "GPU buffer resize mixin must stay registered");
+            assertTrue(json.contains("BakedQuadAccessor"), "baked quad memory accessor must stay registered");
+            assertTrue(json.contains("BasicBakedModelBuilderMixin"), "baked quad dedup mixin must stay registered");
             assertTrue(json.contains("PerformanceMixinPlugin"), "migration compatibility plugin must stay registered");
             assertTrue(json.contains("\"required\": true"), "performance mixin failures must fail loudly");
             assertTrue(json.contains("\"defaultRequire\": 1"), "performance injections must require their target");

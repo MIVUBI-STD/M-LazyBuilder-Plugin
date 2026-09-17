@@ -60,7 +60,9 @@ Current culling compatibility policy is deliberately narrow:
 - when the external `entityculling` mod is present, LazyBuilder culling remains inactive to avoid competing render owners during migration;
 - WorldEditCUI overlay rendering remains outside the entity/block-entity culling path and is not intercepted.
 
-Rendering-efficiency mixins are also migration-aware. When the external `immediatelyfast` mod is installed, the first-party text-buffer and GPU-buffer mixins are not applied at all, avoiding redirect conflicts while migration is incomplete.
+Rendering-efficiency mixins are migration-aware. When the external `immediatelyfast` mod is installed, the first-party text-buffer and GPU-buffer mixins are not applied at all, avoiding redirect conflicts while migration is incomplete.
+
+Memory-dedup mixins are also migration-aware. When `ferritecore` is present, the first-party baked-quad accessor and builder mixin are not applied so only one memory owner canonicalizes baked quad storage.
 
 ## Runtime model
 
@@ -78,7 +80,8 @@ PerformanceManagerClient
     │   ├── CullingRuntime
     │   └── VisibilityDecision
     ├── rendering/        # focused render-path optimizations as implemented
-    ├── memory/           # capability owner as implemented
+    ├── memory/
+    │   └── MemoryDeduplicator
     ├── compatibility/    # explicit bypass/integration policy
     └── diagnostics/
         └── PerformanceSnapshotReader
@@ -101,6 +104,9 @@ The currently implemented first-party behavior is production-owned:
 - consecutive identical text render-layer buffer lookups inside vanilla text drawing reuse the last consumer instead of repeatedly querying the provider;
 - writable non-static GPU vertex buffers are not shrunk and reallocated when the current allocation already fits the upload; static-write buffers retain vanilla resize behavior;
 - rendering-efficiency mixins are disabled while ImmediatelyFast is present to keep one active owner during migration;
+- identical vanilla `BakedQuad` vertex arrays are canonicalized during `BasicBakedModel.Builder` assembly so duplicate quads can share backing storage;
+- baked-quad canonicalization cache is concurrent and cleared on every client resource reload so old model arrays are not retained across reload generations;
+- memory-dedup mixins are disabled while FerriteCore is present to keep one active owner during migration;
 - on-demand performance snapshots containing Minecraft/client state without a metrics-history database;
 - no dedicated performance worker thread or polling service.
 
@@ -148,6 +154,24 @@ The first production rendering subset deliberately targets low-risk redundant wo
 
 HUD batching, screen batching, sign atlas buffering, map atlas generation, GL error-check changes, and other ImmediatelyFast features are not assumed equivalent merely because the source mod contains them. They require separate correctness/compatibility proof before adoption.
 
+## Memory efficiency
+
+Current default:
+
+```properties
+memory.optimizations=true
+```
+
+The first production memory subset is deliberately narrow:
+
+- only vanilla `BasicBakedModel.Builder` quad assembly is targeted;
+- equal `int[]` vertex payloads share one canonical array instance;
+- array identity is reused without changing tint, face, sprite, shade, light-emission, or model-selection semantics;
+- the canonicalization table is cleared during client resource reload;
+- when FerriteCore is installed, first-party baked-quad dedup mixins are not applied.
+
+Block-state cache replacement, fast state maps, multipart predicate deduplication, model-side compaction, threading-detector changes, and other FerriteCore features remain out of the implemented subset until measured builder workloads justify them.
+
 ## Diagnostics
 
 `PerformanceManagerClient.currentSnapshot()` captures diagnostics on demand:
@@ -180,7 +204,7 @@ External performance mods are migration references, not the architecture.
 | EntityCulling entity/block-entity occlusion | `culling/` | first-party conservative implementation exists; keep external-owner bypass until runtime proof is complete |
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
 | ImmediatelyFast immediate rendering efficiency | `rendering/` | first low-risk text lookup and GPU resize subset exists; keep external-owner mixin gate until runtime proof is complete |
-| FerriteCore memory reductions | `memory/` | add only measured, maintainable dedup/cache improvements |
+| FerriteCore memory reductions | `memory/` | first baked-quad vertex dedup subset exists; keep FerriteCore-owner gate until runtime proof is complete |
 | Sodium chunk/render pipeline | `rendering/` | final large phase; renderer ownership requires dedicated compatibility and benchmark proof |
 | Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
 | Sodium Extra | capability-by-capability | retain only performance behavior that fits this contract; cosmetic convenience is out of scope |
@@ -215,6 +239,7 @@ background.minimized_fps=10
 culling.entities=true
 culling.block_entities=true
 rendering.optimizations=true
+memory.optimizations=true
 ```
 
 Future settings should remain high-level. Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.

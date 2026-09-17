@@ -8,7 +8,9 @@
     "WorldRendererMixin",
     "BlockEntityRenderDispatcherMixin",
     "TextRendererDrawerMixin",
-    "VertexBufferMixin"
+    "VertexBufferMixin",
+    "BakedQuadAccessor",
+    "BasicBakedModelBuilderMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -7,10 +7,11 @@ public record PerformancePreferences(
         int minimizedFpsLimit,
         boolean entityCulling,
         boolean blockEntityCulling,
-        boolean renderingOptimizations
+        boolean renderingOptimizations,
+        boolean memoryOptimizations
 ) {
     public static PerformancePreferences defaults() {
-        return new PerformancePreferences(true, 30, 10, true, true, true);
+        return new PerformancePreferences(true, 30, 10, true, true, true, true);
     }
 
     public PerformancePreferences {

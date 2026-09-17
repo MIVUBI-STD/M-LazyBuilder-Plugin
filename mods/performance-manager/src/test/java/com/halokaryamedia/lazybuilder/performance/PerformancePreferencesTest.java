@@ -21,12 +21,13 @@ final class PerformancePreferencesTest {
         assertTrue(defaults.entityCulling());
         assertTrue(defaults.blockEntityCulling());
         assertTrue(defaults.renderingOptimizations());
+        assertTrue(defaults.memoryOptimizations());
         assertEquals(30, defaults.unfocusedFpsLimit());
         assertEquals(10, defaults.minimizedFpsLimit());
     }
 
     @Test
-    void renderingPolicyPersistsWithoutChangingOtherCapabilities() {
+    void performancePoliciesPersistWithoutCrossChangingCapabilities() {
         PerformanceConfigStore store = new PerformanceConfigStore(tempDir);
         PerformancePreferences expected = new PerformancePreferences(
                 false,
@@ -34,6 +35,7 @@ final class PerformancePreferencesTest {
                 12,
                 false,
                 true,
+                false,
                 false
         );
 
@@ -46,5 +48,6 @@ final class PerformancePreferencesTest {
         assertFalse(loaded.entityCulling());
         assertTrue(loaded.blockEntityCulling());
         assertFalse(loaded.renderingOptimizations());
+        assertFalse(loaded.memoryOptimizations());
     }
 }
