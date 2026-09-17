@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{backup_recovery, server_backups, server_process_guard, server_restore, workspace_registry};
@@ -32,7 +32,7 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
         let _start_lease = match ServerStartLease::acquire() {
             Ok(value) => value,
             Err(message) => {
-                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                let error = CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
                 fail_operation(&operations, &operation_id, &error, true);
                 return Err(error);
             }
@@ -40,12 +40,12 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
         let entry = workspace_registry::get(&workspace_id).map_err(CommandError::from)?;
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Confirming the server is offline and safe to snapshot.", None);
         if let Err(message) = server_process_guard::ensure_root_not_running(std::path::Path::new(&entry.path)) {
-            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop server");
+            let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
         if let Err(message) = backup_recovery::begin(&workspace_id) {
-            let error = CommandError::recoverable("BACKUP_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+            let error = CommandError::recoverable_action("BACKUP_RECOVERY_REQUIRED", message, RecoveryAction::RestartLauncher);
             require_recovery(&operations, &operation_id, &error);
             return Err(error);
         }
@@ -71,15 +71,15 @@ pub async fn server_backup_create(app: AppHandle, workspace_id: String) -> Comma
             Err(message) => {
                 match backup_recovery::recover_workspace(&workspace_id) {
                     Ok(_) => {
-                        let error = CommandError::recoverable("BACKUP_FAILED", message, "Retry backup");
+                        let error = CommandError::recoverable_action("BACKUP_FAILED", message, RecoveryAction::RetryOperation);
                         fail_operation(&operations, &operation_id, &error, true);
                         Err(error)
                     }
                     Err(recovery_error) => {
-                        let error = CommandError::recoverable(
+                        let error = CommandError::recoverable_action(
                             "BACKUP_RECOVERY_REQUIRED",
                             format!("{message}. Backup staging recovery also needs attention: {recovery_error}"),
-                            "Restart LazyBuilder",
+                            RecoveryAction::RestartLauncher,
                         );
                         require_recovery(&operations, &operation_id, &error);
                         Err(error)
@@ -118,7 +118,7 @@ pub async fn server_backup_restore(
         let _start_lease = match ServerStartLease::acquire() {
             Ok(value) => value,
             Err(message) => {
-                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                let error = CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
                 fail_operation(&operations, &operation_id, &error, true);
                 return Err(error);
             }
@@ -126,7 +126,7 @@ pub async fn server_backup_restore(
         let entry = workspace_registry::get(&workspace_id).map_err(CommandError::from)?;
         let _ = operations.set_phase(&operation_id, "preflight", "Checking server state", "Restore requires an offline, process-free server workspace.", None);
         if let Err(message) = server_process_guard::ensure_root_not_running(std::path::Path::new(&entry.path)) {
-            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop server");
+            let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
@@ -147,10 +147,10 @@ pub async fn server_backup_restore(
             }
             Ok(_) => {}
             Err(message) => {
-                let error = CommandError::recoverable(
+                let error = CommandError::recoverable_action(
                     "BACKUP_INTEGRITY_FAILED",
                     format!("Restore point integrity verification failed: {message}"),
-                    "Choose another restore point",
+                    RecoveryAction::ReviewBackups,
                 );
                 fail_operation(&operations, &operation_id, &error, true);
                 return Err(error);
@@ -160,7 +160,7 @@ pub async fn server_backup_restore(
         // Track that staging by workspace so a hard kill can be reconciled without a
         // full scan of every registered server on subsequent Launcher starts.
         if let Err(message) = backup_recovery::begin(&workspace_id) {
-            let error = CommandError::recoverable("BACKUP_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+            let error = CommandError::recoverable_action("BACKUP_RECOVERY_REQUIRED", message, RecoveryAction::RestartLauncher);
             require_recovery(&operations, &operation_id, &error);
             return Err(error);
         }
@@ -186,22 +186,22 @@ pub async fn server_backup_restore(
                     Ok(_) => failure.message.clone(),
                     Err(recovery_error) => format!("{}. Safety-backup staging recovery also needs attention: {recovery_error}", failure.message),
                 };
-                let error = CommandError::recoverable("RESTORE_RECOVERY_REQUIRED", details, "Restart LazyBuilder");
+                let error = CommandError::recoverable_action("RESTORE_RECOVERY_REQUIRED", details, RecoveryAction::RestartLauncher);
                 require_recovery(&operations, &operation_id, &error);
                 Err(error)
             }
             Err(failure) => {
                 match backup_cleanup {
                     Ok(_) => {
-                        let error = CommandError::recoverable("RESTORE_FAILED", failure.message, "Retry restore");
+                        let error = CommandError::recoverable_action("RESTORE_FAILED", failure.message, RecoveryAction::RetryOperation);
                         fail_operation(&operations, &operation_id, &error, true);
                         Err(error)
                     }
                     Err(recovery_error) => {
-                        let error = CommandError::recoverable(
+                        let error = CommandError::recoverable_action(
                             "BACKUP_RECOVERY_REQUIRED",
                             format!("{}. Safety-backup staging recovery also needs attention: {recovery_error}", failure.message),
-                            "Restart LazyBuilder",
+                            RecoveryAction::RestartLauncher,
                         );
                         require_recovery(&operations, &operation_id, &error);
                         Err(error)
@@ -226,7 +226,7 @@ pub async fn server_backup_restore(
 pub async fn server_backup_delete(app: AppHandle, workspace_id: String, backup_id: String) -> CommandResult<()> {
     let resource = format!("workspace:{workspace_id}");
     let operation = app.state::<OperationRegistry>().begin_exclusive("delete-backup", &resource, false)
-        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -246,7 +246,7 @@ pub async fn server_backup_delete(app: AppHandle, workspace_id: String, backup_i
                 Ok(())
             }
             Err(message) => {
-                let error = CommandError::recoverable("BACKUP_DELETE_FAILED", message, "Review restore points and retry");
+                let error = CommandError::recoverable_action("BACKUP_DELETE_FAILED", message, RecoveryAction::ReviewBackups);
                 fail_operation(&operations, &operation_id, &error, true);
                 Err(error)
             }
