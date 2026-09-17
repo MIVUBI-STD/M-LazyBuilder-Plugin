@@ -329,6 +329,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.exists(destination)) {
             throw new IOException("Destination world already exists: " + destinationFolder);
         }
+        PaperWorldFamilyLayout.requireFreshFamilyDestinations(worldRoot, destinationFolder);
 
         String sourceName = source.getFileName().toString();
         boolean transactionalPublish = sourceName.endsWith(WORK_SUFFIX) || sourceName.endsWith(COPY_SUFFIX);
