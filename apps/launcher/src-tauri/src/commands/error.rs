@@ -13,6 +13,7 @@ pub enum RecoveryAction {
     RestartLauncher,
     RetryOperation,
     ReviewBackups,
+    ReviewPlugins,
     ReviewServerHealth,
     StartServer,
     StopServer,
@@ -33,6 +34,7 @@ impl RecoveryAction {
             Self::RestartLauncher => "RESTART_LAUNCHER",
             Self::RetryOperation => "RETRY_OPERATION",
             Self::ReviewBackups => "REVIEW_BACKUPS",
+            Self::ReviewPlugins => "REVIEW_PLUGINS",
             Self::ReviewServerHealth => "REVIEW_SERVER_HEALTH",
             Self::StartServer => "START_SERVER",
             Self::StopServer => "STOP_SERVER",
@@ -126,6 +128,7 @@ mod tests {
         assert_eq!(RecoveryAction::StopServer.as_code(), "STOP_SERVER");
         assert_eq!(RecoveryAction::RestartLauncher.as_code(), "RESTART_LAUNCHER");
         assert_eq!(RecoveryAction::ReviewBackups.as_code(), "REVIEW_BACKUPS");
+        assert_eq!(RecoveryAction::ReviewPlugins.as_code(), "REVIEW_PLUGINS");
         assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
         assert_eq!(RecoveryAction::UseServerControls.as_code(), "USE_SERVER_CONTROLS");
     }
