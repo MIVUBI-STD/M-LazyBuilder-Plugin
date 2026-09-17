@@ -14,7 +14,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
@@ -55,11 +55,19 @@ logical allocation
 
 Sequential-index terrain binds Minecraft's shared sequential index buffer and issues `glDrawElementsBaseVertex`. Custom/sorted-index terrain binds the region EBO and issues the same base-vertex draw with the allocation's index byte offset. The physical path validates vertex payload size, index payload size, allocation generation, arena epoch, index alignment, base-vertex range, and draw state before every draw.
 
-A full rebuild can mirror VBO and sorted EBO together before vanilla closes the `BuiltBuffer`. Later translucent resort uploads update only the shared EBO when the logical handle generation remains stable. If allocator growth or compaction changes the handle, physical residency is invalidated and vanilla rendering remains authoritative until the next full rebuild; no speculative GPU relocation is performed.
+A full rebuild can mirror VBO and sorted EBO together before vanilla closes the `BuiltBuffer`. Later translucent resort uploads update only the shared EBO when the logical handle generation remains stable.
+
+Physical arena growth and logical compaction no longer have to discard every mirrored resident. LazyBuilder owns a small raw render-thread GL buffer wrapper for the shared arena backing and can rebuild an arena by GPU-to-GPU copying each still-valid resident from its old VBO/EBO offsets into the current logical allocation offsets. The VAO set is recreated against the new backing. Entries that cannot be proven valid fall back individually to vanilla instead of blocking the rest of the arena.
+
+Relocation remains conservative: if a current handle is missing, changes region, has invalid draw state, or cannot fit the rebuilt backing safely, that resident is invalidated and vanilla rendering remains authoritative until a later upload. Diagnostics report relocation count, copied bytes, and relocation fallbacks separately from ordinary invalidations.
 
 The physical path is still mirrored rather than exclusive. Vanilla VBO/EBO state remains populated so any mismatch immediately falls back without hiding builder geometry. Final VRAM reduction therefore waits until runtime correctness and compatibility proof justify dropping duplicate vanilla backing for proven-safe residents.
 
-Physical diagnostics include shared arena resident bytes, arena/resident counts, mirrored upload bytes, physical draw count, VBO/VAO bind reuse, resize invalidations, and current logical arena pressure.
+## Multi-draw boundary
+
+Minecraft 1.21.4 terrain rendering uploads a different `modelOffset` uniform for every visible `BuiltChunk` immediately before its draw. Plain `glMultiDrawElementsBaseVertex` cannot provide a different `modelOffset` per command, so combining multiple sections into one multi-draw call would place geometry incorrectly unless shader/input ownership changes as well.
+
+For that reason LazyBuilder currently reduces arena VBO/VAO/EBO binds across consecutive physical draws but keeps one draw submission per section. True terrain multi-draw is deferred until a first-party draw-data path can carry per-command section translation without changing visual semantics or breaking FRAPI/Iris compatibility.
 
 ## FRAPI and shader compatibility boundary
 
@@ -75,7 +83,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, and physical shared-buffer usage.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, and physical relocation health.
 
 ## Migration rule
 
@@ -93,4 +101,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, buffer growth, and allocator details are not user-facing knobs.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, relocation, buffer growth, and allocator details are not user-facing knobs.

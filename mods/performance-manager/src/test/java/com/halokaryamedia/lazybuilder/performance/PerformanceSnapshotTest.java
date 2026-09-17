@@ -71,10 +71,14 @@ final class PerformanceSnapshotTest {
                 18,
                 131072L,
                 900L,
+                300L,
                 250L,
                 650L,
                 3L,
                 5L,
+                6L,
+                32768L,
+                2L,
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -133,10 +137,14 @@ final class PerformanceSnapshotTest {
         assertEquals(18, snapshot.terrainPhysicalResidentBuffers());
         assertEquals(131072L, snapshot.terrainPhysicalUploadedBytes());
         assertEquals(900L, snapshot.terrainPhysicalDraws());
+        assertEquals(300L, snapshot.terrainPhysicalCustomIndexDraws());
         assertEquals(250L, snapshot.terrainPhysicalBufferBinds());
         assertEquals(650L, snapshot.terrainPhysicalBindReuses());
         assertEquals(3L, snapshot.terrainPhysicalArenaResizes());
         assertEquals(5L, snapshot.terrainPhysicalInvalidations());
+        assertEquals(6L, snapshot.terrainPhysicalRelocations());
+        assertEquals(32768L, snapshot.terrainPhysicalRelocatedBytes());
+        assertEquals(2L, snapshot.terrainPhysicalRelocationFallbacks());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }
