@@ -13,6 +13,7 @@ public record UtilityPreferences(
         boolean chatSearch,
         boolean chatTimestamps,
         boolean hideChatSigningIndicators,
+        boolean hideChatReportButton,
         boolean suppressNarrator,
         boolean reconnectButton,
         boolean contextualScreenshotNames,
@@ -22,6 +23,7 @@ public record UtilityPreferences(
     public static UtilityPreferences defaults() {
         return new UtilityPreferences(
                 false,
+                true,
                 true,
                 true,
                 true,
