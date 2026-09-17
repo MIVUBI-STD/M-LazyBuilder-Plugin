@@ -79,7 +79,7 @@ class ChunkerCliAdapterTest {
     }
 
     @Test
-    void nativeAreaPruningPreservesOriginalNbtOnlyForCanonicalSameFormat() {
+    void nativeAreaPreservationRequiresExplicitManagedInputAuthority() {
         ChunkerCliAdapter adapter = new ChunkerCliAdapter(
                 Path.of("/java/bin/java"),
                 2048,
@@ -88,14 +88,30 @@ class ChunkerCliAdapterTest {
                 new OnDemandProcessRunner()
         );
 
-        ConverterAdapter.ConversionRequest nativeArea = new ConverterAdapter.ConversionRequest(
+        ConverterAdapter.ConversionRequest genericNativeArea = new ConverterAdapter.ConversionRequest(
                 Path.of("/input"),
                 Path.of("/output"),
                 "java_1_21_4",
                 Path.of("/tmp/pruning.json")
         );
-        assertTrue(nativeArea.keepOriginalNbt());
-        assertTrue(adapter.buildConversionCommand(Path.of("/runtime/converter.jar"), nativeArea).contains("-k"));
+        assertFalse(genericNativeArea.preserveNativeInput());
+        assertFalse(genericNativeArea.keepOriginalNbt());
+        assertFalse(adapter.buildConversionCommand(
+                Path.of("/runtime/converter.jar"), genericNativeArea).contains("-k"));
+
+        ConverterAdapter.ConversionRequest managedNativeArea = new ConverterAdapter.ConversionRequest(
+                Path.of("/input"),
+                Path.of("/output"),
+                "java_1_21_4",
+                Path.of("/tmp/pruning.json"),
+                null,
+                null,
+                true
+        );
+        assertTrue(managedNativeArea.preserveNativeInput());
+        assertTrue(managedNativeArea.keepOriginalNbt());
+        assertTrue(adapter.buildConversionCommand(
+                Path.of("/runtime/converter.jar"), managedNativeArea).contains("-k"));
 
         ConverterAdapter.ConversionRequest crossVersionArea = new ConverterAdapter.ConversionRequest(
                 Path.of("/input"),
@@ -104,7 +120,8 @@ class ChunkerCliAdapterTest {
                 Path.of("/tmp/pruning.json")
         );
         assertFalse(crossVersionArea.keepOriginalNbt());
-        assertFalse(adapter.buildConversionCommand(Path.of("/runtime/converter.jar"), crossVersionArea).contains("-k"));
+        assertFalse(adapter.buildConversionCommand(
+                Path.of("/runtime/converter.jar"), crossVersionArea).contains("-k"));
     }
 
     @Test
