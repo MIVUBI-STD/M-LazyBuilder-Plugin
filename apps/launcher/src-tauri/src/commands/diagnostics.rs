@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::server_manager::ServerManagerState;
 use crate::engine::startup::StartupReport;
@@ -42,7 +42,7 @@ pub async fn diagnostics_export_support_bundle(app: AppHandle) -> CommandResult<
     let operation = app
         .state::<OperationRegistry>()
         .begin_exclusive("export-support-bundle", "launcher:support-bundle", false)
-        .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -92,7 +92,11 @@ pub async fn diagnostics_export_support_bundle(app: AppHandle) -> CommandResult<
                 Ok(path.display().to_string())
             }
             Err(message) => {
-                let error = CommandError::recoverable("SUPPORT_BUNDLE_FAILED", message, "Choose another location");
+                let error = CommandError::recoverable_action(
+                    "SUPPORT_BUNDLE_FAILED",
+                    message,
+                    RecoveryAction::ChooseLocation,
+                );
                 let _ = operations.fail(
                     &operation_id,
                     OperationError {
