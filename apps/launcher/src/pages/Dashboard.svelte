@@ -7,12 +7,15 @@
   import HealthPanel from './HealthPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { dialogFocus } from '../app/dialogFocus';
+  import { recoveryNavigationTarget } from '../app/recoveryNavigation';
+  import type { RecoveryNavigationTarget } from '../app/recoveryNavigation';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ServerLogTail, ServerPreflight, ServerRuntimeSummary, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
   export let serverName = 'Server';
   export let onWorkspaceUnavailable: ((message: string) => Promise<void> | void) | undefined = undefined;
+  export let onRecoveryNavigate: ((target: RecoveryNavigationTarget) => void) | undefined = undefined;
 
   let snapshot: ServerSnapshot = { state: 'Offline', health: 'Offline', cpuLoadPercent: 0, usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: '' };
   let preflight: ServerPreflight = { ready: false, workspace: '', serverDirectory: '', paperJar: '', worldsDirectory: '', javaPath: '', javaVersion: '', logDirectory: '', issues: [] };
@@ -54,6 +57,11 @@
   }
   function activeRuntimes() { return runtimes.filter((runtime) => ACTIVE_RUNTIME_STATES.has(runtime.state)); }
   function managedMemoryBytes() { return activeRuntimes().reduce((total, runtime) => total + runtime.usedMemoryBytes, 0); }
+  function hasErrorAction() {
+    if (!error?.action) return false;
+    if (error.action === 'LOCATE_WORKSPACE') return Boolean(onWorkspaceUnavailable);
+    return Boolean(recoveryNavigationTarget(error.action) && onRecoveryNavigate);
+  }
   async function refreshRuntime() {
     const [nextSnapshot, nextPort, nextRuntimes] = await Promise.all([
       runtimeProduct.server.snapshot(),
@@ -79,9 +87,13 @@
     finally { busy = false; }
   }
   async function handleErrorAction() {
-    if (error?.action === 'LOCATE_WORKSPACE' && onWorkspaceUnavailable) {
+    if (!error?.action) return;
+    if (error.action === 'LOCATE_WORKSPACE' && onWorkspaceUnavailable) {
       await onWorkspaceUnavailable(error.message);
+      return;
     }
+    const target = recoveryNavigationTarget(error.action);
+    if (target && onRecoveryNavigate) onRecoveryNavigate(target);
   }
   async function stopDetachedProcess() {
     if (busy || snapshot.state !== 'Detached') return;
@@ -174,7 +186,7 @@
     </section>
   {/if}
 
-  <RuntimeErrorNotice {error} onAction={error?.action === 'LOCATE_WORKSPACE' && onWorkspaceUnavailable ? handleErrorAction : undefined} />
+  <RuntimeErrorNotice {error} onAction={hasErrorAction() ? handleErrorAction : undefined} />
   {#if notice}<section class="notice success" aria-live="polite"><strong>Server control</strong><p>{notice}</p></section>{/if}
   {#if preflight.issues.length > 0 && ['Offline','Crashed','Detached'].includes(snapshot.state)}<details class="attention" open={!preflight.ready}><summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary><div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div></details>{/if}
   {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
