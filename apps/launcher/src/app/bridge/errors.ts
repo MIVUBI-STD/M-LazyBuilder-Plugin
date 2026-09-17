@@ -14,7 +14,8 @@ export type RecoveryAction =
   | 'START_SERVER'
   | 'STOP_SERVER'
   | 'USE_SERVER_CONTROLS'
-  | 'WAIT_FOR_SERVER_START';
+  | 'WAIT_FOR_SERVER_START'
+  | 'WAIT_FOR_SERVER_STOP';
 
 export type RuntimeCommandError = {
   code: string;
@@ -41,7 +42,8 @@ const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
   'START_SERVER',
   'STOP_SERVER',
   'USE_SERVER_CONTROLS',
-  'WAIT_FOR_SERVER_START'
+  'WAIT_FOR_SERVER_START',
+  'WAIT_FOR_SERVER_STOP'
 ]);
 
 const RECOVERY_ACTION_LABELS: Record<RecoveryAction, string> = {
@@ -60,7 +62,8 @@ const RECOVERY_ACTION_LABELS: Record<RecoveryAction, string> = {
   START_SERVER: 'Start server',
   STOP_SERVER: 'Stop server',
   USE_SERVER_CONTROLS: 'Use server controls',
-  WAIT_FOR_SERVER_START: 'Wait for server start'
+  WAIT_FOR_SERVER_START: 'Wait for server start',
+  WAIT_FOR_SERVER_STOP: 'Wait for server to stop'
 };
 
 function recoveryAction(value: unknown): RecoveryAction | null {
