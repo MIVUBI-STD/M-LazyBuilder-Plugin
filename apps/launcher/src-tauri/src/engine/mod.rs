@@ -10,6 +10,7 @@ pub mod launcher_settings;
 pub mod operations;
 pub mod paper_provider;
 pub mod paths;
+pub mod persistence;
 pub mod plugin_ingress;
 pub mod plugin_manager;
 pub mod privacy_redaction;
