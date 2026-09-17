@@ -1,12 +1,9 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
-/**
- * Explicit safety contract for the first LazyBuilder Axiom tool.
- */
+/** Safety contract for the first end-to-end LazyBuilder Axiom tool. */
 public final class AxiomSplineToolContract {
-    public static final String TOOL_NAME = "LazyBuilder Spline Preview";
-    public static final boolean WORLD_MUTATION_ENABLED = false;
-
-    private AxiomSplineToolContract() {
-    }
+    public static final String TOOL_NAME = "LazyBuilder Spline";
+    public static final boolean WORLD_MUTATION_ENABLED = true;
+    public static final int MAX_MUTATION_VOXELS = SplinePreviewVoxelizer.MAX_PREVIEW_VOXELS;
+    private AxiomSplineToolContract() { }
 }
