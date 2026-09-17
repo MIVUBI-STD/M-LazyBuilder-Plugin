@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
@@ -14,6 +15,7 @@ import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
+import net.minecraft.util.math.BlockPos;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,7 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Builds reusable per-layer submission lists and safely switches ready draws to shared region VBOs. */
+/** Builds reusable per-layer submission lists and safely switches ready draws to shared region buffers. */
 @Mixin(WorldRenderer.class)
 abstract class WorldRendererTerrainSubmissionMixin {
     @Shadow @Final private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
@@ -70,6 +72,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
             this.lazybuilder$submissionIndexActive = false;
             TerrainArenaDrawDiagnostics.clear();
+            TerrainDrawTransformStream.clear();
             TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
@@ -86,6 +89,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
         if (this.lazybuilder$submissionIndexDirty) {
             this.lazybuilder$rebuildSubmissionIndex();
         }
+        this.lazybuilder$publishTransformStream(layer, x, y, z);
     }
 
     @Inject(method = "renderLayer", at = @At("RETURN"))
@@ -232,6 +236,34 @@ abstract class WorldRendererTerrainSubmissionMixin {
     }
 
     @Unique
+    private void lazybuilder$publishTransformStream(RenderLayer layer, double x, double y, double z) {
+        ObjectArrayList<ChunkBuilder.BuiltChunk> chunks = this.lazybuilder$listFor(layer);
+        int layerSlot = lazybuilder$layerSlot(layer);
+        if (chunks == null || layerSlot < 0) return;
+
+        List<TerrainDrawTransformStream.Input> inputs = new ArrayList<>(chunks.size());
+        for (ChunkBuilder.BuiltChunk chunk : chunks) {
+            VertexBuffer buffer = chunk.getBuffer(layer);
+            BlockPos origin = chunk.getOrigin();
+            inputs.add(new TerrainDrawTransformStream.Input(
+                    TerrainGpuResidencyTracker.drawCommand(buffer),
+                    origin.getX(),
+                    origin.getY(),
+                    origin.getZ()
+            ));
+        }
+
+        TerrainDrawTransformStream.publish(TerrainDrawTransformStream.build(
+                layerSlot,
+                inputs,
+                x,
+                y,
+                z,
+                layer == RenderLayer.getTranslucent()
+        ));
+    }
+
+    @Unique
     private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$listFor(RenderLayer layer) {
         if (layer == RenderLayer.getSolid()) return this.lazybuilder$solid;
         if (layer == RenderLayer.getCutoutMipped()) return this.lazybuilder$cutoutMipped;
@@ -242,11 +274,17 @@ abstract class WorldRendererTerrainSubmissionMixin {
     }
 
     @Unique
+    private static int lazybuilder$layerSlot(RenderLayer layer) {
+        if (layer == RenderLayer.getSolid()) return 0;
+        if (layer == RenderLayer.getCutoutMipped()) return 1;
+        if (layer == RenderLayer.getCutout()) return 2;
+        if (layer == RenderLayer.getTranslucent()) return 3;
+        if (layer == RenderLayer.getTripwire()) return 4;
+        return -1;
+    }
+
+    @Unique
     private static boolean lazybuilder$isBlockLayer(RenderLayer layer) {
-        return layer == RenderLayer.getSolid()
-                || layer == RenderLayer.getCutoutMipped()
-                || layer == RenderLayer.getCutout()
-                || layer == RenderLayer.getTranslucent()
-                || layer == RenderLayer.getTripwire();
+        return lazybuilder$layerSlot(layer) >= 0;
     }
 }

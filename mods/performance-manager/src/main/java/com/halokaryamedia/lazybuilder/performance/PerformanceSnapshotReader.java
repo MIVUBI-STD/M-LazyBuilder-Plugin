@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatib
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyLedger;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
@@ -44,6 +45,7 @@ public final class PerformanceSnapshotReader {
         TerrainRegionAllocationRegistry.Snapshot arenas = TerrainGpuResidencyTracker.arenaSnapshot();
         TerrainArenaDrawPlanner.Plan drawPlan = TerrainArenaDrawDiagnostics.snapshot();
         TerrainPhysicalArenaManager.Snapshot physicalArenas = TerrainGpuResidencyTracker.physicalArenaSnapshot();
+        TerrainDrawTransformStream.Snapshot transforms = TerrainDrawTransformStream.snapshot();
 
         return new PerformanceSnapshot(
                 fps,
@@ -117,6 +119,12 @@ public final class PerformanceSnapshotReader {
                 physicalArenas.relocations(),
                 physicalArenas.relocatedBytes(),
                 physicalArenas.relocationFallbacks(),
+                transforms.commands(),
+                transforms.physicalReadyCommands(),
+                transforms.transformBlockedCommands(),
+                transforms.multiDrawCandidateRuns(),
+                transforms.potentialDrawCallReduction(),
+                transforms.packedTransformBytes(),
                 RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,

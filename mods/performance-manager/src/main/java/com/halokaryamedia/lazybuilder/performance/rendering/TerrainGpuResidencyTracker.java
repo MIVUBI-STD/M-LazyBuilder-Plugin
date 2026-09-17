@@ -97,6 +97,8 @@ public final class TerrainGpuResidencyTracker {
 
     public static void clear() {
         TerrainPhysicalArenaManager.clear();
+        TerrainDrawTransformStream.clear();
+        TerrainArenaDrawDiagnostics.clear();
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
