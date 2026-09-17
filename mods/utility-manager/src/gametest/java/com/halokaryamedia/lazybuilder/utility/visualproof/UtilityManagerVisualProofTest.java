@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.visualproof;
 
+import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -15,6 +16,7 @@ import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.ServerInfo;
+import net.minecraft.client.option.NarratorMode;
 import net.minecraft.item.ItemGroups;
 import net.minecraft.text.Text;
 
@@ -25,6 +27,7 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
     public void runTest(ClientGameTestContext context) {
         try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             context.waitTicks(40);
+            verifyNarratorSuppression(context);
             captureCompactDebug(context, 1440, 900, 2,
                     "utility-compact-debug-1440x900-gui2");
             captureCompactDebug(context, 620, 480, 2,
@@ -53,6 +56,30 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             }
 
             context.setScreen(() -> null);
+        }
+    }
+
+    private static void verifyNarratorSuppression(ClientGameTestContext context) {
+        NarratorMode previousNarrator = context.computeOnClient(client -> client.options.getNarrator().getValue());
+        boolean previousHotkey = context.computeOnClient(client -> client.options.getNarratorHotkey().getValue());
+        try {
+            context.runOnClient(client -> {
+                client.options.getNarrator().setValue(NarratorMode.ALL);
+                client.options.getNarratorHotkey().setValue(true);
+                NarratorSuppressionController.applyIfEnabled(client, true);
+
+                if (client.options.getNarrator().getValue() != NarratorMode.OFF) {
+                    throw new AssertionError("Narrator suppression did not force NarratorMode.OFF");
+                }
+                if (client.options.getNarratorHotkey().getValue()) {
+                    throw new AssertionError("Narrator suppression did not disable the narrator hotkey");
+                }
+            });
+        } finally {
+            context.runOnClient(client -> {
+                client.options.getNarrator().setValue(previousNarrator);
+                client.options.getNarratorHotkey().setValue(previousHotkey);
+            });
         }
     }
 
