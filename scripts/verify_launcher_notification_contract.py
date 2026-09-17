@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify bounded, in-app Launcher operation notification behavior."""
+"""Verify bounded, in-app Launcher operation attention behavior."""
 
 from pathlib import Path
 
@@ -22,26 +22,32 @@ def forbid(path: Path, *needles: str) -> None:
 
 
 def main() -> int:
-    host = SRC / "components" / "OperationNotificationHost.svelte"
-    main = SRC / "main.ts"
+    attention = SRC / "components" / "OperationAttention.svelte"
+    app = SRC / "App.svelte"
 
     require(
-        host,
+        attention,
         "runtimeProduct.operations.list()",
-        "MAX_NOTICES = 3",
-        "ACTIVE_POLL_MS = 2500",
+        "ACTIVE_POLL_MS = 3000",
         "IDLE_POLL_MS = 15000",
-        "HIDDEN_POLL_MS = 10000",
-        "document.querySelector('.activity-page')",
-        "knownStates.clear()",
-        "seeded = false",
-        "TERMINAL.has(operation.state)",
-        "operation.correlationId",
-        "Reference: {notice.reference}",
-        "role=\"status\"",
+        "SUCCESS_DISMISS_MS = 7000",
+        "initializedAtUnixSeconds",
+        "transitionedToTerminal",
+        "completedBetweenPolls",
+        "document.hidden",
+        "refreshInFlight",
+        "if (suppressed)",
+        "aria-live={notice.state === 'SUCCEEDED' ? 'polite' : 'assertive'}",
+        "Open Activity",
     )
-    forbid(host, "new Notification(", "Notification.requestPermission", "setInterval(")
-    require(main, "OperationNotificationHost", "mount(OperationNotificationHost, { target: document.body });")
+    forbid(attention, "new Notification(", "Notification.requestPermission", "setInterval(")
+    require(
+        app,
+        "import OperationAttention from './components/OperationAttention.svelte';",
+        "<OperationAttention",
+        "suppressed={globalPage === 'Activity'}",
+        "onOpenActivity={openActivityFromAttention}",
+    )
 
     print("Launcher notification contract OK")
     return 0
