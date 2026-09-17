@@ -12,25 +12,14 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Resolves a MaterialOperation into a committed History v2 plan before any Axiom/world mutation occurs.
- */
+/** Resolves a MaterialOperation into committed History v2 before any world mutation occurs. */
 public final class MaterialOperationPreparer {
-    private MaterialOperationPreparer() {
-    }
+    private MaterialOperationPreparer() { }
 
-    public static Optional<PreparedMaterialMutation> prepare(
-            OperationPlan plan,
-            BlockStateSource source,
-            HistoryStorageRouter history,
-            long estimatedHistoryBytes
-    ) throws IOException {
-        Objects.requireNonNull(plan, "plan");
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(history, "history");
-        if (estimatedHistoryBytes < 0) {
-            throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
-        }
+    public static Optional<PreparedMaterialMutation> prepare(OperationPlan plan, BlockStateSource source,
+            HistoryStorageRouter history, long estimatedHistoryBytes) throws IOException {
+        Objects.requireNonNull(plan, "plan"); Objects.requireNonNull(source, "source"); Objects.requireNonNull(history, "history");
+        if (estimatedHistoryBytes < 0) throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         if (!(plan.operation() instanceof MaterialOperation operation)) {
             throw new IllegalArgumentException("OperationPlan does not contain a MaterialOperation");
         }
@@ -38,26 +27,16 @@ public final class MaterialOperationPreparer {
             throw new IllegalArgumentException("Production material mutation requires durable history");
         }
 
-        ChangeSetWriter writer = history.begin(
-                HistoryRequirement.REQUIRED,
-                estimatedHistoryBytes,
-                operation.id().toString()
-        ).orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
-
+        ChangeSetWriter writer = history.begin(HistoryRequirement.REQUIRED, estimatedHistoryBytes, operation.id().toString())
+                .orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
         try (writer) {
             long plannedChanges = 0L;
             for (ChunkWorkUnit unit : plan.workUnits()) {
                 if (operation.cancellationToken().isCancellationRequested()) {
-                    writer.abort();
-                    return Optional.empty();
+                    writer.abort(); return Optional.empty();
                 }
-                ChunkChangeSet chunk = MaterialMutationPlanner.plan(
-                        unit,
-                        operation.material(),
-                        operation.materialMask(),
-                        operation.seed(),
-                        source
-                );
+                ChunkChangeSet chunk = MaterialMutationPlanner.plan(unit, operation.region(), operation.material(),
+                        operation.materialMask(), operation.seed(), source);
                 if (chunk.size() == 0) continue;
                 writer.append(chunk);
                 plannedChanges = Math.addExact(plannedChanges, chunk.size());
