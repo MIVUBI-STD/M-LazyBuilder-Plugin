@@ -70,6 +70,15 @@
     return error instanceof RuntimeError && (error.action === 'LOCATE_WORKSPACE' || error.code === 'WORKSPACE_UNAVAILABLE');
   }
 
+  async function handleSurfaceError(error: unknown) {
+    const message = friendlyError(error);
+    if (shouldLocateWorkspace(error)) {
+      await onWorkspaceUnavailable(message);
+      return;
+    }
+    surfaceError = message;
+  }
+
   async function handleManagementError(error: unknown) {
     const message = friendlyError(error);
     if (shouldLocateWorkspace(error)) {
@@ -88,7 +97,7 @@
         ? await runtimeProduct.workspace.runtimeUpdateStatus().catch(() => null)
         : null;
     } catch (error) {
-      surfaceError = friendlyError(error);
+      await handleSurfaceError(error);
     }
   }
 
@@ -148,8 +157,12 @@
       runtimeUpdates = provisioning.ready ? await runtimeProduct.workspace.runtimeUpdateStatus().catch(() => null) : null;
       await onChanged();
     } catch (error) {
-      surfaceError = friendlyError(error);
-      provisioning = await runtimeProduct.workspace.provisioningStatus().catch(() => provisioning);
+      if (shouldLocateWorkspace(error)) {
+        await handleSurfaceError(error);
+      } else {
+        surfaceError = friendlyError(error);
+        provisioning = await runtimeProduct.workspace.provisioningStatus().catch(() => provisioning);
+      }
     } finally {
       provisioningServer = false;
     }
@@ -163,7 +176,7 @@
       if (provisioning.ready) runtimeUpdates = await runtimeProduct.workspace.runtimeUpdateStatus().catch(() => null);
       await onChanged();
     } catch (error) {
-      surfaceError = friendlyError(error);
+      await handleSurfaceError(error);
     } finally {
       acceptingEula = false;
     }
@@ -176,7 +189,7 @@
       runtimeUpdates = await runtimeProduct.workspace.updatePaper();
       diagnostics = await runtimeProduct.diagnostics.summary().catch(() => diagnostics);
     } catch (error) {
-      surfaceError = friendlyError(error);
+      await handleSurfaceError(error);
     } finally {
       updatingPaper = false;
     }
