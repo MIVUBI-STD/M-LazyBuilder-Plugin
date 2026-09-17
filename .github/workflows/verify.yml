@@ -125,9 +125,10 @@ jobs:
           retention-days: 7
 
   paper-runtime-smoke:
+    name: Paper runtime proofs (managed-world, multi-instance, restart)
     needs: paper
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -161,17 +162,24 @@ jobs:
           }
           New-Item -ItemType Directory -Path ".artifacts" -Force | Out-Null
           Invoke-WebRequest -Headers $headers -Uri $download -OutFile ".artifacts/paper-1.21.4.jar" -TimeoutSec 120
-      - name: Boot Paper and verify LazyBuilder runtime contracts
+      - name: Execute Paper managed-world lifecycle proof
         shell: pwsh
         run: |
           ./scripts/verify-paper-runtime.ps1 `
             -ServerJar ".artifacts/paper-1.21.4.jar" `
             -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
             -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
-      - name: Verify Paper restart and persistence contracts
+      - name: Execute Paper multi-instance runtime proof (1 -> 2 -> 3)
+        shell: pwsh
+        run: |
+          ./scripts/verify-paper-multi-instance-runtime.ps1 `
+            -ServerJar ".artifacts/paper-1.21.4.jar" `
+            -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
+            -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
+      - name: Execute Paper restart and persistence proof
         shell: pwsh
         run: ./scripts/verify-paper-restart.ps1 -ServerJar ".artifacts/paper-1.21.4.jar"
-      - name: Upload Paper runtime proof logs
+      - name: Upload Paper runtime proof evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -181,6 +189,8 @@ jobs:
             .runtime-proof/paper-smoke/plugins/**/config.yml
             .runtime-proof/paper-smoke/plugins/World-Manager/world/registry.yml
             .runtime-proof/paper-smoke/server.properties
+            .runtime-proof/paper-multi-instance/**/logs/**
+            .runtime-proof/paper-multi-instance/**/server.properties
           if-no-files-found: warn
           retention-days: 7
 
