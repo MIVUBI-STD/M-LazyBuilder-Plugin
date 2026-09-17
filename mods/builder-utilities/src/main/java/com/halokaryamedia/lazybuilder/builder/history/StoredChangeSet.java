@@ -13,6 +13,13 @@ public interface StoredChangeSet extends AutoCloseable {
 
     void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException;
 
+    /**
+     * Streams raw committed chunk deltas without expanding them into per-block callbacks.
+     * Implementations must still validate the complete committed stream even when the
+     * visitor asks to stop receiving callbacks early.
+     */
+    void visitChunks(ChunkChangeSetVisitor visitor) throws IOException;
+
     default void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException {
         replayAll(direction, HistoryReplayConsumer.blocksOnly(consumer));
     }

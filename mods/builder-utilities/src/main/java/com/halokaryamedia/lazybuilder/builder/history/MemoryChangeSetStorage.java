@@ -126,13 +126,27 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
         public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (java.io.InputStream input = inputFactory.apply(bytes)) {
                 ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                if (!header.operationId().equals(operationId)
-                        || header.changeCount() != changeCount
-                        || header.extensionCount() != extensionCount) {
-                    throw new IOException("Stored History metadata mismatch");
-                }
+                validate(header);
             } catch (HistoryReadException e) {
                 throw e.ioCause();
+            }
+        }
+
+        @Override
+        public void visitChunks(ChunkChangeSetVisitor visitor) throws IOException {
+            try (java.io.InputStream input = inputFactory.apply(bytes)) {
+                ChangeSetCodec.Header header = ChangeSetCodec.visitChunks(input, visitor);
+                validate(header);
+            } catch (HistoryReadException e) {
+                throw e.ioCause();
+            }
+        }
+
+        private void validate(ChangeSetCodec.Header header) throws IOException {
+            if (!header.operationId().equals(operationId)
+                    || header.changeCount() != changeCount
+                    || header.extensionCount() != extensionCount) {
+                throw new IOException("Stored History metadata mismatch");
             }
         }
     }

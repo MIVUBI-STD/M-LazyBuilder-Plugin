@@ -58,6 +58,46 @@ public final class ChangeSetCodec {
         return new Header(header.operationId(), counts.changes(), counts.extensions());
     }
 
+    public static Header visitChunks(InputStream input, ChunkChangeSetVisitor visitor) throws IOException {
+        Objects.requireNonNull(visitor, "visitor");
+        DataInputStream data = new DataInputStream(Objects.requireNonNull(input, "input"));
+        Header header = readHeader(data);
+        long observedChanges = 0;
+        long observedExtensions = 0;
+        boolean callbacksEnabled = true;
+        try {
+            while (true) {
+                int marker = data.readUnsignedByte();
+                if (marker == COMMIT_MARKER) {
+                    long committedChanges = data.readLong();
+                    long committedExtensions = data.readLong();
+                    if (committedChanges != observedChanges || committedExtensions != observedExtensions) {
+                        throw new IOException("History footer count mismatch");
+                    }
+                    return new Header(header.operationId(), observedChanges, observedExtensions);
+                }
+                if (marker == CHUNK_MARKER) {
+                    ChunkChangeSet chunk = readChunk(data);
+                    observedChanges = Math.addExact(observedChanges, chunk.size());
+                    if (callbacksEnabled) {
+                        callbacksEnabled = visitor.visit(chunk);
+                    }
+                    continue;
+                }
+                if (marker == EXTENSION_MARKER) {
+                    readExtension(data);
+                    observedExtensions = Math.addExact(observedExtensions, 1);
+                    continue;
+                }
+                throw new IOException("Unknown History v2 frame marker: " + marker);
+            }
+        } catch (EOFException e) {
+            throw incomplete(e);
+        } catch (ArithmeticException e) {
+            throw new IOException("History count overflow", e);
+        }
+    }
+
     private static Header readHeader(DataInputStream data) throws IOException {
         try {
             if (data.readInt() != MAGIC) {

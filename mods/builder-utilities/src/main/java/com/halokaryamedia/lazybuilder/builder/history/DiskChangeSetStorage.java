@@ -166,11 +166,23 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (InputStream input = Files.newInputStream(path)) {
                 ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                if (!header.operationId().equals(operationId)
-                        || header.changeCount() != changeCount
-                        || header.extensionCount() != extensionCount) {
-                    throw new IOException("Stored History metadata mismatch");
-                }
+                validate(header);
+            }
+        }
+
+        @Override
+        public void visitChunks(ChunkChangeSetVisitor visitor) throws IOException {
+            try (InputStream input = Files.newInputStream(path)) {
+                ChangeSetCodec.Header header = ChangeSetCodec.visitChunks(input, visitor);
+                validate(header);
+            }
+        }
+
+        private void validate(ChangeSetCodec.Header header) throws IOException {
+            if (!header.operationId().equals(operationId)
+                    || header.changeCount() != changeCount
+                    || header.extensionCount() != extensionCount) {
+                throw new IOException("Stored History metadata mismatch");
             }
         }
 
