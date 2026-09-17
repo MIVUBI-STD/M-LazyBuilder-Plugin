@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { ServerBackupEstimate, ServerResourceProfile, ServerRuntimeSummary, WorkspaceEntry } from '../app/bridge/runtimeApi';
+  import type { ServerBackupEstimate, ServerBackupSummary, ServerResourceProfile, ServerRuntimeSummary, WorkspaceEntry } from '../app/bridge/runtimeApi';
 
   const MAX_CONCURRENT_SERVERS = 3;
 
@@ -9,6 +9,7 @@
   let runtimes: ServerRuntimeSummary[] = [];
   let resources: ServerResourceProfile | null = null;
   let backupEstimate: ServerBackupEstimate | null = null;
+  let latestBackup: ServerBackupSummary | null = null;
   let backupCount = 0;
   let loading = true;
   let loadError = '';
@@ -17,6 +18,11 @@
     if (bytes == null || !Number.isFinite(bytes)) return 'Unavailable';
     if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
     return `${Math.ceil(bytes / 1024 ** 2)} MB`;
+  }
+
+  function formatBackupDate(seconds?: number | null) {
+    if (!seconds) return 'No backup yet';
+    return new Date(seconds * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   }
 
   function activeRuntimes() {
@@ -42,6 +48,7 @@
 
       if (!workspace) {
         backupEstimate = null;
+        latestBackup = null;
         backupCount = 0;
         return;
       }
@@ -52,6 +59,7 @@
       ]);
       backupEstimate = estimate;
       backupCount = backups.length;
+      latestBackup = backups[0] ?? null;
     } catch (value) {
       loadError = value instanceof Error ? value.message : 'Resource information is unavailable.';
     } finally {
@@ -77,7 +85,7 @@
       <div><span>Running servers</span><strong>{activeRuntimes().length} / {MAX_CONCURRENT_SERVERS}</strong><small>LazyBuilder runtime limit</small></div>
       <div><span>Managed RAM</span><strong>{formatBytes(managedRamBytes())}</strong><small>{resources ? `${Math.round(resources.totalMemoryMb / 1024)} GB system memory` : 'Current managed usage'}</small></div>
       <div><span>This server</span><strong>{formatBytes(backupEstimate?.sourceBytes)}</strong><small>{workspace ? workspace.name : 'No server open'}</small></div>
-      <div><span>Restore points</span><strong>{workspace ? backupCount : '—'}</strong><small>{workspace ? 'Available for this server' : 'Open a server to inspect'}</small></div>
+      <div><span>Restore points</span><strong>{workspace ? backupCount : '—'}</strong><small>{workspace ? `Last backup: ${formatBackupDate(latestBackup?.createdUnixSeconds)}` : 'Open a server to inspect'}</small></div>
       <div><span>Disk available</span><strong>{formatBytes(backupEstimate?.availableBytes)}</strong><small>{backupEstimate ? `Backup needs about ${formatBytes(backupEstimate.requiredBytes)}` : 'Storage estimate unavailable'}</small></div>
       <div><span>Server RAM limit</span><strong>{resources ? `${(resources.currentMaxMemoryMb / 1024).toFixed(1)} GB` : 'Unavailable'}</strong><small>{resources ? `Safe max ${(resources.safeMaxMemoryMb / 1024).toFixed(1)} GB` : 'Open server settings for details'}</small></div>
     </div>
