@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.mixin;
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatCollapseState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatTimestampFormatter;
+import com.halokaryamedia.lazybuilder.utility.chat.signing.SigningPresentationPolicy;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.client.gui.hud.ChatHudLine;
 import net.minecraft.client.gui.hud.MessageIndicator;
@@ -63,7 +64,10 @@ public abstract class ChatHudMixin {
             argsOnly = true
     )
     private MessageIndicator lazybuilder$hideSigningIndicator(MessageIndicator indicator) {
-        return UtilityManagerClient.preferences().hideChatSigningIndicators() ? null : indicator;
+        return SigningPresentationPolicy.visibleIndicator(
+                indicator,
+                UtilityManagerClient.preferences().hideChatSigningIndicators()
+        );
     }
 
     @Inject(method = "addMessage(Lnet/minecraft/text/Text;)V", at = @At("HEAD"), cancellable = true)
