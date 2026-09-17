@@ -1,12 +1,12 @@
 package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
-import net.minecraft.SharedConstants;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemGroups;
+import net.minecraft.util.StringHelper;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -41,7 +41,7 @@ abstract class CreativeInventoryScreenMixin {
     ) {
         if (!UtilityManagerClient.preferences().instantCreativeSearch()) return;
         if (searchBox == null || searchBox.isFocused()) return;
-        if (!SharedConstants.isValidChar(chr)) return;
+        if (!StringHelper.isValidChar(chr)) return;
         if ((modifiers & LAZYBUILDER_BLOCKED_MODIFIERS) != 0) return;
 
         CreativeInventoryScreen screen = (CreativeInventoryScreen) (Object) this;
