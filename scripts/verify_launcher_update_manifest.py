@@ -10,7 +10,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ALLOWED_HOST = "github.com"
-ALLOWED_REPO_PATH = "/halokaryamedia-source/LazyBuilder-Plugin/releases/download/"
+CANONICAL_REPOSITORY = "MIVUBI-STD/M-LazyBuilder-Plugin"
+ALLOWED_REPO_PATH = f"/{CANONICAL_REPOSITORY}/releases/download/"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -43,7 +44,7 @@ def main() -> None:
     if parsed.scheme != "https" or parsed.netloc.lower() != ALLOWED_HOST:
         fail("Updater URL must use HTTPS on github.com")
     if not parsed.path.startswith(ALLOWED_REPO_PATH):
-        fail("Updater URL must point to the canonical LazyBuilder GitHub release path")
+        fail(f"Updater URL must point to the canonical LazyBuilder GitHub release path for {CANONICAL_REPOSITORY}")
     expected_tag = f"/launcher-v{version}/"
     if expected_tag not in parsed.path:
         fail("Updater URL release tag does not match manifest version")
