@@ -1,0 +1,30 @@
+package com.halokaryamedia.lazybuilder.builder.placement;
+
+import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
+import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
+import java.util.List;
+import java.util.Objects;
+
+public final class PlacementPlanner {
+    private PlacementPlanner() {
+    }
+
+    public static List<PlacementPlanEntry> plan(
+            BlockBounds bounds,
+            SurfaceHeightSource surface,
+            OperationSeed seed,
+            PlacementDistribution distribution,
+            PlacementSource source,
+            PlacementVariation variation
+    ) {
+        Objects.requireNonNull(bounds, "bounds");
+        Objects.requireNonNull(surface, "surface");
+        Objects.requireNonNull(seed, "seed");
+        Objects.requireNonNull(distribution, "distribution");
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(variation, "variation");
+        return distribution.generate(bounds, surface, seed).stream()
+                .map(point -> new PlacementPlanEntry(point, source.resolve(point, seed), variation.resolve(point, seed)))
+                .toList();
+    }
+}
