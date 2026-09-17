@@ -6,6 +6,7 @@
   import BackupPanel from './BackupPanel.svelte';
   import HealthPanel from './HealthPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { detailsMenu } from '../app/detailsMenu';
   import { dialogFocus } from '../app/dialogFocus';
   import { recoveryNavigationTarget } from '../app/recoveryNavigation';
   import type { RecoveryNavigationTarget } from '../app/recoveryNavigation';
@@ -115,36 +116,23 @@
   onMount(() => {
     let disposed = false;
     let timer: number | null = null;
-
     const schedule = () => {
       if (disposed || document.hidden) return;
       const delay = ACTIVE_RUNTIME_STATES.has(snapshot.state) ? ACTIVE_RUNTIME_POLL_MS : IDLE_RUNTIME_POLL_MS;
-      timer = window.setTimeout(async () => {
-        timer = null;
-        if (disposed || document.hidden) return;
-        await pollRuntime();
-        schedule();
-      }, delay);
+      timer = window.setTimeout(async () => { timer = null; if (disposed || document.hidden) return; await pollRuntime(); schedule(); }, delay);
     };
-
     const refreshNow = () => {
       if (disposed || document.hidden) return;
       if (timer !== null) { window.clearTimeout(timer); timer = null; }
       void pollRuntime().finally(schedule);
     };
-
     const handleVisibility = () => {
-      if (document.hidden) {
-        if (timer !== null) { window.clearTimeout(timer); timer = null; }
-        return;
-      }
+      if (document.hidden) { if (timer !== null) { window.clearTimeout(timer); timer = null; } return; }
       refreshNow();
     };
-
     void refreshAll().finally(schedule);
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', refreshNow);
-
     return () => {
       disposed = true;
       if (timer !== null) window.clearTimeout(timer);
@@ -166,7 +154,7 @@
       {:else if snapshot.state === 'Detached'}
         <button class="stop" disabled={busy} onclick={() => (confirmExternalStop = true)}>Stop external server</button>
       {:else}<button class="secondary" disabled>{stateLabel(snapshot.state)}…</button>{/if}
-      <details class="more-menu"><summary aria-label="More server actions">•••</summary><div class="menu-popover">{#if snapshot.state === 'Online'}<button disabled={busy} onclick={() => action(runtimeProduct.server.restart)}>Restart server</button>{/if}<button disabled={snapshot.state !== 'Online'} onclick={() => (consoleOpen = true)}>Open server console</button><button disabled={logBusy} onclick={loadLog}>{logBusy ? 'Loading log…' : 'View server log'}</button></div></details>
+      <details use:detailsMenu class="more-menu"><summary aria-label="More server actions">•••</summary><div class="menu-popover">{#if snapshot.state === 'Online'}<button disabled={busy} onclick={() => action(runtimeProduct.server.restart)}>Restart server</button>{/if}<button disabled={snapshot.state !== 'Online'} onclick={() => (consoleOpen = true)}>Open server console</button><button disabled={logBusy} onclick={loadLog}>{logBusy ? 'Loading log…' : 'View server log'}</button></div></details>
     </div>
   </header>
 
