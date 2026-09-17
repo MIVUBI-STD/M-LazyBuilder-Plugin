@@ -64,4 +64,13 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordAvoidedTerrainSectionVisits(11L);
         assertEquals(18L, ChunkPipelineMetrics.avoidedTerrainSectionVisits());
     }
+
+    @Test
+    void countsSectionBuilderBufferLookupHits() {
+        ChunkPipelineMetrics.recordSectionBuilderBufferLookupHit();
+        ChunkPipelineMetrics.recordSectionBuilderBufferLookupHit();
+        ChunkPipelineMetrics.recordSectionBuilderBufferLookupHit();
+        ChunkPipelineMetrics.recordSectionBuilderBufferLookupHit();
+        assertEquals(4L, ChunkPipelineMetrics.sectionBuilderBufferLookupHits());
+    }
 }

@@ -25,15 +25,19 @@ Performance Manager does not own shader loading or shader-pack UX, building/edit
 
 ## Current renderer ownership
 
-The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
+The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, thread-local section-builder layer lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
 
 The terrain submission index preserves vanilla draw order inside each render layer. It is rebuilt only when the visible built-chunk set or published chunk data changes, and it is enabled only for sufficiently large sparse layer populations where indexed traversal is estimated to visit fewer sections than five vanilla full scans.
 
 Block-layer allocator lookup caching keeps the original `BlockBufferAllocatorStorage` instances and lifecycle intact; it only reuses the resolved allocator reference for the five fixed vanilla block render-layer identities.
 
+`SectionBuilder.beginBufferBuilding()` is called repeatedly while one section is meshed. LazyBuilder keeps five thread-local BufferBuilder slots scoped to the current build map, so repeated solid/cutout/translucent/tripwire lookups do not repeatedly scan the five-entry map. The thread-local is removed when the build returns and automatically resets when the build map identity changes, preventing cross-worker sharing and long-lived build retention.
+
 Translucent sort coalescing mirrors vanilla cancellation semantics: sections without a translucent layer do not enqueue a sort task, and an unchanged normalized camera-relative position is skipped only when vanilla would also cancel it. Camera-axis cases still sort.
 
 Full mesh replacement, GPU render-region arenas, terrain multi-draw submission, Fabric Renderer API ownership, and Iris/shader compatibility are not yet claimed equivalent.
+
+A sparse/lazy `VertexBuffer` recreation path is deliberately not implemented yet. Minecraft's `VertexBuffer` constructor asserts the render thread, while meshing can run on worker threads; recreating closed GPU buffers from the mesh worker would violate the render-thread boundary. This remains deferred until buffer creation can be owned safely by a render-thread upload/arena path.
 
 ## FRAPI and shader compatibility boundary
 
@@ -51,7 +55,7 @@ For the current builder stack, this resolves to `iris+sodium`: Sodium declares F
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand and includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, avoided terrain-section visits, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand and includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, avoided terrain-section visits, section-builder BufferBuilder cache hits, and the detected renderer pipeline owner.
 
 The renderer diagnostic uses deterministic labels such as:
 
@@ -80,4 +84,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Implementation details such as compatibility markers, visibility masks, layer submission indexing, allocator lookup caching, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.
+Implementation details such as compatibility markers, visibility masks, layer submission indexing, section-builder lookup caches, allocator lookup caching, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.

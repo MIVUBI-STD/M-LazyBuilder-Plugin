@@ -11,6 +11,7 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder SECTION_VISIBILITY_CACHE_HITS = new LongAdder();
     private static final LongAdder AVOIDED_TRANSLUCENT_SORT_TASKS = new LongAdder();
     private static final LongAdder AVOIDED_TERRAIN_SECTION_VISITS = new LongAdder();
+    private static final LongAdder SECTION_BUILDER_BUFFER_LOOKUP_HITS = new LongAdder();
 
     private ChunkPipelineMetrics() {
     }
@@ -29,6 +30,8 @@ public final class ChunkPipelineMetrics {
     public static long avoidedTranslucentSortTasks() { return AVOIDED_TRANSLUCENT_SORT_TASKS.sum(); }
     public static void recordAvoidedTerrainSectionVisits(long count) { if (count > 0L) AVOIDED_TERRAIN_SECTION_VISITS.add(count); }
     public static long avoidedTerrainSectionVisits() { return AVOIDED_TERRAIN_SECTION_VISITS.sum(); }
+    public static void recordSectionBuilderBufferLookupHit() { SECTION_BUILDER_BUFFER_LOOKUP_HITS.increment(); }
+    public static long sectionBuilderBufferLookupHits() { return SECTION_BUILDER_BUFFER_LOOKUP_HITS.sum(); }
 
     static void resetForTest() {
         COALESCED_REBUILD_REQUESTS.reset();
@@ -38,5 +41,6 @@ public final class ChunkPipelineMetrics {
         SECTION_VISIBILITY_CACHE_HITS.reset();
         AVOIDED_TRANSLUCENT_SORT_TASKS.reset();
         AVOIDED_TERRAIN_SECTION_VISITS.reset();
+        SECTION_BUILDER_BUFFER_LOOKUP_HITS.reset();
     }
 }
