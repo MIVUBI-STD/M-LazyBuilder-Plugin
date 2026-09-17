@@ -14,11 +14,11 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, shared-region arena planning, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
-## Terrain GPU residency, reclamation, and arena model
+## Terrain GPU residency, reclamation, and arena ownership model
 
 Terrain GPU residency is tracked at the existing `VertexBuffer` ownership boundary. Each buffer is associated with its section and one of the five fixed terrain layers. Successful uploads sample actual `GpuBuffer.size` capacities while upload tasks also record mesh payload bytes. Accounting regions are fixed 8x4x8 section groups.
 
@@ -33,12 +33,15 @@ not on render thread   -> keep buffer
 large + cross-region   -> replace stale VertexBuffer with a fresh STATIC_WRITE buffer
 ```
 
-The next shared-region model is now represented by two pure components:
+The shared-region model now has three layers:
 
 - `TerrainRegionArenaPolicy`: 256-byte suballocation alignment, 1 MiB arena capacity quanta, 25% sizing headroom, and a 2 MiB minimum recoverable-capacity threshold before a region becomes a compaction candidate.
 - `TerrainRegionSuballocator`: aligned first-fit suballocation with coalescing free spans and fragmentation accounting.
+- `TerrainRegionAllocationRegistry`: persistent runtime ownership per 8x4x8 region and render layer. It maintains stable allocation handles, reuses slots while payload still fits, reallocates when payload outgrows a slot, compacts when total free space is sufficient but fragmented, grows an arena only when required capacity is genuinely insufficient, and releases ownership when a terrain buffer moves or dies.
 
-The residency ledger applies the same arena sizing policy to current 8x4x8 region payloads and exposes:
+The registry is wired to the same runtime lifecycle as the residency ledger, so it receives real section/layer association and actual uploaded payload sizes. A logical arena is intentionally scoped to one region plus one terrain render layer; this matches the existing layer-separated draw path and avoids inventing cross-layer GPU state sharing prematurely.
+
+The residency ledger also projects region-level arena pressure from current payload/capacity measurements:
 
 ```text
 projected shared-arena bytes
@@ -47,9 +50,23 @@ compaction-candidate region count
 potential arena reclaim bytes
 ```
 
-This makes arena sizing and compaction measurable before physical shared VBO/EBO ownership is introduced. The allocator model owns no GPU objects yet, so vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged.
+The live allocation registry adds:
 
-Full physical shared GPU arenas and terrain multi-draw are still separate ownership steps.
+```text
+planned live arena capacity
+aligned allocated bytes
+free bytes
+fragmented free bytes
+largest live arena
+active arenas and allocations
+allocation reuse / reallocation counts
+compactions / arena growths
+allocation failures
+```
+
+This is now a live runtime ownership model rather than only an offline projection. It still owns no GPU objects: vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged. Physical shared VBO/EBO backing can adopt these handles and allocator generations in the next ownership step without redefining allocation policy.
+
+Full physical shared GPU arenas and terrain multi-draw remain separate ownership steps.
 
 ## FRAPI and shader compatibility boundary
 
@@ -65,7 +82,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, and the detected renderer pipeline owner.
 
 ## Migration rule
 

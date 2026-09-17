@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatib
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyLedger;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.util.Window;
@@ -37,6 +38,7 @@ public final class PerformanceSnapshotReader {
         int chunksToUpload = chunkBuilder == null ? 0 : chunkBuilder.getChunksToUpload();
         int freeChunkBuffers = chunkBuilder == null ? 0 : chunkBuilder.getFreeBufferCount();
         TerrainGpuResidencyLedger.Snapshot residency = TerrainGpuResidencyTracker.snapshot();
+        TerrainRegionAllocationRegistry.Snapshot arenas = TerrainGpuResidencyTracker.arenaSnapshot();
 
         return new PerformanceSnapshot(
                 fps,
@@ -78,6 +80,18 @@ public final class PerformanceSnapshotReader {
                 residency.projectedArenaSlackBytes(),
                 residency.arenaCompactionCandidateRegions(),
                 residency.potentialArenaReclaimBytes(),
+                arenas.plannedCapacityBytes(),
+                arenas.allocatedBytes(),
+                arenas.freeBytes(),
+                arenas.fragmentedFreeBytes(),
+                arenas.largestArenaBytes(),
+                arenas.activeArenas(),
+                arenas.activeAllocations(),
+                arenas.allocationReuses(),
+                arenas.reallocations(),
+                arenas.compactions(),
+                arenas.arenaGrowths(),
+                arenas.allocationFailures(),
                 RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,

@@ -81,6 +81,11 @@ public final class TerrainGpuResidencyLedger<K> {
         return entry == null ? 0L : entry.totalBytes();
     }
 
+    public synchronized long payloadBytes(K key) {
+        Entry entry = entries.get(key);
+        return entry == null ? 0L : entry.totalPayloadBytes();
+    }
+
     public synchronized void release(K key) {
         Entry removed = entries.remove(key);
         if (removed != null) {
@@ -114,7 +119,6 @@ public final class TerrainGpuResidencyLedger<K> {
             );
             totals.capacityBytes += bytes;
             totals.payloadBytes += entry.totalPayloadBytes();
-            totals.alignedPayloadBytes += TerrainRegionArenaPolicy.alignedSize(entry.totalPayloadBytes());
         }
 
         long largestRegionBytes = 0L;
@@ -123,7 +127,6 @@ public final class TerrainGpuResidencyLedger<K> {
         long projectedArenaSlackBytes = 0L;
         long potentialArenaReclaimBytes = 0L;
         int compactionCandidateRegions = 0;
-
         for (RegionTotals totals : regionTotals.values()) {
             largestRegionBytes = Math.max(largestRegionBytes, totals.capacityBytes);
             largestRegionHeadroomBytes = Math.max(
@@ -131,9 +134,9 @@ public final class TerrainGpuResidencyLedger<K> {
                     Math.max(0L, totals.capacityBytes - totals.payloadBytes)
             );
 
-            long plannedCapacity = TerrainRegionArenaPolicy.plannedCapacity(totals.alignedPayloadBytes);
-            projectedArenaBytes += plannedCapacity;
-            projectedArenaSlackBytes += Math.max(0L, plannedCapacity - totals.payloadBytes);
+            long plannedArena = TerrainRegionArenaPolicy.plannedCapacity(totals.payloadBytes);
+            projectedArenaBytes += plannedArena;
+            projectedArenaSlackBytes += Math.max(0L, plannedArena - totals.payloadBytes);
             if (TerrainRegionArenaPolicy.shouldCompact(totals.capacityBytes, totals.payloadBytes)) {
                 compactionCandidateRegions++;
                 potentialArenaReclaimBytes += TerrainRegionArenaPolicy.potentialReclaim(
@@ -198,7 +201,6 @@ public final class TerrainGpuResidencyLedger<K> {
     private static final class RegionTotals {
         private long capacityBytes;
         private long payloadBytes;
-        private long alignedPayloadBytes;
     }
 
     private record RegionKey(int x, int y, int z) {

@@ -47,6 +47,18 @@ final class PerformanceSnapshotTest {
                 4096L,
                 2,
                 7168L,
+                16384L,
+                12288L,
+                4096L,
+                1024L,
+                8192L,
+                2,
+                3,
+                5L,
+                7L,
+                11L,
+                13L,
+                17L,
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -81,6 +93,18 @@ final class PerformanceSnapshotTest {
         assertEquals(4096L, snapshot.projectedTerrainArenaSlackBytes());
         assertEquals(2, snapshot.terrainArenaCompactionCandidateRegions());
         assertEquals(7168L, snapshot.potentialTerrainArenaReclaimBytes());
+        assertEquals(16384L, snapshot.terrainArenaPlannedCapacityBytes());
+        assertEquals(12288L, snapshot.terrainArenaAllocatedBytes());
+        assertEquals(4096L, snapshot.terrainArenaFreeBytes());
+        assertEquals(1024L, snapshot.terrainArenaFragmentedFreeBytes());
+        assertEquals(8192L, snapshot.terrainArenaLargestBytes());
+        assertEquals(2, snapshot.terrainArenaActiveArenas());
+        assertEquals(3, snapshot.terrainArenaActiveAllocations());
+        assertEquals(5L, snapshot.terrainArenaAllocationReuses());
+        assertEquals(7L, snapshot.terrainArenaReallocations());
+        assertEquals(11L, snapshot.terrainArenaCompactions());
+        assertEquals(13L, snapshot.terrainArenaGrowths());
+        assertEquals(17L, snapshot.terrainArenaAllocationFailures());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }
