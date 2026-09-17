@@ -30,6 +30,7 @@ final class PerformanceSnapshotTest {
                 17L,
                 19L,
                 23L,
+                "iris+sodium",
                 "chunks",
                 "entities",
                 "particles"
@@ -46,5 +47,6 @@ final class PerformanceSnapshotTest {
         assertEquals(17L, snapshot.sectionVisibilityCacheHits());
         assertEquals(19L, snapshot.avoidedTranslucentSortTasks());
         assertEquals(23L, snapshot.avoidedTerrainSectionVisits());
+        assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }

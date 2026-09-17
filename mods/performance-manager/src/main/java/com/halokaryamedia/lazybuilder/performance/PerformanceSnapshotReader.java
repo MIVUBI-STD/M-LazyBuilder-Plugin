@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.chunk.ChunkBuilder;
@@ -57,6 +58,7 @@ public final class PerformanceSnapshotReader {
                 ChunkPipelineMetrics.sectionVisibilityCacheHits(),
                 ChunkPipelineMetrics.avoidedTranslucentSortTasks(),
                 ChunkPipelineMetrics.avoidedTerrainSectionVisits(),
+                RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,
                 particleDebug

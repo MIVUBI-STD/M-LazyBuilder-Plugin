@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
+import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import net.fabricmc.loader.api.FabricLoader;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
@@ -28,8 +29,11 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String BAKED_QUAD_ACCESSOR = MIXIN_PACKAGE + "BakedQuadAccessor";
     private static final String BAKED_MODEL_BUILDER_MIXIN = MIXIN_PACKAGE + "BasicBakedModelBuilderMixin";
 
+    private RendererCompatibility.Snapshot rendererCompatibility;
+
     @Override
     public void onLoad(String mixinPackage) {
+        this.rendererCompatibility = RendererCompatibility.detect();
     }
 
     @Override
@@ -40,17 +44,20 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         boolean immediatelyFast = FabricLoader.getInstance().isModLoaded("immediatelyfast");
-        boolean sodium = FabricLoader.getInstance().isModLoaded("sodium");
-        boolean iris = FabricLoader.getInstance().isModLoaded("iris");
+        RendererCompatibility.Snapshot renderer = this.rendererCompatibility == null
+                ? RendererCompatibility.detect()
+                : this.rendererCompatibility;
 
         if ((TEXT_RENDERER_MIXIN.equals(mixinClassName) || VERTEX_BUFFER_MIXIN.equals(mixinClassName))
                 && immediatelyFast) {
             return false;
         }
-        if (CHUNK_UPLOAD_MIXIN.equals(mixinClassName) && (immediatelyFast || sodium)) {
+        if (CHUNK_UPLOAD_MIXIN.equals(mixinClassName)
+                && (immediatelyFast || !renderer.firstPartyChunkPipelineSafe())) {
             return false;
         }
-        if (WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName) && (sodium || iris)) {
+        if (WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName)
+                && !renderer.terrainSubmissionSafe()) {
             return false;
         }
         if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)
@@ -63,7 +70,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
                 || BLOCK_BUFFER_POOL_MIXIN.equals(mixinClassName)
                 || BLOCK_COLORS_MIXIN.equals(mixinClassName)
                 || BLOCK_SIDE_VISIBILITY_MIXIN.equals(mixinClassName))
-                && sodium) {
+                && !renderer.firstPartyChunkPipelineSafe()) {
             return false;
         }
         if ((BAKED_QUAD_ACCESSOR.equals(mixinClassName) || BAKED_MODEL_BUILDER_MIXIN.equals(mixinClassName))

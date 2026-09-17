@@ -27,21 +27,44 @@ Performance Manager does not own shader loading or shader-pack UX, building/edit
 
 The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
 
-The terrain submission index preserves vanilla draw order inside each render layer. It is rebuilt only when the visible built-chunk set or published chunk data changes, and it is enabled only for sufficiently large sparse layer populations where the indexed traversal is estimated to visit fewer sections than five vanilla full scans. Sodium or Iris keeps ownership of this draw path while installed.
+The terrain submission index preserves vanilla draw order inside each render layer. It is rebuilt only when the visible built-chunk set or published chunk data changes, and it is enabled only for sufficiently large sparse layer populations where indexed traversal is estimated to visit fewer sections than five vanilla full scans.
 
-Block-layer allocator lookup caching keeps the original `BlockBufferAllocatorStorage` instances and lifecycle intact; it only reuses the resolved allocator reference for the five fixed vanilla block render-layer identities. Sodium remains owner for this meshing path while installed.
+Block-layer allocator lookup caching keeps the original `BlockBufferAllocatorStorage` instances and lifecycle intact; it only reuses the resolved allocator reference for the five fixed vanilla block render-layer identities.
 
-Translucent sort coalescing mirrors vanilla cancellation semantics: sections without a translucent layer do not enqueue a sort task, and an unchanged normalized camera-relative position is skipped only when vanilla would also cancel it. Camera-axis cases still sort. Sodium remains the active owner for this path while installed.
+Translucent sort coalescing mirrors vanilla cancellation semantics: sections without a translucent layer do not enqueue a sort task, and an unchanged normalized camera-relative position is skipped only when vanilla would also cancel it. Camera-axis cases still sort.
 
 Full mesh replacement, GPU render-region arenas, terrain multi-draw submission, Fabric Renderer API ownership, and Iris/shader compatibility are not yet claimed equivalent.
 
+## FRAPI and shader compatibility boundary
+
+Fabric Renderer API 5.x lets renderer replacements declare ownership with the metadata key:
+
+```text
+fabric-renderer-api-v1:contains_renderer
+```
+
+LazyBuilder uses the same marker that Fabric Indigo uses to decide whether Indigo should stand down. This means first-party chunk/meshing mixins no longer special-case only Sodium: any installed mod declaring FRAPI renderer ownership disables LazyBuilder chunk rebuild, meshing lookup, visibility, storage, allocator, upload, translucent-sort, and related chunk-pipeline hooks.
+
+Terrain submission has an additional Iris boundary. It is enabled only when no custom FRAPI renderer owns the pipeline and Iris is absent. Compatibility detection uncertainty also disables first-party chunk ownership rather than guessing.
+
+For the current builder stack, this resolves to `iris+sodium`: Sodium declares FRAPI renderer ownership and Iris layers shader behavior on top of that renderer. Axiom and WorldEditCUI remain builder consumers/overlays rather than renderer owners and therefore do not globally disable the safe first-party paths by themselves.
+
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand and now includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, and avoided terrain-section visits.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand and includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, avoided terrain-section visits, and the detected renderer pipeline owner.
+
+The renderer diagnostic uses deterministic labels such as:
+
+```text
+fabric-indigo
+sodium
+iris+sodium
+compatibility-uncertain
+```
 
 ## Migration rule
 
-External performance mods remain migration references until the matching first-party behavior is implemented and proven in representative builder workloads. In particular, Sodium-owned chunk/render/allocator mixins are rejected while Sodium is installed, Iris owns terrain draw submission while Iris is installed, ImmediatelyFast-owned overlapping render/upload hooks are rejected while ImmediatelyFast is installed, and FerriteCore-owned baked-quad deduplication is rejected while FerriteCore is installed.
+External performance mods remain migration references until the matching first-party behavior is implemented and proven in representative builder workloads. Custom FRAPI renderer owners keep control of the chunk pipeline while installed, Iris keeps control of shader-sensitive terrain submission, ImmediatelyFast keeps overlapping render/upload hooks while installed, and FerriteCore keeps baked-quad deduplication while installed.
 
 ## Configuration
 
@@ -57,4 +80,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Implementation details such as visibility masks, layer submission indexing, allocator lookup caching, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.
+Implementation details such as compatibility markers, visibility masks, layer submission indexing, allocator lookup caching, upload grouping, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.

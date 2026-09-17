@@ -24,11 +24,13 @@ public record PerformanceSnapshot(
         long sectionVisibilityCacheHits,
         long avoidedTranslucentSortTasks,
         long avoidedTerrainSectionVisits,
+        String rendererPipelineOwner,
         String chunkDebug,
         String entityDebug,
         String particleDebug
 ) {
     public PerformanceSnapshot {
+        rendererPipelineOwner = rendererPipelineOwner == null ? "" : rendererPipelineOwner;
         chunkDebug = chunkDebug == null ? "" : chunkDebug;
         entityDebug = entityDebug == null ? "" : entityDebug;
         particleDebug = particleDebug == null ? "" : particleDebug;
