@@ -87,6 +87,18 @@
     }
   }
 
+  async function handleWorkspaceUnavailable(message: string) {
+    try {
+      await runtimeProduct.workspace.close();
+      page = 'Overview';
+      globalPage = 'Servers';
+      await refreshWorkspaceState();
+      workspaceError = `${message} Use “Locate moved server…” from the server menu to reconnect the original folder.`;
+    } catch (error) {
+      workspaceError = friendlyError(error);
+    }
+  }
+
   function handleCloseRequest(request: LauncherCloseRequest, proceed: () => Promise<void>) {
     closeRequest = request;
     closeProceed = proceed;
@@ -150,7 +162,7 @@
         <div class="nav-server-card"><div class="server-icon nav-server-icon">{workspaceState.active.name.slice(0,1).toUpperCase()}</div><div><strong>{workspaceState.active.name}</strong><span>{provisioning?.ready ? 'Ready' : 'Setup required'}</span></div></div>
         <nav class="server-nav" aria-label="Server navigation">{#each pages as item}<button class:active={page === item} aria-current={page === item ? 'page' : undefined} onclick={() => (page = item)}><span class="nav-icon">{@render navIcon(item)}</span><span>{item}</span></button>{/each}</nav>
       {/if}
-      <div class="navigation-spacer"></div><div class="navigation-footer"><span>Builder workspace</span></div>
+      <div class="navigation-spacer"></div><div class="navigation-footer"><span>Local servers</span></div>
     </aside>
 
     <section class="main-view">
@@ -177,6 +189,7 @@
           {page}
           initialProvisioning={provisioning}
           onChanged={refreshWorkspaceState}
+          onWorkspaceUnavailable={handleWorkspaceUnavailable}
         />
       {/if}
     </section>
