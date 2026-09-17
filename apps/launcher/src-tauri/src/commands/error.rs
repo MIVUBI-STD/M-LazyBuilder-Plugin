@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecoveryAction {
     AcceptEula,
+    EditCommand,
     LocateWorkspace,
     OpenActivity,
     OpenLogs,
@@ -13,7 +14,9 @@ pub enum RecoveryAction {
     RetryOperation,
     ReviewBackups,
     ReviewServerHealth,
+    StartServer,
     StopServer,
+    UseServerControls,
     WaitForServerStart,
 }
 
@@ -21,6 +24,7 @@ impl RecoveryAction {
     pub const fn as_code(self) -> &'static str {
         match self {
             Self::AcceptEula => "ACCEPT_EULA",
+            Self::EditCommand => "EDIT_COMMAND",
             Self::LocateWorkspace => "LOCATE_WORKSPACE",
             Self::OpenActivity => "OPEN_ACTIVITY",
             Self::OpenLogs => "OPEN_LOGS",
@@ -30,7 +34,9 @@ impl RecoveryAction {
             Self::RetryOperation => "RETRY_OPERATION",
             Self::ReviewBackups => "REVIEW_BACKUPS",
             Self::ReviewServerHealth => "REVIEW_SERVER_HEALTH",
+            Self::StartServer => "START_SERVER",
             Self::StopServer => "STOP_SERVER",
+            Self::UseServerControls => "USE_SERVER_CONTROLS",
             Self::WaitForServerStart => "WAIT_FOR_SERVER_START",
         }
     }
@@ -121,5 +127,6 @@ mod tests {
         assert_eq!(RecoveryAction::RestartLauncher.as_code(), "RESTART_LAUNCHER");
         assert_eq!(RecoveryAction::ReviewBackups.as_code(), "REVIEW_BACKUPS");
         assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
+        assert_eq!(RecoveryAction::UseServerControls.as_code(), "USE_SERVER_CONTROLS");
     }
 }
