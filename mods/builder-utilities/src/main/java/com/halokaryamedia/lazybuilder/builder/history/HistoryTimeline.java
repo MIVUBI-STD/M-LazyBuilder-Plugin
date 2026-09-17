@@ -24,12 +24,18 @@ public final class HistoryTimeline implements AutoCloseable {
 
     public synchronized void record(StoredChangeSet changeSet) throws IOException {
         Objects.requireNonNull(changeSet, "changeSet");
+        // Clear redo first. If cleanup fails, the new entry has not been published.
         closeAll(redo);
         redo.clear();
-        undo.addLast(changeSet);
-        while (undo.size() > maxEntries) {
-            undo.removeFirst().close();
+
+        // Evict before adding the new entry so an eviction failure cannot leave a
+        // newly-published entry behind while record() reports failure.
+        while (undo.size() >= maxEntries) {
+            StoredChangeSet oldest = undo.peekFirst();
+            oldest.close();
+            undo.removeFirst();
         }
+        undo.addLast(changeSet);
     }
 
     public synchronized Optional<String> nextUndoOperationId() {

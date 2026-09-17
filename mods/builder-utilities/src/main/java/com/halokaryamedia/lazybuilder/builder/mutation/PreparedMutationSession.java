@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimeline;
+import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
@@ -8,14 +9,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import java.io.IOException;
 import java.util.Objects;
 
-/**
- * Lifecycle owner for one prepared durable mutation.
- *
- * <p>Dispatch and world transport remain adapter-owned. This session only permits
- * COMPLETED after reconciliation proves the whole committed plan is present in
- * world state. Partial/not-applied plans stay RUNNING (or CANCELLING), while
- * conflicts fail explicitly.</p>
- */
+/** Lifecycle owner for one prepared durable mutation. */
 public final class PreparedMutationSession implements AutoCloseable {
     private final PreparedMaterialMutation prepared;
     private final HistoryTimeline timeline;
@@ -32,13 +26,8 @@ public final class PreparedMutationSession implements AutoCloseable {
                 .transitionTo(OperationState.QUEUED);
     }
 
-    public synchronized OperationLifecycle lifecycle() {
-        return lifecycle;
-    }
-
-    public PreparedMaterialMutation prepared() {
-        return prepared;
-    }
+    public synchronized OperationLifecycle lifecycle() { return lifecycle; }
+    public PreparedMaterialMutation prepared() { return prepared; }
 
     public synchronized void startDispatch() {
         ensureOwned();
@@ -65,19 +54,58 @@ public final class PreparedMutationSession implements AutoCloseable {
         if (lifecycle.state() != OperationState.RUNNING && lifecycle.state() != OperationState.CANCELLING) {
             throw new IllegalStateException("Reconciliation requires RUNNING or CANCELLING lifecycle");
         }
-
         PreparedReconciliationReport report = PreparedMutationReconciler.reconcile(prepared.changeSet(), world);
         switch (report.state()) {
             case FULLY_APPLIED -> completeWithHistory();
             case EMPTY -> completeWithoutHistory();
             case CONFLICT -> lifecycle = lifecycle.fail("Prepared mutation conflicts with current world state");
-            case NOT_APPLIED, PARTIALLY_APPLIED -> { /* remain active/recovery-required */ }
+            case NOT_APPLIED, PARTIALLY_APPLIED -> { }
         }
         return report;
     }
 
+    /** Finalizes a CANCELLING operation by preserving only the subset actually applied. */
+    public synchronized void finalizeKeepChanges(AppliedMutationCompaction compaction) throws IOException {
+        Objects.requireNonNull(compaction, "compaction");
+        ensureOwned();
+        if (lifecycle.state() != OperationState.CANCELLING) {
+            throw new IllegalStateException("KEEP_CHANGES finalization requires CANCELLING lifecycle");
+        }
+        switch (compaction.state()) {
+            case CONFLICT -> lifecycle = lifecycle.fail("Cancellation compaction conflicts with current world state");
+            case EMPTY -> {
+                prepared.close();
+                disposed = true;
+                setProcessedWork(0);
+                lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
+            }
+            case COMPACTED -> finalizeCompactedCancellation(compaction);
+        }
+    }
+
+    private void finalizeCompactedCancellation(AppliedMutationCompaction compaction) throws IOException {
+        StoredChangeSet retained = compaction.compactedChangeSet();
+        try {
+            timeline.record(retained);
+        } catch (IOException | RuntimeException e) {
+            try { retained.close(); } catch (IOException closeFailure) { e.addSuppressed(closeFailure); }
+            lifecycle = lifecycle.fail("Failed to publish partial cancellation history: " + e.getMessage());
+            throw e;
+        }
+
+        try {
+            prepared.close();
+            disposed = true;
+        } catch (IOException e) {
+            lifecycle = lifecycle.fail("Partial history published but original plan cleanup failed: " + e.getMessage());
+            throw e;
+        }
+        setProcessedWork(compaction.appliedChanges());
+        lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
+    }
+
     private void completeWithHistory() throws IOException {
-        markAllWorkProcessed();
+        setProcessedWork(lifecycle.totalWork());
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         try {
             timeline.record(prepared.changeSet());
@@ -90,20 +118,15 @@ public final class PreparedMutationSession implements AutoCloseable {
     }
 
     private void completeWithoutHistory() throws IOException {
-        markAllWorkProcessed();
+        setProcessedWork(lifecycle.totalWork());
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         prepared.close();
         disposed = true;
         lifecycle = lifecycle.transitionTo(OperationState.COMPLETED);
     }
 
-    private void markAllWorkProcessed() {
-        lifecycle = new OperationLifecycle(
-                lifecycle.state(),
-                lifecycle.totalWork(),
-                lifecycle.totalWork(),
-                null
-        );
+    private void setProcessedWork(long processedWork) {
+        lifecycle = new OperationLifecycle(lifecycle.state(), processedWork, lifecycle.totalWork(), null);
     }
 
     private void ensureOwned() {
