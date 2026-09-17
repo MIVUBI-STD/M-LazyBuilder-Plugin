@@ -253,21 +253,21 @@
 
 {#if restoreCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="restore-backup-title">
+    <div use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="restore-backup-title">
       <header><div><h3 id="restore-backup-title">Restore this server?</h3><p>Return the complete server to {formatDate(restoreCandidate.createdUnixSeconds)}.</p></div><button class="close-button" disabled={mutationBusy} aria-label="Close restore confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="safety-note"><strong>Your current server will be protected first.</strong><span>LazyBuilder creates a full safety backup before replacing the current server state. Keep the server offline until restore finishes.</span></div>
       <div class="confirm-actions"><button class="cancel-button" disabled={mutationBusy} onclick={closeConfirmation}>Cancel</button><button class="restore-confirm" disabled={mutationBusy || !serverOffline} onclick={restoreBackup}>{restoringId ? 'Restoring…' : 'Restore server'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if deleteCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-backup-title">
+    <div use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-backup-title">
       <header><div><h3 id="delete-backup-title">Delete this restore point?</h3><p>{formatDate(deleteCandidate.createdUnixSeconds)} · {formatBytes(deleteCandidate.sourceBytes)}</p></div><button class="close-button" disabled={mutationBusy} aria-label="Close delete restore point confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="delete-note"><strong>This restore point will be permanently removed.</strong><span>The current server and other backups are not affected.</span></div>
       <div class="confirm-actions"><button class="cancel-button" disabled={mutationBusy} onclick={closeConfirmation}>Cancel</button><button class="delete-confirm" disabled={mutationBusy} onclick={deleteBackup}>{deletingId ? 'Deleting…' : 'Delete restore point'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
