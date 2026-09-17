@@ -17,6 +17,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.item.ItemGroups;
 import net.minecraft.text.Text;
+import net.minecraft.world.GameMode;
 
 /** L4 visual/runtime proof for Utility Manager actions injected into vanilla client screens. */
 @SuppressWarnings("UnstableApiUsage")
@@ -87,60 +88,84 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
     }
 
     private static void verifyInstantCreativeSearch(ClientGameTestContext context) {
-        context.setScreen(() -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player == null) {
-                throw new AssertionError("Instant Creative Search proof requires a client player");
+        GameMode previousGameMode = context.computeOnClient(client -> {
+            if (client.player == null || client.interactionManager == null) {
+                throw new AssertionError("Instant Creative Search proof requires an active client player");
             }
-            return new CreativeInventoryScreen(
-                    client.player,
-                    client.player.getWorld().getEnabledFeatures(),
-                    client.player.hasPermissionLevel(2)
-            );
-        });
-        context.waitForScreen(CreativeInventoryScreen.class);
-
-        context.runOnClient(client -> {
-            CreativeInventoryScreen screen = (CreativeInventoryScreen) client.currentScreen;
-            FabricCreativeInventoryScreen fabricScreen = (FabricCreativeInventoryScreen) screen;
-            var searchGroup = ItemGroups.getSearchGroup();
-            var startingGroup = ItemGroups.getGroupsToDisplay().stream()
-                    .filter(group -> group != searchGroup)
-                    .findFirst()
-                    .orElseThrow(() -> new AssertionError("Creative inventory exposed no non-search item group"));
-            fabricScreen.setSelectedItemGroup(startingGroup);
-            if (fabricScreen.getSelectedItemGroup() != startingGroup) {
-                throw new AssertionError("Creative test did not start from a non-search item group");
-            }
+            return client.interactionManager.getCurrentGameMode();
         });
 
-        context.getInput().typeChars("stone");
-        context.waitTicks(2);
-
         context.runOnClient(client -> {
-            if (!(client.currentScreen instanceof CreativeInventoryScreen screen)) {
-                throw new AssertionError("Creative inventory closed while testing instant search");
+            if (client.player == null || client.interactionManager == null) {
+                throw new AssertionError("Instant Creative Search proof requires an active client player");
             }
+            client.interactionManager.setGameModes(GameMode.CREATIVE, previousGameMode);
+            client.interactionManager.copyAbilities(client.player);
+        });
 
-            FabricCreativeInventoryScreen fabricScreen = (FabricCreativeInventoryScreen) screen;
-            if (fabricScreen.getSelectedItemGroup() != ItemGroups.getSearchGroup()) {
-                throw new AssertionError("Typing did not switch to the vanilla Search Items tab");
-            }
-
-            Element focused = screen.getFocused();
-            if (!(focused instanceof TextFieldWidget searchField)) {
-                throw new AssertionError("Typing did not focus the vanilla creative search field");
-            }
-            if (!"stone".equals(searchField.getText())) {
-                throw new AssertionError(
-                        "Expected the full first-to-last query 'stone', got '" + searchField.getText() + "'"
+        try {
+            context.setScreen(() -> {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.player == null) {
+                    throw new AssertionError("Instant Creative Search proof requires a client player");
+                }
+                return new CreativeInventoryScreen(
+                        client.player,
+                        client.player.getWorld().getEnabledFeatures(),
+                        client.player.hasPermissionLevel(2)
                 );
-            }
-        });
+            });
+            context.waitForScreen(CreativeInventoryScreen.class);
 
-        context.takeScreenshot("utility-instant-creative-search-stone");
-        context.setScreen(() -> null);
-        context.waitTicks(4);
+            context.runOnClient(client -> {
+                CreativeInventoryScreen screen = (CreativeInventoryScreen) client.currentScreen;
+                FabricCreativeInventoryScreen fabricScreen = (FabricCreativeInventoryScreen) screen;
+                var searchGroup = ItemGroups.getSearchGroup();
+                var startingGroup = ItemGroups.getGroupsToDisplay().stream()
+                        .filter(group -> group != searchGroup)
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("Creative inventory exposed no non-search item group"));
+                fabricScreen.setSelectedItemGroup(startingGroup);
+                if (fabricScreen.getSelectedItemGroup() != startingGroup) {
+                    throw new AssertionError("Creative test did not start from a non-search item group");
+                }
+            });
+
+            context.getInput().typeChars("stone");
+            context.waitTicks(2);
+
+            context.runOnClient(client -> {
+                if (!(client.currentScreen instanceof CreativeInventoryScreen screen)) {
+                    throw new AssertionError("Creative inventory closed while testing instant search");
+                }
+
+                FabricCreativeInventoryScreen fabricScreen = (FabricCreativeInventoryScreen) screen;
+                if (fabricScreen.getSelectedItemGroup() != ItemGroups.getSearchGroup()) {
+                    throw new AssertionError("Typing did not switch to the vanilla Search Items tab");
+                }
+
+                Element focused = screen.getFocused();
+                if (!(focused instanceof TextFieldWidget searchField)) {
+                    throw new AssertionError("Typing did not focus the vanilla creative search field");
+                }
+                if (!"stone".equals(searchField.getText())) {
+                    throw new AssertionError(
+                            "Expected the full first-to-last query 'stone', got '" + searchField.getText() + "'"
+                    );
+                }
+            });
+
+            context.takeScreenshot("utility-instant-creative-search-stone");
+        } finally {
+            context.setScreen(() -> null);
+            context.runOnClient(client -> {
+                if (client.player != null && client.interactionManager != null) {
+                    client.interactionManager.setGameModes(previousGameMode, GameMode.CREATIVE);
+                    client.interactionManager.copyAbilities(client.player);
+                }
+            });
+            context.waitTicks(4);
+        }
     }
 
     private static void captureDisconnected(
@@ -180,17 +205,9 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.waitTicks(4);
     }
 
-    private static void configureViewport(
-            ClientGameTestContext context,
-            int width,
-            int height,
-            int guiScale
-    ) {
-        context.runOnClient(client -> {
-            client.options.getGuiScale().setValue(guiScale);
-            client.getWindow().setWindowedSize(width, height);
-            client.onResolutionChanged();
-        });
-        context.waitTicks(10);
+    private static void configureViewport(ClientGameTestContext context, int width, int height, int guiScale) {
+        context.resizeWindow(width, height);
+        context.runOnClient(client -> client.options.getGuiScale().setValue(guiScale));
+        context.waitTicks(4);
     }
 }
