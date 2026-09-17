@@ -5,6 +5,7 @@
   import type { LauncherOperationSnapshot, LauncherOperationState } from '../app/bridge/runtimeApi';
 
   export let onOpenActivity: (() => void) | undefined = undefined;
+  export let suppressed = false;
 
   const ACTIVE_STATES = new Set<LauncherOperationState>(['QUEUED', 'RUNNING', 'CANCELLING']);
   const TERMINAL_STATES = new Set<LauncherOperationState>(['SUCCEEDED', 'FAILED', 'CANCELLED', 'RECOVERY_REQUIRED']);
@@ -30,6 +31,10 @@
   }
 
   function show(operation: LauncherOperationSnapshot) {
+    if (suppressed) {
+      dismiss();
+      return;
+    }
     clearDismissTimer();
     notice = operation;
     if (operation.state === 'SUCCEEDED') {
@@ -90,6 +95,8 @@
     onOpenActivity?.();
   }
 
+  $: if (suppressed && notice) dismiss();
+
   onMount(() => {
     let disposed = false;
     let timer: number | null = null;
@@ -134,7 +141,7 @@
   });
 </script>
 
-{#if notice}
+{#if notice && !suppressed}
   <aside class="operation-attention {tone(notice)}" aria-live={notice.state === 'SUCCEEDED' ? 'polite' : 'assertive'}>
     <div class="attention-icon" aria-hidden="true">{notice.state === 'SUCCEEDED' ? '✓' : notice.state === 'CANCELLED' ? '–' : '!'}</div>
     <div class="attention-copy">
