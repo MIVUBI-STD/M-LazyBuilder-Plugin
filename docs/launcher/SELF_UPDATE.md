@@ -112,8 +112,10 @@ The workflow:
 Stable updater endpoint:
 
 ```text
-https://raw.githubusercontent.com/halokaryamedia-source/LazyBuilder-Plugin/launcher-update-channel/stable/latest.json
+https://raw.githubusercontent.com/MIVUBI-STD/M-LazyBuilder-Plugin/launcher-update-channel/stable/latest.json
 ```
+
+The release workflow derives this repository identity from `GITHUB_REPOSITORY`; documentation and future runtime updater configuration must point to the same repository authority.
 
 ### Metadata-only channel branch
 
