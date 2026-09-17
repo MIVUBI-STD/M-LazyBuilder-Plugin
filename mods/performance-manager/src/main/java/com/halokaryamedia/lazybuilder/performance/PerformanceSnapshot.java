@@ -25,6 +25,7 @@ public record PerformanceSnapshot(
         long avoidedTranslucentSortTasks,
         long avoidedTerrainSectionVisits,
         long sectionBuilderBufferLookupHits,
+        long chunkUploadBudgetStops,
         String rendererPipelineOwner,
         String chunkDebug,
         String entityDebug,

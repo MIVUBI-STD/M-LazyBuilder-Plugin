@@ -73,4 +73,11 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordSectionBuilderBufferLookupHit();
         assertEquals(4L, ChunkPipelineMetrics.sectionBuilderBufferLookupHits());
     }
+
+    @Test
+    void countsUploadBudgetStops() {
+        ChunkPipelineMetrics.recordUploadBudgetStop();
+        ChunkPipelineMetrics.recordUploadBudgetStop();
+        assertEquals(2L, ChunkPipelineMetrics.uploadBudgetStops());
+    }
 }

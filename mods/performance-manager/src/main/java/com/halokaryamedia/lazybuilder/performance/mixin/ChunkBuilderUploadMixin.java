@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadDrainPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadTask;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BuiltBuffer;
@@ -18,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 
-/** Batches consecutive chunk uploads targeting the same GPU buffer without changing queue order. */
+/** Batches and paces render-thread chunk uploads without changing queue order. */
 @Mixin(ChunkBuilder.class)
 abstract class ChunkBuilderUploadMixin {
     @Shadow
@@ -66,29 +67,38 @@ abstract class ChunkBuilderUploadMixin {
     private void lazybuilder$batchUploads(CallbackInfo ci) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
 
+        int budget = ChunkUploadDrainPolicy.taskBudget(this.stopped);
+        int processed = 0;
         Runnable runnable;
-        while ((runnable = this.uploadQueue.poll()) != null) {
+        while (processed < budget && (runnable = this.uploadQueue.poll()) != null) {
             if (!(runnable instanceof ChunkUploadTask task)) {
                 runnable.run();
+                processed++;
                 continue;
             }
-            lazybuilder$runUploadBatch(task);
+            processed += lazybuilder$runUploadBatch(task, budget - processed);
+        }
+
+        if (!this.stopped && !this.uploadQueue.isEmpty()) {
+            ChunkPipelineMetrics.recordUploadBudgetStop();
         }
         ci.cancel();
     }
 
-    private void lazybuilder$runUploadBatch(ChunkUploadTask first) {
+    private int lazybuilder$runUploadBatch(ChunkUploadTask first, int remainingBudget) {
+        if (remainingBudget <= 0) return 0;
+
         VertexBuffer buffer = first.buffer();
         if (buffer.isClosed()) {
             first.discard();
-            return;
+            return 1;
         }
 
         try {
             buffer.bind();
         } catch (Throwable throwable) {
             first.fail(throwable);
-            return;
+            return 1;
         }
 
         int taskCount = 0;
@@ -96,7 +106,7 @@ abstract class ChunkBuilderUploadMixin {
             first.executeBound();
             taskCount++;
 
-            while (true) {
+            while (taskCount < remainingBudget) {
                 Runnable next = this.uploadQueue.peek();
                 if (!(next instanceof ChunkUploadTask nextTask) || nextTask.buffer() != buffer) break;
                 this.uploadQueue.poll();
@@ -108,5 +118,6 @@ abstract class ChunkBuilderUploadMixin {
         }
 
         ChunkPipelineMetrics.recordUploadBatch(taskCount);
+        return taskCount;
     }
 }

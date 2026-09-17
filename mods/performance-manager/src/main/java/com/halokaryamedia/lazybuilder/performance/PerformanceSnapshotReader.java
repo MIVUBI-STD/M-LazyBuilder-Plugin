@@ -59,6 +59,7 @@ public final class PerformanceSnapshotReader {
                 ChunkPipelineMetrics.avoidedTranslucentSortTasks(),
                 ChunkPipelineMetrics.avoidedTerrainSectionVisits(),
                 ChunkPipelineMetrics.sectionBuilderBufferLookupHits(),
+                ChunkPipelineMetrics.uploadBudgetStops(),
                 RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,
