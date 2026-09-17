@@ -13,7 +13,8 @@
     "DisconnectedScreenMixin",
     "KeyboardMixin",
     "MultiplayerScreenMixin",
-    "ScreenshotRecorderMixin"
+    "ScreenshotRecorderMixin",
+    "SocialInteractionsPlayerListEntryMixin"
   ],
   "injectors": {
     "defaultRequire": 1
