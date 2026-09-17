@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationProgress, OperationRegistry};
 use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::{adoption, provisioning, runtime_updates, server_process_guard, server_start_lock::ServerStartLease, workspace_registry};
@@ -47,7 +47,7 @@ pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::
         let result = provisioning::provision_active_tracked(resource_dir.as_deref(), |phase, status, details| { let _ = operations.set_phase(&operation_id, phase, status, details, None); });
         match result {
             Ok(result) => { let _ = operations.succeed(&operation_id, "Server prepared"); Ok(result) }
-            Err(message) => { let error = CommandError::recoverable("PROVISION_FAILED", message, "Retry server preparation"); fail_operation(&operations, &operation_id, &error, true); Err(error) }
+            Err(message) => { let error = CommandError::recoverable_action("PROVISION_FAILED", message, RecoveryAction::RetryOperation); fail_operation(&operations, &operation_id, &error, true); Err(error) }
         }
     });
     match task.await {
@@ -83,7 +83,11 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
             Ok(result) => { let _ = operations.succeed(&operation_id, "Paper updated"); Ok(result) }
             Err(message) => {
                 let rollback_failed = message.contains("rollback also failed");
-                let error = if rollback_failed { CommandError::new("PAPER_UPDATE_FAILED", message.clone()).with_details("Paper rollback could not be completed automatically. Inspect the server before retrying.") } else { CommandError::recoverable("PAPER_UPDATE_FAILED", message.clone(), "Retry Paper update") };
+                let error = if rollback_failed {
+                    CommandError::new("PAPER_UPDATE_FAILED", message.clone()).with_details("Paper rollback could not be completed automatically. Inspect the server before retrying.")
+                } else {
+                    CommandError::recoverable_action("PAPER_UPDATE_FAILED", message.clone(), RecoveryAction::RetryOperation)
+                };
                 let operation_error = OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: !rollback_failed };
                 if rollback_failed { let _ = operations.require_recovery(&operation_id, operation_error); } else { let _ = operations.fail(&operation_id, operation_error); }
                 Err(error)
@@ -134,7 +138,7 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
         let root = PathBuf::from(root_path);
         let _ = operations.set_phase(&operation_id, "preflight", "Validating existing Paper server", "Checking process ownership, filesystem safety, and migration destinations before moving server files.", None);
         if let Err(message) = server_process_guard::ensure_root_not_running(&root) {
-            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop existing server");
+            let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error, true);
             return Err(error);
         }
@@ -143,12 +147,12 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
             Ok(entry) => { let _ = operations.succeed(&operation_id, "Existing server adopted"); Ok(entry) }
             Err(message) if message.starts_with("ADOPTION_RECOVERY_REQUIRED:") => {
                 let message = message.trim_start_matches("ADOPTION_RECOVERY_REQUIRED:").trim().to_string();
-                let error = CommandError::recoverable("ADOPTION_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+                let error = CommandError::recoverable_action("ADOPTION_RECOVERY_REQUIRED", message, RecoveryAction::RestartLauncher);
                 let _ = operations.require_recovery(&operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true });
                 Err(error)
             }
             Err(message) => {
-                let error = CommandError::recoverable("ADOPTION_FAILED", message, "Retry adoption");
+                let error = CommandError::recoverable_action("ADOPTION_FAILED", message, RecoveryAction::RetryOperation);
                 fail_operation(&operations, &operation_id, &error, true);
                 Err(error)
             }
@@ -181,7 +185,13 @@ pub fn workspace_close(operations: State<'_, OperationRegistry>) -> CommandResul
 pub fn workspace_open_folder(id: String) -> CommandResult<()> {
     let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
     let path = PathBuf::from(&entry.path);
-    if !path.is_dir() { return Err(CommandError::new("WORKSPACE_UNAVAILABLE", format!("Server location is currently unavailable: {}", path.display()))); }
+    if !path.is_dir() {
+        return Err(CommandError::recoverable_action(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", path.display()),
+            RecoveryAction::LocateWorkspace,
+        ));
+    }
     Command::new("explorer.exe").arg(&path).spawn().map_err(|error| CommandError::new("OPEN_FOLDER_FAILED", format!("Could not open server folder: {error}")))?;
     Ok(())
 }
@@ -223,11 +233,11 @@ pub async fn workspace_duplicate(app: AppHandle, id: String, parent_path: String
             }
             Err(message) if message.starts_with("DUPLICATE_RECOVERY_REQUIRED:") => {
                 let message = message.trim_start_matches("DUPLICATE_RECOVERY_REQUIRED:").trim().to_string();
-                let error = CommandError::recoverable("DUPLICATE_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+                let error = CommandError::recoverable_action("DUPLICATE_RECOVERY_REQUIRED", message, RecoveryAction::RestartLauncher);
                 let _ = operations.require_recovery(&operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true });
                 Err(error)
             }
-            Err(message) => { let error = CommandError::recoverable("DUPLICATE_FAILED", message, "Retry duplicate"); fail_operation(&operations, &operation_id, &error, true); Err(error) }
+            Err(message) => { let error = CommandError::recoverable_action("DUPLICATE_FAILED", message, RecoveryAction::RetryOperation); fail_operation(&operations, &operation_id, &error, true); Err(error) }
         }
     });
     match task.await {
@@ -272,12 +282,12 @@ pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: St
                 Ok(())
             }
             Err(message) if message.contains("Rollback also failed") || message.contains("final deletion cleanup is pending") => {
-                let error = CommandError::recoverable("DELETE_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+                let error = CommandError::recoverable_action("DELETE_RECOVERY_REQUIRED", message, RecoveryAction::RestartLauncher);
                 let _ = operations.require_recovery(&operation_id, OperationError { code: error.code.to_string(), message: error.message.clone(), details: error.details.clone(), recoverable: true });
                 Err(error)
             }
             Err(message) => {
-                let error = CommandError::recoverable("DELETE_FAILED", message, "Retry server deletion");
+                let error = CommandError::recoverable_action("DELETE_FAILED", message, RecoveryAction::RetryOperation);
                 fail_operation(&operations, &operation_id, &error, true);
                 Err(error)
             }
@@ -298,16 +308,20 @@ fn fail_operation(operations: &OperationRegistry, operation_id: &str, error: &Co
 }
 
 fn acquire_workspace_selection_lease() -> CommandResult<ServerStartLease> {
-    ServerStartLease::acquire().map_err(|message| CommandError::recoverable(
+    ServerStartLease::acquire().map_err(|message| CommandError::recoverable_action(
         "SERVER_START_BUSY",
         message,
-        "Wait for server start",
+        RecoveryAction::WaitForServerStart,
     ))
 }
 
 fn ensure_library_operation_idle(operations: &OperationRegistry) -> CommandResult<()> {
     if operations.has_active_for_resource(WORKSPACE_LIBRARY_RESOURCE).map_err(CommandError::from)? {
-        return Err(CommandError::recoverable("OPERATION_BUSY", "A server-library migration is still running. Wait for it to finish before changing the server library.", "Open Activity"));
+        return Err(CommandError::recoverable_action(
+            "OPERATION_BUSY",
+            "A server-library migration is still running. Wait for it to finish before changing the server library.",
+            RecoveryAction::OpenActivity,
+        ));
     }
     Ok(())
 }
@@ -315,7 +329,11 @@ fn ensure_library_operation_idle(operations: &OperationRegistry) -> CommandResul
 fn ensure_workspace_operation_idle(operations: &OperationRegistry, workspace_id: &str) -> CommandResult<()> {
     let resource = format!("workspace:{workspace_id}");
     if operations.has_active_for_resource(&resource).map_err(CommandError::from)? {
-        return Err(CommandError::recoverable("OPERATION_BUSY", "A Launcher operation is still changing this server. Wait for it to finish before switching or modifying the workspace.", "Open Activity"));
+        return Err(CommandError::recoverable_action(
+            "OPERATION_BUSY",
+            "A Launcher operation is still changing this server. Wait for it to finish before switching or modifying the workspace.",
+            RecoveryAction::OpenActivity,
+        ));
     }
     Ok(())
 }
@@ -339,7 +357,13 @@ fn ensure_switch_allowed(operations: &OperationRegistry) -> CommandResult<()> {
 fn ensure_workspace_mutation_allowed(runtimes: &ServerRuntimeRegistry, target_id: &str) -> CommandResult<()> {
     let entry = workspace_registry::get(target_id).map_err(CommandError::from)?;
     let root = PathBuf::from(&entry.path);
-    if !root.is_dir() { return Err(CommandError::new("WORKSPACE_UNAVAILABLE", format!("Server location is currently unavailable: {}", root.display()))); }
+    if !root.is_dir() {
+        return Err(CommandError::recoverable_action(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", root.display()),
+            RecoveryAction::LocateWorkspace,
+        ));
+    }
     ensure_runtime_update_allowed(runtimes, target_id)?;
     server_process_guard::ensure_root_not_running(&root).map_err(CommandError::from)
 }
@@ -357,11 +381,19 @@ fn ensure_runtime_update_allowed(runtimes: &ServerRuntimeRegistry, workspace_id:
         let snapshot = state.snapshot().map_err(CommandError::from)?;
         return match snapshot.state.as_str() {
             "Offline" | "Crashed" => Ok(()),
-            other => Err(CommandError::new("SERVER_BUSY", format!("Stop this server before changing its runtime files. Current server state: {other}."))),
+            other => Err(CommandError::recoverable_action(
+                "SERVER_BUSY",
+                format!("Stop this server before changing its runtime files. Current server state: {other}."),
+                RecoveryAction::StopServer,
+            )),
         };
     }
     if server_process_guard::workspace_has_running_paper(workspace_id).map_err(CommandError::from)? {
-        return Err(CommandError::new("SERVER_BUSY", "This server still has a verified Paper process running. Stop or recover it before changing runtime files."));
+        return Err(CommandError::recoverable_action(
+            "SERVER_BUSY",
+            "This server still has a verified Paper process running. Stop or recover it before changing runtime files.",
+            RecoveryAction::StopServer,
+        ));
     }
     Ok(())
 }
