@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.symmetry.BuilderTransform;
 import com.moulberry.axiomclientapi.Effects;
 import com.moulberry.axiomclientapi.regions.BooleanRegion;
 import net.minecraft.client.render.Camera;
@@ -13,9 +14,6 @@ import java.util.Objects;
 
 /**
  * Preview-only adapter backed by Axiom's public BooleanRegion API.
- *
- * <p>This class never calls ToolService.pushBlockRegionChange and therefore has no
- * authority to mutate the world.</p>
  */
 public final class AxiomSplinePreviewRegion implements AutoCloseable {
     private final BooleanRegion region;
@@ -26,9 +24,13 @@ public final class AxiomSplinePreviewRegion implements AutoCloseable {
     }
 
     public void update(List<SplinePlacementPlanEntry> plan) {
+        update(plan, List.of(BuilderTransform.identity()));
+    }
+
+    public void update(List<SplinePlacementPlanEntry> plan, List<BuilderTransform> transforms) {
         ensureOpen();
         region.clear();
-        for (SplinePreviewVoxelizer.Voxel voxel : SplinePreviewVoxelizer.voxelize(plan)) {
+        for (SplinePreviewVoxelizer.Voxel voxel : SplinePreviewVoxelizer.voxelize(plan, transforms)) {
             region.add(voxel.x(), voxel.y(), voxel.z());
         }
     }
@@ -48,16 +50,12 @@ public final class AxiomSplinePreviewRegion implements AutoCloseable {
 
     @Override
     public void close() {
-        if (closed) {
-            return;
-        }
+        if (closed) return;
         region.close();
         closed = true;
     }
 
     private void ensureOpen() {
-        if (closed) {
-            throw new IllegalStateException("Axiom spline preview region is closed");
-        }
+        if (closed) throw new IllegalStateException("Axiom spline preview region is closed");
     }
 }

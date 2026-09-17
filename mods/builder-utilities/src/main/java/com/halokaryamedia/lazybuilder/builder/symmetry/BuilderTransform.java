@@ -15,15 +15,17 @@ public record BuilderTransform(
         BuilderVec3 translation
 ) {
     private static final double EPSILON = 1.0e-9;
+    private static final double ORTHONORMAL_TOLERANCE = 1.0e-6;
 
     public BuilderTransform {
         if (!finite(m00, m01, m02, m10, m11, m12, m20, m21, m22)) {
             throw new IllegalArgumentException("transform matrix must be finite");
         }
         Objects.requireNonNull(translation, "translation");
+        validateOrthonormal(m00,m01,m02,m10,m11,m12,m20,m21,m22);
         double determinant = determinant(m00, m01, m02, m10, m11, m12, m20, m21, m22);
-        if (Math.abs(Math.abs(determinant) - 1.0) > 1.0e-6) {
-            throw new IllegalArgumentException("BuilderTransform must be rigid/reflection-orthogonal; determinant=" + determinant);
+        if (Math.abs(Math.abs(determinant) - 1.0) > ORTHONORMAL_TOLERANCE) {
+            throw new IllegalArgumentException("BuilderTransform determinant must be +/-1; determinant=" + determinant);
         }
     }
 
@@ -38,9 +40,8 @@ public record BuilderTransform(
 
     public static BuilderTransform rotation(BuilderVec3 origin, BuilderVec3 axis, double radians) {
         Objects.requireNonNull(origin, "origin");
-        Objects.requireNonNull(axis, "axis");
+        BuilderVec3 n = requireDirection(axis, "axis");
         if (!Double.isFinite(radians)) throw new IllegalArgumentException("radians must be finite");
-        BuilderVec3 n = axis.normalized();
         double x = n.x(), y = n.y(), z = n.z();
         double c = Math.cos(radians), s = Math.sin(radians), t = 1.0 - c;
         double m00 = t*x*x + c,   m01 = t*x*y - s*z, m02 = t*x*z + s*y;
@@ -53,18 +54,18 @@ public record BuilderTransform(
 
     public static BuilderTransform reflection(BuilderVec3 pointOnPlane, BuilderVec3 planeNormal) {
         Objects.requireNonNull(pointOnPlane, "pointOnPlane");
-        Objects.requireNonNull(planeNormal, "planeNormal");
-        BuilderVec3 n = planeNormal.normalized();
+        BuilderVec3 n = requireDirection(planeNormal, "planeNormal");
         double x = n.x(), y = n.y(), z = n.z();
-        double m00 = 1 - 2*x*x, m01 = -2*x*y,    m02 = -2*x*z;
-        double m10 = -2*y*x,    m11 = 1 - 2*y*y,m12 = -2*y*z;
-        double m20 = -2*z*x,    m21 = -2*z*y,    m22 = 1 - 2*z*z;
+        double m00 = 1 - 2*x*x, m01 = -2*x*y,     m02 = -2*x*z;
+        double m10 = -2*y*x,     m11 = 1 - 2*y*y, m12 = -2*y*z;
+        double m20 = -2*z*x,     m21 = -2*z*y,     m22 = 1 - 2*z*z;
         BuilderTransform linear = new BuilderTransform(m00,m01,m02,m10,m11,m12,m20,m21,m22,new BuilderVec3(0,0,0));
         BuilderVec3 translation = pointOnPlane.subtract(linear.transformVector(pointOnPlane));
         return new BuilderTransform(m00,m01,m02,m10,m11,m12,m20,m21,m22,translation);
     }
 
     public BuilderVec3 transformPoint(BuilderVec3 point) {
+        Objects.requireNonNull(point, "point");
         return transformVector(point).add(translation);
     }
 
@@ -88,6 +89,31 @@ public record BuilderTransform(
 
     public boolean orientationReversing() {
         return determinant(m00,m01,m02,m10,m11,m12,m20,m21,m22) < -EPSILON;
+    }
+
+    private static BuilderVec3 requireDirection(BuilderVec3 vector, String label) {
+        Objects.requireNonNull(vector, label);
+        if (vector.lengthSquared() <= EPSILON * EPSILON) {
+            throw new IllegalArgumentException(label + " must be non-zero");
+        }
+        return vector.normalized();
+    }
+
+    private static void validateOrthonormal(double a,double b,double c,double d,double e,double f,double g,double h,double i) {
+        double r0 = a*a+b*b+c*c;
+        double r1 = d*d+e*e+f*f;
+        double r2 = g*g+h*h+i*i;
+        double d01 = a*d+b*e+c*f;
+        double d02 = a*g+b*h+c*i;
+        double d12 = d*g+e*h+f*i;
+        if (Math.abs(r0-1.0) > ORTHONORMAL_TOLERANCE
+                || Math.abs(r1-1.0) > ORTHONORMAL_TOLERANCE
+                || Math.abs(r2-1.0) > ORTHONORMAL_TOLERANCE
+                || Math.abs(d01) > ORTHONORMAL_TOLERANCE
+                || Math.abs(d02) > ORTHONORMAL_TOLERANCE
+                || Math.abs(d12) > ORTHONORMAL_TOLERANCE) {
+            throw new IllegalArgumentException("BuilderTransform matrix must be orthonormal");
+        }
     }
 
     private static boolean finite(double... values) {

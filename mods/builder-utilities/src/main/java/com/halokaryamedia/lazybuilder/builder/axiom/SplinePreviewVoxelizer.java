@@ -1,7 +1,9 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineFrame;
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.symmetry.BuilderTransform;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,31 +20,43 @@ public final class SplinePreviewVoxelizer {
     }
 
     public static List<Voxel> voxelize(List<SplinePlacementPlanEntry> plan) {
+        return voxelize(plan, List.of(BuilderTransform.identity()));
+    }
+
+    public static List<Voxel> voxelize(List<SplinePlacementPlanEntry> plan, List<BuilderTransform> transforms) {
         Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(transforms, "transforms");
+        if (transforms.isEmpty()) {
+            throw new IllegalArgumentException("preview transforms must not be empty");
+        }
         Set<Voxel> voxels = new LinkedHashSet<>();
-        for (SplinePlacementPlanEntry entry : plan) {
-            Objects.requireNonNull(entry, "entry");
-            add(voxels, entry.position());
-            double radius = entry.radius();
-            BuilderVec3 normal = entry.frame().normal().multiply(radius);
-            BuilderVec3 binormal = entry.frame().binormal().multiply(radius);
-            add(voxels, entry.position().add(normal));
-            add(voxels, entry.position().subtract(normal));
-            add(voxels, entry.position().add(binormal));
-            add(voxels, entry.position().subtract(binormal));
-            if (voxels.size() > MAX_PREVIEW_VOXELS) {
-                throw new IllegalArgumentException("preview voxel count exceeds " + MAX_PREVIEW_VOXELS);
+        for (BuilderTransform transform : transforms) {
+            Objects.requireNonNull(transform, "transform");
+            for (SplinePlacementPlanEntry entry : plan) {
+                addEntry(voxels, Objects.requireNonNull(entry, "entry"), transform);
+                if (voxels.size() > MAX_PREVIEW_VOXELS) {
+                    throw new IllegalArgumentException("preview voxel count exceeds " + MAX_PREVIEW_VOXELS);
+                }
             }
         }
         return List.copyOf(voxels);
     }
 
+    private static void addEntry(Set<Voxel> voxels, SplinePlacementPlanEntry entry, BuilderTransform transform) {
+        BuilderVec3 position = transform.transformPoint(entry.position());
+        SplineFrame frame = transform.transformFrame(entry.frame());
+        add(voxels, position);
+        double radius = entry.radius();
+        BuilderVec3 normal = frame.normal().multiply(radius);
+        BuilderVec3 binormal = frame.binormal().multiply(radius);
+        add(voxels, position.add(normal));
+        add(voxels, position.subtract(normal));
+        add(voxels, position.add(binormal));
+        add(voxels, position.subtract(binormal));
+    }
+
     private static void add(Set<Voxel> voxels, BuilderVec3 position) {
-        voxels.add(new Voxel(
-                rounded(position.x()),
-                rounded(position.y()),
-                rounded(position.z())
-        ));
+        voxels.add(new Voxel(rounded(position.x()), rounded(position.y()), rounded(position.z())));
     }
 
     private static int rounded(double value) {
