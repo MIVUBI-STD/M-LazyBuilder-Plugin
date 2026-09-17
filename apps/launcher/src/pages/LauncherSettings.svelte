@@ -32,6 +32,13 @@
     return 'Healthy';
   }
 
+  function buildCommitLabel() {
+    const commit = diagnostics?.buildCommit?.trim();
+    if (!commit) return 'Unavailable';
+    if (commit === 'local' || commit === 'preview') return commit;
+    return commit.slice(0, 12);
+  }
+
   async function copySupportValue(target: string, value: string) {
     if (!value) return;
     const copied = await copyText(value);
@@ -144,6 +151,9 @@
       <div class="support-stack">
         <section class="support-overview" aria-label="LazyBuilder support context">
           <div><span>Launcher</span><strong>{diagnostics?.launcherVersion ? `v${diagnostics.launcherVersion}` : 'Version unavailable'}</strong></div>
+          <div><span>Commit</span><strong title={diagnostics?.buildCommit || ''}>{buildCommitLabel()}</strong></div>
+          <div><span>Channel</span><strong>{diagnostics?.buildChannel || 'Unavailable'}</strong></div>
+          <div><span>Target</span><strong>{diagnostics?.buildTarget || 'Unavailable'}</strong></div>
           <div><span>Startup</span><strong>{startupLabel()}</strong></div>
           <div><span>Java</span><strong>{diagnostics?.javaVersion || 'Unavailable'}</strong></div>
           <div><span>Server</span><strong>{diagnostics?.workspaceName || 'No server open'}</strong></div>
@@ -166,7 +176,7 @@
         {/if}
 
         <div class="support-card">
-          <div><strong>Create support package</strong><span>Includes Launcher information, recent activity, startup status, and logs. Worlds, plugin data, server configuration, sign-in data, and security keys are excluded.</span><small>Personal file paths are redacted where possible. Nothing is uploaded automatically.</small></div>
+          <div><strong>Create support package</strong><span>Includes Launcher build identity, recent activity, startup status, and logs. Worlds, plugin data, server configuration, sign-in data, and security keys are excluded.</span><small>Personal file paths are redacted where possible. Nothing is uploaded automatically.</small></div>
           <button class="secondary" disabled={exportingSupport} onclick={exportSupportBundle}>{exportingSupport ? 'Creating…' : 'Create ZIP'}</button>
         </div>
       </div>
