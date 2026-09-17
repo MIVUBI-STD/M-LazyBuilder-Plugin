@@ -13,6 +13,8 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder AVOIDED_TERRAIN_SECTION_VISITS = new LongAdder();
     private static final LongAdder SECTION_BUILDER_BUFFER_LOOKUP_HITS = new LongAdder();
     private static final LongAdder UPLOAD_BUDGET_STOPS = new LongAdder();
+    private static final LongAdder TERRAIN_GPU_RECLAIMED_BYTES = new LongAdder();
+    private static final LongAdder TERRAIN_GPU_RECLAIMED_BUFFERS = new LongAdder();
 
     private ChunkPipelineMetrics() {
     }
@@ -35,6 +37,13 @@ public final class ChunkPipelineMetrics {
     public static long sectionBuilderBufferLookupHits() { return SECTION_BUILDER_BUFFER_LOOKUP_HITS.sum(); }
     public static void recordUploadBudgetStop() { UPLOAD_BUDGET_STOPS.increment(); }
     public static long uploadBudgetStops() { return UPLOAD_BUDGET_STOPS.sum(); }
+    public static void recordTerrainGpuReclamation(long bytes) {
+        if (bytes <= 0L) return;
+        TERRAIN_GPU_RECLAIMED_BYTES.add(bytes);
+        TERRAIN_GPU_RECLAIMED_BUFFERS.increment();
+    }
+    public static long terrainGpuReclaimedBytes() { return TERRAIN_GPU_RECLAIMED_BYTES.sum(); }
+    public static long terrainGpuReclaimedBuffers() { return TERRAIN_GPU_RECLAIMED_BUFFERS.sum(); }
 
     static void resetForTest() {
         COALESCED_REBUILD_REQUESTS.reset();
@@ -46,5 +55,7 @@ public final class ChunkPipelineMetrics {
         AVOIDED_TERRAIN_SECTION_VISITS.reset();
         SECTION_BUILDER_BUFFER_LOOKUP_HITS.reset();
         UPLOAD_BUDGET_STOPS.reset();
+        TERRAIN_GPU_RECLAIMED_BYTES.reset();
+        TERRAIN_GPU_RECLAIMED_BUFFERS.reset();
     }
 }

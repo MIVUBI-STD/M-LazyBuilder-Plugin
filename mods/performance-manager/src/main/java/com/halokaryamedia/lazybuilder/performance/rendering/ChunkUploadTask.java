@@ -4,6 +4,7 @@ import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.util.BufferAllocator;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
 /** Queue task that can upload vertex or index data while reusing an already-bound VertexBuffer. */
@@ -11,24 +12,33 @@ public final class ChunkUploadTask implements Runnable {
     private final VertexBuffer buffer;
     private final BuiltBuffer vertexData;
     private final BufferAllocator.CloseableBuffer indexData;
+    private final int vertexPayloadBytes;
+    private final int indexPayloadBytes;
     private final CompletableFuture<Void> future = new CompletableFuture<>();
 
     private ChunkUploadTask(
             VertexBuffer buffer,
             BuiltBuffer vertexData,
-            BufferAllocator.CloseableBuffer indexData
+            BufferAllocator.CloseableBuffer indexData,
+            int vertexPayloadBytes,
+            int indexPayloadBytes
     ) {
         this.buffer = buffer;
         this.vertexData = vertexData;
         this.indexData = indexData;
+        this.vertexPayloadBytes = Math.max(0, vertexPayloadBytes);
+        this.indexPayloadBytes = Math.max(0, indexPayloadBytes);
     }
 
     public static ChunkUploadTask vertex(BuiltBuffer data, VertexBuffer buffer) {
-        return new ChunkUploadTask(buffer, data, null);
+        ByteBuffer vertices = data == null ? null : data.getBuffer();
+        ByteBuffer sortedIndices = data == null ? null : data.getSortedBuffer();
+        return new ChunkUploadTask(buffer, data, null, remaining(vertices), remaining(sortedIndices));
     }
 
     public static ChunkUploadTask index(BufferAllocator.CloseableBuffer data, VertexBuffer buffer) {
-        return new ChunkUploadTask(buffer, null, data);
+        ByteBuffer indices = data == null ? null : data.getBuffer();
+        return new ChunkUploadTask(buffer, null, data, 0, remaining(indices));
     }
 
     public VertexBuffer buffer() {
@@ -49,8 +59,10 @@ public final class ChunkUploadTask implements Runnable {
         try {
             if (vertexData != null) {
                 buffer.upload(vertexData);
+                TerrainGpuResidencyTracker.recordPayload(buffer, vertexPayloadBytes, indexPayloadBytes);
             } else if (indexData != null) {
                 buffer.uploadIndexBuffer(indexData);
+                TerrainGpuResidencyTracker.recordIndexPayload(buffer, indexPayloadBytes);
             }
             future.complete(null);
         } catch (Throwable throwable) {
@@ -98,5 +110,9 @@ public final class ChunkUploadTask implements Runnable {
         } finally {
             VertexBuffer.unbind();
         }
+    }
+
+    private static int remaining(ByteBuffer buffer) {
+        return buffer == null ? 0 : buffer.remaining();
     }
 }

@@ -1,10 +1,16 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuReclamationPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.GlUsage;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
+import net.minecraft.util.math.ChunkSectionPos;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -13,14 +19,19 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Reuses resolved terrain buffers and tracks their section/region residency ownership. */
+import java.util.Map;
+
+/** Reuses terrain buffers, tracks residency, and reclaims stale oversized allocations on region moves. */
 @Mixin(ChunkBuilder.BuiltChunk.class)
 abstract class BuiltChunkBufferLookupMixin {
+    @Shadow @Final private Map<RenderLayer, VertexBuffer> buffers;
+
     @Unique private VertexBuffer lazybuilder$solidBuffer;
     @Unique private VertexBuffer lazybuilder$cutoutMippedBuffer;
     @Unique private VertexBuffer lazybuilder$cutoutBuffer;
     @Unique private VertexBuffer lazybuilder$translucentBuffer;
     @Unique private VertexBuffer lazybuilder$tripwireBuffer;
+    @Unique private long lazybuilder$previousSectionPos;
 
     @Shadow
     public abstract long getSectionPos();
@@ -47,8 +58,18 @@ abstract class BuiltChunkBufferLookupMixin {
         }
     }
 
+    @Inject(method = "setSectionPos", at = @At("HEAD"))
+    private void lazybuilder$capturePreviousSection(long sectionPos, CallbackInfo ci) {
+        this.lazybuilder$previousSectionPos = this.getSectionPos();
+    }
+
     @Inject(method = "setSectionPos", at = @At("TAIL"))
     private void lazybuilder$moveResidencyOwnership(long sectionPos, CallbackInfo ci) {
+        if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
+
+        if (RenderSystem.isOnRenderThread()) {
+            this.lazybuilder$reclaimOversizedBuffers(this.lazybuilder$previousSectionPos, sectionPos);
+        }
         this.lazybuilder$associateCachedBuffers(sectionPos);
     }
 
@@ -59,6 +80,62 @@ abstract class BuiltChunkBufferLookupMixin {
         TerrainGpuResidencyTracker.release(this.lazybuilder$cutoutBuffer);
         TerrainGpuResidencyTracker.release(this.lazybuilder$translucentBuffer);
         TerrainGpuResidencyTracker.release(this.lazybuilder$tripwireBuffer);
+    }
+
+    @Unique
+    private void lazybuilder$reclaimOversizedBuffers(long oldSectionPos, long newSectionPos) {
+        if (oldSectionPos == newSectionPos) return;
+
+        int oldX = ChunkSectionPos.unpackX(oldSectionPos);
+        int oldY = ChunkSectionPos.unpackY(oldSectionPos);
+        int oldZ = ChunkSectionPos.unpackZ(oldSectionPos);
+        int newX = ChunkSectionPos.unpackX(newSectionPos);
+        int newY = ChunkSectionPos.unpackY(newSectionPos);
+        int newZ = ChunkSectionPos.unpackZ(newSectionPos);
+
+        this.lazybuilder$reclaimLayer(RenderLayer.getSolid(), 0, oldX, oldY, oldZ, newX, newY, newZ, newSectionPos);
+        this.lazybuilder$reclaimLayer(RenderLayer.getCutoutMipped(), 1, oldX, oldY, oldZ, newX, newY, newZ, newSectionPos);
+        this.lazybuilder$reclaimLayer(RenderLayer.getCutout(), 2, oldX, oldY, oldZ, newX, newY, newZ, newSectionPos);
+        this.lazybuilder$reclaimLayer(RenderLayer.getTranslucent(), 3, oldX, oldY, oldZ, newX, newY, newZ, newSectionPos);
+        this.lazybuilder$reclaimLayer(RenderLayer.getTripwire(), 4, oldX, oldY, oldZ, newX, newY, newZ, newSectionPos);
+    }
+
+    @Unique
+    private void lazybuilder$reclaimLayer(
+            RenderLayer layer,
+            int layerSlot,
+            int oldX,
+            int oldY,
+            int oldZ,
+            int newX,
+            int newY,
+            int newZ,
+            long newSectionPos
+    ) {
+        VertexBuffer current = this.buffers.get(layer);
+        if (current == null || current.isClosed()) return;
+
+        long capacityBytes = TerrainGpuResidencyTracker.capacityBytes(current);
+        if (!TerrainGpuReclamationPolicy.shouldReclaim(
+                capacityBytes,
+                oldX,
+                oldY,
+                oldZ,
+                newX,
+                newY,
+                newZ
+        )) {
+            return;
+        }
+
+        TerrainGpuResidencyTracker.release(current);
+        current.close();
+
+        VertexBuffer replacement = new VertexBuffer(GlUsage.STATIC_WRITE);
+        this.buffers.put(layer, replacement);
+        this.lazybuilder$cacheBuffer(layer, replacement);
+        TerrainGpuResidencyTracker.associate(replacement, newSectionPos, layerSlot);
+        ChunkPipelineMetrics.recordTerrainGpuReclamation(capacityBytes);
     }
 
     @Unique

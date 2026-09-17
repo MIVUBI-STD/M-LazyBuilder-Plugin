@@ -33,6 +33,20 @@ public final class TerrainGpuResidencyTracker {
         LEDGER.recordCapacity(buffer, vertexCapacityBytes, indexCapacityBytes);
     }
 
+    public static void recordPayload(VertexBuffer buffer, int vertexPayloadBytes, int indexPayloadBytes) {
+        if (buffer == null || buffer.isClosed()) return;
+        LEDGER.recordPayload(buffer, vertexPayloadBytes, indexPayloadBytes);
+    }
+
+    public static void recordIndexPayload(VertexBuffer buffer, int indexPayloadBytes) {
+        if (buffer == null || buffer.isClosed()) return;
+        LEDGER.recordIndexPayload(buffer, indexPayloadBytes);
+    }
+
+    public static long capacityBytes(VertexBuffer buffer) {
+        return buffer == null ? 0L : LEDGER.capacityBytes(buffer);
+    }
+
     public static void release(VertexBuffer buffer) {
         if (buffer != null) LEDGER.release(buffer);
     }

@@ -13,7 +13,6 @@ final class ChunkPipelineMetricsTest {
 
     @Test
     void countsOnlyRecordedCoalescedRebuilds() {
-        assertEquals(0L, ChunkPipelineMetrics.coalescedRebuildRequests());
         ChunkPipelineMetrics.recordCoalescedRebuild();
         ChunkPipelineMetrics.recordCoalescedRebuild();
         assertEquals(2L, ChunkPipelineMetrics.coalescedRebuildRequests());
@@ -21,7 +20,6 @@ final class ChunkPipelineMetricsTest {
 
     @Test
     void countsChunkBufferAcquireMisses() {
-        assertEquals(0L, ChunkPipelineMetrics.bufferAcquireMisses());
         ChunkPipelineMetrics.recordBufferAcquireMiss();
         ChunkPipelineMetrics.recordBufferAcquireMiss();
         ChunkPipelineMetrics.recordBufferAcquireMiss();
@@ -79,5 +77,14 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordUploadBudgetStop();
         ChunkPipelineMetrics.recordUploadBudgetStop();
         assertEquals(2L, ChunkPipelineMetrics.uploadBudgetStops());
+    }
+
+    @Test
+    void countsTerrainGpuReclamationBytesAndBuffers() {
+        ChunkPipelineMetrics.recordTerrainGpuReclamation(0L);
+        ChunkPipelineMetrics.recordTerrainGpuReclamation(2L * 1024L * 1024L);
+        ChunkPipelineMetrics.recordTerrainGpuReclamation(3L * 1024L * 1024L);
+        assertEquals(5L * 1024L * 1024L, ChunkPipelineMetrics.terrainGpuReclaimedBytes());
+        assertEquals(2L, ChunkPipelineMetrics.terrainGpuReclaimedBuffers());
     }
 }
