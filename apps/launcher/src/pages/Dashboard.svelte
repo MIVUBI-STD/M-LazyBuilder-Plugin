@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ServerConsole from '../components/ServerConsole.svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import BackupPanel from './BackupPanel.svelte';
   import HealthPanel from './HealthPanel.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ServerLogTail, ServerPreflight, ServerRuntimeSummary, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
   export let serverName = 'Server';
@@ -16,7 +19,7 @@
   let logOpen = false;
   let consoleOpen = false;
   let logBusy = false;
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let notice = '';
   let busy = false;
   let runtimePollInFlight = false;
@@ -26,7 +29,6 @@
   const IDLE_RUNTIME_POLL_MS = 15000;
   const MAX_CONCURRENT_SERVERS = 3;
 
-  function friendlyError(value: unknown) { return value instanceof Error && value.message.trim() ? value.message.trim() : String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.'; }
   function category(message: string) {
     const value = message.toLowerCase();
     if (value.includes('java')) return 'Java'; if (value.includes('paper') || value.includes('jar')) return 'Paper';
@@ -59,30 +61,30 @@
     runtimes = nextRuntimes;
   }
   async function refreshPreflight() { preflight = await runtimeProduct.server.preflight(); }
-  async function refreshAll() { try { await Promise.all([refreshRuntime(), refreshPreflight()]); error = ''; } catch (e) { error = friendlyError(e); } }
+  async function refreshAll() { try { await Promise.all([refreshRuntime(), refreshPreflight()]); error = null; } catch (value) { error = presentRuntimeError(value, 'Could not refresh server status.'); } }
   async function pollRuntime() {
     if (runtimePollInFlight) return;
     runtimePollInFlight = true;
-    try { await refreshRuntime(); } catch (e) { if (!error) error = friendlyError(e); }
+    try { await refreshRuntime(); } catch (value) { if (!error) error = presentRuntimeError(value, 'Could not refresh server status.'); }
     finally { runtimePollInFlight = false; }
   }
   async function action(run: () => Promise<void>) {
-    if (busy) return; busy = true; notice = ''; error = '';
+    if (busy) return; busy = true; notice = ''; error = null;
     try { await run(); await refreshAll(); }
-    catch (e) { const operationError = friendlyError(e); try { await Promise.all([refreshRuntime(), refreshPreflight()]); } catch {} error = operationError; }
+    catch (value) { const operationError = presentRuntimeError(value, 'Server action failed.'); try { await Promise.all([refreshRuntime(), refreshPreflight()]); } catch {} error = operationError; }
     finally { busy = false; }
   }
   async function stopDetachedProcess() {
     if (busy || snapshot.state !== 'Detached') return;
     if (!window.confirm('Stop the externally running server so LazyBuilder can manage it again?')) return;
-    busy = true; error = ''; notice = '';
+    busy = true; error = null; notice = '';
     try { const result = await runtimeProduct.server.recoverDetached(); notice = result.message; await refreshAll(); }
-    catch (e) { error = friendlyError(e); } finally { busy = false; }
+    catch (value) { error = presentRuntimeError(value, 'Could not recover the external server process.'); } finally { busy = false; }
   }
   async function loadLog() {
     if (logBusy) return; logBusy = true;
     try { logTail = await runtimeProduct.server.logTail(snapshot.logPath || ''); logOpen = true; }
-    catch (e) { error = friendlyError(e); } finally { logBusy = false; }
+    catch (value) { error = presentRuntimeError(value, 'Could not load the server log.'); } finally { logBusy = false; }
   }
   onMount(() => {
     let disposed = false;
@@ -158,7 +160,7 @@
     </section>
   {/if}
 
-  {#if error}<section class="notice danger" role="alert"><strong>{category(error)} problem</strong><p>{error}</p></section>{/if}
+  <RuntimeErrorNotice {error} />
   {#if notice}<section class="notice success" aria-live="polite"><strong>Server control</strong><p>{notice}</p></section>{/if}
   {#if preflight.issues.length > 0 && ['Offline','Crashed','Detached'].includes(snapshot.state)}<details class="attention" open={!preflight.ready}><summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary><div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div></details>{/if}
   {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
@@ -175,6 +177,6 @@
   .overview{width:min(920px,100%)}.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.primary-actions{display:flex;align-items:center;gap:7px}.primary,.secondary,.stop{min-height:var(--control-height);border-radius:8px;padding:8px 13px;font-weight:700;cursor:pointer}.primary{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.secondary,.stop{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}button:disabled{opacity:.5;cursor:default}.more-menu{position:relative}.more-menu summary{width:38px;height:38px;display:grid;place-items:center;list-style:none;border-radius:8px;color:var(--muted);cursor:pointer}.menu-popover{position:absolute;z-index:10;right:0;top:42px;width:170px;padding:6px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);box-shadow:var(--shadow-popover)}.menu-popover button{width:100%;padding:8px 9px;border-radius:7px;background:transparent;color:var(--text-soft);text-align:left;cursor:pointer;font-size:10px}
   .status-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:22px;min-height:100px;padding:16px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.status-card.running{border-color:var(--accent-border)}.status-card.warning{border-color:#5f5125}.status-card.danger{border-color:#62343a}.status-copy{display:flex;align-items:flex-start;gap:11px}.status-copy strong{font-size:16px}.status-copy p{margin:3px 0 0;color:var(--muted);font-size:11px}.status-dot{width:8px;height:8px;margin-top:7px;border-radius:50%;background:#697078}.status-dot.running{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}.status-dot.transition{background:var(--info)}.status-dot.warning{background:var(--warning)}.status-dot.danger{background:var(--danger)}.live-facts{display:flex;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.live-facts div{min-width:96px;display:grid;gap:2px;padding:9px 11px;border-left:1px solid var(--border-soft)}.live-facts div:first-child{border-left:0}.live-facts span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.live-facts strong{font-size:11px}
   .fleet-card{margin-top:12px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.fleet-card>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 12px;border-bottom:1px solid var(--border-soft)}.fleet-card>header>div{display:grid;gap:2px}.fleet-card>header strong{font-size:11px}.fleet-card>header span{color:var(--muted);font-size:9px}.fleet-list{display:grid}.fleet-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 12px;border-top:1px solid var(--border-soft)}.fleet-row:first-child{border-top:0}.fleet-name{display:flex;align-items:flex-start;gap:10px}.fleet-name>div{display:grid;gap:1px}.fleet-name strong{font-size:10px}.fleet-name span{color:var(--muted);font-size:9px}.fleet-meta{display:flex;align-items:center;gap:12px;color:var(--muted);font:9px ui-monospace,SFMono-Regular,Consolas,monospace}
-  .notice,.attention{margin-top:12px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.notice{padding:11px 12px}.notice strong{font-size:11px}.notice p{margin:3px 0 0;color:var(--muted);font-size:10px}.notice.success{border-color:var(--accent-border);background:var(--accent-soft)}.notice.danger{border-color:#62343a;background:var(--danger-bg)}.notice.warning{border-color:#5f5125;background:var(--warning-bg)}.attention summary{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;cursor:pointer}.attention summary>span:first-child{display:grid;gap:2px}.attention small{color:var(--muted);font-size:9px}.issue-list{padding:0 12px 9px;border-top:1px solid var(--border-soft)}.issue-row{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:10px}.issue-row span{color:var(--muted)}
+  .notice,.attention{margin-top:12px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.notice{padding:11px 12px}.notice strong{font-size:11px}.notice p{margin:3px 0 0;color:var(--muted);font-size:10px}.notice.success{border-color:var(--accent-border);background:var(--accent-soft)}.notice.warning{border-color:#5f5125;background:var(--warning-bg)}.attention summary{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;cursor:pointer}.attention summary>span:first-child{display:grid;gap:2px}.attention small{color:var(--muted);font-size:9px}.issue-list{padding:0 12px 9px;border-top:1px solid var(--border-soft)}.issue-row{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:10px}.issue-row span{color:var(--muted)}
   .modal-backdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.72)}.log-dialog{width:min(780px,100%);max-height:min(680px,calc(100vh - 48px));display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:12px;padding:18px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}.log-dialog header,.log-dialog footer{display:flex;align-items:center;justify-content:space-between}.log-dialog h2{margin:0;font-size:18px}.log-dialog header p{margin:3px 0 0;color:var(--muted);font-size:10px}.log-dialog pre{min-height:260px;margin:0;padding:12px;overflow:auto;border:1px solid var(--border-soft);border-radius:9px;background:#0b0d0f;color:#c9d1d6;font:11px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}.icon-button{width:32px;height:32px;display:grid;place-items:center;border-radius:8px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}@media(max-width:760px){.page-head,.status-card{align-items:flex-start;grid-template-columns:1fr;flex-direction:column}.live-facts{width:100%}.issue-row{grid-template-columns:1fr}.fleet-card>header,.fleet-row{align-items:flex-start}.fleet-row{flex-direction:column}.fleet-meta{padding-left:18px}}
 </style>
