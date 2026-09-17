@@ -14,6 +14,10 @@ public record PerformanceSnapshot(
         boolean windowMinimized,
         FramePressure pressure,
         int completedChunkCount,
+        int chunkTasksToBatch,
+        int chunksToUpload,
+        int freeChunkBuffers,
+        long coalescedChunkRebuildRequests,
         String chunkDebug,
         String entityDebug,
         String particleDebug

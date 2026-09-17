@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.util.Window;
 
 /** Aggregates diagnostics only when requested; no background sampling is registered here. */
@@ -27,6 +29,11 @@ public final class PerformanceSnapshotReader {
         String entityDebug = client.worldRenderer == null ? "" : client.worldRenderer.getEntitiesDebugString();
         String particleDebug = client.particleManager == null ? "" : client.particleManager.getDebugString();
 
+        ChunkBuilder chunkBuilder = client.worldRenderer == null ? null : client.worldRenderer.getChunkBuilder();
+        int chunkTasksToBatch = chunkBuilder == null ? 0 : chunkBuilder.getToBatchCount();
+        int chunksToUpload = chunkBuilder == null ? 0 : chunkBuilder.getChunksToUpload();
+        int freeChunkBuffers = chunkBuilder == null ? 0 : chunkBuilder.getFreeBufferCount();
+
         return new PerformanceSnapshot(
                 fps,
                 frameMonitor.currentFrameTimeMs(),
@@ -40,6 +47,10 @@ public final class PerformanceSnapshotReader {
                 minimized,
                 frameMonitor.pressure(),
                 completedChunkCount,
+                chunkTasksToBatch,
+                chunksToUpload,
+                freeChunkBuffers,
+                ChunkPipelineMetrics.coalescedRebuildRequests(),
                 chunkDebug,
                 entityDebug,
                 particleDebug
