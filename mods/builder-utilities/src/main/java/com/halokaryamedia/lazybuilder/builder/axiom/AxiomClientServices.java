@@ -29,6 +29,10 @@ public record AxiomClientServices(
         );
     }
 
+    public AxiomSplinePreviewRegion createSplinePreviewRegion() {
+        return new AxiomSplinePreviewRegion(regionProvider.createBoolean());
+    }
+
     private static <T> T require(Class<T> serviceType) {
         return ServiceLoader.load(serviceType, serviceType.getClassLoader())
                 .findFirst()
