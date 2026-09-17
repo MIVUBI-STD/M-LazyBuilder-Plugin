@@ -195,6 +195,7 @@ final class PaperWorldFamilyLayout {
         }
     }
 
+    /** Deletes all committed sibling folders owned by one managed world family. */
     static void deleteFamilySiblings(Path worldRoot, String baseFolder) throws IOException {
         IOException failure = null;
         for (DimensionLayout layout : DIMENSIONS) {
@@ -213,11 +214,54 @@ final class PaperWorldFamilyLayout {
         if (failure != null) throw failure;
     }
 
+    /**
+     * Rollback helper for an uncommitted publication. Only sibling directories carrying
+     * LazyBuilder's family marker are attributable to this transaction and may be removed.
+     */
+    static void deletePendingFamilySiblings(Path worldRoot, String baseFolder) throws IOException {
+        IOException failure = null;
+        for (DimensionLayout layout : DIMENSIONS) {
+            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
+            if (Files.notExists(sibling) || Files.isSymbolicLink(sibling) || !Files.isDirectory(sibling)) continue;
+            Path marker = sibling.resolve(FAMILY_PENDING_MARKER);
+            if (Files.notExists(marker)) continue;
+            try {
+                if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+                    throw new IOException("Paper family publication marker is unsafe: " + marker);
+                }
+                deleteTree(sibling);
+            } catch (IOException exception) {
+                if (failure == null) failure = exception;
+                else failure.addSuppressed(exception);
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
     static boolean hasPendingSibling(Path worldRoot, String baseFolder) throws IOException {
         for (DimensionLayout layout : DIMENSIONS) {
             Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
+            if (Files.notExists(sibling) || Files.isSymbolicLink(sibling) || !Files.isDirectory(sibling)) continue;
             Path marker = sibling.resolve(FAMILY_PENDING_MARKER);
-            if (Files.isRegularFile(marker) && !Files.isSymbolicLink(marker)) return true;
+            if (Files.notExists(marker)) continue;
+            if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+                throw new IOException("Paper family publication marker is unsafe: " + marker);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** True when an existing committed sibling cannot be loaded safely as its Paper dimension. */
+    static boolean hasUnsafeCommittedSibling(Path worldRoot, String baseFolder) throws IOException {
+        for (DimensionLayout layout : DIMENSIONS) {
+            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
+            if (Files.notExists(sibling)) continue;
+            if (!Files.isDirectory(sibling) || Files.isSymbolicLink(sibling)) return true;
+            Path levelDat = sibling.resolve("level.dat");
+            Path dimension = sibling.resolve(layout.directory()).normalize();
+            if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat)) return true;
+            if (!Files.isDirectory(dimension) || Files.isSymbolicLink(dimension)) return true;
         }
         return false;
     }
