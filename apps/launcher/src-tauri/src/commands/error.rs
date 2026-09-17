@@ -9,6 +9,7 @@ pub enum RecoveryAction {
     OpenLogs,
     ReconnectClientProfile,
     RepairServer,
+    RestartLauncher,
     RetryOperation,
     ReviewServerHealth,
     StopServer,
@@ -24,6 +25,7 @@ impl RecoveryAction {
             Self::OpenLogs => "OPEN_LOGS",
             Self::ReconnectClientProfile => "RECONNECT_CLIENT_PROFILE",
             Self::RepairServer => "REPAIR_SERVER",
+            Self::RestartLauncher => "RESTART_LAUNCHER",
             Self::RetryOperation => "RETRY_OPERATION",
             Self::ReviewServerHealth => "REVIEW_SERVER_HEALTH",
             Self::StopServer => "STOP_SERVER",
@@ -114,6 +116,7 @@ mod tests {
     #[test]
     fn recovery_action_codes_are_not_presentation_copy() {
         assert_eq!(RecoveryAction::StopServer.as_code(), "STOP_SERVER");
+        assert_eq!(RecoveryAction::RestartLauncher.as_code(), "RESTART_LAUNCHER");
         assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
     }
 }
