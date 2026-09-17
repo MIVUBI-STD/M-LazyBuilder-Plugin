@@ -32,7 +32,7 @@ function operationCloseRequest(operations: LauncherOperationSnapshot[]): Launche
   return {
     kind: 'operations',
     title: 'Tasks are still running',
-    message: 'Closing LazyBuilder now will interrupt active work. Interrupted mutations may require recovery the next time the Launcher starts.',
+    message: 'Closing now will interrupt the operation and may require recovery the next time LazyBuilder starts. Wait for active work to finish when possible.',
     details: operations.slice(0, 5).map((operation) => `${operationTitle(operation.kind)} — ${operation.status || 'Running'}`),
     confirmLabel: 'Close anyway',
     dangerous: true
