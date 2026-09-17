@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { detailsMenu } from '../app/detailsMenu';
   import { dialogFocus } from '../app/dialogFocus';
   import { recoveryNavigationTarget } from '../app/recoveryNavigation';
   import type { RecoveryNavigationTarget } from '../app/recoveryNavigation';
@@ -430,7 +431,7 @@
                 <strong>{world.displayName}</strong>
                 <div class="world-meta"><span>{kindLabel(world)}</span><span>{modeLabel(world.defaultGameMode)}</span></div>
               </div>
-              <details class="menu">
+              <details use:detailsMenu class="menu">
                 <summary aria-label={`Actions for ${world.displayName}`} title="World actions">•••</summary>
                 <div class="menu-popover">
                   <button disabled={operationBusyWorldId !== null || settingsBusy} onclick={() => openSettings(world)}>World settings</button>
@@ -458,7 +459,7 @@
                 <div class="world-copy"><strong>{world.displayName}</strong><div class="world-meta"><span>Archived</span></div></div>
                 <div class="archived-actions">
                   <button class="secondary compact" disabled={operationBusyWorldId !== null} onclick={() => runWorldTask(world, 'restore')}>Restore</button>
-                  <details class="menu"><summary aria-label={`Actions for ${world.displayName}`} title="World actions">•••</summary><div class="menu-popover"><button class="danger" disabled={operationBusyWorldId !== null} onclick={() => { closePanels(); deleteSource = world; }}>Delete permanently…</button></div></details>
+                  <details use:detailsMenu class="menu"><summary aria-label={`Actions for ${world.displayName}`} title="World actions">•••</summary><div class="menu-popover"><button class="danger" disabled={operationBusyWorldId !== null} onclick={() => { closePanels(); deleteSource = world; }}>Delete permanently…</button></div></details>
                 </div>
               </article>
             {/each}
@@ -567,7 +568,7 @@
   .archived-section{margin-top:14px}.archived-section>summary{width:max-content;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;cursor:pointer}.archived-section>summary span{padding:2px 6px;border-radius:999px;background:var(--surface-2);font-size:9px}.archived-list{margin-top:8px}
   .search-empty{min-height:160px;display:grid;place-content:center;justify-items:center;gap:4px;color:var(--muted);font-size:11px}.search-empty strong{color:var(--text);font-size:13px}.search-empty button{margin-top:4px;background:transparent;color:var(--accent);cursor:pointer}
   .modal-backdrop{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.72);backdrop-filter:blur(5px)}
-  .modal{width:min(480px,100%);display:grid;gap:16px;padding:20px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-popover)}.settings-modal{width:min(600px,100%)}
+  .modal{width:min(480px,100%);display:grid;gap:16px;padding:20px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-popover)}.settings-modal{width:min(600px,100%) }
   .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.modal-head h2{margin:0;font-size:19px;letter-spacing:-.02em}.modal-head p{margin:4px 0 0;color:var(--muted);font-size:11px}
   .icon-button{width:32px;height:32px;flex:0 0 32px;border-radius:var(--radius-sm);background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.icon-button:hover:not(:disabled){background:var(--surface-2);color:var(--text)}
   .modal label{display:grid;gap:6px;color:var(--text-soft);font-size:11px;font-weight:600}.field-hint{color:var(--muted-2);font-weight:400}.modal input,.modal select{width:100%;min-height:var(--control-height);padding:8px 10px}
