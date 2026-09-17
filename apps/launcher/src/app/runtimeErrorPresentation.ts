@@ -1,11 +1,12 @@
 import { RuntimeError, runtimeError } from './bridge/runtimeApi';
+import type { RecoveryAction } from './bridge/errors';
 
 export type RuntimeErrorPresentation = {
   code: string;
   message: string;
   details: string;
   recoverable: boolean;
-  action: string;
+  action: RecoveryAction | null;
   correlationId: string;
 };
 
@@ -16,7 +17,7 @@ export function presentRuntimeError(value: unknown, fallback = 'Something went w
     message: error.message.trim() || fallback,
     details: error.details.trim(),
     recoverable: error.recoverable,
-    action: (error.action ?? '').trim(),
+    action: error.action,
     correlationId: error.correlationId.trim()
   };
 }
