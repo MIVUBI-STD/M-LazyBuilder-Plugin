@@ -29,6 +29,7 @@ final class PerformanceSnapshotTest {
                 13L,
                 17L,
                 19L,
+                23L,
                 "chunks",
                 "entities",
                 "particles"
@@ -44,5 +45,6 @@ final class PerformanceSnapshotTest {
         assertEquals(13L, snapshot.remappedChunkStorageSections());
         assertEquals(17L, snapshot.sectionVisibilityCacheHits());
         assertEquals(19L, snapshot.avoidedTranslucentSortTasks());
+        assertEquals(23L, snapshot.avoidedTerrainSectionVisits());
     }
 }

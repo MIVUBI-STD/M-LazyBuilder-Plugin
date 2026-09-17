@@ -20,6 +20,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String BUILT_CHUNK_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "BuiltChunkBufferLookupMixin";
     private static final String CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN = MIXIN_PACKAGE + "ChunkDataLayerMembershipMixin";
     private static final String BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN = MIXIN_PACKAGE + "BuiltChunkTranslucentSortMixin";
+    private static final String WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN = MIXIN_PACKAGE + "WorldRendererTerrainSubmissionMixin";
     private static final String BLOCK_BUFFER_POOL_MIXIN = MIXIN_PACKAGE + "BlockBufferBuilderPoolMixin";
     private static final String BLOCK_COLORS_MIXIN = MIXIN_PACKAGE + "BlockColorsMixin";
     private static final String BLOCK_SIDE_VISIBILITY_MIXIN = MIXIN_PACKAGE + "BlockSideVisibilityMixin";
@@ -39,12 +40,16 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         boolean immediatelyFast = FabricLoader.getInstance().isModLoaded("immediatelyfast");
         boolean sodium = FabricLoader.getInstance().isModLoaded("sodium");
+        boolean iris = FabricLoader.getInstance().isModLoaded("iris");
 
         if ((TEXT_RENDERER_MIXIN.equals(mixinClassName) || VERTEX_BUFFER_MIXIN.equals(mixinClassName))
                 && immediatelyFast) {
             return false;
         }
         if (CHUNK_UPLOAD_MIXIN.equals(mixinClassName) && (immediatelyFast || sodium)) {
+            return false;
+        }
+        if (WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName) && (sodium || iris)) {
             return false;
         }
         if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)

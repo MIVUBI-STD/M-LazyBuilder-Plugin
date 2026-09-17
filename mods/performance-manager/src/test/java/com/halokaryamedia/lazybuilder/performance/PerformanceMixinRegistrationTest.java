@@ -16,6 +16,7 @@ final class PerformanceMixinRegistrationTest {
             assertNotNull(stream, "Performance mixin configuration must be packaged in the mod JAR");
             String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(json.contains("WorldRendererMixin"), "entity culling mixin must stay registered");
+            assertTrue(json.contains("WorldRendererTerrainSubmissionMixin"), "terrain submission index mixin must stay registered");
             assertTrue(json.contains("BlockEntityRenderDispatcherMixin"), "block entity culling mixin must stay registered");
             assertTrue(json.contains("TextRendererDrawerMixin"), "text render lookup mixin must stay registered");
             assertTrue(json.contains("VertexBufferMixin"), "GPU buffer resize mixin must stay registered");

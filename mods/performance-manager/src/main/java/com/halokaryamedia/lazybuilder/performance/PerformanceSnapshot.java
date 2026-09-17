@@ -23,6 +23,7 @@ public record PerformanceSnapshot(
         long remappedChunkStorageSections,
         long sectionVisibilityCacheHits,
         long avoidedTranslucentSortTasks,
+        long avoidedTerrainSectionVisits,
         String chunkDebug,
         String entityDebug,
         String particleDebug

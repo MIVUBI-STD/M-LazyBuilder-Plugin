@@ -56,4 +56,12 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordAvoidedTranslucentSortTask();
         assertEquals(3L, ChunkPipelineMetrics.avoidedTranslucentSortTasks());
     }
+
+    @Test
+    void countsAvoidedTerrainSectionVisits() {
+        ChunkPipelineMetrics.recordAvoidedTerrainSectionVisits(0L);
+        ChunkPipelineMetrics.recordAvoidedTerrainSectionVisits(7L);
+        ChunkPipelineMetrics.recordAvoidedTerrainSectionVisits(11L);
+        assertEquals(18L, ChunkPipelineMetrics.avoidedTerrainSectionVisits());
+    }
 }

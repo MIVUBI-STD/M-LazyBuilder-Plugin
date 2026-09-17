@@ -6,6 +6,7 @@
   "plugin": "com.halokaryamedia.lazybuilder.performance.mixin.PerformanceMixinPlugin",
   "client": [
     "WorldRendererMixin",
+    "WorldRendererTerrainSubmissionMixin",
     "BlockEntityRenderDispatcherMixin",
     "TextRendererDrawerMixin",
     "VertexBufferMixin",
