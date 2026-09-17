@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.world.registry;
 
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Durable LazyBuilder metadata for one managed world.
@@ -17,6 +19,11 @@ public record WorldRecord(
         String defaultGameMode
 ) {
     public static final String DEFAULT_GAME_MODE = "CREATIVE";
+    private static final Set<String> WINDOWS_RESERVED_DEVICE_NAMES = Set.of(
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    );
 
     public WorldRecord {
         Objects.requireNonNull(id, "id");
@@ -58,7 +65,23 @@ public record WorldRecord(
                 || value.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("folderName must be a single safe world-directory name");
         }
+        if (value.endsWith(".") || containsWindowsForbiddenCharacter(value) || isWindowsReservedDeviceName(value)) {
+            throw new IllegalArgumentException("folderName must be portable across supported filesystems");
+        }
         return value;
+    }
+
+    private static boolean containsWindowsForbiddenCharacter(String value) {
+        return value.indexOf('<') >= 0 || value.indexOf('>') >= 0 || value.indexOf(':') >= 0
+                || value.indexOf('"') >= 0 || value.indexOf('|') >= 0 || value.indexOf('?') >= 0
+                || value.indexOf('*') >= 0;
+    }
+
+    private static boolean isWindowsReservedDeviceName(String value) {
+        String upper = value.toUpperCase(Locale.ROOT);
+        int dot = upper.indexOf('.');
+        String stem = dot >= 0 ? upper.substring(0, dot) : upper;
+        return WINDOWS_RESERVED_DEVICE_NAMES.contains(stem);
     }
 
     private static String validateDisplayName(String value) {
@@ -71,7 +94,7 @@ public record WorldRecord(
 
     private static String validateGameMode(String value) {
         Objects.requireNonNull(value, "defaultGameMode");
-        String normalized = value.strip().toUpperCase(java.util.Locale.ROOT);
+        String normalized = value.strip().toUpperCase(Locale.ROOT);
         if (!normalized.equals("SURVIVAL") && !normalized.equals("CREATIVE")
                 && !normalized.equals("ADVENTURE") && !normalized.equals("SPECTATOR")) {
             throw new IllegalArgumentException("Unsupported default game mode: " + value);
