@@ -63,7 +63,7 @@ class NativeExportImportRoundTripTest {
         assertFalse(Files.exists(staged.worldDirectory().resolve("uid.dat")));
         assertFalse(Files.exists(staged.worldDirectory().resolve(".lazybuilder-transfer.properties")));
 
-        Path worlds = tempDir.resolve("worlds");
+        Path worlds = Files.createDirectories(tempDir.resolve("worlds"));
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, workRoot);
         repository.publishStagedWorld(staged.worldDirectory(), "Imported");
         repository.markPublishedWorldCommitted("Imported");
@@ -85,12 +85,12 @@ class NativeExportImportRoundTripTest {
         try (var file = Files.newOutputStream(path);
              var gzip = new GZIPOutputStream(file);
              var out = new DataOutputStream(gzip)) {
-            out.writeByte(10); // TAG_Compound
+            out.writeByte(10);
             out.writeUTF("");
-            out.writeByte(3); // TAG_Int
+            out.writeByte(3);
             out.writeUTF("DataVersion");
             out.writeInt(JavaLevelDataVersion.JAVA_1_21_4);
-            out.writeByte(0); // TAG_End
+            out.writeByte(0);
         }
     }
 }
