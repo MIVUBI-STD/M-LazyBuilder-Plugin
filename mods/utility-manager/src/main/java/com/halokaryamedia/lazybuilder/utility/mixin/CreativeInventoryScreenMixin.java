@@ -53,7 +53,10 @@ abstract class CreativeInventoryScreenMixin {
             lazybuilder$setSelectedTab(searchGroup);
         }
 
-        searchBox.setFocused(true);
+        // Register the vanilla search field with the Screen/ParentElement focus
+        // hierarchy. Setting only the child widget's focused flag is not enough:
+        // Screen.charTyped routes subsequent characters through its focused child.
+        screen.setFocused(searchBox);
         // Do not cancel: vanilla charTyped now receives the original character,
         // updates the search field, and refreshes the vanilla result list.
     }
