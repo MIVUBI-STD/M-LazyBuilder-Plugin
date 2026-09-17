@@ -10,6 +10,7 @@
     "TextRendererDrawerMixin",
     "VertexBufferMixin",
     "ChunkBuilderBuiltChunkMixin",
+    "BlockColorsMixin",
     "BakedQuadAccessor",
     "BasicBakedModelBuilderMixin"
   ],
