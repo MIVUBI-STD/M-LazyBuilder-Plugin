@@ -234,7 +234,7 @@ Required status does not permit cross-manager implementation dependencies or dup
 
 ```text
 lazybuilder:world     World Control V5
-lazybuilder:map       Map Action V2
+lazybuilder:map       Map Action V4
 lazybuilder:transfer  bounded file bytes only
 ```
 
