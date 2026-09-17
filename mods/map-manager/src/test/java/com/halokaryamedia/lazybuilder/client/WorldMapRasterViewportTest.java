@@ -10,7 +10,7 @@ class WorldMapRasterViewportTest {
     @Test
     void smallPanKeepsSamplingKeyAndChangesOnlyDrawOffset() {
         var first = WorldMapRasterViewport.resolve("world|overworld", 100, 0, 900, 600, 2, 8.0, 100.0, 200.0);
-        var moved = WorldMapRasterViewport.resolve("world|overworld", 100, 0, 900, 600, 2, 8.0, 102.0, 198.0);
+        var moved = WorldMapRasterViewport.resolve("world|overworld", 100, 0, 900, 600, 2, 8.0, 103.0, 197.0);
 
         assertEquals(first.key(), moved.key());
         assertNotEquals(first.drawOffsetX(), moved.drawOffsetX());
