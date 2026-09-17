@@ -1,6 +1,6 @@
 use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
-use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::startup::StartupReport;
 use crate::engine::{diagnostics, support_bundle, workspace_registry};
 use serde::Serialize;
@@ -129,13 +129,15 @@ pub async fn diagnostics_export_support_bundle(app: AppHandle) -> CommandResult<
 }
 
 fn collect_summary(app: &AppHandle) -> DiagnosticSummary {
-    let server = app.state::<ServerManagerState>();
     let workspace = workspace_registry::current().ok().flatten();
     let manifest = workspace
         .as_ref()
         .and_then(|entry| workspace_registry::manifest(Path::new(&entry.path)).ok());
-    let snapshot = server.snapshot().ok();
-    let preflight = server.preflight();
+
+    let registry = app.state::<ServerRuntimeRegistry>();
+    let runtime = registry.active_runtime().ok().map(|(_, state)| state);
+    let snapshot = runtime.as_ref().and_then(|state| state.snapshot().ok());
+    let preflight = runtime.as_ref().map(|state| state.preflight());
     let log_path = diagnostics::launcher_log_path()
         .map(|path| path.display().to_string())
         .unwrap_or_default();
@@ -150,7 +152,7 @@ fn collect_summary(app: &AppHandle) -> DiagnosticSummary {
         paper_build: manifest.as_ref().and_then(|value| value.paper_build),
         server_state: snapshot.as_ref().map(|value| value.state.clone()).unwrap_or_else(|| "Unavailable".into()),
         pid: snapshot.as_ref().and_then(|value| value.pid),
-        java_version: preflight.java_version,
+        java_version: preflight.as_ref().map(|value| value.java_version.clone()).unwrap_or_default(),
         max_memory_mb: snapshot.as_ref().map(|value| value.max_memory_bytes / 1024 / 1024).unwrap_or_default(),
     }
 }
