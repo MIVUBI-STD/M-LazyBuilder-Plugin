@@ -8,31 +8,18 @@
   import { installLauncherCloseGuard } from './app/closeGuard';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
   import { RuntimeError } from './app/bridge/runtimeApi';
-  import type {
-    AdoptionPlan,
-    ServerRuntimeSummary,
-    WorkspaceEntry,
-    WorkspaceProvisioningStatus,
-    WorkspaceState
-  } from './app/bridge/runtimeApi';
+  import type { ServerRuntimeSummary, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
 
   type Page = 'Overview' | 'Worlds' | 'Plugins' | 'Settings';
   type GlobalPage = 'Servers' | 'Activity' | 'Client' | 'Settings';
-  type LauncherMode = 'home' | 'create';
 
   let page: Page = 'Overview';
   let globalPage: GlobalPage = 'Servers';
-  let launcherMode: LauncherMode = 'home';
   let workspaceState: WorkspaceState = { active: null, recent: [] };
   let serverRuntimes: ServerRuntimeSummary[] = [];
   let provisioning: WorkspaceProvisioningStatus | null = null;
-  let adoptionPlan: AdoptionPlan | null = null;
   let loadingWorkspace = true;
   let workspaceError = '';
-  let createName = '';
-  let createParent = '';
-  let creating = false;
-  let adopting = false;
   let closeGuardUnlisten: (() => void) | null = null;
 
   const pages: Page[] = ['Overview', 'Worlds', 'Plugins', 'Settings'];
@@ -42,12 +29,6 @@
     if (error instanceof Error && error.message.trim()) return error.message.trim();
     const message = String(error ?? '').replace(/^Error:\s*/i, '').trim();
     return message || 'Something went wrong. Try again.';
-  }
-
-  function displayLocation(path: string) {
-    if (!path) return '';
-    const normalized = path.replace(/[\\/]+$/, '');
-    return normalized.split(/[\\/]/).pop() || normalized;
   }
 
   async function refreshWorkspaceState() {
@@ -63,74 +44,11 @@
       provisioning = workspaceState.active
         ? await runtimeProduct.workspace.provisioningStatus().catch(() => null)
         : null;
-      if (workspaceState.active) {
-        adoptionPlan = null;
-        launcherMode = 'home';
-      }
     } catch (error) {
       workspaceError = friendlyError(error);
       provisioning = null;
     } finally {
       loadingWorkspace = false;
-    }
-  }
-
-  async function installCloseGuard() {
-    try { closeGuardUnlisten = await installLauncherCloseGuard(); }
-    catch { closeGuardUnlisten = null; }
-  }
-
-  async function chooseCreateLocation() {
-    workspaceError = '';
-    try {
-      const selected = await runtimeProduct.workspace.pickParent();
-      if (selected) createParent = selected;
-    } catch (error) {
-      workspaceError = friendlyError(error);
-    }
-  }
-
-  async function createServer() {
-    if (!createName.trim() || !createParent.trim()) return;
-    creating = true;
-    workspaceError = '';
-    try {
-      await runtimeProduct.workspace.create(createParent, createName.trim());
-      createName = '';
-      createParent = '';
-      page = 'Overview';
-      globalPage = 'Servers';
-      await refreshWorkspaceState();
-    } catch (error) {
-      workspaceError = friendlyError(error);
-    } finally {
-      creating = false;
-    }
-  }
-
-  async function analyzeAdoption() {
-    workspaceError = '';
-    try { adoptionPlan = await runtimeProduct.workspace.pickAdoption(); }
-    catch (error) {
-      workspaceError = friendlyError(error);
-      adoptionPlan = null;
-    }
-  }
-
-  async function adoptServer() {
-    if (!adoptionPlan) return;
-    adopting = true;
-    workspaceError = '';
-    try {
-      await runtimeProduct.workspace.adopt(adoptionPlan.root, adoptionPlan.name);
-      adoptionPlan = null;
-      page = 'Overview';
-      globalPage = 'Servers';
-      await refreshWorkspaceState();
-    } catch (error) {
-      workspaceError = friendlyError(error);
-    } finally {
-      adopting = false;
     }
   }
 
@@ -165,7 +83,10 @@
 
   onMount(() => {
     void refreshWorkspaceState();
-    void installCloseGuard();
+    void (async () => {
+      try { closeGuardUnlisten = await installLauncherCloseGuard(); }
+      catch { closeGuardUnlisten = null; }
+    })();
     return () => {
       closeGuardUnlisten?.();
       closeGuardUnlisten = null;
@@ -219,8 +140,6 @@
           runtimes={serverRuntimes}
           error={workspaceError}
           onOpenServer={activateServer}
-          onCreate={() => (launcherMode = 'create')}
-          onAdopt={analyzeAdoption}
           onChanged={refreshWorkspaceState}
         />
       {:else}
@@ -233,12 +152,8 @@
       {/if}
     </section>
   </div>
-
-  {#if launcherMode === 'create'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (launcherMode = 'home')}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" disabled={creating} onclick={() => (launcherMode = 'home')}>×</button></div><label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} /></label><label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label><div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (launcherMode = 'home')}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div></div></div>{/if}
-
-  {#if adoptionPlan}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !adopting && (adoptionPlan = null)}><div class="dialog adoption-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>×</button></div><div class="detected-grid"><div><strong>{adoptionPlan.worlds.length}</strong><span>Worlds</span></div><div><strong>{adoptionPlan.serverEntries.length}</strong><span>Server files</span></div><div><strong>{adoptionPlan.legacyPluginsToDisable.length}</strong><span>Legacy plugins</span></div></div>{#if adoptionPlan.warnings.length > 0}<div class="warning-box"><strong>Needs your attention</strong>{#each adoptionPlan.warnings as warning}<p>{warning}</p>{/each}</div>{/if}<details><summary>Technical migration details</summary><div class="details-list"><p><strong>Location:</strong> {adoptionPlan.root}</p><p><strong>Paper:</strong> {adoptionPlan.paperJar}</p></div></details><div class="dialog-actions"><button class="ghost-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div></div></div>{/if}
 {/if}
 
 <style>
-  .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);background:var(--bg)}.loading-copy{display:grid;gap:1px}.loading-copy strong{color:var(--text)}.loading-copy span{font-size:12px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-weight:900}.brand-lockup{display:flex;align-items:center;gap:10px}.desktop-shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:100%;height:100vh;background:var(--bg)}.navigation{display:flex;flex-direction:column;padding:14px 11px;border-right:1px solid var(--border-soft);background:#0e1012}.navigation-brand{padding:2px 8px 16px}.navigation-spacer{flex:1}.navigation-footer{padding:10px 9px 2px;color:var(--muted-2);font-size:9px;text-transform:uppercase}.global-nav,.server-nav{display:grid;gap:3px}.global-nav button,.server-nav button{position:relative;min-height:40px;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.global-nav button:hover,.server-nav button:hover{background:var(--surface);color:var(--text)}.global-nav button.active,.server-nav button.active{background:var(--surface-2);color:var(--text);font-weight:650}.global-nav button.active::before,.server-nav button.active::before{content:'';position:absolute;left:-5px;top:9px;bottom:9px;width:2px;background:var(--accent)}.nav-icon{width:19px;height:19px;display:grid;place-items:center}.nav-icon :global(svg){width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav-divider{height:1px;margin:14px 5px 11px;background:var(--border-soft)}.nav-server-card{display:flex;align-items:center;gap:10px;margin:0 2px 9px;padding:8px}.nav-server-card>div:last-child{min-width:0;display:grid}.nav-server-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.nav-server-card span{color:var(--muted-2);font-size:10px}.server-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#252a2e;border:1px solid #3a4147;font-weight:800}.nav-server-icon{width:30px!important;height:30px!important;font-size:12px!important}.main-view{min-width:0;min-height:0;display:flex;flex-direction:column;height:100vh;overflow:hidden}.page-toolbar{min-height:82px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 30px;border-bottom:1px solid var(--border-soft);background:#111315}.page-toolbar h1{margin:0;font-size:23px}.page-toolbar p{margin:4px 0 0;color:var(--muted);font-size:12px}.content{width:min(1040px,calc(100% - 56px));margin:0 auto;padding:26px 0 48px;overflow:auto;min-height:0;flex:1}.primary-button,.secondary-button,.ghost-button,.icon-button{min-height:36px;border-radius:8px;padding:8px 13px;font-weight:650;cursor:pointer}.primary-button{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.secondary-button{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.ghost-button,.icon-button{border:0;background:transparent;color:var(--text-soft)}.icon-button{font-size:20px}button:disabled{opacity:.5;cursor:default}.modal-backdrop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.72)}.dialog{width:min(500px,100%);display:grid;gap:17px;padding:21px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}.adoption-dialog{width:min(580px,100%)}.dialog-heading{display:flex;justify-content:space-between;gap:18px}.dialog-heading h2{margin:0}.dialog-heading p{margin:5px 0 0;color:var(--muted);font-size:12px}label{display:grid;gap:7px;font-size:12px}.location-row{display:grid;grid-template-columns:1fr auto;gap:8px}label>input,.location-row input{min-height:36px;padding:8px 11px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface-2);color:var(--text)}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}.detected-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.detected-grid>div{display:grid;padding:13px;border:1px solid var(--border-soft);border-radius:8px}.warning-box{padding:12px;border:1px solid #5f5125;border-radius:8px;background:var(--warning-bg)}.warning-box p{margin:5px 0 0;font-size:11px}.details-list{margin-top:8px;padding:10px;background:var(--bg-elevated)}@media(max-width:760px){.desktop-shell{grid-template-columns:68px minmax(0,1fr)}.navigation-brand strong,.global-nav button span:last-child,.server-nav button span:last-child,.nav-server-card>div:last-child,.navigation-footer{display:none}.global-nav button,.server-nav button{justify-content:center}.page-toolbar{padding:15px 18px}.content{width:calc(100% - 28px)}.detected-grid{grid-template-columns:1fr}}
+  .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);background:var(--bg)}.loading-copy{display:grid;gap:1px}.loading-copy strong{color:var(--text)}.loading-copy span{font-size:12px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-weight:900}.brand-lockup{display:flex;align-items:center;gap:10px}.desktop-shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:100%;height:100vh;background:var(--bg)}.navigation{display:flex;flex-direction:column;padding:14px 11px;border-right:1px solid var(--border-soft);background:#0e1012}.navigation-brand{padding:2px 8px 16px}.navigation-spacer{flex:1}.navigation-footer{padding:10px 9px 2px;color:var(--muted-2);font-size:9px;text-transform:uppercase}.global-nav,.server-nav{display:grid;gap:3px}.global-nav button,.server-nav button{position:relative;min-height:40px;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.global-nav button:hover,.server-nav button:hover{background:var(--surface);color:var(--text)}.global-nav button.active,.server-nav button.active{background:var(--surface-2);color:var(--text);font-weight:650}.global-nav button.active::before,.server-nav button.active::before{content:'';position:absolute;left:-5px;top:9px;bottom:9px;width:2px;background:var(--accent)}.nav-icon{width:19px;height:19px;display:grid;place-items:center}.nav-icon :global(svg){width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav-divider{height:1px;margin:14px 5px 11px;background:var(--border-soft)}.nav-server-card{display:flex;align-items:center;gap:10px;margin:0 2px 9px;padding:8px}.nav-server-card>div:last-child{min-width:0;display:grid}.nav-server-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.nav-server-card span{color:var(--muted-2);font-size:10px}.server-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#252a2e;border:1px solid #3a4147;font-weight:800}.nav-server-icon{width:30px!important;height:30px!important;font-size:12px!important}.main-view{min-width:0;min-height:0;display:flex;flex-direction:column;height:100vh;overflow:hidden}.page-toolbar{min-height:82px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 30px;border-bottom:1px solid var(--border-soft);background:#111315}.page-toolbar h1{margin:0;font-size:23px}.page-toolbar p{margin:4px 0 0;color:var(--muted);font-size:12px}.content{width:min(1040px,calc(100% - 56px));margin:0 auto;padding:26px 0 48px;overflow:auto;min-height:0;flex:1}@media(max-width:760px){.desktop-shell{grid-template-columns:68px minmax(0,1fr)}.navigation-brand strong,.global-nav button span:last-child,.server-nav button span:last-child,.nav-server-card>div:last-child,.navigation-footer{display:none}.global-nav button,.server-nav button{justify-content:center}.page-toolbar{padding:15px 18px}.content{width:calc(100% - 28px)}}
 </style>
