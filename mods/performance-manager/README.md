@@ -66,6 +66,15 @@ A missed optimization is acceptable. Incorrectly hiding a builder-visible entity
 
 Builder-critical compatibility takes priority over marginal frame savings. Axiom, WorldEditCUI, Iris, Fabric Renderer API consumers, resource packs, and custom model/render paths are explicit compatibility surfaces when the affected capability is implemented.
 
+Current culling compatibility policy is deliberately narrow:
+
+- only `minecraft:` entity and block-entity types are eligible for first-party occlusion culling;
+- modded/custom entity or block-entity types always render through their owning renderer;
+- renderers declaring `rendersOutsideBoundingBox` always bypass culling;
+- glowing, named, camera-focused, player, near-camera, stale, or uncertain targets always render;
+- when the external `entityculling` mod is present, LazyBuilder culling remains inactive to avoid competing render owners during migration;
+- WorldEditCUI overlay rendering remains outside the entity/block-entity culling path and is not intercepted.
+
 ## Runtime model
 
 The existing runtime remains the single authority:
@@ -78,7 +87,9 @@ PerformanceManagerClient
     │   └── FramePressure
     ├── background/
     │   └── BackgroundResourcePolicy
-    ├── culling/          # capability owner as implemented
+    ├── culling/
+    │   ├── CullingRuntime
+    │   └── VisibilityDecision
     ├── rendering/        # capability owner as implemented
     ├── memory/           # capability owner as implemented
     ├── compatibility/    # explicit bypass/integration policy
@@ -90,16 +101,20 @@ Package boundaries may be introduced incrementally as a capability becomes real.
 
 ## Implemented behavior
 
-The currently implemented first-party behavior is intentionally small but production-owned:
+The currently implemented first-party behavior is production-owned:
 
 - allocation-free rolling frame timing over a bounded 60-frame window;
 - target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
 - render-gap protection so world loading, disconnects, unfocused windows, and minimized windows are not counted as frame spikes;
 - first-party unfocused/minimized FPS policy;
+- conservative entity and block-entity occlusion culling with bounded end-of-tick evaluation;
+- culling render hooks never raycast directly; stale/unknown state renders and is queued for later evaluation;
+- opaque full cubes are the only definite ray occluders; partial/transparent collision shapes are stepped through and uncertainty fails open;
+- modded/custom render types bypass culling;
 - on-demand performance snapshots containing Minecraft/client state without a metrics-history database;
 - no dedicated performance worker thread or polling service.
 
-One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy.
+One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy and bounded culling work.
 
 ## Background resource policy
 
@@ -114,6 +129,19 @@ background.minimized_fps=10
 The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured foreground video-option FPS limit. When focus returns, the current user limit remains authoritative.
 
 This is the first capability intended to replace the corresponding external background-FPS role once runtime proof is complete.
+
+## Culling
+
+Current defaults:
+
+```properties
+culling.entities=true
+culling.block_entities=true
+```
+
+The culling path is intentionally conservative. It samples multiple points on vanilla entity/block-entity bounds, caches fresh results briefly, invalidates on camera/target movement or world changes, and limits evaluation work per client tick. If evaluation cannot establish safe occlusion, the target renders.
+
+External EntityCulling remains the active owner when its mod id is present. Remove that migration dependency only after representative Minecraft runtime proof shows the first-party path is correct for the intended builder workload.
 
 ## Diagnostics
 
@@ -144,7 +172,7 @@ External performance mods are migration references, not the architecture.
 | Reference capability | First-party target | Policy |
 | --- | --- | --- |
 | Dynamic FPS background throttling | `background/` | retain existing LazyBuilder policy and prove parity before removing the external mod |
-| EntityCulling entity/block-entity occlusion | `culling/` | independently implement conservative fail-open visibility culling |
+| EntityCulling entity/block-entity occlusion | `culling/` | first-party conservative implementation exists; keep external-owner bypass until runtime proof is complete |
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
 | ImmediatelyFast immediate rendering efficiency | `rendering/` | optimize proven hot paths instead of cloning every hook |
 | FerriteCore memory reductions | `memory/` | add only measured, maintainable dedup/cache improvements |
@@ -173,15 +201,17 @@ Do not advance a later phase by creating placeholder toggles for behavior that i
 
 Only implemented user decisions belong in persisted preferences. Internal implementation details remain internal unless a real compatibility or user-choice requirement proves otherwise.
 
-Current configuration remains:
+Current configuration:
 
 ```properties
 background.enabled=true
 background.unfocused_fps=30
 background.minimized_fps=10
+culling.entities=true
+culling.block_entities=true
 ```
 
-Future settings should remain high-level (for example, an implemented culling capability can expose one user-facing enable/disable decision). Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
+Future settings should remain high-level. Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
 
 ## External-source policy
 
