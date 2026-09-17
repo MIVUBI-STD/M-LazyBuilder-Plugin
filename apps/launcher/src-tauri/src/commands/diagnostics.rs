@@ -11,6 +11,9 @@ use tauri::{AppHandle, Manager};
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticSummary {
     pub launcher_version: String,
+    pub build_commit: String,
+    pub build_channel: String,
+    pub build_target: String,
     pub launcher_log_path: String,
     pub workspace_name: Option<String>,
     pub workspace_path: Option<String>,
@@ -141,9 +144,17 @@ fn collect_summary(app: &AppHandle) -> DiagnosticSummary {
     let log_path = diagnostics::launcher_log_path()
         .map(|path| path.display().to_string())
         .unwrap_or_default();
+    let build_commit = option_env!("GITHUB_SHA")
+        .or(option_env!("LAZYBUILDER_BUILD_COMMIT"))
+        .unwrap_or("local")
+        .to_string();
+    let build_target = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
 
     DiagnosticSummary {
         launcher_version: env!("CARGO_PKG_VERSION").to_string(),
+        build_commit,
+        build_channel: "stable".into(),
+        build_target,
         launcher_log_path: log_path,
         workspace_name: workspace.as_ref().map(|value| value.name.clone()),
         workspace_path: workspace.as_ref().map(|value| value.path.clone()),
