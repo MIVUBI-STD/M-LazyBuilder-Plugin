@@ -3,7 +3,7 @@
   "id": "lazybuilder_performance_manager",
   "version": "${version}",
   "name": "LazyBuilder Performance Manager",
-  "description": "First-party LazyBuilder client performance runtime for frame stability, resource policy, workload pressure, and lightweight diagnostics.",
+  "description": "First-party LazyBuilder client performance layer for frame stability, resource policy, culling, rendering efficiency, memory efficiency, and builder-heavy workload diagnostics.",
   "authors": ["halokaryamedia-source"],
   "environment": "client",
   "entrypoints": {

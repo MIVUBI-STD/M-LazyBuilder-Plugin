@@ -1,8 +1,12 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -10,6 +14,7 @@ import java.util.Properties;
 
 /** Owns persistence for Performance Manager policy preferences. */
 public final class PerformanceConfigStore {
+    private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Performance/Config");
     private static final String FILE_NAME = "lazybuilder-performance-manager.properties";
     private static final String HEADER = "LazyBuilder Performance Manager preferences";
 
@@ -29,7 +34,8 @@ public final class PerformanceConfigStore {
         Properties properties = new Properties();
         try (Reader reader = Files.newBufferedReader(configFile)) {
             properties.load(reader);
-        } catch (IOException ignored) {
+        } catch (IOException exception) {
+            LOGGER.warn("Unable to read Performance Manager preferences from {}; using safe defaults", configFile, exception);
             return defaults;
         }
 
@@ -54,15 +60,21 @@ public final class PerformanceConfigStore {
                 properties.store(writer, HEADER);
             }
             try {
-                Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicMoveFailure) {
+                Files.move(
+                        temporary,
+                        configFile,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                );
+            } catch (AtomicMoveNotSupportedException unsupported) {
                 Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ignored) {
+        } catch (IOException exception) {
+            LOGGER.warn("Unable to persist Performance Manager preferences to {}; keeping runtime preferences active", configFile, exception);
             try {
                 Files.deleteIfExists(temporary);
-            } catch (IOException ignoredCleanup) {
-                // Config persistence must never block Minecraft startup.
+            } catch (IOException cleanupFailure) {
+                LOGGER.debug("Unable to remove temporary Performance Manager preference file {}", temporary, cleanupFailure);
             }
         }
     }

@@ -1,51 +1,109 @@
 # LazyBuilder Performance Manager
 
-> **Status: deferred / experimental for V1.** Performance Manager remains in the repository as isolated research source. It is not a product requirement unless measured client evidence justifies promotion.
->
-> The current `Local` Launcher/client-packaging path may still reference or bundle this module while the active Launcher/installer consolidation is in progress. Treat that as transitional implementation state, not permission to expand Performance Manager or make other systems depend on it. Do not remove or rewire those active Launcher paths in parallel unless that work is explicitly coordinated.
+LazyBuilder Performance Manager is the first-party Fabric client performance layer for Minecraft Java 1.21.4.
 
-## Goal
+## Product contract
 
-Keep a bounded first-party performance experiment available for Minecraft Java 1.21.4 without turning performance tuning into a second product architecture.
+Performance Manager is a production product owner, not an experimental diagnostics helper. Its job is to keep builder-heavy Minecraft sessions responsive while preserving the user's intended scene and visual quality.
 
-The module may be used to measure specific client bottlenecks. It must not become a hidden runtime dependency, graphics-quality controller, general optimization framework, or reason to duplicate behavior already owned by Minecraft, Fabric, Modrinth, or another LazyBuilder manager.
+One Performance Manager = one Fabric mod = one mod id = one output JAR.
 
-## Current research scope
+The target is to replace the external performance stack gradually with independently owned LazyBuilder implementations. External mods remain reference and migration baselines until the matching first-party capability is implemented and proven. They must not be shaded, nested, unpacked, copied, or silently treated as runtime dependencies.
 
-The existing source provides:
+Performance Manager owns only client performance behavior:
 
-- allocation-free rolling frame timing over a bounded 60-frame window;
-- target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
-- render-gap protection so world loading, disconnects, and other render discontinuities are not counted as frame spikes;
-- first-party unfocused/minimized FPS policy;
-- on-demand performance snapshots, including Minecraft chunk/entity/particle debug state;
-- no permanent HUD, metrics history database, background worker, graphics auto-tuning, or speculative workload scheduler.
+- frame timing and frame-pressure diagnostics;
+- background/unfocused resource policy;
+- entity and block-entity visibility culling;
+- conservative model/face culling where visual correctness is provable;
+- immediate-mode/HUD/screen rendering efficiency;
+- targeted memory reductions and deduplication;
+- chunk mesh/render-region/buffer efficiency when the renderer replacement phase is reached;
+- compatibility policy for builder-critical render consumers.
 
-No additional capability should be added until a reproducible client-side performance problem demonstrates that this module is the correct owner.
+Performance Manager does not own:
+
+- shader loading or shader-pack UX;
+- building/editing behavior;
+- map/world management;
+- screenshot/chat/window convenience;
+- automatic graphics-quality reduction;
+- speculative background schedulers or generic worker frameworks.
+
+## Builder performance rule
+
+Optimization success is not defined by peak FPS in an empty vanilla world. Representative workload includes large builds, high render distance, many entities/block entities, rapid creative flight, frequent chunk updates, large resource packs, Axiom, WorldEditCUI, and other builder-facing overlays.
+
+Relevant proof targets include:
+
+- average frame time and FPS;
+- 1% low / sustained slow-frame behavior;
+- worst recent frame time;
+- camera-motion stutter;
+- chunk rebuild/upload latency;
+- entity-heavy render cost;
+- retained memory and GC pressure.
+
+Performance Manager must preserve visual intent:
+
+```text
+same configured scene + less unnecessary work
+```
+
+It must not silently lower render distance, particle quality, graphics mode, entity distance, shader quality, or another user-selected visual setting in response to load.
+
+## Correctness policy
+
+Rendering optimizations are conservative and fail open.
+
+```text
+visibility uncertain -> render
+compatibility uncertain -> use vanilla/Fabric path
+unsupported renderer state -> bypass optimization
+```
+
+A missed optimization is acceptable. Incorrectly hiding a builder-visible entity, block entity, preview, guide, selection, overlay, or model is not.
+
+Builder-critical compatibility takes priority over marginal frame savings. Axiom, WorldEditCUI, Iris, Fabric Renderer API consumers, resource packs, and custom model/render paths are explicit compatibility surfaces when the affected capability is implemented.
 
 ## Runtime model
+
+The existing runtime remains the single authority:
 
 ```text
 PerformanceManagerClient
 └── PerformanceRuntime
-    ├── FrameMonitor
-    ├── BackgroundResourcePolicy
-    └── PerformanceSnapshotReader
+    ├── frame/
+    │   ├── FrameMonitor
+    │   └── FramePressure
+    ├── background/
+    │   └── BackgroundResourcePolicy
+    ├── culling/          # capability owner as implemented
+    ├── rendering/        # capability owner as implemented
+    ├── memory/           # capability owner as implemented
+    ├── compatibility/    # explicit bypass/integration policy
+    └── diagnostics/
+        └── PerformanceSnapshotReader
 ```
 
-One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy. No dedicated thread or polling worker is created.
+Package boundaries may be introduced incrementally as a capability becomes real. Do not create empty managers, workers, registries, caches, or configuration knobs merely to match this diagram.
 
-## Frame pressure
+## Implemented behavior
 
-Frame pressure is diagnostic state. It is intentionally not a graphics-quality controller and does not own scheduling in other LazyBuilder managers.
+The currently implemented first-party behavior is intentionally small but production-owned:
 
-Thresholds are derived from the user's configured foreground FPS target with conservative absolute floors. This avoids treating an intentional 30 FPS target as a performance fault while still detecting sustained slow frames and severe spikes.
+- allocation-free rolling frame timing over a bounded 60-frame window;
+- target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
+- render-gap protection so world loading, disconnects, unfocused windows, and minimized windows are not counted as frame spikes;
+- first-party unfocused/minimized FPS policy;
+- on-demand performance snapshots containing Minecraft/client state without a metrics-history database;
+- no dedicated performance worker thread or polling service.
 
-When world rendering stops, the window loses focus, or the client is minimized, the timing clock is reset. Long render gaps are treated as discontinuities instead of fake lag spikes.
+One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy.
 
 ## Background resource policy
 
-Existing experimental defaults:
+Current defaults:
 
 ```properties
 background.enabled=true
@@ -53,9 +111,9 @@ background.unfocused_fps=30
 background.minimized_fps=10
 ```
 
-The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured video-option FPS limit. When focus returns, the current user limit is authoritative again.
+The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured foreground video-option FPS limit. When focus returns, the current user limit remains authoritative.
 
-This behavior must remain isolated inside Performance Manager while the module is deferred. Other LazyBuilder components must not depend on it.
+This is the first capability intended to replace the corresponding external background-FPS role once runtime proof is complete.
 
 ## Diagnostics
 
@@ -79,23 +137,43 @@ Minecraft particle debug string
 
 Memory, option, entity, chunk, and particle diagnostics are not sampled continuously.
 
-## Ownership rule
+## Migration capability map
 
-Performance Manager is currently an isolated research owner, not a shared infrastructure layer.
+External performance mods are migration references, not the architecture.
 
-Do not:
+| Reference capability | First-party target | Policy |
+| --- | --- | --- |
+| Dynamic FPS background throttling | `background/` | retain existing LazyBuilder policy and prove parity before removing the external mod |
+| EntityCulling entity/block-entity occlusion | `culling/` | independently implement conservative fail-open visibility culling |
+| MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
+| ImmediatelyFast immediate rendering efficiency | `rendering/` | optimize proven hot paths instead of cloning every hook |
+| FerriteCore memory reductions | `memory/` | add only measured, maintainable dedup/cache improvements |
+| Sodium chunk/render pipeline | `rendering/` | final large phase; renderer ownership requires dedicated compatibility and benchmark proof |
+| Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
+| Sodium Extra | capability-by-capability | retain only performance behavior that fits this contract; cosmetic convenience is out of scope |
+| Chunks Fade In | none | visual effect; not a Performance Manager requirement |
 
-- introduce dependencies from Map Manager, Utility Manager, Paper plugins, or shared protocol into Performance Manager;
-- introduce dependencies from Performance Manager into unrelated LazyBuilder managers;
-- add a second performance/config authority in the Launcher or Paper runtime;
-- add renderer replacement, culling engines, shader systems, background schedulers, compatibility matrices, or broad optimization frameworks without measured evidence;
-- promote this module to required V1 runtime solely because the source already exists.
+A migration source is retired only after the first-party capability that replaces it has matching representative proof. Removing a JAR is never used as evidence that replacement behavior exists.
 
-Promotion requires a concrete bottleneck, a success metric, representative Minecraft-client proof, and an explicit product decision.
+## Delivery phases
 
-## Configuration
+Implementation order is deliberate:
 
-Only the existing bounded experimental decisions are represented:
+1. production contract, runtime/config foundation, and diagnostics;
+2. entity and block-entity culling;
+3. conservative face/item-frame culling;
+4. proven immediate-mode/HUD/screen/buffer optimizations;
+5. targeted memory reductions;
+6. chunk mesh/render-region/GPU-buffer pipeline sufficient to retire Sodium-class renderer dependency;
+7. one familiar LazyBuilder settings surface exposing only meaningful user decisions.
+
+Do not advance a later phase by creating placeholder toggles for behavior that is not implemented.
+
+## Configuration rules
+
+Only implemented user decisions belong in persisted preferences. Internal implementation details remain internal unless a real compatibility or user-choice requirement proves otherwise.
+
+Current configuration remains:
 
 ```properties
 background.enabled=true
@@ -103,4 +181,10 @@ background.unfocused_fps=30
 background.minimized_fps=10
 ```
 
-Frame-pressure thresholds remain internal. Do not add more knobs unless profiling proves that a real user decision is required.
+Future settings should remain high-level (for example, an implemented culling capability can expose one user-facing enable/disable decision). Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
+
+## External-source policy
+
+Reference mods may be studied for documented behavior, problem decomposition, public APIs, compatibility requirements, benchmarks, and implementation ideas. Source reuse must follow the source project's license and repository policy. Where direct reuse is not appropriate, implement the behavior independently rather than porting or renaming external classes/mixins.
+
+The finished LazyBuilder artifact must remain maintainable as a first-party implementation rather than a bundle of copied third-party internals.
