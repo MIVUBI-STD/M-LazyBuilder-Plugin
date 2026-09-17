@@ -1,6 +1,37 @@
 use crate::engine::diagnostics;
 use serde::Serialize;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoveryAction {
+    AcceptEula,
+    LocateWorkspace,
+    OpenActivity,
+    OpenLogs,
+    ReconnectClientProfile,
+    RepairServer,
+    RetryOperation,
+    ReviewServerHealth,
+    StopServer,
+    WaitForServerStart,
+}
+
+impl RecoveryAction {
+    pub const fn as_code(self) -> &'static str {
+        match self {
+            Self::AcceptEula => "ACCEPT_EULA",
+            Self::LocateWorkspace => "LOCATE_WORKSPACE",
+            Self::OpenActivity => "OPEN_ACTIVITY",
+            Self::OpenLogs => "OPEN_LOGS",
+            Self::ReconnectClientProfile => "RECONNECT_CLIENT_PROFILE",
+            Self::RepairServer => "REPAIR_SERVER",
+            Self::RetryOperation => "RETRY_OPERATION",
+            Self::ReviewServerHealth => "REVIEW_SERVER_HEALTH",
+            Self::StopServer => "STOP_SERVER",
+            Self::WaitForServerStart => "WAIT_FOR_SERVER_START",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandError {
@@ -27,10 +58,20 @@ impl CommandError {
         }
     }
 
+    /// Compatibility constructor for call sites that have not yet migrated to
+    /// machine-readable RecoveryAction values. New code should use
+    /// `recoverable_action` so UI behavior never depends on backend prose.
     pub fn recoverable(code: &'static str, message: impl Into<String>, action: impl Into<String>) -> Self {
         let mut error = Self::new(code, message);
         error.recoverable = true;
         error.action = Some(action.into());
+        error
+    }
+
+    pub fn recoverable_action(code: &'static str, message: impl Into<String>, action: RecoveryAction) -> Self {
+        let mut error = Self::new(code, message);
+        error.recoverable = true;
+        error.action = Some(action.as_code().into());
         error
     }
 
@@ -57,11 +98,22 @@ pub type CommandResult<T> = Result<T, CommandError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn recoverable_errors_expose_action_and_correlation() {
-        let error = CommandError::recoverable("WORKSPACE_UNAVAILABLE", "Missing", "Locate server");
+    fn typed_recovery_actions_expose_stable_machine_code_and_correlation() {
+        let error = CommandError::recoverable_action(
+            "WORKSPACE_UNAVAILABLE",
+            "Missing",
+            RecoveryAction::LocateWorkspace,
+        );
         assert!(error.recoverable);
-        assert_eq!(error.action.as_deref(), Some("Locate server"));
+        assert_eq!(error.action.as_deref(), Some("LOCATE_WORKSPACE"));
         assert!(!error.correlation_id.is_empty());
+    }
+
+    #[test]
+    fn recovery_action_codes_are_not_presentation_copy() {
+        assert_eq!(RecoveryAction::StopServer.as_code(), "STOP_SERVER");
+        assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
     }
 }
