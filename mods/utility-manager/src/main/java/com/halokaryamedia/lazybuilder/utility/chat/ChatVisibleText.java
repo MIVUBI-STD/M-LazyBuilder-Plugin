@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 
 /** Helpers for user-facing text derived from rendered chat lines. */
 public final class ChatVisibleText {
-    private static final Pattern TIMESTAMP_PREFIX = Pattern.compile("^\\d{2}:\\d{2}\\s{2}");
+    private static final Pattern TIMESTAMP_PREFIX = Pattern.compile("^(?:\\d{2}:\\d{2}\\s{2}|\\[\\d{2}:\\d{2}:\\d{2}\\]\\s+)");
 
     private ChatVisibleText() {
     }

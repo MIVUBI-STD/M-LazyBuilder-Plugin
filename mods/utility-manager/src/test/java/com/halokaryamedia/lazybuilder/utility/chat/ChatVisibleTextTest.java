@@ -10,4 +10,9 @@ class ChatVisibleTextTest {
         assertEquals("Berchman  hello", ChatVisibleText.withoutTimestamp("19:34  Berchman  hello"));
         assertEquals("no timestamp", ChatVisibleText.withoutTimestamp("no timestamp"));
     }
+
+    @Test
+    void externalBracketedTimestampIsRemoved() {
+        assertEquals("<Builder> copied block", ChatVisibleText.withoutTimestamp("[02:40:31] <Builder> copied block"));
+    }
 }
