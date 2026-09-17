@@ -6,6 +6,7 @@
   import ServersLibrary from './pages/ServersLibrary.svelte';
   import ActiveServer from './pages/ActiveServer.svelte';
   import ActivityNavStatus from './components/ActivityNavStatus.svelte';
+  import OperationAttention from './components/OperationAttention.svelte';
   import { installLauncherCloseGuard } from './app/closeGuard';
   import type { LauncherCloseRequest } from './app/closeGuard';
   import { dialogFocus } from './app/dialogFocus';
@@ -111,6 +112,10 @@
     page = target === 'plugins' ? 'Plugins' : target === 'settings' ? 'Settings' : 'Overview';
   }
 
+  function openActivityFromAttention() {
+    globalPage = 'Activity';
+  }
+
   function handleCloseRequest(request: LauncherCloseRequest, proceed: () => Promise<void>) {
     closeRequest = request;
     closeProceed = proceed;
@@ -201,6 +206,8 @@
     </section>
   </div>
 {/if}
+
+<OperationAttention onOpenActivity={openActivityFromAttention} />
 
 {#if closeRequest}
   <div class="close-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelCloseRequest()}>
