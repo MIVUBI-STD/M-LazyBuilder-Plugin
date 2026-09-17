@@ -46,32 +46,44 @@ final class PaperWorldFamilyLayout {
 
         for (DimensionLayout layout : DIMENSIONS) {
             Path canonical = root.resolve(layout.directory()).normalize();
-            if (!canonical.startsWith(root) || Files.notExists(canonical)) continue;
+            if (!canonical.startsWith(root)) throw new IOException("Canonical dimension escaped world root");
+            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
+            Path target = sibling.resolve(layout.directory()).normalize();
+
+            if (Files.notExists(canonical)) {
+                if (Files.exists(sibling)) validateOwnedOrCommittedSibling(sibling, target);
+                continue;
+            }
             if (!Files.isDirectory(canonical) || Files.isSymbolicLink(canonical)) {
                 throw new IOException("Canonical dimension path is unsafe: " + canonical);
             }
 
-            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
-            if (Files.exists(sibling)) {
-                throw new IOException("Paper dimension folder already exists: " + sibling.getFileName());
-            }
-
             boolean siblingCreated = false;
-            try {
+            if (Files.exists(sibling)) {
+                if (!transactional || !hasSafeFamilyMarker(sibling)) {
+                    throw new IOException("Paper dimension folder already exists: " + sibling.getFileName());
+                }
+                if (!Files.isDirectory(sibling) || Files.isSymbolicLink(sibling)) {
+                    throw new IOException("Paper dimension folder is unsafe: " + sibling.getFileName());
+                }
+                if (Files.exists(target)) {
+                    throw new IOException("Both canonical and published dimension data exist for " + layout.directory());
+                }
+            } else {
                 Files.createDirectory(sibling);
                 siblingCreated = true;
-                Files.copy(levelDat, sibling.resolve("level.dat"), StandardCopyOption.COPY_ATTRIBUTES);
-                Path old = root.resolve("level.dat_old");
-                if (Files.isRegularFile(old) && !Files.isSymbolicLink(old)) {
-                    Files.copy(old, sibling.resolve("level.dat_old"), StandardCopyOption.COPY_ATTRIBUTES);
+            }
+
+            try {
+                copyLevelMetadataIfMissing(root, sibling);
+                if (transactional && !Files.exists(sibling.resolve(FAMILY_PENDING_MARKER))) {
+                    Files.createFile(sibling.resolve(FAMILY_PENDING_MARKER));
                 }
-                if (transactional) Files.createFile(sibling.resolve(FAMILY_PENDING_MARKER));
-                move(canonical, sibling.resolve(layout.directory()));
+                move(canonical, target);
             } catch (IOException | RuntimeException failure) {
                 if (siblingCreated) {
                     try {
-                        Path moved = sibling.resolve(layout.directory());
-                        if (Files.exists(moved) && Files.notExists(canonical)) move(moved, canonical);
+                        if (Files.exists(target) && Files.notExists(canonical)) move(target, canonical);
                         deleteTree(sibling);
                     } catch (IOException rollbackFailure) {
                         failure.addSuppressed(rollbackFailure);
@@ -79,6 +91,40 @@ final class PaperWorldFamilyLayout {
                 }
                 throw failure;
             }
+        }
+    }
+
+    private static void validateOwnedOrCommittedSibling(Path sibling, Path target) throws IOException {
+        if (!Files.isDirectory(sibling) || Files.isSymbolicLink(sibling)) {
+            throw new IOException("Paper dimension folder is unsafe: " + sibling.getFileName());
+        }
+        if (!Files.isDirectory(target) || Files.isSymbolicLink(target)) {
+            throw new IOException("Paper dimension data is missing or unsafe: " + target);
+        }
+    }
+
+    private static boolean hasSafeFamilyMarker(Path sibling) throws IOException {
+        Path marker = sibling.resolve(FAMILY_PENDING_MARKER);
+        if (Files.notExists(marker)) return false;
+        if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+            throw new IOException("Paper family publication marker is unsafe: " + marker);
+        }
+        return true;
+    }
+
+    private static void copyLevelMetadataIfMissing(Path root, Path sibling) throws IOException {
+        Path levelDat = root.resolve("level.dat");
+        Path siblingLevel = sibling.resolve("level.dat");
+        if (Files.notExists(siblingLevel)) {
+            Files.copy(levelDat, siblingLevel, StandardCopyOption.COPY_ATTRIBUTES);
+        } else if (!Files.isRegularFile(siblingLevel) || Files.isSymbolicLink(siblingLevel)) {
+            throw new IOException("Paper dimension level.dat is unsafe: " + siblingLevel);
+        }
+
+        Path old = root.resolve("level.dat_old");
+        Path siblingOld = sibling.resolve("level.dat_old");
+        if (Files.isRegularFile(old) && !Files.isSymbolicLink(old) && Files.notExists(siblingOld)) {
+            Files.copy(old, siblingOld, StandardCopyOption.COPY_ATTRIBUTES);
         }
     }
 
