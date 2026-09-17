@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{workspace_creation, workspace_registry};
@@ -18,7 +18,11 @@ pub fn workspace_create(
     // the canonical server-start lease so active-workspace selection cannot move
     // while another server is reading its start-time configuration.
     let _selection_lease = ServerStartLease::acquire().map_err(|message| {
-        CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start")
+        CommandError::recoverable_action(
+            "SERVER_START_BUSY",
+            message,
+            RecoveryAction::WaitForServerStart,
+        )
     })?;
 
     // Creating a workspace changes server-library truth, but it does not mutate
@@ -30,16 +34,16 @@ pub fn workspace_create(
         .iter()
         .any(|entry| !entry.state.is_terminal())
     {
-        return Err(CommandError::recoverable(
+        return Err(CommandError::recoverable_action(
             "OPERATION_BUSY",
             "Wait for the active Launcher operation to finish before creating another server.",
-            "Open Activity",
+            RecoveryAction::OpenActivity,
         ));
     }
 
     let operation = operations
         .begin_exclusive("create-server", WORKSPACE_LIBRARY_RESOURCE, false)
-        .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
 
     let _ = operations.set_phase(
@@ -64,7 +68,11 @@ pub fn workspace_create(
         }
         Err(message) if message.starts_with("CREATE_RECOVERY_REQUIRED:") => {
             let message = message.trim_start_matches("CREATE_RECOVERY_REQUIRED:").trim().to_string();
-            let error = CommandError::recoverable("CREATE_RECOVERY_REQUIRED", message, "Restart LazyBuilder");
+            let error = CommandError::recoverable_action(
+                "CREATE_RECOVERY_REQUIRED",
+                message,
+                RecoveryAction::RestartLauncher,
+            );
             let _ = operations.require_recovery(
                 &operation_id,
                 OperationError {
@@ -77,7 +85,11 @@ pub fn workspace_create(
             Err(error)
         }
         Err(message) => {
-            let error = CommandError::recoverable("CREATE_FAILED", message, "Retry server creation");
+            let error = CommandError::recoverable_action(
+                "CREATE_FAILED",
+                message,
+                RecoveryAction::RetryOperation,
+            );
             let _ = operations.fail(
                 &operation_id,
                 OperationError {
