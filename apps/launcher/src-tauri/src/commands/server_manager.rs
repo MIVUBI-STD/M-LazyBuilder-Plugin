@@ -185,10 +185,10 @@ fn classify_server_start_error(message: String) -> CommandError {
         return CommandError::recoverable_action("SERVER_CAPACITY_REACHED", message, RecoveryAction::StopServer);
     }
     if lower.contains("not enough available ram to start another paper server safely") {
-        return CommandError::recoverable_action("SERVER_MEMORY_PRESSURE", message, RecoveryAction::ReviewServerHealth);
+        return CommandError::recoverable_action("SERVER_MEMORY_PRESSURE", message, RecoveryAction::RetryOperation);
     }
     if lower.contains("could not find a free paper listen port") {
-        return CommandError::recoverable_action("SERVER_PORT_UNAVAILABLE", message, RecoveryAction::ReviewServerHealth);
+        return CommandError::recoverable_action("SERVER_PORT_UNAVAILABLE", message, RecoveryAction::RetryOperation);
     }
     CommandError::recoverable_action("SERVER_START_FAILED", message, RecoveryAction::RetryOperation)
 }
