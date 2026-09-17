@@ -1,12 +1,12 @@
 use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
-use crate::engine::server_health::{self, ServerHealthSnapshot};
+use crate::engine::server_health::{self, ServerReadinessSnapshot};
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::{server_process_guard, server_repair, workspace_registry};
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub fn launcher_server_health(id: String) -> CommandResult<ServerHealthSnapshot> {
+pub fn launcher_server_health(id: String) -> CommandResult<ServerReadinessSnapshot> {
     server_health::inspect(&id).map_err(CommandError::from)
 }
 
