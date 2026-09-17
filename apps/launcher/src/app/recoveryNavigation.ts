@@ -3,8 +3,7 @@ import type { RecoveryAction } from './bridge/errors';
 export type RecoveryNavigationTarget =
   | 'activity'
   | 'overview'
-  | 'plugins'
-  | 'settings';
+  | 'plugins';
 
 /**
  * Maps only recovery actions whose safe handling is an actual cross-surface
