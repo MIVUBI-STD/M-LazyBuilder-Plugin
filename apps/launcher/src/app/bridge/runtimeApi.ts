@@ -21,8 +21,6 @@ export const runtimeApi = {
   startup: appApi.startup,
   settings: appApi.settings,
   readiness: appApi.readiness,
-  /** Compatibility alias; new product code should prefer `readiness`. */
-  health: appApi.health,
   operations: appApi.operations,
   backups: workspaceApi.backups,
   workspace: workspaceApi.workspace,
