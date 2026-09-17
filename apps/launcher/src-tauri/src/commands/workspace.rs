@@ -98,7 +98,7 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
         Ok(result) => result,
         Err(error) => {
             let _ = app.state::<OperationRegistry>().require_recovery(&join_operation_id, OperationError { code: "TASK_FAILED".into(), message: "Paper update task ended unexpectedly".into(), details: error.to_string(), recoverable: true });
-            Err(CommandError::new("TASK_FAILED", format!("Paper update task failed: {error}")))
+            Err(CommandError::new("TASK_FAILED", format!("Server Paper update task failed: {error}")))
         }
     }
 }
@@ -171,7 +171,13 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
 pub fn workspace_activate(operations: State<'_, OperationRegistry>, id: String) -> CommandResult<WorkspaceEntry> {
     let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_activation_allowed(&operations, &id)?;
-    workspace_registry::activate(&id).map_err(CommandError::from)
+    workspace_registry::activate(&id).map_err(|message| {
+        if message.contains("currently unavailable") {
+            CommandError::recoverable_action("WORKSPACE_UNAVAILABLE", message, RecoveryAction::LocateWorkspace)
+        } else {
+            CommandError::from(message)
+        }
+    })
 }
 
 #[tauri::command]
