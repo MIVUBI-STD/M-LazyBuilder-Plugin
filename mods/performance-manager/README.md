@@ -18,7 +18,7 @@ Performance Manager owns only client performance behavior:
 - conservative model/face culling where visual correctness is provable;
 - immediate-mode/HUD/screen rendering efficiency;
 - targeted memory reductions and deduplication;
-- chunk rebuild, mesh, render-region, upload, color-provider, visibility, and buffer efficiency as renderer ownership grows;
+- chunk rebuild, mesh, render-region, upload, visibility, color-provider, and buffer efficiency as renderer ownership grows;
 - compatibility policy for builder-critical render consumers.
 
 Performance Manager does not own shader loading or shader-pack UX, building/editing behavior, map/world management, screenshot/chat/window convenience, automatic graphics-quality reduction, or speculative background schedulers.
@@ -59,7 +59,7 @@ Current migration compatibility is deliberately narrow:
 - glowing, named, camera-focused, player, near-camera, stale, or uncertain targets always render;
 - when the external `entityculling` mod is present, LazyBuilder culling remains inactive;
 - when ImmediatelyFast is installed, first-party text/GPU redirect hooks and chunk-upload batching are not applied;
-- when Sodium is installed, first-party chunk rebuild, ring-storage, chunk-upload, buffer-pool, block-color, and block-side-visibility mixins are not applied;
+- when Sodium is installed, first-party chunk rebuild, ring-storage, chunk-upload, section-visibility, buffer-pool, block-color, and block-side-visibility mixins are not applied;
 - when FerriteCore is installed, first-party baked-quad dedup mixins are not applied;
 - WorldEditCUI overlay rendering remains outside the entity/block-entity culling path and is not intercepted.
 
@@ -88,7 +88,7 @@ PerformanceManagerClient
     │   └── GpuBufferGrowthPolicy
     ├── memory/
     │   └── MemoryDeduplicator
-    ├── compatibility/    # explicit bypass/integration policy
+    ├── compatibility/
     └── diagnostics/
         └── PerformanceSnapshotReader
 ```
@@ -115,9 +115,10 @@ The currently implemented first-party behavior is production-owned:
 - block-side visibility cache is bounded and vanilla remains authoritative on cache miss;
 - `BuiltChunkStorage` camera movement remaps only toroidal X/Z strips whose section ownership changes when that is cheaper than vanilla's full storage scan;
 - chunk vertex/index uploads preserve queue order but consecutive uploads targeting the same `VertexBuffer` share one bind/unbind pair;
+- `ChunkData.isVisibleThrough(from,to)` caches the 36 directional section-visibility pairs after vanilla computes each pair once, using two `long` bitmasks rather than per-section cache objects;
 - queued LazyBuilder upload tasks remain individually future-backed and can still execute standalone if the optimization setting is disabled before upload;
 - chunk-buffer pool starvation is observed without changing vanilla pool behavior;
-- chunk-pipeline diagnostics expose task backlog, upload backlog, free buffers, buffer-acquire misses, coalesced rebuilds, avoided upload binds, and remapped storage sections on demand;
+- chunk-pipeline diagnostics expose task backlog, upload backlog, free buffers, buffer-acquire misses, coalesced rebuilds, avoided upload binds, remapped storage sections, and section-visibility cache hits on demand;
 - identical vanilla `BakedQuad` vertex arrays are canonicalized during `BasicBakedModel.Builder` assembly;
 - baked-quad canonicalization cache is concurrent and cleared on every client resource reload;
 - no dedicated performance worker thread or polling service is added.
@@ -166,8 +167,9 @@ The production rendering subset deliberately targets redundant work before broad
 - block-side visibility caches the exact pure-input vanilla tuple and falls through on miss;
 - `BuiltChunkStorage` uses toroidal-strip remapping for camera movement when fewer columns change than a full storage scan;
 - chunk upload batching groups only consecutive tasks with the identical `VertexBuffer`, preserving global queue order and future completion semantics;
+- section traversal reuses cached directional visibility results only after the original `ChunkOcclusionData` path has produced that exact pair once;
 - unknown/non-LazyBuilder upload queue entries still run directly rather than being reordered or absorbed;
-- ImmediateFast remains owner for overlapping text/GPU/upload behavior while installed;
+- ImmediatelyFast remains owner for overlapping text/GPU/upload behavior while installed;
 - Sodium remains owner for the chunk pipeline while installed.
 
 Full chunk mesh replacement, render-region GPU arenas, terrain draw batching, translucent sorting, and Fabric Renderer API implementation are not yet claimed equivalent. They require separate compatibility and runtime proof.
@@ -212,6 +214,7 @@ Coalesced chunk rebuild requests
 Chunk buffer acquire misses
 Avoided chunk upload buffer binds
 Remapped chunk-storage sections
+Section visibility cache hits
 Minecraft chunk debug string
 Minecraft entity render debug string
 Minecraft particle debug string
@@ -230,7 +233,7 @@ External performance mods are migration references, not the architecture.
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
 | ImmediatelyFast immediate rendering efficiency | `rendering/` | text lookup, GPU growth, and upload-batching foundations exist; keep external-owner gate until runtime proof is complete |
 | FerriteCore memory reductions | `memory/` | first baked-quad vertex dedup subset exists; keep FerriteCore-owner gate until runtime proof is complete |
-| Sodium chunk/render pipeline | `rendering/` | rebuild coalescing, diagnostics, ring-storage remap, upload batching, block-color lookup, visibility cache, and buffer lifecycle foundations exist; Sodium remains owner until mesh/region/draw/FRAPI parity is implemented and proven |
+| Sodium chunk/render pipeline | `rendering/` | rebuild coalescing, diagnostics, ring-storage remap, upload batching, section-visibility caching, block-color lookup, side-visibility caching, and buffer lifecycle foundations exist; Sodium remains owner until mesh/region/draw/FRAPI parity is implemented and proven |
 | Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
 | Sodium Extra | capability-by-capability | retain only performance behavior that fits this contract; cosmetic convenience is out of scope |
 | Chunks Fade In | none | visual effect; not a Performance Manager requirement |

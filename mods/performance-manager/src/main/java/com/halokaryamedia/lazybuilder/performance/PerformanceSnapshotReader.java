@@ -54,6 +54,7 @@ public final class PerformanceSnapshotReader {
                 ChunkPipelineMetrics.bufferAcquireMisses(),
                 ChunkPipelineMetrics.avoidedUploadBufferBinds(),
                 ChunkPipelineMetrics.storageSectionsRemapped(),
+                ChunkPipelineMetrics.sectionVisibilityCacheHits(),
                 chunkDebug,
                 entityDebug,
                 particleDebug

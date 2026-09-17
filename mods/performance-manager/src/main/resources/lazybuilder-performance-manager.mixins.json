@@ -12,6 +12,7 @@
     "ChunkBuilderBuiltChunkMixin",
     "ChunkBuilderUploadMixin",
     "BuiltChunkStorageMixin",
+    "ChunkDataVisibilityMixin",
     "BlockBufferBuilderPoolMixin",
     "BlockColorsMixin",
     "BlockSideVisibilityMixin",

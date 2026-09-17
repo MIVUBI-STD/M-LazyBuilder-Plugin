@@ -27,6 +27,7 @@ final class PerformanceSnapshotTest {
                 5L,
                 11L,
                 13L,
+                17L,
                 "chunks",
                 "entities",
                 "particles"
@@ -40,5 +41,6 @@ final class PerformanceSnapshotTest {
         assertEquals(5L, snapshot.chunkBufferAcquireMisses());
         assertEquals(11L, snapshot.avoidedChunkUploadBufferBinds());
         assertEquals(13L, snapshot.remappedChunkStorageSections());
+        assertEquals(17L, snapshot.sectionVisibilityCacheHits());
     }
 }

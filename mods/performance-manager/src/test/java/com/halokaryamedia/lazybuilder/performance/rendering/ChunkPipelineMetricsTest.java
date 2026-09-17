@@ -41,4 +41,12 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordStorageSectionsRemapped(12);
         assertEquals(12L, ChunkPipelineMetrics.storageSectionsRemapped());
     }
+
+    @Test
+    void countsSectionVisibilityCacheHits() {
+        assertEquals(0L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
+        ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
+        ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
+        assertEquals(2L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
+    }
 }

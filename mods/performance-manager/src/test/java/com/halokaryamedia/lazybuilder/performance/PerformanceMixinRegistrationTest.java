@@ -22,6 +22,7 @@ final class PerformanceMixinRegistrationTest {
             assertTrue(json.contains("ChunkBuilderBuiltChunkMixin"), "chunk rebuild coalescing mixin must stay registered");
             assertTrue(json.contains("ChunkBuilderUploadMixin"), "chunk upload batching mixin must stay registered");
             assertTrue(json.contains("BuiltChunkStorageMixin"), "render-region ring storage mixin must stay registered");
+            assertTrue(json.contains("ChunkDataVisibilityMixin"), "section visibility cache mixin must stay registered");
             assertTrue(json.contains("BlockBufferBuilderPoolMixin"), "chunk buffer pool metrics mixin must stay registered");
             assertTrue(json.contains("BlockColorsMixin"), "block color provider cache mixin must stay registered");
             assertTrue(json.contains("BlockSideVisibilityMixin"), "block side visibility cache mixin must stay registered");
