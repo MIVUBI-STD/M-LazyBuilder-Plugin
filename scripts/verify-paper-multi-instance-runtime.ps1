@@ -35,7 +35,7 @@ function Stop-PaperInstance([System.Diagnostics.Process]$Process, [string]$Insta
         $Process.StandardInput.WriteLine("stop")
         $Process.StandardInput.Flush()
     } catch {
-        Write-Warning "Could not send stop to $InstanceName: $($_.Exception.Message)"
+        Write-Warning "Could not send stop to ${InstanceName}: $($_.Exception.Message)"
     }
     if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
         Write-Warning "$InstanceName did not stop cleanly within $TimeoutSeconds seconds; terminating the disposable process."
