@@ -18,7 +18,7 @@ Performance Manager owns only client performance behavior:
 - conservative model/face culling where visual correctness is provable;
 - immediate-mode/HUD/screen rendering efficiency;
 - targeted memory reductions and deduplication;
-- chunk mesh/render-region/buffer efficiency when the renderer replacement phase is reached;
+- chunk rebuild, mesh, render-region, and buffer efficiency as renderer ownership grows;
 - compatibility policy for builder-critical render consumers.
 
 Performance Manager does not own shader loading or shader-pack UX, building/editing behavior, map/world management, screenshot/chat/window convenience, automatic graphics-quality reduction, or speculative background schedulers.
@@ -62,6 +62,8 @@ Current culling compatibility policy is deliberately narrow:
 
 Rendering-efficiency mixins are migration-aware. When the external `immediatelyfast` mod is installed, the first-party text-buffer and GPU-buffer mixins are not applied at all, avoiding redirect conflicts while migration is incomplete.
 
+Chunk rebuild coalescing is also migration-aware. When Sodium is installed, the first-party `ChunkBuilder.BuiltChunk` rebuild mixin is not applied so Sodium remains the sole chunk-render owner during migration.
+
 Memory-dedup mixins are also migration-aware. When `ferritecore` is present, the first-party baked-quad accessor and builder mixin are not applied so only one memory owner canonicalizes baked quad storage.
 
 ## Runtime model
@@ -79,7 +81,8 @@ PerformanceManagerClient
     ├── culling/
     │   ├── CullingRuntime
     │   └── VisibilityDecision
-    ├── rendering/        # focused render-path optimizations as implemented
+    ├── rendering/
+    │   └── ChunkRebuildPolicy
     ├── memory/
     │   └── MemoryDeduplicator
     ├── compatibility/    # explicit bypass/integration policy
@@ -103,6 +106,8 @@ The currently implemented first-party behavior is production-owned:
 - modded/custom render types bypass culling;
 - consecutive identical text render-layer buffer lookups inside vanilla text drawing reuse the last consumer instead of repeatedly querying the provider;
 - writable non-static GPU vertex buffers are not shrunk and reallocated when the current allocation already fits the upload; static-write buffers retain vanilla resize behavior;
+- duplicate vanilla chunk rebuild requests are coalesced when they cannot strengthen the already-pending rebuild state; an incoming important rebuild still upgrades a pending normal rebuild;
+- chunk rebuild coalescing is disabled while Sodium is present so the migration-source renderer keeps sole ownership;
 - rendering-efficiency mixins are disabled while ImmediatelyFast is present to keep one active owner during migration;
 - identical vanilla `BakedQuad` vertex arrays are canonicalized during `BasicBakedModel.Builder` assembly so duplicate quads can share backing storage;
 - baked-quad canonicalization cache is concurrent and cleared on every client resource reload so old model arrays are not retained across reload generations;
@@ -145,14 +150,17 @@ Current default:
 rendering.optimizations=true
 ```
 
-The first production rendering subset deliberately targets low-risk redundant work rather than broad renderer replacement:
+The production rendering subset deliberately targets low-risk redundant work before broad renderer replacement:
 
 - text rendering caches the immediately previous render-layer consumer inside a vanilla `TextRenderer.Drawer`, avoiding repeated `VertexConsumerProvider#getBuffer` calls for consecutive glyph work on the same layer;
 - vertex uploads keep an existing writable non-static GPU allocation when it is already large enough instead of shrinking/reallocating it for each smaller upload;
 - static-write GPU buffers preserve vanilla resizing semantics;
-- when ImmediatelyFast is installed, both first-party redirect mixins are rejected by the mixin plugin so the external migration source remains the sole owner of those hooks.
+- vanilla chunk rebuild scheduling drops only requests that cannot strengthen an already-pending rebuild state;
+- a pending normal rebuild still accepts an incoming important request so rebuild priority semantics are preserved;
+- when ImmediatelyFast is installed, the text/GPU redirect mixins are rejected by the mixin plugin;
+- when Sodium is installed, the chunk rebuild mixin is rejected by the mixin plugin.
 
-HUD batching, screen batching, sign atlas buffering, map atlas generation, GL error-check changes, and other ImmediatelyFast features are not assumed equivalent merely because the source mod contains them. They require separate correctness/compatibility proof before adoption.
+HUD batching, screen batching, sign atlas buffering, map atlas generation, GL error-check changes, full chunk mesh replacement, render-region management, translucent sorting, and Fabric Renderer API implementation are not assumed equivalent merely because the reference mods contain them. They require separate correctness/compatibility proof before adoption.
 
 ## Memory efficiency
 
@@ -205,7 +213,7 @@ External performance mods are migration references, not the architecture.
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
 | ImmediatelyFast immediate rendering efficiency | `rendering/` | first low-risk text lookup and GPU resize subset exists; keep external-owner mixin gate until runtime proof is complete |
 | FerriteCore memory reductions | `memory/` | first baked-quad vertex dedup subset exists; keep FerriteCore-owner gate until runtime proof is complete |
-| Sodium chunk/render pipeline | `rendering/` | final large phase; renderer ownership requires dedicated compatibility and benchmark proof |
+| Sodium chunk/render pipeline | `rendering/` | first vanilla chunk-rebuild coalescing foundation exists; Sodium remains the chunk-render owner until mesh/region/buffer/FRAPI parity is implemented and proven |
 | Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
 | Sodium Extra | capability-by-capability | retain only performance behavior that fits this contract; cosmetic convenience is out of scope |
 | Chunks Fade In | none | visual effect; not a Performance Manager requirement |
@@ -221,7 +229,7 @@ Implementation order is deliberate:
 3. conservative face/item-frame culling where correctness can be proven;
 4. proven immediate-mode/HUD/screen/buffer optimizations;
 5. targeted memory reductions;
-6. chunk mesh/render-region/GPU-buffer pipeline sufficient to retire Sodium-class renderer dependency;
+6. chunk rebuild/mesh/render-region/GPU-buffer pipeline sufficient to retire Sodium-class renderer dependency;
 7. one familiar LazyBuilder settings surface exposing only meaningful user decisions.
 
 Do not advance a later phase by creating placeholder toggles for behavior that is not implemented.
@@ -242,7 +250,7 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Future settings should remain high-level. Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
+Future settings should remain high-level. Buffer strategies, chunk rebuild coalescing, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.
 
 ## External-source policy
 

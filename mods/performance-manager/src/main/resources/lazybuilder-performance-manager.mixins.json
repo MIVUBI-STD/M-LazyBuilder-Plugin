@@ -9,6 +9,7 @@
     "BlockEntityRenderDispatcherMixin",
     "TextRendererDrawerMixin",
     "VertexBufferMixin",
+    "ChunkBuilderBuiltChunkMixin",
     "BakedQuadAccessor",
     "BasicBakedModelBuilderMixin"
   ],

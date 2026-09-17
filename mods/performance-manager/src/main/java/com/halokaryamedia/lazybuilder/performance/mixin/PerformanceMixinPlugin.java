@@ -13,6 +13,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String MIXIN_PACKAGE = "com.halokaryamedia.lazybuilder.performance.mixin.";
     private static final String TEXT_RENDERER_MIXIN = MIXIN_PACKAGE + "TextRendererDrawerMixin";
     private static final String VERTEX_BUFFER_MIXIN = MIXIN_PACKAGE + "VertexBufferMixin";
+    private static final String CHUNK_REBUILD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBuiltChunkMixin";
     private static final String BAKED_QUAD_ACCESSOR = MIXIN_PACKAGE + "BakedQuadAccessor";
     private static final String BAKED_MODEL_BUILDER_MIXIN = MIXIN_PACKAGE + "BasicBakedModelBuilderMixin";
 
@@ -29,6 +30,10 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if ((TEXT_RENDERER_MIXIN.equals(mixinClassName) || VERTEX_BUFFER_MIXIN.equals(mixinClassName))
                 && FabricLoader.getInstance().isModLoaded("immediatelyfast")) {
+            return false;
+        }
+        if (CHUNK_REBUILD_MIXIN.equals(mixinClassName)
+                && FabricLoader.getInstance().isModLoaded("sodium")) {
             return false;
         }
         if ((BAKED_QUAD_ACCESSOR.equals(mixinClassName) || BAKED_MODEL_BUILDER_MIXIN.equals(mixinClassName))
