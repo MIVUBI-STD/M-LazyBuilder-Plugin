@@ -13,6 +13,7 @@
   let backupCount = 0;
   let loading = true;
   let loadError = '';
+  let updatedAt: Date | null = null;
 
   function formatBytes(bytes?: number | null) {
     if (bytes == null || !Number.isFinite(bytes)) return 'Unavailable';
@@ -23,6 +24,11 @@
   function formatBackupDate(seconds?: number | null) {
     if (!seconds) return 'No backup yet';
     return new Date(seconds * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function snapshotLabel() {
+    if (!updatedAt) return 'Snapshot data';
+    return `Snapshot updated ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
   function activeRuntimes() {
@@ -50,6 +56,7 @@
         backupEstimate = null;
         latestBackup = null;
         backupCount = 0;
+        updatedAt = new Date();
         return;
       }
 
@@ -60,6 +67,7 @@
       backupEstimate = estimate;
       backupCount = backups.length;
       latestBackup = backups[0] ?? null;
+      updatedAt = new Date();
     } catch (value) {
       loadError = value instanceof Error ? value.message : 'Resource information is unavailable.';
     } finally {
@@ -72,7 +80,7 @@
 
 <section class="resource-overview" aria-labelledby="resource-overview-heading">
   <header>
-    <div><h3 id="resource-overview-heading">Resources</h3><p>Capacity and storage signals for this Launcher session.</p></div>
+    <div><h3 id="resource-overview-heading">Resources</h3><p>Capacity and storage signals for this Launcher session. {snapshotLabel()}.</p></div>
     {#if !loading}<button class="refresh-button" onclick={refresh}>Refresh</button>{/if}
   </header>
 
