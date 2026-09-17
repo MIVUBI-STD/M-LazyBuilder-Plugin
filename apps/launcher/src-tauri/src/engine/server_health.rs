@@ -28,13 +28,6 @@ pub struct ServerReadinessSnapshot {
     pub checks: Vec<ServerReadinessCheck>,
 }
 
-/// Compatibility aliases for internal call sites and the existing Tauri command
-/// name. New Rust code should use the readiness names above so runtime condition
-/// and server readiness remain distinct concepts.
-pub type ServerHealthState = ServerReadinessState;
-pub type ServerHealthCheck = ServerReadinessCheck;
-pub type ServerHealthSnapshot = ServerReadinessSnapshot;
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManifestIdentity { workspace_id: String }
