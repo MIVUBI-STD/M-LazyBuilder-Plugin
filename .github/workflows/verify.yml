@@ -45,6 +45,8 @@ jobs:
         run: python scripts/verify_versions.py
       - name: Verify local Launcher packaging contract
         run: python scripts/verify_local_launcher_contract.py
+      - name: Verify Launcher scalability contract
+        run: python scripts/verify_launcher_scalability_contract.py
 
   launcher-check:
     runs-on: windows-latest
