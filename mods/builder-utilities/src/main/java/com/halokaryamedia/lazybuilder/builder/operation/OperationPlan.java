@@ -15,6 +15,18 @@ public record OperationPlan(
 ) {
     public OperationPlan {
         Objects.requireNonNull(operation, "operation");
+        Objects.requireNonNull(operation.id(), "operation.id()");
+        if (operation.type() == null || operation.type().isBlank()) {
+            throw new IllegalArgumentException("operation.type() must not be blank");
+        }
+        Objects.requireNonNull(operation.region(), "operation.region()");
+        Objects.requireNonNull(operation.seed(), "operation.seed()");
+        Objects.requireNonNull(operation.executionBudget(), "operation.executionBudget()");
+        Objects.requireNonNull(operation.cancellationToken(), "operation.cancellationToken()");
+        Objects.requireNonNull(operation.readMode(), "operation.readMode()");
+        Objects.requireNonNull(operation.historyRequirement(), "operation.historyRequirement()");
+        Objects.requireNonNull(operation.cancellationDisposition(), "operation.cancellationDisposition()");
+
         Objects.requireNonNull(workUnits, "workUnits");
         workUnits = List.copyOf(workUnits);
         if (workUnits.isEmpty()) {

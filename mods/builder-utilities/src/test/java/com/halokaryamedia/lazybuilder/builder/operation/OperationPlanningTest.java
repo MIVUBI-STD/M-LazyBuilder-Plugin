@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.operation;
 
+import com.halokaryamedia.lazybuilder.builder.history.HistoryRequirement;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.region.BoxRegion;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
@@ -106,6 +107,21 @@ class OperationPlanningTest {
             @Override
             public CancellationToken cancellationToken() {
                 return cancellation.token();
+            }
+
+            @Override
+            public MutationReadMode readMode() {
+                return MutationReadMode.SNAPSHOT_READ;
+            }
+
+            @Override
+            public HistoryRequirement historyRequirement() {
+                return HistoryRequirement.REQUIRED;
+            }
+
+            @Override
+            public CancellationDisposition cancellationDisposition() {
+                return CancellationDisposition.ROLLBACK;
             }
         };
     }
