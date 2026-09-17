@@ -257,10 +257,15 @@ if "../../plugins/world-manager/src/main/java" in map_build or "../../modules/wo
 if "../../shared/protocol/src/main/java" not in map_build:
     errors.append("Map Manager build is not wired to shared/protocol")
 
-for manager in ("utility-manager", "performance-manager"):
-    build = (ROOT / f"mods/{manager}/build.gradle").read_text(encoding="utf-8")
-    if "../../shared/protocol" in build:
-        errors.append(f"{manager} has an unintended shared World-Manager protocol dependency")
+utility_build = (ROOT / "mods/utility-manager/build.gradle").read_text(encoding="utf-8")
+if "../../shared/protocol/src/main/java" not in utility_build:
+    errors.append("Utility Manager build is not wired to the shared utility telemetry protocol")
+if "include 'com/halokaryamedia/lazybuilder/utility/**'" not in utility_build:
+    errors.append("Utility Manager shared protocol source must remain scoped to the utility package")
+
+performance_build = (ROOT / "mods/performance-manager/build.gradle").read_text(encoding="utf-8")
+if "../../shared/protocol" in performance_build:
+    errors.append("performance-manager has an unintended shared protocol dependency")
 
 legacy_protocol_paths = (
     "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
