@@ -156,6 +156,11 @@ pub async fn server_recover_detached(
     .map_err(classify_detached_recovery_error)
 }
 
+fn is_lifecycle_lease_busy(lower: &str) -> bool {
+    lower.contains("server lifecycle change is currently in progress")
+        || lower.contains("server lifecycle lock after repeated concurrent changes")
+}
+
 fn classify_server_start_error(message: String) -> CommandError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("detached paper process") {
@@ -173,18 +178,24 @@ fn classify_server_start_error(message: String) -> CommandError {
     if lower.contains("operation is still changing this server") {
         return CommandError::recoverable_action("OPERATION_BUSY", message, RecoveryAction::OpenActivity);
     }
-    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+    if is_lifecycle_lease_busy(&lower) {
         return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
     }
-    if lower.contains("memory") || lower.contains("headroom") || lower.contains("concurrent server") {
+    if lower.contains("at most 3 paper servers") {
         return CommandError::recoverable_action("SERVER_CAPACITY_REACHED", message, RecoveryAction::StopServer);
+    }
+    if lower.contains("not enough available ram to start another paper server safely") {
+        return CommandError::recoverable_action("SERVER_MEMORY_PRESSURE", message, RecoveryAction::ReviewServerHealth);
+    }
+    if lower.contains("could not find a free paper listen port") {
+        return CommandError::recoverable_action("SERVER_PORT_UNAVAILABLE", message, RecoveryAction::ReviewServerHealth);
     }
     CommandError::recoverable_action("SERVER_START_FAILED", message, RecoveryAction::RetryOperation)
 }
 
 fn classify_server_stop_error(message: String) -> CommandError {
     let lower = message.to_ascii_lowercase();
-    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+    if is_lifecycle_lease_busy(&lower) {
         return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
     }
     CommandError::recoverable_action("SERVER_STOP_FAILED", message, RecoveryAction::RetryOperation)
@@ -192,7 +203,7 @@ fn classify_server_stop_error(message: String) -> CommandError {
 
 fn classify_detached_recovery_error(message: String) -> CommandError {
     let lower = message.to_ascii_lowercase();
-    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+    if is_lifecycle_lease_busy(&lower) {
         return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
     }
     CommandError::recoverable_action("DETACHED_RECOVERY_FAILED", message, RecoveryAction::RetryOperation)
