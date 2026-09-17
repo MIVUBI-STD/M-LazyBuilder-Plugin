@@ -12,6 +12,7 @@
   const BACKUP_PAGE_SIZE = 20;
   const BACKUP_COUNT_ADVISORY = 10;
   const BACKUP_BYTES_ADVISORY = 20 * 1024 ** 3;
+  const MIN_EXTRA_HEADROOM_BYTES = 1024 ** 3;
 
   let workspace: WorkspaceEntry | null = null;
   let backups: ServerBackupSummary[] = [];
@@ -36,6 +37,26 @@
 
   function formatDate(seconds: number) {
     return new Date(seconds * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function storagePressure() {
+    if (!estimate || estimate.availableBytes == null) return null;
+    if (estimate.availableBytes < estimate.requiredBytes) {
+      return {
+        tone: 'danger',
+        title: 'Not enough free space for a full backup',
+        detail: `LazyBuilder estimates ${formatBytes(estimate.requiredBytes)} is required, but only ${formatBytes(estimate.availableBytes)} is currently available.`
+      };
+    }
+    const extraHeadroom = Math.max(MIN_EXTRA_HEADROOM_BYTES, Math.ceil(estimate.requiredBytes * 0.25));
+    if (estimate.availableBytes < estimate.requiredBytes + extraHeadroom) {
+      return {
+        tone: 'warning',
+        title: 'Backup storage is getting tight',
+        detail: `The backup should fit, but only about ${formatBytes(estimate.availableBytes - estimate.requiredBytes)} would remain after the estimated backup space is reserved.`
+      };
+    }
+    return null;
   }
 
   function closeConfirmation() {
@@ -149,6 +170,7 @@
     ? backups.reduce((oldest, backup) => backup.createdUnixSeconds < oldest.createdUnixSeconds ? backup : oldest)
     : null;
   $: retentionAdvisory = backups.length >= BACKUP_COUNT_ADVISORY || totalBackupBytes >= BACKUP_BYTES_ADVISORY;
+  $: pressure = storagePressure();
 </script>
 
 <section class="backup-panel" aria-labelledby="backup-heading">
@@ -191,6 +213,13 @@
       <span>Check storage to confirm there is enough free space for a full backup.</span>
       <button class="estimate-button" disabled={estimateBusy || mutationBusy} onclick={calculateEstimate}>{estimateBusy ? 'Calculating…' : estimate ? 'Recalculate storage' : 'Check storage'}</button>
     </div>
+    {#if pressure}
+      <div class:danger={pressure.tone === 'danger'} class="storage-pressure" role={pressure.tone === 'danger' ? 'alert' : undefined}>
+        <strong>{pressure.title}</strong>
+        <span>{pressure.detail}</span>
+        <small>The backend rechecks free space immediately before creating a backup, so this estimate is advisory and may change.</small>
+      </div>
+    {/if}
 
     {#if !serverOffline}
       <div class="offline-note">Stop the server before creating or restoring a full backup so world and plugin data remain consistent.</div>
@@ -227,13 +256,7 @@
 
 {#if restoreCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section
-      use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }}
-      class="confirm-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="restore-backup-title"
-    >
+    <section use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="restore-backup-title">
       <header><div><h3 id="restore-backup-title">Restore this server?</h3><p>Return the complete server to {formatDate(restoreCandidate.createdUnixSeconds)}.</p></div><button class="close-button" disabled={mutationBusy} aria-label="Close restore confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="safety-note"><strong>Your current server will be protected first.</strong><span>LazyBuilder creates a full safety backup before replacing the current server state. Keep the server offline until restore finishes.</span></div>
       <div class="confirm-actions"><button class="cancel-button" disabled={mutationBusy} onclick={closeConfirmation}>Cancel</button><button class="restore-confirm" disabled={mutationBusy || !serverOffline} onclick={restoreBackup}>{restoringId ? 'Restoring…' : 'Restore server'}</button></div>
@@ -243,13 +266,7 @@
 
 {#if deleteCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section
-      use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }}
-      class="confirm-dialog danger-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-backup-title"
-    >
+    <section use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.cancel-button', escapeDisabled: mutationBusy }} class="confirm-dialog danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-backup-title">
       <header><div><h3 id="delete-backup-title">Delete this restore point?</h3><p>{formatDate(deleteCandidate.createdUnixSeconds)} · {formatBytes(deleteCandidate.sourceBytes)}</p></div><button class="close-button" disabled={mutationBusy} aria-label="Close delete restore point confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="delete-note"><strong>This restore point will be permanently removed.</strong><span>The current server and other backups are not affected.</span></div>
       <div class="confirm-actions"><button class="cancel-button" disabled={mutationBusy} onclick={closeConfirmation}>Cancel</button><button class="delete-confirm" disabled={mutationBusy} onclick={deleteBackup}>{deletingId ? 'Deleting…' : 'Delete restore point'}</button></div>
@@ -262,6 +279,7 @@
   .backup-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.backup-heading h3{margin:0;font-size:14px}.backup-heading p{margin:3px 0 0;color:var(--muted);font-size:10px}
   .backup-button,.restore-button,.delete-button,.estimate-button,.show-more{min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.backup-button{padding:7px 12px;border:1px solid var(--accent-border);background:var(--accent-soft);color:#9ee8b9}.restore-button,.delete-button,.estimate-button,.show-more{padding:6px 10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-soft);font-size:10px}.restore-button{border-color:var(--accent-border);color:#b7f0cb}.backup-button:disabled,.restore-button:disabled,.delete-button:disabled,.estimate-button:disabled{opacity:.5;cursor:default}
   .retention-summary,.backup-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.retention-summary>div,.backup-summary>div{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.retention-summary span,.backup-summary span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.retention-summary strong,.backup-summary strong{font-size:11px}.retention-summary strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.retention-note{display:grid;gap:3px;margin-top:8px;padding:10px 11px;border:1px solid #5f5125;border-radius:8px;background:var(--warning-bg)}.retention-note strong{font-size:10px}.retention-note span{color:var(--muted);font-size:9px;line-height:1.45}.estimate-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.estimate-actions span{color:var(--muted);font-size:9px}.show-more{margin-top:10px}
+  .storage-pressure{display:grid;gap:3px;margin-top:8px;padding:10px 11px;border:1px solid #5f5125;border-radius:8px;background:var(--warning-bg)}.storage-pressure.danger{border-color:#6c363d;background:var(--danger-bg)}.storage-pressure strong{font-size:10px}.storage-pressure span{color:var(--text-soft);font-size:9px;line-height:1.45}.storage-pressure small{color:var(--muted);font-size:8px;line-height:1.4}
   .offline-note,.backup-notice{margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.offline-note{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}.backup-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}
   .backup-list{display:grid;margin-top:12px}.backup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-top:1px solid var(--border-soft)}.backup-row:first-child{border-top:0}.backup-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:var(--surface-2);color:var(--muted)}.backup-copy{display:grid;gap:2px;min-width:0}.backup-copy strong{font-size:11px}.backup-copy span{color:var(--muted);font-size:9px}.backup-actions{display:flex;gap:6px}
   .backup-empty{min-height:92px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px}.backup-empty.compact{min-height:84px;flex-direction:column;gap:3px}.backup-empty.compact strong{color:var(--text-soft);font-size:11px}
