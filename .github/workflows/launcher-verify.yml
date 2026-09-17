@@ -110,7 +110,7 @@ jobs:
           )
           python scripts/build_launcher_update_manifest.py \
             --version "$VERSION" \
-            --url "https://github.com/halokaryamedia-source/LazyBuilder-Plugin/releases/download/launcher-v$VERSION/LazyBuilder_${VERSION}_x64-setup.exe" \
+            --url "https://github.com/${GITHUB_REPOSITORY}/releases/download/launcher-v$VERSION/LazyBuilder_${VERSION}_x64-setup.exe" \
             --signature-file .artifacts/updater-contract/example.sig \
             --output .artifacts/updater-contract/latest.json
           python scripts/verify_launcher_update_manifest.py \
