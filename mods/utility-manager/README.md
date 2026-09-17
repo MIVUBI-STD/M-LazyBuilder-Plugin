@@ -74,6 +74,7 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Chat Timestamps: enabled by default and prefixes visible chat lines with a low-contrast local `HH:mm` timestamp while preserving the original text component styling/click behavior;
 - Compact Duplicate Messages: consecutive recognized gameplay/warning lines such as repeated join/leave, game-mode feedback, advancement/challenge feedback, and compact warnings are replaced in place with a single `×N` line within an eight-second window. Player chat and unknown system text are never collapsed. Rewriting is suspended while the user is scrolled up in chat;
 - Signing Indicator Suppression: enabled by default and removes only the visible signing indicator while leaving chat signatures, packets, reporting data, and protocol behavior untouched;
+- Report Button Suppression: enabled by default and hides the report button in the vanilla Social Interactions player list without mutating reportability data, message signatures, packets, or report protocol state;
 - Narrator Suppression: enabled by default and disables narrator mode and narrator hotkey through Minecraft options while retaining Minecraft accessibility infrastructure;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
 - Copy Connection Details: contextual action on the disconnect screen for copying the known server target and disconnect reason;
@@ -107,7 +108,7 @@ The stable presentation categories are intentionally small:
 - `CHAT`: player-to-player communication;
 - `GAME`: normal Minecraft gameplay events such as join, advancement, and game-mode feedback;
 - `SYSTEM`: concise LazyBuilder/server information relevant to the player;
-- `WARNING`: actionable conflicts or degraded behavior;
+- `WARNING`: actionable conflict/degraded behavior;
 - `ERROR`: actionable failures such as invalid commands or failed operations.
 
 Routing policy:
@@ -120,7 +121,7 @@ Routing policy:
 - unknown system text must not be collapsed merely because its rendered text happens to repeat;
 - internal translation keys, stack traces, packet/signing state, and implementation identifiers must not be exposed in normal chat unless explicitly requested for diagnostics.
 
-Signing presentation and signing/reporting protocol behavior remain separate internal concerns. Presentation-only features may hide indicators; packet/signature/reporting behavior must live behind a dedicated `chat/signing` boundary and requires independent protocol verification before replacing No Chat Reports.
+Signing presentation and signing/reporting protocol behavior remain separate internal concerns. Presentation-only features may hide indicators or report controls; packet/signature/reporting behavior must live behind a dedicated `chat/signing` boundary and requires independent protocol verification before replacing No Chat Reports.
 
 The migration target is to retire overlapping external chat/narrator helper mods only after equivalent retained behavior is implemented and verified inside Utility Manager. Do not bundle third-party JARs inside Utility Manager as a shortcut.
 
@@ -134,7 +135,11 @@ Chat Timestamps remain a thin `ChatHud.addMessage(Text)` argument transform rath
 
 Compact Duplicate Messages only rewrites the newest unsigned vanilla `addMessage(Text)` entry. It removes that entry and its visible wrapped lines, then lets vanilla add the compact replacement again so line wrapping remains Minecraft-owned. This path intentionally does not target signed player-chat storage, does not run while chat is scrolled, and resets at connection boundaries. `messages`, `visibleMessages`, `scrolledLines`, and `ChatHudLine.Visible.endOfEntry()` are version-sensitive verification points.
 
-Signing indicator suppression is presentation-only. It must not evolve into packet/signature/reporting mutation inside the ChatHud mixin. Any retained No Chat Reports-equivalent protocol behavior belongs behind a separate signing module with its own tests and runtime verification.
+Signing indicator suppression is presentation-only and is routed through `utility/chat/signing/SigningPresentationPolicy`. It must not evolve into packet/signature/reporting mutation inside the ChatHud mixin.
+
+Report-button suppression is also presentation-only. The Social Interactions entry mixin only changes button visibility after vanilla initialization and intentionally leaves reportability/signature state intact.
+
+Any retained No Chat Reports-equivalent protocol behavior belongs behind the same signing module with its own tests and runtime verification.
 
 Narrator suppression uses Minecraft's own narrator options rather than removing narrator/accessibility classes. Accessibility infrastructure remains available when suppression is disabled.
 
@@ -142,7 +147,7 @@ Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existin
 
 Compact Debug targets `DebugHud.render` and the existing `Keyboard.onKey` debug-input path for Yarn 1.21.4. Treat Minecraft-version upgrades as verification points for these mixins. Keep the renderer thin and keep metric/telemetry state outside the mixin classes.
 
-Keep Chat Draft, chat search, chat timestamps, compact duplicate messages, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, narrator suppression, signing-indicator suppression, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Keep Chat Draft, chat search, chat timestamps, compact duplicate messages, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, narrator suppression, signing-indicator suppression, report-button suppression, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
 
 ## Preferences
 
@@ -157,6 +162,7 @@ chat.keep_draft=true
 chat.search=true
 chat.timestamps=true
 chat.hide_signing_indicators=true
+chat.hide_report_button=true
 accessibility.suppress_narrator=true
 connection.reconnect_button=true
 screenshots.contextual_names=false
