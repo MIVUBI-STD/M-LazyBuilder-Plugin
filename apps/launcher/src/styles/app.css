@@ -20,17 +20,17 @@ body {
   color: var(--text);
 }
 
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { border: 0; color: inherit; }
 button, summary { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible, [tabindex]:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 74%, transparent);
   outline-offset: 2px;
 }
-button:disabled, input:disabled, select:disabled { opacity: .5; cursor: default; }
-input::placeholder { color: var(--muted-2); }
+button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .5; cursor: default; }
+input::placeholder, textarea::placeholder { color: var(--muted-2); }
 
-input, select {
+input, select, textarea {
   min-height: var(--control-height);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -39,8 +39,8 @@ input, select {
   box-shadow: var(--shadow-inset);
   transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
-input:hover:not(:disabled), select:hover:not(:disabled) { background: var(--surface-3); }
-input:focus, select:focus {
+input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) { background: var(--surface-3); }
+input:focus, select:focus, textarea:focus {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   background: var(--surface-2);
   box-shadow: var(--shadow-inset), 0 0 0 3px var(--accent-soft);
@@ -91,15 +91,15 @@ h2 { letter-spacing: -.015em; }
 }
 
 @media (forced-colors: active) {
-  button, input, select, summary, [role="dialog"], .menu-popover {
+  button, input, select, textarea, summary, a, [role="dialog"], .menu-popover {
     border-color: ButtonText !important;
     forced-color-adjust: auto;
   }
-  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible, [tabindex]:focus-visible {
     outline: 2px solid Highlight !important;
     outline-offset: 2px;
   }
-  button:disabled, input:disabled, select:disabled {
+  button:disabled, input:disabled, select:disabled, textarea:disabled {
     opacity: 1;
     color: GrayText !important;
   }
