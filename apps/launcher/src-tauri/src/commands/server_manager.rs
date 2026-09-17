@@ -169,6 +169,9 @@ fn classify_server_start_error(message: String) -> CommandError {
     if lower.contains("still stopping") {
         return CommandError::recoverable_action("SERVER_STOPPING", message, RecoveryAction::WaitForServerStop);
     }
+    if lower.contains("server location is currently unavailable") {
+        return CommandError::recoverable_action("WORKSPACE_UNAVAILABLE", message, RecoveryAction::LocateWorkspace);
+    }
     if lower.contains("minecraft eula") || lower.contains("eula has not been accepted") {
         return CommandError::recoverable_action("EULA_REQUIRED", message, RecoveryAction::AcceptEula);
     }
@@ -274,6 +277,10 @@ fn prepare_managed_start(app: &AppHandle, workspace_id: &str) -> Result<u16, Str
         .ok_or_else(|| "No LazyBuilder server workspace is active.".to_string())?;
     if active.id != workspace_id {
         return Err("Server start target changed while preparing the runtime. Re-open the server and retry.".into());
+    }
+    let active_path = PathBuf::from(&active.path);
+    if !active_path.is_dir() {
+        return Err(format!("Server location is currently unavailable: {}", active_path.display()));
     }
     let resource = format!("workspace:{}", active.id);
     if app.state::<OperationRegistry>().has_active_for_resource(&resource)? {
