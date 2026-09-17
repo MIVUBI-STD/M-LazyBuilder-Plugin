@@ -1,9 +1,24 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { runtimeProduct } from './bridge/runtimeProductFacade';
+import { operationTitle } from './operations/operationPresentation';
 import type { LauncherOperationSnapshot, ServerRuntimeSummary } from './bridge/runtimeApi';
 
 const ACTIVE_OPERATION_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
 const RUNNING_SERVER_STATES = new Set(['Online', 'Starting', 'Stopping', 'Detached']);
+
+export type LauncherCloseRequest = {
+  kind: 'operations' | 'servers' | 'unverified';
+  title: string;
+  message: string;
+  details: string[];
+  confirmLabel: string;
+  dangerous: boolean;
+};
+
+export type LauncherCloseRequestHandler = (
+  request: LauncherCloseRequest,
+  proceed: () => Promise<void>
+) => void;
 
 function activeOperations(operations: LauncherOperationSnapshot[]) {
   return operations.filter((operation) => ACTIVE_OPERATION_STATES.has(operation.state));
@@ -13,49 +28,75 @@ function runningServers(runtimes: ServerRuntimeSummary[]) {
   return runtimes.filter((runtime) => RUNNING_SERVER_STATES.has(runtime.state));
 }
 
-function operationCloseMessage(operations: LauncherOperationSnapshot[]) {
-  const count = operations.length;
-  const names = operations
-    .slice(0, 3)
-    .map((operation) => operation.kind.split('-').join(' '))
-    .join(', ');
-  const remainder = count > 3 ? ` and ${count - 3} more` : '';
-  return `${count} Launcher operation${count === 1 ? ' is' : 's are'} still running (${names}${remainder}). Closing now will interrupt the operation and may require recovery on the next start. Close LazyBuilder anyway?`;
+function operationCloseRequest(operations: LauncherOperationSnapshot[]): LauncherCloseRequest {
+  return {
+    kind: 'operations',
+    title: 'Tasks are still running',
+    message: 'Closing LazyBuilder now will interrupt active work. Interrupted mutations may require recovery the next time the Launcher starts.',
+    details: operations.slice(0, 5).map((operation) => `${operationTitle(operation.kind)} — ${operation.status || 'Running'}`),
+    confirmLabel: 'Close anyway',
+    dangerous: true
+  };
 }
 
-function serverCloseMessage(runtimes: ServerRuntimeSummary[]) {
-  const count = runtimes.length;
-  const names = runtimes.map((runtime) => runtime.workspaceName).join(', ');
-  return `${count} Minecraft server${count === 1 ? ' is' : 's are'} still running (${names}). Close LazyBuilder anyway? Attached servers will be asked to stop; detached processes may continue outside this Launcher session.`;
+function serverCloseRequest(runtimes: ServerRuntimeSummary[]): LauncherCloseRequest {
+  const attached = runtimes.filter((runtime) => runtime.state !== 'Detached').length;
+  const detached = runtimes.length - attached;
+  const behavior = [
+    attached > 0 ? `${attached} managed server${attached === 1 ? '' : 's'} will be asked to stop cleanly.` : '',
+    detached > 0 ? `${detached} external server process${detached === 1 ? '' : 'es'} may continue running outside LazyBuilder.` : ''
+  ].filter(Boolean).join(' ');
+  return {
+    kind: 'servers',
+    title: 'Servers are still running',
+    message: behavior || 'One or more Minecraft servers are still running.',
+    details: runtimes.map((runtime) => `${runtime.workspaceName} — ${runtime.state === 'Online' ? 'Running' : runtime.state === 'Detached' ? 'Running externally' : runtime.state}`),
+    confirmLabel: 'Close LazyBuilder',
+    dangerous: detached > 0
+  };
 }
 
-export async function installLauncherCloseGuard(): Promise<() => void> {
+function unverifiedCloseRequest(): LauncherCloseRequest {
+  return {
+    kind: 'unverified',
+    title: 'Close safety could not be verified',
+    message: 'LazyBuilder could not confirm whether tasks or servers are still active. Closing may interrupt work or leave a server running.',
+    details: [],
+    confirmLabel: 'Close anyway',
+    dangerous: true
+  };
+}
+
+export async function installLauncherCloseGuard(onRequest: LauncherCloseRequestHandler): Promise<() => void> {
   if (import.meta.env.MODE === 'visual-preview') return () => {};
 
   const appWindow = getCurrentWindow();
   return appWindow.onCloseRequested(async (event) => {
     event.preventDefault();
+    const proceed = async () => appWindow.destroy();
+
     try {
       const operations = activeOperations(await runtimeProduct.operations.list());
       if (operations.length > 0) {
-        if (window.confirm(operationCloseMessage(operations))) await appWindow.destroy();
+        onRequest(operationCloseRequest(operations), proceed);
         return;
       }
 
       const settings = await runtimeProduct.settings.get();
       if (!settings.confirmCloseWhileServerRunning) {
-        await appWindow.destroy();
+        await proceed();
         return;
       }
 
       const runtimes = runningServers(await runtimeProduct.server.runtimes());
-      if (runtimes.length === 0 || window.confirm(serverCloseMessage(runtimes))) {
-        await appWindow.destroy();
+      if (runtimes.length === 0) {
+        await proceed();
+        return;
       }
+
+      onRequest(serverCloseRequest(runtimes), proceed);
     } catch {
-      if (window.confirm('LazyBuilder could not verify active operations or server state. Close the Launcher anyway?')) {
-        await appWindow.destroy();
-      }
+      onRequest(unverifiedCloseRequest(), proceed);
     }
   });
 }
