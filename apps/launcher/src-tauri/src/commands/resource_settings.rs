@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::resource_settings::{self, ResourceUpdateRequest, ServerResourceProfile};
 use crate::engine::server_start_lock::ServerStartLease;
@@ -22,7 +22,7 @@ pub async fn server_resource_save(
     let operation = app
         .state::<OperationRegistry>()
         .begin_exclusive("save-server-resources", &resource, false)
-        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -32,7 +32,11 @@ pub async fn server_resource_save(
         let _start_lease = match ServerStartLease::acquire() {
             Ok(value) => value,
             Err(message) => {
-                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                let error = CommandError::recoverable_action(
+                    "SERVER_START_BUSY",
+                    message,
+                    RecoveryAction::WaitForServerStart,
+                );
                 fail_operation(&operations, &operation_id, &error);
                 return Err(error);
             }
@@ -51,7 +55,11 @@ pub async fn server_resource_save(
                 Ok(profile)
             }
             Err(message) => {
-                let error = CommandError::recoverable("RESOURCE_SETTINGS_SAVE_FAILED", message, "Review server settings and retry");
+                let error = CommandError::recoverable_action(
+                    "RESOURCE_SETTINGS_SAVE_FAILED",
+                    message,
+                    RecoveryAction::RetryOperation,
+                );
                 fail_operation(&operations, &operation_id, &error);
                 Err(error)
             }
