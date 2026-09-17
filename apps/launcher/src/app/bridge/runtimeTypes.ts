@@ -1,4 +1,4 @@
-export type DiagnosticSummary = { launcherVersion: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
+export type DiagnosticSummary = { launcherVersion: string; buildCommit?: string; buildChannel?: string; buildTarget?: string; launcherLogPath: string; workspaceName?: string | null; workspacePath?: string | null; minecraftVersion?: string | null; serverPlatform?: string | null; paperBuild?: number | null; serverState: string; pid?: number | null; javaVersion: string; maxMemoryMb: number };
 export type StartupStepState = 'READY' | 'WARNING';
 export type StartupStep = { key: string; state: StartupStepState; summary: string; details: string };
 export type StartupReport = { ready: boolean; degraded: boolean; startedAtUnixSeconds: number; completedAtUnixSeconds: number; runtimeTempPath?: string | null; steps: StartupStep[] };
