@@ -4,18 +4,6 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-pub fn load<T: DeserializeOwned>(path: &Path, label: &str) -> Result<Option<T>, String> {
-    recover(path, label)?;
-    if !safe_path::entry_exists(path, label)? {
-        return Ok(None);
-    }
-    safe_path::ensure_regular_file(path, label)?;
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))?;
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|error| format!("Could not parse {label}: {error}"))
-}
-
 pub fn read<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, String> {
     safe_path::ensure_regular_file(path, label)?;
     let text = fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))?;
