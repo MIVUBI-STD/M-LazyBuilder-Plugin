@@ -103,9 +103,14 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.runOnClient(client -> {
             CreativeInventoryScreen screen = (CreativeInventoryScreen) client.currentScreen;
             FabricCreativeInventoryScreen fabricScreen = (FabricCreativeInventoryScreen) screen;
-            fabricScreen.setSelectedItemGroup(ItemGroups.getBuildingBlocks());
-            if (fabricScreen.getSelectedItemGroup() != ItemGroups.getBuildingBlocks()) {
-                throw new AssertionError("Creative test did not start from Building Blocks");
+            var searchGroup = ItemGroups.getSearchGroup();
+            var startingGroup = ItemGroups.getGroupsToDisplay().stream()
+                    .filter(group -> group != searchGroup)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("Creative inventory exposed no non-search item group"));
+            fabricScreen.setSelectedItemGroup(startingGroup);
+            if (fabricScreen.getSelectedItemGroup() != startingGroup) {
+                throw new AssertionError("Creative test did not start from a non-search item group");
             }
         });
 
