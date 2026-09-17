@@ -1,17 +1,48 @@
+export type RecoveryAction =
+  | 'ACCEPT_EULA'
+  | 'LOCATE_WORKSPACE'
+  | 'OPEN_ACTIVITY'
+  | 'OPEN_LOGS'
+  | 'RECONNECT_CLIENT_PROFILE'
+  | 'REPAIR_SERVER'
+  | 'RESTART_LAUNCHER'
+  | 'RETRY_OPERATION'
+  | 'REVIEW_SERVER_HEALTH'
+  | 'STOP_SERVER'
+  | 'WAIT_FOR_SERVER_START';
+
 export type RuntimeCommandError = {
   code: string;
   message: string;
   details?: string;
   recoverable?: boolean;
-  action?: string | null;
+  action?: RecoveryAction | null;
   correlationId?: string;
 };
+
+const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
+  'ACCEPT_EULA',
+  'LOCATE_WORKSPACE',
+  'OPEN_ACTIVITY',
+  'OPEN_LOGS',
+  'RECONNECT_CLIENT_PROFILE',
+  'REPAIR_SERVER',
+  'RESTART_LAUNCHER',
+  'RETRY_OPERATION',
+  'REVIEW_SERVER_HEALTH',
+  'STOP_SERVER',
+  'WAIT_FOR_SERVER_START'
+]);
+
+function recoveryAction(value: unknown): RecoveryAction | null {
+  return typeof value === 'string' && RECOVERY_ACTIONS.has(value) ? (value as RecoveryAction) : null;
+}
 
 export class RuntimeError extends Error {
   readonly code: string;
   readonly details: string;
   readonly recoverable: boolean;
-  readonly action?: string | null;
+  readonly action: RecoveryAction | null;
   readonly correlationId: string;
 
   constructor(error: RuntimeCommandError) {
@@ -34,7 +65,7 @@ export function runtimeError(value: unknown): RuntimeCommandError {
         message: candidate.message,
         details: typeof candidate.details === 'string' ? candidate.details : '',
         recoverable: candidate.recoverable === true,
-        action: typeof candidate.action === 'string' ? candidate.action : null,
+        action: recoveryAction(candidate.action),
         correlationId: typeof candidate.correlationId === 'string' ? candidate.correlationId : ''
       };
     }
