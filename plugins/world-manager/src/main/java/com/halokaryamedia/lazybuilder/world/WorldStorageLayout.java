@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -99,18 +100,33 @@ public record WorldStorageLayout(
 
     public void ensureDirectories() {
         try {
-            Files.createDirectories(worldsRoot);
-            Files.createDirectories(importsRoot);
-            Files.createDirectories(exportsRoot);
-            Files.createDirectories(backupsRoot);
-            Files.createDirectories(archivesRoot);
-            Files.createDirectories(workRoot);
-            Files.createDirectories(transferRoot);
-            Files.createDirectories(conversionRoot);
+            List<Path> ownedDirectories = List.of(
+                    worldsRoot,
+                    importsRoot,
+                    exportsRoot,
+                    backupsRoot,
+                    archivesRoot,
+                    workRoot,
+                    transferRoot,
+                    conversionRoot
+            );
+            for (Path directory : ownedDirectories) Files.createDirectories(directory);
             Path registryParent = registryPath.getParent();
             if (registryParent != null) Files.createDirectories(registryParent);
+
+            // Filesystem containment checks elsewhere are intentionally lexical and direct-child scoped.
+            // Fail closed here so an owned storage root cannot silently redirect those operations through
+            // a symbolic link into an unrelated filesystem location.
+            for (Path directory : ownedDirectories) requireOwnedDirectory(directory);
+            if (registryParent != null) requireOwnedDirectory(registryParent);
         } catch (IOException exception) {
-            throw new IllegalStateException("Failed to create LazyBuilder World-Manager storage directories", exception);
+            throw new IllegalStateException("Failed to create safe LazyBuilder World-Manager storage directories", exception);
+        }
+    }
+
+    private static void requireOwnedDirectory(Path directory) throws IOException {
+        if (!Files.isDirectory(directory) || Files.isSymbolicLink(directory)) {
+            throw new IOException("World-Manager storage directory is missing or unsafe: " + directory);
         }
     }
 }
