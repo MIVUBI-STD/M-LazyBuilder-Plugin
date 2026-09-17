@@ -6,6 +6,7 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { dialogFocus } from '../app/dialogFocus';
   import { RuntimeError } from '../app/bridge/runtimeApi';
+  import type { RecoveryNavigationTarget } from '../app/recoveryNavigation';
   import type {
     DiagnosticSummary,
     RuntimeUpdateStatus,
@@ -22,13 +23,15 @@
     page,
     initialProvisioning = null,
     onChanged,
-    onWorkspaceUnavailable
+    onWorkspaceUnavailable,
+    onRecoveryNavigate
   }: {
     server: WorkspaceEntry;
     page: ActiveServerPage;
     initialProvisioning?: WorkspaceProvisioningStatus | null;
     onChanged: () => Promise<void> | void;
     onWorkspaceUnavailable: (message: string) => Promise<void> | void;
+    onRecoveryNavigate: (target: RecoveryNavigationTarget) => void;
   } = $props();
 
   let provisioning = $state<WorkspaceProvisioningStatus | null>(initialProvisioning);
@@ -303,7 +306,7 @@
       <div class="setup-footer"><details class="setup-details"><summary>Setup details</summary><div class="setup-steps"><span class:done={provisioning.workspaceCreated}>Server folder</span><span class:done={provisioning.javaReady}>Java</span><span class:done={provisioning.paperReady}>Paper</span><span class:done={provisioning.coreModulesReady}>Components</span><span class:done={provisioning.configReady}>Configuration</span><span class:done={provisioning.eulaAccepted}>EULA</span></div></details>{#if !provisioning.javaReady || !provisioning.paperReady || !provisioning.coreModulesReady || !provisioning.configReady}<button class="primary-button" disabled={provisioningServer} onclick={prepareServer}>{provisioningServer ? 'Preparing…' : 'Prepare server'}</button>{:else if !provisioning.eulaAccepted}<button class="primary-button" disabled={acceptingEula} onclick={acceptEula}>{acceptingEula ? 'Saving…' : 'Accept EULA'}</button>{/if}</div>
     </section>
   {/if}
-  {#if page === 'Overview'}<Dashboard serverName={server.name} {onWorkspaceUnavailable} />{:else if page === 'Worlds'}<Worlds />{:else if page === 'Plugins'}<Plugins />{:else}<Settings />{/if}
+  {#if page === 'Overview'}<Dashboard serverName={server.name} {onWorkspaceUnavailable} {onRecoveryNavigate} />{:else if page === 'Worlds'}<Worlds {onRecoveryNavigate} />{:else if page === 'Plugins'}<Plugins />{:else}<Settings />{/if}
 </main>
 
 {#if managementMode === 'active-actions'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}><div use:dialogFocus={{ onEscape: closeManagement, initialFocusSelector: '.action-list button' }} class="dialog action-dialog" role="dialog" aria-modal="true" aria-label={`Manage ${server.name}`}><div class="dialog-heading"><div><h2>Manage {server.name}</h2><p>Open its folder, duplicate it, remove it from the library, or delete it.</p></div><button class="icon-button" aria-label="Close server management" onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="action-list"><button onclick={openServerFolder}>Open folder</button><button onclick={beginDuplicate}>Duplicate server</button><button onclick={() => (managementMode = 'remove')}>Remove from library</button><button class="danger-action" onclick={() => (managementMode = 'delete-review')}>Delete server…</button></div></div></div>{/if}
