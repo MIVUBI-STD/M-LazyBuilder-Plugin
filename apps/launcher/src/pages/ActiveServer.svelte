@@ -170,12 +170,16 @@
     managementError = '';
   }
 
-  function closeManagement() {
-    if (managementBusy) return;
+  function resetManagement() {
     managementMode = null;
     managementError = '';
     duplicateEstimate = null;
     deleteTypedName = '';
+  }
+
+  function closeManagement() {
+    if (managementBusy) return;
+    resetManagement();
   }
 
   async function openServerFolder() {
@@ -219,7 +223,7 @@
     managementError = '';
     try {
       await runtimeProduct.workspace.duplicate(server.id, duplicateParent, duplicateName.trim());
-      closeManagement();
+      resetManagement();
       await onChanged();
     } catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
@@ -230,7 +234,7 @@
     managementError = '';
     try {
       await runtimeProduct.workspace.removeFromLibrary(server.id);
-      closeManagement();
+      resetManagement();
       await onChanged();
     } catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
@@ -242,7 +246,7 @@
     managementError = '';
     try {
       await runtimeProduct.workspace.delete(server.id, deleteTypedName);
-      closeManagement();
+      resetManagement();
       await onChanged();
     } catch (error) { managementError = friendlyError(error); }
     finally { managementBusy = false; }
