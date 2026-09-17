@@ -190,7 +190,7 @@
 
   <ResourceOverview />
   <HealthPanel onRepaired={refreshAll} />
-  <BackupPanel onRestored={refreshAll} />
+  <BackupPanel serverState={snapshot.state} onRestored={refreshAll} />
 </section>
 
 <ServerConsole open={consoleOpen} onClose={() => (consoleOpen = false)} />
