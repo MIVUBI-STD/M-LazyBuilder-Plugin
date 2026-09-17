@@ -205,9 +205,17 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.waitTicks(4);
     }
 
-    private static void configureViewport(ClientGameTestContext context, int width, int height, int guiScale) {
-        context.resizeWindow(width, height);
-        context.runOnClient(client -> client.options.getGuiScale().setValue(guiScale));
-        context.waitTicks(4);
+    private static void configureViewport(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale
+    ) {
+        context.runOnClient(client -> {
+            client.options.getGuiScale().setValue(guiScale);
+            client.getWindow().setWindowedSize(width, height);
+            client.onResolutionChanged();
+        });
+        context.waitTicks(10);
     }
 }
