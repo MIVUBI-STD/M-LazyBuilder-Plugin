@@ -19,6 +19,7 @@ pub enum RecoveryAction {
     StopServer,
     UseServerControls,
     WaitForServerStart,
+    WaitForServerStop,
 }
 
 impl RecoveryAction {
@@ -40,6 +41,7 @@ impl RecoveryAction {
             Self::StopServer => "STOP_SERVER",
             Self::UseServerControls => "USE_SERVER_CONTROLS",
             Self::WaitForServerStart => "WAIT_FOR_SERVER_START",
+            Self::WaitForServerStop => "WAIT_FOR_SERVER_STOP",
         }
     }
 }
@@ -131,5 +133,6 @@ mod tests {
         assert_eq!(RecoveryAction::ReviewPlugins.as_code(), "REVIEW_PLUGINS");
         assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
         assert_eq!(RecoveryAction::UseServerControls.as_code(), "USE_SERVER_CONTROLS");
+        assert_eq!(RecoveryAction::WaitForServerStop.as_code(), "WAIT_FOR_SERVER_STOP");
     }
 }
