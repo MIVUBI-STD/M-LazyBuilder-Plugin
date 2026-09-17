@@ -34,7 +34,7 @@
     {
       "id": "launcher-settings-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/launcher_settings.rs",
-      "markers": ["recover_atomic_file", "cleanup_recovery_files", "metadata_entry_exists", "sync_all"],
+      "markers": ["persistence::recover_atomic_file", "persistence::cleanup_recovery_files", "persistence::metadata_entry_exists", "persistence::write_json_atomically"],
       "testMarkers": ["interrupted_settings_publish_prefers_previous_committed_copy", "settings_staging_recovers_when_no_committed_copy_exists", "malformed_main_settings_preserve_recovery_evidence"]
     },
     {
@@ -135,7 +135,7 @@
     {
       "id": "world-task-exceeds-frontend-duration",
       "owner": "apps/launcher/src/pages/Worlds.svelte",
-      "markers": ["World Manager owns task lifetime", "while (pageActive)", "runtimeProduct.worlds.tasks()", "recoverActiveTask"],
+      "markers": ["TASK_POLL_VISIBLE_MS", "TASK_POLL_HIDDEN_MS", "while (pageActive)", "runtimeProduct.worlds.tasks()", "recoverActiveTask"],
       "forbidMarkers": ["TASK_TIMEOUT_MS", "taking unusually long"]
     },
     {
