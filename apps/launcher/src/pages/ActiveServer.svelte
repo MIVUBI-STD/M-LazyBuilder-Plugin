@@ -34,7 +34,7 @@
     onRecoveryNavigate: (target: RecoveryNavigationTarget) => void;
   } = $props();
 
-  let provisioning = $state<WorkspaceProvisioningStatus | null>(initialProvisioning);
+  let provisioning = $state<WorkspaceProvisioningStatus | null>(null);
   let runtimeUpdates = $state<RuntimeUpdateStatus | null>(null);
   let diagnostics = $state<DiagnosticSummary | null>(null);
   let surfaceError = $state('');
