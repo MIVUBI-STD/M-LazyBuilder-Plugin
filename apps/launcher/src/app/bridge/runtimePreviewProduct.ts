@@ -66,14 +66,14 @@ const previewStartup: StartupReport = {
   runtimeTempPath: 'C:\\Users\\Builder\\AppData\\Local\\LazyBuilder\\temp',
   steps: [
     { key: 'runtime-environment', state: 'READY', summary: 'Runtime environment ready', details: 'Preview runtime.' },
-    { key: 'launcher-settings', state: 'READY', summary: 'Launcher settings ready', details: 'Settings schema 1 loaded.' },
+    { key: 'launcher-settings', state: 'READY', summary: 'Launcher settings ready', details: 'Settings schema 2 loaded; update channel: stable.' },
     { key: 'workspace-registry', state: 'READY', summary: 'Server library ready', details: 'Registry loaded.' },
     { key: 'server-restore-recovery', state: 'READY', summary: 'Server restore state reconciled', details: 'No interrupted restore requires recovery.' },
     { key: 'server-process-reconciliation', state: 'READY', summary: 'Background server state reconciled', details: 'No recovery required.' }
   ]
 };
 
-let previewSettings: LauncherSettings = { schemaVersion: 1, rememberLastServer: true, confirmCloseWhileServerRunning: true, autoCheckUpdates: true, updateChannel: 'stable' };
+let previewSettings: LauncherSettings = { schemaVersion: 2, rememberLastServer: true, confirmCloseWhileServerRunning: true, autoCheckUpdates: false, updateChannel: 'stable' };
 
 function params() { return typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search); }
 function previewKind() { return params().get('preview') ?? 'active'; }
