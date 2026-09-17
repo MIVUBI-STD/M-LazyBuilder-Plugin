@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ServerHealthState { Ready, NeedsAttention, Unavailable, Busy }
+pub enum ServerReadinessState { Ready, NeedsAttention, Unavailable, Busy }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ServerHealthCheck {
+pub struct ServerReadinessCheck {
     pub key: String,
     pub ready: bool,
     pub summary: String,
@@ -19,27 +19,34 @@ pub struct ServerHealthCheck {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ServerHealthSnapshot {
+pub struct ServerReadinessSnapshot {
     pub workspace_id: String,
     pub workspace_name: String,
-    pub state: ServerHealthState,
+    pub state: ServerReadinessState,
     pub ready: bool,
     pub running: bool,
-    pub checks: Vec<ServerHealthCheck>,
+    pub checks: Vec<ServerReadinessCheck>,
 }
+
+/// Compatibility aliases for internal call sites and the existing Tauri command
+/// name. New Rust code should use the readiness names above so runtime condition
+/// and server readiness remain distinct concepts.
+pub type ServerHealthState = ServerReadinessState;
+pub type ServerHealthCheck = ServerReadinessCheck;
+pub type ServerHealthSnapshot = ServerReadinessSnapshot;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManifestIdentity { workspace_id: String }
 
-pub fn inspect(workspace_id: &str) -> Result<ServerHealthSnapshot, String> {
+pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
     let entry = workspace_registry::get(workspace_id)?;
     let root = PathBuf::from(&entry.path);
     let mut checks = Vec::new();
 
     if !root.is_dir() {
         checks.push(check("workspace-location", false, "Server location unavailable", &entry.path, false));
-        return Ok(ServerHealthSnapshot { workspace_id: entry.id, workspace_name: entry.name, state: ServerHealthState::Unavailable, ready: false, running: false, checks });
+        return Ok(ServerReadinessSnapshot { workspace_id: entry.id, workspace_name: entry.name, state: ServerReadinessState::Unavailable, ready: false, running: false, checks });
     }
     checks.push(check("workspace-location", true, "Server location available", &entry.path, false));
 
@@ -99,13 +106,13 @@ pub fn inspect(workspace_id: &str) -> Result<ServerHealthSnapshot, String> {
     let runtime_ready = manifest_ready && config_ready && paper_ready && java_ready && core_modules_ready && eula_ready;
     let ready = runtime_ready && !storage_critical;
     let state = if running {
-        ServerHealthState::Busy
+        ServerReadinessState::Busy
     } else if !runtime_ready || storage_warning {
-        ServerHealthState::NeedsAttention
+        ServerReadinessState::NeedsAttention
     } else {
-        ServerHealthState::Ready
+        ServerReadinessState::Ready
     };
-    Ok(ServerHealthSnapshot { workspace_id: entry.id, workspace_name: entry.name, state, ready, running, checks })
+    Ok(ServerReadinessSnapshot { workspace_id: entry.id, workspace_name: entry.name, state, ready, running, checks })
 }
 
 fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String> {
@@ -125,15 +132,15 @@ fn read_eula(path: &Path) -> Result<bool, String> {
     Ok(text.lines().any(|line| line.trim().eq_ignore_ascii_case("eula=true")))
 }
 
-fn check(key: &str, ready: bool, summary: &str, details: &str, repairable: bool) -> ServerHealthCheck {
-    ServerHealthCheck { key: key.into(), ready, summary: summary.into(), details: details.into(), repairable }
+fn check(key: &str, ready: bool, summary: &str, details: &str, repairable: bool) -> ServerReadinessCheck {
+    ServerReadinessCheck { key: key.into(), ready, summary: summary.into(), details: details.into(), repairable }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn health_checks_keep_repairability_explicit() {
+    fn readiness_checks_keep_repairability_explicit() {
         let item = check("paper-runtime", false, "missing", "paper.jar", true);
         assert!(item.repairable);
         assert!(!item.ready);
