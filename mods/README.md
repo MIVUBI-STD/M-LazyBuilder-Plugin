@@ -1,12 +1,14 @@
 # LazyBuilder Fabric Mods
 
-LazyBuilder client-side functionality is organized as exactly three Manager-owned Fabric mods.
+LazyBuilder client-side functionality is organized as independent Fabric modules with explicit ownership.
 
 ```text
 mods/
-├── map-manager/          implemented / scope locked
-├── utility-manager/      implemented / scope locked
-└── performance-manager/  implemented baseline / scope locked
+├── map-manager/          world / map / transfer workflow
+├── utility-manager/      passive non-building convenience
+├── performance-manager/  performance/resource policy
+├── terraform-manager/    legacy/prototype terrain lane under evaluation
+└── builder-utilities/    Axiom-first building extension layer
 ```
 
 ## Ownership
@@ -14,10 +16,33 @@ mods/
 - **Map Manager** — world/map workflow, navigation, transfer UI, world settings UI, current managed-world state, Map Export Area, and Fabric-to-Paper World-Manager transport.
 - **Utility Manager** — passive non-building client convenience.
 - **Performance Manager** — performance/resource observation and the narrow background-FPS fallback that yields to Dynamic FPS.
+- **Terraform Manager** — existing LazyBuilder terrain prototype; its long-term ownership is evaluated against the Axiom-first builder architecture rather than expanded independently.
+- **Builder Utilities** — Axiom-first extension point for building capabilities that are missing from Axiom. Axiom remains the primary editor and UX. FAWE and ezEdits are reference/donor implementations only; Builder Utilities must not introduce them as permanent runtime authorities.
 
-Each Manager is one Fabric mod and one output JAR. Managers do not import another Manager's implementation packages.
+Each Manager/feature module is one Fabric mod and one output JAR. Modules do not import another LazyBuilder Manager's implementation packages.
 
-Building/editing remains owned by Vanilla, Axiom, WorldEdit/FAWE, MetaBrushes, and other specialist tools. LazyBuilder must not add a duplicate generic build-tool layer.
+## Builder architecture
 
-Architecture lock: `docs/04-system/client-cross-manager-audit-lock.md`.
+The previous rule that LazyBuilder must not own a building/editing layer is superseded for the Builder Utilities scope by the explicit product requirement to extend Axiom while preserving Axiom as the primary editor.
+
+```text
+Axiom original editor / UX
+        ↓
+LazyBuilder Builder Utilities
+        ↓
+Axiom public client API first
+        ↓
+LazyBuilder-native missing capabilities
+```
+
+Rules:
+
+- preserve original Axiom behavior unless a specific missing capability requires an extension;
+- use Axiom's public client API before considering internal hooks or mixins;
+- do not copy or repackage Axiom code into LazyBuilder;
+- do not make FAWE or ezEdits permanent runtime dependencies merely to reuse their behavior;
+- migrate only capabilities that materially improve Axiom, implemented under LazyBuilder ownership;
+- keep world/server authority and shared wire semantics in their existing canonical owners.
+
+Architecture boundary: `docs/04-system/client-cross-manager-audit-lock.md`.
 Proof handoff: `docs/05-operations/client-implementation-proof-handoff.md`.

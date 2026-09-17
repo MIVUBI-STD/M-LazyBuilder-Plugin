@@ -1,12 +1,10 @@
-# Client Cross-Manager Audit Lock
+# Client Cross-Manager Ownership Lock
 
 ## Purpose
 
-This document locks the current Map Manager, Utility Manager, and Performance Manager boundaries after the P0-P3 client cleanup.
+This document locks the independent ownership boundaries of the LazyBuilder client modules. The earlier three-Manager-only lock is superseded by the explicit Builder Utilities product scope: building extensions are now allowed, but Axiom remains the primary editor/UX and the existing Managers remain independent.
 
-The goal is to keep the three Managers independent, non-overlapping, first-party where LazyBuilder requires behavior, and free from unnecessary runtime coupling.
-
-## Final ownership model
+## Current ownership model
 
 ```text
 LazyBuilder Client Suite
@@ -14,131 +12,95 @@ LazyBuilder Client Suite
 │   └── world / map / transfer workflow
 ├── Utility Manager
 │   └── passive generic client convenience
-└── Performance Manager
-    └── first-party performance policy / diagnostics
+├── Performance Manager
+│   └── first-party performance policy / diagnostics
+├── Terraform Manager
+│   └── existing terrain prototype under evaluation
+└── Builder Utilities
+    └── Axiom-first builder extension layer
 ```
 
-Each Manager is one Fabric mod and one output JAR. Internal feature groups are not separate mods.
+Each module is one Fabric mod and one output JAR. Internal feature groups are not separate mods.
 
-## Cross-manager dependency audit
+## Cross-module dependency rules
 
 ### Map Manager
 
 Allowed dependencies:
-
 - Minecraft/Fabric client APIs;
 - shared protocol types required by the World-Manager wire contract.
 
 Forbidden dependencies:
-
-- Utility Manager implementation packages;
-- Performance Manager implementation packages.
-
-Map Manager owns its own workload discipline. Performance Manager does not reach into Map Manager implementation packages to schedule map work.
+- other LazyBuilder Manager implementation packages.
 
 ### Utility Manager
 
 Allowed dependencies:
-
-- Minecraft/Fabric client APIs only for its current feature set.
+- Minecraft/Fabric client APIs for passive convenience behavior.
 
 Forbidden dependencies:
-
-- Map Manager implementation packages;
-- Performance Manager implementation packages;
+- other LazyBuilder Manager implementation packages;
+- building/editing ownership;
 - shared World-Manager protocol for generic convenience behavior.
-
-Utility Manager remains screen/event-driven with no client tick loop, poller, worker, or permanent HUD.
 
 ### Performance Manager
 
 Allowed dependencies:
-
 - Minecraft/Fabric client APIs.
 
 Forbidden dependencies:
+- other LazyBuilder Manager implementation packages;
+- mandatory runtime dependency on external optimization mods.
 
-- Map Manager implementation packages;
-- Utility Manager implementation packages;
-- mandatory runtime dependency on an external optimization mod.
+### Builder Utilities
 
-Required LazyBuilder performance behavior is first-party and LazyBuilder-maintained. External optimization mods may coexist, but they are not authoritative owners for required LazyBuilder behavior.
+Allowed dependencies:
+- Minecraft/Fabric client APIs;
+- the exact supported Axiom artifact and its public client API;
+- neutral LazyBuilder contracts only when a real cross-platform builder capability requires them.
 
-## Ownership overlap audit
+Forbidden dependencies:
+- Map/Utility/Performance implementation packages;
+- copied/repackaged Axiom implementation code;
+- permanent FAWE or ezEdits runtime ownership used as a shortcut for native LazyBuilder capabilities;
+- direct access to Axiom internals when the public client API can satisfy the capability;
+- speculative mixins or compatibility layers without a proven missing public hook.
+
+Builder Utilities owns only capabilities that improve the Axiom building workflow. Axiom remains the canonical editor interaction surface. The first implementation boundary is therefore the Axiom public client API, not a replacement editor.
+
+## Builder donor model
+
+```text
+Axiom
+→ primary editor, interaction model, selection/gizmo/preview/tool UX
+
+FAWE
+→ infrastructure reference for large-operation execution, history scaling,
+  region/chunk processing, material/pattern semantics, limits and cancellation
+
+ ezEdits
+→ algorithm reference for spline, procedural placement/texturing,
+  symmetry, flow and geometry modifiers
+```
+
+FAWE and ezEdits are migration references, not final authorities. Capability adoption must be reimplemented under the Axiom-first LazyBuilder architecture rather than preserving duplicate command/session/editing systems.
+
+## Existing ownership overlap audit
 
 | Concern | Owner | Non-owner behavior |
 | --- | --- | --- |
-| World/map navigation | Map Manager | Utility/Performance do not participate |
-| Transfer/world workflow | Map Manager | Utility/Performance do not participate |
-| Map surface cache/workload | Map Manager | Performance does not import Map internals |
-| Chat convenience | Utility Manager | Map/Performance do not modify chat |
-| Borderless/window presentation | Utility Manager | Performance only reads focus/minimized state |
-| Screenshot naming | Utility Manager | Map Manager does not become a screenshot dependency |
-| Contextual clipboard convenience | Utility Manager | Map owns only map/world metadata actions |
-| Frame pressure/workload policy | Performance Manager | Utility owns no performance policy |
-| Background FPS limit | Performance Manager | Utility owns no FPS/resource throttling |
-| On-demand performance diagnostics | Performance Manager | No permanent monitoring HUD |
-| Building/editing systems | Deferred separate scope | Current three Managers do not absorb them |
+| World/map navigation | Map Manager | Other modules do not participate |
+| Transfer/world workflow | Map Manager | Other modules do not participate |
+| Chat/window/screenshot convenience | Utility Manager | Builder Utilities does not absorb generic convenience |
+| Frame pressure/resource policy | Performance Manager | Builder Utilities may consume a budget contract later but does not import Performance internals |
+| Building/editor extension | Builder Utilities + Axiom public API | Existing Managers do not implement generic building tools |
+| Existing Terraform prototype | Terraform Manager pending migration decision | Do not expand duplicate terrain ownership while Builder Utilities foundation is being established |
 
-The only shared concept observed by more than one Manager is window state:
+## Shared-service rule
 
-- Utility Manager may change window presentation through startup-only borderless mode;
-- Performance Manager reads focus/minimized state for background resource policy.
+Do not extract a generic cross-manager implementation module for notifications, clipboard, config, window state, performance state, or map primitives. Builder-specific primitives may exist inside Builder Utilities only after repeated building responsibilities prove they are shared within that module.
 
-This is not duplicate ownership: presentation and resource policy are distinct domains.
-
-## Performance ownership lock
-
-Performance Manager currently owns:
-
-- frame-time observation and pressure state;
-- LazyBuilder workload budget classification;
-- background/minimized FPS policy;
-- on-demand FPS, frame-time, memory, render/simulation distance and window diagnostics;
-- on-demand Vanilla chunk/entity/particle debug counters.
-
-It does **not** currently own:
-
-- renderer replacement;
-- shader implementation;
-- generic entity/block-entity culling replacement;
-- particle frustum bridge;
-- chunk renderer replacement;
-- graphics-quality auto-tuning.
-
-Those deeper optimizations require profiling evidence before implementation. This is a scope gate, not external ownership delegation.
-
-## Map workload lock
-
-Map Manager keeps map-specific optimization local to its own owner:
-
-- bounded per-frame terrain work;
-- incremental completed-region merge;
-- cached viewport sampling;
-- primitive/lazy region storage;
-- primitive pending coordinate set;
-- bounded asynchronous region loads;
-- dedicated ordered map I/O lane;
-- explicit map I/O shutdown lifecycle.
-
-Performance Manager must not import Map Manager internals merely to control these mechanisms.
-
-## Shared-service audit
-
-No generic cross-manager shared client service is currently justified.
-
-Do not extract a new shared client implementation module for:
-
-- notifications;
-- clipboard;
-- config persistence;
-- window state;
-- performance state;
-- map UI/cache primitives.
-
-Extraction requires a second real consumer and a stable shared contract.
-
-## Artifact identity lock
+## Artifact identities
 
 ```text
 Map Manager
@@ -155,27 +117,30 @@ Performance Manager
 Fabric id: lazybuilder_performance_manager
 Artifact: lazybuilder-performance-manager.jar
 Source: mods/performance-manager/
+
+Builder Utilities
+Fabric id: lazybuilder_builder_utilities
+Artifact: lazybuilder-builder-utilities.jar
+Source: mods/builder-utilities/
 ```
 
 ## Repository guards
 
-Repository consistency checks should enforce where practical:
-
-- one Fabric mod identity per Manager;
-- one output artifact per Manager;
-- no Java import of another Manager's implementation package;
-- no Gradle dependency from one Manager to another;
-- Utility/Performance remain detached from shared World-Manager protocol;
-- Map Manager remains the only client Manager wired to shared World-Manager protocol;
-- no mandatory external optimization dependency for required Performance behavior.
+Repository checks should enforce where practical:
+- one Fabric mod identity per module;
+- one output artifact per module;
+- no imports of another LazyBuilder Manager's implementation package;
+- Builder Utilities pins its supported Axiom line deliberately;
+- Builder Utilities uses the Axiom public API as the first integration boundary;
+- FAWE/ezEdits do not become required runtime dependencies for the final architecture.
 
 ## Current decision
 
 ```text
-Map Manager          implemented / workload stabilized
-Utility Manager      implemented / architecture locked
-Performance Manager  P0-P3 foundation complete / deeper renderer work deferred pending profiling
-Cross-manager audit  architecture locked
+Axiom                     primary building/editor architecture
+Builder Utilities         active extension scope
+FAWE                       donor/reference; planned retirement after capability parity
+ ezEdits                    donor/reference; planned retirement after capability parity
+Terraform Manager          freeze expansion pending capability migration decision
+Existing client Managers   ownership remains independent
 ```
-
-The next step is verification of this exact repository state, not another Manager expansion.
