@@ -17,6 +17,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String CHUNK_UPLOAD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderUploadMixin";
     private static final String BUILT_CHUNK_STORAGE_MIXIN = MIXIN_PACKAGE + "BuiltChunkStorageMixin";
     private static final String CHUNK_DATA_VISIBILITY_MIXIN = MIXIN_PACKAGE + "ChunkDataVisibilityMixin";
+    private static final String BUILT_CHUNK_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "BuiltChunkBufferLookupMixin";
+    private static final String CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN = MIXIN_PACKAGE + "ChunkDataLayerMembershipMixin";
     private static final String BLOCK_BUFFER_POOL_MIXIN = MIXIN_PACKAGE + "BlockBufferBuilderPoolMixin";
     private static final String BLOCK_COLORS_MIXIN = MIXIN_PACKAGE + "BlockColorsMixin";
     private static final String BLOCK_SIDE_VISIBILITY_MIXIN = MIXIN_PACKAGE + "BlockSideVisibilityMixin";
@@ -47,6 +49,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
         if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)
                 || BUILT_CHUNK_STORAGE_MIXIN.equals(mixinClassName)
                 || CHUNK_DATA_VISIBILITY_MIXIN.equals(mixinClassName)
+                || BUILT_CHUNK_BUFFER_LOOKUP_MIXIN.equals(mixinClassName)
+                || CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN.equals(mixinClassName)
                 || BLOCK_BUFFER_POOL_MIXIN.equals(mixinClassName)
                 || BLOCK_COLORS_MIXIN.equals(mixinClassName)
                 || BLOCK_SIDE_VISIBILITY_MIXIN.equals(mixinClassName))

@@ -13,6 +13,8 @@
     "ChunkBuilderUploadMixin",
     "BuiltChunkStorageMixin",
     "ChunkDataVisibilityMixin",
+    "BuiltChunkBufferLookupMixin",
+    "ChunkDataLayerMembershipMixin",
     "BlockBufferBuilderPoolMixin",
     "BlockColorsMixin",
     "BlockSideVisibilityMixin",
