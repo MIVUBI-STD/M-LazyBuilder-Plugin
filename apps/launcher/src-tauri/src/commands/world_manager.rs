@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::workspace_registry;
 use crate::engine::world_manager::{
@@ -140,13 +140,25 @@ fn ensure_world_target(target: &str) -> Result<(), String> {
 
 fn classify_world_error(message: String) -> CommandError {
     if message.contains("selected server changed") || message.contains("target server is no longer open") {
-        return CommandError::recoverable("WORLD_TARGET_CHANGED", message, "Retry on selected server");
+        return CommandError::recoverable_action(
+            "WORLD_TARGET_CHANGED",
+            message,
+            RecoveryAction::RetryOperation,
+        );
     }
     if message.contains("desktop bridge protocol mismatch") {
-        return CommandError::new("WORLD_PROTOCOL_MISMATCH", message);
+        return CommandError::recoverable_action(
+            "WORLD_PROTOCOL_MISMATCH",
+            message,
+            RecoveryAction::RepairServer,
+        );
     }
     if message.contains("desktop bridge is not ready") || message.contains("World-Manager") && message.contains("unavailable") {
-        return CommandError::new("WORLD_BRIDGE_UNAVAILABLE", message);
+        return CommandError::recoverable_action(
+            "WORLD_BRIDGE_UNAVAILABLE",
+            message,
+            RecoveryAction::StartServer,
+        );
     }
     CommandError::runtime(message)
 }
