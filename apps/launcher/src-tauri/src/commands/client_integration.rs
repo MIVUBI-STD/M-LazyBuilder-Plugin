@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::client_integration::{self, ClientIntegrationStatus};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use tauri::{AppHandle, Manager};
@@ -26,7 +26,6 @@ pub async fn client_integration_select_profile(
         "selecting",
         "Selecting client profile",
         "CLIENT_PROFILE_SELECTION_FAILED",
-        "Review Client Setup and retry",
         move || {
             client_integration::select_profile(&profile_path)?;
             client_integration::status(resource_dir.as_deref())
@@ -52,7 +51,6 @@ pub async fn client_integration_pick_profile(app: AppHandle) -> CommandResult<Cl
         "selecting",
         "Selecting client profile",
         "CLIENT_PROFILE_SELECTION_FAILED",
-        "Review Client Setup and retry",
         move || {
             client_integration::select_manual_profile(&profile_path)?;
             client_integration::status(resource_dir.as_deref())
@@ -70,7 +68,6 @@ pub async fn client_integration_sync(app: AppHandle) -> CommandResult<ClientInte
         "syncing",
         "Syncing LazyBuilder client components",
         "CLIENT_SYNC_FAILED",
-        "Review Client Setup and retry",
         move || {
             client_integration::sync(resource_dir.as_deref())?;
             client_integration::status(resource_dir.as_deref())
@@ -85,7 +82,6 @@ async fn run_client_mutation<T, F>(
     phase: &'static str,
     status: &'static str,
     failure_code: &'static str,
-    failure_action: &'static str,
     work: F,
 ) -> CommandResult<T>
 where
@@ -95,7 +91,7 @@ where
     let operation = app
         .state::<OperationRegistry>()
         .begin_exclusive(kind, CLIENT_INTEGRATION_RESOURCE, false)
-        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -115,7 +111,11 @@ where
                 Ok(result)
             }
             Err(message) => {
-                let error = CommandError::recoverable(failure_code, message, failure_action);
+                let error = CommandError::recoverable_action(
+                    failure_code,
+                    message,
+                    RecoveryAction::ReconnectClientProfile,
+                );
                 let _ = operations.fail(
                     &operation_id,
                     OperationError {
