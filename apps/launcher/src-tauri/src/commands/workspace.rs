@@ -98,7 +98,7 @@ pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_upd
         Ok(result) => result,
         Err(error) => {
             let _ = app.state::<OperationRegistry>().require_recovery(&join_operation_id, OperationError { code: "TASK_FAILED".into(), message: "Paper update task ended unexpectedly".into(), details: error.to_string(), recoverable: true });
-            Err(CommandError::new("TASK_FAILED", format!("Server Paper update task failed: {error}")))
+            Err(CommandError::new("TASK_FAILED", format!("Paper update task failed: {error}")))
         }
     }
 }
