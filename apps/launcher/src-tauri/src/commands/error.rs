@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecoveryAction {
     AcceptEula,
+    ChooseLocation,
     EditCommand,
     LocateWorkspace,
     OpenActivity,
@@ -26,6 +27,7 @@ impl RecoveryAction {
     pub const fn as_code(self) -> &'static str {
         match self {
             Self::AcceptEula => "ACCEPT_EULA",
+            Self::ChooseLocation => "CHOOSE_LOCATION",
             Self::EditCommand => "EDIT_COMMAND",
             Self::LocateWorkspace => "LOCATE_WORKSPACE",
             Self::OpenActivity => "OPEN_ACTIVITY",
@@ -127,6 +129,7 @@ mod tests {
 
     #[test]
     fn recovery_action_codes_are_not_presentation_copy() {
+        assert_eq!(RecoveryAction::ChooseLocation.as_code(), "CHOOSE_LOCATION");
         assert_eq!(RecoveryAction::StopServer.as_code(), "STOP_SERVER");
         assert_eq!(RecoveryAction::RestartLauncher.as_code(), "RESTART_LAUNCHER");
         assert_eq!(RecoveryAction::ReviewBackups.as_code(), "REVIEW_BACKUPS");
