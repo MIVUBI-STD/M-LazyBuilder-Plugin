@@ -84,7 +84,7 @@ pub async fn server_console_command(
 }
 
 #[tauri::command]
-pub async fn server_start(app: AppHandle) -> Result<(), String> {
+pub async fn server_start(app: AppHandle) -> CommandResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
@@ -102,11 +102,12 @@ pub async fn server_start(app: AppHandle) -> Result<(), String> {
         Ok(())
     })
     .await
-    .map_err(|error| format!("Server start task failed: {error}"))?
+    .map_err(|error| CommandError::new("SERVER_START_TASK_FAILED", format!("Server start task failed: {error}")))?
+    .map_err(classify_server_start_error)
 }
 
 #[tauri::command]
-pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Result<(), String> {
+pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> CommandResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
@@ -115,11 +116,12 @@ pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Result
         registry.remove(&target_id)
     })
     .await
-    .map_err(|error| format!("Server stop task failed: {error}"))?
+    .map_err(|error| CommandError::new("SERVER_STOP_TASK_FAILED", format!("Server stop task failed: {error}")))?
+    .map_err(classify_server_stop_error)
 }
 
 #[tauri::command]
-pub async fn server_restart(app: AppHandle) -> Result<(), String> {
+pub async fn server_restart(app: AppHandle) -> CommandResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
@@ -130,14 +132,15 @@ pub async fn server_restart(app: AppHandle) -> Result<(), String> {
         registry.set_paper_port(&active.id, paper_port)
     })
     .await
-    .map_err(|error| format!("Server restart task failed: {error}"))?
+    .map_err(|error| CommandError::new("SERVER_RESTART_TASK_FAILED", format!("Server restart task failed: {error}")))?
+    .map_err(classify_server_start_error)
 }
 
 #[tauri::command]
 pub async fn server_recover_detached(
     app: AppHandle,
     workspace_id: Option<String>,
-) -> Result<DetachedRecoveryResult, String> {
+) -> CommandResult<DetachedRecoveryResult> {
     tauri::async_runtime::spawn_blocking(move || {
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
@@ -149,7 +152,50 @@ pub async fn server_recover_detached(
         Ok(result)
     })
     .await
-    .map_err(|error| format!("Detached server recovery task failed: {error}"))?
+    .map_err(|error| CommandError::new("DETACHED_RECOVERY_TASK_FAILED", format!("Detached server recovery task failed: {error}")))?
+    .map_err(classify_detached_recovery_error)
+}
+
+fn classify_server_start_error(message: String) -> CommandError {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("detached paper process") {
+        return CommandError::recoverable_action("SERVER_DETACHED", message, RecoveryAction::StopServer);
+    }
+    if lower.contains("still stopping") {
+        return CommandError::recoverable_action("SERVER_STOPPING", message, RecoveryAction::WaitForServerStop);
+    }
+    if lower.contains("minecraft eula") || lower.contains("eula has not been accepted") {
+        return CommandError::recoverable_action("EULA_REQUIRED", message, RecoveryAction::AcceptEula);
+    }
+    if lower.contains("prepare server") || lower.contains("provisioning is incomplete") || lower.contains("managed java") {
+        return CommandError::recoverable_action("SERVER_NOT_READY", message, RecoveryAction::RepairServer);
+    }
+    if lower.contains("operation is still changing this server") {
+        return CommandError::recoverable_action("OPERATION_BUSY", message, RecoveryAction::OpenActivity);
+    }
+    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+        return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
+    }
+    if lower.contains("memory") || lower.contains("headroom") || lower.contains("concurrent server") {
+        return CommandError::recoverable_action("SERVER_CAPACITY_REACHED", message, RecoveryAction::StopServer);
+    }
+    CommandError::recoverable_action("SERVER_START_FAILED", message, RecoveryAction::RetryOperation)
+}
+
+fn classify_server_stop_error(message: String) -> CommandError {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+        return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
+    }
+    CommandError::recoverable_action("SERVER_STOP_FAILED", message, RecoveryAction::RetryOperation)
+}
+
+fn classify_detached_recovery_error(message: String) -> CommandError {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("server start") && (lower.contains("already") || lower.contains("busy") || lower.contains("another")) {
+        return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
+    }
+    CommandError::recoverable_action("DETACHED_RECOVERY_FAILED", message, RecoveryAction::RetryOperation)
 }
 
 fn resolve_runtime(
