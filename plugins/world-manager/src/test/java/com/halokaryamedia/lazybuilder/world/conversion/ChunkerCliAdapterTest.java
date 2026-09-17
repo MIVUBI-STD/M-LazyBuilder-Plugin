@@ -175,6 +175,33 @@ class ChunkerCliAdapterTest {
     }
 
     @Test
+    void bedrockOutputRequiresConcreteLevelDbData() throws Exception {
+        Path output = tempDir.resolve("bedrock-output");
+        Files.createDirectories(output.resolve("db"));
+        Files.writeString(output.resolve("level.dat"), "level");
+
+        IOException emptyDb = assertThrows(IOException.class,
+                () -> ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80"));
+        assertTrue(emptyDb.getMessage().contains("LevelDB"));
+
+        Files.write(output.resolve("db/LOCK"), new byte[0]);
+        assertThrows(IOException.class,
+                () -> ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80"));
+
+        Files.writeString(output.resolve("db/CURRENT"), "MANIFEST-000001\n");
+        ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80");
+    }
+
+    @Test
+    void javaOutputDoesNotRequireChunkDataForValidEmptyWorld() throws Exception {
+        Path output = tempDir.resolve("java-output");
+        Files.createDirectories(output);
+        Files.writeString(output.resolve("level.dat"), "level");
+
+        ChunkerCliAdapter.validateOutputDirectory(output, "JAVA_1_21_4");
+    }
+
+    @Test
     void sameFormatSeedCopiesWorldMetadataButNotChunkOwnedData() throws Exception {
         Path input = tempDir.resolve("seed-input");
         Files.createDirectories(input.resolve("region"));
