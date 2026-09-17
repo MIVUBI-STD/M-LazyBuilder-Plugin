@@ -26,6 +26,8 @@
   let libraryConsoleWorkspaceId: string | null = null;
   let libraryConsoleServerName = 'Server';
   let libraryRuntimeBusyId: string | null = null;
+  let stopCandidate: WorkspaceEntry | null = null;
+  let stopCandidateDetached = false;
   let surfaceError = '';
   let creating = false;
   let createOpen = false;
@@ -186,19 +188,31 @@
     void onChanged();
   }
 
-  async function stopRuntimeFromLibrary(server: WorkspaceEntry, runtime: ServerRuntimeSummary | null) {
+  function requestStopRuntime(server: WorkspaceEntry, runtime: ServerRuntimeSummary | null) {
     if (!canStopLibraryRuntime(runtime) || libraryRuntimeBusyId) return;
-    const detached = runtime?.state === 'Detached';
-    const message = detached ? `Stop the externally running Paper process for ${server.name}?` : `Stop ${server.name}?`;
-    if (!window.confirm(message)) return;
     menuServerId = null;
+    stopCandidate = server;
+    stopCandidateDetached = runtime?.state === 'Detached';
+  }
+
+  async function confirmStopRuntime() {
+    if (!stopCandidate || libraryRuntimeBusyId) return;
+    const server = stopCandidate;
     libraryRuntimeBusyId = server.id;
     surfaceError = '';
     try {
       await stopLibraryRuntime(server.id);
+      stopCandidate = null;
+      stopCandidateDetached = false;
       await onChanged();
     } catch (value) { surfaceError = friendlyError(value); }
     finally { libraryRuntimeBusyId = null; }
+  }
+
+  function cancelStopRuntime() {
+    if (libraryRuntimeBusyId) return;
+    stopCandidate = null;
+    stopCandidateDetached = false;
   }
 
   async function openServerFolder(server: WorkspaceEntry) {
@@ -346,7 +360,7 @@
           <div class="server-tile">
             <button class="server-open" onclick={() => void openServer(server)}><div class="server-icon">{server.name.slice(0,1).toUpperCase()}</div><div class="server-tile-copy"><strong>{server.name}</strong>{#if runtime && runtimeTone(runtime)}<span class={`runtime-meta ${runtimeTone(runtime)}`}><i aria-hidden="true"></i>{runtimeMeta(runtime)}</span>{:else}<span title={server.path}>{formatLastOpened(server.lastOpenedUnixSeconds)}</span>{/if}</div><span class="open-chevron">›</span></button>
             <div class="server-menu-wrap"><button class="server-menu-button" aria-label={`Manage ${server.name}`} aria-expanded={menuServerId === server.id} onclick={() => (menuServerId = menuServerId === server.id ? null : server.id)}>•••</button>
-              {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => void openServer(server)}>Open</button>{#if canOpenRuntimeConsole(runtime)}<button onclick={() => openLibraryConsole(server, runtime)}>Open console</button><button disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop server'}</button><div class="menu-divider"></div>{:else if runtime?.state === 'Detached'}<button class="danger-menu-item" disabled={libraryRuntimeBusyId === server.id} onclick={() => void stopRuntimeFromLibrary(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop external server'}</button><div class="menu-divider"></div>{/if}<button onclick={() => void openServerFolder(server)}>Open folder</button><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
+              {#if menuServerId === server.id}<div class="server-menu" role="menu"><button onclick={() => void openServer(server)}>Open</button>{#if canOpenRuntimeConsole(runtime)}<button onclick={() => openLibraryConsole(server, runtime)}>Open console</button><button disabled={libraryRuntimeBusyId === server.id} onclick={() => requestStopRuntime(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop server'}</button><div class="menu-divider"></div>{:else if runtime?.state === 'Detached'}<button class="danger-menu-item" disabled={libraryRuntimeBusyId === server.id} onclick={() => requestStopRuntime(server, runtime)}>{libraryRuntimeBusyId === server.id ? 'Stopping…' : 'Stop external server'}</button><div class="menu-divider"></div>{/if}<button onclick={() => void openServerFolder(server)}>Open folder</button><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginLocate(server)}>Locate moved server…</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDuplicate(server)}>Duplicate server</button><div class="menu-divider"></div><button disabled={!canMutateLibraryServer(runtime)} onclick={() => beginRemove(server)}>Remove from library</button><button class="danger-menu-item" disabled={!canMutateLibraryServer(runtime)} onclick={() => beginDelete(server)}>Delete server…</button></div>{/if}
             </div>
           </div>
         {/each}
@@ -354,6 +368,8 @@
     {:else}<section class="search-empty"><strong>No servers found</strong><span>Try a different server name.</span><button onclick={() => (librarySearch = '')}>Clear search</button></section>{/if}
   {:else}<section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={() => (createOpen = true)}>Create server</button><button class="secondary-button" onclick={() => void analyzeAdoption()}>Add existing</button></div></section>{/if}
 </main>
+
+{#if stopCandidate}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelStopRuntime()}><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="stop-server-heading"><div class="dialog-heading"><div><h2 id="stop-server-heading">{stopCandidateDetached ? 'Stop external server?' : `Stop ${stopCandidate.name}?`}</h2><p>{stopCandidateDetached ? 'LazyBuilder will stop the verified Paper process that is still running from an earlier launcher session.' : 'LazyBuilder will ask Paper to stop cleanly before releasing this server runtime.'}</p></div><button class="icon-button" disabled={libraryRuntimeBusyId === stopCandidate.id} onclick={cancelStopRuntime}>×</button></div><div class="safe-notice"><strong>{stopCandidateDetached ? 'External process ownership verified' : 'Graceful shutdown'}</strong><span>{stopCandidate.name}</span><p>{stopCandidateDetached ? 'This does not delete or modify server files.' : 'Server files remain unchanged. Wait for the stop to finish before changing runtime files.'}</p></div><div class="dialog-actions"><button class="ghost-button" disabled={libraryRuntimeBusyId === stopCandidate.id} onclick={cancelStopRuntime}>Cancel</button><button class={stopCandidateDetached ? 'danger-button' : 'secondary-button'} disabled={libraryRuntimeBusyId === stopCandidate.id} onclick={confirmStopRuntime}>{libraryRuntimeBusyId === stopCandidate.id ? 'Stopping…' : stopCandidateDetached ? 'Stop external server' : 'Stop server'}</button></div></div></div>{/if}
 
 {#if createOpen}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (createOpen = false)}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" disabled={creating} onclick={() => (createOpen = false)}>×</button></div><label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} /></label><label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label><div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (createOpen = false)}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div></div></div>{/if}
 
@@ -365,9 +381,9 @@
 
 {#if managementServer && managementMode === 'remove'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Remove {managementServer.name} from LazyBuilder?</h2><p>This only removes the server from your LazyBuilder library.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="safe-notice"><strong>Your files will remain on this computer.</strong><span>{managementServer.path}</span><p>You can add the server again later.</p></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="secondary-button" disabled={managementBusy} onclick={removeServerFromLibrary}>{managementBusy ? 'Removing…' : 'Remove from library'}</button></div></div></div>{/if}
 
-{#if managementServer && managementMode === 'delete-review'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Delete {managementServer.name}?</h2><p>Review exactly what will be permanently removed.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="danger-summary"><strong>This permanently deletes:</strong><ul><li>Worlds</li><li>Server configuration</li><li>Plugins and plugin data</li><li>LazyBuilder workspace data</li></ul><span class="path-copy">{managementServer.path}</span><p>This cannot be undone.</p></div><div class="dialog-actions"><button class="ghost-button" onclick={closeManagement}>Cancel</button><button class="danger-button" onclick={() => (managementMode = 'delete-confirm')}>Continue</button></div></div></div>{/if}
+{#if managementServer && managementMode === 'delete-review'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Delete {managementServer.name}?</h2><p>Review exactly what will be permanently removed.</p></div><button class="icon-button" onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="danger-summary"><strong>This permanently deletes:</strong><ul><li>Worlds</li><li>Server configuration</li><li>Plugins and plugin data</li><li>LazyBuilder server metadata stored inside this server folder</li></ul><span class="path-copy">{managementServer.path}</span><p>The server folder is removed from disk. This cannot be undone.</p></div><div class="dialog-actions"><button class="ghost-button" onclick={closeManagement}>Cancel</button><button class="danger-button" onclick={() => (managementMode = 'delete-confirm')}>Continue</button></div></div></div>{/if}
 
-{#if managementServer && managementMode === 'delete-confirm'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Confirm permanent deletion</h2><p>Type the server name exactly to continue.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="typed-confirmation"><code>{managementServer.name}</code><label>Server name<input bind:value={deleteTypedName} autocomplete="off" disabled={managementBusy} /></label></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={() => (managementMode = 'delete-review')}>Back</button><button class="danger-button" disabled={managementBusy || deleteTypedName !== managementServer.name} onclick={deleteServer}>{managementBusy ? 'Deleting…' : 'Delete permanently'}</button></div></div></div>{/if}
+{#if managementServer && managementMode === 'delete-confirm'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog danger-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Confirm permanent deletion</h2><p>Type the server name exactly to confirm deleting its folder and all server data.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="typed-confirmation"><code>{managementServer.name}</code><label>Server name<input bind:value={deleteTypedName} autocomplete="off" disabled={managementBusy} /></label></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={() => (managementMode = 'delete-review')}>Back</button><button class="danger-button" disabled={managementBusy || deleteTypedName !== managementServer.name} onclick={deleteServer}>{managementBusy ? 'Deleting…' : 'Delete permanently'}</button></div></div></div>{/if}
 
 <ServerConsole open={libraryConsoleWorkspaceId !== null} workspaceId={libraryConsoleWorkspaceId ?? undefined} serverName={libraryConsoleServerName} onClose={closeLibraryConsole} />
 
