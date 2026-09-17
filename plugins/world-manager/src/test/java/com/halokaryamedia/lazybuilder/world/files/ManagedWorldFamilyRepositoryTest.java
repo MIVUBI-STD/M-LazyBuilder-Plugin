@@ -20,7 +20,7 @@ class ManagedWorldFamilyRepositoryTest {
 
     @Test
     void transactionalPublishSplitsCanonicalDimensionsAndCommitClearsFamilyMarkers() throws Exception {
-        Path worlds = tempDir.resolve("worlds");
+        Path worlds = Files.createDirectories(tempDir.resolve("worlds"));
         Path work = tempDir.resolve("work");
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
         Path staged = repository.reserveWorkspace(UUID.randomUUID());
