@@ -1,5 +1,6 @@
 export type RecoveryAction =
   | 'ACCEPT_EULA'
+  | 'CHOOSE_LOCATION'
   | 'EDIT_COMMAND'
   | 'LOCATE_WORKSPACE'
   | 'OPEN_ACTIVITY'
@@ -28,6 +29,7 @@ export type RuntimeCommandError = {
 
 const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
   'ACCEPT_EULA',
+  'CHOOSE_LOCATION',
   'EDIT_COMMAND',
   'LOCATE_WORKSPACE',
   'OPEN_ACTIVITY',
@@ -48,6 +50,7 @@ const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
 
 const RECOVERY_ACTION_LABELS: Record<RecoveryAction, string> = {
   ACCEPT_EULA: 'Accept EULA',
+  CHOOSE_LOCATION: 'Choose another location',
   EDIT_COMMAND: 'Edit command',
   LOCATE_WORKSPACE: 'Locate server folder',
   OPEN_ACTIVITY: 'Open Activity',
