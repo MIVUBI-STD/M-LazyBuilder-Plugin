@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import { RuntimeError } from '../app/bridge/runtimeApi';
+  import { presentRuntimeError } from '../app/runtimeErrorPresentation';
+  import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ManagedWorldSummary, ServerState, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   const TASK_POLL_VISIBLE_MS = 1000;
@@ -9,7 +11,7 @@
 
   let worlds: ManagedWorldSummary[] = [];
   let search = '';
-  let error = '';
+  let error: RuntimeErrorPresentation | null = null;
   let busy = false;
   let serverState: ServerState = 'Offline';
   let serverOnline = false;
@@ -32,14 +34,6 @@
   let exportName = '';
   let deleteSource: ManagedWorldSummary | null = null;
   let deleteConfirmation = '';
-
-  function friendlyError(value: unknown) {
-    if (value instanceof RuntimeError && value.code === 'WORLD_PROTOCOL_MISMATCH') {
-      return 'World Manager is out of sync with this Launcher build. Update the LazyBuilder core components before continuing.';
-    }
-    if (value instanceof Error && value.message.trim()) return value.message.trim();
-    return String(value).replace(/^Error:\s*/i, '').trim() || 'Something went wrong. Try again.';
-  }
 
   function slugify(value: string) {
     return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -98,11 +92,11 @@
       const next = await runtimeProduct.worlds.list();
       if (!pageActive) return;
       worlds = [...next].sort((a, b) => a.lifecycle.localeCompare(b.lifecycle) || a.displayName.localeCompare(b.displayName));
-      error = '';
-    } catch (e) {
+      error = null;
+    } catch (value) {
       if (!pageActive) return;
       worlds = [];
-      error = friendlyError(e);
+      error = presentRuntimeError(value, 'Could not load worlds for this server.');
     } finally {
       busy = false;
     }
@@ -112,7 +106,7 @@
     const displayName = createName.trim();
     if (!displayName || !serverOnline || busy) return;
     busy = true;
-    error = '';
+    error = null;
     try {
       await runtimeProduct.worlds.create({
         folderName: folderName(displayName, 'world'),
@@ -122,8 +116,8 @@
       if (!pageActive) return;
       createOpen = false;
       createName = '';
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not create this world.');
     } finally {
       busy = false;
       if (pageActive) await refresh();
@@ -138,9 +132,9 @@
       importPath = selected;
       const fileName = selected.split(/[\\/]/).pop() || 'Imported World';
       importName = fileName.replace(/\.(zip|mcworld)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Imported World';
-      error = '';
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+      error = null;
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not select a world import file.');
     }
   }
 
@@ -148,7 +142,7 @@
     const displayName = importName.trim();
     if (!serverOnline || importBusy || !importPath || !displayName) return;
     importBusy = true;
-    error = '';
+    error = null;
     try {
       const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
       if (!pageActive) return;
@@ -162,8 +156,8 @@
       if (!completedHere || !pageActive) return;
       importPath = '';
       importName = '';
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not import this world.');
     } finally {
       importBusy = false;
       if (pageActive) {
@@ -204,19 +198,20 @@
       operationTask = null;
       operationBusyWorldId = null;
       await refresh();
-    } catch (e) {
+    } catch (value) {
       if (!pageActive) return;
+      const recoveryError = presentRuntimeError(value, 'Could not resume the active world task.');
       operationTask = null;
       operationBusyWorldId = null;
-      error = friendlyError(e);
       await refresh();
+      if (pageActive) error = recoveryError;
     }
   }
 
   async function runWorldTask(world: ManagedWorldSummary, action: 'backup' | 'archive' | 'restore') {
     if (operationBusyWorldId) return;
     operationBusyWorldId = world.id;
-    error = '';
+    error = null;
     try {
       operationTask = action === 'backup'
         ? await runtimeProduct.worlds.backup(world.id)
@@ -224,8 +219,8 @@
           ? await runtimeProduct.worlds.archive(world.id)
           : await runtimeProduct.worlds.restore(world.id);
       await pollTask(operationTask.taskId);
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, `Could not ${action} this world.`);
     } finally {
       if (pageActive) {
         operationBusyWorldId = null;
@@ -238,11 +233,11 @@
   async function openSettings(world: ManagedWorldSummary) {
     if (settingsBusy || operationBusyWorldId) return;
     settingsBusy = true;
-    error = '';
+    error = null;
     try {
       settings = await runtimeProduct.worlds.settings(world.id);
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not load world settings.');
     } finally {
       settingsBusy = false;
     }
@@ -251,7 +246,7 @@
   async function saveSettings() {
     if (!settings || settingsBusy) return;
     settingsBusy = true;
-    error = '';
+    error = null;
     try {
       const timeOfDayTicks = Number(settings.timeOfDayTicks);
       if (!Number.isFinite(timeOfDayTicks) || timeOfDayTicks < 0 || timeOfDayTicks > 23999) {
@@ -269,8 +264,8 @@
       if (!pageActive) return;
       settings = null;
       await refresh();
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not save world settings.');
     } finally {
       settingsBusy = false;
     }
@@ -279,7 +274,7 @@
   async function runDuplicate() {
     if (!duplicateSource || operationBusyWorldId || !duplicateName.trim()) return;
     operationBusyWorldId = duplicateSource.id;
-    error = '';
+    error = null;
     try {
       operationTask = await runtimeProduct.worlds.duplicate({
         worldId: duplicateSource.id,
@@ -289,8 +284,8 @@
       if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not duplicate this world.');
     } finally {
       if (pageActive) {
         operationBusyWorldId = null;
@@ -303,7 +298,7 @@
   async function runExport() {
     if (!exportSource || operationBusyWorldId || !exportName.trim()) return;
     operationBusyWorldId = exportSource.id;
-    error = '';
+    error = null;
     try {
       operationTask = await runtimeProduct.worlds.export({
         worldId: exportSource.id,
@@ -313,8 +308,8 @@
       if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not export this world.');
     } finally {
       if (pageActive) {
         operationBusyWorldId = null;
@@ -327,7 +322,7 @@
   async function runDelete() {
     if (!deleteSource || deleteConfirmation.trim() !== deleteSource.displayName || operationBusyWorldId) return;
     operationBusyWorldId = deleteSource.id;
-    error = '';
+    error = null;
     try {
       operationTask = await runtimeProduct.worlds.delete({
         worldId: deleteSource.id,
@@ -336,8 +331,8 @@
       if (!pageActive) return;
       closePanels();
       await pollTask(operationTask.taskId);
-    } catch (e) {
-      if (pageActive) error = friendlyError(e);
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not delete this world.');
     } finally {
       if (pageActive) {
         operationBusyWorldId = null;
@@ -371,7 +366,7 @@
     {/if}
   </header>
 
-  {#if error}<div class="notice error" role="alert">{error}</div>{/if}
+  <RuntimeErrorNotice {error} />
 
   {#if !serverOnline}
     <section class="state-card">
@@ -542,7 +537,6 @@
   .secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.secondary:hover:not(:disabled){background:var(--surface-3);border-color:var(--border-strong)}
   .primary:active:not(:disabled),.secondary:active:not(:disabled),.danger-button:active:not(:disabled){transform:scale(.98)}
   .compact{min-height:32px;padding:6px 9px;font-size:11px}.danger-button{border:1px solid #a74650;background:#8d3039;color:#fff}button:disabled{opacity:.5;cursor:default}
-  .notice{margin-bottom:12px;padding:10px 12px;border:1px solid #70343a;border-radius:var(--radius-sm);background:var(--danger-bg);color:#ffd9dc;font-size:12px}
   .state-card{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px dashed var(--border);border-radius:var(--radius);background:var(--bg-elevated);padding:32px}
   .state-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:11px;background:var(--surface-2);color:var(--muted)}
   .state-icon svg,.world-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
