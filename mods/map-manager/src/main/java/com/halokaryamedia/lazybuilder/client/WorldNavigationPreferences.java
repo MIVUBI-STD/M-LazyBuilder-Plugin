@@ -20,7 +20,6 @@ import java.util.function.Supplier;
 public final class WorldNavigationPreferences {
     private static final int MAX_RECENT = 5;
     private static final Properties SHARED_PROPERTIES = new Properties();
-    private static final WorldNavigationPreferences SHARED = new WorldNavigationPreferences();
 
     private final Path path;
     private final Supplier<String> serverIdentity;
@@ -31,7 +30,11 @@ public final class WorldNavigationPreferences {
     private List<UUID> cachedRecent = List.of();
 
     public static WorldNavigationPreferences shared() {
-        return SHARED;
+        return SharedHolder.INSTANCE;
+    }
+
+    private static final class SharedHolder {
+        private static final WorldNavigationPreferences INSTANCE = new WorldNavigationPreferences();
     }
 
     public WorldNavigationPreferences() {
