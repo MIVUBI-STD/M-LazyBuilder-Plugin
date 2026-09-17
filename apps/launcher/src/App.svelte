@@ -9,6 +9,7 @@
   import { installLauncherCloseGuard } from './app/closeGuard';
   import type { LauncherCloseRequest } from './app/closeGuard';
   import { dialogFocus } from './app/dialogFocus';
+  import type { RecoveryNavigationTarget } from './app/recoveryNavigation';
   import { runtimeProduct } from './app/bridge/runtimeProductFacade';
   import { RuntimeError } from './app/bridge/runtimeApi';
   import type { ServerRuntimeSummary, WorkspaceEntry, WorkspaceProvisioningStatus, WorkspaceState } from './app/bridge/runtimeApi';
@@ -101,6 +102,15 @@
     }
   }
 
+  function handleRecoveryNavigate(target: RecoveryNavigationTarget) {
+    if (target === 'activity') {
+      globalPage = 'Activity';
+      return;
+    }
+    globalPage = 'Servers';
+    page = target === 'plugins' ? 'Plugins' : target === 'settings' ? 'Settings' : 'Overview';
+  }
+
   function handleCloseRequest(request: LauncherCloseRequest, proceed: () => Promise<void>) {
     closeRequest = request;
     closeProceed = proceed;
@@ -186,7 +196,7 @@
       {:else if !workspaceState.active}
         <ServersLibrary recent={workspaceState.recent} runtimes={serverRuntimes} error={workspaceError} onOpenServer={activateServer} onChanged={refreshWorkspaceState} />
       {:else}
-        <ActiveServer server={workspaceState.active} {page} initialProvisioning={provisioning} onChanged={refreshWorkspaceState} onWorkspaceUnavailable={handleWorkspaceUnavailable} />
+        <ActiveServer server={workspaceState.active} {page} initialProvisioning={provisioning} onChanged={refreshWorkspaceState} onWorkspaceUnavailable={handleWorkspaceUnavailable} onRecoveryNavigate={handleRecoveryNavigate} />
       {/if}
     </section>
   </div>
