@@ -2,6 +2,10 @@ package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
@@ -19,7 +23,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Builds a reusable per-layer submission index for visible vanilla terrain sections. */
+import java.util.ArrayList;
+import java.util.List;
+
+/** Builds reusable per-layer submission lists and a draw-order-preserving arena command plan. */
 @Mixin(WorldRenderer.class)
 abstract class WorldRendererTerrainSubmissionMixin {
     @Shadow @Final private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
@@ -57,7 +64,12 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         this.lazybuilder$currentLayer = layer;
 
-        if (!PerformanceManagerClient.preferences().renderingOptimizations() || !lazybuilder$isBlockLayer(layer)) {
+        if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
+            this.lazybuilder$submissionIndexActive = false;
+            TerrainArenaDrawDiagnostics.clear();
+            return;
+        }
+        if (!lazybuilder$isBlockLayer(layer)) {
             this.lazybuilder$submissionIndexActive = false;
             return;
         }
@@ -135,6 +147,33 @@ abstract class WorldRendererTerrainSubmissionMixin {
                 layerEntries
         );
         this.lazybuilder$submissionIndexDirty = false;
+        this.lazybuilder$publishArenaDrawPlan();
+    }
+
+    @Unique
+    private void lazybuilder$publishArenaDrawPlan() {
+        TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.Plan.EMPTY;
+        plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$solid, RenderLayer.getSolid(), 0));
+        plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$cutoutMipped, RenderLayer.getCutoutMipped(), 1));
+        plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$cutout, RenderLayer.getCutout(), 2));
+        plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$translucent, RenderLayer.getTranslucent(), 3));
+        plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$tripwire, RenderLayer.getTripwire(), 4));
+        TerrainArenaDrawDiagnostics.publish(plan);
+    }
+
+    @Unique
+    private TerrainArenaDrawPlanner.Plan lazybuilder$planLayer(
+            ObjectArrayList<ChunkBuilder.BuiltChunk> chunks,
+            RenderLayer layer,
+            int layerSlot
+    ) {
+        if (chunks.isEmpty()) return TerrainArenaDrawPlanner.Plan.EMPTY;
+
+        List<TerrainRegionAllocationRegistry.Handle> handles = new ArrayList<>(chunks.size());
+        for (ChunkBuilder.BuiltChunk chunk : chunks) {
+            handles.add(TerrainGpuResidencyTracker.allocationHandle(chunk.getBuffer(layer)));
+        }
+        return TerrainArenaDrawPlanner.plan(handles, layerSlot);
     }
 
     @Unique

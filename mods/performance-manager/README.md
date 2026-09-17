@@ -14,7 +14,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, arena-aware draw planning, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
@@ -33,15 +33,15 @@ not on render thread   -> keep buffer
 large + cross-region   -> replace stale VertexBuffer with a fresh STATIC_WRITE buffer
 ```
 
-The shared-region model now has three layers:
+The shared-region model has three allocation layers:
 
 - `TerrainRegionArenaPolicy`: 256-byte suballocation alignment, 1 MiB arena capacity quanta, 25% sizing headroom, and a 2 MiB minimum recoverable-capacity threshold before a region becomes a compaction candidate.
 - `TerrainRegionSuballocator`: aligned first-fit suballocation with coalescing free spans and fragmentation accounting.
 - `TerrainRegionAllocationRegistry`: persistent runtime ownership per 8x4x8 region and render layer. It maintains stable allocation handles, reuses slots while payload still fits, reallocates when payload outgrows a slot, compacts when total free space is sufficient but fragmented, grows an arena only when required capacity is genuinely insufficient, and releases ownership when a terrain buffer moves or dies.
 
-The registry is wired to the same runtime lifecycle as the residency ledger, so it receives real section/layer association and actual uploaded payload sizes. A logical arena is intentionally scoped to one region plus one terrain render layer; this matches the existing layer-separated draw path and avoids inventing cross-layer GPU state sharing prematurely.
+The registry is wired to the same runtime lifecycle as the residency ledger, so it receives real section/layer association and actual uploaded payload sizes. A logical arena is intentionally scoped to one region plus one terrain render layer; this matches the existing layer-separated draw path and avoids cross-layer GPU-state sharing.
 
-The residency ledger also projects region-level arena pressure from current payload/capacity measurements:
+The residency ledger projects region-level arena pressure from current payload/capacity measurements:
 
 ```text
 projected shared-arena bytes
@@ -64,9 +64,22 @@ compactions / arena growths
 allocation failures
 ```
 
-This is now a live runtime ownership model rather than only an offline projection. It still owns no GPU objects: vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged. Physical shared VBO/EBO backing can adopt these handles and allocator generations in the next ownership step without redefining allocation policy.
+## Arena-aware draw planning
 
-Full physical shared GPU arenas and terrain multi-draw remain separate ownership steps.
+`TerrainArenaDrawPlanner` consumes the live allocation handles while preserving the exact visible-section order already used by the vanilla terrain path. Only consecutive commands in the same region/layer arena are considered one future arena batch. Missing, empty, undersized, or wrong-layer handles remain explicit vanilla fallback commands and break the batch boundary.
+
+Current diagnostics expose:
+
+```text
+arena-eligible draw commands
+fallback draw commands
+ordered arena batches
+potential arena-buffer bind reductions
+```
+
+This closes the ownership gap between live suballocations and physical draw submission without changing rendering yet. Minecraft 1.21.4 exposes `GpuBuffer.copyFrom(ByteBuffer, offset)`, so subrange upload is technically available, but vanilla `VertexBuffer` still owns VAO/index draw state and assumes its own buffer offsets. Physical shared VBO/EBO draw therefore remains deferred until that draw-state ownership is replaced coherently rather than patched around.
+
+Vanilla `VertexBuffer`, draw order, shaders, mesh formats, and FRAPI semantics remain unchanged. Full physical shared GPU arenas and terrain multi-draw remain separate ownership steps.
 
 ## FRAPI and shader compatibility boundary
 
@@ -82,7 +95,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, arena-aware draw-plan coverage, and the detected renderer pipeline owner.
 
 ## Migration rule
 
@@ -100,4 +113,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, buffer growth, and allocator details are not user-facing knobs.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, draw-plan batching, buffer growth, and allocator details are not user-facing knobs.
