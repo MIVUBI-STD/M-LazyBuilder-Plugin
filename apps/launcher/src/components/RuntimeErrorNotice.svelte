@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
+  import { recoveryActionLabel } from '../app/bridge/errors';
 
   export let error: RuntimeErrorPresentation | null = null;
   export let onAction: (() => Promise<void> | void) | undefined = undefined;
@@ -21,9 +22,9 @@
     </div>
     {#if error.recoverable && error.action}
       {#if onAction}
-        <button onclick={() => onAction?.()}>{error.action}</button>
+        <button onclick={() => onAction?.()}>{recoveryActionLabel(error.action)}</button>
       {:else}
-        <div class="error-guidance"><b>Next step</b><span>{error.action}</span></div>
+        <div class="error-guidance"><b>Next step</b><span>{recoveryActionLabel(error.action)}</span></div>
       {/if}
     {/if}
   </div>
