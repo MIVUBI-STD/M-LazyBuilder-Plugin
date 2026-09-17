@@ -3,9 +3,13 @@
   import RuntimeErrorNotice from '../components/RuntimeErrorNotice.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { dialogFocus } from '../app/dialogFocus';
+  import { recoveryNavigationTarget } from '../app/recoveryNavigation';
+  import type { RecoveryNavigationTarget } from '../app/recoveryNavigation';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
   import type { ManagedWorldSummary, ServerState, UpdateWorldSettingsRequest, WorldSettingsSnapshot, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
+
+  export let onRecoveryNavigate: ((target: RecoveryNavigationTarget) => void) | undefined = undefined;
 
   const TASK_POLL_VISIBLE_MS = 1000;
   const TASK_POLL_HIDDEN_MS = 5000;
@@ -67,6 +71,15 @@
 
   function archivedWorlds() {
     return visibleWorlds().filter((world) => world.lifecycle === 'ARCHIVED');
+  }
+
+  function hasErrorAction() {
+    return Boolean(error?.action && recoveryNavigationTarget(error.action) && onRecoveryNavigate);
+  }
+
+  function handleErrorAction() {
+    const target = recoveryNavigationTarget(error?.action ?? null);
+    if (target && onRecoveryNavigate) onRecoveryNavigate(target);
   }
 
   function closePanels() {
@@ -169,8 +182,6 @@
   }
 
   async function pollTask(taskId: string): Promise<boolean> {
-    // World Manager owns task lifetime and terminal state. The Launcher only observes
-    // while this page is mounted; long-running world work is never failed by a UI timer.
     while (pageActive) {
       const task = await runtimeProduct.worlds.task(taskId);
       if (!pageActive) return false;
@@ -367,7 +378,7 @@
     {/if}
   </header>
 
-  <RuntimeErrorNotice {error} />
+  <RuntimeErrorNotice {error} onAction={hasErrorAction() ? handleErrorAction : undefined} />
 
   {#if !serverOnline}
     <section class="state-card">
@@ -376,6 +387,7 @@
       </div>
       <h3>{serverState === 'Starting' ? 'Server is starting' : serverState === 'Stopping' ? 'Server is stopping' : 'Server must be running to manage worlds'}</h3>
       <p>{serverState === 'Starting' || serverState === 'Stopping' ? 'World controls will become available when the server is ready.' : 'Start this server from Overview, then return to Worlds.'}</p>
+      {#if serverState !== 'Starting' && serverState !== 'Stopping' && onRecoveryNavigate}<button class="secondary" onclick={() => onRecoveryNavigate?.('overview')}>Go to Overview</button>{/if}
     </section>
   {:else}
     {#if operationTask && ['QUEUED', 'RUNNING'].includes(operationTask.state)}
@@ -459,13 +471,7 @@
 
 {#if createOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !busy && (createOpen = false)}>
-    <div
-      use:dialogFocus={{ onEscape: () => (createOpen = false), initialFocusSelector: 'input', escapeDisabled: busy }}
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-world-title"
-    >
+    <div use:dialogFocus={{ onEscape: () => (createOpen = false), initialFocusSelector: 'input', escapeDisabled: busy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="create-world-title">
       <div class="modal-head"><div><h2 id="create-world-title">Create world</h2><p>Start with a simple space made for building.</p></div><button class="icon-button" aria-label="Close create world dialog" disabled={busy} onclick={() => (createOpen = false)}>×</button></div>
       <label>World name<input bind:value={createName} placeholder="Build World" disabled={busy} /></label>
       <label>World type<select bind:value={createType} disabled={busy}><option value="FLAT">Flat — normal building surface</option><option value="VOID">Void — empty building space</option></select></label>
@@ -476,13 +482,7 @@
 
 {#if importOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !importBusy && (importOpen = false)}>
-    <div
-      use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }}
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="import-world-title"
-    >
+    <div use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
       <div class="modal-head"><div><h2 id="import-world-title">Import world</h2><p>Add an existing Java world to this server.</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={pickImport}>Choose file</button></div></label>
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
@@ -493,13 +493,7 @@
 
 {#if settings}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !settingsBusy && (settings = null)}>
-    <div
-      use:dialogFocus={{ onEscape: () => (settings = null), initialFocusSelector: 'select', escapeDisabled: settingsBusy }}
-      class="modal settings-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="world-settings-title"
-    >
+    <div use:dialogFocus={{ onEscape: () => (settings = null), initialFocusSelector: 'select', escapeDisabled: settingsBusy }} class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="world-settings-title">
       <div class="modal-head"><div><h2 id="world-settings-title">{settings.displayName}</h2><p>World settings</p></div><button class="icon-button" aria-label="Close world settings" disabled={settingsBusy} onclick={() => (settings = null)}>×</button></div>
       <div class="settings-grid">
         <label>Game mode<select bind:value={settings.defaultGameMode} disabled={settingsBusy}><option value="CREATIVE">Creative</option><option value="SURVIVAL">Survival</option><option value="ADVENTURE">Adventure</option><option value="SPECTATOR">Spectator</option></select></label>
@@ -518,13 +512,7 @@
 
 {#if duplicateSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
-    <div
-      use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }}
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="duplicate-world-title"
-    >
+    <div use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }} class="modal" role="dialog" aria-modal="true" aria-labelledby="duplicate-world-title">
       <div class="modal-head"><div><h2 id="duplicate-world-title">Duplicate world</h2><p>Create a separate copy of {duplicateSource.displayName}.</p></div><button class="icon-button" aria-label="Close duplicate world dialog" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <label>New world name<input bind:value={duplicateName} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="primary" disabled={operationBusyWorldId !== null || !duplicateName.trim()} onclick={runDuplicate}>{operationBusyWorldId ? 'Duplicating…' : 'Duplicate'}</button></div>
@@ -534,13 +522,7 @@
 
 {#if exportSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
-    <div
-      use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }}
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="export-world-title"
-    >
+    <div use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }} class="modal" role="dialog" aria-modal="true" aria-labelledby="export-world-title">
       <div class="modal-head"><div><h2 id="export-world-title">Export world</h2><p>Save {exportSource.displayName} as a Java world ZIP.</p></div><button class="icon-button" aria-label="Close export world dialog" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <label>Export name<input bind:value={exportName} disabled={operationBusyWorldId !== null} /></label>
       <div class="modal-actions"><button class="secondary" disabled={operationBusyWorldId !== null} onclick={closePanels}>Cancel</button><button class="primary" disabled={operationBusyWorldId !== null || !exportName.trim()} onclick={runExport}>{operationBusyWorldId ? 'Exporting…' : 'Export'}</button></div>
@@ -550,13 +532,7 @@
 
 {#if deleteSource}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && operationBusyWorldId === null && closePanels()}>
-    <div
-      use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }}
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="delete-world-title"
-    >
+    <div use:dialogFocus={{ onEscape: closePanels, initialFocusSelector: 'input', escapeDisabled: operationBusyWorldId !== null }} class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-world-title">
       <div class="modal-head"><div><h2 id="delete-world-title">Delete {deleteSource.displayName}?</h2><p>This permanently removes the world from this server.</p></div><button class="icon-button" aria-label="Close delete world confirmation" disabled={operationBusyWorldId !== null} onclick={closePanels}>×</button></div>
       <div class="danger-callout">This cannot be undone. Type <strong>{deleteSource.displayName}</strong> to confirm.</div>
       <label>World name<input bind:value={deleteConfirmation} disabled={operationBusyWorldId !== null} /></label>
