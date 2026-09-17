@@ -14,21 +14,31 @@ final class ChunkPipelineMetricsTest {
     @Test
     void countsOnlyRecordedCoalescedRebuilds() {
         assertEquals(0L, ChunkPipelineMetrics.coalescedRebuildRequests());
-
         ChunkPipelineMetrics.recordCoalescedRebuild();
         ChunkPipelineMetrics.recordCoalescedRebuild();
-
         assertEquals(2L, ChunkPipelineMetrics.coalescedRebuildRequests());
     }
 
     @Test
     void countsChunkBufferAcquireMisses() {
         assertEquals(0L, ChunkPipelineMetrics.bufferAcquireMisses());
-
         ChunkPipelineMetrics.recordBufferAcquireMiss();
         ChunkPipelineMetrics.recordBufferAcquireMiss();
         ChunkPipelineMetrics.recordBufferAcquireMiss();
-
         assertEquals(3L, ChunkPipelineMetrics.bufferAcquireMisses());
+    }
+
+    @Test
+    void countsOnlyBufferBindsActuallyAvoidedByBatching() {
+        ChunkPipelineMetrics.recordUploadBatch(1);
+        ChunkPipelineMetrics.recordUploadBatch(4);
+        assertEquals(3L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
+    }
+
+    @Test
+    void countsOnlyPositiveStorageRemaps() {
+        ChunkPipelineMetrics.recordStorageSectionsRemapped(0);
+        ChunkPipelineMetrics.recordStorageSectionsRemapped(12);
+        assertEquals(12L, ChunkPipelineMetrics.storageSectionsRemapped());
     }
 }

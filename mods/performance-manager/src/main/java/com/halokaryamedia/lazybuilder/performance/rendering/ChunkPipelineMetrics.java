@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.LongAdder;
 public final class ChunkPipelineMetrics {
     private static final LongAdder COALESCED_REBUILD_REQUESTS = new LongAdder();
     private static final LongAdder BUFFER_ACQUIRE_MISSES = new LongAdder();
+    private static final LongAdder AVOIDED_UPLOAD_BUFFER_BINDS = new LongAdder();
+    private static final LongAdder STORAGE_SECTIONS_REMAPPED = new LongAdder();
 
     private ChunkPipelineMetrics() {
     }
@@ -26,8 +28,26 @@ public final class ChunkPipelineMetrics {
         return BUFFER_ACQUIRE_MISSES.sum();
     }
 
+    public static void recordUploadBatch(int taskCount) {
+        if (taskCount > 1) AVOIDED_UPLOAD_BUFFER_BINDS.add(taskCount - 1L);
+    }
+
+    public static long avoidedUploadBufferBinds() {
+        return AVOIDED_UPLOAD_BUFFER_BINDS.sum();
+    }
+
+    public static void recordStorageSectionsRemapped(int count) {
+        if (count > 0) STORAGE_SECTIONS_REMAPPED.add(count);
+    }
+
+    public static long storageSectionsRemapped() {
+        return STORAGE_SECTIONS_REMAPPED.sum();
+    }
+
     static void resetForTest() {
         COALESCED_REBUILD_REQUESTS.reset();
         BUFFER_ACQUIRE_MISSES.reset();
+        AVOIDED_UPLOAD_BUFFER_BINDS.reset();
+        STORAGE_SECTIONS_REMAPPED.reset();
     }
 }
