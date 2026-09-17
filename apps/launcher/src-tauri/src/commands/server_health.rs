@@ -1,4 +1,4 @@
-use crate::commands::error::{CommandError, CommandResult};
+use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::server_health::{self, ServerHealthSnapshot};
 use crate::engine::server_start_lock::ServerStartLease;
@@ -24,7 +24,7 @@ pub async fn launcher_server_repair(
     let operation = app
         .state::<OperationRegistry>()
         .begin_exclusive("repair-server", &resource, false)
-        .map_err(|error| CommandError::recoverable("OPERATION_BUSY", error, "Open Activity"))?;
+        .map_err(|error| CommandError::recoverable_action("OPERATION_BUSY", error, RecoveryAction::OpenActivity))?;
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -34,7 +34,11 @@ pub async fn launcher_server_repair(
         let _start_lease = match ServerStartLease::acquire() {
             Ok(value) => value,
             Err(message) => {
-                let error = CommandError::recoverable("SERVER_START_BUSY", message, "Wait for server start");
+                let error = CommandError::recoverable_action(
+                    "SERVER_START_BUSY",
+                    message,
+                    RecoveryAction::WaitForServerStart,
+                );
                 fail_operation(&operations, &operation_id, &error);
                 return Err(error);
             }
@@ -56,7 +60,7 @@ pub async fn launcher_server_repair(
             None,
         );
         if let Err(message) = server_process_guard::ensure_root_not_running(std::path::Path::new(&entry.path)) {
-            let error = CommandError::recoverable("SERVER_BUSY", message, "Stop server");
+            let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error);
             return Err(error);
         }
@@ -73,7 +77,11 @@ pub async fn launcher_server_repair(
                 Ok(result)
             }
             Err(message) => {
-                let error = CommandError::recoverable("REPAIR_FAILED", message, "Review server health");
+                let error = CommandError::recoverable_action(
+                    "REPAIR_FAILED",
+                    message,
+                    RecoveryAction::ReviewServerHealth,
+                );
                 fail_operation(&operations, &operation_id, &error);
                 Err(error)
             }
