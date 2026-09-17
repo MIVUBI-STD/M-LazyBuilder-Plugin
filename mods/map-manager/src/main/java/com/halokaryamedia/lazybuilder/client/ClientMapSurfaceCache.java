@@ -351,6 +351,9 @@ public final class ClientMapSurfaceCache {
                     .whenComplete((snapshot, failure) -> {
                         regionLoadsInFlight.decrementAndGet();
                         if (generation != scopeGeneration) return;
+                        if (failure != null) {
+                            LOGGER.warn("Ignoring unreadable LazyBuilder map cache region for this session: {}", file, failure);
+                        }
                         completedLoads.add(new LoadedRegion(
                                 generation,
                                 regionKey,
@@ -376,7 +379,10 @@ public final class ClientMapSurfaceCache {
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
-                    if (region != null) region.loadScheduled = false;
+                    if (region != null) {
+                        region.loaded = true;
+                        region.loadScheduled = false;
+                    }
                     continue;
                 }
 
@@ -528,17 +534,24 @@ public final class ClientMapSurfaceCache {
         return result;
     }
 
-    private static RegionSnapshot readRegion(Path source) {
+    static RegionSnapshot readRegion(Path source) {
         if (source == null || !Files.isRegularFile(source)) return RegionSnapshot.EMPTY;
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(
                 new GZIPInputStream(Files.newInputStream(source))))) {
             if (in.readInt() != FORMAT_VERSION) return RegionSnapshot.EMPTY;
-            int count = Math.max(0, Math.min(REGION_CAPACITY, in.readInt()));
+            int count = in.readInt();
+            if (count < 0 || count > REGION_CAPACITY) {
+                throw new IOException("Invalid LazyBuilder map region entry count: " + count);
+            }
             int[] indices = new int[count];
             int[] colors = new int[count];
             int[] heights = new int[count];
             for (int i = 0; i < count; i++) {
-                indices[i] = in.readUnsignedShort();
+                int index = in.readUnsignedShort();
+                if (index >= REGION_CAPACITY) {
+                    throw new IOException("Invalid LazyBuilder map region index: " + index);
+                }
+                indices[i] = index;
                 colors[i] = in.readInt();
                 heights[i] = in.readInt();
             }
