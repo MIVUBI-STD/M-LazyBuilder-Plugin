@@ -4,6 +4,7 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { presentRuntimeError } from '../app/runtimeErrorPresentation';
   import type { RuntimeErrorPresentation } from '../app/runtimeErrorPresentation';
+  import type { RecoveryAction } from '../app/bridge/errors';
   import type { PluginInstallResult, PluginSummary, ServerState } from '../app/bridge/runtimeApi';
 
   let plugins: PluginSummary[] = [];
@@ -29,8 +30,8 @@
     visiblePluginList = extraPluginList.filter((plugin) => !query || `${plugin.displayName} ${plugin.version}`.toLowerCase().includes(query));
   }
 
-  function localError(code: string, message: string, action = ''): RuntimeErrorPresentation {
-    return { code, message, details: '', recoverable: Boolean(action), action, correlationId: '' };
+  function localError(code: string, message: string, action: RecoveryAction | null): RuntimeErrorPresentation {
+    return { code, message, details: '', recoverable: action !== null, action, correlationId: '' };
   }
 
   async function refresh() {
@@ -56,7 +57,7 @@
         serverState === 'Detached'
           ? 'The server is running externally. Stop it before changing plugins.'
           : 'Stop the server before changing plugins.',
-        'Stop the server and retry'
+        'STOP_SERVER'
       );
       return;
     }
@@ -116,7 +117,11 @@
     if (!plugin.mutable) return;
     const jar = plugin.candidateFiles?.[0];
     if (!jar) {
-      error = localError('PLUGIN_FILE_AMBIGUOUS', 'LazyBuilder could not identify the broken plugin file safely.', 'Refresh plugins and review the affected files');
+      error = localError(
+        'PLUGIN_FILE_AMBIGUOUS',
+        'LazyBuilder could not identify the broken plugin file safely.',
+        'REVIEW_PLUGINS'
+      );
       return;
     }
     if (!window.confirm(`Remove broken plugin file ${jar}?`)) return;
