@@ -17,10 +17,6 @@ pub fn status() -> Result<RuntimeUpdateStatus, String> {
     status_with_release(&workspace, &release)
 }
 
-pub fn update_paper() -> Result<RuntimeUpdateStatus, String> {
-    update_paper_tracked(|_, _, _| {})
-}
-
 /// Update Paper while exposing real transaction boundaries to the Launcher operation
 /// model. No percentage is emitted because the provider does not expose byte progress.
 pub fn update_paper_tracked<F>(mut on_stage: F) -> Result<RuntimeUpdateStatus, String>
