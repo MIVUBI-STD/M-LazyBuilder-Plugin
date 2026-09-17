@@ -25,7 +25,7 @@ Performance Manager does not own shader loading or shader-pack UX, building/edit
 
 ## Current renderer ownership
 
-The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, thread-local section-builder layer lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching/pacing, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
+The first-party renderer path now includes conservative culling, chunk rebuild coalescing, block-color lookup caching, block-side visibility caching, section directional visibility caching, terrain-layer membership/buffer lookup caching, block-layer allocator lookup caching, thread-local section-builder layer lookup caching, toroidal built-chunk storage remapping, per-layer terrain submission indexing, chunk upload batching/pacing, terrain GPU residency accounting, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and pre-scheduler translucent-sort coalescing.
 
 The terrain submission index preserves vanilla draw order inside each render layer. It is rebuilt only when the visible built-chunk set or published chunk data changes, and it is enabled only for sufficiently large sparse layer populations where indexed traversal is estimated to visit fewer sections than five vanilla full scans.
 
@@ -35,11 +35,15 @@ Block-layer allocator lookup caching keeps the original `BlockBufferAllocatorSto
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks before yielding to the next frame so a large rebuild burst cannot monopolize one render-thread pass. Shutdown/stop paths ignore that cap and drain the queue fully so upload data and futures are not stranded.
 
+Terrain GPU residency is now tracked at the existing `VertexBuffer` ownership boundary. Each terrain buffer is associated with its current section and one of the five fixed terrain layers; successful vertex/index uploads sample the actual `GpuBuffer.size` capacities after upload, section remaps update ownership, and buffer deletion/ChunkBuilder stop releases bookkeeping. Accounting regions are fixed 8x4x8 section groups and are diagnostics/planning units only: no render order, mesh format, shader state, or physical GPU allocation policy is changed by the ledger.
+
+This residency foundation exposes current/peak terrain resident capacity, active resident buffers, active accounting regions, largest region footprint, and cross-region buffer relocations. Those measurements are the input for the later physical render-region arena allocator rather than a claim that the arena already exists.
+
 Translucent sort coalescing mirrors vanilla cancellation semantics: sections without a translucent layer do not enqueue a sort task, and an unchanged normalized camera-relative position is skipped only when vanilla would also cancel it. Camera-axis cases still sort.
 
-Full mesh replacement, GPU render-region arenas, terrain multi-draw submission, Fabric Renderer API ownership, and Iris/shader compatibility are not yet claimed equivalent.
+Full mesh replacement, physical GPU render-region arenas, terrain multi-draw submission, Fabric Renderer API ownership, and Iris/shader compatibility are not yet claimed equivalent.
 
-A sparse/lazy `VertexBuffer` recreation path is deliberately not implemented yet. Minecraft's `VertexBuffer` constructor asserts the render thread, while meshing can run on worker threads; recreating closed GPU buffers from the mesh worker would violate the render-thread boundary. This remains deferred until buffer creation can be owned safely by a render-thread upload/arena path.
+A sparse/lazy `VertexBuffer` recreation path is deliberately not implemented yet. Minecraft's `VertexBuffer` constructor asserts the render thread, while meshing can run on worker threads; recreating closed GPU buffers from the mesh worker would violate the render-thread boundary. Physical arena allocation therefore remains render-thread work and will consume the residency ownership/size data introduced here.
 
 ## FRAPI and shader compatibility boundary
 
@@ -57,7 +61,7 @@ For the current builder stack, this resolves to `iris+sodium`: Sodium declares F
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand and includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, upload-budget stops, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, avoided terrain-section visits, section-builder BufferBuilder cache hits, and the detected renderer pipeline owner.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand and includes chunk backlog, upload backlog, free chunk buffers, coalesced rebuild requests, buffer acquire misses, avoided upload binds, upload-budget stops, remapped storage sections, section visibility cache hits, avoided translucent sort tasks, avoided terrain-section visits, section-builder BufferBuilder cache hits, terrain GPU residency/region metrics, and the detected renderer pipeline owner.
 
 The renderer diagnostic uses deterministic labels such as:
 
@@ -86,4 +90,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Implementation details such as compatibility markers, visibility masks, layer submission indexing, section-builder lookup caches, allocator lookup caching, upload grouping/pacing, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.
+Implementation details such as compatibility markers, visibility masks, layer submission indexing, section-builder lookup caches, allocator lookup caching, upload grouping/pacing, terrain residency accounting, sort coalescing, provider caches, buffer growth, storage-ring mapping, and allocator behavior are not user-facing knobs.

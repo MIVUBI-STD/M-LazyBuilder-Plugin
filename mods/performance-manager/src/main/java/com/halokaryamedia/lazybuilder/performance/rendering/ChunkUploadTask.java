@@ -66,6 +66,9 @@ public final class ChunkUploadTask implements Runnable {
             } else if (indexData != null) {
                 indexData.close();
             }
+            if (buffer.isClosed()) {
+                TerrainGpuResidencyTracker.release(buffer);
+            }
             future.complete(null);
         } catch (Throwable throwable) {
             future.completeExceptionally(throwable);

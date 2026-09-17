@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyLedger;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.util.Window;
@@ -34,6 +36,7 @@ public final class PerformanceSnapshotReader {
         int chunkTasksToBatch = chunkBuilder == null ? 0 : chunkBuilder.getToBatchCount();
         int chunksToUpload = chunkBuilder == null ? 0 : chunkBuilder.getChunksToUpload();
         int freeChunkBuffers = chunkBuilder == null ? 0 : chunkBuilder.getFreeBufferCount();
+        TerrainGpuResidencyLedger.Snapshot residency = TerrainGpuResidencyTracker.snapshot();
 
         return new PerformanceSnapshot(
                 fps,
@@ -60,6 +63,12 @@ public final class PerformanceSnapshotReader {
                 ChunkPipelineMetrics.avoidedTerrainSectionVisits(),
                 ChunkPipelineMetrics.sectionBuilderBufferLookupHits(),
                 ChunkPipelineMetrics.uploadBudgetStops(),
+                residency.residentBytes(),
+                residency.peakResidentBytes(),
+                residency.residentBuffers(),
+                residency.residentRegions(),
+                residency.largestRegionBytes(),
+                residency.regionRelocations(),
                 RendererCompatibility.detect().ownerSummary(),
                 chunkDebug,
                 entityDebug,

@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadDrainPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadTask;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
@@ -83,6 +84,11 @@ abstract class ChunkBuilderUploadMixin {
             ChunkPipelineMetrics.recordUploadBudgetStop();
         }
         ci.cancel();
+    }
+
+    @Inject(method = "stop", at = @At("TAIL"))
+    private void lazybuilder$clearTerrainResidencyAfterStop(CallbackInfo ci) {
+        TerrainGpuResidencyTracker.clear();
     }
 
     private int lazybuilder$runUploadBatch(ChunkUploadTask first, int remainingBudget) {

@@ -32,6 +32,12 @@ final class PerformanceSnapshotTest {
                 23L,
                 29L,
                 31L,
+                4096L,
+                8192L,
+                12,
+                3,
+                2048L,
+                5L,
                 "iris+sodium",
                 "chunks",
                 "entities",
@@ -51,6 +57,12 @@ final class PerformanceSnapshotTest {
         assertEquals(23L, snapshot.avoidedTerrainSectionVisits());
         assertEquals(29L, snapshot.sectionBuilderBufferLookupHits());
         assertEquals(31L, snapshot.chunkUploadBudgetStops());
+        assertEquals(4096L, snapshot.terrainGpuResidentBytes());
+        assertEquals(8192L, snapshot.peakTerrainGpuResidentBytes());
+        assertEquals(12, snapshot.terrainGpuResidentBuffers());
+        assertEquals(3, snapshot.terrainGpuResidentRegions());
+        assertEquals(2048L, snapshot.largestTerrainRegionBytes());
+        assertEquals(5L, snapshot.terrainBufferRegionRelocations());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
     }
 }
