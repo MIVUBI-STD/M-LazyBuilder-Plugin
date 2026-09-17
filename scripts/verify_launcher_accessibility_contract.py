@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Launcher modal, disclosure-menu, activity and high-contrast accessibility contracts."""
+"""Verify Launcher keyboard, modal, menu, activity and high-contrast accessibility contracts."""
 
 from pathlib import Path
 
@@ -15,39 +15,69 @@ def require(path: Path, *needles: str) -> None:
 
 
 def main() -> int:
-    modal = SRC / "app" / "modalAccessibility.ts"
-    disclosure = SRC / "app" / "disclosureAccessibility.ts"
-    activity = SRC / "app" / "activityAccessibility.ts"
-    main = SRC / "main.ts"
+    dialog = SRC / "app" / "dialogFocus.ts"
+    details_menu = SRC / "app" / "detailsMenu.ts"
+    controlled_menu = SRC / "app" / "controlledMenu.ts"
+    activity = SRC / "pages" / "Activity.svelte"
+    app = SRC / "App.svelte"
     css = SRC / "styles" / "app.css"
 
-    require(modal, "MutationObserver", "event.key === 'Escape'", "event.key !== 'Tab'", "restoreFocus")
     require(
-        disclosure,
-        "details.menu, details.row-menu",
+        dialog,
+        "const previousFocus",
+        "event.key === 'Escape'",
+        "event.key !== 'Tab'",
+        "last.focus()",
+        "first.focus()",
+        "previousFocus?.isConnected",
+    )
+    require(
+        details_menu,
+        "aria-haspopup",
+        "aria-expanded",
         "event.key === 'ArrowDown'",
         "event.key === 'ArrowUp'",
         "event.key === 'Home'",
         "event.key === 'End'",
         "event.key === 'Escape'",
         "summary?.focus()",
+        "pointerdown",
+    )
+    require(
+        controlled_menu,
+        "aria-haspopup",
+        "aria-expanded",
+        "event.key === 'ArrowDown'",
+        "event.key === 'ArrowUp'",
+        "event.key === 'Home'",
+        "event.key === 'End'",
+        "event.key === 'Escape'",
+        "trigger?.focus()",
+        "pointerListening",
     )
     require(
         activity,
-        "installActivityAccessibility",
-        "aria-live', 'off'",
-        "role', 'status'",
-        "HISTORY_ROW_SELECTOR",
-        "MAX_SEEN = 100",
-        "Existing history is context, not a new event",
+        'aria-live="off"',
+        'role="alert"',
+        '<time datetime=',
+        'aria-label={`${progressPercent(operation)} percent complete`}',
     )
     require(
-        main,
-        "installModalAccessibility();",
-        "installDisclosureAccessibility();",
-        "installActivityAccessibility();",
+        app,
+        'class="skip-link"',
+        'href="#main-content"',
+        'id="main-content"',
+        'tabindex="-1"',
+        'aria-current=',
     )
-    require(css, "@media (prefers-reduced-motion: reduce)", "@media (forced-colors: active)", "outline: 2px solid Highlight")
+    require(
+        css,
+        "@media (prefers-reduced-motion: reduce)",
+        "@media (forced-colors: active)",
+        "outline: 2px solid Highlight",
+        ".skip-link:focus",
+        "[tabindex]:focus-visible",
+    )
 
     print("Launcher accessibility contract OK")
     return 0

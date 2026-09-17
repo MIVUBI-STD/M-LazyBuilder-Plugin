@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RUST = ROOT / "apps" / "launcher" / "src-tauri" / "src"
 COMMANDS = RUST / "commands"
 BOOTSTRAP = RUST / "app_bootstrap.rs"
-RUNTIME_API = ROOT / "apps" / "launcher" / "src" / "app" / "bridge" / "runtimeApi.ts"
+BRIDGE = ROOT / "apps" / "launcher" / "src" / "app" / "bridge"
+RUNTIME_API = BRIDGE / "runtimeApi.ts"
 
 COMMAND_RE = re.compile(r"#\[tauri::command\]\s*pub\s+(?:async\s+)?fn\s+([A-Za-z0-9_]+)", re.M)
 REGISTERED_RE = re.compile(r"commands::([A-Za-z0-9_]+)::([A-Za-z0-9_]+)")
@@ -58,25 +59,36 @@ def main() -> int:
         errors.append(f"app_bootstrap.rs registers missing/non-command owner commands::{module}::{command}")
 
     runtime_api = RUNTIME_API.read_text(encoding="utf-8")
-    invoked = INVOKE_RE.findall(runtime_api)
-    invoked_counts = Counter(invoked)
+    if "invokeRuntime" in runtime_api:
+        errors.append("runtimeApi.ts must remain composition-only; command strings belong to bounded *Api modules")
+
+    api_files = sorted(path for path in BRIDGE.glob("*Api.ts") if path.name != "runtimeApi.ts")
+    invoked_by_file: dict[str, list[str]] = {}
+    all_invoked: list[str] = []
+    for path in api_files:
+        commands = INVOKE_RE.findall(path.read_text(encoding="utf-8"))
+        invoked_by_file[path.name] = commands
+        all_invoked.extend(commands)
+
+    invoked_counts = Counter(all_invoked)
     for command, count in sorted(invoked_counts.items()):
         if count != 1:
-            errors.append(f"runtimeApi.ts declares command string {command!r} {count} times")
+            locations = [name for name, commands in invoked_by_file.items() if command in commands]
+            errors.append(f"frontend bounded APIs declare command string {command!r} {count} times: {locations}")
         if command not in owners:
-            errors.append(f"runtimeApi.ts invokes unregistered Tauri command {command!r}")
+            errors.append(f"frontend bounded API invokes missing Tauri command {command!r}")
 
-    for command in invoked:
+    for command in all_invoked:
         modules = owners.get(command, [])
         if len(modules) == 1 and (modules[0], command) not in registered_set:
-            errors.append(f"runtimeApi.ts command {command!r} is owned by {modules[0]} but not exposed by generate_handler")
+            errors.append(f"frontend command {command!r} is owned by {modules[0]} but not exposed by generate_handler")
 
     registered_names = {command for _, command in registered_set}
     invoked_names = set(invoked_counts)
     for command in sorted(registered_names - invoked_names):
-        errors.append(f"registered Tauri command {command!r} has no canonical runtimeApi frontend owner")
+        errors.append(f"registered Tauri command {command!r} has no bounded frontend API owner")
     for command in sorted(invoked_names - registered_names):
-        errors.append(f"runtimeApi command {command!r} is not registered in generate_handler")
+        errors.append(f"frontend command {command!r} is not registered in generate_handler")
 
     if errors:
         print("Launcher command surface verification failed:")
@@ -86,7 +98,7 @@ def main() -> int:
 
     print(
         f"Launcher command surface OK ({len(module_commands)} Rust commands; "
-        f"{len(registered_set)} registered; {len(invoked_counts)} frontend commands)"
+        f"{len(registered_set)} registered; {len(invoked_counts)} frontend commands across {len(api_files)} bounded APIs)"
     )
     return 0
 

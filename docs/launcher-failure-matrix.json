@@ -182,9 +182,9 @@
     },
     {
       "id": "world-control-port-conflict-before-paper-start",
-      "owner": "apps/launcher/src-tauri/src/commands/server_manager.rs",
-      "markers": ["ensure_world_control_port_available", "ensure_loopback_port_available", "occupied_world_control_port_is_rejected_before_paper_start"],
-      "testMarkers": ["occupied_world_control_port_is_rejected_before_paper_start"]
+      "owner": "apps/launcher/src-tauri/src/engine/world_manager/mod.rs",
+      "markers": ["prepare_control_options_for_start", "loopback_port_available", "CONTROL_PORT_SCAN_LIMIT", "LazyBuilder could not find a free World Manager loopback port"],
+      "testMarkers": ["occupied_loopback_port_is_not_available"]
     }
   ]
 }
