@@ -69,8 +69,7 @@ def main() -> int:
     support_bundle = RUST / "engine" / "support_bundle.rs"
     app = LAUNCHER / "src" / "App.svelte"
     close_guard = LAUNCHER / "src" / "app" / "closeGuard.ts"
-    modal_accessibility = LAUNCHER / "src" / "app" / "modalAccessibility.ts"
-    frontend_bootstrap = LAUNCHER / "src" / "main.ts"
+    dialog_focus = LAUNCHER / "src" / "app" / "dialogFocus.ts"
     activity = LAUNCHER / "src" / "pages" / "Activity.svelte"
     dashboard = LAUNCHER / "src" / "pages" / "Dashboard.svelte"
     worlds = LAUNCHER / "src" / "pages" / "Worlds.svelte"
@@ -335,19 +334,24 @@ def main() -> int:
         "Closing now will interrupt the operation and may require recovery",
         "RUNNING_SERVER_STATES",
     )
-    require(app, "installLauncherCloseGuard", "closeGuardUnlisten = await installLauncherCloseGuard()")
+    require(
+        app,
+        "installLauncherCloseGuard",
+        "closeGuardUnlisten = await installLauncherCloseGuard(handleCloseRequest)",
+        "use:dialogFocus",
+        'aria-modal="true"',
+    )
     forbid(app, "getCurrentWindow")
 
     require(
-        modal_accessibility,
-        'role="dialog"',
-        "MutationObserver",
+        dialog_focus,
+        "const previousFocus",
         "event.key === 'Escape'",
         "event.key !== 'Tab'",
-        "Close dialog",
-        "restoreFocus",
+        "last.focus()",
+        "first.focus()",
+        "previousFocus?.isConnected",
     )
-    require(frontend_bootstrap, "installModalAccessibility", "installModalAccessibility();")
 
     require(
         activity,
