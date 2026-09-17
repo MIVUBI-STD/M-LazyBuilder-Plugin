@@ -112,8 +112,8 @@
     </section>
 
     <section class="future-group" aria-label="Update preferences status">
-      <div><strong>Update preferences</strong><span>Automatic update checks and update channels will be available after secure update verification is configured.</span></div>
-      <span class="planned-badge">Not available yet</span>
+      <div><strong>App updates</strong><span>This build does not perform automatic update checks from Settings. The stable channel remains locked until signed in-app update verification is available.</span></div>
+      <span class="planned-badge">Manual release updates</span>
     </section>
 
     <footer class="settings-footer">
