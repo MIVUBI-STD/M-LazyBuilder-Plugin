@@ -1,10 +1,12 @@
 import { appApi } from './appApi';
-import { integrationApi } from './integrationApi';
+import { clientApi } from './clientApi';
+import { pluginApi } from './pluginApi';
 import { serverApi } from './serverApi';
 import { workspaceApi } from './workspaceApi';
+import { worldApi } from './worldApi';
 
 export { RuntimeError, runtimeError } from './errors';
-export type { RuntimeCommandError } from './errors';
+export type { RecoveryAction, RuntimeCommandError } from './errors';
 export * from './runtimeTypes';
 
 /**
@@ -25,7 +27,7 @@ export const runtimeApi = {
   backups: workspaceApi.backups,
   workspace: workspaceApi.workspace,
   server: serverApi.server,
-  plugins: integrationApi.plugins,
-  client: integrationApi.client,
-  worlds: integrationApi.worlds
+  plugins: pluginApi,
+  client: clientApi,
+  worlds: worldApi
 };
