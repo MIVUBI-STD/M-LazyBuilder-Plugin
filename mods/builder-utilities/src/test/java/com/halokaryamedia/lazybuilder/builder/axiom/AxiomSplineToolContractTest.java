@@ -1,12 +1,11 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.*;
 
 class AxiomSplineToolContractTest {
-    @Test
-    void splineToolRemainsPreviewOnly() {
-        assertFalse(AxiomSplineToolContract.WORLD_MUTATION_ENABLED);
+    @Test void splineToolUsesRecoverySafeWorldMutationPath() {
+        assertTrue(AxiomSplineToolContract.WORLD_MUTATION_ENABLED);
+        assertEquals(SplinePreviewVoxelizer.MAX_PREVIEW_VOXELS, AxiomSplineToolContract.MAX_MUTATION_VOXELS);
     }
 }

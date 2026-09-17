@@ -1,13 +1,14 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
+import com.halokaryamedia.lazybuilder.builder.material.BlockStateSource;
 import com.halokaryamedia.lazybuilder.builder.mutation.WorldBlockStateSource;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.Objects;
 
-/** Canonical read adapter matching the History v2 block-state serialization used for Axiom dispatch. */
-public final class AxiomClientWorldStateSource implements WorldBlockStateSource {
+/** Canonical world read adapter shared by material planning and mutation reconciliation. */
+public final class AxiomClientWorldStateSource implements WorldBlockStateSource, BlockStateSource {
     private final ClientWorld world;
     private final AxiomBlockStateCodec codec;
 
