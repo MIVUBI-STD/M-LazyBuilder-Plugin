@@ -7,6 +7,7 @@ export type RecoveryAction =
   | 'REPAIR_SERVER'
   | 'RESTART_LAUNCHER'
   | 'RETRY_OPERATION'
+  | 'REVIEW_BACKUPS'
   | 'REVIEW_SERVER_HEALTH'
   | 'STOP_SERVER'
   | 'WAIT_FOR_SERVER_START';
@@ -29,6 +30,7 @@ const RECOVERY_ACTIONS: ReadonlySet<string> = new Set<RecoveryAction>([
   'REPAIR_SERVER',
   'RESTART_LAUNCHER',
   'RETRY_OPERATION',
+  'REVIEW_BACKUPS',
   'REVIEW_SERVER_HEALTH',
   'STOP_SERVER',
   'WAIT_FOR_SERVER_START'
@@ -43,6 +45,7 @@ const RECOVERY_ACTION_LABELS: Record<RecoveryAction, string> = {
   REPAIR_SERVER: 'Repair server',
   RESTART_LAUNCHER: 'Restart LazyBuilder',
   RETRY_OPERATION: 'Try again',
+  REVIEW_BACKUPS: 'Review restore points',
   REVIEW_SERVER_HEALTH: 'Review server readiness',
   STOP_SERVER: 'Stop server',
   WAIT_FOR_SERVER_START: 'Wait for server start'
