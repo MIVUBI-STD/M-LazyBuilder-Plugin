@@ -21,28 +21,13 @@ Performance Manager owns only client performance behavior:
 - chunk mesh/render-region/buffer efficiency when the renderer replacement phase is reached;
 - compatibility policy for builder-critical render consumers.
 
-Performance Manager does not own:
-
-- shader loading or shader-pack UX;
-- building/editing behavior;
-- map/world management;
-- screenshot/chat/window convenience;
-- automatic graphics-quality reduction;
-- speculative background schedulers or generic worker frameworks.
+Performance Manager does not own shader loading or shader-pack UX, building/editing behavior, map/world management, screenshot/chat/window convenience, automatic graphics-quality reduction, or speculative background schedulers.
 
 ## Builder performance rule
 
 Optimization success is not defined by peak FPS in an empty vanilla world. Representative workload includes large builds, high render distance, many entities/block entities, rapid creative flight, frequent chunk updates, large resource packs, Axiom, WorldEditCUI, and other builder-facing overlays.
 
-Relevant proof targets include:
-
-- average frame time and FPS;
-- 1% low / sustained slow-frame behavior;
-- worst recent frame time;
-- camera-motion stutter;
-- chunk rebuild/upload latency;
-- entity-heavy render cost;
-- retained memory and GC pressure.
+Relevant proof targets include average frame time/FPS, 1% low behavior, worst recent frame time, camera-motion stutter, chunk rebuild/upload latency, entity-heavy render cost, retained memory, and GC pressure.
 
 Performance Manager must preserve visual intent:
 
@@ -75,6 +60,8 @@ Current culling compatibility policy is deliberately narrow:
 - when the external `entityculling` mod is present, LazyBuilder culling remains inactive to avoid competing render owners during migration;
 - WorldEditCUI overlay rendering remains outside the entity/block-entity culling path and is not intercepted.
 
+Rendering-efficiency mixins are also migration-aware. When the external `immediatelyfast` mod is installed, the first-party text-buffer and GPU-buffer mixins are not applied at all, avoiding redirect conflicts while migration is incomplete.
+
 ## Runtime model
 
 The existing runtime remains the single authority:
@@ -90,7 +77,7 @@ PerformanceManagerClient
     ├── culling/
     │   ├── CullingRuntime
     │   └── VisibilityDecision
-    ├── rendering/        # capability owner as implemented
+    ├── rendering/        # focused render-path optimizations as implemented
     ├── memory/           # capability owner as implemented
     ├── compatibility/    # explicit bypass/integration policy
     └── diagnostics/
@@ -111,6 +98,9 @@ The currently implemented first-party behavior is production-owned:
 - culling render hooks never raycast directly; stale/unknown state renders and is queued for later evaluation;
 - opaque full cubes are the only definite ray occluders; partial/transparent collision shapes are stepped through and uncertainty fails open;
 - modded/custom render types bypass culling;
+- consecutive identical text render-layer buffer lookups inside vanilla text drawing reuse the last consumer instead of repeatedly querying the provider;
+- writable non-static GPU vertex buffers are not shrunk and reallocated when the current allocation already fits the upload; static-write buffers retain vanilla resize behavior;
+- rendering-efficiency mixins are disabled while ImmediatelyFast is present to keep one active owner during migration;
 - on-demand performance snapshots containing Minecraft/client state without a metrics-history database;
 - no dedicated performance worker thread or polling service.
 
@@ -128,8 +118,6 @@ background.minimized_fps=10
 
 The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured foreground video-option FPS limit. When focus returns, the current user limit remains authoritative.
 
-This is the first capability intended to replace the corresponding external background-FPS role once runtime proof is complete.
-
 ## Culling
 
 Current defaults:
@@ -142,6 +130,23 @@ culling.block_entities=true
 The culling path is intentionally conservative. It samples multiple points on vanilla entity/block-entity bounds, caches fresh results briefly, invalidates on camera/target movement or world changes, and limits evaluation work per client tick. If evaluation cannot establish safe occlusion, the target renders.
 
 External EntityCulling remains the active owner when its mod id is present. Remove that migration dependency only after representative Minecraft runtime proof shows the first-party path is correct for the intended builder workload.
+
+## Rendering efficiency
+
+Current default:
+
+```properties
+rendering.optimizations=true
+```
+
+The first production rendering subset deliberately targets low-risk redundant work rather than broad renderer replacement:
+
+- text rendering caches the immediately previous render-layer consumer inside a vanilla `TextRenderer.Drawer`, avoiding repeated `VertexConsumerProvider#getBuffer` calls for consecutive glyph work on the same layer;
+- vertex uploads keep an existing writable non-static GPU allocation when it is already large enough instead of shrinking/reallocating it for each smaller upload;
+- static-write GPU buffers preserve vanilla resizing semantics;
+- when ImmediatelyFast is installed, both first-party redirect mixins are rejected by the mixin plugin so the external migration source remains the sole owner of those hooks.
+
+HUD batching, screen batching, sign atlas buffering, map atlas generation, GL error-check changes, and other ImmediatelyFast features are not assumed equivalent merely because the source mod contains them. They require separate correctness/compatibility proof before adoption.
 
 ## Diagnostics
 
@@ -174,7 +179,7 @@ External performance mods are migration references, not the architecture.
 | Dynamic FPS background throttling | `background/` | retain existing LazyBuilder policy and prove parity before removing the external mod |
 | EntityCulling entity/block-entity occlusion | `culling/` | first-party conservative implementation exists; keep external-owner bypass until runtime proof is complete |
 | MoreCulling face/model/item-frame culling | `culling/` | adopt only visually safe, measurable cases |
-| ImmediatelyFast immediate rendering efficiency | `rendering/` | optimize proven hot paths instead of cloning every hook |
+| ImmediatelyFast immediate rendering efficiency | `rendering/` | first low-risk text lookup and GPU resize subset exists; keep external-owner mixin gate until runtime proof is complete |
 | FerriteCore memory reductions | `memory/` | add only measured, maintainable dedup/cache improvements |
 | Sodium chunk/render pipeline | `rendering/` | final large phase; renderer ownership requires dedicated compatibility and benchmark proof |
 | Reese's Sodium Options | settings presentation | unnecessary after first-party settings own first-party capabilities |
@@ -189,7 +194,7 @@ Implementation order is deliberate:
 
 1. production contract, runtime/config foundation, and diagnostics;
 2. entity and block-entity culling;
-3. conservative face/item-frame culling;
+3. conservative face/item-frame culling where correctness can be proven;
 4. proven immediate-mode/HUD/screen/buffer optimizations;
 5. targeted memory reductions;
 6. chunk mesh/render-region/GPU-buffer pipeline sufficient to retire Sodium-class renderer dependency;
@@ -209,6 +214,7 @@ background.unfocused_fps=30
 background.minimized_fps=10
 culling.entities=true
 culling.block_entities=true
+rendering.optimizations=true
 ```
 
 Future settings should remain high-level. Buffer strategies, visibility-cache TTLs, mesh allocator details, dedup tables, and similar implementation mechanics are not normal user settings.

@@ -10,15 +10,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PerformanceMixinRegistrationTest {
     @Test
-    void cullingMixinsStayRegisteredInClientRuntime() throws IOException {
+    void performanceMixinsStayRegisteredInClientRuntime() throws IOException {
         try (var stream = PerformanceMixinRegistrationTest.class.getClassLoader()
                 .getResourceAsStream("lazybuilder-performance-manager.mixins.json")) {
             assertNotNull(stream, "Performance mixin configuration must be packaged in the mod JAR");
             String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(json.contains("WorldRendererMixin"), "entity culling mixin must stay registered");
             assertTrue(json.contains("BlockEntityRenderDispatcherMixin"), "block entity culling mixin must stay registered");
-            assertTrue(json.contains("\"required\": true"), "culling mixin failures must fail loudly");
-            assertTrue(json.contains("\"defaultRequire\": 1"), "culling injections must require their target");
+            assertTrue(json.contains("TextRendererDrawerMixin"), "text render lookup mixin must stay registered");
+            assertTrue(json.contains("VertexBufferMixin"), "GPU buffer resize mixin must stay registered");
+            assertTrue(json.contains("PerformanceMixinPlugin"), "migration compatibility plugin must stay registered");
+            assertTrue(json.contains("\"required\": true"), "performance mixin failures must fail loudly");
+            assertTrue(json.contains("\"defaultRequire\": 1"), "performance injections must require their target");
         }
     }
 }

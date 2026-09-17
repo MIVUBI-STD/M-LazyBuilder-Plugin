@@ -6,10 +6,11 @@ public record PerformancePreferences(
         int unfocusedFpsLimit,
         int minimizedFpsLimit,
         boolean entityCulling,
-        boolean blockEntityCulling
+        boolean blockEntityCulling,
+        boolean renderingOptimizations
 ) {
     public static PerformancePreferences defaults() {
-        return new PerformancePreferences(true, 30, 10, true, true);
+        return new PerformancePreferences(true, 30, 10, true, true, true);
     }
 
     public PerformancePreferences {

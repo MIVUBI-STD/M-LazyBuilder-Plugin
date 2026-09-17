@@ -44,7 +44,8 @@ public final class PerformanceConfigStore {
                 readInt(properties, "background.unfocused_fps", defaults.unfocusedFpsLimit()),
                 readInt(properties, "background.minimized_fps", defaults.minimizedFpsLimit()),
                 readBoolean(properties, "culling.entities", defaults.entityCulling()),
-                readBoolean(properties, "culling.block_entities", defaults.blockEntityCulling())
+                readBoolean(properties, "culling.block_entities", defaults.blockEntityCulling()),
+                readBoolean(properties, "rendering.optimizations", defaults.renderingOptimizations())
         );
     }
 
@@ -55,6 +56,7 @@ public final class PerformanceConfigStore {
         properties.setProperty("background.minimized_fps", Integer.toString(preferences.minimizedFpsLimit()));
         properties.setProperty("culling.entities", Boolean.toString(preferences.entityCulling()));
         properties.setProperty("culling.block_entities", Boolean.toString(preferences.blockEntityCulling()));
+        properties.setProperty("rendering.optimizations", Boolean.toString(preferences.renderingOptimizations()));
 
         Path parent = configFile.getParent();
         Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
