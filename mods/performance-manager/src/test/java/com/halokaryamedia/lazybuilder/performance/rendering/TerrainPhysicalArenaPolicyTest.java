@@ -11,26 +11,52 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class TerrainPhysicalArenaPolicyTest {
     @Test
     void acceptsSequentialVertexPayloadAndPlansQuantizedCapacity() {
-        TerrainArenaDrawPlanner.Command command = command(0L, 0);
+        TerrainArenaDrawPlanner.Command command = command(0L, 0, 0);
         int bytes = command.state().vertexPayloadBytes();
 
-        assertTrue(TerrainPhysicalArenaPolicy.canUpload(command, bytes));
-        assertEquals(1 << 20, TerrainPhysicalArenaPolicy.plannedCapacity(command, bytes));
+        assertTrue(TerrainPhysicalArenaPolicy.canUploadVertex(command, bytes));
+        assertEquals(1 << 20, TerrainPhysicalArenaPolicy.plannedVertexCapacity(command, bytes));
+        assertTrue(TerrainPhysicalArenaPolicy.isDrawReady(command));
     }
 
     @Test
-    void rejectsMismatchedPayloadMisalignmentAndTranslucentLayer() {
-        TerrainArenaDrawPlanner.Command aligned = command(0L, 0);
-        TerrainArenaDrawPlanner.Command misaligned = command(1L, 0);
-        TerrainArenaDrawPlanner.Command translucent = command(0L, 3);
+    void rejectsMismatchedPayloadAndMisalignedBaseVertex() {
+        TerrainArenaDrawPlanner.Command aligned = command(0L, 0, 0);
+        TerrainArenaDrawPlanner.Command misaligned = command(1L, 0, 0);
 
-        assertFalse(TerrainPhysicalArenaPolicy.canUpload(aligned, aligned.state().vertexPayloadBytes() - 1));
-        assertFalse(TerrainPhysicalArenaPolicy.canUpload(misaligned, misaligned.state().vertexPayloadBytes()));
-        assertFalse(TerrainPhysicalArenaPolicy.canUpload(translucent, translucent.state().vertexPayloadBytes()));
-        assertEquals(-1, TerrainPhysicalArenaPolicy.plannedCapacity(misaligned, misaligned.state().vertexPayloadBytes()));
+        assertFalse(TerrainPhysicalArenaPolicy.canUploadVertex(
+                aligned,
+                aligned.state().vertexPayloadBytes() - 1
+        ));
+        assertFalse(TerrainPhysicalArenaPolicy.canUploadVertex(
+                misaligned,
+                misaligned.state().vertexPayloadBytes()
+        ));
+        assertEquals(-1, TerrainPhysicalArenaPolicy.plannedVertexCapacity(
+                misaligned,
+                misaligned.state().vertexPayloadBytes()
+        ));
     }
 
-    private static TerrainArenaDrawPlanner.Command command(long offset, int layerSlot) {
+    @Test
+    void acceptsAlignedCustomIndexRangeAndRejectsWrongPayload() {
+        TerrainArenaDrawPlanner.Command command = command(0L, 48, 3);
+
+        assertTrue(TerrainPhysicalArenaIndexPolicy.isCustomIndexReady(command));
+        assertEquals(1 << 20, TerrainPhysicalArenaPolicy.plannedIndexCapacity(command, 48));
+        assertTrue(TerrainPhysicalArenaPolicy.isDrawReady(command));
+        assertEquals(0, TerrainPhysicalArenaPolicy.baseVertex(command));
+        assertEquals(-1, TerrainPhysicalArenaPolicy.plannedIndexCapacity(command, 46));
+    }
+
+    @Test
+    void rejectsCustomIndexPayloadThatDoesNotMatchIndexCount() {
+        TerrainArenaDrawPlanner.Command command = command(0L, 46, 3);
+        assertFalse(TerrainPhysicalArenaIndexPolicy.isCustomIndexReady(command));
+        assertFalse(TerrainPhysicalArenaPolicy.isDrawReady(command));
+    }
+
+    private static TerrainArenaDrawPlanner.Command command(long offset, int indexBytes, int layerSlot) {
         VertexFormat format = VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL;
         int vertexCount = 16;
         int vertexBytes = format.getVertexSizeByte() * vertexCount;
@@ -41,7 +67,7 @@ final class TerrainPhysicalArenaPolicyTest {
                 VertexFormat.DrawMode.QUADS,
                 VertexFormat.IndexType.SHORT,
                 vertexBytes,
-                0
+                indexBytes
         );
         long required = state.requiredAllocationBytes();
         var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, layerSlot);

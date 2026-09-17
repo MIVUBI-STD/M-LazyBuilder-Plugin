@@ -58,8 +58,6 @@ public final class ChunkUploadTask implements Runnable {
 
         try {
             if (vertexData != null) {
-                // Prepare logical arena ownership while the source ByteBuffer is still alive. The
-                // physical mirror is best-effort; vanilla upload remains the correctness fallback.
                 TerrainGpuResidencyTracker.recordDrawState(
                         buffer,
                         vertexData.getDrawParameters(),
@@ -67,13 +65,16 @@ public final class ChunkUploadTask implements Runnable {
                         indexPayloadBytes
                 );
                 TerrainGpuResidencyTracker.recordPayload(buffer, vertexPayloadBytes, indexPayloadBytes);
-                TerrainPhysicalArenaManager.uploadVertex(buffer, vertexData.getBuffer());
+                TerrainPhysicalArenaManager.upload(
+                        buffer,
+                        vertexData.getBuffer(),
+                        vertexData.getSortedBuffer()
+                );
                 buffer.upload(vertexData);
             } else if (indexData != null) {
-                // A separately uploaded/sorted index stream leaves the base-vertex-only subset.
                 TerrainGpuResidencyTracker.recordIndexDrawState(buffer, indexPayloadBytes);
                 TerrainGpuResidencyTracker.recordIndexPayload(buffer, indexPayloadBytes);
-                TerrainPhysicalArenaManager.release(buffer);
+                TerrainPhysicalArenaManager.uploadIndex(buffer, indexData.getBuffer());
                 buffer.uploadIndexBuffer(indexData);
             }
             future.complete(null);

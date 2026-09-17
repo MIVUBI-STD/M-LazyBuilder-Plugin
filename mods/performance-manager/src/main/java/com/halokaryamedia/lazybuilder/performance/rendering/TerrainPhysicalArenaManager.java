@@ -15,15 +15,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-/**
- * Render-thread physical backing for the first safe shared-VBO terrain subset.
- *
- * Vanilla per-section VertexBuffers are still populated as the correctness fallback. This manager
- * mirrors only sequential-index terrain vertices into region/layer GpuBuffers, validates logical
- * allocation generations before use, and draws through Minecraft's shared sequential index buffer
- * with glDrawElementsBaseVertex. If an arena grows or a logical handle moves, affected mirrored
- * residents are invalidated and the vanilla path remains authoritative until they upload again.
- */
+/** Render-thread physical VBO/EBO backing for live terrain arena allocations. */
 public final class TerrainPhysicalArenaManager {
     private static final Map<TerrainRegionAllocationRegistry.ArenaKey, Arena> ARENAS = new HashMap<>();
     private static final IdentityHashMap<VertexBuffer, Resident> RESIDENTS = new IdentityHashMap<>();
@@ -34,6 +26,7 @@ public final class TerrainPhysicalArenaManager {
 
     private static long uploadedBytes;
     private static long physicalDraws;
+    private static long customIndexDraws;
     private static long physicalBufferBinds;
     private static long physicalBindReuses;
     private static long arenaResizes;
@@ -42,45 +35,68 @@ public final class TerrainPhysicalArenaManager {
     private TerrainPhysicalArenaManager() {
     }
 
-    public static boolean uploadVertex(VertexBuffer source, ByteBuffer vertices) {
+    public static boolean upload(VertexBuffer source, ByteBuffer vertices, ByteBuffer customIndices) {
         if (source == null || vertices == null || !RenderSystem.isOnRenderThread()) return false;
 
         TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
-        int bytes = vertices.remaining();
-        int plannedCapacity = TerrainPhysicalArenaPolicy.plannedCapacity(command, bytes);
-        if (plannedCapacity < 0) {
+        int vertexBytes = vertices.remaining();
+        int vertexCapacity = TerrainPhysicalArenaPolicy.plannedVertexCapacity(command, vertexBytes);
+        if (vertexCapacity < 0) {
             invalidate(source);
             return false;
+        }
+
+        int indexBytes = customIndices == null ? 0 : customIndices.remaining();
+        int indexCapacity = 0;
+        if (indexBytes > 0) {
+            indexCapacity = TerrainPhysicalArenaPolicy.plannedIndexCapacity(command, indexBytes);
+            if (indexCapacity < 0) {
+                invalidate(source);
+                return false;
+            }
         }
 
         TerrainRegionAllocationRegistry.Handle handle = command.handle();
         TerrainRegionAllocationRegistry.ArenaKey key = handle.arenaKey();
         Arena arena = ARENAS.get(key);
         if (arena == null) {
-            arena = new Arena(plannedCapacity);
+            arena = new Arena(vertexCapacity, indexCapacity);
             ARENAS.put(key, arena);
-        } else if (arena.vertexBuffer.size < plannedCapacity) {
+        } else if (needsResize(arena, vertexCapacity, indexCapacity)) {
             invalidateArenaResidents(arena);
-            arena.vertexBuffer.resize(plannedCapacity);
+            if (arena.vertexBuffer.size < vertexCapacity) arena.vertexBuffer.resize(vertexCapacity);
+            if (indexCapacity > 0) ensureIndexBuffer(arena, indexCapacity, true);
             arena.epoch++;
             arenaResizes++;
             noteExternalBind();
+        } else if (indexCapacity > 0) {
+            ensureIndexBuffer(arena, indexCapacity, false);
         }
 
-        long offset = command.vertexByteOffset();
-        if (offset < 0L || offset > Integer.MAX_VALUE) {
+        long vertexOffset = command.vertexByteOffset();
+        if (vertexOffset < 0L || vertexOffset > Integer.MAX_VALUE) {
             invalidate(source);
             discardArenaIfUnused(key, arena);
             return false;
         }
 
         Resident previous = RESIDENTS.get(source);
-        if (previous != null && !previous.arenaKey.equals(key)) {
-            detachResident(source, previous);
-        }
+        if (previous != null && !previous.arenaKey.equals(key)) detachResident(source, previous);
 
         try {
-            arena.vertexBuffer.copyFrom(vertices.duplicate(), (int) offset);
+            arena.vertexBuffer.copyFrom(vertices.duplicate(), (int) vertexOffset);
+            uploadedBytes += vertexBytes;
+
+            if (indexBytes > 0) {
+                long indexOffset = command.indexByteOffset();
+                if (arena.indexBuffer == null || indexOffset < 0L || indexOffset > Integer.MAX_VALUE) {
+                    invalidate(source);
+                    discardArenaIfUnused(key, arena);
+                    return false;
+                }
+                arena.indexBuffer.copyFrom(customIndices.duplicate(), (int) indexOffset);
+                uploadedBytes += indexBytes;
+            }
         } catch (RuntimeException ex) {
             invalidate(source);
             discardArenaIfUnused(key, arena);
@@ -88,13 +104,55 @@ public final class TerrainPhysicalArenaManager {
         }
 
         arena.sources.put(source, Boolean.TRUE);
-        RESIDENTS.put(source, new Resident(key, handle.generation(), arena.epoch, bytes));
-        uploadedBytes += bytes;
+        RESIDENTS.put(source, new Resident(key, handle.generation(), arena.epoch, vertexBytes, indexBytes));
         prepared = null;
         return true;
     }
 
-    /** Bind a physical region VAO when the mirrored bytes still match the current logical handle. */
+    /** Update a custom/sorted index range without moving the existing vertex mirror. */
+    public static boolean uploadIndex(VertexBuffer source, ByteBuffer indices) {
+        if (source == null || indices == null || !RenderSystem.isOnRenderThread()) return false;
+
+        TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
+        int indexBytes = indices.remaining();
+        if (!TerrainPhysicalArenaIndexPolicy.isCustomIndexReady(command)
+                || command.state().indexPayloadBytes() != indexBytes) {
+            invalidate(source);
+            return false;
+        }
+
+        Resident resident = RESIDENTS.get(source);
+        if (!matchesLogicalHandle(command, resident)) {
+            invalidate(source);
+            return false;
+        }
+
+        Arena arena = ARENAS.get(resident.arenaKey);
+        int requiredCapacity = TerrainPhysicalArenaPolicy.plannedIndexCapacity(command, indexBytes);
+        if (arena == null || arena.indexBuffer == null || requiredCapacity < 0 || arena.indexBuffer.size < requiredCapacity) {
+            invalidate(source);
+            return false;
+        }
+
+        try {
+            arena.indexBuffer.copyFrom(indices.duplicate(), (int) command.indexByteOffset());
+        } catch (RuntimeException ex) {
+            invalidate(source);
+            return false;
+        }
+
+        RESIDENTS.put(source, new Resident(
+                resident.arenaKey,
+                resident.handleGeneration,
+                resident.arenaEpoch,
+                resident.vertexBytes,
+                indexBytes
+        ));
+        uploadedBytes += indexBytes;
+        prepared = null;
+        return true;
+    }
+
     public static boolean bind(VertexBuffer source) {
         if (source == null || !RenderSystem.isOnRenderThread()) return false;
 
@@ -126,17 +184,37 @@ public final class TerrainPhysicalArenaManager {
             physicalBufferBinds++;
         }
 
-        RenderSystem.ShapeIndexBuffer sequential = RenderSystem.getSequentialBuffer(state.mode());
-        if (vao.indexMode != state.mode() || !sequential.isLargeEnough(state.indexCount())) {
-            sequential.bindAndGrow(state.indexCount());
-            vao.indexMode = state.mode();
+        VertexFormat.IndexType drawIndexType;
+        long drawIndexOffset;
+        if (state.indexPayloadBytes() > 0) {
+            if (arena.indexBuffer == null || resident.indexBytes != state.indexPayloadBytes()) {
+                invalidate(source);
+                return false;
+            }
+            if (!vao.customIndexBound) {
+                arena.indexBuffer.bind();
+                vao.customIndexBound = true;
+                vao.sequentialMode = null;
+            }
+            drawIndexType = state.indexType();
+            drawIndexOffset = command.indexByteOffset();
+        } else {
+            RenderSystem.ShapeIndexBuffer sequential = RenderSystem.getSequentialBuffer(state.mode());
+            if (vao.customIndexBound
+                    || vao.sequentialMode != state.mode()
+                    || !sequential.isLargeEnough(state.indexCount())) {
+                sequential.bindAndGrow(state.indexCount());
+                vao.customIndexBound = false;
+                vao.sequentialMode = state.mode();
+            }
+            drawIndexType = sequential.getIndexType();
+            drawIndexOffset = 0L;
         }
 
-        prepared = new Prepared(source, resident, sequential.getIndexType());
+        prepared = new Prepared(source, resident, drawIndexType, drawIndexOffset);
         return true;
     }
 
-    /** Draw the command prepared by {@link #bind(VertexBuffer)} using the shared sequential EBO. */
     public static boolean draw(VertexBuffer source) {
         if (source == null || !RenderSystem.isOnRenderThread()) return false;
         Prepared current = prepared;
@@ -150,7 +228,7 @@ public final class TerrainPhysicalArenaManager {
             return false;
         }
 
-        int baseVertex = TerrainArenaBaseVertexPolicy.baseVertex(command);
+        int baseVertex = TerrainPhysicalArenaPolicy.baseVertex(command);
         if (baseVertex < 0) {
             prepared = null;
             return false;
@@ -161,15 +239,15 @@ public final class TerrainPhysicalArenaManager {
                 state.mode().glMode,
                 state.indexCount(),
                 current.indexType.glType,
-                0L,
+                current.indexByteOffset,
                 baseVertex
         );
         physicalDraws++;
+        if (state.indexPayloadBytes() > 0) customIndexDraws++;
         prepared = null;
         return true;
     }
 
-    /** Mark VAO state as externally changed before falling back to a vanilla VertexBuffer bind. */
     public static void noteExternalBind() {
         boundArena = null;
         boundVao = -1;
@@ -183,9 +261,7 @@ public final class TerrainPhysicalArenaManager {
             return;
         }
         Resident resident = RESIDENTS.remove(source);
-        if (resident != null) {
-            detachResident(source, resident);
-        }
+        if (resident != null) detachResident(source, resident);
     }
 
     public static void clear() {
@@ -195,13 +271,12 @@ public final class TerrainPhysicalArenaManager {
         }
 
         noteExternalBind();
-        for (Arena arena : ARENAS.values()) {
-            closeArena(arena);
-        }
+        for (Arena arena : ARENAS.values()) closeArena(arena);
         ARENAS.clear();
         RESIDENTS.clear();
         uploadedBytes = 0L;
         physicalDraws = 0L;
+        customIndexDraws = 0L;
         physicalBufferBinds = 0L;
         physicalBindReuses = 0L;
         arenaResizes = 0L;
@@ -210,13 +285,17 @@ public final class TerrainPhysicalArenaManager {
 
     public static Snapshot snapshot() {
         long bytes = 0L;
-        for (Arena arena : ARENAS.values()) bytes += Math.max(0, arena.vertexBuffer.size);
+        for (Arena arena : ARENAS.values()) {
+            bytes += Math.max(0, arena.vertexBuffer.size);
+            if (arena.indexBuffer != null) bytes += Math.max(0, arena.indexBuffer.size);
+        }
         return new Snapshot(
                 bytes,
                 ARENAS.size(),
                 RESIDENTS.size(),
                 uploadedBytes,
                 physicalDraws,
+                customIndexDraws,
                 physicalBufferBinds,
                 physicalBindReuses,
                 arenaResizes,
@@ -237,12 +316,31 @@ public final class TerrainPhysicalArenaManager {
     }
 
     private static boolean matches(TerrainArenaDrawPlanner.Command command, Resident resident) {
-        if (resident == null || !TerrainArenaBaseVertexPolicy.isReady(command)) return false;
+        if (!matchesLogicalHandle(command, resident) || !TerrainPhysicalArenaPolicy.isDrawReady(command)) return false;
+        TerrainArenaDrawStateRegistry.DrawState state = command.state();
+        return resident.vertexBytes == state.vertexPayloadBytes()
+                && resident.indexBytes == state.indexPayloadBytes();
+    }
+
+    private static boolean matchesLogicalHandle(TerrainArenaDrawPlanner.Command command, Resident resident) {
+        if (resident == null || command == null || command.handle() == null) return false;
         TerrainRegionAllocationRegistry.Handle handle = command.handle();
-        return handle != null
-                && resident.arenaKey.equals(handle.arenaKey())
-                && resident.handleGeneration == handle.generation()
-                && resident.vertexBytes == command.state().vertexPayloadBytes();
+        return resident.arenaKey.equals(handle.arenaKey())
+                && resident.handleGeneration == handle.generation();
+    }
+
+    private static boolean needsResize(Arena arena, int vertexCapacity, int indexCapacity) {
+        if (arena.vertexBuffer.size < vertexCapacity) return true;
+        return indexCapacity > 0 && (arena.indexBuffer == null || arena.indexBuffer.size < indexCapacity);
+    }
+
+    private static void ensureIndexBuffer(Arena arena, int capacity, boolean allowResize) {
+        if (capacity <= 0) return;
+        if (arena.indexBuffer == null) {
+            arena.indexBuffer = new GpuBuffer(GlBufferTarget.INDICES, GlUsage.DYNAMIC_WRITE, capacity);
+            return;
+        }
+        if (allowResize && arena.indexBuffer.size < capacity) arena.indexBuffer.resize(capacity);
     }
 
     private static void invalidate(VertexBuffer source) {
@@ -280,27 +378,31 @@ public final class TerrainPhysicalArenaManager {
     }
 
     private static void closeArena(Arena arena) {
-        for (VaoState vao : arena.vaos.values()) {
-            RenderSystem.glDeleteVertexArrays(vao.id);
-        }
+        for (VaoState vao : arena.vaos.values()) RenderSystem.glDeleteVertexArrays(vao.id);
         arena.vaos.clear();
         arena.vertexBuffer.close();
+        if (arena.indexBuffer != null) arena.indexBuffer.close();
     }
 
     private static final class Arena {
         private final GpuBuffer vertexBuffer;
+        private GpuBuffer indexBuffer;
         private final IdentityHashMap<VertexFormat, VaoState> vaos = new IdentityHashMap<>();
         private final IdentityHashMap<VertexBuffer, Boolean> sources = new IdentityHashMap<>();
         private long epoch = 1L;
 
-        private Arena(int capacity) {
-            this.vertexBuffer = new GpuBuffer(GlBufferTarget.VERTICES, GlUsage.DYNAMIC_WRITE, capacity);
+        private Arena(int vertexCapacity, int indexCapacity) {
+            this.vertexBuffer = new GpuBuffer(GlBufferTarget.VERTICES, GlUsage.DYNAMIC_WRITE, vertexCapacity);
+            if (indexCapacity > 0) {
+                this.indexBuffer = new GpuBuffer(GlBufferTarget.INDICES, GlUsage.DYNAMIC_WRITE, indexCapacity);
+            }
         }
     }
 
     private static final class VaoState {
         private final int id;
-        private VertexFormat.DrawMode indexMode;
+        private boolean customIndexBound;
+        private VertexFormat.DrawMode sequentialMode;
 
         private VaoState(int id) {
             this.id = id;
@@ -311,14 +413,16 @@ public final class TerrainPhysicalArenaManager {
             TerrainRegionAllocationRegistry.ArenaKey arenaKey,
             long handleGeneration,
             long arenaEpoch,
-            int vertexBytes
+            int vertexBytes,
+            int indexBytes
     ) {
     }
 
     private record Prepared(
             VertexBuffer source,
             Resident resident,
-            VertexFormat.IndexType indexType
+            VertexFormat.IndexType indexType,
+            long indexByteOffset
     ) {
     }
 
@@ -328,6 +432,7 @@ public final class TerrainPhysicalArenaManager {
             int residentBuffers,
             long uploadedBytes,
             long physicalDraws,
+            long customIndexDraws,
             long bufferBinds,
             long bindReuses,
             long arenaResizes,
