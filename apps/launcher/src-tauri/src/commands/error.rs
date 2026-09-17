@@ -74,16 +74,6 @@ impl CommandError {
         }
     }
 
-    /// Compatibility constructor for call sites that have not yet migrated to
-    /// machine-readable RecoveryAction values. New code should use
-    /// `recoverable_action` so UI behavior never depends on backend prose.
-    pub fn recoverable(code: &'static str, message: impl Into<String>, action: impl Into<String>) -> Self {
-        let mut error = Self::new(code, message);
-        error.recoverable = true;
-        error.action = Some(action.into());
-        error
-    }
-
     pub fn recoverable_action(code: &'static str, message: impl Into<String>, action: RecoveryAction) -> Self {
         let mut error = Self::new(code, message);
         error.recoverable = true;
