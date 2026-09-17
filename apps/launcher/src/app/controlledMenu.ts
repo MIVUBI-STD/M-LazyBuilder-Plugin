@@ -12,17 +12,33 @@ function menuItems(node: HTMLElement): HTMLElement[] {
 
 export function controlledMenu(node: HTMLElement, initialOptions: ControlledMenuOptions) {
   let options = initialOptions;
+  let pointerListening = false;
   const trigger = node.querySelector<HTMLElement>('.server-menu-button,[aria-haspopup="menu"]');
-
-  const sync = () => {
-    trigger?.setAttribute('aria-haspopup', 'menu');
-    trigger?.setAttribute('aria-expanded', options.open ? 'true' : 'false');
-  };
 
   const close = (restoreFocus = false) => {
     if (!options.open) return;
     options.onClose();
     if (restoreFocus) queueMicrotask(() => trigger?.focus());
+  };
+
+  const handlePointerDown = (event: PointerEvent) => {
+    if (options.open && event.target instanceof Node && !node.contains(event.target)) close(false);
+  };
+
+  const syncPointerListener = () => {
+    if (options.open && !pointerListening) {
+      document.addEventListener('pointerdown', handlePointerDown, true);
+      pointerListening = true;
+    } else if (!options.open && pointerListening) {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      pointerListening = false;
+    }
+  };
+
+  const sync = () => {
+    trigger?.setAttribute('aria-haspopup', 'menu');
+    trigger?.setAttribute('aria-expanded', options.open ? 'true' : 'false');
+    syncPointerListener();
   };
 
   const focusItem = (index: number) => {
@@ -40,10 +56,6 @@ export function controlledMenu(node: HTMLElement, initialOptions: ControlledMenu
       if (!items.length) return;
       (last ? items[items.length - 1] : items[0])?.focus();
     });
-  };
-
-  const handlePointerDown = (event: PointerEvent) => {
-    if (options.open && event.target instanceof Node && !node.contains(event.target)) close(false);
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -86,7 +98,6 @@ export function controlledMenu(node: HTMLElement, initialOptions: ControlledMenu
 
   node.addEventListener('keydown', handleKeyDown);
   node.addEventListener('click', handleClick);
-  document.addEventListener('pointerdown', handlePointerDown, true);
   sync();
 
   return {
@@ -97,7 +108,7 @@ export function controlledMenu(node: HTMLElement, initialOptions: ControlledMenu
     destroy() {
       node.removeEventListener('keydown', handleKeyDown);
       node.removeEventListener('click', handleClick);
-      document.removeEventListener('pointerdown', handlePointerDown, true);
+      if (pointerListening) document.removeEventListener('pointerdown', handlePointerDown, true);
     }
   };
 }
