@@ -275,16 +275,31 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     static void validateOutputDirectory(Path outputDirectory, String outputFormat) throws IOException {
         Path output = Objects.requireNonNull(outputDirectory, "outputDirectory").toAbsolutePath().normalize();
         String format = Objects.requireNonNull(outputFormat, "outputFormat").strip().toUpperCase(Locale.ROOT);
-        if (!Files.isDirectory(output)) {
-            throw new IOException("Conversion runtime reported success but produced no output directory");
+        if (!Files.isDirectory(output) || Files.isSymbolicLink(output)) {
+            throw new IOException("Conversion runtime reported success but produced no safe output directory");
         }
         Path levelDat = output.resolve("level.dat");
-        if (!Files.isRegularFile(levelDat) || Files.size(levelDat) == 0L) {
-            throw new IOException("Conversion runtime produced an incomplete world: level.dat is missing or empty");
+        if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat) || Files.size(levelDat) == 0L) {
+            throw new IOException("Conversion runtime produced an incomplete world: level.dat is missing, unsafe, or empty");
         }
-        if (format.startsWith("BEDROCK_") && !Files.isDirectory(output.resolve("db"))) {
-            throw new IOException("Conversion runtime produced an incomplete Bedrock world: db directory is missing");
+        if (format.startsWith("BEDROCK_")) {
+            Path database = output.resolve("db");
+            if (!Files.isDirectory(database) || Files.isSymbolicLink(database)) {
+                throw new IOException("Conversion runtime produced an incomplete Bedrock world: db directory is missing or unsafe");
+            }
+            if (!containsNonEmptyRegularFile(database)) {
+                throw new IOException("Conversion runtime produced an incomplete Bedrock world: db contains no LevelDB data");
+            }
         }
+    }
+
+    private static boolean containsNonEmptyRegularFile(Path root) throws IOException {
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.toList()) {
+                if (!Files.isSymbolicLink(path) && Files.isRegularFile(path) && Files.size(path) > 0L) return true;
+            }
+        }
+        return false;
     }
 
     static void requireSupportedCustomDimensionShape(ConversionRequest request) throws IOException {
