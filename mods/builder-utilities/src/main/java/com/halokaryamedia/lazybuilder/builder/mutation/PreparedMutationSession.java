@@ -55,6 +55,11 @@ public final class PreparedMutationSession implements AutoCloseable {
         }
     }
 
+    public synchronized void fail(String message) {
+        ensureOwned();
+        lifecycle = lifecycle.fail(message);
+    }
+
     public synchronized PreparedReconciliationReport reconcile(WorldBlockStateSource world) throws IOException {
         ensureOwned();
         if (lifecycle.state() != OperationState.RUNNING && lifecycle.state() != OperationState.CANCELLING) {
@@ -72,6 +77,7 @@ public final class PreparedMutationSession implements AutoCloseable {
     }
 
     private void completeWithHistory() throws IOException {
+        markAllWorkProcessed();
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         try {
             timeline.record(prepared.changeSet());
@@ -84,10 +90,20 @@ public final class PreparedMutationSession implements AutoCloseable {
     }
 
     private void completeWithoutHistory() throws IOException {
+        markAllWorkProcessed();
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         prepared.close();
         disposed = true;
         lifecycle = lifecycle.transitionTo(OperationState.COMPLETED);
+    }
+
+    private void markAllWorkProcessed() {
+        lifecycle = new OperationLifecycle(
+                lifecycle.state(),
+                lifecycle.totalWork(),
+                lifecycle.totalWork(),
+                null
+        );
     }
 
     private void ensureOwned() {

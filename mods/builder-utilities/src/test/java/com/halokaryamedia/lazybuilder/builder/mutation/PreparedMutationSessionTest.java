@@ -32,6 +32,8 @@ class PreparedMutationSessionTest {
             PreparedReconciliationReport complete = session.reconcile((x, y, z) -> "minecraft:dirt");
             assertEquals(ReconciliationState.FULLY_APPLIED, complete.state());
             assertEquals(OperationState.COMPLETED, session.lifecycle().state());
+            assertEquals(1, session.lifecycle().processedWork());
+            assertEquals(1.0, session.lifecycle().progressFraction());
             assertEquals(1, timeline.undoSize());
             assertTrue(timeline.nextUndoOperationId().isPresent());
         }
@@ -47,6 +49,20 @@ class PreparedMutationSessionTest {
             PreparedReconciliationReport report = session.reconcile((x, y, z) -> "minecraft:gold_block");
             assertEquals(ReconciliationState.CONFLICT, report.state());
             assertEquals(OperationState.FAILED, session.lifecycle().state());
+            assertEquals(0, timeline.undoSize());
+        }
+    }
+
+    @Test
+    void adapterCanFailActiveSessionExplicitly() throws Exception {
+        StoredChangeSet stored = prepared();
+        try (HistoryTimeline timeline = new HistoryTimeline(8);
+             PreparedMutationSession session = new PreparedMutationSession(
+                     new PreparedMaterialMutation(stored, 1), timeline)) {
+            session.startDispatch();
+            session.fail("budget exceeded");
+            assertEquals(OperationState.FAILED, session.lifecycle().state());
+            assertEquals("budget exceeded", session.lifecycle().failureMessage());
             assertEquals(0, timeline.undoSize());
         }
     }
