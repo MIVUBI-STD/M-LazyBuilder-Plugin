@@ -83,11 +83,12 @@
     ]);
     backups = items;
     snapshot = runtime;
+    if (!['Offline', 'Crashed'].includes(runtime.state)) estimate = null;
     visibleLimit = Math.max(BACKUP_PAGE_SIZE, Math.min(visibleLimit, Math.max(items.length, BACKUP_PAGE_SIZE)));
   }
 
   async function calculateEstimate() {
-    if (!workspace || estimateBusy || mutationBusy) return;
+    if (!workspace || estimateBusy || mutationBusy || !serverOffline) return;
     estimateBusy = true;
     error = null;
     try { estimate = await runtimeProduct.backups.estimate(workspace.id); }
@@ -104,7 +105,7 @@
   }
 
   async function createBackup() {
-    if (!workspace || creating || restoringId || deletingId) return;
+    if (!workspace || creating || restoringId || deletingId || !serverOffline) return;
     creating = true;
     error = null;
     notice = '';
@@ -179,7 +180,7 @@
       <h3 id="backup-heading">Server backups</h3>
       <p>Full restore points for worlds, configuration, plugins, and plugin data.</p>
     </div>
-    <button class="backup-button" disabled={loading || mutationBusy || !workspace || !serverOffline} onclick={createBackup}>
+    <button class="backup-button" disabled={loading || mutationBusy || !workspace || !serverOffline} title={!serverOffline && workspace ? 'Stop the server before creating a full backup.' : undefined} onclick={createBackup}>
       {creating ? 'Creating backup…' : 'Create backup'}
     </button>
   </header>
@@ -210,8 +211,8 @@
       <div><span>Available space</span><strong>{formatBytes(estimate?.availableBytes)}</strong></div>
     </div>
     <div class="estimate-actions">
-      <span>Check storage to confirm there is enough free space for a full backup.</span>
-      <button class="estimate-button" disabled={estimateBusy || mutationBusy} onclick={calculateEstimate}>{estimateBusy ? 'Calculating…' : estimate ? 'Recalculate storage' : 'Check storage'}</button>
+      <span>{serverOffline ? 'Check storage to confirm there is enough free space for a full backup.' : 'Stop the server before calculating a safe full-backup estimate.'}</span>
+      <button class="estimate-button" disabled={estimateBusy || mutationBusy || !serverOffline} title={!serverOffline ? 'Backup sizing is measured only while the server is offline.' : undefined} onclick={calculateEstimate}>{estimateBusy ? 'Calculating…' : estimate ? 'Recalculate storage' : 'Check storage'}</button>
     </div>
     {#if pressure}
       <div class:danger={pressure.tone === 'danger'} class="storage-pressure" role={pressure.tone === 'danger' ? 'alert' : undefined}>
@@ -222,7 +223,7 @@
     {/if}
 
     {#if !serverOffline}
-      <div class="offline-note">Stop the server before creating or restoring a full backup so world and plugin data remain consistent.</div>
+      <div class="offline-note">Stop the server before checking backup storage, creating a backup, or restoring a full backup so the snapshot remains consistent.</div>
     {/if}
 
     {#if backups.length === 0}
@@ -237,7 +238,7 @@
               <span>{formatBytes(backup.sourceBytes)} · full server restore point</span>
             </div>
             <div class="backup-actions">
-              <button class="restore-button" disabled={mutationBusy || !serverOffline} onclick={() => { restoreCandidate = backup; deleteCandidate = null; }}>
+              <button class="restore-button" disabled={mutationBusy || !serverOffline} title={!serverOffline ? 'Stop the server before restoring a full backup.' : undefined} onclick={() => { restoreCandidate = backup; deleteCandidate = null; }}>
                 {restoringId === backup.id ? 'Restoring…' : 'Restore'}
               </button>
               <button class="delete-button" disabled={mutationBusy} onclick={() => { deleteCandidate = backup; restoreCandidate = null; }}>
