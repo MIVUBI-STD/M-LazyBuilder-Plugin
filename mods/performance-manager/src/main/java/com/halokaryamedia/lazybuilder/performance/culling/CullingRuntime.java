@@ -7,6 +7,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
+import net.minecraft.registry.Registries;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
@@ -27,6 +28,7 @@ import java.util.WeakHashMap;
  *
  * Render hooks never raycast. Unknown or stale state renders immediately and is queued for a
  * bounded end-of-tick evaluation. This makes overload fail open instead of hiding builder content.
+ * Modded entity and block-entity types are left to their owning renderer and are never culled here.
  */
 public final class CullingRuntime {
     private static final int ENTITY_BUDGET_PER_TICK = 8;
@@ -72,6 +74,7 @@ public final class CullingRuntime {
         if (EXTERNAL_ENTITY_CULLING_PRESENT
                 || !preferences.blockEntityCulling()
                 || renderer == null
+                || !isVanillaBlockEntity(blockEntity)
                 || renderer.rendersOutsideBoundingBox(blockEntity)) {
             return true;
         }
@@ -117,7 +120,11 @@ public final class CullingRuntime {
             BlockEntity blockEntity = blockEntityQueue.poll();
             if (blockEntity == null) break;
             queuedBlockEntities.remove(blockEntity);
-            if (!preferences.blockEntityCulling() || blockEntity.getWorld() != client.world) continue;
+            if (!preferences.blockEntityCulling()
+                    || blockEntity.getWorld() != client.world
+                    || !isVanillaBlockEntity(blockEntity)) {
+                continue;
+            }
             evaluateBlockEntity(client, blockEntity);
         }
     }
@@ -134,10 +141,19 @@ public final class CullingRuntime {
 
     private static boolean eligible(MinecraftClient client, Entity entity) {
         if (client == null || client.world == null || entity == null || entity.getWorld() != client.world) return false;
+        if (!isVanillaEntity(entity)) return false;
         if (entity == client.player || entity == client.gameRenderer.getCamera().getFocusedEntity()) return false;
         if (entity.isGlowing() || entity.hasCustomName()) return false;
         Vec3d camera = client.gameRenderer.getCamera().getPos();
         return camera.squaredDistanceTo(entity.getBoundingBox().getCenter()) > ALWAYS_VISIBLE_DISTANCE_SQ;
+    }
+
+    private static boolean isVanillaEntity(Entity entity) {
+        return Registries.ENTITY_TYPE.getId(entity.getType()).getNamespace().equals("minecraft");
+    }
+
+    private static boolean isVanillaBlockEntity(BlockEntity blockEntity) {
+        return Registries.BLOCK_ENTITY_TYPE.getId(blockEntity.getType()).getNamespace().equals("minecraft");
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
