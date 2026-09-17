@@ -44,9 +44,16 @@ final class ChunkPipelineMetricsTest {
 
     @Test
     void countsSectionVisibilityCacheHits() {
-        assertEquals(0L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
         ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
         ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
         assertEquals(2L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
+    }
+
+    @Test
+    void countsAvoidedTranslucentSortTasks() {
+        ChunkPipelineMetrics.recordAvoidedTranslucentSortTask();
+        ChunkPipelineMetrics.recordAvoidedTranslucentSortTask();
+        ChunkPipelineMetrics.recordAvoidedTranslucentSortTask();
+        assertEquals(3L, ChunkPipelineMetrics.avoidedTranslucentSortTasks());
     }
 }

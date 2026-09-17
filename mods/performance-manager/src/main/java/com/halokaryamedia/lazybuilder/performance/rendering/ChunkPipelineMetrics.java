@@ -9,6 +9,7 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder AVOIDED_UPLOAD_BUFFER_BINDS = new LongAdder();
     private static final LongAdder STORAGE_SECTIONS_REMAPPED = new LongAdder();
     private static final LongAdder SECTION_VISIBILITY_CACHE_HITS = new LongAdder();
+    private static final LongAdder AVOIDED_TRANSLUCENT_SORT_TASKS = new LongAdder();
 
     private ChunkPipelineMetrics() {
     }
@@ -23,6 +24,8 @@ public final class ChunkPipelineMetrics {
     public static long storageSectionsRemapped() { return STORAGE_SECTIONS_REMAPPED.sum(); }
     public static void recordSectionVisibilityCacheHit() { SECTION_VISIBILITY_CACHE_HITS.increment(); }
     public static long sectionVisibilityCacheHits() { return SECTION_VISIBILITY_CACHE_HITS.sum(); }
+    public static void recordAvoidedTranslucentSortTask() { AVOIDED_TRANSLUCENT_SORT_TASKS.increment(); }
+    public static long avoidedTranslucentSortTasks() { return AVOIDED_TRANSLUCENT_SORT_TASKS.sum(); }
 
     static void resetForTest() {
         COALESCED_REBUILD_REQUESTS.reset();
@@ -30,5 +33,6 @@ public final class ChunkPipelineMetrics {
         AVOIDED_UPLOAD_BUFFER_BINDS.reset();
         STORAGE_SECTIONS_REMAPPED.reset();
         SECTION_VISIBILITY_CACHE_HITS.reset();
+        AVOIDED_TRANSLUCENT_SORT_TASKS.reset();
     }
 }

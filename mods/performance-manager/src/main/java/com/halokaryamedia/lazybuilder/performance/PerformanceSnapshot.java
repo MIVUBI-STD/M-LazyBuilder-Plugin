@@ -22,6 +22,7 @@ public record PerformanceSnapshot(
         long avoidedChunkUploadBufferBinds,
         long remappedChunkStorageSections,
         long sectionVisibilityCacheHits,
+        long avoidedTranslucentSortTasks,
         String chunkDebug,
         String entityDebug,
         String particleDebug
