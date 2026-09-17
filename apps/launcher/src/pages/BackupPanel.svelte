@@ -10,6 +10,8 @@
   export let onRestored: (() => Promise<void> | void) | undefined = undefined;
 
   const BACKUP_PAGE_SIZE = 20;
+  const BACKUP_COUNT_ADVISORY = 10;
+  const BACKUP_BYTES_ADVISORY = 20 * 1024 ** 3;
 
   let workspace: WorkspaceEntry | null = null;
   let backups: ServerBackupSummary[] = [];
@@ -142,6 +144,11 @@
   $: serverOffline = snapshot ? ['Offline', 'Crashed'].includes(snapshot.state) : false;
   $: mutationBusy = creating || !!restoringId || !!deletingId;
   $: visibleBackups = backups.slice(0, visibleLimit);
+  $: totalBackupBytes = backups.reduce((total, backup) => total + Math.max(0, backup.sourceBytes || 0), 0);
+  $: oldestBackup = backups.length > 0
+    ? backups.reduce((oldest, backup) => backup.createdUnixSeconds < oldest.createdUnixSeconds ? backup : oldest)
+    : null;
+  $: retentionAdvisory = backups.length >= BACKUP_COUNT_ADVISORY || totalBackupBytes >= BACKUP_BYTES_ADVISORY;
 </script>
 
 <section class="backup-panel" aria-labelledby="backup-heading">
@@ -163,6 +170,18 @@
   {:else if !workspace}
     <div class="backup-empty">Open a server to manage its backups.</div>
   {:else}
+    <div class="retention-summary" aria-label="Backup retention summary">
+      <div><span>Restore points</span><strong>{backups.length}</strong></div>
+      <div><span>Backup storage</span><strong>{formatBytes(totalBackupBytes)}</strong></div>
+      <div><span>Oldest</span><strong>{oldestBackup ? formatDate(oldestBackup.createdUnixSeconds) : 'None'}</strong></div>
+    </div>
+    {#if retentionAdvisory}
+      <div class="retention-note">
+        <strong>Review older restore points</strong>
+        <span>Backups are never deleted automatically. Remove restore points you no longer need if you want to reclaim disk space.</span>
+      </div>
+    {/if}
+
     <div class="backup-summary">
       <div><span>Server data</span><strong>{formatBytes(estimate?.sourceBytes)}</strong></div>
       <div><span>Space needed</span><strong>{formatBytes(estimate?.requiredBytes)}</strong></div>
@@ -242,10 +261,10 @@
   .backup-panel{margin-top:16px;padding:16px;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}
   .backup-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.backup-heading h3{margin:0;font-size:14px}.backup-heading p{margin:3px 0 0;color:var(--muted);font-size:10px}
   .backup-button,.restore-button,.delete-button,.estimate-button,.show-more{min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.backup-button{padding:7px 12px;border:1px solid var(--accent-border);background:var(--accent-soft);color:#9ee8b9}.restore-button,.delete-button,.estimate-button,.show-more{padding:6px 10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-soft);font-size:10px}.restore-button{border-color:var(--accent-border);color:#b7f0cb}.backup-button:disabled,.restore-button:disabled,.delete-button:disabled,.estimate-button:disabled{opacity:.5;cursor:default}
-  .backup-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.backup-summary>div{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.backup-summary span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.backup-summary strong{font-size:11px}.estimate-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.estimate-actions span{color:var(--muted);font-size:9px}.show-more{margin-top:10px}
+  .retention-summary,.backup-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.retention-summary>div,.backup-summary>div{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.retention-summary span,.backup-summary span{color:var(--muted-2);font-size:8px;text-transform:uppercase}.retention-summary strong,.backup-summary strong{font-size:11px}.retention-summary strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.retention-note{display:grid;gap:3px;margin-top:8px;padding:10px 11px;border:1px solid #5f5125;border-radius:8px;background:var(--warning-bg)}.retention-note strong{font-size:10px}.retention-note span{color:var(--muted);font-size:9px;line-height:1.45}.estimate-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.estimate-actions span{color:var(--muted);font-size:9px}.show-more{margin-top:10px}
   .offline-note,.backup-notice{margin-top:11px;padding:10px 11px;border-radius:8px;font-size:10px}.offline-note{border:1px solid #5f5125;background:var(--warning-bg);color:var(--text-soft)}.backup-notice.success{border:1px solid var(--accent-border);background:var(--accent-soft);color:#b7f0cb}
   .backup-list{display:grid;margin-top:12px}.backup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-top:1px solid var(--border-soft)}.backup-row:first-child{border-top:0}.backup-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:var(--surface-2);color:var(--muted)}.backup-copy{display:grid;gap:2px;min-width:0}.backup-copy strong{font-size:11px}.backup-copy span{color:var(--muted);font-size:9px}.backup-actions{display:flex;gap:6px}
   .backup-empty{min-height:92px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px}.backup-empty.compact{min-height:84px;flex-direction:column;gap:3px}.backup-empty.compact strong{color:var(--text-soft);font-size:11px}
   .confirm-backdrop{position:fixed;z-index:120;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.74);backdrop-filter:blur(4px)}.confirm-dialog{width:min(470px,100%);display:grid;gap:15px;padding:19px;border:1px solid var(--border);border-radius:13px;background:var(--surface);box-shadow:var(--shadow-popover)}.confirm-dialog.danger-dialog{border-color:#6c363d}.confirm-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.confirm-dialog h3{margin:0;font-size:16px}.confirm-dialog header p{margin:4px 0 0;color:var(--muted);font-size:10px}.close-button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:19px;cursor:pointer}.safety-note,.delete-note{display:grid;gap:4px;padding:11px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--bg-elevated)}.safety-note strong,.delete-note strong{font-size:10px}.safety-note span,.delete-note span{color:var(--muted);font-size:10px;line-height:1.45}.delete-note{border-color:#6c363d;background:var(--danger-bg)}.confirm-actions{display:flex;justify-content:flex-end;gap:8px}.cancel-button,.restore-confirm,.delete-confirm{min-height:34px;padding:7px 11px;border-radius:8px;font-weight:700;cursor:pointer}.cancel-button{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.restore-confirm{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.delete-confirm{border:1px solid #a74650;background:#8d3039;color:#fff}.confirm-dialog button:disabled{opacity:.5;cursor:default}
-  @media(max-width:760px){.backup-heading,.estimate-actions{align-items:flex-start;flex-direction:column}.backup-summary{grid-template-columns:1fr}.backup-row{grid-template-columns:auto minmax(0,1fr)}.backup-actions{grid-column:2;justify-content:flex-start}.confirm-backdrop{padding:14px}.confirm-actions{align-items:stretch;flex-direction:column-reverse}}
+  @media(max-width:760px){.backup-heading,.estimate-actions{align-items:flex-start;flex-direction:column}.retention-summary,.backup-summary{grid-template-columns:1fr}.backup-row{grid-template-columns:auto minmax(0,1fr)}.backup-actions{grid-column:2;justify-content:flex-start}.confirm-backdrop{padding:14px}.confirm-actions{align-items:stretch;flex-direction:column-reverse}}
 </style>
