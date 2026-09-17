@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility;
 
+import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatCollapseState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatDraftState;
 import com.halokaryamedia.lazybuilder.utility.chat.ChatSearchHistory;
@@ -38,12 +39,14 @@ public final class UtilityManagerClient implements ClientModInitializer {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
         LOGGER.info(
-                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, chatSearch={}, chatTimestamps={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
+                "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, chatSearch={}, chatTimestamps={}, hideSigningIndicators={}, suppressNarrator={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
                 preferences.reconnectButton(),
                 preferences.keepChatDraft(),
                 preferences.extendedChatHistory(),
                 preferences.chatSearch(),
                 preferences.chatTimestamps(),
+                preferences.hideChatSigningIndicators(),
+                preferences.suppressNarrator(),
                 preferences.borderlessWindow(),
                 preferences.contextualScreenshotNames(),
                 preferences.instantCreativeSearch(),
@@ -57,6 +60,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             ResourceReloadNotifier.markClientStarted();
             BorderlessWindowController.applyIfEnabled(client, preferences.borderlessWindow());
+            NarratorSuppressionController.applyIfEnabled(client, preferences.suppressNarrator());
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
@@ -108,17 +112,21 @@ public final class UtilityManagerClient implements ClientModInitializer {
     public static void updatePreferences(UtilityPreferences updated) {
         Objects.requireNonNull(updated, "updated");
         boolean compactDebugDisabled = preferences.compactDebugHud() && !updated.compactDebugHud();
+        boolean narratorSuppressionEnabled = !preferences.suppressNarrator() && updated.suppressNarrator();
         preferences = updated;
         if (configStore != null) configStore.save(updated);
 
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) return;
+
         if (compactDebugDisabled) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null) {
-                client.execute(() -> {
-                    CompactDebugInteraction.invalidate(client);
-                    CompactDebugServerState.clear();
-                });
-            }
+            client.execute(() -> {
+                CompactDebugInteraction.invalidate(client);
+                CompactDebugServerState.clear();
+            });
+        }
+        if (narratorSuppressionEnabled) {
+            client.execute(() -> NarratorSuppressionController.applyIfEnabled(client, true));
         }
     }
 
