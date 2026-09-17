@@ -22,6 +22,7 @@
   let serverRuntimes: ServerRuntimeSummary[] = [];
   let provisioning: WorkspaceProvisioningStatus | null = null;
   let loadingWorkspace = true;
+  let workspaceLoaded = false;
   let workspaceError = '';
   let closeGuardUnlisten: (() => void) | null = null;
   let closeRequest: LauncherCloseRequest | null = null;
@@ -37,8 +38,8 @@
     return message || 'Something went wrong. Try again.';
   }
 
-  async function refreshWorkspaceState() {
-    loadingWorkspace = true;
+  async function refreshWorkspaceState(showLoading = !workspaceLoaded) {
+    if (showLoading) loadingWorkspace = true;
     workspaceError = '';
     try {
       const [nextWorkspaceState, nextRuntimes] = await Promise.all([
@@ -54,7 +55,8 @@
       workspaceError = friendlyError(error);
       provisioning = null;
     } finally {
-      loadingWorkspace = false;
+      workspaceLoaded = true;
+      if (showLoading) loadingWorkspace = false;
     }
   }
 
@@ -113,9 +115,8 @@
   async function confirmCloseRequest() {
     if (!closeProceed || closeBusy) return;
     closeBusy = true;
-    try {
-      await closeProceed();
-    } finally {
+    try { await closeProceed(); }
+    finally {
       closeBusy = false;
       closeRequest = null;
       closeProceed = null;
@@ -123,7 +124,7 @@
   }
 
   onMount(() => {
-    void refreshWorkspaceState();
+    void refreshWorkspaceState(true);
     void (async () => {
       try { closeGuardUnlisten = await installLauncherCloseGuard(handleCloseRequest); }
       catch { closeGuardUnlisten = null; }
@@ -176,21 +177,9 @@
         <header class="page-toolbar"><div><h1>Settings</h1><p>Choose how LazyBuilder behaves and handles safety checks.</p></div></header>
         <main class="content"><LauncherSettingsPage /></main>
       {:else if !workspaceState.active}
-        <ServersLibrary
-          recent={workspaceState.recent}
-          runtimes={serverRuntimes}
-          error={workspaceError}
-          onOpenServer={activateServer}
-          onChanged={refreshWorkspaceState}
-        />
+        <ServersLibrary recent={workspaceState.recent} runtimes={serverRuntimes} error={workspaceError} onOpenServer={activateServer} onChanged={refreshWorkspaceState} />
       {:else}
-        <ActiveServer
-          server={workspaceState.active}
-          {page}
-          initialProvisioning={provisioning}
-          onChanged={refreshWorkspaceState}
-          onWorkspaceUnavailable={handleWorkspaceUnavailable}
-        />
+        <ActiveServer server={workspaceState.active} {page} initialProvisioning={provisioning} onChanged={refreshWorkspaceState} onWorkspaceUnavailable={handleWorkspaceUnavailable} />
       {/if}
     </section>
   </div>
@@ -198,34 +187,15 @@
 
 {#if closeRequest}
   <div class="close-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelCloseRequest()}>
-    <section
-      use:dialogFocus={{ onEscape: cancelCloseRequest, initialFocusSelector: '.close-secondary', escapeDisabled: closeBusy }}
-      class:dangerous={closeRequest.dangerous}
-      class="close-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="launcher-close-heading"
-    >
-      <header>
-        <div><h2 id="launcher-close-heading">{closeRequest.title}</h2><p>{closeRequest.message}</p></div>
-        <button class="close-icon" aria-label="Cancel closing LazyBuilder" disabled={closeBusy} onclick={cancelCloseRequest}>×</button>
-      </header>
-      {#if closeRequest.details.length > 0}
-        <div class="close-details" aria-label="Active items">
-          {#each closeRequest.details as detail}<div>{detail}</div>{/each}
-        </div>
-      {/if}
+    <section use:dialogFocus={{ onEscape: cancelCloseRequest, initialFocusSelector: '.close-secondary', escapeDisabled: closeBusy }} class:dangerous={closeRequest.dangerous} class="close-dialog" role="dialog" aria-modal="true" aria-labelledby="launcher-close-heading">
+      <header><div><h2 id="launcher-close-heading">{closeRequest.title}</h2><p>{closeRequest.message}</p></div><button class="close-icon" aria-label="Cancel closing LazyBuilder" disabled={closeBusy} onclick={cancelCloseRequest}>×</button></header>
+      {#if closeRequest.details.length > 0}<div class="close-details" aria-label="Active items">{#each closeRequest.details as detail}<div>{detail}</div>{/each}</div>{/if}
       {#if closeRequest.kind === 'operations'}<p class="close-guidance">Return to Activity if you want to let these tasks finish before closing.</p>{/if}
-      <footer>
-        <button class="close-secondary" disabled={closeBusy} onclick={cancelCloseRequest}>{closeRequest.kind === 'operations' ? 'Keep working' : 'Cancel'}</button>
-        <button class:danger={closeRequest.dangerous} class="close-confirm" disabled={closeBusy} onclick={confirmCloseRequest}>{closeBusy ? 'Closing…' : closeRequest.confirmLabel}</button>
-      </footer>
+      <footer><button class="close-secondary" disabled={closeBusy} onclick={cancelCloseRequest}>{closeRequest.kind === 'operations' ? 'Keep working' : 'Cancel'}</button><button class:danger={closeRequest.dangerous} class="close-confirm" disabled={closeBusy} onclick={confirmCloseRequest}>{closeBusy ? 'Closing…' : closeRequest.confirmLabel}</button></footer>
     </section>
   </div>
 {/if}
 
 <style>
-  .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);background:var(--bg)}.loading-copy{display:grid;gap:1px}.loading-copy strong{color:var(--text)}.loading-copy span{font-size:12px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-weight:900}.brand-lockup{display:flex;align-items:center;gap:10px}.desktop-shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:100%;height:100vh;background:var(--bg)}.navigation{display:flex;flex-direction:column;padding:14px 11px;border-right:1px solid var(--border-soft);background:#0e1012}.navigation-brand{padding:2px 8px 16px}.navigation-spacer{flex:1}.navigation-footer{padding:10px 9px 2px;color:var(--muted-2);font-size:9px;text-transform:uppercase}.global-nav,.server-nav{display:grid;gap:3px}.global-nav button,.server-nav button{position:relative;min-height:40px;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.global-nav button:hover,.server-nav button:hover{background:var(--surface);color:var(--text)}.global-nav button.active,.server-nav button.active{background:var(--surface-2);color:var(--text);font-weight:650}.global-nav button.active::before,.server-nav button.active::before{content:'';position:absolute;left:-5px;top:9px;bottom:9px;width:2px;background:var(--accent)}.nav-icon{width:19px;height:19px;display:grid;place-items:center}.nav-icon :global(svg){width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav-divider{height:1px;margin:14px 5px 11px;background:var(--border-soft)}.nav-server-card{display:flex;align-items:center;gap:10px;margin:0 2px 9px;padding:8px}.nav-server-card>div:last-child{min-width:0;display:grid}.nav-server-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.nav-server-card span{color:var(--muted-2);font-size:10px}.server-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#252a2e;border:1px solid #3a4147;font-weight:800}.nav-server-icon{width:30px!important;height:30px!important;font-size:12px!important}.main-view{min-width:0;min-height:0;display:flex;flex-direction:column;height:100vh;overflow:hidden}.page-toolbar{min-height:82px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 30px;border-bottom:1px solid var(--border-soft);background:#111315}.page-toolbar h1{margin:0;font-size:23px}.page-toolbar p{margin:4px 0 0;color:var(--muted);font-size:12px}.content{width:min(1040px,calc(100% - 56px));margin:0 auto;padding:26px 0 48px;overflow:auto;min-height:0;flex:1}
-  .close-backdrop{position:fixed;z-index:300;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.78);backdrop-filter:blur(4px)}.close-dialog{width:min(520px,100%);display:grid;gap:15px;padding:20px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover)}.close-dialog.dangerous{border-color:#6d3036}.close-dialog header,.close-dialog footer{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.close-dialog h2{margin:0;font-size:18px}.close-dialog header p,.close-guidance{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.close-icon{width:32px;height:32px;flex:0 0 auto;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.close-details{display:grid;gap:5px;padding:10px;border:1px solid var(--border-soft);border-radius:9px;background:var(--bg-elevated)}.close-details div{padding:5px 6px;border-radius:6px;background:var(--surface-2);color:var(--text-soft);font-size:10px}.close-dialog footer{align-items:center;justify-content:flex-end}.close-secondary,.close-confirm{min-height:36px;padding:8px 13px;border-radius:8px;font-weight:650;cursor:pointer}.close-secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.close-confirm{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.close-confirm.danger{border-color:#8e3840;background:#7a2d34;color:#fff}.close-dialog button:disabled{opacity:.5;cursor:default}
-  @media(max-width:760px){.desktop-shell{grid-template-columns:68px minmax(0,1fr)}.navigation-brand strong,.global-nav button span:last-child,.server-nav button span:last-child,.nav-server-card>div:last-child,.navigation-footer{display:none}.global-nav button,.server-nav button{justify-content:center}.global-nav button :global(.activity-status){margin-left:0}.page-toolbar{padding:15px 18px}.content{width:calc(100% - 28px)}.close-backdrop{padding:14px}.close-dialog footer{align-items:stretch;flex-direction:column-reverse}.close-secondary,.close-confirm{width:100%}}
+  .loading-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);background:var(--bg)}.loading-copy{display:grid;gap:1px}.loading-copy strong{color:var(--text)}.loading-copy span{font-size:12px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font-weight:900}.brand-lockup{display:flex;align-items:center;gap:10px}.desktop-shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:100%;height:100vh;background:var(--bg)}.navigation{display:flex;flex-direction:column;padding:14px 11px;border-right:1px solid var(--border-soft);background:#0e1012}.navigation-brand{padding:2px 8px 16px}.navigation-spacer{flex:1}.navigation-footer{padding:10px 9px 2px;color:var(--muted-2);font-size:9px;text-transform:uppercase}.global-nav,.server-nav{display:grid;gap:3px}.global-nav button,.server-nav button{position:relative;min-height:40px;display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);text-align:left;cursor:pointer}.global-nav button:hover,.server-nav button:hover{background:var(--surface);color:var(--text)}.global-nav button.active,.server-nav button.active{background:var(--surface-2);color:var(--text);font-weight:650}.global-nav button.active::before,.server-nav button.active::before{content:'';position:absolute;left:-5px;top:9px;bottom:9px;width:2px;background:var(--accent)}.nav-icon{width:19px;height:19px;display:grid;place-items:center}.nav-icon :global(svg){width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.nav-divider{height:1px;margin:14px 5px 11px;background:var(--border-soft)}.nav-server-card{display:flex;align-items:center;gap:10px;margin:0 2px 9px;padding:8px}.nav-server-card>div:last-child{min-width:0;display:grid}.nav-server-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.nav-server-card span{color:var(--muted-2);font-size:10px}.server-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#252a2e;border:1px solid #3a4147;font-weight:800}.nav-server-icon{width:30px!important;height:30px!important;font-size:12px!important}.main-view{min-width:0;min-height:0;display:flex;flex-direction:column;height:100vh;overflow:hidden}.page-toolbar{min-height:82px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 30px;border-bottom:1px solid var(--border-soft);background:#111315}.page-toolbar h1{margin:0;font-size:23px}.page-toolbar p{margin:4px 0 0;color:var(--muted);font-size:12px}.content{width:min(1040px,calc(100% - 56px));margin:0 auto;padding:26px 0 48px;overflow:auto;min-height:0;flex:1}.close-backdrop{position:fixed;z-index:300;inset:0;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.78);backdrop-filter:blur(4px)}.close-dialog{width:min(520px,100%);display:grid;gap:15px;padding:20px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-popover)}.close-dialog.dangerous{border-color:#6d3036}.close-dialog header,.close-dialog footer{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.close-dialog h2{margin:0;font-size:18px}.close-dialog header p,.close-guidance{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}.close-icon{width:32px;height:32px;flex:0 0 auto;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.close-details{display:grid;gap:5px;padding:10px;border:1px solid var(--border-soft);border-radius:9px;background:var(--bg-elevated)}.close-details div{padding:5px 6px;border-radius:6px;background:var(--surface-2);color:var(--text-soft);font-size:10px}.close-dialog footer{align-items:center;justify-content:flex-end}.close-secondary,.close-confirm{min-height:36px;padding:8px 13px;border-radius:8px;font-weight:650;cursor:pointer}.close-secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.close-confirm{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.close-confirm.danger{border-color:#8e3840;background:#7a2d34;color:#fff}.close-dialog button:disabled{opacity:.5;cursor:default}@media(max-width:760px){.desktop-shell{grid-template-columns:68px minmax(0,1fr)}.navigation-brand strong,.global-nav button span:last-child,.server-nav button span:last-child,.nav-server-card>div:last-child,.navigation-footer{display:none}.global-nav button,.server-nav button{justify-content:center}.global-nav button :global(.activity-status){margin-left:0}.page-toolbar{padding:15px 18px}.content{width:calc(100% - 28px)}.close-backdrop{padding:14px}.close-dialog footer{align-items:stretch;flex-direction:column-reverse}.close-secondary,.close-confirm{width:100%}}
 </style>
