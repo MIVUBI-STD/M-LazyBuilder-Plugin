@@ -164,7 +164,7 @@
       {#if activeOperations.length === 0}
         <div class="quiet-state">No tasks are currently running.</div>
       {:else}
-        <div class="operation-list" aria-live="polite">
+        <div class="operation-list" aria-live="off">
           {#each activeOperations as operation (operation.id)}
             <article class="operation-card active-operation">
               <div class="operation-main">
