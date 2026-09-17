@@ -25,13 +25,17 @@ class ChunkerOutputValidationTest {
     }
 
     @Test
-    void bedrockOutputRequiresLevelDatAndDatabaseDirectory() throws Exception {
+    void bedrockOutputRequiresLevelDatAndDatabaseData() throws Exception {
         Path output = Files.createDirectory(tempDir.resolve("bedrock"));
         Files.writeString(output.resolve("level.dat"), "nbt");
         assertThrows(IOException.class, () ->
                 ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80"));
 
-        Files.createDirectory(output.resolve("db"));
+        Path database = Files.createDirectory(output.resolve("db"));
+        assertThrows(IOException.class, () ->
+                ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80"));
+
+        Files.write(database.resolve("000001.ldb"), new byte[]{1});
         assertDoesNotThrow(() ->
                 ChunkerCliAdapter.validateOutputDirectory(output, "BEDROCK_1_21_80"));
     }
