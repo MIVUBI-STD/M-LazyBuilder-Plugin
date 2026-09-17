@@ -188,7 +188,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
 
                 deleteTree(world);
-                PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
+                PaperWorldFamilyLayout.deletePendingFamilySiblings(worldRoot, folderName);
                 Files.delete(marker);
                 rolledBack++;
             }
@@ -243,6 +243,12 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                         preserved++;
                         continue;
                     }
+                    try {
+                        PaperWorldFamilyLayout.requireFreshFamilyDestinations(worldRoot, folderName);
+                    } catch (IOException collision) {
+                        preserved++;
+                        continue;
+                    }
                     moveDirectory(staged, destination);
                     PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, false);
                     restored++;
@@ -264,6 +270,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
         Set<String> managedFolders = new HashSet<>();
         for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+        Set<String> finalizedFolders = new HashSet<>();
 
         int finalized = 0;
         int discarded = 0;
@@ -278,16 +285,26 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 String folderName = child.getFileName().toString();
                 if (managedFolders.contains(folderName)) {
                     PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
-                    Files.delete(marker);
                     PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
+                    Files.delete(marker);
+                    finalizedFolders.add(folderName);
                     finalized++;
                 } else {
-                    boolean familyPending = PaperWorldFamilyLayout.hasPendingSibling(worldRoot, folderName);
                     deleteTree(child);
-                    if (familyPending) PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
+                    PaperWorldFamilyLayout.deletePendingFamilySiblings(worldRoot, folderName);
                     discarded++;
                 }
             }
+        }
+
+        for (String folderName : managedFolders) {
+            if (finalizedFolders.contains(folderName)) continue;
+            Path root = worldPath(folderName);
+            if (!Files.isDirectory(root) || Files.isSymbolicLink(root)) continue;
+            if (!PaperWorldFamilyLayout.hasPendingSibling(worldRoot, folderName)) continue;
+            PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
+            PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
+            finalized++;
         }
         return new PublishRecovery(finalized, discarded);
     }
@@ -302,8 +319,8 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.exists(marker) && (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker))) {
             throw new IOException("Pending publication marker is unsafe in " + destinationFolder);
         }
-        Files.deleteIfExists(marker);
         PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, destinationFolder);
+        Files.deleteIfExists(marker);
     }
 
     @Override
@@ -313,8 +330,12 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         List<String> unsafe = new ArrayList<>();
         for (WorldRecord world : managedWorlds) {
             Path target = worldPath(world.folderName());
-            if (Files.notExists(target)) missing.add(world.folderName());
-            else if (!Files.isDirectory(target) || Files.isSymbolicLink(target)) unsafe.add(world.folderName());
+            if (Files.notExists(target)) {
+                missing.add(world.folderName());
+            } else if (!Files.isDirectory(target) || Files.isSymbolicLink(target)
+                    || PaperWorldFamilyLayout.hasUnsafeCommittedSibling(worldRoot, world.folderName())) {
+                unsafe.add(world.folderName());
+            }
         }
         return new ManagedWorldAudit(missing, unsafe);
     }
