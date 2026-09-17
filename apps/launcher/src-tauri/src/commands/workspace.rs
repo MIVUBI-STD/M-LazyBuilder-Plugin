@@ -171,13 +171,16 @@ pub async fn workspace_adopt(app: AppHandle, root_path: String, name: Option<Str
 pub fn workspace_activate(operations: State<'_, OperationRegistry>, id: String) -> CommandResult<WorkspaceEntry> {
     let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_activation_allowed(&operations, &id)?;
-    workspace_registry::activate(&id).map_err(|message| {
-        if message.contains("currently unavailable") {
-            CommandError::recoverable_action("WORKSPACE_UNAVAILABLE", message, RecoveryAction::LocateWorkspace)
-        } else {
-            CommandError::from(message)
-        }
-    })
+    let entry = workspace_registry::get(&id).map_err(CommandError::from)?;
+    let path = PathBuf::from(&entry.path);
+    if !path.is_dir() {
+        return Err(CommandError::recoverable_action(
+            "WORKSPACE_UNAVAILABLE",
+            format!("Server location is currently unavailable: {}", path.display()),
+            RecoveryAction::LocateWorkspace,
+        ));
+    }
+    workspace_registry::activate(&id).map_err(CommandError::from)
 }
 
 #[tauri::command]
