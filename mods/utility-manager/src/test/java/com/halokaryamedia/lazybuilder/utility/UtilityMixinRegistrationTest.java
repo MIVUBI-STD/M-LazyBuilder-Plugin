@@ -19,6 +19,7 @@ class UtilityMixinRegistrationTest {
             assertTrue(json.contains("ChatHudMixin"), "chat presentation/history mixin must stay registered");
             assertTrue(json.contains("ChatHudAccessor"), "chat context-menu accessor must stay registered");
             assertTrue(json.contains("ChatScreenMixin"), "chat search/context mixin must stay registered");
+            assertTrue(json.contains("SocialInteractionsPlayerListEntryMixin"), "chat report-button presentation mixin must stay registered");
             assertTrue(json.contains("CreativeInventoryScreenMixin"), "creative instant-search mixin must stay registered");
             assertTrue(json.contains("DebugHudMixin"), "compact F3 renderer mixin must stay registered");
             assertTrue(json.contains("KeyboardMixin"), "compact Alt interaction keyboard mixin must stay registered");
