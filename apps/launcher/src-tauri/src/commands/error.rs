@@ -11,6 +11,7 @@ pub enum RecoveryAction {
     RepairServer,
     RestartLauncher,
     RetryOperation,
+    ReviewBackups,
     ReviewServerHealth,
     StopServer,
     WaitForServerStart,
@@ -27,6 +28,7 @@ impl RecoveryAction {
             Self::RepairServer => "REPAIR_SERVER",
             Self::RestartLauncher => "RESTART_LAUNCHER",
             Self::RetryOperation => "RETRY_OPERATION",
+            Self::ReviewBackups => "REVIEW_BACKUPS",
             Self::ReviewServerHealth => "REVIEW_SERVER_HEALTH",
             Self::StopServer => "STOP_SERVER",
             Self::WaitForServerStart => "WAIT_FOR_SERVER_START",
@@ -117,6 +119,7 @@ mod tests {
     fn recovery_action_codes_are_not_presentation_copy() {
         assert_eq!(RecoveryAction::StopServer.as_code(), "STOP_SERVER");
         assert_eq!(RecoveryAction::RestartLauncher.as_code(), "RESTART_LAUNCHER");
+        assert_eq!(RecoveryAction::ReviewBackups.as_code(), "REVIEW_BACKUPS");
         assert_eq!(RecoveryAction::ReviewServerHealth.as_code(), "REVIEW_SERVER_HEALTH");
     }
 }
