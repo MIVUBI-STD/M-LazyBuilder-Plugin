@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { operationTitle } from '../app/operations/operationPresentation';
   import type { LauncherOperationSnapshot, StartupReport } from '../app/bridge/runtimeApi';
 
   let operations: LauncherOperationSnapshot[] = [];
@@ -22,34 +23,6 @@
 
   function warningSteps() {
     return startup?.steps.filter((step) => step.state === 'WARNING') ?? [];
-  }
-
-  function labelKind(kind: string) {
-    const labels: Record<string, string> = {
-      'create-server': 'Create server',
-      'adopt-server': 'Add existing server',
-      'duplicate-server': 'Duplicate server',
-      'delete-server': 'Delete server',
-      'provision-server': 'Prepare server',
-      'update-paper': 'Update Paper',
-      'backup-server': 'Backup server',
-      'restore-server': 'Restore server',
-      'delete-backup': 'Delete restore point',
-      'repair-server': 'Repair server',
-      'save-server-resources': 'Save server memory settings',
-      'install-plugin': 'Install plugin',
-      'update-plugin': 'Update plugin',
-      'change-plugin-state': 'Change plugin state',
-      'remove-plugin': 'Remove plugin',
-      'remove-problem-plugin': 'Remove broken plugin',
-      'resolve-plugin-duplicates': 'Resolve plugin duplicates',
-      'select-client-profile': 'Select client profile',
-      'sync-client-components': 'Sync client components',
-      'export-support-bundle': 'Create support package',
-      'launcher-update': 'Update LazyBuilder',
-      'download-runtime': 'Prepare server software'
-    };
-    return labels[kind] ?? 'Launcher task';
   }
 
   function stateLabel(state: LauncherOperationSnapshot['state']) {
@@ -207,7 +180,7 @@
             <article class="operation-card active-operation">
               <div class="operation-main">
                 <div class="operation-title-row">
-                  <div><strong>{labelKind(operation.kind)}</strong><span class="operation-phase">{operation.status || 'Working…'}</span></div>
+                  <div><strong>{operationTitle(operation.kind)}</strong><span class="operation-phase">{operation.status || 'Working…'}</span></div>
                   <span class:warning-state={operation.state === 'CANCELLING'} class="state-badge">{stateLabel(operation.state)}</span>
                 </div>
                 {#if operation.details}<p class="operation-details">{operation.details}</p>{/if}
@@ -244,7 +217,7 @@
                 {operation.state === 'SUCCEEDED' ? '✓' : operation.state === 'CANCELLED' ? '–' : '!'}
               </div>
               <div class="history-copy">
-                <div class="history-title"><strong>{labelKind(operation.kind)}</strong><span>{stateLabel(operation.state)}</span></div>
+                <div class="history-title"><strong>{operationTitle(operation.kind)}</strong><span>{stateLabel(operation.state)}</span></div>
                 <span class="history-status">{operation.error?.message || operation.status || 'No additional details.'}</span>
                 {#if operation.state === 'RECOVERY_REQUIRED'}<span class="recovery-note">Open the affected server before retrying or changing its files.</span>{/if}
               </div>
