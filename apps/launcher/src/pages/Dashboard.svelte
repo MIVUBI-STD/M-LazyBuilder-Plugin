@@ -11,6 +11,7 @@
   import type { ServerLogTail, ServerPreflight, ServerRuntimeSummary, ServerSnapshot, ServerState } from '../app/bridge/runtimeApi';
 
   export let serverName = 'Server';
+  export let onWorkspaceUnavailable: ((message: string) => Promise<void> | void) | undefined = undefined;
 
   let snapshot: ServerSnapshot = { state: 'Offline', health: 'Offline', cpuLoadPercent: 0, usedMemoryBytes: 0, maxMemoryBytes: 0, pid: null, logPath: '' };
   let preflight: ServerPreflight = { ready: false, workspace: '', serverDirectory: '', paperJar: '', worldsDirectory: '', javaPath: '', javaVersion: '', logDirectory: '', issues: [] };
@@ -75,6 +76,11 @@
     try { await run(); await refreshAll(); }
     catch (value) { const operationError = presentRuntimeError(value, 'Server action failed.'); try { await Promise.all([refreshRuntime(), refreshPreflight()]); } catch {} error = operationError; }
     finally { busy = false; }
+  }
+  async function handleErrorAction() {
+    if (error?.action === 'LOCATE_WORKSPACE' && onWorkspaceUnavailable) {
+      await onWorkspaceUnavailable(error.message);
+    }
   }
   async function stopDetachedProcess() {
     if (busy || snapshot.state !== 'Detached') return;
@@ -167,7 +173,7 @@
     </section>
   {/if}
 
-  <RuntimeErrorNotice {error} />
+  <RuntimeErrorNotice {error} onAction={error?.action === 'LOCATE_WORKSPACE' && onWorkspaceUnavailable ? handleErrorAction : undefined} />
   {#if notice}<section class="notice success" aria-live="polite"><strong>Server control</strong><p>{notice}</p></section>{/if}
   {#if preflight.issues.length > 0 && ['Offline','Crashed','Detached'].includes(snapshot.state)}<details class="attention" open={!preflight.ready}><summary><span><strong>Needs attention</strong><small>{preflight.issues.length} item{preflight.issues.length === 1 ? '' : 's'} blocking start</small></span><span>Details</span></summary><div class="issue-list">{#each preflight.issues as issue}<div class="issue-row"><strong>{category(issue)}</strong><span>{issue}</span></div>{/each}</div></details>{/if}
   {#if snapshot.state === 'Detached'}<section class="notice warning"><strong>Server is running externally</strong><p>Stop the external server first, then start it here so LazyBuilder can manage it normally.</p></section>{/if}
