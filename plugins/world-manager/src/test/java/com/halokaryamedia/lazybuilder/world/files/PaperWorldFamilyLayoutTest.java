@@ -43,6 +43,27 @@ class PaperWorldFamilyLayoutTest {
     }
 
     @Test
+    void transactionalPublishResumesOwnedSiblingCreatedBeforeDimensionMove() throws Exception {
+        Path worlds = tempDir.resolve("worlds");
+        Path root = worlds.resolve("Build");
+        Path canonical = root.resolve("DIM-1/region");
+        Files.createDirectories(canonical);
+        Files.write(root.resolve("level.dat"), new byte[]{1, 2, 3});
+        Files.write(canonical.resolve("r.0.0.mca"), new byte[]{4, 5});
+
+        Path sibling = worlds.resolve("Build_nether");
+        Files.createDirectories(sibling);
+        Files.write(sibling.resolve("level.dat"), new byte[]{1, 2, 3});
+        Files.writeString(sibling.resolve(".lazybuilder-family-publish-pending"), "");
+
+        PaperWorldFamilyLayout.publishCanonicalDimensions(worlds, "Build", true);
+
+        assertFalse(Files.exists(root.resolve("DIM-1")));
+        assertTrue(Files.isRegularFile(worlds.resolve("Build_nether/DIM-1/region/r.0.0.mca")));
+        assertTrue(Files.isRegularFile(worlds.resolve("Build_nether/.lazybuilder-family-publish-pending")));
+    }
+
+    @Test
     void stagingConsolidatesPaperSiblingsBackToCanonicalJavaLayout() throws Exception {
         Path worlds = tempDir.resolve("worlds");
         Path staged = tempDir.resolve("staged");
