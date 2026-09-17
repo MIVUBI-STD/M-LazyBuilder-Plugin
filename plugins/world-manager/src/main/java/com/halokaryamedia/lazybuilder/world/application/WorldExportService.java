@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.world.conversion.ConversionJobCoordinator;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConverterAdapter;
+import com.halokaryamedia.lazybuilder.world.files.AreaCopySelection;
 import com.halokaryamedia.lazybuilder.world.files.ExportArtifactType;
 import com.halokaryamedia.lazybuilder.world.files.WorldCopyProfile;
 import com.halokaryamedia.lazybuilder.world.files.WorldExportArtifactStore;
@@ -25,12 +26,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /** Phased Export World use case shared by whole-world and Export Area requests. */
 public final class WorldExportService {
     public static final String NATIVE_SERVER_FORMAT = "JAVA_1_21_4";
     private static final String TRANSFER_MARKER = ".lazybuilder-transfer.properties";
     private static final String PRUNING_FILE = "lazybuilder-export-area.json";
+    private static final BooleanSupplier NEVER_CANCELLED = () -> false;
     private static final List<String> VANILLA_DIMENSIONS = List.of(
             "minecraft:overworld",
             "minecraft:the_nether",
@@ -152,15 +155,79 @@ public final class WorldExportService {
         }
     }
 
-    public void captureSnapshot(ExportTask task) {
+    /**
+     * Validates Paper/runtime state before an asynchronous snapshot file copy begins.
+     * Callers that split the export into main-thread and file phases must invoke this
+     * while they still own the Paper main thread, immediately before dispatching the
+     * filesystem copy. Validation grants a one-shot task permit consumed by the async phase.
+     */
+    public void validateSnapshotSourceForAsyncCapture(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         requireSnapshotSource(task);
+        task.authorizeAsyncCapture();
+    }
+
+    /** Existing synchronous/test path: validates runtime state and then copies files. */
+    public void captureSnapshot(ExportTask task) {
+        captureSnapshotFiles(task, true, NEVER_CANCELLED);
+    }
+
+    /**
+     * Async file-phase path used only after validateSnapshotSourceForAsyncCapture()
+     * has completed on the Paper main thread. This method performs filesystem work
+     * only and must not touch Bukkit/Paper runtime state. The validation permit is
+     * consumed before I/O begins so a retry must be validated again.
+     */
+    public void captureSnapshotAfterValidation(ExportTask task) {
+        captureSnapshotAfterValidation(task, NEVER_CANCELLED);
+    }
+
+    /** Async capture path with an external cooperative cancellation signal. */
+    public void captureSnapshotAfterValidation(ExportTask task, BooleanSupplier cancellationRequested) {
+        Objects.requireNonNull(task, "task");
+        Objects.requireNonNull(cancellationRequested, "cancellationRequested");
+        task.consumeAsyncCaptureAuthorization();
+        captureSnapshotFiles(task, false, cancellationRequested);
+    }
+
+    private void captureSnapshotFiles(
+            ExportTask task,
+            boolean validateRuntimeState,
+            BooleanSupplier cancellationRequested
+    ) {
+        Objects.requireNonNull(task, "task");
+        Objects.requireNonNull(cancellationRequested, "cancellationRequested");
+        task.requireOpen();
+        if (validateRuntimeState) {
+            requireSnapshotSource(task);
+            task.beginSynchronousCapture();
+        }
+        BooleanSupplier combinedCancellation =
+                () -> task.captureCancellationRequested() || cancellationRequested.getAsBoolean();
         Path snapshot = null;
         try {
-            snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);
+            if (task.area == null) {
+                snapshot = files.stageCopy(
+                        task.source,
+                        task.operationId,
+                        WorldCopyProfile.SNAPSHOT,
+                        combinedCancellation);
+            } else {
+                snapshot = files.stageAreaCopy(
+                        task.source,
+                        task.operationId,
+                        new AreaCopySelection(
+                                task.area.dimensionId(),
+                                task.area.minChunkX(),
+                                task.area.minChunkZ(),
+                                task.area.maxChunkX(),
+                                task.area.maxChunkZ(),
+                                combinedCancellation));
+            }
             task.attachSnapshot(snapshot);
         } catch (IOException | RuntimeException exception) {
+            task.failSnapshotCapture();
             cleanupWorkspace(snapshot);
             throw new IllegalStateException("Failed to prepare " + task.source.displayName() + " for export", exception);
         }
@@ -170,9 +237,8 @@ public final class WorldExportService {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         task.requireSnapshot();
-        if (task.sourceRestoreResolved) return;
-        task.sourceRestored = restoreSourceAfterSnapshot(task);
-        task.sourceRestoreResolved = true;
+        if (task.sourceRestoreResolved()) return;
+        task.resolveSourceRestore(restoreSourceAfterSnapshot(task));
     }
 
     public ExportResult processSnapshot(ExportTask task) {
@@ -256,12 +322,12 @@ public final class WorldExportService {
 
     public void finish(ExportTask task) {
         Objects.requireNonNull(task, "task");
-        if (task.closed) return;
+        if (task.closed()) return;
+        task.requestCaptureCancellation();
         RuntimeException failure = null;
-        if (!task.sourceRestoreResolved) {
+        if (!task.sourceRestoreResolved()) {
             try {
-                task.sourceRestored = restoreSourceAfterSnapshot(task);
-                task.sourceRestoreResolved = true;
+                task.resolveSourceRestore(restoreSourceAfterSnapshot(task));
             } catch (RuntimeException exception) {
                 failure = exception;
             }
@@ -471,6 +537,22 @@ public final class WorldExportService {
     }
 
     public static final class ExportTask {
+        private enum Phase {
+            PREPARED,
+            CAPTURE_AUTHORIZED,
+            CAPTURING,
+            CAPTURED,
+            PROCESSING,
+            CONSUMED,
+            CLOSED
+        }
+
+        private enum SourceRestoreState {
+            UNRESOLVED,
+            NOT_RESTORED,
+            RESTORED
+        }
+
         private final UUID operationId;
         private final WorldRecord source;
         private final String targetFormat;
@@ -481,12 +563,11 @@ public final class WorldExportService {
         private final boolean liveSnapshot;
         private final WorldRuntimeGateway.LiveSnapshotState snapshotState;
         private final WorldOperationCoordinator.Lease lease;
-        private volatile boolean sourceRestoreResolved;
-        private volatile boolean sourceRestored;
+        private volatile SourceRestoreState sourceRestoreState = SourceRestoreState.UNRESOLVED;
         private volatile boolean completed;
-        private volatile boolean closed;
+        private volatile boolean captureCancellationRequested;
+        private Phase phase = Phase.PREPARED;
         private Path snapshot;
-        private boolean snapshotProcessing;
 
         private ExportTask(
                 UUID operationId,
@@ -517,43 +598,105 @@ public final class WorldExportService {
         public WorldAreaSelection area() { return area; }
         public WorldExportOptions options() { return options; }
         public boolean completed() { return completed; }
-        public boolean sourceRestored() { return sourceRestored; }
+        public boolean sourceRestored() { return sourceRestoreState == SourceRestoreState.RESTORED; }
         public boolean liveSnapshot() { return liveSnapshot; }
 
+        private boolean sourceRestoreResolved() {
+            return sourceRestoreState != SourceRestoreState.UNRESOLVED;
+        }
+
+        private void resolveSourceRestore(boolean restored) {
+            sourceRestoreState = restored ? SourceRestoreState.RESTORED : SourceRestoreState.NOT_RESTORED;
+        }
+
+        private void requestCaptureCancellation() {
+            captureCancellationRequested = true;
+        }
+
+        private boolean captureCancellationRequested() {
+            return captureCancellationRequested;
+        }
+
+        private synchronized boolean closed() {
+            return phase == Phase.CLOSED;
+        }
+
         private synchronized void requireOpen() {
-            if (closed) throw new IllegalStateException("Export task is already closed");
+            if (phase == Phase.CLOSED) throw new IllegalStateException("Export task is already closed");
+        }
+
+        private synchronized void authorizeAsyncCapture() {
+            requireOpen();
+            if (phase == Phase.PREPARED || phase == Phase.CAPTURE_AUTHORIZED) {
+                phase = Phase.CAPTURE_AUTHORIZED;
+                return;
+            }
+            throw new IllegalStateException("Export snapshot capture has already started");
+        }
+
+        private synchronized void consumeAsyncCaptureAuthorization() {
+            requireOpen();
+            if (phase != Phase.CAPTURE_AUTHORIZED) {
+                throw new IllegalStateException("Async export snapshot capture requires fresh runtime validation");
+            }
+            phase = Phase.CAPTURING;
+        }
+
+        private synchronized void beginSynchronousCapture() {
+            requireOpen();
+            if (phase != Phase.PREPARED && phase != Phase.CAPTURE_AUTHORIZED) {
+                throw new IllegalStateException("Export snapshot capture has already started");
+            }
+            phase = Phase.CAPTURING;
+        }
+
+        private synchronized void failSnapshotCapture() {
+            if (phase == Phase.CAPTURING) phase = Phase.PREPARED;
         }
 
         private synchronized void attachSnapshot(Path value) {
-            if (closed) throw new IllegalStateException("Export task closed while snapshot was being captured");
-            if (snapshot != null) throw new IllegalStateException("Export snapshot already exists");
+            if (phase == Phase.CLOSED) {
+                throw new IllegalStateException("Export task closed while snapshot was being captured");
+            }
+            if (phase != Phase.CAPTURING) {
+                throw new IllegalStateException("Export snapshot already exists");
+            }
             snapshot = Objects.requireNonNull(value, "snapshot");
+            phase = Phase.CAPTURED;
         }
 
         private synchronized Path requireSnapshot() {
+            if (phase != Phase.CAPTURED && phase != Phase.PROCESSING) {
+                throw new IllegalStateException("Export snapshot has not been captured");
+            }
             if (snapshot == null) throw new IllegalStateException("Export snapshot has not been captured");
             return snapshot;
         }
 
         private synchronized Path beginSnapshotProcessing() {
             requireOpen();
-            if (snapshotProcessing) throw new IllegalStateException("Export snapshot is already processing");
+            if (phase == Phase.PROCESSING) {
+                throw new IllegalStateException("Export snapshot is already processing");
+            }
+            if (phase != Phase.CAPTURED) {
+                throw new IllegalStateException("Export snapshot has not been captured");
+            }
             Path value = requireSnapshot();
-            snapshotProcessing = true;
+            phase = Phase.PROCESSING;
             return value;
         }
 
         private synchronized void endSnapshotProcessing(Path processed) {
             if (snapshot == processed) snapshot = null;
-            snapshotProcessing = false;
+            if (phase == Phase.PROCESSING) phase = Phase.CONSUMED;
         }
 
         private synchronized Path closeAndDetachIdleSnapshot() {
-            if (!closed) {
-                lease.close();
-                closed = true;
-            }
-            if (snapshotProcessing) return null;
+            if (phase == Phase.CLOSED) return null;
+            Phase previous = phase;
+            lease.close();
+            phase = Phase.CLOSED;
+            if (previous == Phase.PROCESSING || previous == Phase.CAPTURING) return null;
             Path value = snapshot;
             snapshot = null;
             return value;

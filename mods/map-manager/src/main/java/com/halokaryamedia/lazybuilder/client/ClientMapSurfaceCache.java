@@ -58,6 +58,7 @@ public final class ClientMapSurfaceCache {
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
+    private static final int MAX_FAILED_REGION_LOADS = 4096;
     private static final int MAX_PENDING = 262_144;
     private static final int MAX_REGION_LOADS_IN_FLIGHT = 32;
     private static final int MAX_LIVE_SAMPLES_PER_TICK = 1024;
@@ -73,6 +74,7 @@ public final class ClientMapSurfaceCache {
     /** Access-order LRU; all mutation happens on the Minecraft client thread. */
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LongLinkedOpenHashSet pending = new LongLinkedOpenHashSet();
+    private final LongLinkedOpenHashSet failedRegionLoads = new LongLinkedOpenHashSet();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<RegionWriteCompletion> completedWrites = new ConcurrentLinkedQueue<>();
     private final AtomicInteger regionLoadsInFlight = new AtomicInteger();
@@ -98,7 +100,11 @@ public final class ClientMapSurfaceCache {
     }
 
     public void useScope(String scope, Path storageRoot) {
-        String normalized = Objects.requireNonNullElse(scope, "");
+        String localScope = Objects.requireNonNullElse(scope, "");
+        boolean identifiedManagedWorld = !localScope.startsWith("unmanaged|");
+        String normalized = identifiedManagedWorld && !localScope.isBlank()
+                ? ClientServerIdentity.mapScope(localScope)
+                : localScope;
         if (this.scope.equals(normalized)) return;
 
         flushAsync();
@@ -106,7 +112,6 @@ public final class ClientMapSurfaceCache {
         this.scopeGeneration++;
         this.activeNetherLayerCenter = null;
 
-        boolean identifiedManagedWorld = !normalized.startsWith("unmanaged|");
         this.baseScopeDirectory = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
                 ? null
                 : storageRoot.resolve(safeName(normalized));
@@ -122,6 +127,7 @@ public final class ClientMapSurfaceCache {
     private void clearResidentState() {
         regions.clear();
         pending.clear();
+        failedRegionLoads.clear();
         completedLoads.clear();
         activeCompletedSnapshot = null;
         activeCompletedRegion = null;
@@ -325,7 +331,8 @@ public final class ClientMapSurfaceCache {
         RegionData existing = regions.get(regionKey);
         Path directory = scopeDirectory;
         if (existing != null) {
-            if (scheduleLoad && directory != null && !existing.loaded && !existing.loadScheduled) {
+            if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)
+                    && !existing.loaded && !existing.loadScheduled) {
                 scheduleRegionLoad(directory, regionKey, existing, scopeGeneration);
             }
             return existing;
@@ -333,7 +340,9 @@ public final class ClientMapSurfaceCache {
 
         RegionData created = new RegionData();
         regions.put(regionKey, created);
-        if (scheduleLoad && directory != null) scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)) {
+            scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        }
         return created;
     }
 
@@ -351,6 +360,9 @@ public final class ClientMapSurfaceCache {
                     .whenComplete((snapshot, failure) -> {
                         regionLoadsInFlight.decrementAndGet();
                         if (generation != scopeGeneration) return;
+                        if (failure != null) {
+                            LOGGER.warn("Suppressing unreadable LazyBuilder map cache region reload: {}", file, failure);
+                        }
                         completedLoads.add(new LoadedRegion(
                                 generation,
                                 regionKey,
@@ -376,7 +388,11 @@ public final class ClientMapSurfaceCache {
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
-                    if (region != null) region.loadScheduled = false;
+                    rememberFailedRegionLoad(loaded.regionKey);
+                    if (region != null) {
+                        region.loaded = true;
+                        region.loadScheduled = false;
+                    }
                     continue;
                 }
 
@@ -407,6 +423,14 @@ public final class ClientMapSurfaceCache {
             if (activeCompletedIndex >= activeCompletedSnapshot.size()) finishActiveCompletedLoad();
         }
         return processed;
+    }
+
+    private void rememberFailedRegionLoad(long regionKey) {
+        failedRegionLoads.remove(regionKey);
+        failedRegionLoads.add(regionKey);
+        while (failedRegionLoads.size() > MAX_FAILED_REGION_LOADS) {
+            failedRegionLoads.removeFirstLong();
+        }
     }
 
     private void finishActiveCompletedLoad() {
@@ -528,17 +552,24 @@ public final class ClientMapSurfaceCache {
         return result;
     }
 
-    private static RegionSnapshot readRegion(Path source) {
+    static RegionSnapshot readRegion(Path source) {
         if (source == null || !Files.isRegularFile(source)) return RegionSnapshot.EMPTY;
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(
                 new GZIPInputStream(Files.newInputStream(source))))) {
             if (in.readInt() != FORMAT_VERSION) return RegionSnapshot.EMPTY;
-            int count = Math.max(0, Math.min(REGION_CAPACITY, in.readInt()));
+            int count = in.readInt();
+            if (count < 0 || count > REGION_CAPACITY) {
+                throw new IOException("Invalid LazyBuilder map region entry count: " + count);
+            }
             int[] indices = new int[count];
             int[] colors = new int[count];
             int[] heights = new int[count];
             for (int i = 0; i < count; i++) {
-                indices[i] = in.readUnsignedShort();
+                int index = in.readUnsignedShort();
+                if (index >= REGION_CAPACITY) {
+                    throw new IOException("Invalid LazyBuilder map region index: " + index);
+                }
+                indices[i] = index;
                 colors[i] = in.readInt();
                 heights[i] = in.readInt();
             }

@@ -331,21 +331,31 @@ public final class WorldMapScreen extends Screen {
         if (SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK) > 0) rasterContentDirty = true;
 
         int pixel = mapPixelSize();
+        WorldMapRasterViewport.State viewport = WorldMapRasterViewport.resolve(
+                scope, bounds.left, bounds.top, bounds.right, bounds.bottom, pixel, zoom, centerX, centerZ);
         long worldTime = world.getTime();
-        if (rasterNeedsRefresh(scope, bounds, pixel, worldTime)) rebuildRaster(world, scope, bounds, pixel, worldTime);
-        drawRaster(context, bounds, pixel);
+        if (rasterNeedsRefresh(scope, bounds, pixel, worldTime, viewport)) {
+            rebuildRaster(world, scope, bounds, pixel, worldTime, viewport);
+        }
+        drawRaster(context, bounds, pixel, viewport);
         renderPlayerMarker(context, bounds);
     }
 
-    private boolean rasterNeedsRefresh(String scope, Bounds bounds, int pixel, long worldTime) {
+    private boolean rasterNeedsRefresh(
+            String scope,
+            Bounds bounds,
+            int pixel,
+            long worldTime,
+            WorldMapRasterViewport.State viewport
+    ) {
         boolean viewportChanged = rasterColors.length == 0
                 || rasterPixel != pixel
                 || rasterLeft != bounds.left
                 || rasterTop != bounds.top
                 || rasterRight != bounds.right
                 || rasterBottom != bounds.bottom
-                || Double.compare(rasterCenterX, centerX) != 0
-                || Double.compare(rasterCenterZ, centerZ) != 0
+                || Double.compare(rasterCenterX, viewport.sampleCenterX()) != 0
+                || Double.compare(rasterCenterZ, viewport.sampleCenterZ()) != 0
                 || Double.compare(rasterZoom, zoom) != 0
                 || !rasterScope.equals(scope);
         if (viewportChanged) return true;
@@ -355,8 +365,15 @@ public final class WorldMapScreen extends Screen {
                 || worldTime - rasterWorldTime >= RASTER_CONTENT_REFRESH_TICKS;
     }
 
-    private void rebuildRaster(ClientWorld world, String scope, Bounds bounds, int pixel, long worldTime) {
-        double blocksPerCell = zoom * pixel / 2.0;
+    private void rebuildRaster(
+            ClientWorld world,
+            String scope,
+            Bounds bounds,
+            int pixel,
+            long worldTime,
+            WorldMapRasterViewport.State viewport
+    ) {
+        double blocksPerCell = viewport.blocksPerCell();
         int sampleSpan = Math.max(1, (int) Math.ceil(blocksPerCell));
         int halfCellsX = Math.max(1, bounds.width() / pixel / 2);
         int halfCellsZ = Math.max(1, bounds.height() / pixel / 2);
@@ -365,8 +382,8 @@ public final class WorldMapScreen extends Screen {
         int[] nextColors = new int[columns * rows];
         java.util.Arrays.fill(nextColors, ClientMapSurfaceCache.UNEXPLORED_COLOR);
 
-        double originCellX = centerX / blocksPerCell;
-        double originCellZ = centerZ / blocksPerCell;
+        double originCellX = viewport.sampleCenterX() / blocksPerCell;
+        double originCellZ = viewport.sampleCenterZ() / blocksPerCell;
         int index = 0;
         for (int cz = -halfCellsZ - 2; cz <= halfCellsZ + 2; cz++) {
             int screenY = bounds.centerY() + cz * pixel;
@@ -392,8 +409,8 @@ public final class WorldMapScreen extends Screen {
         rasterTop = bounds.top;
         rasterRight = bounds.right;
         rasterBottom = bounds.bottom;
-        rasterCenterX = centerX;
-        rasterCenterZ = centerZ;
+        rasterCenterX = viewport.sampleCenterX();
+        rasterCenterZ = viewport.sampleCenterZ();
         rasterZoom = zoom;
         rasterScope = scope;
         rasterContentDirty = false;
@@ -405,13 +422,18 @@ public final class WorldMapScreen extends Screen {
         }
     }
 
-    private void drawRaster(DrawContext context, Bounds bounds, int pixel) {
+    private void drawRaster(
+            DrawContext context,
+            Bounds bounds,
+            int pixel,
+            WorldMapRasterViewport.State viewport
+    ) {
         if (rasterColumns <= 0 || rasterRows <= 0 || rasterColors.length == 0) return;
         ensureRasterTexture();
         if (rasterTexture == null || !rasterTexture.ready()) return;
 
-        int rasterX = bounds.centerX() + (-rasterHalfCellsX - 2) * pixel;
-        int rasterY = bounds.centerY() + (-rasterHalfCellsZ - 2) * pixel;
+        int rasterX = bounds.centerX() + (-rasterHalfCellsX - 2) * pixel + viewport.drawOffsetX();
+        int rasterY = bounds.centerY() + (-rasterHalfCellsZ - 2) * pixel + viewport.drawOffsetZ();
         int drawWidth = rasterColumns * pixel;
         int drawHeight = rasterRows * pixel;
 

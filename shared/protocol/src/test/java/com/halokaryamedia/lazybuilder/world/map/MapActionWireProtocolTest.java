@@ -13,24 +13,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MapActionWireProtocolTest {
     @Test
-    void teleportRequestRoundTrips() throws Exception {
+    void teleportRequestRoundTripsWithCorrelationId() throws Exception {
         WorldId worldId = WorldId.create();
-        byte[] payload = MapActionWireProtocol.teleportRequest(worldId, -12, 345);
+        byte[] payload = MapActionWireProtocol.teleportRequest(41L, worldId, -12, 345);
 
         var decoded = (MapActionWireProtocol.TeleportLocation) MapActionWireProtocol.decodeRequest(payload);
+        assertEquals(41L, decoded.requestId());
         assertEquals(worldId, decoded.worldId());
         assertEquals(-12, decoded.blockX());
         assertEquals(345, decoded.blockZ());
     }
 
     @Test
-    void exportAreaRequestRoundTripsWithDimension() throws Exception {
+    void exportAreaRequestRoundTripsWithDimensionAndCorrelationId() throws Exception {
         WorldId worldId = WorldId.create();
         byte[] payload = MapActionWireProtocol.exportAreaRequest(
-                worldId, "minecraft:the_nether", 31, 48, -17, -1,
-                "JAVA_1_21_4", "area-export");
+                42L, worldId, "minecraft:the_nether", 31, 48, -17, -1,
+                "JAVA_1_21_4", "area-export", ExportSettingsWire.Settings.inherit());
 
         var decoded = (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(payload);
+        assertEquals(42L, decoded.requestId());
         assertEquals(worldId, decoded.worldId());
         assertEquals("minecraft:the_nether", decoded.dimensionId());
         assertEquals(31, decoded.x1());
@@ -48,47 +50,84 @@ class MapActionWireProtocolTest {
         var settings = new ExportSettingsWire.Settings(
                 "ADVENTURE", "HARD", Map.of("keepinventory", "true"));
         byte[] payload = MapActionWireProtocol.exportAreaRequest(
-                worldId, "minecraft:the_end", 0, 0, 15, 15,
+                43L, worldId, "minecraft:the_end", 0, 0, 15, 15,
                 "BEDROCK_1_21_80", "custom-area", settings);
 
         var decoded = (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(payload);
+        assertEquals(43L, decoded.requestId());
         assertEquals("minecraft:the_end", decoded.dimensionId());
         assertEquals(settings, decoded.settings());
     }
 
     @Test
-    void currentWorldHandshakeRoundTripsForClient() throws Exception {
-        var request = MapActionWireProtocol.decodeRequest(MapActionWireProtocol.currentWorldRequest());
-        assertEquals(MapActionWireProtocol.CurrentWorldRequest.class, request.getClass());
+    void currentWorldHandshakeRoundTripsCorrelationForExplicitRefresh() throws Exception {
+        var request = (MapActionWireProtocol.CurrentWorldRequest) MapActionWireProtocol.decodeRequest(
+                MapActionWireProtocol.currentWorldRequest(44L));
+        assertEquals(44L, request.requestId());
 
         WorldId id = WorldId.create();
         var response = (MapActionWireProtocol.CurrentWorldResult) MapActionWireProtocol.decodeResponse(
-                MapActionWireProtocol.currentWorld(id, "Build World", "build-world"));
+                MapActionWireProtocol.currentWorld(44L, id, "Build World", "build-world"));
+        assertEquals(44L, response.requestId());
         assertEquals(id, response.worldId());
         assertEquals("Build World", response.displayName());
         assertEquals("build-world", response.folderName());
 
-        var cleared = MapActionWireProtocol.decodeResponse(MapActionWireProtocol.currentWorldCleared());
-        assertEquals(MapActionWireProtocol.CurrentWorldCleared.class, cleared.getClass());
+        var cleared = (MapActionWireProtocol.CurrentWorldCleared) MapActionWireProtocol.decodeResponse(
+                MapActionWireProtocol.currentWorldCleared(44L));
+        assertEquals(44L, cleared.requestId());
     }
 
     @Test
-    void responseRoundTrips() throws Exception {
+    void requestBoundResponsesRoundTripCorrelationId() throws Exception {
         WorldId id = WorldId.create();
         var teleport = (MapActionWireProtocol.TeleportOk) MapActionWireProtocol.decodeResponse(
-                MapActionWireProtocol.teleportOk(id, 10.5, 65.0, -3.5));
+                MapActionWireProtocol.teleportOk(51L, id, 10.5, 65.0, -3.5));
+        assertEquals(51L, teleport.requestId());
         assertEquals(id, teleport.worldId());
         assertEquals(65.0, teleport.y());
 
+        var accepted = (MapActionWireProtocol.ExportAccepted) MapActionWireProtocol.decodeResponse(
+                MapActionWireProtocol.exportAccepted(52L, id));
+        assertEquals(52L, accepted.requestId());
+
         var complete = (MapActionWireProtocol.ExportComplete) MapActionWireProtocol.decodeResponse(
-                MapActionWireProtocol.exportComplete(id, "area.zip", "JAVA_1_21_4"));
+                MapActionWireProtocol.exportComplete(52L, id, "area.zip", "JAVA_1_21_4"));
+        assertEquals(52L, complete.requestId());
         assertEquals("area.zip", complete.fileName());
+
+        var error = (MapActionWireProtocol.ErrorResponse) MapActionWireProtocol.decodeResponse(
+                MapActionWireProtocol.error(53L, "denied"));
+        assertEquals(53L, error.requestId());
+        assertEquals("denied", error.message());
+    }
+
+    @Test
+    void unsolicitedCurrentWorldPushUsesZeroCorrelationId() throws Exception {
+        WorldId id = WorldId.create();
+        var response = (MapActionWireProtocol.CurrentWorldResult) MapActionWireProtocol.decodeResponse(
+                MapActionWireProtocol.currentWorld(id, "Build World", "build-world"));
+        assertEquals(0L, response.requestId());
+    }
+
+    @Test
+    void rejectsNonPositiveRequestCorrelationIds() {
+        WorldId worldId = WorldId.create();
+        assertThrows(IllegalArgumentException.class,
+                () -> MapActionWireProtocol.teleportRequest(0L, worldId, 1, 2));
+        assertThrows(IllegalArgumentException.class,
+                () -> MapActionWireProtocol.currentWorldRequest(-1L));
+
+        byte[] valid = MapActionWireProtocol.teleportRequest(61L, worldId, 1, 2);
+        byte[] zeroId = valid.clone();
+        Arrays.fill(zeroId, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(zeroId));
     }
 
     @Test
     void rejectsUnsupportedVersionAndTrailingBytes() {
         WorldId worldId = WorldId.create();
-        byte[] payload = MapActionWireProtocol.teleportRequest(worldId, 1, 2);
+        byte[] payload = MapActionWireProtocol.teleportRequest(61L, worldId, 1, 2);
 
         byte[] badVersion = payload.clone();
         badVersion[0] = 99;
@@ -98,7 +137,7 @@ class MapActionWireProtocolTest {
         trailing[trailing.length - 1] = 7;
         assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(trailing));
 
-        byte[] response = MapActionWireProtocol.exportAccepted(worldId);
+        byte[] response = MapActionWireProtocol.exportAccepted(61L, worldId);
         byte[] responseTrailing = Arrays.copyOf(response, response.length + 1);
         assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(responseTrailing));
     }

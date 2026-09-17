@@ -17,11 +17,11 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
+import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Thin Paper transport for map intents; domain authority stays in application services. */
 public final class PaperMapActionPayloadAdapter implements PluginMessageListener, Listener {
@@ -35,9 +35,8 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     private final WorldRegistry registry;
     private final WorldLocationTeleportService teleportService;
     private final WorldExportService exportService;
-    private final Set<UUID> exportInFlight = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, WorldExportService.ExportTask> activeExports = new ConcurrentHashMap<>();
-    private final Map<UUID, byte[]> pendingExportCompletion = new ConcurrentHashMap<>();
+    private final Map<UUID, WorldExportService.ExportTask> activeExports = new HashMap<>();
+    private final PendingMapExportCompletionStore pendingExportCompletions;
     private volatile boolean started;
     private volatile boolean stopping;
 
@@ -51,11 +50,24 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         this.registry = Objects.requireNonNull(registry, "registry");
         this.teleportService = Objects.requireNonNull(teleportService, "teleportService");
         this.exportService = Objects.requireNonNull(exportService, "exportService");
+        this.pendingExportCompletions = new PendingMapExportCompletionStore(
+                plugin.getDataFolder().toPath().resolve("pending-map-export-completions"));
     }
 
     public void start() {
         if (started) return;
         stopping = false;
+        try {
+            int recoveredTemps = pendingExportCompletions.recoverTemps();
+            if (recoveredTemps > 0) {
+                plugin.getLogger().info("Recovered " + recoveredTemps
+                        + " interrupted pending map-export completion write"
+                        + (recoveredTemps == 1 ? "" : "s") + ".");
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not recover pending map-export completion writes: "
+                    + exception.getMessage());
+        }
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
@@ -72,8 +84,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
         activeExports.values().forEach(exportService::abandon);
         activeExports.clear();
-        exportInFlight.clear();
-        pendingExportCompletion.clear();
     }
 
     @EventHandler
@@ -81,7 +91,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         if (!started || stopping) return;
         Player player = event.getPlayer();
         if (!hasAnyWorldPermission(player)) return;
-        sendCurrentWorldState(player);
+        sendCurrentWorldState(player, 0L);
     }
 
     @Override
@@ -98,27 +108,28 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         }
 
         switch (request) {
-            case MapActionWireProtocol.CurrentWorldRequest ignored -> handleCurrentWorld(player);
+            case MapActionWireProtocol.CurrentWorldRequest current -> handleCurrentWorld(player, current);
             case MapActionWireProtocol.TeleportLocation teleport -> handleTeleport(player, teleport);
             case MapActionWireProtocol.ExportArea export -> handleExportArea(player, export);
         }
     }
 
-    private void handleCurrentWorld(Player player) {
+    private void handleCurrentWorld(Player player, MapActionWireProtocol.CurrentWorldRequest request) {
         if (!hasAnyWorldPermission(player)) {
-            send(player, MapActionWireProtocol.error("Missing LazyBuilder world permission"));
+            send(player, MapActionWireProtocol.error(request.requestId(), "Missing LazyBuilder world permission"));
             return;
         }
-        sendCurrentWorldState(player);
+        sendCurrentWorldState(player, request.requestId());
     }
 
-    private void sendCurrentWorldState(Player player) {
+    private void sendCurrentWorldState(Player player, long requestId) {
         WorldRecord world = currentManagedWorld(player);
         if (world == null) {
-            send(player, MapActionWireProtocol.currentWorldCleared());
+            send(player, MapActionWireProtocol.currentWorldCleared(requestId));
             return;
         }
-        send(player, MapActionWireProtocol.currentWorld(world.id(), world.displayName(), world.folderName()));
+        send(player, MapActionWireProtocol.currentWorld(
+                requestId, world.id(), world.displayName(), world.folderName()));
     }
 
     private boolean hasAnyWorldPermission(Player player) {
@@ -127,7 +138,8 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
     private void handleTeleport(Player player, MapActionWireProtocol.TeleportLocation request) {
         if (!player.hasPermission(TELEPORT_PERMISSION)) {
-            send(player, MapActionWireProtocol.error("Missing permission: " + TELEPORT_PERMISSION));
+            send(player, MapActionWireProtocol.error(
+                    request.requestId(), "Missing permission: " + TELEPORT_PERMISSION));
             return;
         }
         try {
@@ -135,29 +147,31 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                     player.getUniqueId(), request.worldId(), request.blockX(), request.blockZ());
             var location = result.resolved();
             send(player, MapActionWireProtocol.teleportOk(
-                    request.worldId(), location.x(), location.y(), location.z()));
+                    request.requestId(), request.worldId(), location.x(), location.y(), location.z()));
         } catch (RuntimeException exception) {
-            send(player, MapActionWireProtocol.error(exception.getMessage()));
+            send(player, MapActionWireProtocol.error(request.requestId(), exception.getMessage()));
         }
     }
 
     private void handleExportArea(Player player, MapActionWireProtocol.ExportArea request) {
         if (!player.hasPermission(MANAGE_PERMISSION)) {
-            send(player, MapActionWireProtocol.error("Missing permission: " + MANAGE_PERMISSION));
+            send(player, MapActionWireProtocol.error(
+                    request.requestId(), "Missing permission: " + MANAGE_PERMISSION));
             return;
         }
         if (stopping) {
-            send(player, MapActionWireProtocol.error("LazyBuilder is shutting down"));
+            send(player, MapActionWireProtocol.error(request.requestId(), "LazyBuilder is shutting down"));
             return;
         }
 
         UUID owner = player.getUniqueId();
-        if (!exportInFlight.add(owner)) {
-            send(player, MapActionWireProtocol.error("Previous Export Area request is still processing"));
+        if (activeExports.containsKey(owner)) {
+            send(player, MapActionWireProtocol.error(
+                    request.requestId(), "Previous Export Area request is still processing"));
             return;
         }
 
-        final WorldExportService.ExportTask task;
+        WorldExportService.ExportTask prepared = null;
         try {
             WorldRecord current = currentManagedWorld(player);
             if (current == null || !current.id().equals(request.worldId())) {
@@ -173,28 +187,36 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             WorldAreaSelection area = WorldAreaSelection.ofCorners(
                     activeDimension, request.x1(), request.z1(), request.x2(), request.z2());
             WorldExportOptions options = ExportSettingsMapper.toOptions(request.settings());
-            task = exportService.prepareArea(
+            prepared = exportService.prepareArea(
                     request.worldId(), request.targetFormat(), request.artifactName(), area, options);
-            activeExports.put(owner, task);
-            send(player, MapActionWireProtocol.exportAccepted(request.worldId()));
+            exportService.validateSnapshotSourceForAsyncCapture(prepared);
         } catch (RuntimeException exception) {
-            exportInFlight.remove(owner);
-            send(player, MapActionWireProtocol.error(exception.getMessage()));
+            if (prepared != null) {
+                try {
+                    exportService.abandon(prepared);
+                } catch (RuntimeException cleanupFailure) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
+            send(player, MapActionWireProtocol.error(request.requestId(), exception.getMessage()));
             return;
         }
+
+        final WorldExportService.ExportTask task = prepared;
+        activeExports.put(owner, task);
+        send(player, MapActionWireProtocol.exportAccepted(request.requestId(), request.worldId()));
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Throwable captureFailure = null;
             try {
-                exportService.captureSnapshot(task);
+                exportService.captureSnapshotAfterValidation(task);
             } catch (Throwable exception) {
                 captureFailure = exception;
             }
 
-            if (stopping || !started) {
-                completeAbandoned(owner, task);
-                return;
-            }
+            // stop() owns shutdown abandonment on the Paper thread. Async workers
+            // must never restore/load Paper runtime state while the plugin is stopping.
+            if (stopping || !started) return;
 
             Throwable finalCaptureFailure = captureFailure;
             plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -203,14 +225,14 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                     return;
                 }
                 if (finalCaptureFailure != null) {
-                    finishFailure(owner, task, finalCaptureFailure);
+                    finishFailure(owner, request.requestId(), task, finalCaptureFailure);
                     return;
                 }
 
                 try {
                     exportService.resumeSourceAfterSnapshot(task);
                 } catch (RuntimeException resumeFailure) {
-                    finishFailure(owner, task, resumeFailure);
+                    finishFailure(owner, request.requestId(), task, resumeFailure);
                     return;
                 }
 
@@ -233,10 +255,8 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                 failure = exception;
             }
 
-            if (stopping || !started) {
-                completeAbandoned(owner, task);
-                return;
-            }
+            // The main-thread stop path owns cleanup after shutdown begins.
+            if (stopping || !started) return;
 
             WorldExportService.ExportResult finalResult = result;
             Throwable finalFailure = failure;
@@ -244,37 +264,41 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
                 try {
                     exportService.finish(task);
                     byte[] completion = finalFailure != null
-                            ? MapActionWireProtocol.error(finalFailure.getMessage())
+                            ? MapActionWireProtocol.error(request.requestId(), finalFailure.getMessage())
                             : MapActionWireProtocol.exportComplete(
+                                    request.requestId(),
                                     request.worldId(),
                                     finalResult.artifact().getFileName().toString(),
                                     finalResult.targetFormat());
                     deliverOrRemember(owner, completion);
                 } catch (RuntimeException finishFailure) {
-                    deliverOrRemember(owner, MapActionWireProtocol.error(finishFailure.getMessage()));
+                    deliverOrRemember(owner, MapActionWireProtocol.error(
+                            request.requestId(), finishFailure.getMessage()));
                 } finally {
                     activeExports.remove(owner, task);
-                    exportInFlight.remove(owner);
                 }
             });
         });
     }
 
-    private void finishFailure(UUID owner, WorldExportService.ExportTask task, Throwable failure) {
+    private void finishFailure(
+            UUID owner,
+            long requestId,
+            WorldExportService.ExportTask task,
+            Throwable failure
+    ) {
         try {
             exportService.finish(task);
         } catch (RuntimeException finishFailure) {
             failure.addSuppressed(finishFailure);
         } finally {
             activeExports.remove(owner, task);
-            exportInFlight.remove(owner);
         }
-        deliverOrRemember(owner, MapActionWireProtocol.error(failure.getMessage()));
+        deliverOrRemember(owner, MapActionWireProtocol.error(requestId, failure.getMessage()));
     }
 
     private void completeAbandoned(UUID owner, WorldExportService.ExportTask task) {
         activeExports.remove(owner, task);
-        exportInFlight.remove(owner);
         exportService.abandon(task);
     }
 
@@ -285,12 +309,22 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             send(online, payload);
             return;
         }
-        pendingExportCompletion.put(owner, payload);
+        try {
+            pendingExportCompletions.put(owner, payload);
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not persist pending map-export completion for " + owner
+                    + ": " + exception.getMessage());
+        }
     }
 
     private void flushPendingCompletion(Player player) {
-        byte[] payload = pendingExportCompletion.remove(player.getUniqueId());
-        if (payload != null) send(player, payload);
+        try {
+            byte[] payload = pendingExportCompletions.take(player.getUniqueId());
+            if (payload != null) send(player, payload);
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not load pending map-export completion for "
+                    + player.getUniqueId() + ": " + exception.getMessage());
+        }
     }
 
     private void send(Player player, byte[] payload) {
