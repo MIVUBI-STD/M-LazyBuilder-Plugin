@@ -69,13 +69,13 @@ def main() -> int:
         'id="main-content"',
         'tabindex="-1"',
         'aria-current=',
+        ".skip-link:focus",
     )
     require(
         css,
         "@media (prefers-reduced-motion: reduce)",
         "@media (forced-colors: active)",
         "outline: 2px solid Highlight",
-        ".skip-link:focus",
         "[tabindex]:focus-visible",
     )
 
