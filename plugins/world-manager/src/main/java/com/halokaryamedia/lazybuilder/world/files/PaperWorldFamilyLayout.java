@@ -85,10 +85,10 @@ final class PaperWorldFamilyLayout {
             }
 
             try {
-                copyLevelMetadataIfMissing(root, sibling);
                 if (transactional && !Files.exists(sibling.resolve(FAMILY_PENDING_MARKER))) {
                     Files.createFile(sibling.resolve(FAMILY_PENDING_MARKER));
                 }
+                copyLevelMetadataIfMissing(root, sibling);
                 move(canonical, target);
             } catch (IOException | RuntimeException failure) {
                 if (siblingCreated) {
