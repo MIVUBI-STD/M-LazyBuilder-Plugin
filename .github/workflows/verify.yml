@@ -45,8 +45,36 @@ jobs:
         run: python scripts/verify_versions.py
       - name: Verify local Launcher packaging contract
         run: python scripts/verify_local_launcher_contract.py
+      - name: Verify Launcher release signing contract
+        run: python scripts/verify_launcher_release_contract.py
+      - name: Verify Launcher production hardening contract
+        run: python scripts/verify_launcher_hardening_contract.py
+      - name: Verify Launcher cross-runtime compatibility contract
+        run: python scripts/verify_compatibility.py
+      - name: Verify Launcher data preservation contract
+        run: python scripts/verify_launcher_data_preservation_contract.py
+      - name: Verify Launcher failure recovery matrix
+        run: python scripts/verify_launcher_failure_matrix.py
       - name: Verify Launcher scalability contract
         run: python scripts/verify_launcher_scalability_contract.py
+      - name: Verify Launcher production ownership contract
+        run: python scripts/verify_launcher_ownership_contract.py
+      - name: Verify Launcher structured error UX
+        run: python scripts/verify_launcher_error_ux.py
+      - name: Verify Launcher accessibility contract
+        run: python scripts/verify_launcher_accessibility_contract.py
+      - name: Verify Launcher notification contract
+        run: python scripts/verify_launcher_notification_contract.py
+      - name: Verify Launcher runtime bridge contract
+        run: python scripts/verify_launcher_bridge_contract.py
+      - name: Verify Launcher command surface
+        run: python scripts/verify_launcher_command_surface.py
+      - name: Verify Launcher tracked operation coverage
+        run: python scripts/verify_launcher_operation_coverage.py
+      - name: Verify Launcher metadata durability
+        run: python scripts/verify_launcher_metadata_durability.py
+      - name: Verify Launcher contract wiring
+        run: python scripts/verify_launcher_contract_wiring.py
 
   launcher-check:
     runs-on: windows-latest
