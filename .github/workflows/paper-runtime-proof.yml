@@ -13,7 +13,7 @@ concurrency:
 jobs:
   runtime-proof:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -55,7 +55,7 @@ jobs:
           New-Item -ItemType Directory -Path ".artifacts" -Force | Out-Null
           Invoke-WebRequest -Headers $headers -Uri $download -OutFile ".artifacts/paper-1.21.4.jar" -TimeoutSec 120
 
-      - name: Execute managed-world lifecycle proof
+      - name: Execute Paper managed-world lifecycle proof
         shell: pwsh
         run: |
           ./scripts/verify-paper-runtime.ps1 `
@@ -63,13 +63,21 @@ jobs:
             -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
             -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
 
-      - name: Execute restart and persistence proof
+      - name: Execute Paper multi-instance runtime proof (1 -> 2 -> 3)
+        shell: pwsh
+        run: |
+          ./scripts/verify-paper-multi-instance-runtime.ps1 `
+            -ServerJar ".artifacts/paper-1.21.4.jar" `
+            -WorldManagerJar ".artifacts/core/World-Manager-0.1.0-SNAPSHOT.jar" `
+            -UtilitiesManagerJar ".artifacts/core/Utilities-Manager-0.1.0-SNAPSHOT.jar"
+
+      - name: Execute Paper restart and persistence proof
         shell: pwsh
         run: |
           ./scripts/verify-paper-restart.ps1 `
             -ServerJar ".artifacts/paper-1.21.4.jar"
 
-      - name: Upload runtime proof evidence
+      - name: Upload Paper runtime proof evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -79,5 +87,7 @@ jobs:
             .runtime-proof/paper-smoke/plugins/**/config.yml
             .runtime-proof/paper-smoke/plugins/World-Manager/world/registry.yml
             .runtime-proof/paper-smoke/server.properties
+            .runtime-proof/paper-multi-instance/**/logs/**
+            .runtime-proof/paper-multi-instance/**/server.properties
           if-no-files-found: warn
           retention-days: 7
