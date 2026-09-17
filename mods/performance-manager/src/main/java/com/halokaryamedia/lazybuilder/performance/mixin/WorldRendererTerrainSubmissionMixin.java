@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlan
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubmissionBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPerDrawShaderBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
@@ -33,7 +34,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Builds reusable per-layer submission lists and safely switches ready draws to shared region buffers. */
+/** Builds indexed terrain submission and guarded physical/multi-draw execution paths. */
 @Mixin(WorldRenderer.class)
 abstract class WorldRendererTerrainSubmissionMixin {
     @Shadow @Final private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
@@ -77,12 +78,14 @@ abstract class WorldRendererTerrainSubmissionMixin {
             this.lazybuilder$submissionIndexActive = false;
             TerrainArenaDrawDiagnostics.clear();
             TerrainDrawTransformStream.clear();
+            TerrainMultiDrawSubmissionBackend.clear();
             TerrainPerDrawShaderBackend.clear();
             TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
         if (!lazybuilder$isBlockLayer(layer)) {
             this.lazybuilder$submissionIndexActive = false;
+            TerrainMultiDrawSubmissionBackend.finishLayer();
             TerrainPhysicalArenaManager.noteExternalBind();
             return;
         }
@@ -117,7 +120,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
         int layerSlot = lazybuilder$layerSlot(layer);
         if (layerSlot < 0 || !PerformanceManagerClient.preferences().renderingOptimizations()) return;
         ShaderProgram shader = RenderSystem.getShader();
-        TerrainPerDrawShaderBackend.prepare(shader, TerrainMultiDrawCommandStream.layer(layerSlot));
+        TerrainMultiDrawSubmissionBackend.prepare(shader, TerrainMultiDrawCommandStream.layer(layerSlot));
     }
 
     @Inject(method = "renderLayer", at = @At("RETURN"))
@@ -131,6 +134,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             CallbackInfo ci
     ) {
         this.lazybuilder$physicalPreparedBuffer = null;
+        TerrainMultiDrawSubmissionBackend.finishLayer();
         TerrainPhysicalArenaManager.noteExternalBind();
     }
 
@@ -168,10 +172,17 @@ abstract class WorldRendererTerrainSubmissionMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gl/VertexBuffer;bind()V")
     )
     private void lazybuilder$bindPhysicalArenaOrVanilla(VertexBuffer buffer) {
-        if (PerformanceManagerClient.preferences().renderingOptimizations()
-                && TerrainPhysicalArenaManager.bind(buffer)) {
-            this.lazybuilder$physicalPreparedBuffer = buffer;
-            return;
+        if (PerformanceManagerClient.preferences().renderingOptimizations()) {
+            TerrainMultiDrawSubmissionBackend.BindAction multi = TerrainMultiDrawSubmissionBackend.onBind(buffer);
+            if (multi == TerrainMultiDrawSubmissionBackend.BindAction.START
+                    || multi == TerrainMultiDrawSubmissionBackend.BindAction.SKIP) {
+                this.lazybuilder$physicalPreparedBuffer = null;
+                return;
+            }
+            if (TerrainPhysicalArenaManager.bind(buffer)) {
+                this.lazybuilder$physicalPreparedBuffer = buffer;
+                return;
+            }
         }
 
         this.lazybuilder$physicalPreparedBuffer = null;
@@ -184,6 +195,20 @@ abstract class WorldRendererTerrainSubmissionMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gl/VertexBuffer;draw()V")
     )
     private void lazybuilder$drawPhysicalArenaOrVanilla(VertexBuffer buffer) {
+        TerrainMultiDrawSubmissionBackend.DrawAction multi = TerrainMultiDrawSubmissionBackend.onDraw(buffer);
+        if (multi == TerrainMultiDrawSubmissionBackend.DrawAction.SUBMITTED
+                || multi == TerrainMultiDrawSubmissionBackend.DrawAction.SKIP) {
+            this.lazybuilder$physicalPreparedBuffer = null;
+            return;
+        }
+        if (multi == TerrainMultiDrawSubmissionBackend.DrawAction.FALLBACK) {
+            this.lazybuilder$physicalPreparedBuffer = null;
+            TerrainPhysicalArenaManager.noteExternalBind();
+            buffer.bind();
+            buffer.draw();
+            return;
+        }
+
         boolean expectedPhysical = this.lazybuilder$physicalPreparedBuffer == buffer;
         this.lazybuilder$physicalPreparedBuffer = null;
 
@@ -274,6 +299,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             VertexBuffer buffer = chunk.getBuffer(layer);
             BlockPos origin = chunk.getOrigin();
             inputs.add(new TerrainDrawTransformStream.Input(
+                    buffer,
                     TerrainGpuResidencyTracker.drawCommand(buffer),
                     origin.getX(),
                     origin.getY(),

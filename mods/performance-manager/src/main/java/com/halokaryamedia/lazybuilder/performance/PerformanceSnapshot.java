@@ -83,6 +83,13 @@ public record PerformanceSnapshot(
         long terrainMultiDrawPackedCommandBytes,
         long terrainMultiDrawPackedTransformBytes,
         String terrainMultiDrawCapability,
+        long terrainMultiDrawPrepareAttempts,
+        long terrainMultiDrawPreparedRuns,
+        long terrainMultiDrawSubmittedBatches,
+        long terrainMultiDrawSubmittedCommands,
+        long terrainMultiDrawReducedDrawCalls,
+        long terrainMultiDrawSubmissionFailures,
+        String terrainMultiDrawSubmissionStatus,
         String rendererPipelineOwner,
         String chunkDebug,
         String entityDebug,
@@ -90,6 +97,7 @@ public record PerformanceSnapshot(
 ) {
     public PerformanceSnapshot {
         terrainMultiDrawCapability = terrainMultiDrawCapability == null ? "" : terrainMultiDrawCapability;
+        terrainMultiDrawSubmissionStatus = terrainMultiDrawSubmissionStatus == null ? "" : terrainMultiDrawSubmissionStatus;
         rendererPipelineOwner = rendererPipelineOwner == null ? "" : rendererPipelineOwner;
         chunkDebug = chunkDebug == null ? "" : chunkDebug;
         entityDebug = entityDebug == null ? "" : entityDebug;

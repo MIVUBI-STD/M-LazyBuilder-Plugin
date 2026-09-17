@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import net.minecraft.client.gl.VertexBuffer;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -21,8 +23,8 @@ public final class TerrainMultiDrawCommandStream {
         }
 
         List<PackedCommand> commands = new ArrayList<>();
-        for (int i = 0; i < layer.commands().size(); i++) {
-            TerrainDrawTransformStream.Command transform = layer.commands().get(i);
+        for (int orderIndex = 0; orderIndex < layer.commands().size(); orderIndex++) {
+            TerrainDrawTransformStream.Command transform = layer.commands().get(orderIndex);
             if (transform == null || !transform.physicalReady()) continue;
 
             TerrainArenaDrawPlanner.Command arena = transform.arenaCommand();
@@ -35,12 +37,15 @@ public final class TerrainMultiDrawCommandStream {
             long indexOffset = state.indexPayloadBytes() > 0 ? arena.indexByteOffset() : 0L;
             if (indexOffset < 0L) continue;
 
+            int packedTransformIndex = commands.size();
             commands.add(new PackedCommand(
+                    transform.source(),
                     arena,
                     state.indexCount(),
                     indexOffset,
                     baseVertex,
-                    i,
+                    packedTransformIndex,
+                    orderIndex,
                     transform.modelOffsetX(),
                     transform.modelOffsetY(),
                     transform.modelOffsetZ()
@@ -129,11 +134,13 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public record PackedCommand(
+            VertexBuffer source,
             TerrainArenaDrawPlanner.Command arenaCommand,
             int indexCount,
             long indexByteOffset,
             int baseVertex,
             int transformIndex,
+            int orderIndex,
             float modelOffsetX,
             float modelOffsetY,
             float modelOffsetZ

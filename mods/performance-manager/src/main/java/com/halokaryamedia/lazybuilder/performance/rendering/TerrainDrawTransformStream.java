@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import net.minecraft.client.gl.VertexBuffer;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -8,9 +10,8 @@ import java.util.List;
  * modelOffset uniform before each terrain draw.
  *
  * The stream preserves exact vanilla draw order, including reverse translucent traversal. It does
- * not alter shader state yet; it materializes the per-command transform payload required by a future
- * shader-aware multi-draw backend and exposes how much physical arena work is blocked only by the
- * current single-uniform transform contract.
+ * not alter shader state by itself; it materializes the per-command transform payload required by
+ * the guarded multi-draw backend.
  */
 public final class TerrainDrawTransformStream {
     private static final int LAYER_COUNT = 5;
@@ -45,6 +46,7 @@ public final class TerrainDrawTransformStream {
             if (input == null) continue;
 
             Command command = new Command(
+                    input.source(),
                     input.arenaCommand(),
                     (float) ((double) input.originX() - cameraX),
                     (float) ((double) input.originY() - cameraY),
@@ -159,14 +161,19 @@ public final class TerrainDrawTransformStream {
     }
 
     public record Input(
+            VertexBuffer source,
             TerrainArenaDrawPlanner.Command arenaCommand,
             int originX,
             int originY,
             int originZ
     ) {
+        public Input(TerrainArenaDrawPlanner.Command arenaCommand, int originX, int originY, int originZ) {
+            this(null, arenaCommand, originX, originY, originZ);
+        }
     }
 
     public record Command(
+            VertexBuffer source,
             TerrainArenaDrawPlanner.Command arenaCommand,
             float modelOffsetX,
             float modelOffsetY,

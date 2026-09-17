@@ -14,7 +14,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 ## Current renderer ownership
 
-The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, a guarded true multi-draw submission backend, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
 Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
 
@@ -63,24 +63,29 @@ Relocation remains conservative: if a current handle is missing, changes region,
 
 The physical path is still mirrored rather than exclusive. Vanilla VBO/EBO state remains populated so any mismatch immediately falls back without hiding builder geometry. Final VRAM reduction therefore waits until runtime correctness and compatibility proof justify dropping duplicate vanilla backing for proven-safe residents.
 
-## Multi-draw boundary and transform stream
+## Guarded multi-draw contract
 
-Minecraft 1.21.4 terrain rendering uploads a different `modelOffset` uniform for every visible `BuiltChunk` immediately before its draw. Plain `glMultiDrawElementsBaseVertex` cannot provide a different `modelOffset` per command, so combining multiple sections into one multi-draw call would place geometry incorrectly unless shader/input ownership changes as well.
+Minecraft 1.21.4 terrain rendering normally uploads a different `ModelOffset` uniform for every visible `BuiltChunk`. LazyBuilder materializes that translation in `TerrainDrawTransformStream`, packs physical-ready draws in `TerrainMultiDrawCommandStream`, and exposes a render-thread UBO backend through `TerrainPerDrawShaderBackend`.
 
-`TerrainDrawTransformStream` now materializes that missing per-command state explicitly. Every block render layer publishes the exact vanilla-order section translation as three floats, with translucent traversal reversed exactly like vanilla. Each transform entry is paired with the live arena draw command, so future shader-aware multi-draw can consume the same VBO/EBO allocation, draw state, and section translation without reconstructing ownership.
-
-Current transform diagnostics report:
+A shader must opt in explicitly. The guarded contract is:
 
 ```text
-transform-stream command count
-physical-ready commands
-commands blocked only by the current modelOffset uniform contract
-state-compatible future multi-draw runs
-potential draw-call reduction once per-draw transforms are shader-visible
-packed transform-stream bytes
+std140 uniform block: LazyBuilderDrawTransforms
+integer uniform:      LazyBuilderDrawBase
+draw-id support:      OpenGL 4.6 or ARB_shader_draw_parameters
 ```
 
-For now LazyBuilder still issues one draw submission per section and only reduces VBO/VAO/EBO bind churn. The transform stream deliberately does not replace the vanilla shader uniform yet. True multi-draw remains gated on a first-party per-draw shader data path that can be proven compatible with FRAPI/Iris rather than silently changing terrain semantics.
+The intended shader indexing rule is equivalent to:
+
+```text
+transform = LazyBuilderDrawTransforms[LazyBuilderDrawBase + gl_DrawID]
+```
+
+`TerrainMultiDrawSubmissionBackend` then groups only consecutive vanilla-order commands with the same region/layer arena, vertex format, draw mode, index type, and sequential/custom-index mode. It validates every mirrored source before suppressing any vanilla draw, binds the physical arena once, sets the packet-relative transform base, and issues `glMultiDrawElementsBaseVertex` for the run. Any capability, residency, or submission failure immediately returns that run to the existing physical/vanilla per-section path.
+
+The Performance Manager does not currently bundle a replacement vanilla terrain shader resource. Therefore ordinary vanilla/Indigo shaders still fail the handshake and continue using their authoritative `ModelOffset` path. This keeps shader ownership explicit instead of silently overriding resource-pack or renderer behavior. Iris, custom FRAPI renderers, and compatibility-uncertain states remain hard gates.
+
+Diagnostics report packed command/transform bytes, capability reason, prepare attempts, eligible prepared runs, submitted multi-draw batches/commands, actual draw-call reductions, and submission failures.
 
 ## FRAPI and shader compatibility boundary
 
@@ -96,7 +101,7 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, and transform-stream multi-draw readiness.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, transform-stream readiness, and guarded multi-draw submission health.
 
 ## Migration rule
 
@@ -114,4 +119,4 @@ rendering.optimizations=true
 memory.optimizations=true
 ```
 
-Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, relocation, transform-stream layout, buffer growth, and allocator details are not user-facing knobs.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, relocation, transform-stream layout, multi-draw shader handshake, buffer growth, and allocator details are not user-facing knobs.

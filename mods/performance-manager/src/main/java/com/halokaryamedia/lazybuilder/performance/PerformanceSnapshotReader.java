@@ -9,6 +9,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyL
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCapability;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubmissionBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import net.minecraft.client.MinecraftClient;
@@ -50,6 +51,7 @@ public final class PerformanceSnapshotReader {
         TerrainDrawTransformStream.Snapshot transforms = TerrainDrawTransformStream.snapshot();
         TerrainMultiDrawCommandStream.Snapshot multiDraw = TerrainMultiDrawCommandStream.snapshot();
         TerrainMultiDrawCapability.Snapshot multiDrawCapability = TerrainMultiDrawCapability.current();
+        TerrainMultiDrawSubmissionBackend.Snapshot multiDrawSubmission = TerrainMultiDrawSubmissionBackend.snapshot();
         RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
 
         return new PerformanceSnapshot(
@@ -134,6 +136,13 @@ public final class PerformanceSnapshotReader {
                 multiDraw.packedCommandBytes(),
                 multiDraw.packedTransformBytes(),
                 multiDrawCapability.status(),
+                multiDrawSubmission.prepareAttempts(),
+                multiDrawSubmission.preparedRuns(),
+                multiDrawSubmission.submittedBatches(),
+                multiDrawSubmission.submittedCommands(),
+                multiDrawSubmission.reducedDrawCalls(),
+                multiDrawSubmission.submissionFailures(),
+                multiDrawSubmission.status(),
                 renderer.ownerSummary(),
                 chunkDebug,
                 entityDebug,
