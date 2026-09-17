@@ -122,8 +122,13 @@ public final class WorldHeavyOperationOrchestrator {
         Exception failure = null;
         WorldExportService.ExportResult result = null;
         try {
-            reporter.update(25, "Capturing consistent world snapshot.");
-            exportService.captureSnapshot(task);
+            reporter.update(25, "Validating snapshot source on Paper.");
+            mainThread.call(() -> {
+                exportService.validateSnapshotSourceForAsyncCapture(task);
+                return null;
+            });
+            reporter.update(30, "Capturing consistent world snapshot.");
+            exportService.captureSnapshotAfterValidation(task);
             reporter.update(45, "Restoring source runtime state.");
             mainThread.call(() -> {
                 exportService.resumeSourceAfterSnapshot(task);

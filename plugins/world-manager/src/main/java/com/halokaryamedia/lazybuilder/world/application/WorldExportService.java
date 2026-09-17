@@ -152,10 +152,36 @@ public final class WorldExportService {
         }
     }
 
-    public void captureSnapshot(ExportTask task) {
+    /**
+     * Validates Paper/runtime state before an asynchronous snapshot file copy begins.
+     * Callers that split the export into main-thread and file phases must invoke this
+     * while they still own the Paper main thread, immediately before dispatching the
+     * filesystem copy.
+     */
+    public void validateSnapshotSourceForAsyncCapture(ExportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
         requireSnapshotSource(task);
+    }
+
+    /** Existing synchronous/test path: validates runtime state and then copies files. */
+    public void captureSnapshot(ExportTask task) {
+        captureSnapshotFiles(task, true);
+    }
+
+    /**
+     * Async file-phase path used only after validateSnapshotSourceForAsyncCapture()
+     * has completed on the Paper main thread. This method performs filesystem work
+     * only and must not touch Bukkit/Paper runtime state.
+     */
+    public void captureSnapshotAfterValidation(ExportTask task) {
+        captureSnapshotFiles(task, false);
+    }
+
+    private void captureSnapshotFiles(ExportTask task, boolean validateRuntimeState) {
+        Objects.requireNonNull(task, "task");
+        task.requireOpen();
+        if (validateRuntimeState) requireSnapshotSource(task);
         Path snapshot = null;
         try {
             snapshot = files.stageCopy(task.source, task.operationId, WorldCopyProfile.SNAPSHOT);

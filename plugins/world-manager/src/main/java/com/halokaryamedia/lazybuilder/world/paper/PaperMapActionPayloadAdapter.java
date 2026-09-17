@@ -157,7 +157,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        final WorldExportService.ExportTask task;
+        WorldExportService.ExportTask prepared = null;
         try {
             WorldRecord current = currentManagedWorld(player);
             if (current == null || !current.id().equals(request.worldId())) {
@@ -173,20 +173,30 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             WorldAreaSelection area = WorldAreaSelection.ofCorners(
                     activeDimension, request.x1(), request.z1(), request.x2(), request.z2());
             WorldExportOptions options = ExportSettingsMapper.toOptions(request.settings());
-            task = exportService.prepareArea(
+            prepared = exportService.prepareArea(
                     request.worldId(), request.targetFormat(), request.artifactName(), area, options);
-            activeExports.put(owner, task);
-            send(player, MapActionWireProtocol.exportAccepted(request.worldId()));
+            exportService.validateSnapshotSourceForAsyncCapture(prepared);
         } catch (RuntimeException exception) {
+            if (prepared != null) {
+                try {
+                    exportService.abandon(prepared);
+                } catch (RuntimeException cleanupFailure) {
+                    exception.addSuppressed(cleanupFailure);
+                }
+            }
             exportInFlight.remove(owner);
             send(player, MapActionWireProtocol.error(exception.getMessage()));
             return;
         }
 
+        final WorldExportService.ExportTask task = prepared;
+        activeExports.put(owner, task);
+        send(player, MapActionWireProtocol.exportAccepted(request.worldId()));
+
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Throwable captureFailure = null;
             try {
-                exportService.captureSnapshot(task);
+                exportService.captureSnapshotAfterValidation(task);
             } catch (Throwable exception) {
                 captureFailure = exception;
             }
