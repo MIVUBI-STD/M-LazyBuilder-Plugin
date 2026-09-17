@@ -2,7 +2,7 @@
   import ServerConsole from '../components/ServerConsole.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { RuntimeError } from '../app/bridge/runtimeApi';
-  import type { ServerRuntimeSummary, WorkspaceDuplicateEstimate, WorkspaceEntry } from '../app/bridge/runtimeApi';
+  import type { AdoptionPlan, ServerRuntimeSummary, WorkspaceDuplicateEstimate, WorkspaceEntry } from '../app/bridge/runtimeApi';
   import { canMutateLibraryServer, canOpenRuntimeConsole, canStopLibraryRuntime, stopLibraryRuntime } from '../app/serverLibraryRuntimeActions';
 
   type ManagementMode = 'locate' | 'duplicate' | 'remove' | 'delete-review' | 'delete-confirm' | null;
@@ -12,16 +12,12 @@
     runtimes,
     error = '',
     onOpenServer,
-    onCreate,
-    onAdopt,
     onChanged
   }: {
     recent: WorkspaceEntry[];
     runtimes: ServerRuntimeSummary[];
     error?: string;
     onOpenServer: (server: WorkspaceEntry) => Promise<void> | void;
-    onCreate: () => void;
-    onAdopt: () => Promise<void> | void;
     onChanged: () => Promise<void> | void;
   } = $props();
 
@@ -31,6 +27,12 @@
   let libraryConsoleServerName = 'Server';
   let libraryRuntimeBusyId: string | null = null;
   let surfaceError = '';
+  let creating = false;
+  let createOpen = false;
+  let createName = '';
+  let createParent = '';
+  let adopting = false;
+  let adoptionPlan: AdoptionPlan | null = null;
   let managementServer: WorkspaceEntry | null = null;
   let managementMode: ManagementMode = null;
   let managementBusy = false;
@@ -110,6 +112,49 @@
     return `Opened ${then.toLocaleDateString()}`;
   }
 
+  async function chooseCreateLocation() {
+    surfaceError = '';
+    try {
+      const selected = await runtimeProduct.workspace.pickParent();
+      if (selected) createParent = selected;
+    } catch (value) { surfaceError = friendlyError(value); }
+  }
+
+  async function createServer() {
+    if (!createName.trim() || !createParent.trim()) return;
+    creating = true;
+    surfaceError = '';
+    try {
+      await runtimeProduct.workspace.create(createParent, createName.trim());
+      createOpen = false;
+      createName = '';
+      createParent = '';
+      await onChanged();
+    } catch (value) { surfaceError = friendlyError(value); }
+    finally { creating = false; }
+  }
+
+  async function analyzeAdoption() {
+    surfaceError = '';
+    try { adoptionPlan = await runtimeProduct.workspace.pickAdoption(); }
+    catch (value) {
+      surfaceError = friendlyError(value);
+      adoptionPlan = null;
+    }
+  }
+
+  async function adoptServer() {
+    if (!adoptionPlan) return;
+    adopting = true;
+    surfaceError = '';
+    try {
+      await runtimeProduct.workspace.adopt(adoptionPlan.root, adoptionPlan.name);
+      adoptionPlan = null;
+      await onChanged();
+    } catch (value) { surfaceError = friendlyError(value); }
+    finally { adopting = false; }
+  }
+
   function beginLocate(server: WorkspaceEntry, initialError = '') {
     menuServerId = null;
     managementServer = server;
@@ -121,9 +166,8 @@
   async function openServer(server: WorkspaceEntry) {
     menuServerId = null;
     surfaceError = '';
-    try {
-      await onOpenServer(server);
-    } catch (value) {
+    try { await onOpenServer(server); }
+    catch (value) {
       const message = friendlyError(value);
       if (message.toLowerCase().includes('currently unavailable')) beginLocate(server, message);
       else surfaceError = message;
@@ -153,19 +197,15 @@
     try {
       await stopLibraryRuntime(server.id);
       await onChanged();
-    } catch (value) {
-      surfaceError = friendlyError(value);
-    } finally {
-      libraryRuntimeBusyId = null;
-    }
+    } catch (value) { surfaceError = friendlyError(value); }
+    finally { libraryRuntimeBusyId = null; }
   }
 
   async function openServerFolder(server: WorkspaceEntry) {
     menuServerId = null;
     managementError = '';
-    try {
-      await runtimeProduct.workspace.openFolder(server.id);
-    } catch (value) {
+    try { await runtimeProduct.workspace.openFolder(server.id); }
+    catch (value) {
       const message = friendlyError(value);
       if (message.toLowerCase().includes('unavailable')) beginLocate(server, message);
       else surfaceError = message;
@@ -178,9 +218,7 @@
     try {
       const selected = await runtimeProduct.workspace.pickLocation(managementServer.id);
       if (selected) locateCandidate = selected;
-    } catch (value) {
-      managementError = friendlyError(value);
-    }
+    } catch (value) { managementError = friendlyError(value); }
   }
 
   async function reconnectServerLocation() {
@@ -192,11 +230,8 @@
       closeManagementAfterSuccess();
       await onChanged();
       surfaceError = `${relocated.name} was reconnected to ${relocated.path}.`;
-    } catch (value) {
-      managementError = friendlyError(value);
-    } finally {
-      managementBusy = false;
-    }
+    } catch (value) { managementError = friendlyError(value); }
+    finally { managementBusy = false; }
   }
 
   async function refreshDuplicateEstimate() {
@@ -204,13 +239,9 @@
     if (!managementServer || !duplicateParent.trim()) return;
     estimateLoading = true;
     managementError = '';
-    try {
-      duplicateEstimate = await runtimeProduct.workspace.duplicateEstimate(managementServer.id, duplicateParent);
-    } catch (value) {
-      managementError = friendlyError(value);
-    } finally {
-      estimateLoading = false;
-    }
+    try { duplicateEstimate = await runtimeProduct.workspace.duplicateEstimate(managementServer.id, duplicateParent); }
+    catch (value) { managementError = friendlyError(value); }
+    finally { estimateLoading = false; }
   }
 
   function beginDuplicate(server: WorkspaceEntry) {
@@ -231,9 +262,7 @@
         duplicateParent = selected;
         await refreshDuplicateEstimate();
       }
-    } catch (value) {
-      managementError = friendlyError(value);
-    }
+    } catch (value) { managementError = friendlyError(value); }
   }
 
   async function duplicateServer() {
@@ -244,11 +273,8 @@
       await runtimeProduct.workspace.duplicate(managementServer.id, duplicateParent, duplicateName.trim());
       closeManagementAfterSuccess();
       await onChanged();
-    } catch (value) {
-      managementError = friendlyError(value);
-    } finally {
-      managementBusy = false;
-    }
+    } catch (value) { managementError = friendlyError(value); }
+    finally { managementBusy = false; }
   }
 
   function beginRemove(server: WorkspaceEntry) {
@@ -266,11 +292,8 @@
       await runtimeProduct.workspace.removeFromLibrary(managementServer.id);
       closeManagementAfterSuccess();
       await onChanged();
-    } catch (value) {
-      managementError = friendlyError(value);
-    } finally {
-      managementBusy = false;
-    }
+    } catch (value) { managementError = friendlyError(value); }
+    finally { managementBusy = false; }
   }
 
   function beginDelete(server: WorkspaceEntry) {
@@ -289,11 +312,8 @@
       await runtimeProduct.workspace.delete(managementServer.id, deleteTypedName);
       closeManagementAfterSuccess();
       await onChanged();
-    } catch (value) {
-      managementError = friendlyError(value);
-    } finally {
-      managementBusy = false;
-    }
+    } catch (value) { managementError = friendlyError(value); }
+    finally { managementBusy = false; }
   }
 
   function closeManagement() {
@@ -313,7 +333,7 @@
 
 <header class="page-toolbar">
   <div><h1>Servers</h1><p>Open, reconnect, duplicate, remove, or delete servers from one place.</p></div>
-  <div class="top-actions"><button class="secondary-button" onclick={() => void onAdopt()}>Add existing</button><button class="primary-button" onclick={onCreate}>Create server</button></div>
+  <div class="top-actions"><button class="secondary-button" onclick={() => void analyzeAdoption()}>Add existing</button><button class="primary-button" onclick={() => (createOpen = true)}>Create server</button></div>
 </header>
 <main class="library-content">
   {#if error || surfaceError}<div class="error-box" role="status">{surfaceError || error}</div>{/if}
@@ -332,8 +352,12 @@
         {/each}
       </div>
     {:else}<section class="search-empty"><strong>No servers found</strong><span>Try a different server name.</span><button onclick={() => (librarySearch = '')}>Clear search</button></section>{/if}
-  {:else}<section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={onCreate}>Create server</button><button class="secondary-button" onclick={() => void onAdopt()}>Add existing</button></div></section>{/if}
+  {:else}<section class="empty-library"><div class="empty-icon">L</div><h2>Start with a server</h2><p>Create a new build server, or add one you already use.</p><div class="empty-actions"><button class="primary-button" onclick={() => (createOpen = true)}>Create server</button><button class="secondary-button" onclick={() => void analyzeAdoption()}>Add existing</button></div></section>{/if}
 </main>
+
+{#if createOpen}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !creating && (createOpen = false)}><div class="dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Create server</h2><p>Set a name and choose where LazyBuilder should keep it.</p></div><button class="icon-button" disabled={creating} onclick={() => (createOpen = false)}>×</button></div><label>Server name<input bind:value={createName} placeholder="Build Server" disabled={creating} /></label><label>Save in<div class="location-row"><input value={displayLocation(createParent)} title={createParent} readonly placeholder="Choose a folder" /><button class="secondary-button" disabled={creating} onclick={chooseCreateLocation}>Browse</button></div></label><div class="dialog-actions"><button class="ghost-button" disabled={creating} onclick={() => (createOpen = false)}>Cancel</button><button class="primary-button" disabled={!createName.trim() || !createParent.trim() || creating} onclick={createServer}>{creating ? 'Creating…' : 'Create server'}</button></div></div></div>{/if}
+
+{#if adoptionPlan}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !adopting && (adoptionPlan = null)}><div class="dialog adoption-dialog" role="dialog" aria-modal="true"><div class="dialog-heading"><div><h2>Add {adoptionPlan.name}</h2><p>Review what LazyBuilder found before adding this server.</p></div><button class="icon-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>×</button></div><div class="detected-grid"><div><strong>{adoptionPlan.worlds.length}</strong><span>Worlds</span></div><div><strong>{adoptionPlan.serverEntries.length}</strong><span>Server files</span></div><div><strong>{adoptionPlan.legacyPluginsToDisable.length}</strong><span>Legacy plugins</span></div></div>{#if adoptionPlan.warnings.length > 0}<div class="warning-box"><strong>Needs your attention</strong>{#each adoptionPlan.warnings as warning}<p>{warning}</p>{/each}</div>{/if}<details><summary>Technical migration details</summary><div class="details-list"><p><strong>Location:</strong> {adoptionPlan.root}</p><p><strong>Paper:</strong> {adoptionPlan.paperJar}</p></div></details><div class="dialog-actions"><button class="ghost-button" disabled={adopting} onclick={() => (adoptionPlan = null)}>Cancel</button><button class="primary-button" disabled={adopting} onclick={adoptServer}>{adopting ? 'Adding…' : 'Add server'}</button></div></div></div>{/if}
 
 {#if managementServer && managementMode === 'locate'}<div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !managementBusy && closeManagement()}><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="locate-server-heading"><div class="dialog-heading"><div><h2 id="locate-server-heading">Locate {managementServer.name}</h2><p>Reconnect this server after its folder or drive has moved.</p></div><button class="icon-button" disabled={managementBusy} onclick={closeManagement}>×</button></div>{#if managementError}<div class="error-box" role="alert">{managementError}</div>{/if}<div class="safe-notice"><strong>Previously registered location</strong><span>{managementServer.path}</span><p>LazyBuilder will only reconnect if the selected folder belongs to this same server.</p></div><label>New server folder<div class="location-row"><input value={locateCandidate} title={locateCandidate} readonly placeholder="Choose the moved server folder" /><button class="secondary-button" disabled={managementBusy} onclick={chooseLocateCandidate}>Browse</button></div></label><div class="identity-notice"><strong>Server identity protected</strong><span>Other server folders and unsupported linked locations are rejected.</span></div><div class="dialog-actions"><button class="ghost-button" disabled={managementBusy} onclick={closeManagement}>Cancel</button><button class="primary-button" disabled={managementBusy || !locateCandidate} onclick={reconnectServerLocation}>{managementBusy ? 'Reconnecting…' : 'Reconnect server'}</button></div></div></div>{/if}
 
@@ -350,6 +374,6 @@
 <style>
   .page-toolbar{min-height:82px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:15px 30px;border-bottom:1px solid var(--border-soft);background:#111315}.page-toolbar h1{margin:0;font-size:23px}.page-toolbar p{margin:4px 0 0;color:var(--muted);font-size:12px}.top-actions,.empty-actions{display:flex;gap:8px}.library-content{width:min(1040px,calc(100% - 56px));margin:0 auto;padding:26px 0 48px;overflow:auto;min-height:0;flex:1}.server-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.server-tile{position:relative;min-height:78px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;border:1px solid var(--border-soft);border-radius:10px;background:var(--surface)}.server-open{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px;border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer}.server-open:hover{background:var(--surface-2)}.server-icon{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#252a2e;border:1px solid #3a4147;font-weight:800}.server-tile-copy{display:grid;gap:3px;min-width:0}.server-tile-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.server-tile-copy span{color:var(--muted);font-size:10px}.runtime-meta{display:flex!important;align-items:center;gap:6px}.runtime-meta i{width:6px;height:6px;border-radius:50%;background:var(--muted-2)}.runtime-meta.running{color:#9ee8b9}.runtime-meta.running i{background:var(--accent)}.runtime-meta.transition{color:var(--info)}.runtime-meta.transition i{background:var(--info)}.runtime-meta.detached{color:var(--warning)}.runtime-meta.detached i{background:var(--warning)}.open-chevron{color:var(--muted-2);font-size:22px}.server-menu-wrap{position:relative;display:flex;align-items:center;padding-right:8px}.server-menu-button{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer;letter-spacing:1px}.server-menu-button:hover{background:var(--surface-3);color:var(--text)}.server-menu{position:absolute;z-index:12;right:7px;top:58px;width:190px;display:grid;padding:6px;border:1px solid var(--border);border-radius:9px;background:#171a1d;box-shadow:0 12px 34px rgba(0,0,0,.38)}.server-menu button{padding:9px 10px;border:0;border-radius:6px;background:transparent;color:var(--text-soft);text-align:left;cursor:pointer}.server-menu button:hover{background:var(--surface-2);color:var(--text)}.server-menu .danger-menu-item{color:#ff9aa2}.menu-divider{height:1px;margin:4px 2px;background:var(--border-soft)}.empty-library,.search-empty{min-height:300px;display:grid;place-content:center;justify-items:center;text-align:center;border:1px dashed var(--border);border-radius:12px;background:var(--bg-elevated)}.empty-icon{width:50px;height:50px;display:grid;place-items:center;border-radius:13px;background:var(--surface-2);margin-bottom:13px}.empty-library h2{margin:0}.empty-library p{color:var(--muted);font-size:12px}.search-field{display:flex;gap:8px;margin-bottom:12px;padding:9px 11px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface)}.search-field input{flex:1;border:0;background:transparent;color:var(--text)}
   .primary-button,.secondary-button,.ghost-button,.icon-button,.danger-button{min-height:36px;border-radius:8px;padding:8px 13px;font-weight:650;cursor:pointer}.primary-button{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.secondary-button{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.ghost-button,.icon-button{border:0;background:transparent;color:var(--text-soft)}.icon-button{font-size:20px}.danger-button{border:1px solid #8e3840;background:#7a2d34;color:#fff}button:disabled{opacity:.5;cursor:default}.error-box{margin-bottom:12px;padding:11px 13px;border:1px solid #70343a;border-radius:8px;background:var(--danger-bg);color:#ffd9dc;font-size:12px}
-  .modal-backdrop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.72)}.dialog{width:min(500px,100%);display:grid;gap:17px;padding:21px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}.danger-dialog{border-color:#6d3036}.dialog-heading{display:flex;justify-content:space-between;gap:18px}.dialog-heading h2{margin:0}.dialog-heading p{margin:5px 0 0;color:var(--muted);font-size:12px}label{display:grid;gap:7px;font-size:12px}.location-row{display:grid;grid-template-columns:1fr auto;gap:8px}label>input,.location-row input{min-height:36px;padding:8px 11px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface-2);color:var(--text)}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}.included-box,.safe-notice,.identity-notice,.danger-summary,.typed-confirmation{display:grid;gap:8px;padding:13px;border:1px solid var(--border-soft);border-radius:9px;background:var(--bg-elevated)}.included-box span,.safe-notice span,.identity-notice span,.danger-summary .path-copy{color:var(--text-soft);font-size:11px;word-break:break-all}.included-box small,.safe-notice p,.danger-summary p{margin:0;color:var(--muted);font-size:10px}.identity-notice{border-color:var(--accent-border);background:var(--accent-soft)}.identity-notice span{word-break:normal}.storage-row{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.storage-row>div{display:grid;gap:4px;padding:10px;border:1px solid var(--border-soft);border-radius:8px}.storage-row span{color:var(--muted);font-size:9px}.storage-row strong{font-size:12px}.danger-summary ul{margin:2px 0 2px 18px;padding:0;color:var(--text-soft);font-size:11px}.typed-confirmation code{width:max-content;padding:5px 8px;border-radius:5px;background:var(--surface-3);color:#ffb7bd}
-  @media(max-width:760px){.page-toolbar{padding:15px 18px}.library-content{width:calc(100% - 28px)}.server-grid,.storage-row{grid-template-columns:1fr}}
+  .modal-backdrop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:rgba(4,6,8,.72)}.dialog{width:min(500px,100%);display:grid;gap:17px;padding:21px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}.adoption-dialog{width:min(580px,100%)}.danger-dialog{border-color:#6d3036}.dialog-heading{display:flex;justify-content:space-between;gap:18px}.dialog-heading h2{margin:0}.dialog-heading p{margin:5px 0 0;color:var(--muted);font-size:12px}label{display:grid;gap:7px;font-size:12px}.location-row{display:grid;grid-template-columns:1fr auto;gap:8px}label>input,.location-row input{min-height:36px;padding:8px 11px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface-2);color:var(--text)}.dialog-actions{display:flex;justify-content:flex-end;gap:8px}.detected-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.detected-grid>div{display:grid;padding:13px;border:1px solid var(--border-soft);border-radius:8px}.warning-box{padding:12px;border:1px solid #5f5125;border-radius:8px;background:var(--warning-bg)}.warning-box p{margin:5px 0 0;font-size:11px}.details-list{margin-top:8px;padding:10px;background:var(--bg-elevated)}.included-box,.safe-notice,.identity-notice,.danger-summary,.typed-confirmation{display:grid;gap:8px;padding:13px;border:1px solid var(--border-soft);border-radius:9px;background:var(--bg-elevated)}.included-box span,.safe-notice span,.identity-notice span,.danger-summary .path-copy{color:var(--text-soft);font-size:11px;word-break:break-all}.included-box small,.safe-notice p,.danger-summary p{margin:0;color:var(--muted);font-size:10px}.identity-notice{border-color:var(--accent-border);background:var(--accent-soft)}.identity-notice span{word-break:normal}.storage-row{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.storage-row>div{display:grid;gap:4px;padding:10px;border:1px solid var(--border-soft);border-radius:8px}.storage-row span{color:var(--muted);font-size:9px}.storage-row strong{font-size:12px}.danger-summary ul{margin:2px 0 2px 18px;padding:0;color:var(--text-soft);font-size:11px}.typed-confirmation code{width:max-content;padding:5px 8px;border-radius:5px;background:var(--surface-3);color:#ffb7bd}
+  @media(max-width:760px){.page-toolbar{padding:15px 18px}.library-content{width:calc(100% - 28px)}.server-grid,.storage-row,.detected-grid{grid-template-columns:1fr}}
 </style>
