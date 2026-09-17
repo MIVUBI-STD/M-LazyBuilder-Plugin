@@ -48,7 +48,7 @@ public final class AxiomSplinePreviewTool implements CustomTool {
 
     @Override
     public String name() {
-        return "LazyBuilder Spline Preview";
+        return AxiomSplineToolContract.TOOL_NAME;
     }
 
     @Override
@@ -80,7 +80,9 @@ public final class AxiomSplinePreviewTool implements CustomTool {
 
     @Override
     public boolean callConfirm() {
-        // Intentionally no mutation path until History v2/world reconciliation is authoritative.
+        if (AxiomSplineToolContract.WORLD_MUTATION_ENABLED) {
+            throw new IllegalStateException("Spline preview tool mutation contract was enabled without an executor");
+        }
         return false;
     }
 
