@@ -39,6 +39,8 @@ public final class UtilityConfigStore {
                 readBoolean(properties, "chat.keep_draft", defaults.keepChatDraft()),
                 readBoolean(properties, "chat.search", defaults.chatSearch()),
                 readBoolean(properties, "chat.timestamps", defaults.chatTimestamps()),
+                readBoolean(properties, "chat.hide_signing_indicators", defaults.hideChatSigningIndicators()),
+                readBoolean(properties, "accessibility.suppress_narrator", defaults.suppressNarrator()),
                 readBoolean(properties, "connection.reconnect_button", defaults.reconnectButton()),
                 readBooleanWithLegacyAlias(
                         properties,
@@ -58,6 +60,14 @@ public final class UtilityConfigStore {
         properties.setProperty("chat.keep_draft", Boolean.toString(preferences.keepChatDraft()));
         properties.setProperty("chat.search", Boolean.toString(preferences.chatSearch()));
         properties.setProperty("chat.timestamps", Boolean.toString(preferences.chatTimestamps()));
+        properties.setProperty(
+                "chat.hide_signing_indicators",
+                Boolean.toString(preferences.hideChatSigningIndicators())
+        );
+        properties.setProperty(
+                "accessibility.suppress_narrator",
+                Boolean.toString(preferences.suppressNarrator())
+        );
         properties.setProperty("connection.reconnect_button", Boolean.toString(preferences.reconnectButton()));
         properties.setProperty(
                 "screenshots.contextual_names",
