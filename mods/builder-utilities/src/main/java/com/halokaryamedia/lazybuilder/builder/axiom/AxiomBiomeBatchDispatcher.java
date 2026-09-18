@@ -46,18 +46,17 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
             boolean undo
     ) {
         Objects.requireNonNull(stored, "stored");
-        this.cursor = StoredExtensionCursor.open(stored);
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
         this.dimensionId = Objects.requireNonNull(world, "world")
                 .getRegistryKey().getValue().toString();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsBiome()) {
-            cursor.close();
             throw new IllegalStateException(
                     "Server does not advertise Builder BIOME authority");
         }
         this.maxBatchEntries = capabilities.maxBatchEntries();
         this.undo = undo;
+        this.cursor = StoredExtensionCursor.open(stored);
     }
 
     public synchronized BiomeBatchDispatchProgress pump() throws IOException {
