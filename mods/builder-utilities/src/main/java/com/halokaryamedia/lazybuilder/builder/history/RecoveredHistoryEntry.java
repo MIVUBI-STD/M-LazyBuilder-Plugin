@@ -53,9 +53,6 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
     public Optional<String> unsupportedReason() {
         return Optional.ofNullable(unsupportedReason);
     }
-    /** Backward-compatible block report accessor. */
-    public PreparedReconciliationReport reconciliation() { return blocks; }
-
     public RecoveredPreparedMutation transferForResume() {
         ensureOwned();
         if (overallState == null) {
