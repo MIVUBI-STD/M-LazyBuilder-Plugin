@@ -15,6 +15,8 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -139,56 +141,98 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        int processed = 0;
+        List<BiomeStep> steps = new ArrayList<>(batch.entries().size());
+
+        // Preflight the entire batch before mutating any biome. Ordinary conflicts
+        // therefore cannot leave a partially-applied batch.
         for (int i = 0; i < batch.entries().size(); i++) {
             BuilderExtensionWireProtocol.BiomeMutation mutation =
                     batch.entries().get(i);
-            String actual = world.getBiome(
-                    mutation.x(), mutation.y(), mutation.z())
-                    .getKey().toString();
+            Biome actualBiome = world.getBiome(
+                    mutation.x(), mutation.y(), mutation.z());
+            String actual = actualBiome.getKey().toString();
 
             if (actual.equals(mutation.afterBiome())) {
-                processed++;
+                steps.add(new BiomeStep(mutation, actualBiome, actualBiome, true));
                 continue;
             }
             if (!actual.equals(mutation.beforeBiome())) {
                 send(player, BuilderExtensionWireProtocol.BatchResult.conflict(
-                        batch.operationId(), processed, i, actual));
+                        batch.operationId(), 0, i, actual));
                 return;
             }
 
-            NamespacedKey key = NamespacedKey.fromString(mutation.afterBiome());
-            if (key == null) {
+            NamespacedKey desiredKey = NamespacedKey.fromString(mutation.afterBiome());
+            if (desiredKey == null) {
                 send(player, new BuilderExtensionWireProtocol.Error(
                         batch.operationId(),
                         "invalid biome id: " + mutation.afterBiome()));
                 return;
             }
-            Biome desired = Registry.BIOME.get(key);
+            Biome desired = Registry.BIOME.get(desiredKey);
             if (desired == null) {
                 send(player, new BuilderExtensionWireProtocol.Error(
                         batch.operationId(),
                         "unknown biome: " + mutation.afterBiome()));
                 return;
             }
+            steps.add(new BiomeStep(mutation, actualBiome, desired, false));
+        }
 
+        List<BiomeStep> applied = new ArrayList<>();
+        for (int i = 0; i < steps.size(); i++) {
+            BiomeStep step = steps.get(i);
+            if (step.noop()) continue;
+
+            BuilderExtensionWireProtocol.BiomeMutation mutation = step.mutation();
             world.setBiome(
-                    mutation.x(), mutation.y(), mutation.z(), desired);
+                    mutation.x(), mutation.y(), mutation.z(), step.after());
+            applied.add(step);
+
             String verified = world.getBiome(
                     mutation.x(), mutation.y(), mutation.z())
                     .getKey().toString();
             if (!verified.equals(mutation.afterBiome())) {
-                send(player, BuilderExtensionWireProtocol.BatchResult.conflict(
-                        batch.operationId(), processed, i, verified));
+                String rollbackFailure = rollbackBiomeSteps(world, applied);
+                String detail = "biome write verification failed at batch index " + i
+                        + (rollbackFailure == null ? "; batch rolled back"
+                        : "; rollback failed: " + rollbackFailure);
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(), detail));
                 return;
             }
-            processed++;
         }
 
         send(player, BuilderExtensionWireProtocol.BatchResult.completed(
-                batch.operationId(), processed));
+                batch.operationId(), batch.entries().size()));
     }
 
+    private static String rollbackBiomeSteps(
+            World world,
+            List<BiomeStep> applied
+    ) {
+        String failure = null;
+        for (int i = applied.size() - 1; i >= 0; i--) {
+            BiomeStep step = applied.get(i);
+            BuilderExtensionWireProtocol.BiomeMutation mutation = step.mutation();
+            try {
+                world.setBiome(
+                        mutation.x(), mutation.y(), mutation.z(), step.before());
+                String verified = world.getBiome(
+                        mutation.x(), mutation.y(), mutation.z())
+                        .getKey().toString();
+                if (!verified.equals(mutation.beforeBiome())) {
+                    failure = appendFailure(
+                            failure,
+                            "biome rollback verification failed at "
+                                    + mutation.x() + "," + mutation.y() + "," + mutation.z());
+                }
+            } catch (RuntimeException e) {
+                failure = appendFailure(failure, concise(e));
+            }
+        }
+        return failure;
+    }
 
     private void applyBlockEntityBatch(
             Player player,
@@ -251,117 +295,226 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        int processed = 0;
+        List<EntityStep> steps = new ArrayList<>(batch.entries().size());
+
+        // Validate every target slot and every entity snapshot before mutating.
+        // A normal conflict therefore leaves this authoritative batch unchanged.
         for (int i = 0; i < batch.entries().size(); i++) {
             BuilderExtensionWireProtocol.EntityMutation mutation =
                     batch.entries().get(i);
-            Location location = new Location(
-                    world,
-                    mutation.x(),
-                    mutation.y(),
-                    mutation.z(),
-                    mutation.yaw(),
-                    mutation.pitch()
-            );
+            Location location = entityLocation(world, mutation);
+            var nearby = nearbyNonPlayers(world, location);
+            var marked = markedEntities(nearby, mutation.markerId());
 
-            var nearby = world.getNearbyEntities(
-                    location,
-                    0.125,
-                    0.125,
-                    0.125,
-                    entity -> !(entity instanceof Player));
-            var marked = nearby.stream()
-                    .filter(entity -> mutation.markerId().equals(
-                            entity.getPersistentDataContainer().get(
-                                    entityMarkerKey, PersistentDataType.STRING)))
-                    .toList();
+            final org.bukkit.entity.EntitySnapshot snapshot;
+            try {
+                snapshot = Bukkit.getEntityFactory()
+                        .createEntitySnapshot(mutation.templateSnbt());
+            } catch (IllegalArgumentException e) {
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(),
+                        "invalid entity snapshot: " + concise(e)));
+                return;
+            }
+            if (snapshot.getEntityType() == EntityType.PLAYER) {
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(), "player entities cannot be spawned"));
+                return;
+            }
 
             if (mutation.afterPresent()) {
-                if (marked.size() == 1) {
-                    processed++;
+                if (marked.size() == 1 && nearby.size() == 1) {
+                    steps.add(new EntityStep(
+                            mutation, location, snapshot, marked.get(0), true));
                     continue;
                 }
-                if (marked.size() > 1 || !nearby.isEmpty()) {
+                if (!nearby.isEmpty()) {
                     send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
-                            batch.operationId(), processed, i,
+                            batch.operationId(), 0, i,
                             "entity target slot occupied"));
                     return;
                 }
-
-                final org.bukkit.entity.EntitySnapshot snapshot;
-                try {
-                    snapshot = Bukkit.getEntityFactory()
-                            .createEntitySnapshot(mutation.templateSnbt());
-                } catch (IllegalArgumentException e) {
-                    send(player, new BuilderExtensionWireProtocol.Error(
-                            batch.operationId(),
-                            "invalid entity snapshot: " + concise(e)));
-                    return;
-                }
-                if (snapshot.getEntityType() == EntityType.PLAYER) {
-                    send(player, new BuilderExtensionWireProtocol.Error(
-                            batch.operationId(), "player entities cannot be spawned"));
-                    return;
-                }
-
-                Entity entity = snapshot.createEntity(world);
-                entity.getPersistentDataContainer().set(
-                        entityMarkerKey,
-                        PersistentDataType.STRING,
-                        mutation.markerId()
-                );
-                if (!entity.spawnAt(location)) {
-                    send(player, new BuilderExtensionWireProtocol.Error(
-                            batch.operationId(), "entity spawn was rejected"));
-                    return;
-                }
-
-                long verified = world.getNearbyEntities(
-                                location, 0.125, 0.125, 0.125,
-                                candidate -> !(candidate instanceof Player))
-                        .stream()
-                        .filter(candidate -> mutation.markerId().equals(
-                                candidate.getPersistentDataContainer().get(
-                                        entityMarkerKey, PersistentDataType.STRING)))
-                        .count();
-                if (verified != 1) {
-                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
-                            batch.operationId(), processed, i,
-                            "spawned entity marker verification failed"));
-                    return;
-                }
+                steps.add(new EntityStep(
+                        mutation, location, snapshot, null, false));
             } else {
-                if (marked.isEmpty()) {
-                    processed++;
+                if (marked.isEmpty() && nearby.isEmpty()) {
+                    steps.add(new EntityStep(
+                            mutation, location, snapshot, null, true));
                     continue;
                 }
-                if (marked.size() != 1) {
+                if (marked.size() != 1 || nearby.size() != 1) {
                     send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
-                            batch.operationId(), processed, i,
-                            "multiple Builder-owned entities occupy target slot"));
+                            batch.operationId(), 0, i,
+                            "entity target slot changed externally"));
                     return;
                 }
-                marked.get(0).remove();
-                boolean remains = world.getNearbyEntities(
-                                location, 0.125, 0.125, 0.125,
-                                candidate -> !(candidate instanceof Player))
-                        .stream()
-                        .anyMatch(candidate -> mutation.markerId().equals(
-                                candidate.getPersistentDataContainer().get(
-                                        entityMarkerKey, PersistentDataType.STRING)));
-                if (remains) {
-                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
-                            batch.operationId(), processed, i,
-                            "entity removal verification failed"));
-                    return;
-                }
+                steps.add(new EntityStep(
+                        mutation, location, snapshot, marked.get(0), false));
             }
-            processed++;
+        }
+
+        List<AppliedEntityStep> applied = new ArrayList<>();
+        for (int i = 0; i < steps.size(); i++) {
+            EntityStep step = steps.get(i);
+            if (step.noop()) continue;
+
+            try {
+                if (step.mutation().afterPresent()) {
+                    Entity entity = step.snapshot().createEntity(world);
+                    entity.getPersistentDataContainer().set(
+                            entityMarkerKey,
+                            PersistentDataType.STRING,
+                            step.mutation().markerId()
+                    );
+                    if (!entity.spawnAt(step.location())) {
+                        throw new IllegalStateException("entity spawn was rejected");
+                    }
+                    applied.add(new AppliedEntityStep(step, entity));
+                } else {
+                    Entity entity = step.existingMarkedEntity();
+                    entity.remove();
+                    applied.add(new AppliedEntityStep(step, null));
+                }
+
+                if (!entityStateMatchesDesired(world, step)) {
+                    throw new IllegalStateException(
+                            "entity state verification failed at batch index " + i);
+                }
+            } catch (RuntimeException failure) {
+                String rollbackFailure = rollbackEntitySteps(world, applied);
+                String detail = "entity mutation failed at batch index " + i
+                        + ": " + concise(failure)
+                        + (rollbackFailure == null ? "; batch rolled back"
+                        : "; rollback failed: " + rollbackFailure);
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(), detail));
+                return;
+            }
         }
 
         send(player, BuilderExtensionWireProtocol.EntityBatchResult.completed(
-                batch.operationId(), processed));
+                batch.operationId(), batch.entries().size()));
     }
+
+    private Location entityLocation(
+            World world,
+            BuilderExtensionWireProtocol.EntityMutation mutation
+    ) {
+        return new Location(
+                world,
+                mutation.x(),
+                mutation.y(),
+                mutation.z(),
+                mutation.yaw(),
+                mutation.pitch()
+        );
+    }
+
+    private java.util.Collection<Entity> nearbyNonPlayers(
+            World world,
+            Location location
+    ) {
+        return world.getNearbyEntities(
+                location,
+                0.125,
+                0.125,
+                0.125,
+                entity -> !(entity instanceof Player));
+    }
+
+    private List<Entity> markedEntities(
+            java.util.Collection<Entity> nearby,
+            String markerId
+    ) {
+        return nearby.stream()
+                .filter(entity -> markerId.equals(
+                        entity.getPersistentDataContainer().get(
+                                entityMarkerKey, PersistentDataType.STRING)))
+                .toList();
+    }
+
+    private boolean entityStateMatchesDesired(
+            World world,
+            EntityStep step
+    ) {
+        var nearby = nearbyNonPlayers(world, step.location());
+        var marked = markedEntities(
+                nearby, step.mutation().markerId());
+
+        if (step.mutation().afterPresent()) {
+            return nearby.size() == 1 && marked.size() == 1;
+        }
+        return nearby.isEmpty() && marked.isEmpty();
+    }
+
+    private String rollbackEntitySteps(
+            World world,
+            List<AppliedEntityStep> applied
+    ) {
+        String failure = null;
+        for (int i = applied.size() - 1; i >= 0; i--) {
+            AppliedEntityStep appliedStep = applied.get(i);
+            EntityStep step = appliedStep.step();
+            try {
+                if (step.mutation().afterPresent()) {
+                    Entity spawned = appliedStep.spawnedEntity();
+                    if (spawned != null) spawned.remove();
+                } else {
+                    Entity restored = step.snapshot().createEntity(world);
+                    restored.getPersistentDataContainer().set(
+                            entityMarkerKey,
+                            PersistentDataType.STRING,
+                            step.mutation().markerId()
+                    );
+                    if (!restored.spawnAt(step.location())) {
+                        throw new IllegalStateException(
+                                "entity rollback spawn was rejected");
+                    }
+                }
+
+                var nearby = nearbyNonPlayers(world, step.location());
+                var marked = markedEntities(
+                        nearby, step.mutation().markerId());
+                boolean restored = step.mutation().afterPresent()
+                        ? marked.isEmpty()
+                        : nearby.size() == 1 && marked.size() == 1;
+                if (!restored) {
+                    failure = appendFailure(
+                            failure,
+                            "entity rollback verification failed for marker "
+                                    + step.mutation().markerId());
+                }
+            } catch (RuntimeException e) {
+                failure = appendFailure(failure, concise(e));
+            }
+        }
+        return failure;
+    }
+
+    private static String appendFailure(String current, String next) {
+        if (next == null || next.isBlank()) return current;
+        return current == null ? next : current + " | " + next;
+    }
+
+    private record BiomeStep(
+            BuilderExtensionWireProtocol.BiomeMutation mutation,
+            Biome before,
+            Biome after,
+            boolean noop
+    ) {}
+
+    private record EntityStep(
+            BuilderExtensionWireProtocol.EntityMutation mutation,
+            Location location,
+            org.bukkit.entity.EntitySnapshot snapshot,
+            Entity existingMarkedEntity,
+            boolean noop
+    ) {}
+
+    private record AppliedEntityStep(
+            EntityStep step,
+            Entity spawnedEntity
+    ) {}
 
     private void send(
             Player player,
