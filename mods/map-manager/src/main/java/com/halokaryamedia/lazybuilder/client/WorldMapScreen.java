@@ -661,7 +661,7 @@ public final class WorldMapScreen extends Screen {
 
         if (!status.isBlank()) {
             int statusWidth = textRenderer.getWidth(status);
-            int statusRight = camera.zoomLabelRect().left - 10;
+            int statusRight = zoomLabelRect().left - 10;
             int statusX = statusRight - statusWidth;
             if (statusX > recenterMapRect().right + 10) {
                 context.drawTextWithShadow(textRenderer, Text.literal(status), statusX, height - 16, LbUi.TEXT_MUTED);
@@ -670,10 +670,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
-        Rect label = camera.zoomLabelRect();
-        Rect minus = camera.zoomMinusRect();
-        Rect plus = camera.zoomPlusRect();
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(camera.zoomLabel()),
+        Rect label = zoomLabelRect();
+        Rect minus = zoomMinusRect();
+        Rect plus = zoomPlusRect();
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(zoomLabel()),
                 (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_MUTED);
         context.fill(minus.left, minus.top, minus.right, minus.bottom,
                 minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
@@ -821,11 +821,11 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             return true;
         }
-        if (camera.zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
+        if (zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
             discreteZoom(1, mapBounds().centerX(), mapBounds().centerY());
             return true;
         }
-        if (camera.zoomPlusRect().contains(mouseX, mouseY) && button == 0) {
+        if (zoomPlusRect().contains(mouseX, mouseY) && button == 0) {
             discreteZoom(-1, mapBounds().centerX(), mapBounds().centerY());
             return true;
         }
@@ -1360,7 +1360,7 @@ public final class WorldMapScreen extends Screen {
         return bounds.centerY() + (int) Math.round((blockZ - camera.centerZ) / blocksPerPixel());
     }
 
-    private String camera.zoomLabel() {
+    private String zoomLabel() {
         if (Math.abs(camera.zoom - Math.rint(camera.zoom)) < 0.01) return "Zoom " + (int) Math.rint(camera.zoom) + "×";
         return String.format(Locale.ROOT, "Zoom %.1f×", camera.zoom);
     }
@@ -1402,17 +1402,17 @@ public final class WorldMapScreen extends Screen {
         int bottom = map.bottom - 20;
         return new Rect(center - buttonWidth / 2, bottom - 22, center + buttonWidth / 2, bottom);
     }
-    private Rect camera.zoomPlusRect() {
+    private Rect zoomPlusRect() {
         int right = mapBounds().right - 8;
         return new Rect(right - 20, height - 22, right, height - 3);
     }
-    private Rect camera.zoomMinusRect() {
-        int right = camera.zoomPlusRect().left - 3;
+    private Rect zoomMinusRect() {
+        int right = zoomPlusRect().left - 3;
         return new Rect(right - 20, height - 22, right, height - 3);
     }
-    private Rect camera.zoomLabelRect() {
+    private Rect zoomLabelRect() {
         int labelWidth = 58;
-        int right = camera.zoomMinusRect().left - 6;
+        int right = zoomMinusRect().left - 6;
         return new Rect(right - labelWidth, height - 22, right, height - 3);
     }
 
