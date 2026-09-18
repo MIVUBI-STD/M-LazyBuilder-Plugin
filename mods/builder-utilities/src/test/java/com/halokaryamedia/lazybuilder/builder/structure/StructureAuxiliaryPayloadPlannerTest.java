@@ -14,7 +14,7 @@ class StructureAuxiliaryPayloadPlannerTest {
                 List.of(new StructureBlock(0, 0, 0, "minecraft:stone")),
                 List.of(),
                 List.of(new StructureBiomeSample(0, 0, 0, new byte[]{2})),
-                List.of(new StructureEntity(0.5, 1.0, 0.5, new byte[]{4}))
+                List.of(new StructureEntity(0.5, 0.5, 0.5, new byte[]{4}))
         );
 
         var frames = StructureAuxiliaryPayloadPlanner.plan(
