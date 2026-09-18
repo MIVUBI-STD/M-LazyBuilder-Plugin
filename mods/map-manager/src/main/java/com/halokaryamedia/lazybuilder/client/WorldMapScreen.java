@@ -1040,7 +1040,7 @@ public final class WorldMapScreen extends Screen {
             return;
         }
         UUID currentId = currentWorldId();
-        if (areaSelection.worldId != null && areaSelection.worldId.equals(currentId)) {
+        if (areaSelection.belongsTo(currentId)) {
             areaSelection.active = true;
             invalidateRasterViewport();
             return;
@@ -1057,12 +1057,12 @@ public final class WorldMapScreen extends Screen {
         int centerChunkZ = Math.floorDiv(blockZ, CHUNK_BLOCKS);
         int before = DEFAULT_SELECTION_CHUNKS / 2;
         int after = DEFAULT_SELECTION_CHUNKS - before - 1;
-        areaSelection.minChunkX = centerChunkX - before;
-        areaSelection.maxChunkX = centerChunkX + after;
-        areaSelection.minChunkZ = centerChunkZ - before;
-        areaSelection.maxChunkZ = centerChunkZ + after;
-        areaSelection.worldId = current.worldId().value();
-        areaSelection.active = true;
+        areaSelection.activate(
+                current.worldId().value(),
+                centerChunkX - before,
+                centerChunkX + after,
+                centerChunkZ - before,
+                centerChunkZ + after);
         selectionDrag = DragMode.NONE;
         camera.dragging = false;
         contextOpen = false;
@@ -1103,8 +1103,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void clearAreaSelection() {
-        areaSelection.active = false;
-        areaSelection.worldId = null;
+        areaSelection.clear();
         selectionDrag = DragMode.NONE;
         camera.dragging = false;
         contextOpen = false;
