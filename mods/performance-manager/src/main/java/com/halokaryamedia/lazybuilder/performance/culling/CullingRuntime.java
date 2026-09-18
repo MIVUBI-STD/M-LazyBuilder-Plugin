@@ -8,6 +8,8 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -48,6 +50,8 @@ public final class CullingRuntime {
     private static final double RAY_ADVANCE = 0.05D;
     private static final boolean EXTERNAL_ENTITY_CULLING_PRESENT =
             FabricLoader.getInstance().isModLoaded("entityculling");
+    private static final Map<EntityType<?>, Boolean> VANILLA_ENTITY_TYPES = new IdentityHashMap<>();
+    private static final Map<BlockEntityType<?>, Boolean> VANILLA_BLOCK_ENTITY_TYPES = new IdentityHashMap<>();
 
     // All access is from Minecraft's client/render thread; weak keys avoid retaining removed world objects.
     private final Map<Entity, CacheEntry> entities = new WeakHashMap<>();
@@ -175,11 +179,23 @@ public final class CullingRuntime {
     }
 
     private static boolean isVanillaEntity(Entity entity) {
-        return Registries.ENTITY_TYPE.getId(entity.getType()).getNamespace().equals("minecraft");
+        EntityType<?> type = entity.getType();
+        Boolean cached = VANILLA_ENTITY_TYPES.get(type);
+        if (cached != null) return cached;
+
+        boolean vanilla = Registries.ENTITY_TYPE.getId(type).getNamespace().equals("minecraft");
+        VANILLA_ENTITY_TYPES.put(type, vanilla);
+        return vanilla;
     }
 
     private static boolean isVanillaBlockEntity(BlockEntity blockEntity) {
-        return Registries.BLOCK_ENTITY_TYPE.getId(blockEntity.getType()).getNamespace().equals("minecraft");
+        BlockEntityType<?> type = blockEntity.getType();
+        Boolean cached = VANILLA_BLOCK_ENTITY_TYPES.get(type);
+        if (cached != null) return cached;
+
+        boolean vanilla = Registries.BLOCK_ENTITY_TYPE.getId(type).getNamespace().equals("minecraft");
+        VANILLA_BLOCK_ENTITY_TYPES.put(type, vanilla);
+        return vanilla;
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
@@ -276,13 +292,13 @@ public final class CullingRuntime {
     }
 
     private void enqueue(Entity entity) {
-        if (queuedEntities.contains(entity) || entityQueue.size() >= MAX_ENTITY_QUEUE) return;
-        if (queuedEntities.add(entity)) entityQueue.add(entity);
+        if (entityQueue.size() >= MAX_ENTITY_QUEUE || !queuedEntities.add(entity)) return;
+        entityQueue.add(entity);
     }
 
     private void enqueue(BlockEntity blockEntity) {
-        if (queuedBlockEntities.contains(blockEntity) || blockEntityQueue.size() >= MAX_BLOCK_ENTITY_QUEUE) return;
-        if (queuedBlockEntities.add(blockEntity)) blockEntityQueue.add(blockEntity);
+        if (blockEntityQueue.size() >= MAX_BLOCK_ENTITY_QUEUE || !queuedBlockEntities.add(blockEntity)) return;
+        blockEntityQueue.add(blockEntity);
     }
 
     private record CacheEntry(
