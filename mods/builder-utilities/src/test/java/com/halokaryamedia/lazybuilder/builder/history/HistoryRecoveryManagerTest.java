@@ -74,6 +74,33 @@ class HistoryRecoveryManagerTest {
         assertNotNull(initiallyCommitted);
     }
     @Test
+    void discoveryFailureLeavesAllDurableJournalsForRetry() throws Exception {
+        DiskChangeSetStorage storage = new DiskChangeSetStorage(tempDir);
+
+        for (int i = 0; i < 2; i++) {
+            try (ChangeSetWriter writer = storage.begin("recover-" + i)) {
+                writer.append(new ChunkChangeSet(
+                        0, 0,
+                        List.of("minecraft:stone", "minecraft:air"),
+                        new long[]{LocalBlockPosition.pack(i, 64, 0)},
+                        new int[]{0}, new int[]{1}
+                ));
+                writer.commit().preserveForRecovery();
+            }
+        }
+
+        HistoryRecoveryManager recovery = new HistoryRecoveryManager(storage);
+        assertThrows(IllegalStateException.class, () -> recovery.discover(
+                (x, y, z) -> {
+                    throw new IllegalStateException("synthetic world read failure");
+                }
+        ));
+
+        assertEquals(2, storage.listCommitted().size());
+        assertEquals(2, recovery.committedSummaries(id -> true).size());
+    }
+
+    @Test
     void recoveredGuardDoesNotInflatePlannedChangesAndCanBeReclaimed() throws Exception {
         DiskChangeSetStorage storage = new DiskChangeSetStorage(tempDir);
         StoredChangeSet initiallyCommitted;
