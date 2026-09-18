@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
 import net.minecraft.nbt.AbstractNbtNumber;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtDouble;
 import net.minecraft.nbt.NbtFloat;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
@@ -40,6 +41,8 @@ public final class AxiomEntityPayloadTransform implements EntityPayloadTransform
 
         transformRotationList(compound, "Rotation", placement);
         transformRotationList(compound, "rotation", placement);
+        transformMotionList(compound, "Motion", placement);
+        transformMotionList(compound, "motion", placement);
     }
 
     private static void transformRotationList(
@@ -56,6 +59,43 @@ public final class AxiomEntityPayloadTransform implements EntityPayloadTransform
         NbtList transformed = new NbtList();
         transformed.add(NbtFloat.of(transformYaw(yawNumber.floatValue(), placement)));
         transformed.add(NbtFloat.of(pitchNumber.floatValue()));
+        compound.put(key, transformed);
+    }
+
+    private static void transformMotionList(
+            NbtCompound compound,
+            String key,
+            StructurePlacement placement
+    ) {
+        NbtList motion = compound.getList(key, NbtElement.DOUBLE_TYPE);
+        if (motion.size() != 3
+                || !(motion.get(0) instanceof AbstractNbtNumber xNumber)
+                || !(motion.get(1) instanceof AbstractNbtNumber yNumber)
+                || !(motion.get(2) instanceof AbstractNbtNumber zNumber)) {
+            return;
+        }
+
+        double x = xNumber.doubleValue();
+        double y = yNumber.doubleValue();
+        double z = zNumber.doubleValue();
+
+        if (placement.mirrorX()) x = -x;
+        if (placement.mirrorZ()) z = -z;
+
+        double rx;
+        double rz;
+        switch (Math.floorMod(placement.quarterTurnsY(), 4)) {
+            case 0 -> { rx = x; rz = z; }
+            case 1 -> { rx = -z; rz = x; }
+            case 2 -> { rx = -x; rz = -z; }
+            case 3 -> { rx = z; rz = -x; }
+            default -> throw new AssertionError();
+        }
+
+        NbtList transformed = new NbtList();
+        transformed.add(NbtDouble.of(rx));
+        transformed.add(NbtDouble.of(y));
+        transformed.add(NbtDouble.of(rz));
         compound.put(key, transformed);
     }
 
