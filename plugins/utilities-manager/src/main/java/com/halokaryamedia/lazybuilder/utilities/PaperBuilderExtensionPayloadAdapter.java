@@ -304,7 +304,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                     batch.entries().get(i);
             Location location = entityLocation(world, mutation);
             var nearby = nearbyNonPlayers(world, location);
-            var marked = markedEntities(nearby, mutation.markerId());
+            var marked = markedEntitiesInWorld(world, mutation.markerId());
 
             final org.bukkit.entity.EntitySnapshot snapshot;
             try {
@@ -323,10 +323,16 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             }
 
             if (mutation.afterPresent()) {
-                if (marked.size() == 1 && nearby.size() == 1) {
+                if (marked.size() == 1) {
                     steps.add(new EntityStep(
                             mutation, location, snapshot, marked.get(0), true));
                     continue;
+                }
+                if (marked.size() > 1) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), 0, i,
+                            "multiple Builder-owned entities share one marker"));
+                    return;
                 }
                 if (!nearby.isEmpty()) {
                     send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
@@ -337,15 +343,15 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                 steps.add(new EntityStep(
                         mutation, location, snapshot, null, false));
             } else {
-                if (marked.isEmpty() && nearby.isEmpty()) {
+                if (marked.isEmpty()) {
                     steps.add(new EntityStep(
                             mutation, location, snapshot, null, true));
                     continue;
                 }
-                if (marked.size() != 1 || nearby.size() != 1) {
+                if (marked.size() != 1) {
                     send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
                             batch.operationId(), 0, i,
-                            "entity target slot changed externally"));
+                            "multiple Builder-owned entities share one marker"));
                     return;
                 }
                 steps.add(new EntityStep(
@@ -422,11 +428,12 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                 entity -> !(entity instanceof Player));
     }
 
-    private List<Entity> markedEntities(
-            java.util.Collection<Entity> nearby,
+    private List<Entity> markedEntitiesInWorld(
+            World world,
             String markerId
     ) {
-        return nearby.stream()
+        return world.getEntities().stream()
+                .filter(entity -> !(entity instanceof Player))
                 .filter(entity -> markerId.equals(
                         entity.getPersistentDataContainer().get(
                                 entityMarkerKey, PersistentDataType.STRING)))
@@ -437,14 +444,11 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             World world,
             EntityStep step
     ) {
-        var nearby = nearbyNonPlayers(world, step.location());
-        var marked = markedEntities(
-                nearby, step.mutation().markerId());
-
-        if (step.mutation().afterPresent()) {
-            return nearby.size() == 1 && marked.size() == 1;
-        }
-        return nearby.isEmpty() && marked.isEmpty();
+        var marked = markedEntitiesInWorld(
+                world, step.mutation().markerId());
+        return step.mutation().afterPresent()
+                ? marked.size() == 1
+                : marked.isEmpty();
     }
 
     private String rollbackEntitySteps(
@@ -472,12 +476,11 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                     }
                 }
 
-                var nearby = nearbyNonPlayers(world, step.location());
-                var marked = markedEntities(
-                        nearby, step.mutation().markerId());
+                var marked = markedEntitiesInWorld(
+                        world, step.mutation().markerId());
                 boolean restored = step.mutation().afterPresent()
                         ? marked.isEmpty()
-                        : nearby.size() == 1 && marked.size() == 1;
+                        : marked.size() == 1;
                 if (!restored) {
                     failure = appendFailure(
                             failure,
