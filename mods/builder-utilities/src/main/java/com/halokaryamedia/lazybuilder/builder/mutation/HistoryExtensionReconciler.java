@@ -1,13 +1,12 @@
 package com.halokaryamedia.lazybuilder.builder.mutation;
 
-import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** World-aware reconciliation for opaque extension frames. */
+/** World-aware reconciliation for opaque extension frames through one mutation target. */
 public final class HistoryExtensionReconciler {
     private HistoryExtensionReconciler() {}
 
@@ -18,43 +17,22 @@ public final class HistoryExtensionReconciler {
         Objects.requireNonNull(stored, "stored");
         Objects.requireNonNull(target, "target");
 
-        Mutable counts = new Mutable();
+        long[] counts = new long[3];
         stored.visitExtensions(frame -> {
-            classify(frame, target, counts);
+            byte[] actual = Objects.requireNonNull(target.read(frame), "extension actual payload");
+            if (Arrays.equals(actual, frame.beforePayload())) counts[0]++;
+            else if (Arrays.equals(actual, frame.afterPayload())) counts[1]++;
+            else counts[2]++;
             return true;
         });
 
-        ExtensionReconciliationState state;
-        if (counts.before == 0 && counts.after == 0 && counts.conflicts == 0) {
-            state = ExtensionReconciliationState.EMPTY;
-        } else if (counts.conflicts > 0) state = ExtensionReconciliationState.CONFLICT;
-        else if (counts.after > 0 && counts.before == 0) state = ExtensionReconciliationState.FULLY_APPLIED;
-        else if (counts.before > 0 && counts.after == 0) state = ExtensionReconciliationState.NOT_APPLIED;
-        else state = ExtensionReconciliationState.PARTIALLY_APPLIED;
-
-        return new ExtensionReconciliationReport(state, counts.before, counts.after, counts.conflicts);
-    }
-
-    private static void classify(
-            HistoryExtensionFrame frame,
-            HistoryExtensionMutationTarget target,
-            Mutable counts
-    ) throws IOException {
-        byte[] actual = Objects.requireNonNull(
-                target.read(frame.typeId(), frame.chunkX(), frame.chunkZ(), frame.localKey()),
-                "extension actual payload");
-        if (Arrays.equals(actual, frame.afterPayload())) {
-            counts.after++;
-        } else if (Arrays.equals(actual, frame.beforePayload())) {
-            counts.before++;
-        } else {
-            counts.conflicts++;
-        }
-    }
-
-    private static final class Mutable {
-        long before;
-        long after;
-        long conflicts;
+        long total = Math.addExact(Math.addExact(counts[0], counts[1]), counts[2]);
+        ReconciliationState state;
+        if (total == 0) state = ReconciliationState.EMPTY;
+        else if (counts[2] > 0) state = ReconciliationState.CONFLICT;
+        else if (counts[1] == total) state = ReconciliationState.FULLY_APPLIED;
+        else if (counts[0] == total) state = ReconciliationState.NOT_APPLIED;
+        else state = ReconciliationState.PARTIALLY_APPLIED;
+        return new ExtensionReconciliationReport(total, counts[0], counts[1], counts[2], state);
     }
 }

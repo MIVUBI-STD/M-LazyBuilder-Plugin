@@ -40,7 +40,7 @@ public final class HistoryExtensionMutationExecutor {
         long processed = 0;
         for (HistoryExtensionFrame frame : frames) {
             if (cancellation.isCancellationRequested()) {
-                return ExtensionMutationExecution.cancelled(processed);
+                return ExtensionMutationExecution.cancelled(stored.extensionCount(), processed);
             }
             byte[] expected = direction == ReplayDirection.REDO
                     ? frame.beforePayload()
@@ -57,7 +57,7 @@ public final class HistoryExtensionMutationExecutor {
                 continue;
             }
             if (!Arrays.equals(actual, expected)) {
-                return ExtensionMutationExecution.conflict(processed, frame);
+                return ExtensionMutationExecution.conflict(stored.extensionCount(), processed, frame);
             }
 
             target.write(
@@ -71,10 +71,10 @@ public final class HistoryExtensionMutationExecutor {
                     target.read(frame.typeId(), frame.chunkX(), frame.chunkZ(), frame.localKey()),
                     "extension verified payload");
             if (!Arrays.equals(verified, desired)) {
-                return ExtensionMutationExecution.conflict(processed, frame);
+                return ExtensionMutationExecution.conflict(stored.extensionCount(), processed, frame);
             }
             processed++;
         }
-        return ExtensionMutationExecution.completed(processed);
+        return ExtensionMutationExecution.completed(stored.extensionCount());
     }
 }

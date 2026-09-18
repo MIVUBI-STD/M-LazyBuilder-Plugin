@@ -1,8 +1,11 @@
 package com.halokaryamedia.lazybuilder.builder.mutation;
 
+import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
+
 public record ExtensionMutationExecution(
-        MutationExecutionState state,
+        long totalExtensions,
         long processedExtensions,
+        MutationExecutionState state,
         String conflictTypeId,
         Integer conflictChunkX,
         Integer conflictChunkZ,
@@ -10,25 +13,28 @@ public record ExtensionMutationExecution(
 ) {
     public ExtensionMutationExecution {
         if (state == null) throw new NullPointerException("state");
-        if (processedExtensions < 0) throw new IllegalArgumentException("processedExtensions must be >= 0");
+        if (totalExtensions < 0 || processedExtensions < 0 || processedExtensions > totalExtensions) {
+            throw new IllegalArgumentException("invalid extension execution counts");
+        }
     }
 
-    public static ExtensionMutationExecution completed(long count) {
-        return new ExtensionMutationExecution(MutationExecutionState.COMPLETED, count, null, null, null, null);
+    public static ExtensionMutationExecution completed(long total) {
+        return new ExtensionMutationExecution(total, total, MutationExecutionState.COMPLETED,
+                null, null, null, null);
     }
 
-    public static ExtensionMutationExecution cancelled(long count) {
-        return new ExtensionMutationExecution(MutationExecutionState.CANCELLED, count, null, null, null, null);
+    public static ExtensionMutationExecution cancelled(long total, long processed) {
+        return new ExtensionMutationExecution(total, processed, MutationExecutionState.CANCELLED,
+                null, null, null, null);
     }
 
-    public static ExtensionMutationExecution conflict(long count, com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame frame) {
+    public static ExtensionMutationExecution conflict(
+            long total,
+            long processed,
+            HistoryExtensionFrame frame
+    ) {
         return new ExtensionMutationExecution(
-                MutationExecutionState.CONFLICT,
-                count,
-                frame.typeId(),
-                frame.chunkX(),
-                frame.chunkZ(),
-                frame.localKey()
-        );
+                total, processed, MutationExecutionState.CONFLICT,
+                frame.typeId(), frame.chunkX(), frame.chunkZ(), frame.localKey());
     }
 }
