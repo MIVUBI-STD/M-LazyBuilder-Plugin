@@ -18,6 +18,7 @@ import com.google.gson.JsonParser;
 
 /** Atomic JSON proof snapshots for real Builder runtime sessions. */
 public final class BuilderRuntimeProofStore {
+    static final int SCHEMA_VERSION = 5;
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                     .withZone(ZoneOffset.UTC);
@@ -71,6 +72,10 @@ public final class BuilderRuntimeProofStore {
                     if (!parsed.isJsonObject()) continue;
                     json = parsed.getAsJsonObject();
                 } catch (RuntimeException malformed) {
+                    continue;
+                }
+
+                if (intValue(json, "schema") != SCHEMA_VERSION) {
                     continue;
                 }
 
@@ -134,6 +139,16 @@ public final class BuilderRuntimeProofStore {
                 forwardBiomes,
                 forwardEntities
         );
+    }
+
+    private static int intValue(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        if (value == null || !value.isJsonPrimitive()) return -1;
+        try {
+            return value.getAsInt();
+        } catch (RuntimeException invalid) {
+            return -1;
+        }
     }
 
     private static long longValue(JsonObject object, String key) {
@@ -205,7 +220,7 @@ public final class BuilderRuntimeProofStore {
             String label
     ) {
         return "{\n"
-                + "  \"schema\": 5,\n"
+                + "  \"schema\": " + SCHEMA_VERSION + ",\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"
