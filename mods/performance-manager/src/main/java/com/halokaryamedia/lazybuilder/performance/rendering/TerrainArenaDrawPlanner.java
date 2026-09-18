@@ -133,9 +133,13 @@ public final class TerrainArenaDrawPlanner {
         if (required <= 0L || handle.payloadBytes() < required || handle.sizeBytes() < required) return false;
         if (handle.offsetBytes() < 0L || handle.offsetBytes() > Long.MAX_VALUE - required) return false;
 
+        if (state.indexPayloadBytes() == 0) {
+            return true;
+        }
+
         long indexOffset = command.indexByteOffset();
         int indexSize = state.indexType().size;
-        return indexSize > 0 && indexOffset % indexSize == 0L;
+        return indexSize > 0 && indexOffset >= 0L && indexOffset % indexSize == 0L;
     }
 
     private static boolean sameBatch(Command left, Command right) {
