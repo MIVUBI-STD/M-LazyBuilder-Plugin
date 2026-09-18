@@ -102,6 +102,31 @@ class ClientMapSurfaceCacheTest {
     }
 
     @Test
+    void regionWithWriteInFlightIsNotEvicted() {
+        LinkedHashMap<Long, ClientMapSurfaceCache.RegionData> regions =
+                new LinkedHashMap<>(8, 0.75f, true);
+
+        ClientMapSurfaceCache.RegionData writing = new ClientMapSurfaceCache.RegionData();
+        writing.put(0, 0xFF335577, 72);
+        ClientMapSurfaceCache.RegionSnapshot snapshot = writing.snapshot();
+        assertTrue(writing.markWriteQueued(snapshot.revision()));
+        regions.put(0L, writing);
+
+        for (long key = 1; key <= 4; key++) {
+            ClientMapSurfaceCache.RegionData clean = new ClientMapSurfaceCache.RegionData();
+            clean.putIfAbsent((int) key, 0xFF7799BB, 73);
+            regions.put(key, clean);
+        }
+
+        int removedSamples = ClientMapSurfaceCache.pruneCleanRegions(regions, 3, null);
+
+        assertEquals(3, regions.size());
+        assertEquals(2, removedSamples);
+        assertTrue(regions.containsValue(writing));
+        assertTrue(writing.hasWritesInFlight());
+    }
+
+    @Test
     void staleAsyncCompletionGenerationIsRejected() {
         assertTrue(ClientMapSurfaceCache.isCurrentScopeGeneration(7L, 7L));
         assertFalse(ClientMapSurfaceCache.isCurrentScopeGeneration(6L, 7L));
