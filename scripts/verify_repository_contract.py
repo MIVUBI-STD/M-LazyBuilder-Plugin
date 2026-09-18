@@ -265,6 +265,7 @@ def main() -> int:
     module_boundaries = read_text("docs/04-system/module-boundaries.md", errors)
     client_architecture = read_text("docs/04-system/client-manager-architecture-lock.md", errors)
     stable_context = read_text("CONTEXT.md", errors)
+    root_pom = read_text("pom.xml", errors)
     builder_manifest = read_text("mods/builder-utilities/src/main/resources/fabric.mod.json", errors)
     builder_properties = read_text("mods/builder-utilities/gradle.properties", errors)
     builder_compatibility = read_text(
@@ -327,6 +328,26 @@ def main() -> int:
     for manager in core_managers:
         if manager not in fabric_verifier or "--no-daemon build" not in fabric_verifier:
             fail(errors, f"canonical Fabric verification lane missing manager: {manager}")
+
+    for development_lane in ("mods/builder-utilities", "mods/terraform-manager"):
+        if development_lane in fabric_verifier:
+            fail(errors, f"default Fabric verification must not treat development lane as core: {development_lane}")
+
+    default_modules = root_pom.split("<profiles>", 1)[0]
+    for legacy_module in ("shared/terraform-core", "plugins/terraform-manager"):
+        if f"<module>{legacy_module}</module>" in default_modules:
+            fail(errors, f"default Maven reactor must not include legacy Terraform module: {legacy_module}")
+    if "<id>legacy-terraform</id>" not in root_pom:
+        fail(errors, "root Maven reactor must preserve an explicit legacy-terraform profile")
+
+    if "lazybuilder-builder-utilities-" in build_local:
+        fail(errors, "Launcher runtime-ready build must not bundle Builder Utilities into V1 Client Setup")
+    if "lazybuilder-builder-utilities-" in verify_workflow:
+        fail(errors, "integrated Verify must not stage Builder Utilities into the V1 core client artifact")
+    if "lazybuilder-terraform-manager-" in build_local or "lazybuilder-terraform-manager-" in verify_workflow:
+        fail(errors, "Terraform legacy lane must not enter the V1 Launcher/core artifact path")
+    if "$BuilderExpected" not in client_artifact_verifier or "$CoreExpected" not in client_artifact_verifier:
+        fail(errors, "client artifact verifier must keep core and Builder extension artifact sets separate")
 
     architecture_contracts = {
         "docs/01-product/README.md": product_doc,
