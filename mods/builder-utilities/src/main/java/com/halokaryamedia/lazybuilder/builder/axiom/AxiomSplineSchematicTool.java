@@ -386,12 +386,14 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(applyImport.snapshot());
 
+        String durableOperationId = AxiomDurableOperationIds.random(world);
+
         Optional<PreparedStructureMutation> prepared =
                 applyImport.snapshot().blockEntityCount() == 0
                         && applyImport.snapshot().biomeCount() == 0
                         && applyImport.snapshot().entityCount() == 0
                         ? PlacementStructureMutationPreparer.prepareBlocks(
-                                UUID.randomUUID().toString(),
+                                durableOperationId,
                                 placements,
                                 id -> applyImport.snapshot(),
                                 new MinecraftStructureBlockStateTransform(world),
@@ -401,7 +403,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                                 cancellation.token()
                         )
                         : PlacementStructureMutationPreparer.prepareAll(
-                                UUID.randomUUID().toString(),
+                                durableOperationId,
                                 placements,
                                 id -> applyImport.snapshot(),
                                 new MinecraftStructureBlockStateTransform(world),
