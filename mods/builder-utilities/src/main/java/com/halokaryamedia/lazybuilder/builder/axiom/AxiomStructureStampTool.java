@@ -133,7 +133,7 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Select two source corners, then click a destination anchor. Capture preserves block-entity NBT and can optionally preserve full biomes/entities for .schem export. Axiom stamping remains block-only until the authoritative extension mutation channel is available.");
+        ImGui.textWrapped("Select two source corners, then click a destination anchor. Blocks use Axiom; captured biomes use negotiated server BIOME authority. Block entities/entities remain export-only until their authoritative capability is available.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -239,20 +239,12 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
-        ensureBlockOnlyForAxiom(snapshot);
-        StructurePastePlan plan = new StructurePastePlan(
-                StructurePastePlanner.plan(
-                        snapshot,
-                        placement(),
-                        new MinecraftStructureBlockStateTransform(world),
-                        new AxiomClientWorldStateSource(world)
-                ),
-                List.of()
-        );
+        AxiomStructureAuxiliary.requireApplySupported(snapshot);
+        StructurePastePlan plan =
+                AxiomStructureAuxiliary.planSingle(snapshot, placement(), world);
 
         CancellationSource cancellation = new CancellationSource();
-        long estimateBytes = OperationPreflight.estimateBytes(
-                plan.blockChanges(), 96L, "structure history estimate");
+        long estimateBytes = AxiomStructureAuxiliary.estimateHistoryBytes(plan);
         PreparedStructureMutation prepared = StructureMutationPreparer.prepare(
                 UUID.randomUUID().toString(),
                 plan,
@@ -295,16 +287,6 @@ public final class AxiomStructureStampTool implements CustomTool {
             if (!Files.exists(candidate)) return candidate;
         }
         throw new IllegalStateException("Could not allocate unique capture filename");
-    }
-
-    private static void ensureBlockOnlyForAxiom(StructureSnapshot snapshot) {
-        if (snapshot.blockEntityCount() != 0
-                || snapshot.biomeCount() != 0
-                || snapshot.entityCount() != 0) {
-            throw new IllegalStateException(
-                    "Axiom public mutation path is block-only; export this capture as .schem "
-                            + "or disable biome/entity capture and select a source without block entities");
-        }
     }
 
     private StructurePlacement placement() {

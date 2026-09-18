@@ -218,7 +218,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private void loadSelected() {
         try {
             selected = catalog.load(entries.get(selectedIndex));
-            ensureBlockOnly(selected);
+            AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             if (controlPoints.size() >= 2) rebuildPreview();
             else idleStatus = "Loaded " + selectedName();
         } catch (Exception e) {
@@ -361,16 +361,28 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                 estimatedBlocks, 96L, "spline schematic history estimate");
 
         Optional<PreparedStructureMutation> prepared =
-                PlacementStructureMutationPreparer.prepareBlocks(
-                        UUID.randomUUID().toString(),
-                        placements,
-                        id -> selected.snapshot(),
-                        new MinecraftStructureBlockStateTransform(world),
-                        new AxiomClientWorldStateSource(world),
-                        runtime.history(),
-                        estimateBytes,
-                        cancellation.token()
-                );
+                selected.snapshot().biomeCount() == 0
+                        ? PlacementStructureMutationPreparer.prepareBlocks(
+                                UUID.randomUUID().toString(),
+                                placements,
+                                id -> selected.snapshot(),
+                                new MinecraftStructureBlockStateTransform(world),
+                                new AxiomClientWorldStateSource(world),
+                                runtime.history(),
+                                estimateBytes,
+                                cancellation.token()
+                        )
+                        : PlacementStructureMutationPreparer.prepareAll(
+                                UUID.randomUUID().toString(),
+                                placements,
+                                id -> selected.snapshot(),
+                                new MinecraftStructureBlockStateTransform(world),
+                                new AxiomClientWorldStateSource(world),
+                                AxiomStructureAuxiliary.contextFor(selected.snapshot(), world),
+                                runtime.history(),
+                                estimateBytes,
+                                cancellation.token()
+                        );
         if (prepared.isEmpty()) {
             throw new IllegalStateException("Spline schematic preparation was cancelled");
         }
@@ -389,16 +401,6 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             throw new IllegalArgumentException("spline structure coordinate exceeds world integer range");
         }
         return (int) rounded;
-    }
-
-    private static void ensureBlockOnly(SpongeSchematicImport imported) {
-        var snapshot = imported.snapshot();
-        if (snapshot.blockEntityCount() != 0
-                || snapshot.biomeCount() != 0
-                || snapshot.entityCount() != 0) {
-            throw new IllegalArgumentException(
-                    "spline schematic apply currently requires block-only payloads");
-        }
     }
 
     private String selectedName() {

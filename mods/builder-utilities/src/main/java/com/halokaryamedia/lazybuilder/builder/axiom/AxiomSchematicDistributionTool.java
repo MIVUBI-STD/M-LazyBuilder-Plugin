@@ -359,7 +359,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
-        ensureBlockOnly(selected);
+        AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
         CancellationSource cancellation = new CancellationSource();
         long estimatedBlocks = estimatedPlacedBlocks(placements);
         long estimateBytes = OperationPreflight.estimateBytes(
@@ -452,16 +452,6 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             loaded.put(entry.name(), imported);
         }
         return Map.copyOf(loaded);
-    }
-
-    private static void ensureBlockOnly(SpongeSchematicImport imported) {
-        var snapshot = imported.snapshot();
-        if (snapshot.blockEntityCount() != 0
-                || snapshot.biomeCount() != 0
-                || snapshot.entityCount() != 0) {
-            throw new IllegalArgumentException(
-                    "distributed schematic apply currently requires block-only payloads");
-        }
     }
 
     private String selectedName() {

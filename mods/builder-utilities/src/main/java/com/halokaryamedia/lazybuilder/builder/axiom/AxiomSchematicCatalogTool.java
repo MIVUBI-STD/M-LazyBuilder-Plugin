@@ -97,7 +97,7 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     @Override
     public void displayImguiOptions() {
         ImGui.textWrapped("Reads Sponge v3 .schem files from " + catalog.directory()
-                + ". Schematics containing block entities, biomes, or entities are preserved by the core importer but rejected by this Axiom block-only apply path.");
+                + ". Blocks use Axiom and biomes use negotiated server BIOME authority. Block entities/entities stay preserved but cannot be applied yet.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -181,7 +181,7 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     private void loadSelected() {
         try {
             selected = catalog.load(entries.get(selectedIndex));
-            ensureBlockOnly(selected);
+            AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             destination = null;
             previewPoints = List.of();
             if (preview != null) preview.clear();
@@ -213,21 +213,13 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
         ClientWorld world = Objects.requireNonNull(
                 MinecraftClient.getInstance().world,
                 "Minecraft client world is unavailable");
-        ensureBlockOnly(selected);
+        AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
 
-        StructurePastePlan plan = new StructurePastePlan(
-                StructurePastePlanner.plan(
-                        selected.snapshot(),
-                        placement(),
-                        new MinecraftStructureBlockStateTransform(world),
-                        new AxiomClientWorldStateSource(world)
-                ),
-                List.of()
-        );
+        StructurePastePlan plan = AxiomStructureAuxiliary.planSingle(
+                selected.snapshot(), placement(), world);
 
         CancellationSource cancellation = new CancellationSource();
-        long estimateBytes = OperationPreflight.estimateBytes(
-                plan.blockChanges(), 96L, "structure history estimate");
+        long estimateBytes = AxiomStructureAuxiliary.estimateHistoryBytes(plan);
         PreparedStructureMutation prepared = StructureMutationPreparer.prepare(
                 UUID.randomUUID().toString(),
                 plan,
@@ -251,21 +243,6 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
                 mirrorX[0] != 0,
                 mirrorZ[0] != 0
         );
-    }
-
-    private static void ensureBlockOnly(SpongeSchematicImport imported) {
-        var snapshot = imported.snapshot();
-        if (snapshot.blockEntityCount() != 0
-                || snapshot.biomeCount() != 0
-                || snapshot.entityCount() != 0) {
-            throw new IllegalArgumentException(
-                    "schematic contains non-block payloads (blockEntities="
-                            + snapshot.blockEntityCount()
-                            + ", biomes=" + snapshot.biomeCount()
-                            + ", entities=" + snapshot.entityCount()
-                            + "); Axiom public block-only apply cannot preserve them"
-            );
-        }
     }
 
     private String selectedName() {
