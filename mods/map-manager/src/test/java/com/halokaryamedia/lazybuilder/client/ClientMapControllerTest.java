@@ -61,6 +61,64 @@ class ClientMapControllerTest {
     }
 
     @Test
+    void negativeTeleportPermissionFailureRoundTripsThroughWire() throws Exception {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+        harness.controller.accept(new MapActionWireProtocol.CurrentWorldResult(
+                0L, worldId, "Build", "Build"));
+
+        harness.controller.teleportCurrent(-128, -64);
+
+        MapActionWireProtocol.TeleportLocation request =
+                (MapActionWireProtocol.TeleportLocation) MapActionWireProtocol.decodeRequest(
+                        harness.sent.get(harness.sent.size() - 1));
+        assertEquals(-128, request.blockX());
+        assertEquals(-64, request.blockZ());
+
+        byte[] deniedPayload = MapActionWireProtocol.error(
+                request.requestId(), "Missing permission: lazybuilder.world.teleport");
+        harness.controller.accept(MapActionWireProtocol.decodeResponse(deniedPayload));
+
+        assertFalse(harness.controller.teleportPending());
+        assertEquals("Missing permission: lazybuilder.world.teleport", harness.controller.lastError());
+        assertEquals(
+                List.of("LazyBuilder: Missing permission: lazybuilder.world.teleport"),
+                harness.notifications);
+    }
+
+    @Test
+    void negativeAreaExportPermissionFailureRoundTripsThroughWire() throws Exception {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+
+        harness.controller.exportArea(
+                worldId,
+                "minecraft:overworld",
+                -96, -80, -1, -17,
+                "JAVA_1_21_4",
+                "negative-area",
+                ExportSettingsWire.Settings.inherit());
+
+        MapActionWireProtocol.ExportArea request =
+                (MapActionWireProtocol.ExportArea) MapActionWireProtocol.decodeRequest(
+                        harness.sent.get(harness.sent.size() - 1));
+        assertEquals(-96, request.x1());
+        assertEquals(-80, request.z1());
+        assertEquals(-1, request.x2());
+        assertEquals(-17, request.z2());
+
+        byte[] deniedPayload = MapActionWireProtocol.error(
+                request.requestId(), "Missing permission: lazybuilder.world.manage");
+        harness.controller.accept(MapActionWireProtocol.decodeResponse(deniedPayload));
+
+        assertFalse(harness.controller.exportBusy());
+        assertEquals("Missing permission: lazybuilder.world.manage", harness.controller.lastError());
+        assertEquals(
+                List.of("LazyBuilder: Missing permission: lazybuilder.world.manage"),
+                harness.notifications);
+    }
+
+    @Test
     void staleErrorDoesNotNotifyOrMutateActiveRequest() {
         Harness harness = new Harness();
         WorldId worldId = WorldId.create();
