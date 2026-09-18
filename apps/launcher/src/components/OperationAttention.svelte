@@ -18,7 +18,10 @@
   let initializedAtUnixSeconds = 0;
   let notice: LauncherOperationSnapshot | null = null;
   let dismissTimer: number | null = null;
+  let pollTimer: number | null = null;
   let refreshInFlight = false;
+  let pollingMounted = false;
+  let pollingDisposed = false;
 
   function clearDismissTimer() {
     if (dismissTimer !== null) window.clearTimeout(dismissTimer);
@@ -95,46 +98,54 @@
     onOpenActivity?.();
   }
 
+  function clearPollTimer() {
+    if (pollTimer !== null) window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+
+  function schedulePolling(hasActive: boolean) {
+    clearPollTimer();
+    if (pollingDisposed || !pollingMounted || suppressed || document.hidden) return;
+    pollTimer = window.setTimeout(async () => {
+      pollTimer = null;
+      if (pollingDisposed || suppressed || document.hidden) return;
+      const active = await refresh();
+      schedulePolling(active);
+    }, hasActive ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+  }
+
+  function refreshNow() {
+    if (pollingDisposed || !pollingMounted || suppressed || document.hidden) return;
+    clearPollTimer();
+    void refresh().then(schedulePolling);
+  }
+
   $: if (suppressed && notice) dismiss();
+  $: if (pollingMounted) {
+    if (suppressed) clearPollTimer();
+    else refreshNow();
+  }
 
   onMount(() => {
-    let disposed = false;
-    let timer: number | null = null;
-
-    const schedule = (hasActive: boolean) => {
-      if (disposed || document.hidden) return;
-      timer = window.setTimeout(async () => {
-        timer = null;
-        if (disposed || document.hidden) return;
-        const active = await refresh();
-        schedule(active);
-      }, hasActive ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    };
-
-    const refreshNow = () => {
-      if (disposed || document.hidden) return;
-      if (timer !== null) window.clearTimeout(timer);
-      timer = null;
-      void refresh().then(schedule);
-    };
+    pollingMounted = true;
+    pollingDisposed = false;
 
     const handleVisibility = () => {
-      if (document.hidden) {
-        if (timer !== null) window.clearTimeout(timer);
-        timer = null;
+      if (document.hidden || suppressed) {
+        clearPollTimer();
         return;
       }
       refreshNow();
     };
 
-    void refresh().then(schedule);
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', refreshNow);
 
     return () => {
-      disposed = true;
+      pollingDisposed = true;
+      pollingMounted = false;
       clearDismissTimer();
-      if (timer !== null) window.clearTimeout(timer);
+      clearPollTimer();
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', refreshNow);
     };
