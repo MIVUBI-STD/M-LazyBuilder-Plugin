@@ -74,7 +74,7 @@ abstract class SectionBuilderBufferLookupMixin {
             BlockBufferAllocatorStorage allocatorStorage,
             CallbackInfoReturnable<SectionBuilder.RenderData> cir
     ) {
-        lazybuilder$layerCache.remove();
+        lazybuilder$layerCache.get().clear();
     }
 
     @Unique
@@ -108,6 +108,15 @@ abstract class SectionBuilderBufferLookupMixin {
         private void ensureOwner(Map<RenderLayer, BufferBuilder> builders) {
             if (owner == builders) return;
             owner = builders;
+            solid = null;
+            cutoutMipped = null;
+            cutout = null;
+            translucent = null;
+            tripwire = null;
+        }
+
+        void clear() {
+            owner = null;
             solid = null;
             cutoutMipped = null;
             cutout = null;
