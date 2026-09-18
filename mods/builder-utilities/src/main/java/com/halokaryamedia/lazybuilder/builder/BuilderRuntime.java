@@ -23,6 +23,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private final ExecutionBudget dispatchBudget;
     private final Path schematicDirectory;
     private final DiskChangeSetStorage diskHistory;
+    private final BuilderRuntimeMetrics metrics;
     private boolean closed;
 
     private BuilderRuntime(
@@ -30,13 +31,15 @@ public final class BuilderRuntime implements AutoCloseable {
             HistoryStorageRouter history,
             ExecutionBudget dispatchBudget,
             Path schematicDirectory,
-            DiskChangeSetStorage diskHistory
+            DiskChangeSetStorage diskHistory,
+            BuilderRuntimeMetrics metrics
     ) {
         this.timeline = timeline;
         this.history = history;
         this.dispatchBudget = dispatchBudget;
         this.schematicDirectory = schematicDirectory;
         this.diskHistory = diskHistory;
+        this.metrics = metrics;
     }
 
     public static BuilderRuntime createDefault() {
@@ -54,7 +57,8 @@ public final class BuilderRuntime implements AutoCloseable {
                 router,
                 new ExecutionBudget(Duration.ofMillis(4), 4, 65_536, 16 * MIB),
                 schematicDir,
-                diskHistory
+                diskHistory,
+                new BuilderRuntimeMetrics()
         );
     }
 
@@ -69,6 +73,7 @@ public final class BuilderRuntime implements AutoCloseable {
     public ExecutionBudget dispatchBudget() { return dispatchBudget; }
     public Path schematicDirectory() { return schematicDirectory; }
     public DiskChangeSetStorage diskHistory() { return diskHistory; }
+    public BuilderRuntimeMetrics metrics() { return metrics; }
 
     @Override
     public synchronized void close() throws IOException {

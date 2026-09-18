@@ -78,6 +78,7 @@ public final class AxiomMutationController implements AutoCloseable {
         }
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
+        runtime.metrics().operationStarted();
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
     }
 
@@ -121,7 +122,12 @@ public final class AxiomMutationController implements AutoCloseable {
     }
 
     private void pumpForwardDispatch() throws IOException {
+        long started = System.nanoTime();
         BudgetedDispatchSlice slice = session.dispatchSlice(runtime.dispatchBudget());
+        runtime.metrics().recordForwardSlice(
+                slice.sliceVisitedChunks(),
+                slice.sliceDispatchedBlocks(),
+                Math.max(0L, System.nanoTime() - started));
         status = "Dispatch " + slice.totalVisitedChunks() + " chunks / "
                 + slice.totalDispatchedBlocks() + " blocks";
 
@@ -131,6 +137,8 @@ public final class AxiomMutationController implements AutoCloseable {
             beginRollback();
         } else if (slice.state() == BudgetedDispatchState.CONFLICT
                 || slice.state() == BudgetedDispatchState.BUDGET_EXCEEDED) {
+            if (slice.state() == BudgetedDispatchState.CONFLICT) runtime.metrics().conflict();
+            else runtime.metrics().budgetExceeded();
             finishIfTerminal();
         }
     }
@@ -153,12 +161,19 @@ public final class AxiomMutationController implements AutoCloseable {
     }
 
     private void pumpRollbackDispatch() throws IOException {
+        long started = System.nanoTime();
         BudgetedDispatchSlice slice = session.dispatchRollbackSlice(runtime.dispatchBudget());
+        runtime.metrics().recordRollbackSlice(
+                slice.sliceVisitedChunks(),
+                slice.sliceDispatchedBlocks(),
+                Math.max(0L, System.nanoTime() - started));
         status = "Rollback dispatch: " + slice.state();
         if (slice.state() == BudgetedDispatchState.EXHAUSTED) {
             phase = Phase.ROLLBACK_RECONCILE;
         } else if (slice.state() == BudgetedDispatchState.CONFLICT
                 || slice.state() == BudgetedDispatchState.BUDGET_EXCEEDED) {
+            if (slice.state() == BudgetedDispatchState.CONFLICT) runtime.metrics().conflict();
+            else runtime.metrics().budgetExceeded();
             finishIfTerminal();
         }
     }

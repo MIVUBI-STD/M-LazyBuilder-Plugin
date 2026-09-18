@@ -49,6 +49,21 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     + " (not auto-resumed because their original world cannot be proven)");
         }
 
+        var proof = runtime.metrics().snapshot();
+        ImGui.textWrapped("Runtime proof: started=" + proof.operationsStarted()
+                + " completed=" + proof.operationsCompleted()
+                + " cancelled=" + proof.operationsCancelled()
+                + " failed=" + proof.operationsFailed());
+        ImGui.textWrapped("Forward dispatch: chunks=" + proof.forwardChunksVisited()
+                + " blocks=" + proof.forwardBlocksDispatched()
+                + " | rollback chunks=" + proof.rollbackChunksVisited()
+                + " blocks=" + proof.rollbackBlocksDispatched());
+        ImGui.textWrapped("Conflicts=" + proof.conflicts()
+                + " budgetExceeded=" + proof.budgetExceeded()
+                + " maxObservedSliceMs="
+                + String.format("%.3f", proof.maxSliceNanos() / 1_000_000.0)
+                + " lastOutcome=" + proof.lastOutcome());
+
         var budget = runtime.dispatchBudget();
         ImGui.textWrapped("Dispatch budget: "
                 + budget.maxSliceDuration().toMillis() + " ms/slice, "
