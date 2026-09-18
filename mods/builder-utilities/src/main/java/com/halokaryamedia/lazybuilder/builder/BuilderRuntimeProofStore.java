@@ -18,7 +18,7 @@ import com.google.gson.JsonParser;
 
 /** Atomic JSON proof snapshots for real Builder runtime sessions. */
 public final class BuilderRuntimeProofStore {
-    static final int SCHEMA_VERSION = 5;
+    static final int SCHEMA_VERSION = 6;
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                     .withZone(ZoneOffset.UTC);
