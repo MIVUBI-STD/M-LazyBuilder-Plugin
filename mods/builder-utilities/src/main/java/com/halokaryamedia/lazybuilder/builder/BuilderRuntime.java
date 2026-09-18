@@ -136,16 +136,20 @@ public final class BuilderRuntime implements AutoCloseable {
         if (closing) throw new IllegalStateException("Builder runtime close is already in progress");
         closing = true;
         IOException failure = null;
+        boolean activeOperationsPreserved = false;
         try {
-            proofStore.writeSnapshot(metrics.snapshot(), "shutdown");
+            preserveActiveOperations();
+            activeOperationsPreserved = true;
         } catch (IOException e) {
             failure = e;
         }
-        try {
-            preserveActiveOperations();
-        } catch (IOException e) {
-            if (failure == null) failure = e;
-            else failure.addSuppressed(e);
+        if (activeOperationsPreserved) {
+            try {
+                proofStore.writeSnapshot(metrics.snapshot(), "shutdown");
+            } catch (IOException e) {
+                if (failure == null) failure = e;
+                else failure.addSuppressed(e);
+            }
         }
         try {
             timeline.close();
