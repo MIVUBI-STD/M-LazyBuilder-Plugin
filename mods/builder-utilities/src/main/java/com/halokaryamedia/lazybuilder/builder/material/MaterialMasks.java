@@ -7,6 +7,10 @@ public final class MaterialMasks {
     private MaterialMasks() {
     }
 
+    public static MaterialMask all() {
+        return context -> true;
+    }
+
     public static MaterialMask none() {
         return context -> false;
     }
