@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.builder.history.LocalBlockPosition;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.history.StoredExtensionCursor;
 import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionRequestTimeout;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 import net.minecraft.client.world.ClientWorld;
@@ -38,6 +39,7 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
     private long processedExtensions;
     private int batchOrdinal;
     private String pendingOperationId;
+    private long pendingStartedNanos;
 
     public AxiomBlockEntityBatchDispatcher(
             StoredChangeSet stored,
@@ -80,6 +82,15 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         if (requestPending) {
             BuilderExtensionWireProtocol.Response received = response.getAndSet(null);
             if (received == null) {
+                if (BuilderExtensionRequestTimeout.expired(
+                        pendingStartedNanos, System.nanoTime())) {
+                    BuilderExtensionClientNetworking.cancelPending(pendingOperationId);
+                    pendingOperationId = null;
+                    requestPending = false;
+                    return terminal(
+                            BlockEntityBatchDispatchState.FAILED,
+                            "Builder extension request timed out");
+                }
                 return new BlockEntityBatchDispatchProgress(
                         BlockEntityBatchDispatchState.WAITING, processedExtensions, null);
             }
@@ -121,6 +132,7 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         response.set(null);
         requestPending = true;
         pendingOperationId = operationId;
+        pendingStartedNanos = System.nanoTime();
         BuilderExtensionClientNetworking.sendBlockEntityBatch(batch, response::set);
         return new BlockEntityBatchDispatchProgress(
                 BlockEntityBatchDispatchState.YIELDED, processedExtensions, null);

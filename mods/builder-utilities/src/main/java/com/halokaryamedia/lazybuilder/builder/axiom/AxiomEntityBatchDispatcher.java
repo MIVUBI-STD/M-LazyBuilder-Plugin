@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionTypes;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.history.StoredExtensionCursor;
 import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionRequestTimeout;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
 import com.halokaryamedia.lazybuilder.builder.structure.EntityExtensionPayload;
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
@@ -37,6 +38,7 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
     private long processedExtensions;
     private int batchOrdinal;
     private String pendingOperationId;
+    private long pendingStartedNanos;
 
     public AxiomEntityBatchDispatcher(
             StoredChangeSet stored,
@@ -74,6 +76,15 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
         if (requestPending) {
             BuilderExtensionWireProtocol.Response received = response.getAndSet(null);
             if (received == null) {
+                if (BuilderExtensionRequestTimeout.expired(
+                        pendingStartedNanos, System.nanoTime())) {
+                    BuilderExtensionClientNetworking.cancelPending(pendingOperationId);
+                    pendingOperationId = null;
+                    requestPending = false;
+                    return terminal(
+                            EntityBatchDispatchState.FAILED,
+                            "Builder extension request timed out");
+                }
                 return new EntityBatchDispatchProgress(
                         EntityBatchDispatchState.WAITING, processedExtensions, null);
             }
@@ -117,6 +128,7 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
         response.set(null);
         requestPending = true;
         pendingOperationId = operationId;
+        pendingStartedNanos = System.nanoTime();
         BuilderExtensionClientNetworking.sendEntityBatch(batch, response::set);
         return new EntityBatchDispatchProgress(
                 EntityBatchDispatchState.YIELDED, processedExtensions, null);
