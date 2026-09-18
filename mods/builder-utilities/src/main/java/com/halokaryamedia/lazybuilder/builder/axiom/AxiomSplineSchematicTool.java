@@ -70,6 +70,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private final float[] normalOffset = {0.0f};
     private final float[] binormalOffset = {0.0f};
     private final float[] jitter = {0.0f};
+    private final int[] stripBlockEntitiesOnApply = {0};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
@@ -126,7 +127,8 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     public void displayImguiOptions() {
         ImGui.textWrapped("Place the selected .schem at arc-length intervals along a spline. "
                 + "Blocks use Axiom; BIOME/ENTITY payloads use negotiated server authority. "
-                + "Spline tangent is snapped to the nearest 90-degree structure rotation.");
+                + "Spline tangent is snapped to the nearest 90-degree structure rotation. "
+                + "Block-entity payloads require the explicit lossy strip toggle.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -158,6 +160,11 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         changed |= ImGui.sliderFloat("Normal Offset", normalOffset, -16.0f, 16.0f);
         changed |= ImGui.sliderFloat("Binormal Offset", binormalOffset, -16.0f, 16.0f);
         changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
+        changed |= ImGui.sliderInt(
+                "Strip Block Entity Payloads On Apply (Lossy)",
+                stripBlockEntitiesOnApply,
+                0,
+                1);
 
         if (ImGui.button("Clear Spline")) {
             clearSpline();
@@ -221,7 +228,6 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             selected = catalog.load(entries.get(selectedIndex));
             com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
                     .requireNotFuture(selected.dataVersion());
-            AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             if (controlPoints.size() >= 2) rebuildPreview();
             else idleStatus = "Loaded " + selectedName();
         } catch (Exception e) {
@@ -355,17 +361,18 @@ public final class AxiomSplineSchematicTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
-        AxiomSchematicCompatibility.validateForApply(selected, world);
+        SpongeSchematicImport applyImport = applyImport();
+        AxiomSchematicCompatibility.validateForApply(applyImport, world);
         CancellationSource cancellation = new CancellationSource();
-        long estimateBytes = estimatedHistoryBytes();
+        long estimateBytes = estimatedHistoryBytes(applyImport.snapshot());
 
         Optional<PreparedStructureMutation> prepared =
-                selected.snapshot().biomeCount() == 0
-                        && selected.snapshot().entityCount() == 0
+                applyImport.snapshot().biomeCount() == 0
+                        && applyImport.snapshot().entityCount() == 0
                         ? PlacementStructureMutationPreparer.prepareBlocks(
                                 UUID.randomUUID().toString(),
                                 placements,
-                                id -> selected.snapshot(),
+                                id -> applyImport.snapshot(),
                                 new MinecraftStructureBlockStateTransform(world),
                                 new AxiomClientWorldStateSource(world),
                                 runtime.history(),
@@ -375,10 +382,10 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                         : PlacementStructureMutationPreparer.prepareAll(
                                 UUID.randomUUID().toString(),
                                 placements,
-                                id -> selected.snapshot(),
+                                id -> applyImport.snapshot(),
                                 new MinecraftStructureBlockStateTransform(world),
                                 new AxiomClientWorldStateSource(world),
-                                AxiomStructureAuxiliary.contextFor(selected.snapshot(), world),
+                                AxiomStructureAuxiliary.contextFor(applyImport.snapshot(), world),
                                 runtime.history(),
                                 estimateBytes,
                                 cancellation.token()
@@ -390,8 +397,13 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         idleStatus = "Mutation started";
     }
 
-    private long estimatedHistoryBytes() {
-        StructureSnapshot snapshot = selected.snapshot();
+    private SpongeSchematicImport applyImport() {
+        return AxiomStructureAuxiliary.importForApply(
+                selected,
+                stripBlockEntitiesOnApply[0] != 0);
+    }
+
+    private long estimatedHistoryBytes(StructureSnapshot snapshot) {
         long instances = placements.size();
         long total = OperationPreflight.multiply(
                 snapshot.blockCount(), instances, "spline schematic block estimate");

@@ -75,6 +75,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private final int[] useCatalogPalette = {0};
     private final int[] sameBiome = {0};
     private final int[] seedValue = {424242};
+    private final int[] stripBlockEntitiesOnApply = {0};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
@@ -131,7 +132,8 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     public void displayImguiOptions() {
         ImGui.textWrapped("Distribute supported .schem files as Array or Scatter. "
                 + "Both single-source and catalog-palette modes can include negotiated "
-                + "BIOME/ENTITY payloads; block-entity schematics stay excluded.");
+                + "BIOME/ENTITY payloads. Block-entity schematics require the explicit "
+                + "lossy strip toggle until generic BLOCK_ENTITY authority exists.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -160,6 +162,16 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         changed |= ImGui.sliderInt("Use Catalog Palette", useCatalogPalette, 0, 1);
         changed |= ImGui.sliderInt("Match Origin Biome", sameBiome, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
+        boolean stripChanged = ImGui.sliderInt(
+                "Strip Block Entity Payloads On Apply (Lossy)",
+                stripBlockEntitiesOnApply,
+                0,
+                1);
+        changed |= stripChanged;
+        if (stripChanged) {
+            reload();
+            return;
+        }
         if (useCatalogPalette[0] != 0) {
             ImGui.textWrapped("Authority-compatible palette sources: " + supportedCatalog.size());
         }
@@ -236,7 +248,6 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                 SpongeSchematicImport imported = catalog.load(entries.get(selectedIndex));
                 com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
                         .requireNotFuture(imported.dataVersion());
-                AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
                 selected = imported;
             }
             clearPreview();
@@ -324,7 +335,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         List<StructurePreviewPoints.Instance> instances = new ArrayList<>(entries.size());
         for (PlacementPlanEntry entry : entries) {
             instances.add(new StructurePreviewPoints.Instance(
-                    requireSource(entry.sourceId()).snapshot(),
+                    applyImport(requireSource(entry.sourceId())).snapshot(),
                     StructurePlacementAdapter.from(entry)
             ));
         }
@@ -365,9 +376,8 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         ClientWorld world = requireWorld();
         for (PlacementPlanEntry entry : placements) {
             AxiomSchematicCompatibility.validateForApply(
-                    requireSource(entry.sourceId()), world);
+                    applyImport(requireSource(entry.sourceId())), world);
         }
-        AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(placements);
 
@@ -376,7 +386,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             prepared = PlacementStructureMutationPreparer.prepareBlocks(
                     UUID.randomUUID().toString(),
                     placements,
-                    id -> requireSource(id).snapshot(),
+                    id -> applyImport(requireSource(id)).snapshot(),
                     new MinecraftStructureBlockStateTransform(world),
                     new AxiomClientWorldStateSource(world),
                     runtime.history(),
@@ -387,7 +397,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             prepared = PlacementStructureMutationPreparer.prepareAll(
                     UUID.randomUUID().toString(),
                     placements,
-                    id -> requireSource(id).snapshot(),
+                    id -> applyImport(requireSource(id)).snapshot(),
                     new MinecraftStructureBlockStateTransform(world),
                     new AxiomClientWorldStateSource(world),
                     AxiomStructureAuxiliary.contextForAuthorities(world),
@@ -405,7 +415,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     private boolean requiresAuxiliary(List<PlacementPlanEntry> entries) {
         for (PlacementPlanEntry entry : entries) {
-            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
+            StructureSnapshot snapshot = applyImport(requireSource(entry.sourceId())).snapshot();
             if (snapshot.biomeCount() != 0 || snapshot.entityCount() != 0) {
                 return true;
             }
@@ -416,7 +426,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private long estimatedHistoryBytes(List<PlacementPlanEntry> entries) {
         long total = 0L;
         for (PlacementPlanEntry entry : entries) {
-            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
+            StructureSnapshot snapshot = applyImport(requireSource(entry.sourceId())).snapshot();
             total = Math.addExact(total, Math.multiplyExact(snapshot.blockCount(), 96L));
             total = Math.addExact(total, Math.multiplyExact((long) snapshot.biomeCount(), 192L));
             total = Math.addExact(total, Math.multiplyExact((long) snapshot.entityCount(), 256L));
@@ -447,6 +457,12 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         return new WeightedPlacementSource(weighted, 0x50414c455454454cL);
     }
 
+    private SpongeSchematicImport applyImport(SpongeSchematicImport source) {
+        return AxiomStructureAuxiliary.importForApply(
+                source,
+                stripBlockEntitiesOnApply[0] != 0);
+    }
+
     private SpongeSchematicImport requireSource(String sourceId) {
         SpongeSchematicImport imported;
         if (useCatalogPalette[0] != 0) {
@@ -473,7 +489,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         for (PlacementPlanEntry entry : entries) {
             total = Math.addExact(
                     total,
-                    requireSource(entry.sourceId()).snapshot().blockCount()
+                    applyImport(requireSource(entry.sourceId())).snapshot().blockCount()
             );
         }
         return total;
@@ -489,7 +505,9 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                 imported = catalog.load(entry);
                 com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
                         .requireNotFuture(imported.dataVersion());
-                AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
+                AxiomStructureAuxiliary.snapshotForApply(
+                        imported.snapshot(),
+                        stripBlockEntitiesOnApply[0] != 0);
             } catch (IllegalArgumentException unsupported) {
                 continue;
             }
