@@ -67,6 +67,7 @@ public final class FrameMonitor {
      */
     public void pauseFrameClock() {
         previousFrameNanos = Long.MIN_VALUE;
+        currentFrameNanos = 0L;
     }
 
     void recordFrameTimeMs(double frameTimeMs) {
