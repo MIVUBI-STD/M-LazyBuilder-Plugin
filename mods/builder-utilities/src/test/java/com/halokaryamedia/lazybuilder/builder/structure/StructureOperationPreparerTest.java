@@ -40,6 +40,8 @@ class StructureOperationPreparerTest {
         )) {
             assertEquals(2, prepared.plannedChanges());
             assertEquals(2, prepared.changeSet().changeCount());
+            assertEquals(0, prepared.extensionChanges());
+            assertEquals(true, prepared.blockOnly());
         }
     }
 }

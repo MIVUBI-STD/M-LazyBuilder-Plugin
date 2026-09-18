@@ -5,18 +5,32 @@ import com.halokaryamedia.lazybuilder.builder.mutation.PreparedBlockMutation;
 
 import java.util.Objects;
 
+/**
+ * Durable prepared structure mutation. Extension frames are preserved here even
+ * when the current Axiom public mutation adapter can only execute block-only plans.
+ */
 public record PreparedStructureMutation(
         StoredChangeSet changeSet,
-        long plannedChanges
+        long plannedChanges,
+        long extensionChanges
 ) implements PreparedBlockMutation {
+    public PreparedStructureMutation(StoredChangeSet changeSet, long plannedChanges) {
+        this(changeSet, plannedChanges, Objects.requireNonNull(changeSet, "changeSet").extensionCount());
+    }
+
     public PreparedStructureMutation {
         Objects.requireNonNull(changeSet, "changeSet");
         if (plannedChanges < 0) throw new IllegalArgumentException("plannedChanges must be >= 0");
+        if (extensionChanges < 0) throw new IllegalArgumentException("extensionChanges must be >= 0");
         if (changeSet.changeCount() != plannedChanges) {
             throw new IllegalArgumentException("Stored changeset count does not match plannedChanges");
         }
-        if (changeSet.extensionCount() != 0) {
-            throw new IllegalArgumentException("PreparedStructureMutation is block-only");
+        if (changeSet.extensionCount() != extensionChanges) {
+            throw new IllegalArgumentException("Stored extension count does not match extensionChanges");
         }
+    }
+
+    public boolean blockOnly() {
+        return extensionChanges == 0;
     }
 }

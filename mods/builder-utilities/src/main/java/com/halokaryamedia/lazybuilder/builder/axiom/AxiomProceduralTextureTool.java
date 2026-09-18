@@ -217,7 +217,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         BuilderMaterial active =
                 new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
         ScalarField field = AxiomTextureFields.create(
-                fieldMode[0], world, frequency[0], octaves[0]);
+                fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
         BuilderMaterial material = new ConditionalMaterial(
                 field,
                 threshold[0],
