@@ -43,6 +43,10 @@ public final class BuilderRetirementReadiness {
         long proofSnapshots = persisted.snapshotCount();
         List<String> blockers = new ArrayList<>();
 
+        if (!runtime.proofStore().buildFingerprint().startsWith("sha256:")) {
+            blockers.add("runtime proof is not bound to a packaged Builder artifact");
+        }
+
         int activeOperations = runtime.activeOperationCount();
         if (activeOperations > 0) {
             blockers.add("active Builder operations=" + activeOperations);
