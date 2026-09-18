@@ -184,11 +184,13 @@ public final class AxiomRecoveryTool implements CustomTool {
     }
 
     private void resumeSelected(RecoveredHistoryEntry entry) {
+        boolean transferred = false;
         try {
             ClientWorld world = requireWorld();
             var prepared = entry.blockOnly()
                     ? entry.transferForResume()
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
+            transferred = true;
             CancellationSource cancellation = new CancellationSource();
             long estimate = Math.max(
                     1L,
@@ -199,6 +201,13 @@ public final class AxiomRecoveryTool implements CustomTool {
             removeEntry(entry);
             status = "Recovery resume started";
         } catch (Exception e) {
+            if (transferred) {
+                try {
+                    entry.reclaimAfterFailedStart();
+                } catch (RuntimeException reclaimFailure) {
+                    e.addSuppressed(reclaimFailure);
+                }
+            }
             status = "Recovery resume failed: " + safeMessage(e);
         }
     }
@@ -228,11 +237,13 @@ public final class AxiomRecoveryTool implements CustomTool {
     }
 
     private void rollbackSelected(RecoveredHistoryEntry entry) {
+        boolean transferred = false;
         try {
             ClientWorld world = requireWorld();
             var prepared = entry.blockOnly()
                     ? entry.transferForResume()
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
+            transferred = true;
             CancellationSource cancellation = new CancellationSource();
             long estimate = Math.max(
                     1L,
@@ -244,6 +255,13 @@ public final class AxiomRecoveryTool implements CustomTool {
             removeEntry(entry);
             status = "Recovery rollback started";
         } catch (Exception e) {
+            if (transferred) {
+                try {
+                    entry.reclaimAfterFailedStart();
+                } catch (RuntimeException reclaimFailure) {
+                    e.addSuppressed(reclaimFailure);
+                }
+            }
             status = "Recovery rollback failed to start: " + safeMessage(e);
         }
     }
