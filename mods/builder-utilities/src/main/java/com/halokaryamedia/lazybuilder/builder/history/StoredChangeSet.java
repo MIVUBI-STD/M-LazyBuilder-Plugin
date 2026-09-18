@@ -20,6 +20,9 @@ public interface StoredChangeSet extends AutoCloseable {
      */
     void visitChunks(ChunkChangeSetVisitor visitor) throws IOException;
 
+    /** Streams opaque extension frames while still validating the complete committed stream. */
+    void visitExtensions(HistoryExtensionVisitor visitor) throws IOException;
+
     default void replay(ReplayDirection direction, BlockChangeConsumer consumer) throws IOException {
         replayAll(direction, HistoryReplayConsumer.blocksOnly(consumer));
     }

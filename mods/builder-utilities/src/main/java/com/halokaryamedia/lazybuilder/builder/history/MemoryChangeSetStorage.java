@@ -146,6 +146,15 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
             }
         }
 
+        @Override
+        public void visitExtensions(HistoryExtensionVisitor visitor) throws IOException {
+            try (java.io.InputStream input = inputFactory.apply(bytes)) {
+                validate(ChangeSetCodec.visitExtensions(input, visitor));
+            } catch (HistoryReadException e) {
+                throw e.ioCause();
+            }
+        }
+
         private void validate(ChangeSetCodec.Header header) throws IOException {
             if (!header.operationId().equals(operationId)
                     || header.changeCount() != changeCount

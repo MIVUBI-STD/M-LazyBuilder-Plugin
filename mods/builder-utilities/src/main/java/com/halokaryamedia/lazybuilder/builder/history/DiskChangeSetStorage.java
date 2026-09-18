@@ -221,6 +221,13 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             }
         }
 
+        @Override
+        public void visitExtensions(HistoryExtensionVisitor visitor) throws IOException {
+            try (InputStream input = Files.newInputStream(path)) {
+                validate(ChangeSetCodec.visitExtensions(input, visitor));
+            }
+        }
+
         private void validate(ChangeSetCodec.Header header) throws IOException {
             if (!header.operationId().equals(operationId)
                     || header.changeCount() != changeCount

@@ -131,6 +131,48 @@ public final class ChangeSetCodec {
         }
     }
 
+    public static Header visitExtensions(InputStream input, HistoryExtensionVisitor visitor) throws IOException {
+        Objects.requireNonNull(visitor, "visitor");
+        ScanContext context = openInput(input);
+        DataInputStream data = context.data;
+        long observedChanges = 0;
+        long observedExtensions = 0;
+        boolean callbacksEnabled = true;
+        Set<Long> seenChunks = new HashSet<>();
+        Set<ExtensionKey> seenExtensions = new HashSet<>();
+
+        try {
+            while (true) {
+                int marker = data.readUnsignedByte();
+                if (marker == COMMIT_MARKER) {
+                    long committedChanges = data.readLong();
+                    long committedExtensions = data.readLong();
+                    verifyFooter(context, committedChanges, committedExtensions,
+                            observedChanges, observedExtensions);
+                    return new Header(context.header.operationId, observedChanges, observedExtensions);
+                }
+                if (marker == CHUNK_MARKER) {
+                    ChunkChangeSet chunk = readChunk(data);
+                    requireUniqueChunk(seenChunks, chunk.chunkX(), chunk.chunkZ());
+                    observedChanges = Math.addExact(observedChanges, chunk.size());
+                    continue;
+                }
+                if (marker == EXTENSION_MARKER) {
+                    HistoryExtensionFrame frame = readExtension(data);
+                    requireUniqueExtension(seenExtensions, frame);
+                    observedExtensions = Math.addExact(observedExtensions, 1);
+                    if (callbacksEnabled) callbacksEnabled = visitor.visit(frame);
+                    continue;
+                }
+                throw new IOException("Unknown History v2 frame marker: " + marker);
+            }
+        } catch (EOFException e) {
+            throw incomplete(e);
+        } catch (ArithmeticException e) {
+            throw new IOException("History count overflow", e);
+        }
+    }
+
     private static ScanContext openInput(InputStream input) throws IOException {
         CRC32 crc = new CRC32();
         CheckedInputStream checked = new CheckedInputStream(Objects.requireNonNull(input, "input"), crc);
