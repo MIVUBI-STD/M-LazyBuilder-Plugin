@@ -6,7 +6,11 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
+import org.bukkit.Location;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
@@ -15,14 +19,17 @@ import java.io.IOException;
 final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener {
     static final String PERMISSION = "lazybuilder.utilities.builder-extension";
     private static final int SERVER_CAPABILITIES =
-            BuilderExtensionWireProtocol.CAPABILITY_BIOME;
+            BuilderExtensionWireProtocol.CAPABILITY_BIOME
+                    | BuilderExtensionWireProtocol.CAPABILITY_ENTITY;
     private static final int MAX_BATCH =
             BuilderExtensionWireProtocol.MAX_BATCH_ENTRIES;
 
     private final UtilitiesManagerPlugin plugin;
+    private final NamespacedKey entityMarkerKey;
 
     PaperBuilderExtensionPayloadAdapter(UtilitiesManagerPlugin plugin) {
         this.plugin = plugin;
+        this.entityMarkerKey = new NamespacedKey(plugin, "builder_entity_marker");
     }
 
     void start() {
@@ -66,15 +73,24 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        BuilderExtensionWireProtocol.ApplyBiomeBatch batch =
-                (BuilderExtensionWireProtocol.ApplyBiomeBatch) request;
         if (!player.hasPermission(PERMISSION)) {
+            String operationId =
+                    request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch biome
+                            ? biome.operationId()
+                            : ((BuilderExtensionWireProtocol.ApplyEntityBatch) request).operationId();
             send(player, new BuilderExtensionWireProtocol.Error(
-                    batch.operationId(), "permission denied"));
+                    operationId, "permission denied"));
             return;
         }
 
-        Runnable apply = () -> applyBiomeBatch(player, batch);
+        Runnable apply;
+        if (request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch batch) {
+            apply = () -> applyBiomeBatch(player, batch);
+        } else {
+            BuilderExtensionWireProtocol.ApplyEntityBatch batch =
+                    (BuilderExtensionWireProtocol.ApplyEntityBatch) request;
+            apply = () -> applyEntityBatch(player, batch);
+        }
         if (Bukkit.isPrimaryThread()) apply.run();
         else plugin.getServer().getScheduler().runTask(plugin, apply);
     }
@@ -138,6 +154,130 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
         }
 
         send(player, BuilderExtensionWireProtocol.BatchResult.completed(
+                batch.operationId(), processed));
+    }
+
+    private void applyEntityBatch(
+            Player player,
+            BuilderExtensionWireProtocol.ApplyEntityBatch batch
+    ) {
+        World world = player.getWorld();
+        if (!world.getKey().toString().equals(batch.dimensionId())) {
+            send(player, new BuilderExtensionWireProtocol.Error(
+                    batch.operationId(),
+                    "player changed dimension before entity batch execution"));
+            return;
+        }
+
+        int processed = 0;
+        for (int i = 0; i < batch.entries().size(); i++) {
+            BuilderExtensionWireProtocol.EntityMutation mutation =
+                    batch.entries().get(i);
+            Location location = new Location(
+                    world,
+                    mutation.x(),
+                    mutation.y(),
+                    mutation.z(),
+                    mutation.yaw(),
+                    mutation.pitch()
+            );
+
+            var nearby = world.getNearbyEntities(
+                    location,
+                    0.125,
+                    0.125,
+                    0.125,
+                    entity -> !(entity instanceof Player));
+            var marked = nearby.stream()
+                    .filter(entity -> mutation.markerId().equals(
+                            entity.getPersistentDataContainer().get(
+                                    entityMarkerKey, PersistentDataType.STRING)))
+                    .toList();
+
+            if (mutation.afterPresent()) {
+                if (marked.size() == 1) {
+                    processed++;
+                    continue;
+                }
+                if (marked.size() > 1 || !nearby.isEmpty()) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), processed, i,
+                            "entity target slot occupied"));
+                    return;
+                }
+
+                final org.bukkit.entity.EntitySnapshot snapshot;
+                try {
+                    snapshot = Bukkit.getEntityFactory()
+                            .createEntitySnapshot(mutation.templateSnbt());
+                } catch (IllegalArgumentException e) {
+                    send(player, new BuilderExtensionWireProtocol.Error(
+                            batch.operationId(),
+                            "invalid entity snapshot: " + concise(e)));
+                    return;
+                }
+                if (snapshot.getEntityType() == EntityType.PLAYER) {
+                    send(player, new BuilderExtensionWireProtocol.Error(
+                            batch.operationId(), "player entities cannot be spawned"));
+                    return;
+                }
+
+                Entity entity = snapshot.createEntity(world);
+                entity.getPersistentDataContainer().set(
+                        entityMarkerKey,
+                        PersistentDataType.STRING,
+                        mutation.markerId()
+                );
+                if (!entity.spawnAt(location)) {
+                    send(player, new BuilderExtensionWireProtocol.Error(
+                            batch.operationId(), "entity spawn was rejected"));
+                    return;
+                }
+
+                long verified = world.getNearbyEntities(
+                                location, 0.125, 0.125, 0.125,
+                                candidate -> !(candidate instanceof Player))
+                        .stream()
+                        .filter(candidate -> mutation.markerId().equals(
+                                candidate.getPersistentDataContainer().get(
+                                        entityMarkerKey, PersistentDataType.STRING)))
+                        .count();
+                if (verified != 1) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), processed, i,
+                            "spawned entity marker verification failed"));
+                    return;
+                }
+            } else {
+                if (marked.isEmpty()) {
+                    processed++;
+                    continue;
+                }
+                if (marked.size() != 1) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), processed, i,
+                            "multiple Builder-owned entities occupy target slot"));
+                    return;
+                }
+                marked.get(0).remove();
+                boolean remains = world.getNearbyEntities(
+                                location, 0.125, 0.125, 0.125,
+                                candidate -> !(candidate instanceof Player))
+                        .stream()
+                        .anyMatch(candidate -> mutation.markerId().equals(
+                                candidate.getPersistentDataContainer().get(
+                                        entityMarkerKey, PersistentDataType.STRING)));
+                if (remains) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), processed, i,
+                            "entity removal verification failed"));
+                    return;
+                }
+            }
+            processed++;
+        }
+
+        send(player, BuilderExtensionWireProtocol.EntityBatchResult.completed(
                 batch.operationId(), processed));
     }
 

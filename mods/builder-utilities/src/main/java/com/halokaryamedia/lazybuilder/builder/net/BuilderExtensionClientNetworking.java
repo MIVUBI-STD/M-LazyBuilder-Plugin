@@ -67,6 +67,25 @@ public final class BuilderExtensionClientNetworking {
         PENDING.remove(operationId);
     }
 
+    public static void sendEntityBatch(
+            BuilderExtensionWireProtocol.ApplyEntityBatch batch,
+            Consumer<BuilderExtensionWireProtocol.Response> callback
+    ) throws IOException {
+        Objects.requireNonNull(batch, "batch");
+        Objects.requireNonNull(callback, "callback");
+        BuilderExtensionCapabilities capabilities = CAPABILITIES.get();
+        if (!capabilities.supportsEntity()) {
+            throw new IllegalStateException(
+                    "Server does not advertise Builder ENTITY authority");
+        }
+        if (batch.entries().size() > capabilities.maxBatchEntries()) {
+            throw new IllegalArgumentException(
+                    "Entity batch exceeds negotiated server limit "
+                            + capabilities.maxBatchEntries());
+        }
+        sendOperationRequest(batch.operationId(), batch, callback);
+    }
+
     public static void sendBiomeBatch(
             BuilderExtensionWireProtocol.ApplyBiomeBatch batch,
             Consumer<BuilderExtensionWireProtocol.Response> callback
@@ -83,16 +102,23 @@ public final class BuilderExtensionClientNetworking {
                     "Biome batch exceeds negotiated server limit "
                             + capabilities.maxBatchEntries());
         }
-        if (PENDING.putIfAbsent(batch.operationId(), callback) != null) {
+        sendOperationRequest(batch.operationId(), batch, callback);
+    }
+
+    private static void sendOperationRequest(
+            String operationId,
+            BuilderExtensionWireProtocol.Request request,
+            Consumer<BuilderExtensionWireProtocol.Response> callback
+    ) throws IOException {
+        if (PENDING.putIfAbsent(operationId, callback) != null) {
             throw new IllegalStateException(
-                    "Operation already has a pending extension request: "
-                            + batch.operationId());
+                    "Operation already has a pending extension request: " + operationId);
         }
         try {
             ClientPlayNetworking.send(new BuilderExtensionPayload(
-                    BuilderExtensionWireProtocol.encodeRequest(batch)));
+                    BuilderExtensionWireProtocol.encodeRequest(request)));
         } catch (RuntimeException | IOException failure) {
-            PENDING.remove(batch.operationId());
+            PENDING.remove(operationId);
             throw failure;
         }
     }
@@ -145,6 +171,8 @@ public final class BuilderExtensionClientNetworking {
 
             String operationId;
             if (response instanceof BuilderExtensionWireProtocol.BatchResult result) {
+                operationId = result.operationId();
+            } else if (response instanceof BuilderExtensionWireProtocol.EntityBatchResult result) {
                 operationId = result.operationId();
             } else {
                 operationId =

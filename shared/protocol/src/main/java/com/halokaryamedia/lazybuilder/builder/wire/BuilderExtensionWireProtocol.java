@@ -23,8 +23,8 @@ public final class BuilderExtensionWireProtocol {
 
     private BuilderExtensionWireProtocol() {}
 
-    public sealed interface Request permits CapabilitiesRequest, ApplyBiomeBatch {}
-    public sealed interface Response permits Capabilities, BatchResult, Error {}
+    public sealed interface Request permits CapabilitiesRequest, ApplyBiomeBatch, ApplyEntityBatch {}
+    public sealed interface Response permits Capabilities, BatchResult, EntityBatchResult, Error {}
 
     public record CapabilitiesRequest(String requestId) implements Request {
         public CapabilitiesRequest { requireId(requestId, "requestId"); }
@@ -58,6 +58,51 @@ public final class BuilderExtensionWireProtocol {
                         "biome batch entry count must be in 1.." + MAX_BATCH_ENTRIES);
             }
             for (BiomeMutation entry : entries) Objects.requireNonNull(entry, "entry");
+        }
+    }
+
+    public record EntityMutation(
+            String markerId,
+            double x,
+            double y,
+            double z,
+            float yaw,
+            float pitch,
+            boolean beforePresent,
+            boolean afterPresent,
+            String templateSnbt
+    ) {
+        public EntityMutation {
+            requireId(markerId, "markerId");
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                    || !Float.isFinite(yaw) || !Float.isFinite(pitch)) {
+                throw new IllegalArgumentException("entity mutation coordinates/rotation must be finite");
+            }
+            if (beforePresent == afterPresent) {
+                throw new IllegalArgumentException("entity mutation must toggle presence");
+            }
+            templateSnbt = Objects.requireNonNull(templateSnbt, "templateSnbt");
+            if (templateSnbt.isBlank() || templateSnbt.length() > 32768) {
+                throw new IllegalArgumentException("entity template SNBT is invalid");
+            }
+        }
+    }
+
+    public record ApplyEntityBatch(
+            String operationId,
+            String dimensionId,
+            List<EntityMutation> entries
+    ) implements Request {
+        public ApplyEntityBatch {
+            requireId(operationId, "operationId");
+            dimensionId = requireResourceId(dimensionId, "dimensionId");
+            Objects.requireNonNull(entries, "entries");
+            entries = List.copyOf(entries);
+            if (entries.isEmpty() || entries.size() > MAX_BATCH_ENTRIES) {
+                throw new IllegalArgumentException(
+                        "entity batch entry count must be in 1.." + MAX_BATCH_ENTRIES);
+            }
+            for (EntityMutation entry : entries) Objects.requireNonNull(entry, "entry");
         }
     }
 
@@ -134,6 +179,48 @@ public final class BuilderExtensionWireProtocol {
         }
     }
 
+    public record EntityBatchResult(
+            String operationId,
+            BatchState state,
+            int processedEntries,
+            int conflictIndex,
+            String detail
+    ) implements Response {
+        public EntityBatchResult {
+            requireId(operationId, "operationId");
+            Objects.requireNonNull(state, "state");
+            if (processedEntries < 0 || processedEntries > MAX_BATCH_ENTRIES) {
+                throw new IllegalArgumentException("processedEntries out of range");
+            }
+            if (state == BatchState.COMPLETED) {
+                if (conflictIndex != -1 || detail != null) {
+                    throw new IllegalArgumentException(
+                            "COMPLETED entity result cannot contain conflict detail");
+                }
+            } else {
+                if (conflictIndex < 0 || conflictIndex >= MAX_BATCH_ENTRIES) {
+                    throw new IllegalArgumentException("conflictIndex out of range");
+                }
+                detail = safeText(detail, 320);
+            }
+        }
+
+        public static EntityBatchResult completed(String operationId, int processedEntries) {
+            return new EntityBatchResult(
+                    operationId, BatchState.COMPLETED, processedEntries, -1, null);
+        }
+
+        public static EntityBatchResult conflict(
+                String operationId,
+                int processedEntries,
+                int conflictIndex,
+                String detail
+        ) {
+            return new EntityBatchResult(
+                    operationId, BatchState.CONFLICT, processedEntries, conflictIndex, detail);
+        }
+    }
+
     public record Error(String operationId, String message) implements Response {
         public Error {
             operationId = operationId == null || operationId.isBlank()
@@ -175,6 +262,29 @@ public final class BuilderExtensionWireProtocol {
                     }
                     yield new ApplyBiomeBatch(operationId, dimensionId, entries);
                 }
+                case 3 -> {
+                    String operationId = readString(in, 160);
+                    String dimensionId = readString(in, 128);
+                    int count = in.readUnsignedShort();
+                    if (count <= 0 || count > MAX_BATCH_ENTRIES) {
+                        throw new IOException("invalid entity batch count");
+                    }
+                    List<EntityMutation> entries = new ArrayList<>(count);
+                    for (int i = 0; i < count; i++) {
+                        entries.add(new EntityMutation(
+                                readString(in, 160),
+                                in.readDouble(),
+                                in.readDouble(),
+                                in.readDouble(),
+                                in.readFloat(),
+                                in.readFloat(),
+                                in.readBoolean(),
+                                in.readBoolean(),
+                                readLargeString(in, 32768)
+                        ));
+                    }
+                    yield new ApplyEntityBatch(operationId, dimensionId, entries);
+                }
                 default -> throw new IOException("unknown Builder extension request");
             };
             requireExhausted(in);
@@ -202,6 +312,16 @@ public final class BuilderExtensionWireProtocol {
                             operationId, state, processed, conflictIndex, actual);
                 }
                 case 3 -> new Error(readString(in, 160), readString(in, 320));
+                case 4 -> {
+                    String operationId = readString(in, 160);
+                    BatchState state = enumValue(
+                            BatchState.values(), in.readUnsignedByte(), "entity batch state");
+                    int processed = in.readUnsignedShort();
+                    int conflictIndex = in.readInt();
+                    String detail = readNullableString(in, 320);
+                    yield new EntityBatchResult(
+                            operationId, state, processed, conflictIndex, detail);
+                }
                 default -> throw new IOException("unknown Builder extension response");
             };
             requireExhausted(in);
@@ -231,6 +351,24 @@ public final class BuilderExtensionWireProtocol {
             }
             return;
         }
+        if (request instanceof ApplyEntityBatch batch) {
+            out.writeByte(3);
+            writeString(out, batch.operationId());
+            writeString(out, batch.dimensionId());
+            out.writeShort(batch.entries().size());
+            for (EntityMutation entry : batch.entries()) {
+                writeString(out, entry.markerId());
+                out.writeDouble(entry.x());
+                out.writeDouble(entry.y());
+                out.writeDouble(entry.z());
+                out.writeFloat(entry.yaw());
+                out.writeFloat(entry.pitch());
+                out.writeBoolean(entry.beforePresent());
+                out.writeBoolean(entry.afterPresent());
+                writeLargeString(out, entry.templateSnbt(), 32768);
+            }
+            return;
+        }
         throw new IOException("unsupported Builder extension request");
     }
 
@@ -257,6 +395,15 @@ public final class BuilderExtensionWireProtocol {
             out.writeByte(3);
             writeString(out, error.operationId());
             writeString(out, error.message());
+            return;
+        }
+        if (response instanceof EntityBatchResult result) {
+            out.writeByte(4);
+            writeString(out, result.operationId());
+            out.writeByte(result.state().ordinal());
+            out.writeShort(result.processedEntries());
+            out.writeInt(result.conflictIndex());
+            writeNullableString(out, result.detail());
             return;
         }
         throw new IOException("unsupported Builder extension response");
@@ -324,6 +471,31 @@ public final class BuilderExtensionWireProtocol {
     private static String readNullableString(DataInputStream in, int maxChars)
             throws IOException {
         return in.readBoolean() ? readString(in, maxChars) : null;
+    }
+
+    private static void writeLargeString(
+            DataOutputStream out,
+            String value,
+            int maxBytes
+    ) throws IOException {
+        byte[] bytes = Objects.requireNonNull(value, "value")
+                .getBytes(StandardCharsets.UTF_8);
+        if (bytes.length == 0 || bytes.length > maxBytes || bytes.length > 0xffff) {
+            throw new IOException("large string size out of range");
+        }
+        out.writeShort(bytes.length);
+        out.write(bytes);
+    }
+
+    private static String readLargeString(DataInputStream in, int maxBytes)
+            throws IOException {
+        int size = in.readUnsignedShort();
+        if (size <= 0 || size > maxBytes) {
+            throw new IOException("large string size out of range");
+        }
+        byte[] bytes = in.readNBytes(size);
+        if (bytes.length != size) throw new EOFException();
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
     private static String safeText(String value, int maxChars) {
