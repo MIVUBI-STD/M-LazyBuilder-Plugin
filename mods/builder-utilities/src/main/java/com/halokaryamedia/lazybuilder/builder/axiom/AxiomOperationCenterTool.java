@@ -7,6 +7,9 @@ import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworki
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.Camera;
+import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix4f;
 
 import java.util.Objects;
 
@@ -14,7 +17,9 @@ import java.util.Objects;
 public final class AxiomOperationCenterTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Operation Center";
 
+    private final AxiomClientServices services;
     private final BuilderRuntime runtime;
+    private AxiomMixedHistoryReplayController replay;
     private String status = "Open a world, then refresh Builder status";
     private int scopedCommitted;
     private int scopedIncomplete;
@@ -23,7 +28,11 @@ public final class AxiomOperationCenterTool implements CustomTool {
     private long scopedExtensions;
     private String scopePreview = "<none>";
 
-    public AxiomOperationCenterTool(BuilderRuntime runtime) {
+    public AxiomOperationCenterTool(
+            AxiomClientServices services,
+            BuilderRuntime runtime
+    ) {
+        this.services = Objects.requireNonNull(services, "services");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
     }
 
@@ -31,11 +40,25 @@ public final class AxiomOperationCenterTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Read-only Builder status. Native Axiom remains the user-facing edit/history owner; "
-                + "these counters describe LazyBuilder's durable safety layer.");
+        ImGui.textWrapped("Builder status and mixed-history repair. Native Axiom remains the primary block history owner; LazyBuilder replay is exposed only when a timeline entry also contains non-block payloads.");
         ImGui.separator();
 
         if (ImGui.button("Refresh Builder Status")) refresh();
+
+        if (replay != null && !replay.finished()) {
+            ImGui.textWrapped("Mixed replay: " + replay.status());
+        } else {
+            var undoSummary = runtime.timeline().nextUndoSummary();
+            if (undoSummary.isPresent() && undoSummary.get().extensionCount() > 0
+                    && ImGui.button("Undo Last Mixed Builder Operation")) {
+                startUndo();
+            }
+            var redoSummary = runtime.timeline().nextRedoSummary();
+            if (redoSummary.isPresent() && redoSummary.get().extensionCount() > 0
+                    && ImGui.button("Redo Last Mixed Builder Operation")) {
+                startRedo();
+            }
+        }
 
         ImGui.textWrapped(status);
         ImGui.textWrapped("World scope: " + scopePreview);
@@ -78,6 +101,61 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + budget.maxChunksInFlight() + " chunks, "
                 + budget.maxPendingMutations() + " pending blocks, "
                 + budget.maxWorkingMemoryBytes() + " bytes working set");
+    }
+
+    @Override
+    public void render(
+            Camera camera,
+            float tickDelta,
+            long time,
+            MatrixStack poseStack,
+            Matrix4f projection
+    ) {
+        if (replay == null) return;
+        replay.pump();
+        if (replay.finished()) {
+            status = replay.status();
+            replay = null;
+            refresh();
+        }
+    }
+
+    @Override
+    public void reset() {
+        // Replay intentionally survives tool deselection.
+    }
+
+    private void startUndo() {
+        try {
+            replay = AxiomMixedHistoryReplayController.beginUndo(
+                    services, runtime, requireWorld());
+            status = "Mixed undo started";
+        } catch (Exception e) {
+            status = "Mixed undo failed to start: " + concise(e);
+        }
+    }
+
+    private void startRedo() {
+        try {
+            replay = AxiomMixedHistoryReplayController.beginRedo(
+                    services, runtime, requireWorld());
+            status = "Mixed redo started";
+        } catch (Exception e) {
+            status = "Mixed redo failed to start: " + concise(e);
+        }
+    }
+
+    private net.minecraft.client.world.ClientWorld requireWorld() {
+        return Objects.requireNonNull(
+                MinecraftClient.getInstance().world,
+                "Minecraft client world is unavailable");
+    }
+
+    private static String concise(Throwable failure) {
+        String message = failure.getMessage();
+        return message == null || message.isBlank()
+                ? failure.getClass().getSimpleName()
+                : message;
     }
 
     private void refresh() {

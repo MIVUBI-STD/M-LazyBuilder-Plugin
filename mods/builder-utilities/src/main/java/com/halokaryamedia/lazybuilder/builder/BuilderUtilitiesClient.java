@@ -36,7 +36,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomSchematicCatalogTool(services, runtime));
         services.toolRegistry().register(new AxiomSchematicDistributionTool(services, runtime));
         services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
-        services.toolRegistry().register(new AxiomOperationCenterTool(runtime));
+        services.toolRegistry().register(new AxiomOperationCenterTool(services, runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
         ClientPlayConnectionEvents.DISCONNECT.register(
                 (handler, client) -> resetWorldTimeline());
