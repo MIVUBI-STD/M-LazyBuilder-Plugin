@@ -36,9 +36,7 @@ if (-not ([string]$env:GRADLE_OPTS).Contains($GradleEnvironment.JavaTmpOption)) 
 $Managers = @(
     @{ Name = 'Map Manager'; Path = 'mods/map-manager' },
     @{ Name = 'Utility Manager'; Path = 'mods/utility-manager' },
-    @{ Name = 'Performance Manager'; Path = 'mods/performance-manager' },
-    @{ Name = 'Terraform Manager'; Path = 'mods/terraform-manager' },
-    @{ Name = 'Builder Utilities'; Path = 'mods/builder-utilities' }
+    @{ Name = 'Performance Manager'; Path = 'mods/performance-manager' }
 )
 
 Push-Location $RepoRoot
@@ -55,4 +53,4 @@ finally {
     Pop-Location
 }
 
-Write-Host 'PASS: required LazyBuilder Fabric client suite verified.' -ForegroundColor Green
+Write-Host 'PASS: required three-manager LazyBuilder Fabric core suite verified.' -ForegroundColor Green

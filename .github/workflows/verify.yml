@@ -215,7 +215,6 @@ jobs:
           Copy-Item "mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar" ".artifacts/client-mods/"
           Copy-Item "mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar" ".artifacts/client-mods/"
           Copy-Item "mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar" ".artifacts/client-mods/"
-          Copy-Item "mods/builder-utilities/build/libs/lazybuilder-builder-utilities-0.1.0-SNAPSHOT.jar" ".artifacts/client-mods/"
       - name: Verify packaged client mod contents
         shell: powershell
         run: .\tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1 -ClientModsDir ".artifacts\client-mods" -RepoRoot "."

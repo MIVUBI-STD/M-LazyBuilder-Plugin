@@ -28,7 +28,7 @@ V1 Client Setup / required runtime
 
 Builder development extension
 └── Builder Utilities
-    └── requires Axiom 5.3.0
+    └── requires Axiom >=5.3.0 <5.5.0
 
 Legacy/prototype terrain lane
 ├── mods/terraform-manager/

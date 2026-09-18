@@ -19,18 +19,13 @@ $AxiomRangeMatch = Select-String -Path $BuilderPropertiesPath -Pattern '^axiom_s
 if (-not $AxiomRangeMatch) { throw "Client artifact verification failed: missing axiom_supported_range" }
 $AxiomSupportedRange = $AxiomRangeMatch.Matches[0].Groups[1].Value.Trim()
 
-$AllExpected = @(
+$CoreExpected = @(
     [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
-    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
-    [pscustomobject]@{ File="lazybuilder-builder-utilities-$SnapshotVersion.jar"; Id='lazybuilder_builder_utilities'; Name='LazyBuilder Builder Utilities' }
+    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' }
 )
-$Expected = if ($OnlyBuilder) {
-    @($AllExpected | Where-Object { $_.Id -eq 'lazybuilder_builder_utilities' })
-} else {
-    @($AllExpected)
-}
-$Terraform = [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
+$BuilderExpected = [pscustomobject]@{ File="lazybuilder-builder-utilities-$SnapshotVersion.jar"; Id='lazybuilder_builder_utilities'; Name='LazyBuilder Builder Utilities' }
+$Expected = if ($OnlyBuilder) { @($BuilderExpected) } else { @($CoreExpected) }
 
 function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
 
@@ -95,7 +90,7 @@ function Verify-Jar($Spec) {
             if (-not $zip.GetEntry([string]$config)) { Fail "$($Spec.File) mixin config is missing: $config" }
         }
 
-        if ($Spec.Id -eq 'lazybuilder-terraform-manager' -or $Spec.Id -eq 'lazybuilder_builder_utilities') {
+        if ($Spec.Id -eq 'lazybuilder_builder_utilities') {
             if ([string]$metadata.depends.fabricloader -ne '>=0.16.10') { Fail "$($Spec.File) Fabric Loader contract drifted" }
             if ([string]$metadata.depends.minecraft -ne '1.21.4') { Fail "$($Spec.File) Minecraft contract drifted" }
             if ([string]$metadata.depends.java -ne '>=21') { Fail "$($Spec.File) Java contract drifted" }
@@ -127,17 +122,12 @@ function Verify-Jar($Spec) {
 $actual = @(Get-ChildItem $ClientModsDir -Filter '*.jar' -File | ForEach-Object Name | Sort-Object)
 $expectedNames = @($Expected | ForEach-Object File | Sort-Object)
 $missing = @($expectedNames | Where-Object { $_ -notin $actual })
-$allowed = if ($OnlyBuilder) { @($expectedNames) } else { @($expectedNames + $Terraform.File) }
-$unexpected = @($actual | Where-Object { $_ -notin $allowed })
+$unexpected = @($actual | Where-Object { $_ -notin $expectedNames })
 if ($missing.Count -gt 0) { Fail "missing required JARs: $($missing -join ', ')" }
 if ($unexpected.Count -gt 0) { Fail "unexpected client JARs: $($unexpected -join ', ')" }
 
 foreach ($spec in $Expected) { Verify-Jar $spec }
-if (-not $OnlyBuilder) {
-    $terraformPath = Join-Path $ClientModsDir $Terraform.File
-    if (Test-Path $terraformPath) { Verify-Jar $Terraform }
-}
-$scope = if ($OnlyBuilder) { 'Builder artifact' } else { 'Client artifacts' }
+$scope = if ($OnlyBuilder) { 'Builder artifact' } else { 'Core client artifacts' }
 Write-Host "$scope OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
 
 if (-not $AxiomRangeMatch) { throw "Client artifact verification failed: missing axiom_supported_range" }
