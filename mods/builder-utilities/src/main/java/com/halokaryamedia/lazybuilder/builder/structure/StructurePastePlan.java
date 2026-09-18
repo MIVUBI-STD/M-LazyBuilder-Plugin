@@ -18,6 +18,18 @@ public record StructurePastePlan(
     }
 
     public long blockChanges() {
+        long total = 0L;
+        for (ChunkChangeSet chunk : chunks) {
+            for (int i = 0; i < chunk.size(); i++) {
+                if (!chunk.beforeState(i).equals(chunk.afterState(i))) {
+                    total = Math.addExact(total, 1L);
+                }
+            }
+        }
+        return total;
+    }
+
+    public long historyBlockEntries() {
         return chunks.stream().mapToLong(ChunkChangeSet::size).sum();
     }
 
