@@ -452,20 +452,33 @@ public final class ClientMapSurfaceCache {
         if (regions.size() <= MAX_LOADED_REGIONS) return;
         Path directory = scopeDirectory;
         long generation = scopeGeneration;
-        Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
-        while (regions.size() > MAX_LOADED_REGIONS && iterator.hasNext()) {
-            Map.Entry<Long, RegionData> eldest = iterator.next();
-            RegionData region = eldest.getValue();
+
+        for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
+            if (regions.size() <= MAX_LOADED_REGIONS) break;
+            RegionData region = entry.getValue();
             if (region == activeCompletedRegion) continue;
-
             if (region.isDirty() && directory != null && region.shouldQueueWrite()) {
-                enqueueRegionWrite(directory, eldest.getKey(), region, region.snapshot(), generation);
+                enqueueRegionWrite(directory, entry.getKey(), region, region.snapshot(), generation);
             }
-            if (region.isDirty() || region.hasWritesInFlight()) continue;
+        }
 
-            residentSampleCount -= region.size();
+        residentSampleCount -= pruneCleanRegions(regions, MAX_LOADED_REGIONS, activeCompletedRegion);
+    }
+
+    static int pruneCleanRegions(
+            LinkedHashMap<Long, RegionData> regions,
+            int maxRegions,
+            RegionData activeRegion
+    ) {
+        int removedSamples = 0;
+        Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
+        while (regions.size() > maxRegions && iterator.hasNext()) {
+            RegionData region = iterator.next().getValue();
+            if (region == activeRegion || region.isDirty() || region.hasWritesInFlight()) continue;
+            removedSamples += region.size();
             iterator.remove();
         }
+        return removedSamples;
     }
 
     private void queueIfLoaded(ClientWorld world, int blockX, int blockZ, long key) {
