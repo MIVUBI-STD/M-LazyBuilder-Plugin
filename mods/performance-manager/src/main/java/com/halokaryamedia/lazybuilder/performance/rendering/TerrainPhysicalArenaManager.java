@@ -419,7 +419,12 @@ public final class TerrainPhysicalArenaManager {
                 invalidations,
                 relocations,
                 relocatedBytes,
-                relocationFallbacks
+                relocationFallbacks,
+                EXCLUSIVE_RESIDENTS.size(),
+                exclusiveRetiredBytes,
+                exclusivePromotions,
+                exclusiveRecoveries,
+                exclusiveRecoveryFailures
         );
     }
 
@@ -779,7 +784,12 @@ public final class TerrainPhysicalArenaManager {
             long invalidations,
             long relocations,
             long relocatedBytes,
-            long relocationFallbacks
+            long relocationFallbacks,
+            int exclusiveResidentBuffers,
+            long exclusiveRetiredBytes,
+            long exclusivePromotions,
+            long exclusiveRecoveries,
+            long exclusiveRecoveryFailures
     ) {
     }
 }
