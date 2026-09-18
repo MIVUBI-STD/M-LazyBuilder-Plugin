@@ -34,6 +34,29 @@ class StructureBlockEntityPlanTest {
     }
 
     @Test
+    void nbtOnlyBlockEntityChangeCarriesDurableBlockStateGuard() throws Exception {
+        StructureSnapshot snapshot = new StructureSnapshot(
+                List.of(new StructureBlock(0, 0, 0, "minecraft:chest")),
+                List.of(new StructureBlockEntity(0, 0, 0, new byte[]{2}))
+        );
+
+        StructurePastePlan plan = StructurePastePlanner.planWithBlockEntities(
+                snapshot,
+                new StructurePlacement(10, 64, 10, 0, false, false),
+                BlockStateTransform.identity(),
+                (x, y, z) -> "minecraft:chest",
+                (x, y, z) -> new byte[]{1},
+                BlockEntityPayloadTransform.identity()
+        );
+
+        assertEquals(1, plan.blockChanges());
+        var guardChunk = plan.chunks().get(0);
+        assertEquals("minecraft:chest", guardChunk.beforeState(0));
+        assertEquals("minecraft:chest", guardChunk.afterState(0));
+        assertEquals(1, plan.extensionChanges());
+    }
+
+    @Test
     void blockEntityMustBelongToExistingStructureBlock() {
         assertThrows(IllegalArgumentException.class, () -> new StructureSnapshot(
                 List.of(new StructureBlock(0, 0, 0, "minecraft:stone")),
