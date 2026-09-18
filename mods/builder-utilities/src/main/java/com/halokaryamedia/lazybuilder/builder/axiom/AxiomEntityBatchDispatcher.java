@@ -45,14 +45,12 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
             boolean undo
     ) {
         Objects.requireNonNull(stored, "stored");
-        this.cursor = StoredExtensionCursor.open(stored);
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
         this.dimensionId = Objects.requireNonNull(world, "world")
                 .getRegistryKey().getValue().toString();
         this.historyOperationId = stored.operationId();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsEntity()) {
-            cursor.close();
             throw new IllegalStateException(
                     "Server does not advertise Builder ENTITY authority");
         }
@@ -61,6 +59,7 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
         // handles the plugin-message ceiling independently.
         this.maxBatchEntries = 1;
         this.undo = undo;
+        this.cursor = StoredExtensionCursor.open(stored);
     }
 
     public synchronized EntityBatchDispatchProgress pump() throws IOException {
