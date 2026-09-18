@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
+import com.halokaryamedia.lazybuilder.client.MapAreaSelectionState.DragMode;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -73,13 +74,6 @@ public final class WorldMapScreen extends Screen {
     private TextFieldWidget exportNameField;
 
     private final MapAreaSelectionState areaSelection = new MapAreaSelectionState();
-    private DragMode selectionDrag = DragMode.NONE;
-    private int dragStartChunkX;
-    private int dragStartChunkZ;
-    private int dragMinChunkX;
-    private int dragMaxChunkX;
-    private int dragMinChunkZ;
-    private int dragMaxChunkZ;
 
     private boolean contextOpen;
     private int contextBlockX;
@@ -913,7 +907,7 @@ public final class WorldMapScreen extends Screen {
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (button != 0) return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-        if (areaSelection.active && selectionDrag != DragMode.NONE) {
+        if (areaSelection.active && areaSelection.dragging()) {
             int[] chunk = screenToChunk(mouseX, mouseY);
             if (chunk != null) updateSelectionDrag(chunk[0], chunk[1]);
             return true;
@@ -928,9 +922,9 @@ public final class WorldMapScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            boolean handled = camera.dragging || selectionDrag != DragMode.NONE;
+            boolean handled = camera.dragging || areaSelection.dragging();
             camera.dragging = false;
-            selectionDrag = DragMode.NONE;
+            areaSelection.endDrag();
             if (handled) return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
@@ -1034,7 +1028,7 @@ public final class WorldMapScreen extends Screen {
         exportWorkspace.scope(scope);
         if (scope == MapExportWorkspaceState.Scope.FULL_WORLD) {
             areaSelection.active = false;
-            selectionDrag = DragMode.NONE;
+            areaSelection.endDrag();
             camera.dragging = false;
             invalidateRasterViewport();
             return;
@@ -1063,7 +1057,7 @@ public final class WorldMapScreen extends Screen {
                 centerChunkX + after,
                 centerChunkZ - before,
                 centerChunkZ + after);
-        selectionDrag = DragMode.NONE;
+        areaSelection.endDrag();
         camera.dragging = false;
         contextOpen = false;
         invalidateRasterViewport();
@@ -1104,7 +1098,7 @@ public final class WorldMapScreen extends Screen {
 
     private void clearAreaSelection() {
         areaSelection.clear();
-        selectionDrag = DragMode.NONE;
+        areaSelection.endDrag();
         camera.dragging = false;
         contextOpen = false;
         invalidateRasterViewport();
@@ -1189,8 +1183,8 @@ public final class WorldMapScreen extends Screen {
 
         DragMode hover = hitSelection(mouseX, mouseY);
         for (Handle handle : handles(rect)) {
-            int radius = handle.mode == hover || handle.mode == selectionDrag ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
-            int color = handle.mode == hover || handle.mode == selectionDrag ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
+            int radius = handle.mode == hover || handle.mode == areaSelection.dragMode() ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
+            int color = handle.mode == hover || handle.mode == areaSelection.dragMode() ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
             context.fill(handle.x - radius, handle.y - radius, handle.x + radius + 1, handle.y + radius + 1, 0xAA10151C);
             context.fill(handle.x - radius + 2, handle.y - radius + 2,
                     handle.x + radius - 1, handle.y + radius - 1, color);
@@ -1205,44 +1199,11 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void beginSelectionDrag(DragMode mode, int chunkX, int chunkZ) {
-        selectionDrag = mode;
-        dragStartChunkX = chunkX;
-        dragStartChunkZ = chunkZ;
-        dragMinChunkX = areaSelection.minChunkX;
-        dragMaxChunkX = areaSelection.maxChunkX;
-        dragMinChunkZ = areaSelection.minChunkZ;
-        dragMaxChunkZ = areaSelection.maxChunkZ;
+        areaSelection.beginDrag(mode, chunkX, chunkZ);
     }
 
     private void updateSelectionDrag(int chunkX, int chunkZ) {
-        if (selectionDrag == DragMode.MOVE) {
-            int dx = chunkX - dragStartChunkX;
-            int dz = chunkZ - dragStartChunkZ;
-            areaSelection.minChunkX = dragMinChunkX + dx;
-            areaSelection.maxChunkX = dragMaxChunkX + dx;
-            areaSelection.minChunkZ = dragMinChunkZ + dz;
-            areaSelection.maxChunkZ = dragMaxChunkZ + dz;
-            return;
-        }
-        int x1 = dragMinChunkX;
-        int x2 = dragMaxChunkX;
-        int z1 = dragMinChunkZ;
-        int z2 = dragMaxChunkZ;
-        switch (selectionDrag) {
-            case NW -> { x1 = chunkX; z1 = chunkZ; }
-            case N -> z1 = chunkZ;
-            case NE -> { x2 = chunkX; z1 = chunkZ; }
-            case E -> x2 = chunkX;
-            case SE -> { x2 = chunkX; z2 = chunkZ; }
-            case S -> z2 = chunkZ;
-            case SW -> { x1 = chunkX; z2 = chunkZ; }
-            case W -> x1 = chunkX;
-            default -> { return; }
-        }
-        areaSelection.minChunkX = Math.min(x1, x2);
-        areaSelection.maxChunkX = Math.max(x1, x2);
-        areaSelection.minChunkZ = Math.min(z1, z2);
-        areaSelection.maxChunkZ = Math.max(z1, z2);
+        areaSelection.updateDrag(chunkX, chunkZ);
     }
 
     private DragMode hitSelection(double mouseX, double mouseY) {
@@ -1563,7 +1524,6 @@ public final class WorldMapScreen extends Screen {
         if (client != null) client.setScreen(null);
     }
 
-    private enum DragMode { NONE, MOVE, N, NE, E, SE, S, SW, W, NW }
     private record Handle(int x, int y, DragMode mode) {}
     private record SelectionRect(int left, int top, int right, int bottom) {}
     private record Rect(int left, int top, int right, int bottom) {
