@@ -2,8 +2,6 @@ package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.client.MapAreaSelectionState.DragMode;
-import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.Handle;
-import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.SelectionRect;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.world.ClientWorld;
@@ -30,12 +28,7 @@ public final class WorldMapScreen extends Screen {
     private static final int SAMPLE_BUDGET_PER_TICK = 4096;
     private static final int RASTER_CONTENT_REFRESH_TICKS = 4;
     private static final int CHUNK_BLOCKS = 16;
-    private static final int REGION_BLOCKS = 512;
     private static final int DEFAULT_SELECTION_CHUNKS = 8;
-    private static final int HANDLE_RADIUS = 5;
-    private static final int CHUNK_GRID_COLOR = 0x2EFFFFFF;
-    private static final int REGION_GRID_COLOR = 0x667F8FA3;
-    private static final int OUTSIDE_SELECTION_DIM = 0x48101418;
     private static final int MAX_FAVORITES = 5;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
@@ -61,6 +54,7 @@ public final class WorldMapScreen extends Screen {
     private UUID selectedWorldId;
 
     private final MapAreaSelectionState areaSelection = new MapAreaSelectionState();
+    private final MapAreaSelectionOverlay selectionOverlay = new MapAreaSelectionOverlay();
 
     private final MapContextMenuPanel contextMenu = new MapContextMenuPanel();
 
@@ -237,8 +231,12 @@ public final class WorldMapScreen extends Screen {
         context.fill(0, 0, width, height, LbUi.BACKGROUND);
         renderMap(context);
         if (areaSelection.active) {
-            renderSelectionGrid(context);
-            renderSelection(context, mouseX, mouseY);
+            selectionOverlay.render(
+                    context,
+                    areaSelection,
+                    selectionViewport(),
+                    mouseX,
+                    mouseY);
         }
         renderCursor(context, mouseX, mouseY);
         if (exportWorkspace.active()) renderExportSidebar(context, mouseX, mouseY);
@@ -951,76 +949,6 @@ public final class WorldMapScreen extends Screen {
         LazyBuilderClientNetworking.notifyPlayer("Location details copied.");
     }
 
-    private void renderSelectionGrid(DrawContext context) {
-        Bounds bounds = mapBounds();
-        double bpp = blocksPerPixel();
-        double chunkPixels = CHUNK_BLOCKS / bpp;
-        double regionPixels = REGION_BLOCKS / bpp;
-        double worldLeft = camera.centerX + (bounds.left - bounds.centerX()) * bpp;
-        double worldRight = camera.centerX + (bounds.right - bounds.centerX()) * bpp;
-        double worldTop = camera.centerZ + (bounds.top - bounds.centerY()) * bpp;
-        double worldBottom = camera.centerZ + (bounds.bottom - bounds.centerY()) * bpp;
-
-        if (chunkPixels >= 6.0) {
-            int firstChunkX = Math.floorDiv((int) Math.floor(worldLeft), CHUNK_BLOCKS) - 1;
-            int lastChunkX = Math.floorDiv((int) Math.ceil(worldRight), CHUNK_BLOCKS) + 1;
-            for (int chunkX = firstChunkX; chunkX <= lastChunkX; chunkX++) {
-                int x = worldToScreenX(chunkX * CHUNK_BLOCKS, bounds);
-                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 1, bounds.bottom, CHUNK_GRID_COLOR);
-            }
-            int firstChunkZ = Math.floorDiv((int) Math.floor(worldTop), CHUNK_BLOCKS) - 1;
-            int lastChunkZ = Math.floorDiv((int) Math.ceil(worldBottom), CHUNK_BLOCKS) + 1;
-            for (int chunkZ = firstChunkZ; chunkZ <= lastChunkZ; chunkZ++) {
-                int y = worldToScreenZ(chunkZ * CHUNK_BLOCKS, bounds);
-                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 1, CHUNK_GRID_COLOR);
-            }
-        }
-        if (regionPixels >= 8.0) {
-            int firstRegionX = Math.floorDiv((int) Math.floor(worldLeft), REGION_BLOCKS) - 1;
-            int lastRegionX = Math.floorDiv((int) Math.ceil(worldRight), REGION_BLOCKS) + 1;
-            for (int regionX = firstRegionX; regionX <= lastRegionX; regionX++) {
-                int x = worldToScreenX(regionX * REGION_BLOCKS, bounds);
-                if (x >= bounds.left && x < bounds.right) context.fill(x, bounds.top, x + 2, bounds.bottom, REGION_GRID_COLOR);
-            }
-            int firstRegionZ = Math.floorDiv((int) Math.floor(worldTop), REGION_BLOCKS) - 1;
-            int lastRegionZ = Math.floorDiv((int) Math.ceil(worldBottom), REGION_BLOCKS) + 1;
-            for (int regionZ = firstRegionZ; regionZ <= lastRegionZ; regionZ++) {
-                int y = worldToScreenZ(regionZ * REGION_BLOCKS, bounds);
-                if (y >= bounds.top && y < bounds.bottom) context.fill(bounds.left, y, bounds.right, y + 2, REGION_GRID_COLOR);
-            }
-        }
-    }
-
-    private void renderSelection(DrawContext context, int mouseX, int mouseY) {
-        SelectionRect rect = selectionRect();
-        if (rect == null) return;
-        Bounds bounds = mapBounds();
-        int left = Math.max(bounds.left, rect.left());
-        int right = Math.min(bounds.right, rect.right());
-        int top = Math.max(bounds.top, rect.top());
-        int bottom = Math.min(bounds.bottom, rect.bottom());
-        if (right <= left || bottom <= top) return;
-
-        if (top > bounds.top) context.fill(bounds.left, bounds.top, bounds.right, top, OUTSIDE_SELECTION_DIM);
-        if (bottom < bounds.bottom) context.fill(bounds.left, bottom, bounds.right, bounds.bottom, OUTSIDE_SELECTION_DIM);
-        if (left > bounds.left) context.fill(bounds.left, top, left, bottom, OUTSIDE_SELECTION_DIM);
-        if (right < bounds.right) context.fill(right, top, bounds.right, bottom, OUTSIDE_SELECTION_DIM);
-
-        context.fill(left, top, right, top + 2, LbUi.ACCENT_BRIGHT);
-        context.fill(left, bottom - 2, right, bottom, LbUi.ACCENT_BRIGHT);
-        context.fill(left, top, left + 2, bottom, LbUi.ACCENT_BRIGHT);
-        context.fill(right - 2, top, right, bottom, LbUi.ACCENT_BRIGHT);
-
-        DragMode hover = hitSelection(mouseX, mouseY);
-        for (Handle handle : MapAreaSelectionGeometry.handles(rect)) {
-            int radius = handle.mode() == hover || handle.mode() == areaSelection.dragMode() ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
-            int color = handle.mode() == hover || handle.mode() == areaSelection.dragMode() ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
-            context.fill(handle.x() - radius, handle.y() - radius, handle.x() + radius + 1, handle.y() + radius + 1, 0xAA10151C);
-            context.fill(handle.x() - radius + 2, handle.y() - radius + 2,
-                    handle.x() + radius - 1, handle.y() + radius - 1, color);
-        }
-    }
-
     private void renderCursor(DrawContext context, int mouseX, int mouseY) {
         if (contextMenu.isOpen() || !mapBounds().contains(mouseX, mouseY)) return;
         int color = areaSelection.active ? 0xBB8AA8FF : 0x667F8A98;
@@ -1037,21 +965,21 @@ public final class WorldMapScreen extends Screen {
     }
 
     private DragMode hitSelection(double mouseX, double mouseY) {
-        if (!areaSelection.active) return DragMode.NONE;
-        SelectionRect rect = selectionRect();
-        return rect == null
-                ? DragMode.NONE
-                : MapAreaSelectionGeometry.hit(rect, mouseX, mouseY, HANDLE_RADIUS);
+        return selectionOverlay.hit(areaSelection, selectionViewport(), mouseX, mouseY);
     }
 
-    private SelectionRect selectionRect() {
-        if (!areaSelection.active) return null;
+    private MapAreaSelectionOverlay.Viewport selectionViewport() {
         Bounds bounds = mapBounds();
-        int left = worldToScreenX(minBlockX(), bounds);
-        int right = worldToScreenX((areaSelection.maxChunkX + 1) * CHUNK_BLOCKS, bounds);
-        int top = worldToScreenZ(minBlockZ(), bounds);
-        int bottom = worldToScreenZ((areaSelection.maxChunkZ + 1) * CHUNK_BLOCKS, bounds);
-        return MapAreaSelectionGeometry.rect(left, top, right, bottom);
+        return new MapAreaSelectionOverlay.Viewport(
+                bounds.left,
+                bounds.top,
+                bounds.right,
+                bounds.bottom,
+                bounds.centerX(),
+                bounds.centerY(),
+                camera.centerX,
+                camera.centerZ,
+                blocksPerPixel());
     }
 
     private int minBlockX() { return areaSelection.minBlockX(CHUNK_BLOCKS); }
@@ -1125,14 +1053,6 @@ public final class WorldMapScreen extends Screen {
         int[] world = screenToWorld(mouseX, mouseY);
         if (world == null) return null;
         return new int[]{Math.floorDiv(world[0], CHUNK_BLOCKS), Math.floorDiv(world[1], CHUNK_BLOCKS)};
-    }
-
-    private int worldToScreenX(int blockX, Bounds bounds) {
-        return bounds.centerX() + (int) Math.round((blockX - camera.centerX) / blocksPerPixel());
-    }
-
-    private int worldToScreenZ(int blockZ, Bounds bounds) {
-        return bounds.centerY() + (int) Math.round((blockZ - camera.centerZ) / blocksPerPixel());
     }
 
     private String zoomLabel() {
