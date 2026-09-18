@@ -26,13 +26,13 @@ class BackgroundResourcePolicyTest {
 
     @Test
     void disabledPolicyLeavesUserLimitUntouched() {
-        PerformancePreferences disabled = new PerformancePreferences(false, 30, 10);
+        PerformancePreferences disabled = new PerformancePreferences(false, 30, 10, true, true, true, true);
         assertEquals(75, BackgroundResourcePolicy.targetLimit(75, disabled, false, true));
     }
 
     @Test
     void invalidPreferenceLimitsAreSanitized() {
-        PerformancePreferences invalid = new PerformancePreferences(true, 1, 999);
+        PerformancePreferences invalid = new PerformancePreferences(true, 1, 999, true, true, true, true);
         assertEquals(30, BackgroundResourcePolicy.targetLimit(120, invalid, false, false));
         assertEquals(10, BackgroundResourcePolicy.targetLimit(120, invalid, false, true));
     }

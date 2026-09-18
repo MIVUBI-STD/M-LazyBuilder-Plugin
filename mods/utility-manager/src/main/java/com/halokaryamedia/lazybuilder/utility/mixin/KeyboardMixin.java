@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.utility.mixin;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugInteraction;
+import com.halokaryamedia.lazybuilder.utility.screenshot.ScreenshotSettingsScreen;
 import net.minecraft.client.Keyboard;
 import net.minecraft.client.MinecraftClient;
 import org.lwjgl.glfw.GLFW;
@@ -12,15 +13,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Temporarily releases the pointer while Alt is held over an active Compact Debug HUD. */
+/** Routes Utility screenshot setup and Compact Debug keyboard interaction. */
 @Mixin(Keyboard.class)
 abstract class KeyboardMixin {
     @Shadow
     @Final
     private MinecraftClient client;
 
-    @Inject(method = "onKey", at = @At("HEAD"))
-    private void lazybuilder$compactDebugInteraction(
+    @Inject(method = "onKey", at = @At("HEAD"), cancellable = true)
+    private void lazybuilder$utilityKeyboardInteraction(
             long window,
             int key,
             int scancode,
@@ -28,8 +29,18 @@ abstract class KeyboardMixin {
             int modifiers,
             CallbackInfo ci
     ) {
-        if (!UtilityManagerClient.preferences().compactDebugHud()) return;
         if (window != client.getWindow().getHandle()) return;
+
+        if (action == GLFW.GLFW_PRESS
+                && client.currentScreen == null
+                && (modifiers & GLFW.GLFW_MOD_SHIFT) != 0
+                && client.options.screenshotKey.matchesKey(key, scancode)) {
+            client.setScreen(new ScreenshotSettingsScreen(null));
+            ci.cancel();
+            return;
+        }
+
+        if (!UtilityManagerClient.preferences().compactDebugHud()) return;
 
         // Toggling F3 invalidates the previous frame's coordinate target immediately.
         if (key == GLFW.GLFW_KEY_F3 && action == GLFW.GLFW_PRESS) {

@@ -1,9 +1,13 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.client.render.block.entity.BlockEntityRenderer;
+import net.minecraft.entity.Entity;
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
@@ -12,6 +16,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         runtime = new PerformanceRuntime(FabricLoader.getInstance().getConfigDir());
+        MemoryDeduplicator.register();
 
         WorldRenderEvents.END.register(context ->
                 runtime.recordFrame(System.nanoTime())
@@ -30,6 +35,17 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     public static void updatePreferences(PerformancePreferences updated) {
         if (runtime != null) runtime.updatePreferences(updated);
+    }
+
+    public static boolean shouldRenderEntity(Entity entity) {
+        return runtime == null || runtime.shouldRender(entity);
+    }
+
+    public static <E extends BlockEntity> boolean shouldRenderBlockEntity(
+            E blockEntity,
+            BlockEntityRenderer<E> renderer
+    ) {
+        return runtime == null || runtime.shouldRender(blockEntity, renderer);
     }
 
     /** Captures current diagnostics on demand; no metrics history database is maintained. */

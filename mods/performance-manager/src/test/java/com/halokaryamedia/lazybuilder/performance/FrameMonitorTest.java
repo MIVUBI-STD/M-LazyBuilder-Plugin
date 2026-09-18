@@ -53,12 +53,22 @@ class FrameMonitorTest {
     }
 
     @Test
+    void exposesLatestRenderedFrameTimestamp() {
+        FrameMonitor monitor = new FrameMonitor();
+        monitor.recordFrame(1_000_000_000L, 60);
+        assertEquals(1_000_000_000L, monitor.currentFrameNanos());
+        monitor.recordFrame(1_016_000_000L, 60);
+        assertEquals(1_016_000_000L, monitor.currentFrameNanos());
+    }
+
+    @Test
     void pausedClockDoesNotTurnBackgroundGapIntoFrameSpike() {
         FrameMonitor monitor = new FrameMonitor();
 
         monitor.recordFrame(1_000_000_000L, 60);
         monitor.recordFrame(1_016_000_000L, 60);
         monitor.pauseFrameClock();
+        assertEquals(0L, monitor.currentFrameNanos());
         monitor.recordFrame(10_000_000_000L, 60);
         monitor.recordFrame(10_016_000_000L, 60);
 

@@ -4,10 +4,14 @@ package com.halokaryamedia.lazybuilder.performance;
 public record PerformancePreferences(
         boolean backgroundFpsPolicy,
         int unfocusedFpsLimit,
-        int minimizedFpsLimit
+        int minimizedFpsLimit,
+        boolean entityCulling,
+        boolean blockEntityCulling,
+        boolean renderingOptimizations,
+        boolean memoryOptimizations
 ) {
     public static PerformancePreferences defaults() {
-        return new PerformancePreferences(true, 30, 10);
+        return new PerformancePreferences(true, 30, 10, true, true, true, true);
     }
 
     public PerformancePreferences {

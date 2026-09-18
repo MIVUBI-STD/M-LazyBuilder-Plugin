@@ -45,7 +45,7 @@ public abstract class DisconnectedScreenMixin extends Screen {
     private void lazybuilder$addUtilityActions(CallbackInfo ci) {
         boolean reconnectEnabled = UtilityManagerClient.preferences().reconnectButton();
         boolean reconnectAvailable = ReconnectState.canReconnect();
-        LOGGER.info(
+        LOGGER.debug(
                 "DisconnectedScreen utility injection active; reconnectEnabled={}, reconnectAvailable={}",
                 reconnectEnabled,
                 reconnectAvailable
@@ -58,7 +58,7 @@ public abstract class DisconnectedScreenMixin extends Screen {
                             button -> ReconnectState.reconnect((Screen) (Object) this)
                     ).width(200).build()
             );
-            LOGGER.info("Reconnect button added for {}", ReconnectState.serverAddress());
+            LOGGER.debug("Reconnect button added to DisconnectedScreen");
         }
 
         String details = lazybuilder$disconnectDetails();

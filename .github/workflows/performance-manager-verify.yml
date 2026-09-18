@@ -1,0 +1,52 @@
+name: Performance Manager Verify
+
+on:
+  push:
+    branches: [utilities]
+    paths:
+      - 'mods/performance-manager/**'
+      - '.github/workflows/performance-manager-verify.yml'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle/**'
+  pull_request:
+    branches: [Local, main]
+    paths:
+      - 'mods/performance-manager/**'
+      - '.github/workflows/performance-manager-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-manager-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build and test Performance Manager
+        shell: pwsh
+        run: .\gradlew.bat -p mods/performance-manager --no-daemon build
+      - name: Stage verified artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".artifacts/performance-manager" -Force | Out-Null
+          Copy-Item "mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar" ".artifacts/performance-manager/"
+      - name: Upload verified Performance Manager
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: LazyBuilder-Performance-Manager-${{ github.sha }}
+          path: .artifacts/performance-manager/*.jar
+          if-no-files-found: error
+          retention-days: 7

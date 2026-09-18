@@ -1,0 +1,35 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.halokaryamedia.lazybuilder.performance.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.halokaryamedia.lazybuilder.performance.mixin.PerformanceMixinPlugin",
+  "client": [
+    "WorldRendererMixin",
+    "WorldRendererTerrainSubmissionMixin",
+    "ShaderLoaderSourceMixin",
+    "CompiledShaderMixin",
+    "BlockEntityRenderDispatcherMixin",
+    "TextRendererDrawerMixin",
+    "VertexBufferMixin",
+    "ChunkBuilderBuiltChunkMixin",
+    "ChunkBuilderBackpressureMixin",
+    "ChunkBuilderUploadMixin",
+    "ParticleManagerMixin",
+    "BuiltChunkStorageMixin",
+    "ChunkDataVisibilityMixin",
+    "BuiltChunkBufferLookupMixin",
+    "ChunkDataLayerMembershipMixin",
+    "BuiltChunkTranslucentSortMixin",
+    "BlockBufferAllocatorStorageMixin",
+    "SectionBuilderBufferLookupMixin",
+    "BlockBufferBuilderPoolMixin",
+    "BlockColorsMixin",
+    "BlockSideVisibilityMixin",
+    "BakedQuadAccessor",
+    "BasicBakedModelBuilderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

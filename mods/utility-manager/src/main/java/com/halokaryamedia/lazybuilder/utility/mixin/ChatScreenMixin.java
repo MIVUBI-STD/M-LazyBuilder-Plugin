@@ -163,7 +163,9 @@ public abstract class ChatScreenMixin extends Screen {
         ChatHudAccessor accessor = (ChatHudAccessor) chatHud;
         double chatX = accessor.lazybuilder$toChatLineX(mouseX);
         double chatY = accessor.lazybuilder$toChatLineY(mouseY);
-        int messageIndex = accessor.lazybuilder$getMessageIndex(chatX, chatY);
+        int visibleMessageIndex = accessor.lazybuilder$getMessageIndex(chatX, chatY);
+        List<ChatHudLine.Visible> visibleMessages = accessor.lazybuilder$getVisibleMessages();
+        int messageIndex = lazybuilder$storedMessageIndex(visibleMessages, visibleMessageIndex);
         List<ChatHudLine> messages = accessor.lazybuilder$getMessages();
         if (messageIndex < 0 || messageIndex >= messages.size()) return;
 
@@ -277,6 +279,19 @@ public abstract class ChatScreenMixin extends Screen {
         if (this.chatField != null) this.chatField.setFocused(false);
         this.setFocused(this.lazybuilder$searchField);
         this.lazybuilder$searchField.setFocused(true);
+    }
+
+    private static int lazybuilder$storedMessageIndex(
+            List<ChatHudLine.Visible> visibleMessages,
+            int visibleMessageIndex
+    ) {
+        if (visibleMessageIndex < 0 || visibleMessageIndex >= visibleMessages.size()) return -1;
+
+        int storedIndex = 0;
+        for (int index = 0; index < visibleMessageIndex; index++) {
+            if (visibleMessages.get(index).endOfEntry()) storedIndex++;
+        }
+        return storedIndex;
     }
 
     private int lazybuilder$contextHeight() {

@@ -1,106 +1,153 @@
 # LazyBuilder Performance Manager
 
-> **Status: deferred / experimental for V1.** Performance Manager remains in the repository as isolated research source. It is not a product requirement unless measured client evidence justifies promotion.
->
-> The current `Local` Launcher/client-packaging path may still reference or bundle this module while the active Launcher/installer consolidation is in progress. Treat that as transitional implementation state, not permission to expand Performance Manager or make other systems depend on it. Do not remove or rewire those active Launcher paths in parallel unless that work is explicitly coordinated.
+LazyBuilder Performance Manager is the first-party Fabric client performance layer for Minecraft Java 1.21.4.
 
-## Goal
+## Product contract
 
-Keep a bounded first-party performance experiment available for Minecraft Java 1.21.4 without turning performance tuning into a second product architecture.
+Performance Manager is a production product owner, not an experimental diagnostics helper. Its job is to keep builder-heavy Minecraft sessions responsive while preserving the user's intended scene and visual quality.
 
-The module may be used to measure specific client bottlenecks. It must not become a hidden runtime dependency, graphics-quality controller, general optimization framework, or reason to duplicate behavior already owned by Minecraft, Fabric, Modrinth, or another LazyBuilder manager.
+One Performance Manager = one Fabric mod = one mod id = one output JAR.
 
-## Current research scope
+The target is to replace the external performance stack gradually with independently owned LazyBuilder implementations. External mods remain reference and migration baselines until the matching first-party capability is implemented and proven. They must not be shaded, nested, unpacked, copied, or silently treated as runtime dependencies.
 
-The existing source provides:
+Performance Manager owns client performance behavior only: frame timing/pressure, background FPS policy, conservative culling, immediate rendering efficiency, targeted memory reduction, chunk rebuild/mesh/render-region/upload/visibility/submission/buffer efficiency, and builder-render compatibility policy.
 
-- allocation-free rolling frame timing over a bounded 60-frame window;
-- target-aware frame-pressure states: `NORMAL`, `ELEVATED`, and `HEAVY`;
-- render-gap protection so world loading, disconnects, and other render discontinuities are not counted as frame spikes;
-- first-party unfocused/minimized FPS policy;
-- on-demand performance snapshots, including Minecraft chunk/entity/particle debug state;
-- no permanent HUD, metrics history database, background worker, graphics auto-tuning, or speculative workload scheduler.
+## Current renderer ownership
 
-No additional capability should be added until a reproducible client-side performance problem demonstrates that this module is the correct owner.
+The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, a guarded true multi-draw submission backend, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
-## Runtime model
+Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Chunk-meshing hot paths also avoid transient block-side lookup keys on cache hits and retain one cleared section-builder lookup cache per worker thread instead of reallocating it for every section build. Foreground upload work is now paced by the existing frame-pressure signal: normal frames allow up to 48 queued tasks per pass, elevated pressure reduces that to 24, and heavy pressure reduces it to 8; shutdown still drains fully. Terrain submission also reuses per-layer transform builders and grow-only native packing buffers to reduce per-frame allocation and direct-buffer churn.
+
+Chunk rebuild backpressure uses the same `FramePressure` signal rather than creating a second scheduler. Only non-prioritized work can be deferred, and only while pressure is heavy, at least eight vanilla tasks are already queued, and the chunk buffer pool has one or fewer free buffers. The deferred queue is capped at 128 tasks, fails open when full, and releases work at 16/4/1 tasks per tick for normal/elevated/heavy pressure respectively, so sustained heavy pressure still makes forward progress. `reset` and `stop` cancel deferred tasks instead of carrying stale work into another builder lifecycle.
+
+Distant particle creation is also pressure-aware. Normal pressure leaves particles untouched; elevated pressure suppresses only particles farther than 96 blocks from the camera, while heavy pressure lowers that distance to 64 blocks. Nearby effects remain authoritative, invalid distance state fails open, and this hook stands down when ImmediatelyFast owns the overlapping particle path.
+
+## Terrain GPU residency, reclamation, and arena ownership model
+
+Terrain GPU residency is tracked at the existing `VertexBuffer` ownership boundary. Each buffer is associated with its section and one of the five fixed terrain layers. Successful uploads sample actual `GpuBuffer.size` capacities while upload tasks also record mesh payload bytes. Accounting regions are fixed 8x4x8 section groups.
+
+Diagnostics distinguish resident GPU capacity, uploaded payload, headroom/fragmentation, peak residency, region footprint, relocation churn, and reclaimed capacity.
+
+When a toroidal `BuiltChunk` slot moves into a different accounting region, LazyBuilder may reclaim stale terrain capacity. Reclamation remains conservative:
 
 ```text
-PerformanceManagerClient
-└── PerformanceRuntime
-    ├── FrameMonitor
-    ├── BackgroundResourcePolicy
-    └── PerformanceSnapshotReader
+capacity < 2 MiB       -> keep buffer
+same 8x4x8 region      -> keep buffer
+not on render thread   -> keep buffer
+large + cross-region   -> replace stale VertexBuffer with a fresh STATIC_WRITE buffer
 ```
 
-One world-render callback records focused world frame timing. One end-client-tick hook updates the background FPS policy. No dedicated thread or polling worker is created.
+The shared-region model has three allocation layers:
 
-## Frame pressure
+- `TerrainRegionArenaPolicy`: 256-byte suballocation alignment, 1 MiB arena capacity quanta, 25% sizing headroom, and a 2 MiB minimum recoverable-capacity threshold before a region becomes a compaction candidate.
+- `TerrainRegionSuballocator`: aligned first-fit suballocation with coalescing free spans and fragmentation accounting.
+- `TerrainRegionAllocationRegistry`: persistent runtime ownership per 8x4x8 region and render layer. It maintains stable allocation handles, reuses slots while payload still fits, reallocates when payload outgrows a slot, compacts when total free space is sufficient but fragmented, grows an arena only when required capacity is genuinely insufficient, and releases ownership when a terrain buffer moves or dies.
 
-Frame pressure is diagnostic state. It is intentionally not a graphics-quality controller and does not own scheduling in other LazyBuilder managers.
+The registry is wired to the same runtime lifecycle as the residency ledger, so it receives real section/layer association and actual uploaded payload sizes. A logical arena is intentionally scoped to one region plus one terrain render layer; this matches the existing layer-separated draw path and avoids cross-layer GPU-state sharing.
 
-Thresholds are derived from the user's configured foreground FPS target with conservative absolute floors. This avoids treating an intentional 30 FPS target as a performance fault while still detecting sustained slow frames and severe spikes.
+## Arena-aware physical draw path
 
-When world rendering stops, the window loses focus, or the client is minimized, the timing clock is reset. Long render gaps are treated as discontinuities instead of fake lag spikes.
+`TerrainArenaDrawStateRegistry` captures vanilla vertex format, vertex/index counts, draw mode, index type, and separate vertex/index payload sizes. Allocation handles therefore provide deterministic vertex and index byte ranges.
 
-## Background resource policy
+`TerrainPhysicalArenaManager` mirrors eligible geometry into render-thread-owned region/layer buffers while retaining vanilla per-section `VertexBuffer` objects as correctness fallback:
 
-Existing experimental defaults:
-
-```properties
-background.enabled=true
-background.unfocused_fps=30
-background.minimized_fps=10
+```text
+logical allocation
+├─ vertex range -> shared region VBO
+└─ sorted index range -> shared region EBO when present
 ```
 
-The policy changes only Minecraft's temporary inactivity FPS limiter. It does not rewrite the user's configured video-option FPS limit. When focus returns, the current user limit is authoritative again.
+Sequential-index terrain binds Minecraft's shared sequential index buffer and issues `glDrawElementsBaseVertex`. Custom/sorted-index terrain binds the region EBO and issues the same base-vertex draw with the allocation's index byte offset. The physical path validates vertex payload size, index payload size, allocation generation, arena epoch, index alignment, base-vertex range, and draw state before every draw.
 
-This behavior must remain isolated inside Performance Manager while the module is deferred. Other LazyBuilder components must not depend on it.
+A full rebuild can mirror VBO and sorted EBO together before vanilla closes the `BuiltBuffer`. Later translucent resort uploads update only the shared EBO when the logical handle generation remains stable.
+
+Physical arena growth and logical compaction no longer have to discard every mirrored resident. LazyBuilder owns a small raw render-thread GL buffer wrapper for the shared arena backing and can rebuild an arena by GPU-to-GPU copying each still-valid resident from its old VBO/EBO offsets into the current logical allocation offsets. The VAO set is recreated against the new backing. Entries that cannot be proven valid fall back individually to vanilla instead of blocking the rest of the arena.
+
+Relocation remains conservative: if a current handle is missing, changes region, has invalid draw state, or cannot fit the rebuilt backing safely, that resident is invalidated and vanilla rendering remains authoritative until a later upload. Diagnostics report relocation count, copied bytes, and relocation fallbacks separately from ordinary invalidations.
+
+Sequential-index physical residents now have a guarded promotion path from mirrored ownership to exclusive shared-arena ownership. Each resident must accumulate 600 successful physical draws without re-upload, relocation, invalidation, or multi-draw submission failure before its duplicate vanilla GPU backing can be retired. Custom/sorted-index residents remain mirrored and are excluded from promotion.
+
+Retirement preserves the existing VertexBuffer identity while releasing its duplicate per-section GPU storage. The physical arena remains authoritative for exclusive residents. Before a vanilla fallback, arena relocation, region ownership move, or rendering-optimization disable can become authoritative again, LazyBuilder reconstructs the vanilla vertex backing by GPU-to-GPU copy from the shared arena and reattaches it to the existing VAO. Multi-draw failure first falls back to physical single-draw; vanilla fallback is used only after backing recovery succeeds. A failed recovery blocks the unsafe vanilla draw instead of submitting against retired storage.
+
+This promotion remains intentionally limited to sequential-index terrain. Runtime diagnostics expose current exclusive resident count, retired bytes, promotions, recoveries, and recovery failures so live validation can prove that VRAM reduction remains reversible before the scope is expanded.
+
+## Guarded multi-draw contract
+
+Minecraft 1.21.4 terrain rendering normally uploads a different `ModelOffset` uniform for every visible `BuiltChunk`. LazyBuilder materializes that translation in `TerrainDrawTransformStream`, packs physical-ready draws in `TerrainMultiDrawCommandStream`, and exposes a render-thread UBO backend through `TerrainPerDrawShaderBackend`.
+
+A shader must opt in explicitly. The guarded contract is:
+
+```text
+std140 uniform block: LazyBuilderDrawTransforms
+integer uniform:      LazyBuilderDrawBase
+draw-id support:      OpenGL 4.6 or ARB_shader_draw_parameters
+```
+
+The intended shader indexing rule is equivalent to:
+
+```text
+transform = LazyBuilderDrawTransforms[LazyBuilderDrawBase + gl_DrawID]
+```
+
+`TerrainMultiDrawSubmissionBackend` then groups only consecutive vanilla-order commands with the same region/layer arena, vertex format, draw mode, index type, and sequential/custom-index mode. It validates every mirrored source before suppressing any vanilla draw, binds the physical arena once, sets the packet-relative transform base, and issues `glMultiDrawElementsBaseVertex` for the run. Any capability, residency, or submission failure immediately returns that run to the existing physical/vanilla per-section path.
+
+The Performance Manager does not currently bundle a replacement vanilla terrain shader resource. Therefore ordinary vanilla/Indigo shaders still fail the handshake and continue using their authoritative `ModelOffset` path. This keeps shader ownership explicit instead of silently overriding resource-pack or renderer behavior. Iris, custom FRAPI renderers, and compatibility-uncertain states remain hard gates.
+
+Diagnostics report packed command/transform bytes, capability reason, prepare attempts, eligible prepared runs, submitted multi-draw batches/commands, actual draw-call reductions, and submission failures.
+
+## FRAPI and shader compatibility boundary
+
+Fabric Renderer API 5.x lets renderer replacements declare ownership with:
+
+```text
+fabric-renderer-api-v1:contains_renderer
+```
+
+LazyBuilder uses the same ownership marker used by Fabric Indigo. Any custom FRAPI renderer owner disables first-party chunk/meshing mixins. Terrain submission has an additional Iris gate. Compatibility uncertainty also disables first-party chunk ownership.
+
+For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEditCUI remain consumers/overlays rather than global renderer owners.
+
+Entity and block-entity culling now cache vanilla renderer ownership by type identity and avoid duplicate queue-membership lookups. This keeps the conservative culling contract unchanged while reducing repeated registry/namespace work in the render path.
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` captures diagnostics on demand:
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, transform-stream readiness, and guarded multi-draw submission health.
+
+## Live runtime proof
+
+Performance Manager has an opt-in structured proof logger for representative builder workloads. It is disabled during normal play and does not create a metrics history database.
+
+Enable it for a benchmark run with:
 
 ```text
-FPS
-Current frame time
-Rolling average frame time
-Worst recent frame time
-JVM used / max memory
-Render distance
-Simulation distance
-Window focused / minimized state
-Current frame pressure
-Completed chunk count
-Minecraft chunk debug string
-Minecraft entity render debug string
-Minecraft particle debug string
+-Dlazybuilder.performance.proof=true
 ```
 
-Memory, option, entity, chunk, and particle diagnostics are not sampled continuously.
+While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, average/worst recent frame time, upload queue pressure, rebuild deferral/release totals, distant-particle suppression count, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, and active renderer ownership.
 
-## Ownership rule
+A useful two-run comparison keeps the same world, camera route, render distance, FPS target, resource pack, resolution, and other mods:
 
-Performance Manager is currently an isolated research owner, not a shared infrastructure layer.
+```text
+baseline  -> rendering.optimizations=false
+optimized -> rendering.optimizations=true
+```
 
-Do not:
+Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. FPS alone is not the acceptance criterion; average/worst frame time and recovery health are equally important.
 
-- introduce dependencies from Map Manager, Utility Manager, Paper plugins, or shared protocol into Performance Manager;
-- introduce dependencies from Performance Manager into unrelated LazyBuilder managers;
-- add a second performance/config authority in the Launcher or Paper runtime;
-- add renderer replacement, culling engines, shader systems, background schedulers, compatibility matrices, or broad optimization frameworks without measured evidence;
-- promote this module to required V1 runtime solely because the source already exists.
+## Migration rule
 
-Promotion requires a concrete bottleneck, a success metric, representative Minecraft-client proof, and an explicit product decision.
+External performance mods remain migration references until matching first-party behavior is implemented and proven in representative builder workloads. Custom FRAPI renderer owners keep control of the chunk pipeline while installed, Iris keeps shader-sensitive terrain submission, ImmediatelyFast keeps overlapping render/upload hooks, and FerriteCore keeps baked-quad deduplication.
 
 ## Configuration
-
-Only the existing bounded experimental decisions are represented:
 
 ```properties
 background.enabled=true
 background.unfocused_fps=30
 background.minimized_fps=10
+culling.entities=true
+culling.block_entities=true
+rendering.optimizations=true
+memory.optimizations=true
 ```
 
-Frame-pressure thresholds remain internal. Do not add more knobs unless profiling proves that a real user decision is required.
+Compatibility markers, visibility masks, upload pacing, terrain residency/reclamation thresholds, arena sizing/suballocation internals, physical mirror ownership, draw-plan batching, relocation, transform-stream layout, multi-draw shader handshake, buffer growth, and allocator details are not user-facing knobs.
