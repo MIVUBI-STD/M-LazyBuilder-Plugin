@@ -71,9 +71,11 @@ public final class StructureAuxiliaryPayloadPlanner {
                 byte[] before = Objects.requireNonNull(
                         entitySource.read(key, world),
                         "entity before payload").clone();
-                byte[] after = Objects.requireNonNull(
+                byte[] transformed = Objects.requireNonNull(
                         entityTransform.transform(entity.payload(), placement),
                         "entity transformed payload").clone();
+                byte[] after = EntityExtensionPayload.present(
+                        world.x(), world.y(), world.z(), transformed).encode();
                 if (Arrays.equals(before, after)) continue;
                 int blockX = floorToInt(world.x());
                 int blockZ = floorToInt(world.z());

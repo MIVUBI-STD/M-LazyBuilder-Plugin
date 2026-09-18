@@ -144,6 +144,9 @@ public final class AxiomStructureSnapshotCapture {
 
             payload.remove("id");
             payload.remove("Pos");
+            payload.remove("UUID");
+            payload.remove("UUIDMost");
+            payload.remove("UUIDLeast");
             var typeId = Registries.ENTITY_TYPE.getId(entity.getType());
             if (typeId == null) {
                 throw new IOException("Entity type is not registered: " + entity.getType());
