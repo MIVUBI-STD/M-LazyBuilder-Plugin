@@ -26,6 +26,8 @@ import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
 import com.halokaryamedia.lazybuilder.builder.spline.CatmullRomSpline;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineControlPoint;
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineModifierPipeline;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineModifiers;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSample;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSampler;
 import com.halokaryamedia.lazybuilder.builder.spline.StructureChainSplinePayload;
@@ -61,6 +63,9 @@ public final class AxiomSplinePreviewTool implements CustomTool {
     private final int[] seedValue = {424242};
     private final int[] rotationalCopies = {1};
     private final int[] parameterization = {1};
+    private final float[] taperEndScale = {1.0f};
+    private final float[] twistDegrees = {0.0f};
+    private final float[] jitter = {0.0f};
 
     private AxiomSplinePreviewRegion preview;
     private List<SplinePlacementPlanEntry> lastPlan = List.of();
@@ -137,6 +142,9 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
         changed |= ImGui.sliderInt("Curve Mode (0 Uniform / 1 Centripetal)", parameterization, 0, 1);
+        changed |= ImGui.sliderFloat("End Radius Scale", taperEndScale, 0.0f, 4.0f);
+        changed |= ImGui.sliderFloat("Twist Degrees", twistDegrees, -720.0f, 720.0f);
+        changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
         if (ImGui.button("Clear Spline")) {
             reset();
             return;
@@ -240,14 +248,24 @@ public final class AxiomSplinePreviewTool implements CustomTool {
                         ? SplineParameterization.UNIFORM
                         : SplineParameterization.CENTRIPETAL
         );
+        OperationSeed operationSeed = new OperationSeed(seedValue[0]);
         List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
+        samples = SplineModifierPipeline.apply(
+                samples,
+                SplineModifiers.compose(
+                        SplineModifiers.taper(1.0, taperEndScale[0]),
+                        SplineModifiers.twist(0.0, twistDegrees[0]),
+                        SplineModifiers.jitter(jitter[0], jitter[0], jitter[0] * 0.25, 0x4a49545445524cL)
+                ),
+                operationSeed
+        );
         StructureChainSplinePayload payload = new StructureChainSplinePayload(
                 spacing[0],
                 (point, seed) -> "lazybuilder:preview-segment",
                 new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L)
         );
 
-        lastPlan = payload.plan(samples, new OperationSeed(seedValue[0]));
+        lastPlan = payload.plan(samples, operationSeed);
         lastTransforms = SymmetryPlanner.rotational(
                 controlPoints.get(0).position(),
                 new BuilderVec3(0, 1, 0),

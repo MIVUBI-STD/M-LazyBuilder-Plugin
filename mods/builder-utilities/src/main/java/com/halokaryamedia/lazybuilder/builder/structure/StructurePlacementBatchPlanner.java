@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.structure;
 
 import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSet;
+import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSetBuilder;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionTypes;
 import com.halokaryamedia.lazybuilder.builder.history.LocalBlockPosition;
@@ -197,7 +198,7 @@ public final class StructurePlacementBatchPlanner {
             }
         }
 
-        LinkedHashMap<ChunkKey, ChunkBuilder> chunks = new LinkedHashMap<>();
+        LinkedHashMap<ChunkKey, ChunkChangeSetBuilder> chunks = new LinkedHashMap<>();
         for (DesiredBlock block : desired.values()) {
             String before = requireState(
                     existing.stateAt(block.x, block.y, block.z),
@@ -208,12 +209,12 @@ public final class StructurePlacementBatchPlanner {
             int chunkZ = Math.floorDiv(block.z, 16);
             chunks.computeIfAbsent(
                     new ChunkKey(chunkX, chunkZ),
-                    key -> new ChunkBuilder(key.chunkX, key.chunkZ)
-            ).add(block.x, block.y, block.z, before, block.afterState);
+                    key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ)
+            ).addWorld(block.x, block.y, block.z, before, block.afterState);
         }
 
         return new StructurePastePlan(
-                chunks.values().stream().map(ChunkBuilder::build).toList(),
+                chunks.values().stream().map(ChunkChangeSetBuilder::build).toList(),
                 extensions
         );
     }
@@ -265,54 +266,4 @@ public final class StructurePlacementBatchPlanner {
     private record ChunkKey(int chunkX, int chunkZ) {}
     private record DesiredBlock(int x, int y, int z, String afterState) {}
 
-    private static final class ChunkBuilder {
-        private final int chunkX;
-        private final int chunkZ;
-        private final LinkedHashMap<String, Integer> palette = new LinkedHashMap<>();
-        private final List<Long> positions = new ArrayList<>();
-        private final List<Integer> before = new ArrayList<>();
-        private final List<Integer> after = new ArrayList<>();
-
-        private ChunkBuilder(int chunkX, int chunkZ) {
-            this.chunkX = chunkX;
-            this.chunkZ = chunkZ;
-        }
-
-        private void add(int worldX, int y, int worldZ, String beforeState, String afterState) {
-            positions.add(LocalBlockPosition.pack(
-                    Math.floorMod(worldX, 16),
-                    y,
-                    Math.floorMod(worldZ, 16)
-            ));
-            before.add(paletteIndex(beforeState));
-            after.add(paletteIndex(afterState));
-        }
-
-        private int paletteIndex(String state) {
-            Integer index = palette.get(state);
-            if (index != null) return index;
-            int next = palette.size();
-            palette.put(state, next);
-            return next;
-        }
-
-        private ChunkChangeSet build() {
-            long[] p = new long[positions.size()];
-            int[] b = new int[before.size()];
-            int[] a = new int[after.size()];
-            for (int i = 0; i < p.length; i++) {
-                p[i] = positions.get(i);
-                b[i] = before.get(i);
-                a[i] = after.get(i);
-            }
-            return new ChunkChangeSet(
-                    chunkX,
-                    chunkZ,
-                    List.copyOf(palette.keySet()),
-                    p,
-                    b,
-                    a
-            );
-        }
-    }
 }
