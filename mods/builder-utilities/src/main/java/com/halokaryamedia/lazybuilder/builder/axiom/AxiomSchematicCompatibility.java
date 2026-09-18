@@ -17,6 +17,18 @@ public final class AxiomSchematicCompatibility {
         Objects.requireNonNull(imported, "imported");
         Objects.requireNonNull(world, "world");
         SchematicDataVersionPolicy.requireNotFuture(imported.dataVersion());
+        var compatibility = SchematicDataVersionPolicy.classify(imported.dataVersion());
+        if (compatibility
+                == SchematicDataVersionPolicy.Compatibility.LEGACY_REQUIRES_VALIDATION
+                && (imported.snapshot().biomeCount() != 0
+                || imported.snapshot().entityCount() != 0
+                || imported.snapshot().blockEntityCount() != 0)) {
+            throw new IllegalArgumentException(
+                    "Legacy schematic DataVersion " + imported.dataVersion()
+                            + " contains auxiliary BIOME/ENTITY/BLOCK_ENTITY payloads. "
+                            + "LazyBuilder preserves them but does not apply them until a "
+                            + "verified per-type DataFix migration is available.");
+        }
 
         AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
         for (var block : imported.snapshot().blocks()) {
@@ -30,7 +42,7 @@ public final class AxiomSchematicCompatibility {
                         failure);
             }
         }
-        return SchematicDataVersionPolicy.classify(imported.dataVersion());
+        return compatibility;
     }
 
     public static String status(SpongeSchematicImport imported) {
