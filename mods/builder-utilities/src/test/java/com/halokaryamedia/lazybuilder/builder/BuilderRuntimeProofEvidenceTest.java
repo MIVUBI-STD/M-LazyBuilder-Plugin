@@ -15,7 +15,8 @@ class BuilderRuntimeProofEvidenceTest {
     void aggregatesMaximaWithoutDoubleCountingRepeatedSnapshots() throws Exception {
         Files.writeString(tempDir.resolve("one.json"), """
                 {
-                  "schema": 6,
+                  "schema": 7,
+                  "buildFingerprint": "test-build",
                   "operationsCompleted": 2,
                   "operationsCancelled": 1,
                   "operationsFailed": 0,
@@ -33,7 +34,8 @@ class BuilderRuntimeProofEvidenceTest {
                 """);
         Files.writeString(tempDir.resolve("two.json"), """
                 {
-                  "schema": 6,
+                  "schema": 7,
+                  "buildFingerprint": "test-build",
                   "operationsCompleted": 2,
                   "operationsCancelled": 1,
                   "operationsFailed": 0,
@@ -44,7 +46,7 @@ class BuilderRuntimeProofEvidenceTest {
                 }
                 """);
 
-        BuilderRuntimeProofStore store = new BuilderRuntimeProofStore(tempDir);
+        BuilderRuntimeProofStore store = new BuilderRuntimeProofStore(tempDir, "test-build");
         BuilderRuntimeProofEvidence evidence = store.aggregateEvidence();
 
         assertEquals(2, evidence.snapshotCount());

@@ -18,7 +18,7 @@ import com.google.gson.JsonParser;
 
 /** Atomic JSON proof snapshots for real Builder runtime sessions. */
 public final class BuilderRuntimeProofStore {
-    static final int SCHEMA_VERSION = 6;
+    static final int SCHEMA_VERSION = 7;
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                     .withZone(ZoneOffset.UTC);
@@ -26,16 +26,29 @@ public final class BuilderRuntimeProofStore {
     private final Path directory;
     private final long sessionStartedEpochMillis;
     private final String sessionId;
+    private final String buildFingerprint;
 
     public BuilderRuntimeProofStore(Path directory) {
+        this(directory, BuilderBuildFingerprint.current());
+    }
+
+    BuilderRuntimeProofStore(Path directory, String buildFingerprint) {
         this.directory = Objects.requireNonNull(directory, "directory")
                 .toAbsolutePath().normalize();
         this.sessionStartedEpochMillis = System.currentTimeMillis();
         this.sessionId = UUID.randomUUID().toString();
+        this.buildFingerprint = Objects.requireNonNull(buildFingerprint, "buildFingerprint");
+        if (buildFingerprint.isBlank()) {
+            throw new IllegalArgumentException("buildFingerprint must be non-blank");
+        }
     }
 
     public Path directory() {
         return directory;
+    }
+
+    public String buildFingerprint() {
+        return buildFingerprint;
     }
 
     public synchronized BuilderRuntimeProofEvidence aggregateEvidence()
@@ -76,6 +89,9 @@ public final class BuilderRuntimeProofStore {
                 }
 
                 if (intValue(json, "schema") != SCHEMA_VERSION) {
+                    continue;
+                }
+                if (!buildFingerprint.equals(stringValue(json, "buildFingerprint"))) {
                     continue;
                 }
 
@@ -151,6 +167,16 @@ public final class BuilderRuntimeProofStore {
         }
     }
 
+    private static String stringValue(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        if (value == null || !value.isJsonPrimitive()) return "";
+        try {
+            return value.getAsString();
+        } catch (RuntimeException invalid) {
+            return "";
+        }
+    }
+
     private static long longValue(JsonObject object, String key) {
         JsonElement value = object.get(key);
         if (value == null || !value.isJsonPrimitive()) return 0L;
@@ -221,6 +247,7 @@ public final class BuilderRuntimeProofStore {
     ) {
         return "{\n"
                 + "  \"schema\": " + SCHEMA_VERSION + ",\n"
+                + "  \"buildFingerprint\": \"" + escape(buildFingerprint) + "\",\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"

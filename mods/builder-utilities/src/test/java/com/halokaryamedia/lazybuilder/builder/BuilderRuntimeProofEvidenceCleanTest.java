@@ -15,7 +15,8 @@ class BuilderRuntimeProofEvidenceCleanTest {
     void failedHistoricalSnapshotDoesNotPoisonLaterCleanEvidence() throws Exception {
         Files.writeString(tempDir.resolve("failed.json"), """
                 {
-                  "schema": 6,
+                  "schema": 7,
+                  "buildFingerprint": "test-build",
                   "operationsCompleted": 5,
                   "operationsFailed": 2,
                   "maxCompletedPlannedBlocks": 5000000,
@@ -24,7 +25,8 @@ class BuilderRuntimeProofEvidenceCleanTest {
                 """);
         Files.writeString(tempDir.resolve("clean.json"), """
                 {
-                  "schema": 6,
+                  "schema": 7,
+                  "buildFingerprint": "test-build",
                   "operationsCompleted": 3,
                   "operationsCancelled": 1,
                   "operationsFailed": 0,
@@ -39,7 +41,7 @@ class BuilderRuntimeProofEvidenceCleanTest {
                 """);
 
         BuilderRuntimeProofEvidence e =
-                new BuilderRuntimeProofStore(tempDir).aggregateEvidence();
+                new BuilderRuntimeProofStore(tempDir, "test-build").aggregateEvidence();
 
         assertEquals(2, e.snapshotCount());
         assertEquals(1, e.cleanSnapshotCount());
