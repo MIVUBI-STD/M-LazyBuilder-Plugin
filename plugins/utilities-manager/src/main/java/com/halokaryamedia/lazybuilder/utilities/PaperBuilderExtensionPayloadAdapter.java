@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.utilities;
 
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionTransport;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
@@ -14,6 +15,9 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Authoritative Paper compare-and-set backend for negotiated Builder extension types. */
 final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener {
@@ -27,6 +31,8 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
     private final UtilitiesManagerPlugin plugin;
     private final NamespacedKey entityMarkerKey;
     private final PaperBlockEntityNbtBridge blockEntities;
+    private final Map<UUID, BuilderExtensionTransport.Reassembler> reassemblers =
+            new ConcurrentHashMap<>();
 
     PaperBuilderExtensionPayloadAdapter(UtilitiesManagerPlugin plugin) {
         this.plugin = plugin;
@@ -49,6 +55,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
     }
 
     void stop() {
+        reassemblers.clear();
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(
                 plugin, BuilderExtensionWireProtocol.CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(
@@ -65,7 +72,13 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
 
         BuilderExtensionWireProtocol.Request request;
         try {
-            request = BuilderExtensionWireProtocol.decodeRequest(message);
+            BuilderExtensionTransport.Reassembler reassembler =
+                    reassemblers.computeIfAbsent(
+                            player.getUniqueId(),
+                            ignored -> new BuilderExtensionTransport.Reassembler());
+            var assembled = reassembler.accept(message);
+            if (assembled.isEmpty()) return;
+            request = BuilderExtensionWireProtocol.decodeRequest(assembled.get());
         } catch (IOException | RuntimeException failure) {
             send(player, new BuilderExtensionWireProtocol.Error(
                     "unknown", "invalid Builder extension request: "

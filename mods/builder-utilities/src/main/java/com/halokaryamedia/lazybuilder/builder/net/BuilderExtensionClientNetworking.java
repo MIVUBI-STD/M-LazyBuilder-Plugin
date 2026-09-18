@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.net;
 
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionTransport;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -138,8 +139,7 @@ public final class BuilderExtensionClientNetworking {
                     "Operation already has a pending extension request: " + operationId);
         }
         try {
-            ClientPlayNetworking.send(new BuilderExtensionPayload(
-                    BuilderExtensionWireProtocol.encodeRequest(request)));
+            sendWireMessage(BuilderExtensionWireProtocol.encodeRequest(request));
         } catch (RuntimeException | IOException failure) {
             PENDING.remove(operationId);
             throw failure;
@@ -157,16 +157,22 @@ public final class BuilderExtensionClientNetworking {
         String requestId = "cap-" + UUID.randomUUID();
         pendingCapabilityRequest = requestId;
         try {
-            ClientPlayNetworking.send(new BuilderExtensionPayload(
-                    BuilderExtensionWireProtocol.encodeRequest(
-                            new BuilderExtensionWireProtocol.CapabilitiesRequest(
-                                    requestId))));
+            sendWireMessage(BuilderExtensionWireProtocol.encodeRequest(
+                    new BuilderExtensionWireProtocol.CapabilitiesRequest(
+                            requestId)));
         } catch (IOException | RuntimeException failure) {
             pendingCapabilityRequest = null;
             CAPABILITIES.set(
                     BuilderExtensionCapabilities.unavailable(
                             "capability request failed: "
                                     + concise(failure)));
+        }
+    }
+
+
+    private static void sendWireMessage(byte[] wireMessage) throws IOException {
+        for (byte[] fragment : BuilderExtensionTransport.fragment(wireMessage)) {
+            ClientPlayNetworking.send(new BuilderExtensionPayload(fragment));
         }
     }
 

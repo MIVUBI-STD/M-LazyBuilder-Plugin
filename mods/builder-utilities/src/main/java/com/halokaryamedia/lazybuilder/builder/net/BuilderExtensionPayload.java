@@ -1,6 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.net;
 
-import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionTransport;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
@@ -27,7 +27,7 @@ public record BuilderExtensionPayload(byte[] bytes) implements CustomPayload {
     public BuilderExtensionPayload {
         bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
         if (bytes.length < 2
-                || bytes.length > BuilderExtensionWireProtocol.MAX_MESSAGE_BYTES) {
+                || bytes.length > BuilderExtensionTransport.MAX_PLUGIN_MESSAGE_BYTES) {
             throw new IllegalArgumentException("invalid Builder extension payload size");
         }
     }
