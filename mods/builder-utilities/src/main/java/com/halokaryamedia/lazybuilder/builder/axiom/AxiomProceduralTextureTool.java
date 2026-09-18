@@ -126,7 +126,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Set two corners. Choose Noise, Slope, Curvature, Flow, or Light as a normalized field. Axiom's active block is applied where the field is above Threshold.");
+        ImGui.textWrapped("Set two corners. Choose Fractal, Slope, Curvature, Flow, Light, Ridged, or Cellular as a normalized field. Axiom's active block is applied where the field is above Threshold.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -141,11 +141,11 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         ImGui.textWrapped(idleStatus);
         boolean changed = false;
-        changed |= ImGui.sliderInt("Field Mode (0 Noise / 1 Slope / 2 Curvature / 3 Flow / 4 Light)", fieldMode, 0, 4);
-        if (fieldMode[0] == 0) {
+        changed |= ImGui.sliderInt("Field Mode (0 Fractal / 1 Slope / 2 Curvature / 3 Flow / 4 Light / 5 Ridged / 6 Cellular)", fieldMode, 0, 6);
+        if (fieldMode[0] == 0 || fieldMode[0] == 5 || fieldMode[0] == 6) {
             changed |= ImGui.sliderFloat("Frequency", frequency, 0.01f, 0.5f);
         }
-        if (fieldMode[0] == 0) {
+        if (fieldMode[0] == 0 || fieldMode[0] == 5) {
             changed |= ImGui.sliderInt("Octaves", octaves, 1, 8);
         }
         if (fieldMode[0] == 3) {

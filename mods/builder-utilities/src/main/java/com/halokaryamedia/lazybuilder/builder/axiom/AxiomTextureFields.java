@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
+import com.halokaryamedia.lazybuilder.builder.material.CellularNoiseField;
 import com.halokaryamedia.lazybuilder.builder.material.LightLevelField;
+import com.halokaryamedia.lazybuilder.builder.material.RidgedNoiseField;
 import com.halokaryamedia.lazybuilder.builder.material.ScalarField;
 import com.halokaryamedia.lazybuilder.builder.material.SurfaceCurvatureField;
 import com.halokaryamedia.lazybuilder.builder.material.SurfaceFlowField;
@@ -29,17 +31,22 @@ public final class AxiomTextureFields {
             case 2 -> curvature(world);
             case 3 -> flow(world, flowAngleDegrees);
             case 4 -> light(world);
+            case 5 -> new RidgedNoiseField(
+                    ProceduralTexturePreview.field(frequency, octaves), 1.5);
+            case 6 -> new CellularNoiseField(frequency, 0x43454c4c554c4152L);
             default -> throw new IllegalArgumentException("Unknown texture field mode: " + mode);
         };
     }
 
     public static String name(int mode) {
         return switch (mode) {
-            case 0 -> "Noise";
+            case 0 -> "Fractal";
             case 1 -> "Slope";
             case 2 -> "Curvature";
             case 3 -> "Flow";
             case 4 -> "Light";
+            case 5 -> "Ridged";
+            case 6 -> "Cellular";
             default -> "Unknown";
         };
     }
