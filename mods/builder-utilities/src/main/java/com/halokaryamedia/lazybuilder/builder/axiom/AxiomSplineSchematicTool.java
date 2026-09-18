@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
@@ -244,6 +245,10 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                 throw new IllegalArgumentException("spline schematic instance limit exceeded");
             }
 
+            OperationPreflight.requireAtMost(
+                    selected.snapshot().blockCount(),
+                    MAX_PREVIEW_BLOCKS,
+                    "schematic block count");
             placements = collisionFilteredPlacements(splinePlan);
             previewPoints = expandPreview(selected.snapshot(), placements);
             ensurePreview().update(previewPoints);
@@ -286,6 +291,10 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             }
             if (collision) continue;
 
+            OperationPreflight.requireAtMost(
+                    (long) occupied.size() + instance.size(),
+                    MAX_PREVIEW_BLOCKS,
+                    "spline schematic collision workspace");
             occupied.addAll(instance);
             accepted.add(new PlacementPlanEntry(
                     new PlacementPoint(
@@ -326,10 +335,12 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
         CancellationSource cancellation = new CancellationSource();
-        long estimatedBlocks = Math.multiplyExact(
-                (long) selected.snapshot().blockCount(),
-                placements.size());
-        long estimateBytes = Math.max(1L, Math.multiplyExact(estimatedBlocks, 96L));
+        long estimatedBlocks = OperationPreflight.multiply(
+                selected.snapshot().blockCount(),
+                placements.size(),
+                "spline schematic block estimate");
+        long estimateBytes = OperationPreflight.estimateBytes(
+                estimatedBlocks, 96L, "spline schematic history estimate");
 
         Optional<PreparedStructureMutation> prepared =
                 PlacementStructureMutationPreparer.prepareBlocks(

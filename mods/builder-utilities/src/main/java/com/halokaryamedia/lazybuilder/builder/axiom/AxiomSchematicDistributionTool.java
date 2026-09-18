@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDistribution;
@@ -257,6 +258,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             placements = raw.stream()
                     .map(this::applySchematicOffset)
                     .toList();
+            OperationPreflight.requireAtMost(
+                    OperationPreflight.multiply(
+                            snapshot.blockCount(),
+                            placements.size(),
+                            "distributed schematic preview estimate"),
+                    MAX_PREVIEW_BLOCKS,
+                    "distributed schematic preview blocks");
             previewPoints = expandPreview(snapshot, placements);
             ensurePreview().update(previewPoints);
             idleStatus = "Distribution preview ready";
@@ -342,10 +350,12 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         ClientWorld world = requireWorld();
         ensureBlockOnly(selected);
         CancellationSource cancellation = new CancellationSource();
-        long estimatedBlocks = Math.multiplyExact(
-                (long) selected.snapshot().blockCount(),
-                placements.size());
-        long estimateBytes = Math.max(1L, Math.multiplyExact(estimatedBlocks, 96L));
+        long estimatedBlocks = OperationPreflight.multiply(
+                selected.snapshot().blockCount(),
+                placements.size(),
+                "distributed schematic block estimate");
+        long estimateBytes = OperationPreflight.estimateBytes(
+                estimatedBlocks, 96L, "distributed schematic history estimate");
 
         Optional<PreparedStructureMutation> prepared =
                 PlacementStructureMutationPreparer.prepareBlocks(
