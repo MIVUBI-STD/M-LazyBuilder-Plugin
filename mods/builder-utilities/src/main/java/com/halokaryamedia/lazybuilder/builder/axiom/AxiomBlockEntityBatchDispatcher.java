@@ -46,13 +46,11 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
             boolean undo
     ) throws IOException {
         Objects.requireNonNull(stored, "stored");
-        this.cursor = StoredExtensionCursor.open(stored);
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
         this.world = Objects.requireNonNull(world, "world");
         this.dimensionId = world.getRegistryKey().getValue().toString();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsBlockEntity()) {
-            cursor.close();
             throw new IllegalStateException(
                     "Server does not advertise Builder BLOCK_ENTITY authority");
         }
@@ -61,6 +59,7 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         // guaranteed without buffering/pushback complexity in the streaming cursor.
         this.maxBatchEntries = 1;
         this.undo = undo;
+        this.cursor = StoredExtensionCursor.open(stored);
         try {
             this.blockStates = buildBlockStateIndex(stored);
         } catch (IOException | RuntimeException failure) {
