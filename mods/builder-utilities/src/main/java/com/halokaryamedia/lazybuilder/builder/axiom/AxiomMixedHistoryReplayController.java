@@ -106,12 +106,14 @@ public final class AxiomMixedHistoryReplayController
     ) throws IOException {
         HistoryTimelineLease lease = runtime.timeline().beginUndo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to undo"));
+        AxiomMixedHistoryReplayController controller = null;
         try {
-            AxiomMixedHistoryReplayController controller =
-                    new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            controller = new AxiomMixedHistoryReplayController(
+                    services, runtime, world, lease);
             runtime.registerActiveOperation(controller);
             return controller;
         } catch (IOException | RuntimeException failure) {
+            if (controller != null) controller.closeTransports();
             lease.abort();
             throw failure;
         }
@@ -124,12 +126,14 @@ public final class AxiomMixedHistoryReplayController
     ) throws IOException {
         HistoryTimelineLease lease = runtime.timeline().beginRedo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to redo"));
+        AxiomMixedHistoryReplayController controller = null;
         try {
-            AxiomMixedHistoryReplayController controller =
-                    new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            controller = new AxiomMixedHistoryReplayController(
+                    services, runtime, world, lease);
             runtime.registerActiveOperation(controller);
             return controller;
         } catch (IOException | RuntimeException failure) {
+            if (controller != null) controller.closeTransports();
             lease.abort();
             throw failure;
         }
