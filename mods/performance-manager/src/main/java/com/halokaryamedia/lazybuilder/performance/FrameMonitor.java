@@ -30,9 +30,11 @@ public final class FrameMonitor {
     private int severeSamples;
     private int stableFrames;
     private FramePressure pressure = FramePressure.NORMAL;
+    private long currentFrameNanos;
     private long previousFrameNanos = Long.MIN_VALUE;
 
     public void recordFrame(long nowNanos, int targetFps) {
+        currentFrameNanos = nowNanos;
         if (previousFrameNanos == Long.MIN_VALUE) {
             previousFrameNanos = nowNanos;
             return;
@@ -110,6 +112,10 @@ public final class FrameMonitor {
 
     public FramePressure pressure() {
         return pressure;
+    }
+
+    public long currentFrameNanos() {
+        return currentFrameNanos;
     }
 
     public int sampleCount() {

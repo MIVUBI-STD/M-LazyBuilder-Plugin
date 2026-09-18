@@ -52,11 +52,16 @@ public final class PerformanceRuntime {
     }
 
     public boolean shouldRender(Entity entity) {
-        return cullingRuntime.shouldRender(entity, preferences);
+        return cullingRuntime.shouldRender(entity, preferences, frameMonitor.currentFrameNanos());
     }
 
     public <E extends BlockEntity> boolean shouldRender(E blockEntity, BlockEntityRenderer<E> renderer) {
-        return cullingRuntime.shouldRender(blockEntity, renderer, preferences);
+        return cullingRuntime.shouldRender(
+                blockEntity,
+                renderer,
+                preferences,
+                frameMonitor.currentFrameNanos()
+        );
     }
 
     public FramePressure pressure() {

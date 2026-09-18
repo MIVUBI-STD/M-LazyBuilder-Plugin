@@ -62,15 +62,25 @@ public final class CullingRuntime {
     private final Set<BlockEntity> queuedBlockEntities = Collections.newSetFromMap(new IdentityHashMap<>());
     private World lastWorld;
 
-    public boolean shouldRender(Entity entity, PerformancePreferences preferences) {
+    public boolean shouldRender(
+            Entity entity,
+            PerformancePreferences preferences,
+            long frameNowNanos
+    ) {
         if (EXTERNAL_ENTITY_CULLING_PRESENT || !preferences.entityCulling()) return true;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (!eligible(client, entity)) return true;
+        if (!eligibleWithoutDistance(client, entity)) return true;
 
         Vec3d camera = client.gameRenderer.getCamera().getPos();
-        Vec3d target = entity.getBoundingBox().getCenter();
+        Box box = entity.getBoundingBox();
+        double targetX = (box.minX + box.maxX) * 0.5D;
+        double targetY = (box.minY + box.maxY) * 0.5D;
+        double targetZ = (box.minZ + box.maxZ) * 0.5D;
+        if (squaredDistance(camera, targetX, targetY, targetZ) <= ALWAYS_VISIBLE_DISTANCE_SQ) return true;
+
         CacheEntry entry = entities.get(entity);
-        if (!fresh(entry, camera, target, System.nanoTime())) {
+        long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
+        if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
             enqueue(entity);
             return true;
         }
@@ -80,7 +90,8 @@ public final class CullingRuntime {
     public <E extends BlockEntity> boolean shouldRender(
             E blockEntity,
             BlockEntityRenderer<E> renderer,
-            PerformancePreferences preferences
+            PerformancePreferences preferences,
+            long frameNowNanos
     ) {
         if (EXTERNAL_ENTITY_CULLING_PRESENT
                 || !preferences.blockEntityCulling()
@@ -93,11 +104,14 @@ public final class CullingRuntime {
         if (client == null || client.world == null || blockEntity.getWorld() != client.world) return true;
 
         Vec3d camera = client.gameRenderer.getCamera().getPos();
-        Vec3d target = Vec3d.ofCenter(blockEntity.getPos());
-        if (camera.squaredDistanceTo(target) <= ALWAYS_VISIBLE_DISTANCE_SQ) return true;
+        double targetX = blockEntity.getPos().getX() + 0.5D;
+        double targetY = blockEntity.getPos().getY() + 0.5D;
+        double targetZ = blockEntity.getPos().getZ() + 0.5D;
+        if (squaredDistance(camera, targetX, targetY, targetZ) <= ALWAYS_VISIBLE_DISTANCE_SQ) return true;
 
         CacheEntry entry = blockEntities.get(blockEntity);
-        if (!fresh(entry, camera, target, System.nanoTime())) {
+        long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
+        if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
             enqueue(blockEntity);
             return true;
         }
@@ -170,12 +184,20 @@ public final class CullingRuntime {
     }
 
     private static boolean eligible(MinecraftClient client, Entity entity) {
+        if (!eligibleWithoutDistance(client, entity)) return false;
+        Vec3d camera = client.gameRenderer.getCamera().getPos();
+        Box box = entity.getBoundingBox();
+        double targetX = (box.minX + box.maxX) * 0.5D;
+        double targetY = (box.minY + box.maxY) * 0.5D;
+        double targetZ = (box.minZ + box.maxZ) * 0.5D;
+        return squaredDistance(camera, targetX, targetY, targetZ) > ALWAYS_VISIBLE_DISTANCE_SQ;
+    }
+
+    private static boolean eligibleWithoutDistance(MinecraftClient client, Entity entity) {
         if (client == null || client.world == null || entity == null || entity.getWorld() != client.world) return false;
         if (!isVanillaEntity(entity)) return false;
         if (entity == client.player || entity == client.gameRenderer.getCamera().getFocusedEntity()) return false;
-        if (entity.isGlowing() || entity.hasCustomName()) return false;
-        Vec3d camera = client.gameRenderer.getCamera().getPos();
-        return camera.squaredDistanceTo(entity.getBoundingBox().getCenter()) > ALWAYS_VISIBLE_DISTANCE_SQ;
+        return !entity.isGlowing() && !entity.hasCustomName();
     }
 
     private static boolean isVanillaEntity(Entity entity) {
@@ -284,11 +306,25 @@ public final class CullingRuntime {
         return true;
     }
 
-    private static boolean fresh(CacheEntry entry, Vec3d camera, Vec3d target, long now) {
+    private static boolean fresh(
+            CacheEntry entry,
+            Vec3d camera,
+            double targetX,
+            double targetY,
+            double targetZ,
+            long now
+    ) {
         return entry != null
                 && now - entry.createdNanos <= MAX_AGE_NANOS
                 && entry.camera.squaredDistanceTo(camera) <= MAX_CAMERA_MOVE_SQ
-                && entry.target.squaredDistanceTo(target) <= MAX_TARGET_MOVE_SQ;
+                && squaredDistance(entry.target, targetX, targetY, targetZ) <= MAX_TARGET_MOVE_SQ;
+    }
+
+    private static double squaredDistance(Vec3d origin, double x, double y, double z) {
+        double dx = origin.x - x;
+        double dy = origin.y - y;
+        double dz = origin.z - z;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private void enqueue(Entity entity) {
