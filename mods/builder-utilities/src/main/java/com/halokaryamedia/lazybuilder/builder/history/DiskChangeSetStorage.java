@@ -127,6 +127,27 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         return recoverCommitted(operationId -> true);
     }
 
+    public List<HistoryJournalSummary> inspectRecoverableCommitted(
+            Predicate<String> operationFilter
+    ) throws IOException {
+        Objects.requireNonNull(operationFilter, "operationFilter");
+        List<HistoryJournalSummary> result = new java.util.ArrayList<>();
+        for (Path path : listCommitted()) {
+            if (ownedCommittedPaths.contains(path)) continue;
+            ChangeSetCodec.Header header;
+            try (InputStream input = Files.newInputStream(path)) {
+                header = ChangeSetCodec.inspect(input);
+            }
+            if (operationFilter.test(header.operationId())) {
+                result.add(new HistoryJournalSummary(
+                        header.operationId(),
+                        header.changeCount(),
+                        header.extensionCount()));
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public List<StoredChangeSet> recoverCommitted(Predicate<String> operationFilter) throws IOException {
         Objects.requireNonNull(operationFilter, "operationFilter");
         List<StoredChangeSet> recovered = new java.util.ArrayList<>();

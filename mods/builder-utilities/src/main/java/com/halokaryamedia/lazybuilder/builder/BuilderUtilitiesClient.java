@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomArrayTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomClientServices;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomProceduralTextureTool;
+import com.halokaryamedia.lazybuilder.builder.axiom.AxiomOperationCenterTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomRecoveryTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomScatterTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSchematicCatalogTool;
@@ -33,6 +34,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomSchematicCatalogTool(services, runtime));
         services.toolRegistry().register(new AxiomSchematicDistributionTool(services, runtime));
         services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
+        services.toolRegistry().register(new AxiomOperationCenterTool(runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
         ClientPlayConnectionEvents.DISCONNECT.register(
                 (handler, client) -> resetWorldTimeline());
