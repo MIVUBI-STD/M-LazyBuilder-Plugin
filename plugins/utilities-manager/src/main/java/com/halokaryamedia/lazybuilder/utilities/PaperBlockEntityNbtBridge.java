@@ -115,40 +115,100 @@ final class PaperBlockEntityNbtBridge {
                     "expected block/NBT before-state but actual state differs");
         }
 
-        block.setBlockData(afterBlock, false);
-        Object desiredNbt = after.nbt();
-        if (desiredNbt != null) {
-            Object blockEntity = blockEntity(world, mutation.x(), mutation.y(), mutation.z());
-            if (blockEntity == null) {
-                return new ApplyResult(
-                        ApplyState.CONFLICT,
-                        "after block state did not create a block entity");
+        try {
+            writeState(world, block, after.blockData(), after.nbt());
+            Snapshot verified = snapshot(
+                    world, mutation.x(), mutation.y(), mutation.z());
+            if (matches(verified, after)) {
+                return new ApplyResult(ApplyState.APPLIED, "applied");
             }
-            String desiredId = id(desiredNbt);
-            Object actualNbt = canonicalize(save(blockEntity, world));
-            if (!desiredId.equals(id(actualNbt))) {
-                return new ApplyResult(
-                        ApplyState.CONFLICT,
-                        "block entity type mismatch after block placement");
-            }
-            Object loadPayload = copyForLoad(desiredNbt);
-            loadWithComponents.invoke(
-                    blockEntity,
-                    loadPayload,
-                    registryAccess(world)
-            );
-            setChanged.invoke(blockEntity);
-            // Trigger Paper/Bukkit block-state propagation after the NMS payload load.
-            block.getState(false).update(true, false);
-        }
 
-        Snapshot verified = snapshot(world, mutation.x(), mutation.y(), mutation.z());
-        if (!matches(verified, after)) {
+            restoreOrThrow(world, block, actual, null);
             return new ApplyResult(
                     ApplyState.CONFLICT,
-                    "block entity verification failed after mutation");
+                    "block entity verification failed; BEFORE state restored");
+        } catch (Exception applyFailure) {
+            try {
+                restoreOrThrow(world, block, actual, applyFailure);
+            } catch (Exception restoreFailure) {
+                if (restoreFailure != applyFailure) {
+                    applyFailure.addSuppressed(restoreFailure);
+                }
+                throw applyFailure;
+            }
+            return new ApplyResult(
+                    ApplyState.CONFLICT,
+                    "block entity write failed; BEFORE state restored: "
+                            + concise(applyFailure));
         }
-        return new ApplyResult(ApplyState.APPLIED, "applied");
+    }
+
+    private void writeState(
+            World world,
+            Block block,
+            BlockData blockData,
+            Object canonicalNbt
+    ) throws Exception {
+        block.setBlockData(blockData, false);
+
+        Object blockEntity = blockEntity(
+                world, block.getX(), block.getY(), block.getZ());
+        if (canonicalNbt == null) {
+            if (blockEntity != null) {
+                throw new IllegalStateException(
+                        "target block state creates a block entity but desired NBT is absent");
+            }
+            return;
+        }
+        if (blockEntity == null) {
+            throw new IllegalStateException(
+                    "target block state did not create a block entity");
+        }
+
+        String desiredId = id(canonicalNbt);
+        Object actualNbt = canonicalize(save(blockEntity, world));
+        if (!desiredId.equals(id(actualNbt))) {
+            throw new IllegalStateException(
+                    "block entity type mismatch after block placement");
+        }
+
+        loadWithComponents.invoke(
+                blockEntity,
+                copyForLoad(canonicalNbt),
+                registryAccess(world)
+        );
+        setChanged.invoke(blockEntity);
+        block.getState(false).update(true, false);
+    }
+
+    private void restoreOrThrow(
+            World world,
+            Block block,
+            Snapshot before,
+            Exception originalFailure
+    ) throws Exception {
+        try {
+            writeState(world, block, before.blockData(), before.nbt());
+            Snapshot restored = snapshot(
+                    world, block.getX(), block.getY(), block.getZ());
+            if (!before.equals(restored)) {
+                throw new IllegalStateException(
+                        "rollback verification did not restore exact BEFORE state");
+            }
+        } catch (Exception restoreFailure) {
+            if (originalFailure != null) {
+                originalFailure.addSuppressed(restoreFailure);
+                throw originalFailure;
+            }
+            throw restoreFailure;
+        }
+    }
+
+    private static String concise(Throwable failure) {
+        String message = failure.getMessage();
+        return message == null || message.isBlank()
+                ? failure.getClass().getSimpleName()
+                : message;
     }
 
     private Snapshot snapshot(World world, int x, int y, int z) throws Exception {
