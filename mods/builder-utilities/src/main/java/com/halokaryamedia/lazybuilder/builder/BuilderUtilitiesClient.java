@@ -84,6 +84,13 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                     "Failed to preserve one or more active Builder operations on disconnect", e);
         }
         try {
+            current.saveRuntimeProof("world-exit");
+        } catch (java.io.IOException e) {
+            if (failure == null) failure = e;
+            else failure.addSuppressed(e);
+            LOGGER.error("Failed to persist Builder runtime proof on world disconnect", e);
+        }
+        try {
             current.resetWorldTimeline();
         } catch (java.io.IOException e) {
             if (failure != null) e.addSuppressed(failure);
