@@ -1,7 +1,5 @@
 package com.halokaryamedia.lazybuilder.builder.structure;
 
-import net.minecraft.SharedConstants;
-
 /**
  * Explicit compatibility policy for Sponge schematic DataVersion.
  *
@@ -11,6 +9,9 @@ import net.minecraft.SharedConstants;
  * byte-for-byte; this class does not pretend to datafix them.</p>
  */
 public final class SchematicDataVersionPolicy {
+    /** Minecraft Java 1.21.4 data version; this module is runtime-pinned to 1.21.4. */
+    private static final int CURRENT_DATA_VERSION = 4189;
+
     private SchematicDataVersionPolicy() {}
 
     public static Compatibility classify(int dataVersion) {
@@ -33,7 +34,7 @@ public final class SchematicDataVersionPolicy {
     }
 
     public static int currentDataVersion() {
-        return SharedConstants.getGameVersion().getSaveVersion().getId();
+        return CURRENT_DATA_VERSION;
     }
 
     public enum Compatibility {

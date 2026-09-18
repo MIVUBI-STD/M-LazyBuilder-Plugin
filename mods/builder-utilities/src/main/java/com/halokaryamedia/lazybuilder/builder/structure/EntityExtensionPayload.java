@@ -49,6 +49,27 @@ public record EntityExtensionPayload(
 
     @Override public byte[] templateNbt() { return templateNbt.clone(); }
 
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) return true;
+        if (!(other instanceof EntityExtensionPayload that)) return false;
+        return present == that.present
+                && Double.doubleToLongBits(x) == Double.doubleToLongBits(that.x)
+                && Double.doubleToLongBits(y) == Double.doubleToLongBits(that.y)
+                && Double.doubleToLongBits(z) == Double.doubleToLongBits(that.z)
+                && Arrays.equals(templateNbt, that.templateNbt);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Boolean.hashCode(present);
+        result = 31 * result + Double.hashCode(x);
+        result = 31 * result + Double.hashCode(y);
+        result = 31 * result + Double.hashCode(z);
+        result = 31 * result + Arrays.hashCode(templateNbt);
+        return result;
+    }
+
     public byte[] encode() throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(bytes)) {
