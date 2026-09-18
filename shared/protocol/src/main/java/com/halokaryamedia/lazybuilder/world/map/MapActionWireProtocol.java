@@ -40,7 +40,6 @@ public final class MapActionWireProtocol {
             requireRequestId(requestId);
             Objects.requireNonNull(worldId, "worldId");
         }
-        public TeleportLocation(WorldId worldId, int blockX, int blockZ) { this(1L, worldId, blockX, blockZ); }
     }
 
     public record ExportArea(
@@ -63,19 +62,12 @@ public final class MapActionWireProtocol {
             artifactName = requireString(artifactName, "artifactName");
             settings = Objects.requireNonNull(settings, "settings");
         }
-        public ExportArea(
-                WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-                String targetFormat, String artifactName, ExportSettingsWire.Settings settings
-        ) {
-            this(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
-        }
     }
 
     public record CurrentWorldRequest(long requestId) implements Request {
         public CurrentWorldRequest {
             requireRequestId(requestId);
         }
-        public CurrentWorldRequest() { this(1L); }
     }
 
     public sealed interface Response permits TeleportOk, ExportAccepted, ExportComplete,
@@ -238,27 +230,8 @@ public final class MapActionWireProtocol {
         }
     }
 
-    public static byte[] teleportRequest(WorldId worldId, int blockX, int blockZ) {
-        return teleportRequest(1L, worldId, blockX, blockZ);
-    }
-
     public static byte[] teleportRequest(long requestId, WorldId worldId, int blockX, int blockZ) {
         return encodeRequest(new TeleportLocation(requestId, worldId, blockX, blockZ));
-    }
-
-    public static byte[] exportAreaRequest(
-            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-            String targetFormat, String artifactName
-    ) {
-        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2,
-                targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
-    }
-
-    public static byte[] exportAreaRequest(
-            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-            String targetFormat, String artifactName, ExportSettingsWire.Settings settings
-    ) {
-        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
     }
 
     public static byte[] exportAreaRequest(
@@ -269,7 +242,6 @@ public final class MapActionWireProtocol {
                 requestId, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings));
     }
 
-    public static byte[] currentWorldRequest() { return currentWorldRequest(1L); }
     public static byte[] currentWorldRequest(long requestId) {
         return encodeRequest(new CurrentWorldRequest(requestId));
     }
