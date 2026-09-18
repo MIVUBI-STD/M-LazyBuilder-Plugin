@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,53 @@ class MapExportWorkspaceStateTest {
         state.initialize(worldId, "Build", source, List.of(replacement));
 
         assertEquals(replacement, state.format());
+    }
+
+    @Test
+    void enterAndExitResetTransientPresentationLifecycle() {
+        MapExportWorkspaceState state = state();
+
+        state.enter();
+        state.markSettingsRequested();
+        state.markFormatsRequested();
+        state.markControlsReady();
+        state.scrollBy(60, 120);
+
+        state.enter();
+
+        assertTrue(state.active());
+        assertFalse(state.requestedSettings());
+        assertFalse(state.requestedFormats());
+        assertFalse(state.controlsReady());
+        assertEquals(0, state.scroll());
+
+        state.markSettingsRequested();
+        state.markFormatsRequested();
+        state.markControlsReady();
+        state.scrollBy(40, 100);
+        state.exit();
+
+        assertFalse(state.active());
+        assertFalse(state.requestedSettings());
+        assertFalse(state.requestedFormats());
+        assertFalse(state.controlsReady());
+        assertEquals(0, state.scroll());
+    }
+
+    @Test
+    void workspaceScrollRemainsBounded() {
+        MapExportWorkspaceState state = state();
+        state.enter();
+
+        state.scrollBy(80, 60);
+        assertEquals(60, state.scroll());
+
+        state.scrollBy(-100, 60);
+        assertEquals(0, state.scroll());
+
+        state.scrollBy(40, 100);
+        state.clampScroll(20);
+        assertEquals(20, state.scroll());
     }
 
     @Test
