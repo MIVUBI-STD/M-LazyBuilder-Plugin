@@ -73,18 +73,6 @@ public final class ClientMapController {
         }
     }
 
-    /** Legacy export path retained for compatibility with the old transfer screen. */
-    public void exportAreaCurrent(
-            int x1,
-            int z1,
-            int x2,
-            int z2,
-            String targetFormat,
-            String artifactName
-    ) {
-        exportAreaCurrent(x1, z1, x2, z2, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
-    }
-
     /** Export-workspace path. Settings are export-only and never mutate the source world. */
     public void exportAreaCurrent(
             int x1,
