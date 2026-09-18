@@ -984,10 +984,6 @@ public final class WorldMapScreen extends Screen {
         if (maps.currentWorld() == null || !worlds.canManage()) return;
         exportLifecycle.enter();
         exportWorkspace.scope(scope);
-        
-        
-        
-        
         contextOpen = false;
         if (scope == MapExportWorkspaceState.Scope.CUSTOM_AREA) initializeAreaSelection(blockX, blockZ);
         else areaSelection.active = false;
@@ -1023,10 +1019,6 @@ public final class WorldMapScreen extends Screen {
         if (exportNameField != null) exportWorkspace.artifactName(exportNameField.getText());
         exportLifecycle.exit();
         exportNameField = null;
-        
-        
-        
-        
         clearAreaSelection();
         invalidateRasterViewport();
         clearAndInit();
