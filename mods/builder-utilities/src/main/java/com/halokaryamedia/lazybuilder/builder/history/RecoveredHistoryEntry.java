@@ -8,6 +8,8 @@ import com.halokaryamedia.lazybuilder.builder.mutation.RecoveredPreparedMutation
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.LinkedHashSet;
 
 /** Ownership wrapper for one durable recovery journal and its world-aware classification. */
 public final class RecoveredHistoryEntry implements AutoCloseable {
@@ -65,6 +67,43 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
         }
         transferred = true;
         return new RecoveredPreparedMutation(stored);
+    }
+
+    /**
+     * Transfers an unclassified mixed journal to a caller that owns authoritative
+     * compare-and-set execution for every extension type in the journal.
+     *
+     * <p>Block reconciliation must already be non-conflicting. This is intended for
+     * async authorities such as ENTITY where a synchronous read target is unavailable
+     * but replay itself is idempotent and conflict-detecting.</p>
+     */
+    public RecoveredPreparedMutation transferForAuthoritativeResume(
+            Set<String> authoritativeExtensionTypes
+    ) throws IOException {
+        ensureOwned();
+        Objects.requireNonNull(authoritativeExtensionTypes, "authoritativeExtensionTypes");
+        if (blocks.state() == ReconciliationState.CONFLICT) {
+            throw new IllegalStateException(
+                    "Conflicted block state cannot resume automatically");
+        }
+        Set<String> required = extensionTypeIds();
+        if (!authoritativeExtensionTypes.containsAll(required)) {
+            Set<String> missing = new LinkedHashSet<>(required);
+            missing.removeAll(authoritativeExtensionTypes);
+            throw new IllegalStateException(
+                    "Missing authoritative recovery support for extension types " + missing);
+        }
+        transferred = true;
+        return new RecoveredPreparedMutation(stored);
+    }
+
+    public Set<String> extensionTypeIds() throws IOException {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        stored.visitExtensions(frame -> {
+            ids.add(frame.typeId());
+            return true;
+        });
+        return Set.copyOf(ids);
     }
 
     public void transferFullyAppliedTo(HistoryTimeline timeline) throws IOException {

@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** User-facing recovery surface for durable block-only operations left after restart. */
 public final class AxiomRecoveryTool implements CustomTool {
@@ -43,7 +45,9 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. Block-only and negotiated BIOME plans can resume safely after world-aware classification.");
+        ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. "
+                + "Block/BIOME plans use world-aware classification; ENTITY plans may resume "
+                + "through negotiated authoritative compare-and-set replay.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -78,9 +82,7 @@ public final class AxiomRecoveryTool implements CustomTool {
                     + " | extensions=" + entry.extensionCount()
                     + " | state=" + state);
 
-            if (entry.state().isPresent()
-                    && entry.state().get() != ReconciliationState.CONFLICT
-                    && ImGui.button("Resume Selected")) {
+            if (canResume(entry) && ImGui.button("Resume Selected")) {
                 resumeSelected(entry);
             }
 
@@ -141,9 +143,11 @@ public final class AxiomRecoveryTool implements CustomTool {
             releaseWrappersWithoutDeleting();
             ClientWorld world = requireWorld();
             String scope = AxiomWorldScope.currentScopeId(world);
-            HistoryExtensionTargetRegistry extensions =
+            var capabilities =
                     com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
-                                    .capabilities().supportsBiome()
+                            .capabilities();
+            HistoryExtensionTargetRegistry extensions =
+                    capabilities.supportsBiome()
                             ? new HistoryExtensionTargetRegistry(java.util.Map.of(
                                     HistoryExtensionTypes.BIOME,
                                     new AxiomBiomeExtensionReadTarget(world)))
@@ -167,19 +171,46 @@ public final class AxiomRecoveryTool implements CustomTool {
     private void resumeSelected(RecoveredHistoryEntry entry) {
         try {
             ClientWorld world = requireWorld();
-            var prepared = entry.transferForResume();
+            var prepared = entry.state().isPresent()
+                    ? entry.transferForResume()
+                    : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
             CancellationSource cancellation = new CancellationSource();
             long estimate = Math.max(
                     1L,
                     Math.addExact(
                             Math.multiplyExact(prepared.plannedChanges(), 96L),
-                            Math.multiplyExact(entry.extensionCount(), 192L)));
+                            Math.multiplyExact(entry.extensionCount(), 256L)));
             mutation.start(world, prepared, cancellation, estimate);
             removeEntry(entry);
             status = "Recovery resume started";
         } catch (Exception e) {
             status = "Recovery resume failed: " + safeMessage(e);
         }
+    }
+
+    private boolean canResume(RecoveredHistoryEntry entry) {
+        try {
+            if (entry.state().isPresent()) {
+                return entry.state().get() != ReconciliationState.CONFLICT;
+            }
+            if (entry.blockReconciliation().state() == ReconciliationState.CONFLICT) {
+                return false;
+            }
+            return authoritativeResumeTypes().containsAll(entry.extensionTypeIds());
+        } catch (IOException e) {
+            status = "Recovery inspection failed: " + safeMessage(e);
+            return false;
+        }
+    }
+
+    private static Set<String> authoritativeResumeTypes() {
+        var capabilities =
+                com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
+                        .capabilities();
+        LinkedHashSet<String> types = new LinkedHashSet<>();
+        if (capabilities.supportsBiome()) types.add(HistoryExtensionTypes.BIOME);
+        if (capabilities.supportsEntity()) types.add(HistoryExtensionTypes.ENTITY);
+        return Set.copyOf(types);
     }
 
     private void publishSelected(RecoveredHistoryEntry entry) {
