@@ -25,10 +25,13 @@ public final class BuilderRetirementReadiness {
             boolean blockEntityAuthority,
             boolean entityAuthority,
             int recoverableCommitted,
-            int incompleteJournals
+            int incompleteJournals,
+            int legacyUnscopedJournals
     ) throws IOException {
         Objects.requireNonNull(runtime, "runtime");
-        if (recoverableCommitted < 0 || incompleteJournals < 0) {
+        if (recoverableCommitted < 0
+                || incompleteJournals < 0
+                || legacyUnscopedJournals < 0) {
             throw new IllegalArgumentException("journal counts must be >= 0");
         }
 
@@ -59,6 +62,10 @@ public final class BuilderRetirementReadiness {
         }
         if (incompleteJournals > 0) {
             blockers.add("incomplete recovery journals=" + incompleteJournals);
+        }
+        if (legacyUnscopedJournals > 0) {
+            blockers.add("legacy unscoped recovery journals="
+                    + legacyUnscopedJournals);
         }
         if (proofSnapshots == 0) {
             blockers.add("no persisted runtime proof snapshot exists");
