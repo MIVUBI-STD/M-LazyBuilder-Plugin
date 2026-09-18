@@ -99,6 +99,15 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             throw new IllegalStateException("Server does not advertise Builder ENTITY authority");
         }
 
+        long total = Math.addExact(
+                prepared.plannedChanges(),
+                extensionPlan.total());
+        this.lifecycle = OperationLifecycle.created(total)
+                .transitionTo(OperationState.VALIDATING)
+                .transitionTo(OperationState.PLANNING)
+                .transitionTo(OperationState.QUEUED)
+                .transitionTo(OperationState.RUNNING);
+
         this.worldBlocks = new AxiomClientWorldStateSource(world);
         ChunkDispatchTarget baseBlockTarget = new AxiomBudgetedChunkDispatchTarget(
                 new AxiomChunkMutationDispatcher(services, world));
@@ -117,13 +126,6 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
         } else {
             startNextForwardExtension();
         }
-
-        long total = Math.addExact(prepared.plannedChanges(), extensionPlan.total());
-        this.lifecycle = OperationLifecycle.created(total)
-                .transitionTo(OperationState.VALIDATING)
-                .transitionTo(OperationState.PLANNING)
-                .transitionTo(OperationState.QUEUED)
-                .transitionTo(OperationState.RUNNING);
     }
 
     public synchronized OperationLifecycle lifecycle() { return lifecycle; }
