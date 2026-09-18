@@ -42,6 +42,8 @@ public final class BuilderRuntimeMetrics {
     private final AtomicReference<String> lastOperationId = new AtomicReference<>("none");
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong budgetExceeded = new AtomicLong();
+    private final AtomicLong forwardDispatchYields = new AtomicLong();
+    private final AtomicLong rollbackDispatchYields = new AtomicLong();
     private final AtomicLong maxSliceNanos = new AtomicLong();
     private final AtomicReference<String> lastOutcome = new AtomicReference<>("none");
 
@@ -144,6 +146,14 @@ public final class BuilderRuntimeMetrics {
         budgetExceeded.incrementAndGet();
     }
 
+    public void forwardDispatchYielded() {
+        forwardDispatchYields.incrementAndGet();
+    }
+
+    public void rollbackDispatchYielded() {
+        rollbackDispatchYields.incrementAndGet();
+    }
+
     public void terminal(OperationState state) {
         terminal(state, 0L, "unknown", 0L, 0L);
     }
@@ -220,6 +230,8 @@ public final class BuilderRuntimeMetrics {
                 lastOperationId.get(),
                 conflicts.get(),
                 budgetExceeded.get(),
+                forwardDispatchYields.get(),
+                rollbackDispatchYields.get(),
                 maxSliceNanos.get(),
                 lastOutcome.get()
         );
@@ -270,6 +282,8 @@ public final class BuilderRuntimeMetrics {
             String lastOperationId,
             long conflicts,
             long budgetExceeded,
+            long forwardDispatchYields,
+            long rollbackDispatchYields,
             long maxSliceNanos,
             String lastOutcome
     ) {}

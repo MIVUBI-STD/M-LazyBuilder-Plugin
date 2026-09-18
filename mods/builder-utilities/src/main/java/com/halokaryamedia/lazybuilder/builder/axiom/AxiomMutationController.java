@@ -224,7 +224,9 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         status = "Dispatch " + slice.totalVisitedChunks() + " chunks / "
                 + slice.totalDispatchedBlocks() + " blocks";
 
-        if (slice.state() == BudgetedDispatchState.EXHAUSTED) {
+        if (slice.state() == BudgetedDispatchState.YIELDED) {
+            runtime.metrics().forwardDispatchYielded();
+        } else if (slice.state() == BudgetedDispatchState.EXHAUSTED) {
             phase = Phase.RECONCILING;
         } else if (slice.state() == BudgetedDispatchState.CANCELLED) {
             beginRollback();
@@ -261,7 +263,9 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
                 slice.sliceDispatchedBlocks(),
                 Math.max(0L, System.nanoTime() - started));
         status = "Rollback dispatch: " + slice.state();
-        if (slice.state() == BudgetedDispatchState.EXHAUSTED) {
+        if (slice.state() == BudgetedDispatchState.YIELDED) {
+            runtime.metrics().rollbackDispatchYielded();
+        } else if (slice.state() == BudgetedDispatchState.EXHAUSTED) {
             phase = Phase.ROLLBACK_RECONCILE;
         } else if (slice.state() == BudgetedDispatchState.CONFLICT
                 || slice.state() == BudgetedDispatchState.BUDGET_EXCEEDED) {

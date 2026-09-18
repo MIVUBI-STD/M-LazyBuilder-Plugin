@@ -176,7 +176,15 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     }
 
     private AxiomMixedPumpResult pumpForwardBlocks(ExecutionBudget budget) throws IOException {
+        long started = System.nanoTime();
         BudgetedDispatchSlice slice = blockDispatcher.dispatchSlice(budget);
+        metrics.recordForwardSlice(
+                slice.sliceVisitedChunks(),
+                slice.sliceDispatchedBlocks(),
+                Math.max(0L, System.nanoTime() - started));
+        if (slice.state() == BudgetedDispatchState.YIELDED) {
+            metrics.forwardDispatchYielded();
+        }
         setProcessed(Math.min(
                 prepared.plannedChanges(),
                 blockDispatcher.totalProcessedMutations()));
@@ -586,7 +594,15 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     }
 
     private AxiomMixedPumpResult pumpRollbackBlocks(ExecutionBudget budget) throws IOException {
+        long started = System.nanoTime();
         BudgetedDispatchSlice slice = rollbackBlockDispatcher.dispatchSlice(budget);
+        metrics.recordRollbackSlice(
+                slice.sliceVisitedChunks(),
+                slice.sliceDispatchedBlocks(),
+                Math.max(0L, System.nanoTime() - started));
+        if (slice.state() == BudgetedDispatchState.YIELDED) {
+            metrics.rollbackDispatchYielded();
+        }
         return switch (slice.state()) {
             case YIELDED -> running("rolling back blocks");
             case EXHAUSTED -> {

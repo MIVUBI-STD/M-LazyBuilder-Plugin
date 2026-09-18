@@ -287,6 +287,8 @@ public final class BuilderRuntimeProofStore {
                 + "  \"lastOperationId\": \"" + escape(s.lastOperationId()) + "\",\n"
                 + "  \"conflicts\": " + s.conflicts() + ",\n"
                 + "  \"budgetExceeded\": " + s.budgetExceeded() + ",\n"
+                + "  \"forwardDispatchYields\": " + s.forwardDispatchYields() + ",\n"
+                + "  \"rollbackDispatchYields\": " + s.rollbackDispatchYields() + ",\n"
                 + "  \"maxSliceNanos\": " + s.maxSliceNanos() + ",\n"
                 + "  \"lastOutcome\": \"" + escape(s.lastOutcome()) + "\"\n"
                 + "}\n";
