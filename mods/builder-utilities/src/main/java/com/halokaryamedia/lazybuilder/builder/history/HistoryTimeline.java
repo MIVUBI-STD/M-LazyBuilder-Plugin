@@ -119,6 +119,25 @@ public final class HistoryTimeline implements AutoCloseable {
         activeLease = null;
     }
 
+    synchronized boolean preserveLeaseForRecovery(
+            HistoryTimelineLease lease
+    ) throws IOException {
+        requireActiveLease(lease);
+        StoredChangeSet changeSet = lease.changeSet();
+        Deque<StoredChangeSet> ownerStack =
+                lease.direction() == ReplayDirection.UNDO ? undo : redo;
+        if (ownerStack.peekLast() != changeSet) {
+            throw new IllegalStateException(
+                    "History stack changed during active replay lease");
+        }
+        if (!changeSet.preserveForRecovery()) {
+            return false;
+        }
+        ownerStack.removeLast();
+        activeLease = null;
+        return true;
+    }
+
     public synchronized int undoSize() { return undo.size(); }
     public synchronized int redoSize() { return redo.size(); }
 
