@@ -378,13 +378,10 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         SpongeSchematicImport applyImport = applyImport();
         AxiomSchematicCompatibility.validateForApply(applyImport, world);
         for (PlacementPlanEntry entry : placements) {
-            StructurePlacementBounds placementBounds = StructurePlacementBounds.of(
-                    applyImport.snapshot(), StructurePlacementAdapter.from(entry));
-            if (placementBounds.minY() < world.getBottomY()
-                    || placementBounds.maxY() > world.getTopYInclusive()) {
-                throw new IllegalArgumentException(
-                        "spline schematic placement exceeds current world build height");
-            }
+            AxiomStructureAuxiliary.requirePlacementInsideWorld(
+                    applyImport.snapshot(),
+                    StructurePlacementAdapter.from(entry),
+                    world);
         }
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(applyImport.snapshot());
