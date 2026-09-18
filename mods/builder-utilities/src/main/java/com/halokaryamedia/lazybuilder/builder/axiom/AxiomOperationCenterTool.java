@@ -125,6 +125,13 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + String.format("%.3f", proof.maxSliceNanos() / 1_000_000.0)
                 + " lastOutcome=" + proof.lastOutcome());
 
+        var structureCapabilities = AxiomStructureCapabilityMatrix.global();
+        ImGui.textWrapped("Structure payload matrix: BLOCKS="
+                + structureCapabilities.blocks()
+                + " BIOME=" + structureCapabilities.biomes()
+                + " ENTITY=" + structureCapabilities.entities()
+                + " BLOCK_ENTITY=" + structureCapabilities.blockEntities());
+
         var extension = BuilderExtensionClientNetworking.capabilities();
         ImGui.textWrapped("Server extension authority: " + extension.status()
                 + " | BIOME=" + extension.supportsBiome()

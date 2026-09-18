@@ -21,23 +21,13 @@ public final class AxiomStructureAuxiliary {
     private AxiomStructureAuxiliary() {}
 
     public static void requireApplySupported(StructureSnapshot snapshot) {
-        Objects.requireNonNull(snapshot, "snapshot");
-        if (snapshot.blockEntityCount() != 0) {
+        AxiomStructureCapabilityMatrix.Report report =
+                AxiomStructureCapabilityMatrix.current(snapshot);
+        if (!report.canApplyLosslessly()) {
             throw new IllegalStateException(
-                    "Block-entity mutation authority is not available yet; "
-                            + "the payload remains preserved for .schem export");
-        }
-        if (snapshot.entityCount() != 0
-                && !BuilderExtensionClientNetworking.capabilities().supportsEntity()) {
-            throw new IllegalStateException(
-                    "This structure contains entities but the connected server does not "
-                            + "advertise LazyBuilder ENTITY authority");
-        }
-        if (snapshot.biomeCount() != 0
-                && !BuilderExtensionClientNetworking.capabilities().supportsBiome()) {
-            throw new IllegalStateException(
-                    "This structure contains biomes but the connected server does not "
-                            + "advertise LazyBuilder BIOME authority");
+                    "Structure cannot be applied losslessly with current authorities: "
+                            + report.blockerSummary()
+                            + ". Unsupported payloads remain preserved for .schem export.");
         }
     }
 
