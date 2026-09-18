@@ -222,7 +222,6 @@ impl OperationRegistry {
 
     pub fn cancellation_requested(&self, id: &str) -> Result<bool, String> { Ok(self.get(id)?.cancel_requested) }
     pub fn succeed(&self, id: &str, status: &str) -> Result<OperationSnapshot, String> { self.finish(id, OperationState::Succeeded, status, None) }
-    pub fn cancel(&self, id: &str, status: &str) -> Result<OperationSnapshot, String> { self.finish(id, OperationState::Cancelled, status, None) }
     pub fn fail(&self, id: &str, error: OperationError) -> Result<OperationSnapshot, String> { let status = error.message.clone(); self.finish(id, OperationState::Failed, &status, Some(error)) }
     pub fn require_recovery(&self, id: &str, error: OperationError) -> Result<OperationSnapshot, String> { let status = error.message.clone(); self.finish(id, OperationState::RecoveryRequired, &status, Some(error)) }
 

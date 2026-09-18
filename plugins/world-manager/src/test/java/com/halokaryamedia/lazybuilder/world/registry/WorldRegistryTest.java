@@ -62,6 +62,17 @@ class WorldRegistryTest {
     }
 
     @Test
+    void rejectsFolderNamesThatAreNotPortableToWindows() {
+        for (String folder : List.of("CON", "nul.txt", "Build.", "Build:One", "Build?", "Build*")) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> new WorldRecord(WorldId.create(), folder, "World", WorldKind.IMPORTED,
+                            WorldLifecycle.ACTIVE), folder);
+        }
+        world("Build One", "Build One");
+        world("Build.One", "Build One");
+    }
+
+    @Test
     void metadataUpdateCannotRenameFilesystemIdentity() {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = world("Build", "Build");

@@ -239,7 +239,7 @@
 
 {#if removeCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section
+    <div
       use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.secondary-confirm', escapeDisabled: busy }}
       class="confirm-dialog"
       role="dialog"
@@ -249,13 +249,13 @@
       <header><div><h3 id="remove-plugin-title">Remove {removeCandidate.displayName}?</h3><p>The plugin JAR will be removed from this server.</p></div><button class="close-button" disabled={busy} aria-label="Close remove plugin confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="safe-note"><strong>Plugin data will be kept.</strong><span>Its data folder stays on disk so configuration and saved plugin data are not destroyed.</span></div>
       <div class="confirm-actions"><button class="secondary-confirm" disabled={busy} onclick={closeConfirmation}>Cancel</button><button class="danger-confirm" disabled={busy} onclick={removePlugin}>{busy ? 'Removing…' : 'Remove plugin'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 
 {#if brokenFileCandidate}
   <div class="confirm-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && closeConfirmation()}>
-    <section
+    <div
       use:dialogFocus={{ onEscape: closeConfirmation, initialFocusSelector: '.secondary-confirm', escapeDisabled: busy }}
       class="confirm-dialog danger-dialog"
       role="dialog"
@@ -265,7 +265,7 @@
       <header><div><h3 id="remove-broken-plugin-title">Remove broken plugin file?</h3><p>{brokenFileCandidate.candidateFiles?.[0] || brokenFileCandidate.displayName}</p></div><button class="close-button" disabled={busy} aria-label="Close broken plugin file confirmation" onclick={closeConfirmation}>×</button></header>
       <div class="danger-note"><strong>Only the selected broken JAR is removed.</strong><span>LazyBuilder will not delete unrelated plugin files or plugin data.</span></div>
       <div class="confirm-actions"><button class="secondary-confirm" disabled={busy} onclick={closeConfirmation}>Cancel</button><button class="danger-confirm" disabled={busy} onclick={removeProblemPlugin}>{busy ? 'Removing…' : 'Remove broken file'}</button></div>
-    </section>
+    </div>
   </div>
 {/if}
 

@@ -1,7 +1,7 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(windows)]

@@ -8,6 +8,9 @@ pub enum RecoveryAction {
     EditCommand,
     LocateWorkspace,
     OpenActivity,
+    // Reserved in the public recovery protocol for diagnostics/log surfaces even though
+    // current V1 command paths route support failures through the Support Center.
+    #[allow(dead_code)]
     OpenLogs,
     ReconnectClientProfile,
     RepairServer,

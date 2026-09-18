@@ -245,7 +245,7 @@
 
 {#if closeRequest}
   <div class="close-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && cancelCloseRequest()}>
-    <section
+    <div
       use:dialogFocus={{ onEscape: cancelCloseRequest, initialFocusSelector: closeRequest.kind === 'operations' ? '.close-activity' : '.close-secondary', escapeDisabled: closeBusy }}
       class:dangerous={closeRequest.dangerous}
       class="close-dialog"
@@ -261,7 +261,7 @@
         {#if closeRequest.kind === 'operations'}<button class="close-activity" disabled={closeBusy} onclick={openActivityFromCloseRequest}>Open Activity</button>{/if}
         <button class:danger={closeRequest.dangerous} class="close-confirm" disabled={closeBusy} onclick={confirmCloseRequest}>{closeBusy ? 'Closing…' : closeRequest.confirmLabel}</button>
       </footer>
-    </section>
+    </div>
   </div>
 {/if}
 
