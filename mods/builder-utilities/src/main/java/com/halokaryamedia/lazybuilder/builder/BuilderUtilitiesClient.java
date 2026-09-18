@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.builder.axiom.AxiomScatterTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSchematicCatalogTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSchematicDistributionTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplinePreviewTool;
+import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplineSchematicTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomStructureStampTool;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
@@ -22,6 +23,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         AxiomClientServices services = AxiomClientServices.load();
         runtime = BuilderRuntime.createDefault();
         services.toolRegistry().register(new AxiomSplinePreviewTool(services, runtime));
+        services.toolRegistry().register(new AxiomSplineSchematicTool(services, runtime));
         services.toolRegistry().register(new AxiomArrayTool(services, runtime));
         services.toolRegistry().register(new AxiomScatterTool(services, runtime));
         services.toolRegistry().register(new AxiomProceduralTextureTool(services, runtime));
