@@ -192,11 +192,7 @@ public final class AxiomRecoveryTool implements CustomTool {
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
             transferred = true;
             CancellationSource cancellation = new CancellationSource();
-            long estimate = Math.max(
-                    1L,
-                    Math.addExact(
-                            Math.multiplyExact(prepared.plannedChanges(), 96L),
-                            Math.multiplyExact(entry.extensionCount(), 256L)));
+            long estimate = entry.estimatedHistoryBytes();
             mutation.start(world, prepared, cancellation, estimate);
             removeEntry(entry);
             status = "Recovery resume started";
@@ -245,11 +241,7 @@ public final class AxiomRecoveryTool implements CustomTool {
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
             transferred = true;
             CancellationSource cancellation = new CancellationSource();
-            long estimate = Math.max(
-                    1L,
-                    Math.addExact(
-                            Math.multiplyExact(prepared.plannedChanges(), 96L),
-                            Math.multiplyExact(entry.extensionCount(), 256L)));
+            long estimate = entry.estimatedHistoryBytes();
             mutation.start(world, prepared, cancellation, estimate);
             mutation.requestRollbackCancellation();
             removeEntry(entry);
