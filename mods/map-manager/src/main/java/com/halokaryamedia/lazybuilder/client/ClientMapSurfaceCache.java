@@ -811,7 +811,7 @@ public final class ClientMapSurfaceCache {
     }
 
     record RegionSnapshot(int[] indices, int[] colors, int[] heights, long revision) {
-        private static final RegionSnapshot EMPTY = new RegionSnapshot(new int[0], new int[0], new int[0], 0L);
+        static final RegionSnapshot EMPTY = new RegionSnapshot(new int[0], new int[0], new int[0], 0L);
 
         RegionSnapshot {
             if (indices.length != colors.length || colors.length != heights.length) {
