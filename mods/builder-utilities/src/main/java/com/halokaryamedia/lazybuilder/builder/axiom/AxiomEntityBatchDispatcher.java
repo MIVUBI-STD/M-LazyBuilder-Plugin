@@ -55,7 +55,10 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
             throw new IllegalStateException(
                     "Server does not advertise Builder ENTITY authority");
         }
-        this.maxBatchEntries = capabilities.maxBatchEntries();
+        // Entity SNBT may approach the shared wire-message ceiling by itself.
+        // One entry per request keeps encoding bounded; transport fragmentation
+        // handles the plugin-message ceiling independently.
+        this.maxBatchEntries = 1;
         this.undo = undo;
     }
 

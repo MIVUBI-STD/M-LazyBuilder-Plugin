@@ -126,6 +126,10 @@ public final class BuilderExtensionTransport {
             return Optional.of(transfer.assemble());
         }
 
+        public synchronized boolean isIdle() {
+            return pending.isEmpty();
+        }
+
         public synchronized void clear() {
             pending.clear();
         }

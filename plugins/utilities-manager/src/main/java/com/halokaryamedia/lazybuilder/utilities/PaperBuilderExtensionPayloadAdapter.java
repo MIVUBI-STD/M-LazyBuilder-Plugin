@@ -78,6 +78,9 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                             ignored -> new BuilderExtensionTransport.Reassembler());
             var assembled = reassembler.accept(message);
             if (assembled.isEmpty()) return;
+            if (reassembler.isIdle()) {
+                reassemblers.remove(player.getUniqueId(), reassembler);
+            }
             request = BuilderExtensionWireProtocol.decodeRequest(assembled.get());
         } catch (IOException | RuntimeException failure) {
             send(player, new BuilderExtensionWireProtocol.Error(
