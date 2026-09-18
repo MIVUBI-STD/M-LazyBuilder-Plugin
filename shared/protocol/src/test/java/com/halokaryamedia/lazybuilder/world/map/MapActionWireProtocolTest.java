@@ -157,7 +157,7 @@ class MapActionWireProtocolTest {
     }
 
     @Test
-    void rejectsOversizedMapPayloadsAndStrings() {
+    void rejectsOversizedMapPayloadsAndRequestStrings() {
         assertThrows(
                 IOException.class,
                 () -> MapActionWireProtocol.decodeResponse(
@@ -166,7 +166,23 @@ class MapActionWireProtocolTest {
         String oversized = "x".repeat(193);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> MapActionWireProtocol.error(75L, oversized));
+                () -> MapActionWireProtocol.exportAreaRequest(
+                        75L,
+                        WorldId.create(),
+                        "minecraft:overworld",
+                        0, 0, 15, 15,
+                        "JAVA_1_21_4",
+                        oversized,
+                        ExportSettingsWire.Settings.inherit()));
+    }
+
+    @Test
+    void oversizedErrorMessageFallsBackToBoundedGenericMessage() throws Exception {
+        byte[] payload = MapActionWireProtocol.error(76L, "x".repeat(193));
+
+        var decoded = (MapActionWireProtocol.ErrorResponse) MapActionWireProtocol.decodeResponse(payload);
+        assertEquals(76L, decoded.requestId());
+        assertEquals("Map action failed", decoded.message());
     }
 
     @Test
