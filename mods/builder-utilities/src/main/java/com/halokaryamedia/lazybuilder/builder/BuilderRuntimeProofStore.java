@@ -34,6 +34,15 @@ public final class BuilderRuntimeProofStore {
         return directory;
     }
 
+    public synchronized long snapshotCount() throws IOException {
+        if (!Files.isDirectory(directory)) return 0L;
+        try (var stream = Files.list(directory)) {
+            return stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .count();
+        }
+    }
+
     public synchronized Path writeSnapshot(
             BuilderRuntimeMetrics.Snapshot snapshot,
             String label

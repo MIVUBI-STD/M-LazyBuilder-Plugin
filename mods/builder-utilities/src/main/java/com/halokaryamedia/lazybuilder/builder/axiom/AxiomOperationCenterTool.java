@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
+import com.halokaryamedia.lazybuilder.builder.BuilderRetirementReadiness;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryRecoveryManager;
 import com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds;
 import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
@@ -102,6 +103,26 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " BLOCK_ENTITY=" + extension.supportsBlockEntity()
                 + " ENTITY=" + extension.supportsEntity()
                 + " maxBatch=" + extension.maxBatchEntries());
+
+        try {
+            var retirement = BuilderRetirementReadiness.evaluate(
+                    runtime,
+                    extension.supportsBiome(),
+                    extension.supportsBlockEntity(),
+                    extension.supportsEntity(),
+                    scopedCommitted,
+                    scopedIncomplete
+            );
+            ImGui.textWrapped("FAWE retirement gate: " + retirement.status()
+                    + " | persistedProofs=" + retirement.proofSnapshots()
+                    + " | completedOps=" + retirement.completedOperations());
+            if (!retirement.blockers().isEmpty()) {
+                ImGui.textWrapped("Remaining blockers: "
+                        + String.join(" | ", retirement.blockers()));
+            }
+        } catch (Exception e) {
+            ImGui.textWrapped("FAWE retirement gate unavailable: " + concise(e));
+        }
 
         var budget = runtime.dispatchBudget();
         ImGui.textWrapped("Dispatch budget: "
