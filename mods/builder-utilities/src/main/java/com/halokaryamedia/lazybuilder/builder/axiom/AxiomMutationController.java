@@ -99,6 +99,26 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             this.cancellation = null;
             throw failure;
         }
+        try {
+            runtime.registerActiveOperation(this);
+        } catch (RuntimeException registrationFailure) {
+            IOException cleanupFailure = null;
+            try {
+                if (mixedSession != null) mixedSession.close();
+                else if (session != null) session.close();
+            } catch (IOException e) {
+                cleanupFailure = e;
+            } finally {
+                session = null;
+                mixedSession = null;
+                this.cancellation = null;
+            }
+            if (cleanupFailure != null) {
+                registrationFailure.addSuppressed(cleanupFailure);
+            }
+            throw registrationFailure;
+        }
+
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
         this.terminalMetricRecorded = false;
@@ -107,7 +127,6 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         this.operationPlannedBlocks = prepared.plannedChanges();
         this.operationPlannedExtensions = prepared.changeSet().extensionCount();
         runtime.metrics().operationStarted();
-        runtime.registerActiveOperation(this);
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
     }
 
