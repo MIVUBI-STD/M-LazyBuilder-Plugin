@@ -34,6 +34,28 @@ class PreparedMutationReconcilerTest {
         }
     }
 
+    @Test
+    void noopGuardMatchesBothBeforeAndAfter() throws Exception {
+        try (ChangeSetWriter writer = new MemoryChangeSetStorage().begin("guard")) {
+            writer.append(new ChunkChangeSet(
+                    0, 0,
+                    List.of("minecraft:chest"),
+                    new long[]{LocalBlockPosition.pack(0, 64, 0)},
+                    new int[]{0},
+                    new int[]{0}
+            ));
+            try (StoredChangeSet stored = writer.commit()) {
+                PreparedReconciliationReport report =
+                        PreparedMutationReconciler.reconcile(
+                                stored,
+                                (x, y, z) -> "minecraft:chest");
+                assertEquals(1, report.beforeMatches());
+                assertEquals(1, report.afterMatches());
+                assertEquals(ReconciliationState.FULLY_APPLIED, report.state());
+            }
+        }
+    }
+
     private static StoredChangeSet prepared() throws Exception {
         ChangeSetWriter writer = new MemoryChangeSetStorage().begin("op");
         writer.append(new ChunkChangeSet(
