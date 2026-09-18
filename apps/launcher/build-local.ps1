@@ -76,10 +76,16 @@ if (-not $AllowMissingRuntime) {
     New-Item -ItemType Directory -Force -Path $CoreDir | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientModsDir | Out-Null
 
+    # Clean every LazyBuilder-owned client artifact from the package staging
+    # directory before publishing the exact three-manager V1 core set. Builder
+    # Utilities and Terraform are separate development lanes and stale JARs must
+    # never leak into the Launcher package from an earlier local build.
     foreach ($Prefix in @(
         'lazybuilder-map-manager-',
         'lazybuilder-utility-manager-',
-        'lazybuilder-performance-manager-'
+        'lazybuilder-performance-manager-',
+        'lazybuilder-builder-utilities-',
+        'lazybuilder-terraform-manager-'
     )) {
         Get-ChildItem $ClientModsDir -Filter "$Prefix*.jar" -File -ErrorAction SilentlyContinue | Remove-Item -Force
     }

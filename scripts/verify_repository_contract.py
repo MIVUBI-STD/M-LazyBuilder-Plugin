@@ -340,8 +340,10 @@ def main() -> int:
     if "<id>legacy-terraform</id>" not in root_pom:
         fail(errors, "root Maven reactor must preserve an explicit legacy-terraform profile")
 
-    if "lazybuilder-builder-utilities-" in build_local:
-        fail(errors, "Launcher runtime-ready build must not bundle Builder Utilities into V1 Client Setup")
+    if "lazybuilder-builder-utilities-" not in build_local or "lazybuilder-terraform-manager-" not in build_local:
+        fail(errors, "Launcher build staging must explicitly purge non-core LazyBuilder client JARs before packaging")
+    if "Copy-Item $Builder" in build_local or "Copy-Item $Terraform" in build_local:
+        fail(errors, "Launcher runtime-ready build must not stage Builder/Terraform artifacts into V1 Client Setup")
     if "lazybuilder-builder-utilities-" in verify_workflow:
         fail(errors, "integrated Verify must not stage Builder Utilities into the V1 core client artifact")
     if "lazybuilder-terraform-manager-" in build_local or "lazybuilder-terraform-manager-" in verify_workflow:
