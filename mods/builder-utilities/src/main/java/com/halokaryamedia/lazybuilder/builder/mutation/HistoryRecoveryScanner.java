@@ -23,16 +23,46 @@ public final class HistoryRecoveryScanner {
         Objects.requireNonNull(storage, "storage");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(extensions, "extensions");
+        return classifyRecovered(storage.recoverCommitted(), world, extensions, false);
+    }
 
-        List<StoredChangeSet> recovered = storage.recoverCommitted();
+    public static List<RecoveredMutationCandidate> scanBlocksOnly(
+            DiskChangeSetStorage storage,
+            WorldBlockStateSource world
+    ) throws IOException {
+        Objects.requireNonNull(storage, "storage");
+        Objects.requireNonNull(world, "world");
+        return classifyRecovered(
+                storage.recoverCommitted(),
+                world,
+                HistoryExtensionTargetRegistry.empty(),
+                true
+        );
+    }
+
+    private static List<RecoveredMutationCandidate> classifyRecovered(
+            List<StoredChangeSet> recovered,
+            WorldBlockStateSource world,
+            HistoryExtensionTargetRegistry extensions,
+            boolean requireNoExtensions
+    ) throws IOException {
         List<RecoveredMutationCandidate> result = new ArrayList<>(recovered.size());
 
         try {
             for (StoredChangeSet set : recovered) {
+                if (requireNoExtensions && set.extensionCount() != 0) {
+                    throw new IllegalArgumentException(
+                            "Recovered history contains extension frames; an extension registry is required");
+                }
+
                 PreparedReconciliationReport blockReport =
                         PreparedMutationReconciler.reconcile(set, world);
                 ExtensionReconciliationReport extensionReport =
-                        PreparedExtensionMutationReconciler.reconcile(set, extensions);
+                        set.extensionCount() == 0
+                                ? new ExtensionReconciliationReport(
+                                        0, 0, 0, 0, ReconciliationState.EMPTY)
+                                : PreparedExtensionMutationReconciler.reconcile(set, extensions);
+
                 result.add(new RecoveredMutationCandidate(
                         set,
                         blockReport,
@@ -42,30 +72,19 @@ public final class HistoryRecoveryScanner {
             }
             return List.copyOf(result);
         } catch (IOException | RuntimeException failure) {
-            for (RecoveredMutationCandidate item : result) {
-                try { item.close(); } catch (IOException suppressed) { failure.addSuppressed(suppressed); }
-            }
-            for (int i = result.size(); i < recovered.size(); i++) {
-                try { recovered.get(i).close(); } catch (IOException suppressed) { failure.addSuppressed(suppressed); }
-            }
+            closeRecovered(recovered, failure);
             throw failure;
         }
     }
 
-    public static List<RecoveredMutationCandidate> scanBlocksOnly(
-            DiskChangeSetStorage storage,
-            WorldBlockStateSource world
-    ) throws IOException {
-        for (StoredChangeSet set : storage.recoverCommitted()) {
-            // Close the probe immediately; scan() will reopen canonical owners.
-            boolean extensions = set.extensionCount() != 0;
-            set.close();
-            if (extensions) {
-                throw new IllegalArgumentException(
-                        "Recovered history contains extension frames; an extension registry is required");
+    private static void closeRecovered(List<StoredChangeSet> recovered, Throwable failure) {
+        for (StoredChangeSet set : recovered) {
+            try {
+                set.close();
+            } catch (IOException suppressed) {
+                failure.addSuppressed(suppressed);
             }
         }
-        return scan(storage, world, HistoryExtensionTargetRegistry.empty());
     }
 
     static ReconciliationState combine(ReconciliationState blocks, ReconciliationState extensions) {
