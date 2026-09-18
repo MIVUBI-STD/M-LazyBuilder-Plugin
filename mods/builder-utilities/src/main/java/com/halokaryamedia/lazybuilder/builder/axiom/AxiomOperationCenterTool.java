@@ -92,6 +92,8 @@ public final class AxiomOperationCenterTool implements CustomTool {
             var persisted = runtime.proofStore().aggregateEvidence();
             ImGui.textWrapped("Persisted proof evidence: snapshots="
                     + persisted.snapshotCount()
+                    + " clean=" + persisted.cleanSnapshotCount()
+                    + " rejected=" + persisted.rejectedSnapshotCount()
                     + " maxCompletedBlocks=" + persisted.maxCompletedPlannedBlocks()
                     + " rollbackWork=" + persisted.maxRollbackWork()
                     + " BIOME=" + persisted.maxForwardBiomeExtensions()

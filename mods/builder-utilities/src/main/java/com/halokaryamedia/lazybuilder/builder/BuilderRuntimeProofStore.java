@@ -44,9 +44,10 @@ public final class BuilderRuntimeProofStore {
         }
 
         long snapshots = 0;
+        long clean = 0;
+        long rejected = 0;
         long completed = 0;
         long cancelled = 0;
-        long failed = 0;
         long maxBlocks = 0;
         long maxExtensions = 0;
         long rollbackBlocks = 0;
@@ -54,9 +55,6 @@ public final class BuilderRuntimeProofStore {
         long rollbackEntities = 0;
         long forwardBiomes = 0;
         long forwardEntities = 0;
-        long budgetExceeded = 0;
-        long extensionFailures = 0;
-        long replayFailures = 0;
 
         try (var stream = Files.list(directory)) {
             for (Path path : stream
@@ -75,9 +73,19 @@ public final class BuilderRuntimeProofStore {
                 }
 
                 snapshots++;
+                boolean cleanSnapshot =
+                        longValue(json, "operationsFailed") == 0
+                        && longValue(json, "budgetExceeded") == 0
+                        && longValue(json, "extensionFailures") == 0
+                        && longValue(json, "historyReplayFailures") == 0;
+                if (!cleanSnapshot) {
+                    rejected++;
+                    continue;
+                }
+
+                clean++;
                 completed = Math.max(completed, longValue(json, "operationsCompleted"));
                 cancelled = Math.max(cancelled, longValue(json, "operationsCancelled"));
-                failed = Math.max(failed, longValue(json, "operationsFailed"));
                 maxBlocks = Math.max(
                         maxBlocks,
                         longValue(json, "maxCompletedPlannedBlocks"));
@@ -99,33 +107,22 @@ public final class BuilderRuntimeProofStore {
                 forwardEntities = Math.max(
                         forwardEntities,
                         longValue(json, "forwardEntityExtensions"));
-                budgetExceeded = Math.max(
-                        budgetExceeded,
-                        longValue(json, "budgetExceeded"));
-                extensionFailures = Math.max(
-                        extensionFailures,
-                        longValue(json, "extensionFailures"));
-                replayFailures = Math.max(
-                        replayFailures,
-                        longValue(json, "historyReplayFailures"));
             }
         }
 
         return new BuilderRuntimeProofEvidence(
                 snapshots,
+                clean,
+                rejected,
                 completed,
                 cancelled,
-                failed,
                 maxBlocks,
                 maxExtensions,
                 rollbackBlocks,
                 rollbackBiomes,
                 rollbackEntities,
                 forwardBiomes,
-                forwardEntities,
-                budgetExceeded,
-                extensionFailures,
-                replayFailures
+                forwardEntities
         );
     }
 

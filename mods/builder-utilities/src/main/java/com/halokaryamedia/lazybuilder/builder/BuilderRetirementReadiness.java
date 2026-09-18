@@ -58,6 +58,8 @@ public final class BuilderRetirementReadiness {
         }
         if (proofSnapshots == 0) {
             blockers.add("no persisted runtime proof snapshot exists");
+        } else if (persisted.cleanSnapshotCount() == 0) {
+            blockers.add("persisted proof snapshots exist but none are clean");
         }
         long completedOps = Math.max(
                 metrics.operationsCompleted(),
@@ -101,35 +103,21 @@ public final class BuilderRetirementReadiness {
             blockers.add("ENTITY authority exists but has no observed runtime apply proof");
         }
 
-        long failedOps = Math.max(
-                metrics.operationsFailed(),
-                persisted.maxFailedOperations());
-        if (failedOps > 0) {
-            blockers.add("runtime evidence contains failed operations=" + failedOps);
+        if (metrics.operationsFailed() > 0) {
+            blockers.add("current runtime contains failed operations="
+                    + metrics.operationsFailed());
         }
-
-        long budgetFailures = Math.max(
-                metrics.budgetExceeded(),
-                persisted.maxBudgetExceeded());
-        if (budgetFailures > 0) {
-            blockers.add("runtime evidence contains dispatch budget exceeded="
-                    + budgetFailures);
+        if (metrics.budgetExceeded() > 0) {
+            blockers.add("current runtime contains dispatch budget exceeded="
+                    + metrics.budgetExceeded());
         }
-
-        long extensionFailures = Math.max(
-                metrics.extensionFailures(),
-                persisted.maxExtensionFailures());
-        if (extensionFailures > 0) {
-            blockers.add("runtime evidence contains extension failures="
-                    + extensionFailures);
+        if (metrics.extensionFailures() > 0) {
+            blockers.add("current runtime contains extension failures="
+                    + metrics.extensionFailures());
         }
-
-        long replayFailures = Math.max(
-                metrics.historyReplayFailures(),
-                persisted.maxHistoryReplayFailures());
-        if (replayFailures > 0) {
-            blockers.add("runtime evidence contains history replay failures="
-                    + replayFailures);
+        if (metrics.historyReplayFailures() > 0) {
+            blockers.add("current runtime contains history replay failures="
+                    + metrics.historyReplayFailures());
         }
 
         return new Report(

@@ -1,48 +1,48 @@
 package com.halokaryamedia.lazybuilder.builder;
 
 /**
- * Cross-session runtime evidence aggregated with max semantics so repeated snapshots
- * from one session never double-count work.
+ * Cross-session runtime evidence. Capability evidence is aggregated only from clean
+ * snapshots so an old failed development session cannot poison retirement proof forever.
  */
 public record BuilderRuntimeProofEvidence(
         long snapshotCount,
+        long cleanSnapshotCount,
+        long rejectedSnapshotCount,
         long maxCompletedOperations,
         long maxCancelledOperations,
-        long maxFailedOperations,
         long maxCompletedPlannedBlocks,
         long maxCompletedPlannedExtensions,
         long maxRollbackBlocks,
         long maxRollbackBiomeExtensions,
         long maxRollbackEntityExtensions,
         long maxForwardBiomeExtensions,
-        long maxForwardEntityExtensions,
-        long maxBudgetExceeded,
-        long maxExtensionFailures,
-        long maxHistoryReplayFailures
+        long maxForwardEntityExtensions
 ) {
     public BuilderRuntimeProofEvidence {
         if (snapshotCount < 0
+                || cleanSnapshotCount < 0
+                || rejectedSnapshotCount < 0
                 || maxCompletedOperations < 0
                 || maxCancelledOperations < 0
-                || maxFailedOperations < 0
                 || maxCompletedPlannedBlocks < 0
                 || maxCompletedPlannedExtensions < 0
                 || maxRollbackBlocks < 0
                 || maxRollbackBiomeExtensions < 0
                 || maxRollbackEntityExtensions < 0
                 || maxForwardBiomeExtensions < 0
-                || maxForwardEntityExtensions < 0
-                || maxBudgetExceeded < 0
-                || maxExtensionFailures < 0
-                || maxHistoryReplayFailures < 0) {
+                || maxForwardEntityExtensions < 0) {
             throw new IllegalArgumentException("proof evidence values must be >= 0");
+        }
+        if (cleanSnapshotCount + rejectedSnapshotCount != snapshotCount) {
+            throw new IllegalArgumentException(
+                    "clean + rejected snapshot counts must equal total");
         }
     }
 
     public static BuilderRuntimeProofEvidence empty() {
         return new BuilderRuntimeProofEvidence(
-                0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0);
+                0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0);
     }
 
     public long maxRollbackWork() {
