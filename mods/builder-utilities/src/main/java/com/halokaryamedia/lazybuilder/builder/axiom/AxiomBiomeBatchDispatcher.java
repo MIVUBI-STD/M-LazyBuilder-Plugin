@@ -37,6 +37,7 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
     private String terminalDetail;
     private long processedExtensions;
     private int batchOrdinal;
+    private String pendingOperationId;
 
     public AxiomBiomeBatchDispatcher(
             StoredChangeSet stored,
@@ -75,6 +76,7 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
                         BiomeBatchDispatchState.WAITING, processedExtensions, null);
             }
             requestPending = false;
+            pendingOperationId = null;
             if (received instanceof BuilderExtensionWireProtocol.Error error) {
                 return terminal(BiomeBatchDispatchState.FAILED, error.message());
             }
@@ -114,6 +116,7 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
                         operationId, dimensionId, entries);
         response.set(null);
         requestPending = true;
+        pendingOperationId = operationId;
         BuilderExtensionClientNetworking.sendBiomeBatch(batch, response::set);
         return new BiomeBatchDispatchProgress(
                 BiomeBatchDispatchState.YIELDED, processedExtensions, null);
@@ -122,6 +125,11 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
     @Override
     public synchronized void close() {
         terminal = true;
+        if (pendingOperationId != null) {
+            BuilderExtensionClientNetworking.cancelPending(pendingOperationId);
+            pendingOperationId = null;
+        }
+        requestPending = false;
         cursor.close();
         response.set(null);
     }

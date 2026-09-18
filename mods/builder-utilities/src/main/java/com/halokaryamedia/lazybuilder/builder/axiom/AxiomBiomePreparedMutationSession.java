@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedPreparedMutationDispatcher;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedBlockMutation;
+import com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedMutationReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
 import com.halokaryamedia.lazybuilder.builder.mutation.StoredChangeSetReverser;
@@ -190,6 +191,18 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             return waiting("waiting for Axiom block application");
         }
 
+        ReconciliationState biomes =
+                HistoryExtensionReconciler.reconcile(
+                        prepared.changeSet(),
+                        new AxiomBiomeExtensionReadTarget(world)).state();
+        if (biomes == ReconciliationState.CONFLICT) {
+            return fail("biome reconciliation conflict");
+        }
+        if (biomes != ReconciliationState.FULLY_APPLIED
+                && biomes != ReconciliationState.EMPTY) {
+            return waiting("waiting for biome reconciliation");
+        }
+
         setProcessed(lifecycle.totalWork());
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         timeline.record(prepared.changeSet());
@@ -276,6 +289,18 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             }
             rollbackBlocks.close();
             rollbackBlocks = null;
+        }
+
+        ReconciliationState biomes =
+                HistoryExtensionReconciler.reconcile(
+                        prepared.changeSet(),
+                        new AxiomBiomeExtensionReadTarget(world)).state();
+        if (biomes == ReconciliationState.CONFLICT) {
+            return fail("biome rollback reconciliation conflict");
+        }
+        if (biomes != ReconciliationState.NOT_APPLIED
+                && biomes != ReconciliationState.EMPTY) {
+            return waiting("waiting for biome rollback reconciliation");
         }
 
         prepared.close();

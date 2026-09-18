@@ -9,6 +9,7 @@ import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedPreparedMutationDispatcher;
 import com.halokaryamedia.lazybuilder.builder.mutation.ChunkChangeSetTransforms;
 import com.halokaryamedia.lazybuilder.builder.mutation.ChunkDispatchTarget;
+import com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedMutationReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
 import net.minecraft.client.world.ClientWorld;
@@ -163,7 +164,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
             phase = Phase.BIOMES;
             status = "Redoing biomes";
         } else {
-            complete();
+            reconcileBiomesThenComplete(ReconciliationState.NOT_APPLIED);
         }
     }
 
@@ -177,18 +178,44 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                 biomeDispatcher.close();
                 biomeDispatcher = null;
                 if (lease.direction() == ReplayDirection.UNDO) {
-                    blockDispatcher = new BudgetedPreparedMutationDispatcher(
-                            lease.changeSet(), reverseTarget, () -> false);
-                    phase = Phase.BLOCKS;
-                    status = "Undoing blocks";
+                    reconcileBiomesThenContinueUndo();
                 } else {
-                    complete();
+                    reconcileBiomesThenComplete(ReconciliationState.FULLY_APPLIED);
                 }
             }
             case CANCELLED -> throw new IllegalStateException("History replay cannot be cancelled internally");
             case CONFLICT, FAILED -> throw new IllegalStateException(
                     "biome replay " + progress.state() + ": " + progress.detail());
         }
+    }
+
+    private void reconcileBiomesThenContinueUndo() throws IOException {
+        ReconciliationState state = HistoryExtensionReconciler.reconcile(
+                lease.changeSet(), new AxiomBiomeExtensionReadTarget(world)).state();
+        if (state == ReconciliationState.CONFLICT) {
+            throw new IllegalStateException("biome undo reconciliation conflict");
+        }
+        if (state != ReconciliationState.NOT_APPLIED
+                && state != ReconciliationState.EMPTY) {
+            throw new IllegalStateException("biome undo did not reach BEFORE state: " + state);
+        }
+        blockDispatcher = new BudgetedPreparedMutationDispatcher(
+                lease.changeSet(), reverseTarget, () -> false);
+        phase = Phase.BLOCKS;
+        status = "Undoing blocks";
+    }
+
+    private void reconcileBiomesThenComplete(ReconciliationState expected) throws IOException {
+        ReconciliationState state = HistoryExtensionReconciler.reconcile(
+                lease.changeSet(), new AxiomBiomeExtensionReadTarget(world)).state();
+        if (state == ReconciliationState.CONFLICT) {
+            throw new IllegalStateException("biome replay reconciliation conflict");
+        }
+        if (state != expected && state != ReconciliationState.EMPTY) {
+            throw new IllegalStateException(
+                    "biome replay expected " + expected + " but found " + state);
+        }
+        complete();
     }
 
     private void complete() {

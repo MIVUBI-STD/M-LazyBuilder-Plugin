@@ -61,6 +61,12 @@ public final class BuilderExtensionClientNetworking {
         negotiate();
     }
 
+    /** Releases a pending callback when a local dispatcher is abandoned. */
+    public static void cancelPending(String operationId) {
+        if (operationId == null || operationId.isBlank()) return;
+        PENDING.remove(operationId);
+    }
+
     public static void sendBiomeBatch(
             BuilderExtensionWireProtocol.ApplyBiomeBatch batch,
             Consumer<BuilderExtensionWireProtocol.Response> callback
