@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.builder.material.BuilderMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.ConditionalMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.ExistingBlockMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialMask;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialMasks;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialOperation;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialOperationPreparer;
 import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
@@ -60,6 +61,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private final int[] seedValue = {424242};
     private final int[] fieldMode = {0};
     private final float[] flowAngle = {270.0f};
+    private final int[] targetMode = {0};
 
     private BlockPos first;
     private BlockPos second;
@@ -153,6 +155,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             changed |= ImGui.sliderFloat("Flow Angle", flowAngle, 0.0f, 360.0f);
         }
         changed |= ImGui.sliderFloat("Threshold", threshold, 0.0f, 1.0f);
+        changed |= ImGui.sliderInt("Target (0 All / 1 Non-Air / 2 Air Only)", targetMode, 0, 2);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
 
         if (ImGui.button("Clear Texture Box")) {
@@ -193,11 +196,14 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                     "Minecraft client world is unavailable");
             ScalarField field = AxiomTextureFields.create(
                     fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
+            AxiomClientWorldStateSource source = new AxiomClientWorldStateSource(world);
             previewPoints = ProceduralTexturePreview.sample(
                     bounds,
                     new OperationSeed(seedValue[0]),
                     field,
-                    threshold[0]
+                    threshold[0],
+                    source,
+                    targetMask()
             );
             ensurePreview().update(previewPoints);
             idleStatus = "Preview ready";
@@ -233,7 +239,8 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                 new OperationSeed(seedValue[0]),
                 runtime.dispatchBudget(),
                 cancellation.token(),
-                material
+                material,
+                targetMask()
         );
 
         OperationPlan plan =
@@ -250,6 +257,15 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private MaterialMask targetMask() {
+        return switch (targetMode[0]) {
+            case 0 -> MaterialMasks.all();
+            case 1 -> MaterialMasks.not(MaterialMasks.existingState("minecraft:air"));
+            case 2 -> MaterialMasks.existingState("minecraft:air");
+            default -> throw new IllegalArgumentException("Unknown target mode: " + targetMode[0]);
+        };
     }
 
     private BlockBounds bounds() {
@@ -289,12 +305,13 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             OperationSeed seed,
             ExecutionBudget executionBudget,
             CancellationToken cancellationToken,
-            BuilderMaterial material
+            BuilderMaterial material,
+            MaterialMask mask
     ) implements MaterialOperation {
         @Override public String type() { return "lazybuilder:procedural_texture"; }
         @Override public MutationReadMode readMode() { return MutationReadMode.SNAPSHOT_READ; }
         @Override public HistoryRequirement historyRequirement() { return HistoryRequirement.REQUIRED; }
         @Override public CancellationDisposition cancellationDisposition() { return CancellationDisposition.ROLLBACK; }
-        @Override public MaterialMask materialMask() { return MaterialMask.all(); }
+        @Override public MaterialMask materialMask() { return mask; }
     }
 }

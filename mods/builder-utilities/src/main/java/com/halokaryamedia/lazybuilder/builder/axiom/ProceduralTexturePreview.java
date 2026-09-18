@@ -1,7 +1,10 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
+import com.halokaryamedia.lazybuilder.builder.material.BlockStateSource;
 import com.halokaryamedia.lazybuilder.builder.material.FractalNoiseField;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialContext;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialMask;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialMasks;
 import com.halokaryamedia.lazybuilder.builder.material.ScalarField;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
@@ -42,6 +45,24 @@ public final class ProceduralTexturePreview {
             ScalarField field,
             double threshold
     ) {
+        return sample(
+                bounds,
+                seed,
+                field,
+                threshold,
+                (x, y, z) -> "minecraft:air",
+                MaterialMasks.all()
+        );
+    }
+
+    public static List<PlacementPoint> sample(
+            BlockBounds bounds,
+            OperationSeed seed,
+            ScalarField field,
+            double threshold,
+            BlockStateSource source,
+            MaterialMask mask
+    ) {
         if (bounds.blockCount() > MAX_CANDIDATE_VOXELS) {
             throw new IllegalArgumentException(
                     "texture region exceeds " + MAX_CANDIDATE_VOXELS + " candidate blocks");
@@ -50,6 +71,8 @@ public final class ProceduralTexturePreview {
             throw new IllegalArgumentException("threshold must be in [0,1]");
         }
         if (field == null) throw new NullPointerException("field");
+        if (source == null) throw new NullPointerException("source");
+        if (mask == null) throw new NullPointerException("mask");
 
         List<PlacementPoint> selected = new ArrayList<>();
         int ordinal = 0;
@@ -57,14 +80,18 @@ public final class ProceduralTexturePreview {
         for (long y = bounds.minY(); y <= (long) bounds.maxY(); y++) {
             for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z++) {
                 for (long x = bounds.minX(); x <= (long) bounds.maxX(); x++) {
+                    int worldX = (int) x;
+                    int worldY = (int) y;
+                    int worldZ = (int) z;
+                    String existing = source.stateAt(worldX, worldY, worldZ);
                     MaterialContext context = new MaterialContext(
-                            (int) x, (int) y, (int) z, "minecraft:air", seed);
-                    if (field.sample(context) < threshold) continue;
+                            worldX, worldY, worldZ, existing, seed);
+                    if (!mask.test(context) || field.sample(context) < threshold) continue;
                     if (selected.size() >= MAX_PREVIEW_VOXELS) {
                         throw new IllegalArgumentException(
                                 "texture preview exceeds " + MAX_PREVIEW_VOXELS + " selected blocks");
                     }
-                    selected.add(new PlacementPoint((int) x, (int) y, (int) z, ordinal++));
+                    selected.add(new PlacementPoint(worldX, worldY, worldZ, ordinal++));
                 }
             }
         }

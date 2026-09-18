@@ -7,6 +7,8 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDistribution;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraint;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraints;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementVariation;
@@ -70,6 +72,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
     private final int[] useCatalogPalette = {0};
+    private final int[] sameBiome = {0};
     private final int[] seedValue = {424242};
 
     private List<SchematicCatalog.Entry> entries = List.of();
@@ -153,6 +156,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         changed |= ImGui.sliderInt("Use Catalog Palette", useCatalogPalette, 0, 1);
+        changed |= ImGui.sliderInt("Match Origin Biome", sameBiome, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         if (useCatalogPalette[0] != 0) {
             ImGui.textWrapped("Palette sources: " + blockOnlyCatalog.size());
@@ -264,7 +268,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                             mirrorZ[0] != 0 ? 1.0 : 0.0,
                             0x534348454d415452L
                     ),
-                    point -> true,
+                    placementConstraint(world),
                     sourceId -> footprint(requireSource(sourceId).snapshot()),
                     true
             );
@@ -386,6 +390,15 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         }
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private PlacementConstraint placementConstraint(ClientWorld world) {
+        if (sameBiome[0] == 0) return PlacementConstraints.all();
+        AxiomWorldBiomeSource biomes = new AxiomWorldBiomeSource(world);
+        return PlacementConstraints.biomeEquals(
+                biomes,
+                biomes.biomeAt(origin.getX(), origin.getY(), origin.getZ())
+        );
     }
 
     private PlacementSource placementSource() {

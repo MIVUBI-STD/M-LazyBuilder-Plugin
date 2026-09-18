@@ -38,6 +38,17 @@ public final class PlacementConstraints {
         };
     }
 
+    public static PlacementConstraint biomeEquals(
+            PlacementBiomeSource source,
+            String biomeId
+    ) {
+        Objects.requireNonNull(source, "source");
+        if (biomeId == null || biomeId.isBlank()) {
+            throw new IllegalArgumentException("biomeId must be non-blank");
+        }
+        return point -> biomeId.equals(source.biomeAt(point.x(), point.y(), point.z()));
+    }
+
     public static PlacementConstraint predicate(Predicate<PlacementPoint> predicate) {
         Objects.requireNonNull(predicate, "predicate");
         return predicate::test;

@@ -66,6 +66,7 @@ public final class AxiomScatterTool implements CustomTool {
     private final int[] maxHeightDelta = {3};
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
+    private final int[] sameBiome = {0};
 
     private BlockPos center;
     private List<PlacementPoint> points = List.of();
@@ -139,6 +140,7 @@ public final class AxiomScatterTool implements CustomTool {
         changed |= ImGui.sliderInt("Max Height Delta", maxHeightDelta, 0, 16);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
+        changed |= ImGui.sliderInt("Match Center Biome", sameBiome, 0, 1);
         if (ImGui.button("Clear Scatter")) {
             clearGeometry();
             return;
@@ -196,16 +198,26 @@ public final class AxiomScatterTool implements CustomTool {
                             SCATTER_CHANNEL
                     );
 
-            PlacementConstraint slopeConstraint = PlacementConstraints.slope(
+            PlacementConstraint constraint = PlacementConstraints.slope(
                     surface,
                     new PlacementFootprint(footprintRadius[0], footprintRadius[0]),
                     maxHeightDelta[0]
             );
+            if (sameBiome[0] != 0) {
+                AxiomWorldBiomeSource biomes = new AxiomWorldBiomeSource(world);
+                constraint = PlacementConstraints.and(
+                        constraint,
+                        PlacementConstraints.biomeEquals(
+                                biomes,
+                                biomes.biomeAt(center.getX(), center.getY(), center.getZ()))
+                );
+            }
+            PlacementConstraint finalConstraint = constraint;
             List<PlacementPoint> basePoints = distribution.generate(
                     bounds,
                     surface,
                     new OperationSeed(seedValue[0])
-            ).stream().filter(slopeConstraint::test).toList();
+            ).stream().filter(finalConstraint::test).toList();
             points = PointSymmetryPlanner.rotationalAndMirrors(
                     basePoints,
                     new BuilderVec3(center.getX(), center.getY(), center.getZ()),
