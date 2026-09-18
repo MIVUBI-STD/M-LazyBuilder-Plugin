@@ -92,7 +92,7 @@ public final class BuilderRuntimeProofStore {
             String label
     ) {
         return "{\n"
-                + "  \"schema\": 2,\n"
+                + "  \"schema\": 3,\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"
@@ -111,6 +111,13 @@ public final class BuilderRuntimeProofStore {
                 + "  \"rollbackEntityExtensions\": " + s.rollbackEntityExtensions() + ",\n"
                 + "  \"extensionConflicts\": " + s.extensionConflicts() + ",\n"
                 + "  \"extensionFailures\": " + s.extensionFailures() + ",\n"
+                + "  \"historyUndoBlocks\": " + s.historyUndoBlocks() + ",\n"
+                + "  \"historyRedoBlocks\": " + s.historyRedoBlocks() + ",\n"
+                + "  \"historyUndoBiomeExtensions\": " + s.historyUndoBiomeExtensions() + ",\n"
+                + "  \"historyRedoBiomeExtensions\": " + s.historyRedoBiomeExtensions() + ",\n"
+                + "  \"historyUndoEntityExtensions\": " + s.historyUndoEntityExtensions() + ",\n"
+                + "  \"historyRedoEntityExtensions\": " + s.historyRedoEntityExtensions() + ",\n"
+                + "  \"historyReplayFailures\": " + s.historyReplayFailures() + ",\n"
                 + "  \"conflicts\": " + s.conflicts() + ",\n"
                 + "  \"budgetExceeded\": " + s.budgetExceeded() + ",\n"
                 + "  \"maxSliceNanos\": " + s.maxSliceNanos() + ",\n"

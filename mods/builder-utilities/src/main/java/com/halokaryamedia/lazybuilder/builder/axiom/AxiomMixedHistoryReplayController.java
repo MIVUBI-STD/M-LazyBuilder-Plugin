@@ -37,6 +37,8 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private Phase phase;
     private String status;
     private boolean finished;
+    private long biomeObserved;
+    private long entityObserved;
 
     private AxiomMixedHistoryReplayController(
             AxiomClientServices services,
@@ -128,6 +130,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                 case DONE -> { }
             }
         } catch (Exception failure) {
+            runtime.metrics().historyReplayFailure();
             status = "Replay failed: " + concise(failure);
             lease.abort();
             closeTransports();
@@ -149,6 +152,11 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private void pumpBlocks() throws IOException {
         BudgetedDispatchSlice slice =
                 blockDispatcher.dispatchSlice(runtime.dispatchBudget());
+        if (lease.direction() == ReplayDirection.UNDO) {
+            runtime.metrics().recordHistoryUndoBlocks(slice.sliceDispatchedBlocks());
+        } else {
+            runtime.metrics().recordHistoryRedoBlocks(slice.sliceDispatchedBlocks());
+        }
         status = (lease.direction() == ReplayDirection.UNDO ? "Undo" : "Redo")
                 + " blocks: " + slice.totalDispatchedBlocks();
         switch (slice.state()) {
@@ -190,11 +198,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
 
     private void startRedoExtensions() throws IOException {
         if (extensionPlan.hasBiomes()) {
+            biomeObserved = 0L;
             biomeDispatcher = new AxiomBiomeBatchDispatcher(
                     lease.changeSet(), world, () -> false, false);
             phase = Phase.BIOMES;
             status = "Redoing biomes";
         } else if (extensionPlan.hasEntities()) {
+            entityObserved = 0L;
             entityDispatcher = new AxiomEntityBatchDispatcher(
                     lease.changeSet(), world, () -> false, false);
             phase = Phase.ENTITIES;
@@ -206,11 +216,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
 
     private void startUndoExtensions() throws IOException {
         if (extensionPlan.hasEntities()) {
+            entityObserved = 0L;
             entityDispatcher = new AxiomEntityBatchDispatcher(
                     lease.changeSet(), world, () -> false, true);
             phase = Phase.ENTITIES;
             status = "Undoing entities";
         } else if (extensionPlan.hasBiomes()) {
+            biomeObserved = 0L;
             biomeDispatcher = new AxiomBiomeBatchDispatcher(
                     lease.changeSet(), world, () -> false, true);
             phase = Phase.BIOMES;
@@ -222,6 +234,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
 
     private void pumpBiomes() throws IOException {
         BiomeBatchDispatchProgress progress = biomeDispatcher.pump();
+        long delta = progressDelta(progress.processedExtensions(), biomeObserved);
+        biomeObserved = progress.processedExtensions();
+        if (lease.direction() == ReplayDirection.UNDO) {
+            runtime.metrics().recordHistoryUndoBiomeExtensions(delta);
+        } else {
+            runtime.metrics().recordHistoryRedoBiomeExtensions(delta);
+        }
         status = (lease.direction() == ReplayDirection.UNDO ? "Undo" : "Redo")
                 + " biomes: " + progress.processedExtensions();
         switch (progress.state()) {
@@ -235,6 +254,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                                 : ReconciliationState.NOT_APPLIED);
                 if (lease.direction() == ReplayDirection.REDO) {
                     if (extensionPlan.hasEntities()) {
+                        entityObserved = 0L;
                         entityDispatcher = new AxiomEntityBatchDispatcher(
                                 lease.changeSet(), world, () -> false, false);
                         phase = Phase.ENTITIES;
@@ -255,6 +275,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
 
     private void pumpEntities() throws IOException {
         EntityBatchDispatchProgress progress = entityDispatcher.pump();
+        long delta = progressDelta(progress.processedExtensions(), entityObserved);
+        entityObserved = progress.processedExtensions();
+        if (lease.direction() == ReplayDirection.UNDO) {
+            runtime.metrics().recordHistoryUndoEntityExtensions(delta);
+        } else {
+            runtime.metrics().recordHistoryRedoEntityExtensions(delta);
+        }
         status = (lease.direction() == ReplayDirection.UNDO ? "Undo" : "Redo")
                 + " entities: " + progress.processedExtensions();
         switch (progress.state()) {
@@ -265,6 +292,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                 if (lease.direction() == ReplayDirection.REDO) {
                     complete();
                 } else if (extensionPlan.hasBiomes()) {
+                    biomeObserved = 0L;
                     biomeDispatcher = new AxiomBiomeBatchDispatcher(
                             lease.changeSet(), world, () -> false, true);
                     phase = Phase.BIOMES;
@@ -333,6 +361,15 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
             entityDispatcher.close();
             entityDispatcher = null;
         }
+    }
+
+    private static long progressDelta(long current, long previous) {
+        if (current < previous) {
+            throw new IllegalStateException(
+                    "history extension replay progress regressed from "
+                            + previous + " to " + current);
+        }
+        return current - previous;
     }
 
     private static String concise(Throwable failure) {

@@ -21,6 +21,13 @@ public final class BuilderRuntimeMetrics {
     private final AtomicLong rollbackEntityExtensions = new AtomicLong();
     private final AtomicLong extensionConflicts = new AtomicLong();
     private final AtomicLong extensionFailures = new AtomicLong();
+    private final AtomicLong historyUndoBlocks = new AtomicLong();
+    private final AtomicLong historyRedoBlocks = new AtomicLong();
+    private final AtomicLong historyUndoBiomeExtensions = new AtomicLong();
+    private final AtomicLong historyRedoBiomeExtensions = new AtomicLong();
+    private final AtomicLong historyUndoEntityExtensions = new AtomicLong();
+    private final AtomicLong historyRedoEntityExtensions = new AtomicLong();
+    private final AtomicLong historyReplayFailures = new AtomicLong();
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong budgetExceeded = new AtomicLong();
     private final AtomicLong maxSliceNanos = new AtomicLong();
@@ -73,6 +80,34 @@ public final class BuilderRuntimeMetrics {
         extensionFailures.incrementAndGet();
     }
 
+    public void recordHistoryUndoBlocks(long count) {
+        addNonNegative(historyUndoBlocks, count, "historyUndoBlocks");
+    }
+
+    public void recordHistoryRedoBlocks(long count) {
+        addNonNegative(historyRedoBlocks, count, "historyRedoBlocks");
+    }
+
+    public void recordHistoryUndoBiomeExtensions(long count) {
+        addNonNegative(historyUndoBiomeExtensions, count, "historyUndoBiomeExtensions");
+    }
+
+    public void recordHistoryRedoBiomeExtensions(long count) {
+        addNonNegative(historyRedoBiomeExtensions, count, "historyRedoBiomeExtensions");
+    }
+
+    public void recordHistoryUndoEntityExtensions(long count) {
+        addNonNegative(historyUndoEntityExtensions, count, "historyUndoEntityExtensions");
+    }
+
+    public void recordHistoryRedoEntityExtensions(long count) {
+        addNonNegative(historyRedoEntityExtensions, count, "historyRedoEntityExtensions");
+    }
+
+    public void historyReplayFailure() {
+        historyReplayFailures.incrementAndGet();
+    }
+
     public void conflict() {
         conflicts.incrementAndGet();
     }
@@ -110,6 +145,13 @@ public final class BuilderRuntimeMetrics {
                 rollbackEntityExtensions.get(),
                 extensionConflicts.get(),
                 extensionFailures.get(),
+                historyUndoBlocks.get(),
+                historyRedoBlocks.get(),
+                historyUndoBiomeExtensions.get(),
+                historyRedoBiomeExtensions.get(),
+                historyUndoEntityExtensions.get(),
+                historyRedoEntityExtensions.get(),
+                historyReplayFailures.get(),
                 conflicts.get(),
                 budgetExceeded.get(),
                 maxSliceNanos.get(),
@@ -141,6 +183,13 @@ public final class BuilderRuntimeMetrics {
             long rollbackEntityExtensions,
             long extensionConflicts,
             long extensionFailures,
+            long historyUndoBlocks,
+            long historyRedoBlocks,
+            long historyUndoBiomeExtensions,
+            long historyRedoBiomeExtensions,
+            long historyUndoEntityExtensions,
+            long historyRedoEntityExtensions,
+            long historyReplayFailures,
             long conflicts,
             long budgetExceeded,
             long maxSliceNanos,

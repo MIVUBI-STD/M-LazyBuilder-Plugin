@@ -91,6 +91,14 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " ENTITY=" + proof.rollbackEntityExtensions());
         ImGui.textWrapped("Extension conflicts=" + proof.extensionConflicts()
                 + " failures=" + proof.extensionFailures());
+        ImGui.textWrapped("Mixed history replay blocks: undo=" + proof.historyUndoBlocks()
+                + " redo=" + proof.historyRedoBlocks());
+        ImGui.textWrapped("Mixed history replay BIOME: undo="
+                + proof.historyUndoBiomeExtensions()
+                + " redo=" + proof.historyRedoBiomeExtensions()
+                + " | ENTITY: undo=" + proof.historyUndoEntityExtensions()
+                + " redo=" + proof.historyRedoEntityExtensions()
+                + " | replayFailures=" + proof.historyReplayFailures());
         ImGui.textWrapped("Conflicts=" + proof.conflicts()
                 + " budgetExceeded=" + proof.budgetExceeded()
                 + " maxObservedSliceMs="
