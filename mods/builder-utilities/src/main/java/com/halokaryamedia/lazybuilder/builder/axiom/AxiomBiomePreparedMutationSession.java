@@ -213,6 +213,12 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("block-entity batch sent");
             case WAITING -> waiting("waiting for authoritative block-entity response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.blockEntities()) {
+                    metrics.extensionFailure();
+                    yield fail("block-entity authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.blockEntities() + " planned block-entity extensions");
+                }
                 blockEntityDispatcher.close();
                 blockEntityDispatcher = null;
                 if (extensionPlan.hasBiomes()) {
@@ -262,6 +268,12 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("biome batch sent");
             case WAITING -> waiting("waiting for authoritative biome response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.biomes()) {
+                    metrics.extensionFailure();
+                    yield fail("biome authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.biomes() + " planned biome extensions");
+                }
                 biomeDispatcher.close();
                 biomeDispatcher = null;
                 if (extensionPlan.hasEntities()) {
@@ -490,6 +502,12 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("rollback biome batch sent");
             case WAITING -> waiting("waiting for biome rollback response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.biomes()) {
+                    metrics.extensionFailure();
+                    yield fail("biome rollback authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.biomes() + " planned biome extensions");
+                }
                 biomeDispatcher.close();
                 biomeDispatcher = null;
                 if (extensionPlan.hasBlockEntities()) {
@@ -524,6 +542,12 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("rollback block-entity batch sent");
             case WAITING -> waiting("waiting for block-entity rollback response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.blockEntities()) {
+                    metrics.extensionFailure();
+                    yield fail("block-entity rollback authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.blockEntities() + " planned block-entity extensions");
+                }
                 blockEntityDispatcher.close();
                 blockEntityDispatcher = null;
                 startRollbackBlocksOrReconcile();
