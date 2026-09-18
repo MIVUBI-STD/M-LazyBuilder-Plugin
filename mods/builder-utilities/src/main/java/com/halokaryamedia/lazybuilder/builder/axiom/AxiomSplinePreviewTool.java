@@ -2,18 +2,33 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryRequirement;
-import com.halokaryamedia.lazybuilder.builder.material.*;
-import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
-import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
-import com.halokaryamedia.lazybuilder.builder.mutation.PreparedReconciliationReport;
-import com.halokaryamedia.lazybuilder.builder.mutation.RollbackPreparationResult;
-import com.halokaryamedia.lazybuilder.builder.mutation.RollbackPreparationState;
-import com.halokaryamedia.lazybuilder.builder.operation.*;
+import com.halokaryamedia.lazybuilder.builder.material.BlockMaterial;
+import com.halokaryamedia.lazybuilder.builder.material.BuilderMaterial;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialMask;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialOperation;
+import com.halokaryamedia.lazybuilder.builder.material.MaterialOperationPreparer;
+import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
+import com.halokaryamedia.lazybuilder.builder.operation.CancellationDisposition;
+import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
+import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
+import com.halokaryamedia.lazybuilder.builder.operation.DefaultOperationPlanner;
+import com.halokaryamedia.lazybuilder.builder.operation.ExecutionBudget;
+import com.halokaryamedia.lazybuilder.builder.operation.MutationReadMode;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationPlan;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementVariation;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
 import com.halokaryamedia.lazybuilder.builder.region.DeterministicRegionPlanner;
 import com.halokaryamedia.lazybuilder.builder.region.PointSetRegion;
-import com.halokaryamedia.lazybuilder.builder.spline.*;
+import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
+import com.halokaryamedia.lazybuilder.builder.spline.CatmullRomSpline;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineControlPoint;
+import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineSample;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineSampler;
+import com.halokaryamedia.lazybuilder.builder.spline.StructureChainSplinePayload;
 import com.halokaryamedia.lazybuilder.builder.symmetry.BuilderTransform;
 import com.halokaryamedia.lazybuilder.builder.symmetry.SymmetryPlanner;
 import com.moulberry.axiomclientapi.CustomTool;
@@ -34,10 +49,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** First end-to-end Axiom-native LazyBuilder tool: preview, durable plan, bounded apply, reconcile and rollback. */
+/** End-to-end spline tool backed by the shared durable Axiom mutation controller. */
 public final class AxiomSplinePreviewTool implements CustomTool {
     private final AxiomClientServices services;
     private final BuilderRuntime runtime;
+    private final AxiomMutationController mutation;
     private final List<SplineControlPoint> controlPoints = new ArrayList<>();
     private final float[] spacing = {4.0f};
     private final float[] radius = {2.0f};
@@ -48,46 +64,50 @@ public final class AxiomSplinePreviewTool implements CustomTool {
     private AxiomSplinePreviewRegion preview;
     private List<SplinePlacementPlanEntry> lastPlan = List.of();
     private List<BuilderTransform> lastTransforms = List.of(BuilderTransform.identity());
-    private AxiomPreparedMutationSession activeSession;
-    private CancellationSource activeCancellation;
-    private Phase phase = Phase.IDLE;
-    private String operationStatus = "Ready";
-    private long activeEstimateBytes;
+    private String idleStatus = "Ready";
 
     public AxiomSplinePreviewTool(AxiomClientServices services, BuilderRuntime runtime) {
         this.services = Objects.requireNonNull(services, "services");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.mutation = new AxiomMutationController(services, runtime);
     }
 
-    @Override public String name() { return AxiomSplineToolContract.TOOL_NAME; }
+    @Override
+    public String name() {
+        return AxiomSplineToolContract.TOOL_NAME;
+    }
 
     @Override
     public boolean callUseTool() {
-        if (activeSession != null) return false;
+        if (mutation.isActive()) return false;
         BlockHitResult hit = services.toolService().raycastBlock();
         if (hit == null || hit.getType() != HitResult.Type.BLOCK) return false;
         BlockPos pointPos = hit.getBlockPos().offset(hit.getSide());
         controlPoints.add(new SplineControlPoint(
-                new BuilderVec3(pointPos.getX() + 0.5, pointPos.getY() + 0.5, pointPos.getZ() + 0.5), radius[0], 0.0));
+                new BuilderVec3(pointPos.getX() + 0.5, pointPos.getY() + 0.5, pointPos.getZ() + 0.5),
+                radius[0], 0.0));
         rebuildPreview();
         return true;
     }
 
     @Override
     public boolean callDelete() {
-        if (activeSession != null || controlPoints.isEmpty()) return false;
-        controlPoints.remove(controlPoints.size() - 1); rebuildPreview(); return true;
+        if (mutation.isActive() || controlPoints.isEmpty()) return false;
+        controlPoints.remove(controlPoints.size() - 1);
+        rebuildPreview();
+        return true;
     }
 
     @Override
     public boolean callConfirm() {
-        if (!AxiomSplineToolContract.WORLD_MUTATION_ENABLED || activeSession != null || lastPlan.isEmpty()) return false;
+        if (!AxiomSplineToolContract.WORLD_MUTATION_ENABLED || mutation.isActive() || lastPlan.isEmpty()) {
+            return false;
+        }
         try {
             startMutation();
             return true;
         } catch (Exception e) {
-            operationStatus = "Apply failed: " + e.getMessage();
-            closeActiveQuietly();
+            idleStatus = "Apply failed: " + safeMessage(e);
             return false;
         }
     }
@@ -96,17 +116,18 @@ public final class AxiomSplinePreviewTool implements CustomTool {
     public void displayImguiOptions() {
         ImGui.textWrapped("Right-click block faces to add spline points. Confirm applies the preview with Axiom's active block through durable History v2 and bounded dispatch.");
         ImGui.separator();
-        if (activeSession != null) {
-            OperationLifecycle lifecycle = activeSession.lifecycle();
-            ImGui.textWrapped("Operation: " + lifecycle.state() + " | " + operationStatus + " | "
+
+        if (mutation.isActive()) {
+            OperationLifecycle lifecycle = mutation.lifecycle();
+            ImGui.textWrapped("Operation: " + lifecycle.state() + " | " + mutation.status() + " | "
                     + String.format("%.1f%%", lifecycle.progressFraction() * 100.0));
             if (!lifecycle.state().isTerminal() && ImGui.button("Cancel and Roll Back")) {
-                activeCancellation.requestCancellation();
-                operationStatus = "Cancellation requested";
+                mutation.requestRollbackCancellation();
             }
             return;
         }
-        ImGui.textWrapped(operationStatus);
+
+        ImGui.textWrapped(idleStatus);
         boolean changed = false;
         changed |= ImGui.sliderFloat("Spacing", spacing, 0.5f, 32.0f);
         boolean radiusChanged = ImGui.sliderFloat("Radius", radius, 0.5f, 16.0f);
@@ -114,154 +135,130 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         changed |= ImGui.sliderInt("Preview Quality", quality, 4, 64);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
-        if (ImGui.button("Clear Spline")) { reset(); return; }
+        if (ImGui.button("Clear Spline")) {
+            reset();
+            return;
+        }
         if (radiusChanged) applyRadiusToControlPoints();
         if (changed) rebuildPreview();
     }
 
-    @Override public void reset() { clearGeometry(); }
+    @Override
+    public void reset() {
+        if (!mutation.isActive()) clearGeometry();
+    }
 
     @Override
     public void render(Camera camera, float tickDelta, long time, MatrixStack poseStack, Matrix4f projection) {
-        pumpOperation();
-        if (preview != null && !lastPlan.isEmpty()) preview.render(camera, time, poseStack, projection);
+        mutation.pump();
+        OperationState outcome = mutation.pollOutcome();
+        if (outcome != null) {
+            idleStatus = "Last operation: " + outcome;
+            if (outcome == OperationState.COMPLETED) clearGeometry();
+        }
+        if (preview != null && !lastPlan.isEmpty()) {
+            preview.render(camera, time, poseStack, projection);
+        }
     }
 
-    public List<SplineControlPoint> controlPoints() { return List.copyOf(controlPoints); }
-    public List<SplinePlacementPlanEntry> lastPlan() { return lastPlan; }
-    public List<BuilderTransform> lastTransforms() { return lastTransforms; }
+    public List<SplineControlPoint> controlPoints() {
+        return List.copyOf(controlPoints);
+    }
+
+    public List<SplinePlacementPlanEntry> lastPlan() {
+        return lastPlan;
+    }
+
+    public List<BuilderTransform> lastTransforms() {
+        return lastTransforms;
+    }
 
     private void startMutation() throws IOException {
         MinecraftClient client = MinecraftClient.getInstance();
         ClientWorld world = Objects.requireNonNull(client.world, "Minecraft client world is unavailable");
-        List<SplinePreviewVoxelizer.Voxel> voxels = SplinePreviewVoxelizer.voxelize(lastPlan, lastTransforms);
+        List<SplinePreviewVoxelizer.Voxel> voxels =
+                SplinePreviewVoxelizer.voxelize(lastPlan, lastTransforms);
         if (voxels.isEmpty()) throw new IllegalStateException("Spline preview contains no blocks");
-        if (voxels.size() > AxiomSplineToolContract.MAX_MUTATION_VOXELS) throw new IllegalStateException("Spline exceeds mutation voxel limit");
+        if (voxels.size() > AxiomSplineToolContract.MAX_MUTATION_VOXELS) {
+            throw new IllegalStateException("Spline exceeds mutation voxel limit");
+        }
 
         PointSetRegion region = new PointSetRegion(voxels.stream()
-                .map(v -> new PointSetRegion.Point(v.x(), v.y(), v.z())).toList());
+                .map(v -> new PointSetRegion.Point(v.x(), v.y(), v.z()))
+                .toList());
         AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
-        BuilderMaterial material = new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
-        activeCancellation = new CancellationSource();
+        BuilderMaterial material =
+                new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
+        CancellationSource cancellation = new CancellationSource();
+
         SplineMaterialOperation operation = new SplineMaterialOperation(
-                UUID.randomUUID(), region, new OperationSeed(seedValue[0]), runtime.dispatchBudget(),
-                activeCancellation.token(), material);
-        OperationPlan plan = new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation);
-        AxiomClientWorldStateSource worldSource = new AxiomClientWorldStateSource(world);
-        activeEstimateBytes = Math.max(1L, Math.multiplyExact((long) region.size(), 96L));
+                UUID.randomUUID(),
+                region,
+                new OperationSeed(seedValue[0]),
+                runtime.dispatchBudget(),
+                cancellation.token(),
+                material
+        );
+
+        OperationPlan plan =
+                new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation);
+        long estimateBytes = Math.max(1L, Math.multiplyExact((long) region.size(), 96L));
         Optional<PreparedMaterialMutation> prepared = MaterialOperationPreparer.prepare(
-                plan, worldSource, runtime.history(), activeEstimateBytes);
-        if (prepared.isEmpty()) throw new IllegalStateException("Spline preparation was cancelled");
-        activeSession = new AxiomPreparedMutationSession(
-                services, world, prepared.get(), runtime.timeline(), activeCancellation.token());
-        phase = Phase.DISPATCHING;
-        operationStatus = "Prepared " + prepared.get().plannedChanges() + " block changes";
-    }
+                plan,
+                new AxiomClientWorldStateSource(world),
+                runtime.history(),
+                estimateBytes
+        );
 
-    private void pumpOperation() {
-        if (activeSession == null) return;
-        try {
-            if (activeCancellation.token().isCancellationRequested()
-                    && phase != Phase.ROLLBACK_DISPATCH && phase != Phase.ROLLBACK_RECONCILE) {
-                beginRollback();
-                return;
-            }
-            switch (phase) {
-                case DISPATCHING -> pumpForwardDispatch();
-                case RECONCILING -> pumpForwardReconcile();
-                case ROLLBACK_DISPATCH -> pumpRollbackDispatch();
-                case ROLLBACK_RECONCILE -> pumpRollbackReconcile();
-                case IDLE -> { }
-            }
-        } catch (Exception e) {
-            operationStatus = "Operation failed: " + e.getMessage();
-            closeActiveQuietly();
+        if (prepared.isEmpty()) {
+            throw new IllegalStateException("Spline preparation was cancelled");
         }
-    }
 
-    private void pumpForwardDispatch() throws IOException {
-        BudgetedDispatchSlice slice = activeSession.dispatchSlice(runtime.dispatchBudget());
-        operationStatus = "Dispatch " + slice.totalVisitedChunks() + " chunks / "
-                + slice.totalDispatchedBlocks() + " blocks";
-        if (slice.state() == BudgetedDispatchState.EXHAUSTED) phase = Phase.RECONCILING;
-        else if (slice.state() == BudgetedDispatchState.CANCELLED) beginRollback();
-        else if (slice.state() == BudgetedDispatchState.CONFLICT || slice.state() == BudgetedDispatchState.BUDGET_EXCEEDED) {
-            finishIfTerminal();
-        }
-    }
-
-    private void pumpForwardReconcile() throws IOException {
-        PreparedReconciliationReport report = activeSession.reconcile();
-        operationStatus = "Reconcile: " + report.state();
-        finishIfTerminal();
-    }
-
-    private void beginRollback() throws IOException {
-        RollbackPreparationResult result = activeSession.prepareRollback(runtime.history(), activeEstimateBytes);
-        operationStatus = "Rollback preparation: " + result.state();
-        if (result.state() == RollbackPreparationState.READY) phase = Phase.ROLLBACK_DISPATCH;
-        else finishIfTerminal();
-    }
-
-    private void pumpRollbackDispatch() throws IOException {
-        BudgetedDispatchSlice slice = activeSession.dispatchRollbackSlice(runtime.dispatchBudget());
-        operationStatus = "Rollback dispatch: " + slice.state();
-        if (slice.state() == BudgetedDispatchState.EXHAUSTED) phase = Phase.ROLLBACK_RECONCILE;
-        else if (slice.state() == BudgetedDispatchState.CONFLICT || slice.state() == BudgetedDispatchState.BUDGET_EXCEEDED) {
-            finishIfTerminal();
-        }
-    }
-
-    private void pumpRollbackReconcile() throws IOException {
-        PreparedReconciliationReport report = activeSession.reconcileRollback();
-        operationStatus = "Rollback reconcile: " + report.state();
-        finishIfTerminal();
-    }
-
-    private void finishIfTerminal() throws IOException {
-        if (!activeSession.lifecycle().state().isTerminal()) return;
-        OperationState finalState = activeSession.lifecycle().state();
-        activeSession.close();
-        activeSession = null; activeCancellation = null; phase = Phase.IDLE;
-        operationStatus = "Last operation: " + finalState;
-        if (finalState == OperationState.COMPLETED) clearGeometry();
-    }
-
-    private void closeActiveQuietly() {
-        if (activeSession != null) {
-            try { activeSession.close(); } catch (IOException ignored) { }
-        }
-        activeSession = null; activeCancellation = null; phase = Phase.IDLE;
-    }
-
-    private void clearGeometry() {
-        controlPoints.clear(); lastPlan = List.of(); lastTransforms = List.of(BuilderTransform.identity());
-        if (preview != null) preview.clear();
+        mutation.start(world, prepared.get(), cancellation, estimateBytes);
+        idleStatus = "Mutation started";
     }
 
     private void applyRadiusToControlPoints() {
         for (int i = 0; i < controlPoints.size(); i++) {
             SplineControlPoint point = controlPoints.get(i);
-            controlPoints.set(i, new SplineControlPoint(point.position(), radius[0], point.rollDegrees()));
+            controlPoints.set(i, new SplineControlPoint(
+                    point.position(), radius[0], point.rollDegrees()));
         }
     }
 
     private void rebuildPreview() {
-        if (controlPoints.size() < 2) { clearGeometryPreviewOnly(); return; }
+        if (controlPoints.size() < 2) {
+            clearGeometryPreviewOnly();
+            return;
+        }
+
         CatmullRomSpline spline = new CatmullRomSpline(controlPoints);
         List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
         StructureChainSplinePayload payload = new StructureChainSplinePayload(
-                spacing[0], (point, seed) -> "lazybuilder:preview-segment",
-                new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L));
+                spacing[0],
+                (point, seed) -> "lazybuilder:preview-segment",
+                new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L)
+        );
+
         lastPlan = payload.plan(samples, new OperationSeed(seedValue[0]));
         lastTransforms = SymmetryPlanner.rotational(
-                controlPoints.get(0).position(), new BuilderVec3(0, 1, 0), rotationalCopies[0]);
+                controlPoints.get(0).position(),
+                new BuilderVec3(0, 1, 0),
+                rotationalCopies[0]
+        );
         ensurePreview().update(lastPlan, lastTransforms);
+        idleStatus = "Preview ready";
     }
 
     private void clearGeometryPreviewOnly() {
-        lastPlan = List.of(); lastTransforms = List.of(BuilderTransform.identity());
+        lastPlan = List.of();
+        lastTransforms = List.of(BuilderTransform.identity());
         if (preview != null) preview.clear();
+    }
+
+    private void clearGeometry() {
+        controlPoints.clear();
+        clearGeometryPreviewOnly();
     }
 
     private AxiomSplinePreviewRegion ensurePreview() {
@@ -269,11 +266,18 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         return preview;
     }
 
-    private enum Phase { IDLE, DISPATCHING, RECONCILING, ROLLBACK_DISPATCH, ROLLBACK_RECONCILE }
+    private static String safeMessage(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
+    }
 
     private record SplineMaterialOperation(
-            UUID id, BuilderRegion region, OperationSeed seed, ExecutionBudget executionBudget,
-            CancellationToken cancellationToken, BuilderMaterial material
+            UUID id,
+            BuilderRegion region,
+            OperationSeed seed,
+            ExecutionBudget executionBudget,
+            CancellationToken cancellationToken,
+            BuilderMaterial material
     ) implements MaterialOperation {
         @Override public String type() { return "lazybuilder:spline"; }
         @Override public MutationReadMode readMode() { return MutationReadMode.SNAPSHOT_READ; }
