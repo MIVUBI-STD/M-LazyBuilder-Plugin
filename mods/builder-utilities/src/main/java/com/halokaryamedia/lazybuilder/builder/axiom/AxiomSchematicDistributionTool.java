@@ -5,7 +5,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
-import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution;
+import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution3d;
 import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraint;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraints;
@@ -66,6 +66,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private final int[] mode = {0};
     private final int[] arrayCount = {8};
     private final int[] stepX = {8};
+    private final int[] stepY = {0};
     private final int[] stepZ = {0};
     private final int[] scatterRadius = {32};
     private final int[] scatterCount = {32};
@@ -180,6 +181,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         if (mode[0] == 0) {
             changed |= ImGui.sliderInt("Array Count", arrayCount, 1, MAX_INSTANCES);
             changed |= ImGui.sliderInt("Step X", stepX, -128, 128);
+            changed |= ImGui.sliderInt("Step Y", stepY, -128, 128);
             changed |= ImGui.sliderInt("Step Z", stepZ, -128, 128);
         } else {
             changed |= ImGui.sliderInt("Scatter Radius", scatterRadius, 2, 256);
@@ -373,8 +375,9 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     private PlacementDistribution distribution() {
         if (mode[0] == 0) {
-            return new ArrayDistribution(
-                    origin.getX(), origin.getZ(), arrayCount[0], stepX[0], stepZ[0]);
+            return new ArrayDistribution3d(
+                    origin.getX(), origin.getY(), origin.getZ(),
+                    arrayCount[0], stepX[0], stepY[0], stepZ[0]);
         }
         return new MinimumSpacingScatterDistribution(
                 scatterCount[0], minimumSpacing[0], 24, SCATTER_CHANNEL);
@@ -383,12 +386,19 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private BlockBounds distributionBounds(ClientWorld world) {
         if (mode[0] == 0) {
             long endX = (long) origin.getX() + (long) (arrayCount[0] - 1) * stepX[0];
+            long endY = (long) origin.getY() + (long) (arrayCount[0] - 1) * stepY[0];
             long endZ = (long) origin.getZ() + (long) (arrayCount[0] - 1) * stepZ[0];
             int minX = Math.toIntExact(Math.min(origin.getX(), endX));
             int maxX = Math.toIntExact(Math.max(origin.getX(), endX));
+            int minY = Math.toIntExact(Math.min(origin.getY(), endY));
+            int maxY = Math.toIntExact(Math.max(origin.getY(), endY));
             int minZ = Math.toIntExact(Math.min(origin.getZ(), endZ));
             int maxZ = Math.toIntExact(Math.max(origin.getZ(), endZ));
-            return new BlockBounds(minX, origin.getY(), minZ, maxX, origin.getY(), maxZ);
+            if (minY < world.getBottomY() || maxY > world.getTopYInclusive()) {
+                throw new IllegalArgumentException(
+                        "schematic array Y range exceeds current world build height");
+            }
+            return new BlockBounds(minX, minY, minZ, maxX, maxY, maxZ);
         }
         int r = scatterRadius[0];
         return new BlockBounds(
