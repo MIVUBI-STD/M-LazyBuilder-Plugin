@@ -13,6 +13,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(targets = "net.minecraft.client.font.TextRenderer$Drawer")
 abstract class TextRendererDrawerMixin {
     @Unique
+    private VertexConsumerProvider lazybuilder$lastProvider;
+
+    @Unique
     private RenderLayer lazybuilder$lastRenderLayer;
 
     @Unique
@@ -32,10 +35,13 @@ abstract class TextRendererDrawerMixin {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
             return provider.getBuffer(layer);
         }
-        if (this.lazybuilder$lastRenderLayer == layer && this.lazybuilder$lastVertexConsumer != null) {
+        if (this.lazybuilder$lastProvider == provider
+                && this.lazybuilder$lastRenderLayer == layer
+                && this.lazybuilder$lastVertexConsumer != null) {
             return this.lazybuilder$lastVertexConsumer;
         }
 
+        this.lazybuilder$lastProvider = provider;
         this.lazybuilder$lastRenderLayer = layer;
         this.lazybuilder$lastVertexConsumer = provider.getBuffer(layer);
         return this.lazybuilder$lastVertexConsumer;
