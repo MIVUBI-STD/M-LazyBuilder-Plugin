@@ -16,6 +16,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.ExecutionBudget;
 import com.halokaryamedia.lazybuilder.builder.operation.MutationReadMode;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationPlan;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution;
@@ -206,7 +207,8 @@ public final class AxiomArrayTool implements CustomTool {
 
         OperationPlan plan =
                 new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation);
-        long estimateBytes = Math.max(1L, Math.multiplyExact((long) region.size(), 96L));
+        long estimateBytes = OperationPreflight.estimateBytes(
+                region.size(), 96L, "block mutation history estimate");
         Optional<PreparedMaterialMutation> prepared = MaterialOperationPreparer.prepare(
                 plan,
                 new AxiomClientWorldStateSource(world),

@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
@@ -227,7 +228,8 @@ public final class AxiomStructureStampTool implements CustomTool {
         );
 
         CancellationSource cancellation = new CancellationSource();
-        long estimateBytes = Math.max(1L, Math.multiplyExact(plan.blockChanges(), 96L));
+        long estimateBytes = OperationPreflight.estimateBytes(
+                plan.blockChanges(), 96L, "structure history estimate");
         PreparedStructureMutation prepared = StructureMutationPreparer.prepare(
                 UUID.randomUUID().toString(),
                 plan,
