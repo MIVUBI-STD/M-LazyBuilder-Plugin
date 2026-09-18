@@ -63,6 +63,7 @@ def main() -> int:
     world_manager = read(RUST / "engine/world_manager/mod.rs")
     privacy_redaction = read(RUST / "engine/privacy_redaction.rs")
     support_bundle = read(RUST / "engine/support_bundle.rs")
+    installer_smoke = read(ROOT / "tooling/windows-toolchain/scripts/distribution/verify-installer.ps1")
 
     app = read(SRC / "App.svelte")
     close_guard = read(SRC / "app/closeGuard.ts")
@@ -269,6 +270,14 @@ def main() -> int:
         "create_new(true)",
         "sync_all()",
         "FILE_ATTRIBUTE_REPARSE_POINT",
+    )
+    require(
+        errors,
+        "installer smoke isolation",
+        installer_smoke,
+        "Pre-existing LazyBuilder installation detected.",
+        "expected exactly one",
+        "clean-PATH startup smoke",
     )
 
     require(

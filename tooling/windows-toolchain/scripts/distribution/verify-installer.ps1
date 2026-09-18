@@ -6,6 +6,23 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $InstallerPath = (Resolve-Path $InstallerPath).Path
 
+$uninstallRoots = @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+    'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+    'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+)
+
+function Find-LazyBuilderUninstallEntries {
+    $entries = @()
+    foreach ($root in $uninstallRoots) {
+        if (-not (Test-Path $root)) { continue }
+        $entries += @(Get-ChildItem $root -ErrorAction SilentlyContinue |
+            Get-ItemProperty -ErrorAction SilentlyContinue |
+            Where-Object { (Get-OptionalProperty $_ 'DisplayName') -eq 'LazyBuilder' })
+    }
+    return @($entries)
+}
+
 function Normalize-RegistryPath([object]$Value) {
     if ($null -eq $Value) { return $null }
     $text = ([string]$Value).Trim()
@@ -25,22 +42,22 @@ if ($process.ExitCode -ne 0) {
     throw "LazyBuilder installer exited with code $($process.ExitCode)."
 }
 
-$uninstallRoots = @(
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
-    'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
-    'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
-)
+$preExisting = @(Find-LazyBuilderUninstallEntries)
+if ($preExisting.Count -gt 0) {
+    $locations = $preExisting | ForEach-Object {
+        $location = Normalize-RegistryPath (Get-OptionalProperty $_ 'InstallLocation')
+        if ($location) { $location } else { $_.PSPath }
+    }
+    throw "Pre-existing LazyBuilder installation detected. Canonical installer smoke requires a clean host so it cannot pass against stale registration: $($locations -join '; ')"
+}
 
 $entry = $null
 for ($attempt = 0; $attempt -lt 20 -and -not $entry; $attempt++) {
-    foreach ($root in $uninstallRoots) {
-        if (-not (Test-Path $root)) { continue }
-        $entry = Get-ChildItem $root -ErrorAction SilentlyContinue |
-            Get-ItemProperty -ErrorAction SilentlyContinue |
-            Where-Object { (Get-OptionalProperty $_ 'DisplayName') -eq 'LazyBuilder' } |
-            Select-Object -First 1
-        if ($entry) { break }
+    $entries = @(Find-LazyBuilderUninstallEntries)
+    if ($entries.Count -gt 1) {
+        throw "LazyBuilder installer created multiple uninstall registrations; expected exactly one, found $($entries.Count)."
     }
+    if ($entries.Count -eq 1) { $entry = $entries[0] }
     if (-not $entry) { Start-Sleep -Milliseconds 500 }
 }
 
