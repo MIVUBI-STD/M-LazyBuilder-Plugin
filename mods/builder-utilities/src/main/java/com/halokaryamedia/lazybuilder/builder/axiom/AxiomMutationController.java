@@ -310,6 +310,9 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
                 ? mixedSession.preserveForRecovery()
                 : session.preserveForRecovery();
         if (!preserved) {
+            recoveryTransferBlocked = true;
+            phase = Phase.IDLE;
+            status = "World-exit recovery transfer failed; operation retained for preservation retry";
             throw new IOException(
                     "Active Builder mutation could not transfer its durable plan to Recovery");
         }
