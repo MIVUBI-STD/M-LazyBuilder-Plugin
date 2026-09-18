@@ -57,7 +57,16 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                             .belongsTo(operationId, scope);
             int committed = recovery.committedSummaries(filter).size();
             int incomplete = recovery.incompleteFiles(filter).size();
+            int legacyCommitted = recovery.unscopedCommittedSummaries().size();
+            int legacyIncomplete = recovery.unscopedIncompleteFiles().size();
             current.recoveryNotice().update(scope, committed, incomplete);
+            if (legacyCommitted > 0 || legacyIncomplete > 0) {
+                LOGGER.warn(
+                        "Legacy unscoped Builder recovery journals detected: committed={}, incomplete={}. "
+                                + "They are intentionally not attached to the current world automatically.",
+                        legacyCommitted,
+                        legacyIncomplete);
+            }
             if (committed > 0 || incomplete > 0) {
                 LOGGER.warn(
                         "LazyBuilder recovery work detected for current world: committed={}, incomplete={}. "
