@@ -195,6 +195,11 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         if (voxels.length == 0) throw new IllegalStateException("Spline contains no mutation blocks");
 
         PackedPointRegion region = new PackedPointRegion(voxels);
+        if (region.bounds().minY() < world.getBottomY()
+                || region.bounds().maxY() > world.getTopYInclusive()) {
+            throw new IllegalArgumentException(
+                    "spline mutation exceeds current world build height");
+        }
         AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
         BuilderMaterial material =
                 new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
