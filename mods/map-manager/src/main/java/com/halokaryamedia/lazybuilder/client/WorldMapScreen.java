@@ -1103,10 +1103,6 @@ public final class WorldMapScreen extends Screen {
         return maps.exportBusy() || worlds.exportPending();
     }
 
-    void finishAreaExport() {
-        clearAreaSelection();
-    }
-
     private void clearAreaSelection() {
         areaSelection.clear();
         areaSelection.endDrag();
