@@ -106,6 +106,20 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
         transferred = false;
     }
 
+    public long estimatedHistoryBytes() throws IOException {
+        long[] total = {Math.multiplyExact(stored.changeCount(), 96L)};
+        stored.visitExtensions(frame -> {
+            long payloadBytes = Math.addExact(
+                    frame.beforePayload().length,
+                    frame.afterPayload().length);
+            total[0] = Math.addExact(
+                    total[0],
+                    Math.addExact(96L, payloadBytes));
+            return true;
+        });
+        return Math.max(1L, total[0]);
+    }
+
     public Set<String> extensionTypeIds() throws IOException {
         LinkedHashSet<String> ids = new LinkedHashSet<>();
         stored.visitExtensions(frame -> {
