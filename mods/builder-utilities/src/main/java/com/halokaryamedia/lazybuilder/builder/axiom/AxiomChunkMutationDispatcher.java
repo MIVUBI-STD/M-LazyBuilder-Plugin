@@ -28,9 +28,10 @@ public final class AxiomChunkMutationDispatcher {
 
     public AxiomChunkDispatchResult dispatch(ChunkChangeSet chunk) {
         Objects.requireNonNull(chunk, "chunk");
+        BlockPos.Mutable readPosition = new BlockPos.Mutable();
         ChunkDispatchPlan plan = ChunkDispatchPlanner.plan(
                 chunk,
-                (x, y, z) -> codec.encode(world.getBlockState(new BlockPos(x, y, z)))
+                (x, y, z) -> codec.encode(world.getBlockState(readPosition.set(x, y, z)))
         );
         return switch (plan.state()) {
             case ALREADY_APPLIED -> AxiomChunkDispatchResult.alreadyApplied();

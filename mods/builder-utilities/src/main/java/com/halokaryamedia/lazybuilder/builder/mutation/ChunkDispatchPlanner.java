@@ -16,14 +16,16 @@ public final class ChunkDispatchPlanner {
         Objects.requireNonNull(chunk, "chunk");
         Objects.requireNonNull(world, "world");
         long[] positions = chunk.positions();
-        List<ChunkDispatchEntry> entries = new ArrayList<>();
+        int chunkBaseX = Math.multiplyExact(chunk.chunkX(), 16);
+        int chunkBaseZ = Math.multiplyExact(chunk.chunkZ(), 16);
+        List<ChunkDispatchEntry> entries = new ArrayList<>(positions.length);
         for (int i = 0; i < positions.length; i++) {
             long packed = positions[i];
             int localX = LocalBlockPosition.localX(packed);
             int y = LocalBlockPosition.y(packed);
             int localZ = LocalBlockPosition.localZ(packed);
-            int worldX = Math.addExact(Math.multiplyExact(chunk.chunkX(), 16), localX);
-            int worldZ = Math.addExact(Math.multiplyExact(chunk.chunkZ(), 16), localZ);
+            int worldX = Math.addExact(chunkBaseX, localX);
+            int worldZ = Math.addExact(chunkBaseZ, localZ);
             String before = chunk.beforeState(i);
             String after = chunk.afterState(i);
             String actual = world.readBlockState(worldX, y, worldZ);
