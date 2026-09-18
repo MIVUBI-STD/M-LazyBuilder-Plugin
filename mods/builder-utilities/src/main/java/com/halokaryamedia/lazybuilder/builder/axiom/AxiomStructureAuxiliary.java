@@ -27,10 +27,11 @@ public final class AxiomStructureAuxiliary {
                     "Block-entity mutation authority is not available yet; "
                             + "the payload remains preserved for .schem export");
         }
-        if (snapshot.entityCount() != 0) {
+        if (snapshot.entityCount() != 0
+                && !BuilderExtensionClientNetworking.capabilities().supportsEntity()) {
             throw new IllegalStateException(
-                    "Entity mutation authority is not available yet; "
-                            + "the payload remains preserved for .schem export");
+                    "This structure contains entities but the connected server does not "
+                            + "advertise LazyBuilder ENTITY authority");
         }
         if (snapshot.biomeCount() != 0
                 && !BuilderExtensionClientNetworking.capabilities().supportsBiome()) {
@@ -55,8 +56,12 @@ public final class AxiomStructureAuxiliary {
                                 .biomeAt(x, y, z)
                                 .getBytes(StandardCharsets.UTF_8),
                 BiomePayloadTransform.identity(),
-                null,
-                EntityPayloadTransform.identity()
+                snapshot.entityCount() == 0
+                        ? null
+                        : new AxiomEntityPlacementStateSource(world),
+                snapshot.entityCount() == 0
+                        ? EntityPayloadTransform.identity()
+                        : new AxiomEntityPayloadTransform()
         );
     }
 
@@ -81,8 +86,12 @@ public final class AxiomStructureAuxiliary {
                                 .biomeAt(x, y, z)
                                 .getBytes(StandardCharsets.UTF_8),
                 BiomePayloadTransform.identity(),
-                null,
-                EntityPayloadTransform.identity()
+                snapshot.entityCount() == 0
+                        ? null
+                        : new AxiomEntityPlacementStateSource(world),
+                snapshot.entityCount() == 0
+                        ? EntityPayloadTransform.identity()
+                        : new AxiomEntityPayloadTransform()
         );
         return new StructurePastePlan(blocks, extensions);
     }
