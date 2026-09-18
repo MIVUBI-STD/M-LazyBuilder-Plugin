@@ -82,6 +82,15 @@ public final class WorldTransferScreen extends Screen {
         return new WorldTransferScreen(parent, worlds, transfers, world, Tab.EXPORT);
     }
 
+    void prepareVisualProof(boolean advanced, WorldControlWireProtocol.ImportInspection inspection) {
+        this.advanced = advanced;
+        if (inspection != null) {
+            this.importInspection = inspection;
+            this.importArtifactName = inspection.artifactName();
+            this.importDisplayName = inspection.suggestedName();
+        }
+    }
+
     @Override
     protected void init() {
         if (world != null && !requestedFormats) {
