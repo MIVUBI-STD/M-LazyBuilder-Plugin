@@ -269,7 +269,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                     samples,
                     spacing[0],
                     (point, ignored) -> selectedName(),
-                    new PlacementVariation(0, 0, 1, 1, 0, 0),
+                    new PlacementVariation(0, 0, 1, 1, 0, 0, 0),
                     seed
             );
             if (splinePlan.size() > MAX_INSTANCES) {
