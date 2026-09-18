@@ -24,7 +24,7 @@ import java.util.Objects;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** User-facing recovery surface for durable block-only operations left after restart. */
+/** User-facing recovery surface for durable block and authoritative mixed operations left after restart. */
 public final class AxiomRecoveryTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Recovery";
 

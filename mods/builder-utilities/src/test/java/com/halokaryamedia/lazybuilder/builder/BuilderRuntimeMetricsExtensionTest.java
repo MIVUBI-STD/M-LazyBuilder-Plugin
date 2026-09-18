@@ -10,16 +10,20 @@ class BuilderRuntimeMetricsExtensionTest {
     void extensionCountersAccumulateWithoutAffectingTerminalCounts() {
         BuilderRuntimeMetrics metrics = new BuilderRuntimeMetrics();
         metrics.operationStarted();
+        metrics.recordForwardBlockEntityExtensions(2);
         metrics.recordForwardBiomeExtensions(4);
         metrics.recordForwardEntityExtensions(3);
+        metrics.recordRollbackBlockEntityExtensions(1);
         metrics.recordRollbackEntityExtensions(1);
         metrics.extensionConflict();
         metrics.extensionFailure();
         metrics.terminal(OperationState.FAILED);
 
         var snapshot = metrics.snapshot();
+        assertEquals(2, snapshot.forwardBlockEntityExtensions());
         assertEquals(4, snapshot.forwardBiomeExtensions());
         assertEquals(3, snapshot.forwardEntityExtensions());
+        assertEquals(1, snapshot.rollbackBlockEntityExtensions());
         assertEquals(1, snapshot.rollbackEntityExtensions());
         assertEquals(1, snapshot.extensionConflicts());
         assertEquals(1, snapshot.extensionFailures());
