@@ -46,7 +46,7 @@ public final class AxiomBlockEntityPayloads {
     }
 
     private static byte[] encodeCanonical(NbtCompound source) throws IOException {
-        NbtCompound normalized = canonicalCompound(source);
+        NbtCompound normalized = canonicalRootCompound(source);
         String id = normalized.getString("Id");
         if (id.isBlank()) {
             throw new IOException("Block entity payload is missing Id");
@@ -59,7 +59,7 @@ public final class AxiomBlockEntityPayloads {
         }
     }
 
-    private static NbtCompound canonicalCompound(NbtCompound source) {
+    private static NbtCompound canonicalRootCompound(NbtCompound source) {
         NbtCompound result = new NbtCompound();
         String id = source.getString("Id");
         if (id.isBlank()) id = source.getString("id");
@@ -69,24 +69,39 @@ public final class AxiomBlockEntityPayloads {
         for (String key : keys) {
             if (key.equals("Id") || key.equals("id")
                     || key.equals("x") || key.equals("y") || key.equals("z")
-                    || key.equals("Pos")) {
+                    || key.equals("Pos") || key.equals("pos")) {
                 continue;
             }
             NbtElement value = source.get(key);
-            if (value != null) result.put(key, canonicalElement(value));
+            if (value != null) result.put(key, canonicalNestedElement(value));
         }
         if (!id.isBlank()) result.putString("Id", id);
         return result;
     }
 
-    private static NbtElement canonicalElement(NbtElement element) {
+    /**
+     * Nested NBT is canonicalized only by deterministic key order. Nested key names
+     * and position-like fields are semantic payload and must not be rewritten.
+     */
+    private static NbtCompound canonicalNestedCompound(NbtCompound source) {
+        NbtCompound result = new NbtCompound();
+        List<String> keys = new ArrayList<>(source.getKeys());
+        Collections.sort(keys);
+        for (String key : keys) {
+            NbtElement value = source.get(key);
+            if (value != null) result.put(key, canonicalNestedElement(value));
+        }
+        return result;
+    }
+
+    private static NbtElement canonicalNestedElement(NbtElement element) {
         if (element instanceof NbtCompound compound) {
-            return canonicalCompound(compound);
+            return canonicalNestedCompound(compound);
         }
         if (element instanceof NbtList list) {
             NbtList result = new NbtList();
             for (NbtElement value : list) {
-                result.add(canonicalElement(value));
+                result.add(canonicalNestedElement(value));
             }
             return result;
         }
