@@ -12,17 +12,27 @@ import java.util.Objects;
 public final class PreparedMutationSession implements AutoCloseable {
     private final PreparedBlockMutation prepared;
     private final HistoryTimeline timeline;
+    private final boolean publishToTimeline;
     private OperationLifecycle lifecycle;
     private boolean ownershipTransferred;
     private boolean disposed;
 
     public PreparedMutationSession(PreparedBlockMutation prepared, HistoryTimeline timeline) {
+        this(prepared, timeline, true);
+    }
+
+    public PreparedMutationSession(
+            PreparedBlockMutation prepared,
+            HistoryTimeline timeline,
+            boolean publishToTimeline
+    ) {
         this.prepared = Objects.requireNonNull(prepared, "prepared");
         if (prepared.changeSet().extensionCount() != 0) {
             throw new IllegalArgumentException(
                     "PreparedMutationSession is block-only; extension frames require an extension-aware session");
         }
         this.timeline = Objects.requireNonNull(timeline, "timeline");
+        this.publishToTimeline = publishToTimeline;
         this.lifecycle = OperationLifecycle.created(prepared.plannedChanges())
                 .transitionTo(OperationState.VALIDATING)
                 .transitionTo(OperationState.PLANNING)
@@ -98,6 +108,30 @@ public final class PreparedMutationSession implements AutoCloseable {
 
     private void finalizeCompactedCancellation(AppliedMutationCompaction compaction) throws IOException {
         StoredChangeSet retained = compaction.compactedChangeSet();
+        if (!publishToTimeline) {
+            IOException failure = null;
+            try {
+                retained.close();
+            } catch (IOException e) {
+                failure = e;
+            }
+            try {
+                prepared.close();
+                disposed = true;
+            } catch (IOException e) {
+                if (failure == null) failure = e;
+                else failure.addSuppressed(e);
+            }
+            if (failure != null) {
+                lifecycle = lifecycle.fail(
+                        "Partial cancellation cleanup failed: " + failure.getMessage());
+                throw failure;
+            }
+            setProcessedWork(compaction.appliedChanges());
+            lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
+            return;
+        }
+
         try {
             timeline.record(retained);
         } catch (IOException | RuntimeException e) {
@@ -131,6 +165,19 @@ public final class PreparedMutationSession implements AutoCloseable {
     private void completeWithHistory() throws IOException {
         setProcessedWork(lifecycle.totalWork());
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
+        if (!publishToTimeline) {
+            try {
+                prepared.close();
+                disposed = true;
+                lifecycle = lifecycle.transitionTo(OperationState.COMPLETED);
+            } catch (IOException | RuntimeException e) {
+                lifecycle = lifecycle.fail(
+                        "Failed to release completed mutation journal: " + e.getMessage());
+                throw e;
+            }
+            return;
+        }
+
         try {
             timeline.record(prepared.changeSet());
             ownershipTransferred = true;

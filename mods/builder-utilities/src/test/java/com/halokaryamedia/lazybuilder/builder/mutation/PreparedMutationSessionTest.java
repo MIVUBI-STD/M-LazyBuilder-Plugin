@@ -67,6 +67,22 @@ class PreparedMutationSessionTest {
         }
     }
 
+    @Test
+    void axiomStyleBlockOnlySessionCanCompleteWithoutInternalTimelineEntry() throws Exception {
+        StoredChangeSet stored = prepared(1, "axiom-owned");
+        try (HistoryTimeline timeline = new HistoryTimeline(8);
+             PreparedMutationSession session = new PreparedMutationSession(
+                     new PreparedMaterialMutation(stored, 1),
+                     timeline,
+                     false)) {
+            session.startDispatch();
+            assertEquals(ReconciliationState.FULLY_APPLIED,
+                    session.reconcile((x, y, z) -> "minecraft:dirt").state());
+            assertEquals(OperationState.COMPLETED, session.lifecycle().state());
+            assertEquals(0, timeline.undoSize());
+        }
+    }
+
     private static StoredChangeSet prepared(int changes, String id) throws Exception {
         ChangeSetWriter writer = new MemoryChangeSetStorage().begin(id);
         long[] positions = new long[changes];

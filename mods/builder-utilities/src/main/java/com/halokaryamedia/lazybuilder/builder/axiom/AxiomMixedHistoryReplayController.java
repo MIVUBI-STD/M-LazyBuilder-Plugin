@@ -17,7 +17,9 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * Async mixed-history replay for authoritative BLOCK_ENTITY/BIOME/ENTITY extensions.
+ * Async Builder timeline replay. Normal block-only edits stay owned by native Axiom;
+ * block-only entries can still appear here when a recovered post-restart journal is
+ * explicitly published into the LazyBuilder timeline.
  *
  * <p>Redo order: regular blocks → block entities → biomes → entities.
  * Undo order: entities → biomes → block entities → regular blocks.</p>
@@ -53,10 +55,6 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         this.world = Objects.requireNonNull(world, "world");
         this.lease = Objects.requireNonNull(lease, "lease");
         this.extensionPlan = AxiomMixedExtensionSupport.inspect(lease.changeSet());
-        if (extensionPlan.total() == 0) {
-            throw new IllegalArgumentException(
-                    "Block-only history should use Axiom native undo/redo");
-        }
 
         var capabilities =
                 com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking.capabilities();

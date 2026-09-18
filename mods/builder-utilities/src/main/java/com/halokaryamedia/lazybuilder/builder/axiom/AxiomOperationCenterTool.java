@@ -41,24 +41,28 @@ public final class AxiomOperationCenterTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Builder status and mixed-history repair. Native Axiom remains the primary block history owner; LazyBuilder replay is exposed only when a timeline entry also contains non-block payloads.");
+        ImGui.textWrapped("Builder status and durable-history repair. Native Axiom owns normal block-only undo/redo. LazyBuilder timeline replay owns mixed payload history and block-only journals explicitly restored after restart.");
         ImGui.separator();
 
         if (ImGui.button("Refresh Builder Status")) refresh();
         if (ImGui.button("Save Runtime Proof Snapshot")) saveProof();
 
         if (replay != null && !replay.finished()) {
-            ImGui.textWrapped("Mixed replay: " + replay.status());
+            ImGui.textWrapped("Builder replay: " + replay.status());
         } else {
             var undoSummary = runtime.timeline().nextUndoSummary();
-            if (undoSummary.isPresent() && undoSummary.get().extensionCount() > 0
-                    && ImGui.button("Undo Last Mixed Builder Operation")) {
-                startUndo();
+            if (undoSummary.isPresent()) {
+                String label = undoSummary.get().extensionCount() > 0
+                        ? "Undo Last Mixed Builder Operation"
+                        : "Undo Recovered Block Operation";
+                if (ImGui.button(label)) startUndo();
             }
             var redoSummary = runtime.timeline().nextRedoSummary();
-            if (redoSummary.isPresent() && redoSummary.get().extensionCount() > 0
-                    && ImGui.button("Redo Last Mixed Builder Operation")) {
-                startRedo();
+            if (redoSummary.isPresent()) {
+                String label = redoSummary.get().extensionCount() > 0
+                        ? "Redo Last Mixed Builder Operation"
+                        : "Redo Recovered Block Operation";
+                if (ImGui.button(label)) startRedo();
             }
         }
 
@@ -123,7 +127,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " ENTITY=" + proof.rollbackEntityExtensions());
         ImGui.textWrapped("Extension conflicts=" + proof.extensionConflicts()
                 + " failures=" + proof.extensionFailures());
-        ImGui.textWrapped("Mixed history replay blocks: undo=" + proof.historyUndoBlocks()
+        ImGui.textWrapped("Builder timeline replay blocks: undo=" + proof.historyUndoBlocks()
                 + " redo=" + proof.historyRedoBlocks());
         ImGui.textWrapped("Mixed history replay BLOCK_ENTITY: undo="
                 + proof.historyUndoBlockEntityExtensions()
@@ -214,9 +218,9 @@ public final class AxiomOperationCenterTool implements CustomTool {
         try {
             replay = AxiomMixedHistoryReplayController.beginUndo(
                     services, runtime, requireWorld());
-            status = "Mixed undo started";
+            status = "Builder undo started";
         } catch (Exception e) {
-            status = "Mixed undo failed to start: " + concise(e);
+            status = "Builder undo failed to start: " + concise(e);
         }
     }
 
@@ -224,9 +228,9 @@ public final class AxiomOperationCenterTool implements CustomTool {
         try {
             replay = AxiomMixedHistoryReplayController.beginRedo(
                     services, runtime, requireWorld());
-            status = "Mixed redo started";
+            status = "Builder redo started";
         } catch (Exception e) {
-            status = "Mixed redo failed to start: " + concise(e);
+            status = "Builder redo failed to start: " + concise(e);
         }
     }
 

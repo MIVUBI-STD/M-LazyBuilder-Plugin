@@ -40,7 +40,13 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
             throw new IllegalArgumentException(
                     "Axiom public block mutation path cannot apply History extension frames");
         }
-        this.core = new PreparedMutationSession(prepared, Objects.requireNonNull(timeline, "timeline"));
+        // Native Axiom owns normal block-only undo/redo. The durable LazyBuilder
+        // journal exists for crash safety only and is deleted after reconciliation.
+        this.core = new PreparedMutationSession(
+                prepared,
+                Objects.requireNonNull(timeline, "timeline"),
+                false
+        );
         AxiomChunkMutationDispatcher dispatcher = new AxiomChunkMutationDispatcher(services, world);
         this.axiomTarget = new AxiomBudgetedChunkDispatchTarget(dispatcher);
         this.cancellationToken = Objects.requireNonNull(cancellationToken, "cancellationToken");
