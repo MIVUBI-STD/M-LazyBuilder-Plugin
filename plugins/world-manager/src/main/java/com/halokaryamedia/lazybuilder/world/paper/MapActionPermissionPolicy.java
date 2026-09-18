@@ -18,18 +18,18 @@ final class MapActionPermissionPolicy {
 
         return switch (request) {
             case MapActionWireProtocol.CurrentWorldRequest ignored ->
-                    hasPermission.test(PaperMapActionPayloadAdapter.TELEPORT_PERMISSION)
-                            || hasPermission.test(PaperMapActionPayloadAdapter.MANAGE_PERMISSION)
+                    hasPermission.test(WorldPermissionNodes.TELEPORT)
+                            || hasPermission.test(WorldPermissionNodes.MANAGE)
                             ? null
                             : "Missing LazyBuilder world permission";
             case MapActionWireProtocol.TeleportLocation ignored ->
-                    hasPermission.test(PaperMapActionPayloadAdapter.TELEPORT_PERMISSION)
+                    hasPermission.test(WorldPermissionNodes.TELEPORT)
                             ? null
-                            : "Missing permission: " + PaperMapActionPayloadAdapter.TELEPORT_PERMISSION;
+                            : "Missing permission: " + WorldPermissionNodes.TELEPORT;
             case MapActionWireProtocol.ExportArea ignored ->
-                    hasPermission.test(PaperMapActionPayloadAdapter.MANAGE_PERMISSION)
+                    hasPermission.test(WorldPermissionNodes.MANAGE)
                             ? null
-                            : "Missing permission: " + PaperMapActionPayloadAdapter.MANAGE_PERMISSION;
+                            : "Missing permission: " + WorldPermissionNodes.MANAGE;
         };
     }
 }
