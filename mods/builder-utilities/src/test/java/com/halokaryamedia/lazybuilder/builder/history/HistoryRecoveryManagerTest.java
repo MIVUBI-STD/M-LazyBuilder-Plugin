@@ -25,6 +25,7 @@ class HistoryRecoveryManagerTest {
             ));
             initiallyCommitted = writer.commit();
         }
+        assertTrue(initiallyCommitted.preserveForRecovery());
         // Simulate process loss: leave the durable file in place without closing/deleting it.
         assertEquals(1, storage.listCommitted().size());
 
@@ -62,6 +63,7 @@ class HistoryRecoveryManagerTest {
             ));
             initiallyCommitted = writer.commit();
         }
+        assertTrue(initiallyCommitted.preserveForRecovery());
 
         HistoryRecoveryManager recovery = new HistoryRecoveryManager(storage);
         RecoveredHistoryEntry entry = recovery.discover(
@@ -113,6 +115,7 @@ class HistoryRecoveryManagerTest {
             ));
             initiallyCommitted = writer.commit();
         }
+        assertTrue(initiallyCommitted.preserveForRecovery());
 
         HistoryRecoveryManager recovery = new HistoryRecoveryManager(storage);
         RecoveredHistoryEntry entry =

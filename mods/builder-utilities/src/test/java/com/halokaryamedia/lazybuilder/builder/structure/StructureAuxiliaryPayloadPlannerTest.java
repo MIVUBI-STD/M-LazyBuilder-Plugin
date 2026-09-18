@@ -22,7 +22,9 @@ class StructureAuxiliaryPayloadPlannerTest {
                 new StructurePlacement(32, 64, -1, 1, false, false),
                 (x, y, z) -> new byte[]{1},
                 BiomePayloadTransform.identity(),
-                (key, pos) -> new byte[]{3},
+                (key, pos) -> EntityExtensionPayload
+                        .absent(pos.x(), pos.y(), pos.z())
+                        .encode(),
                 EntityPayloadTransform.identity()
         );
 
@@ -30,7 +32,15 @@ class StructureAuxiliaryPayloadPlannerTest {
         assertEquals(HistoryExtensionTypes.BIOME, frames.get(0).typeId());
         assertEquals(HistoryExtensionTypes.ENTITY, frames.get(1).typeId());
         assertArrayEquals(new byte[]{2}, frames.get(0).afterPayload());
-        assertArrayEquals(new byte[]{4}, frames.get(1).afterPayload());
+
+        EntityExtensionPayload beforeEntity =
+                EntityExtensionPayload.decode(frames.get(1).beforePayload());
+        EntityExtensionPayload afterEntity =
+                EntityExtensionPayload.decode(frames.get(1).afterPayload());
+        assertFalse(beforeEntity.present());
+        assertTrue(afterEntity.present());
+        assertTrue(beforeEntity.sameSlot(afterEntity));
+        assertArrayEquals(new byte[]{4}, afterEntity.templateNbt());
     }
 
     @Test

@@ -12,7 +12,7 @@ class PointMirrorSymmetryTest {
     @Test
     void mirrorsAroundPivotAndDeduplicates() {
         var result = PointSymmetryPlanner.rotationalAndMirrors(
-                List.of(new PlacementPoint(2, 64, 0, 0)),
+                List.of(new PlacementPoint(2, 64, 3, 0)),
                 new BuilderVec3(0, 64, 0),
                 1,
                 true,
@@ -21,8 +21,10 @@ class PointMirrorSymmetryTest {
         );
 
         assertEquals(4, result.size());
-        assertTrue(result.stream().anyMatch(p -> p.x() == 2 && p.z() == 0));
-        assertTrue(result.stream().anyMatch(p -> p.x() == -2 && p.z() == 0));
+        assertTrue(result.stream().anyMatch(p -> p.x() == 2 && p.z() == 3));
+        assertTrue(result.stream().anyMatch(p -> p.x() == -2 && p.z() == 3));
+        assertTrue(result.stream().anyMatch(p -> p.x() == 2 && p.z() == -3));
+        assertTrue(result.stream().anyMatch(p -> p.x() == -2 && p.z() == -3));
     }
 
     @Test

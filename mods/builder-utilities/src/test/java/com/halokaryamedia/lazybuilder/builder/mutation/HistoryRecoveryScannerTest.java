@@ -31,6 +31,7 @@ class HistoryRecoveryScannerTest {
             ));
             leaked = writer.commit();
         }
+        assertTrue(leaked.preserveForRecovery());
 
         var candidates = HistoryRecoveryScanner.scanBlocksOnly(
                 storage,
