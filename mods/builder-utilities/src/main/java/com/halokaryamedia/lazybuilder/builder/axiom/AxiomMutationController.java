@@ -10,6 +10,7 @@ import com.halokaryamedia.lazybuilder.builder.mutation.RollbackPreparationState;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
+import com.halokaryamedia.lazybuilder.builder.operation.RecoverableActiveOperation;
 import net.minecraft.client.world.ClientWorld;
 
 import java.io.IOException;
@@ -21,7 +22,7 @@ import java.util.Objects;
  * <p>Tools own preview/planning. This class owns bounded forward dispatch,
  * reconciliation, rollback-on-cancel and terminal cleanup.</p>
  */
-public final class AxiomMutationController implements AutoCloseable {
+public final class AxiomMutationController implements AutoCloseable, RecoverableActiveOperation {
     private final AxiomClientServices services;
     private final BuilderRuntime runtime;
 
@@ -106,6 +107,7 @@ public final class AxiomMutationController implements AutoCloseable {
         this.operationPlannedBlocks = prepared.plannedChanges();
         this.operationPlannedExtensions = prepared.changeSet().extensionCount();
         runtime.metrics().operationStarted();
+        runtime.registerActiveOperation(this);
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
     }
 
@@ -174,6 +176,7 @@ public final class AxiomMutationController implements AutoCloseable {
             cancellation = null;
             phase = Phase.IDLE;
             pendingOutcome = finalState;
+            runtime.unregisterActiveOperation(this);
             recordTerminalOnce(finalState);
         }
     }
@@ -257,12 +260,16 @@ public final class AxiomMutationController implements AutoCloseable {
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = finalState;
+        runtime.unregisterActiveOperation(this);
         recordTerminalOnce(finalState);
     }
 
     @Override
-    public void close() throws IOException {
-        if (!isActive()) return;
+    public void preserveForWorldExit() throws IOException {
+        if (!isActive()) {
+            runtime.unregisterActiveOperation(this);
+            return;
+        }
         try {
             if (mixedSession != null) {
                 mixedSession.preserveForRecovery();
@@ -274,7 +281,13 @@ public final class AxiomMutationController implements AutoCloseable {
             mixedSession = null;
             cancellation = null;
             phase = Phase.IDLE;
+            runtime.unregisterActiveOperation(this);
         }
+    }
+
+    @Override
+    public void close() throws IOException {
+        preserveForWorldExit();
     }
 
     private void preserveFailedOperation(Exception failure) {
@@ -299,6 +312,7 @@ public final class AxiomMutationController implements AutoCloseable {
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = OperationState.FAILED;
+        runtime.unregisterActiveOperation(this);
         recordTerminalOnce(OperationState.FAILED);
         if (preserved) {
             status = base + " | durable plan preserved for Recovery";

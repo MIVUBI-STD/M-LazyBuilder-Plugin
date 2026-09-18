@@ -75,9 +75,18 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static void resetWorldTimeline() {
         BuilderRuntime current = runtime;
         if (current == null) return;
+        java.io.IOException failure = null;
+        try {
+            current.preserveActiveOperations();
+        } catch (java.io.IOException e) {
+            failure = e;
+            LOGGER.error(
+                    "Failed to preserve one or more active Builder operations on disconnect", e);
+        }
         try {
             current.resetWorldTimeline();
         } catch (java.io.IOException e) {
+            if (failure != null) e.addSuppressed(failure);
             LOGGER.error("Failed to reset Builder history after world disconnect", e);
         }
     }
