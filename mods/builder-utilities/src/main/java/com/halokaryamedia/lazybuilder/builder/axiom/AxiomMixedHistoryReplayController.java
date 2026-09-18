@@ -17,26 +17,28 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * Async mixed-history replay for authoritative BIOME/ENTITY extensions.
+ * Async mixed-history replay for authoritative BLOCK_ENTITY/BIOME/ENTITY extensions.
  *
- * <p>Redo order: blocks → biomes → entities. Undo order: entities → biomes → blocks.
- * BLOCK_ENTITY remains unsupported until a generic authoritative backend exists.</p>
+ * <p>Redo order: regular blocks → block entities → biomes → entities.
+ * Undo order: entities → biomes → block entities → regular blocks.</p>
  */
 public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private final BuilderRuntime runtime;
     private final ClientWorld world;
     private final HistoryTimelineLease lease;
     private final AxiomClientWorldStateSource blocks;
-    private final AxiomBudgetedChunkDispatchTarget forwardTarget;
+    private final ChunkDispatchTarget forwardTarget;
     private final ChunkDispatchTarget reverseTarget;
     private final AxiomMixedExtensionSupport.Plan extensionPlan;
 
     private BudgetedPreparedMutationDispatcher blockDispatcher;
+    private AxiomBlockEntityBatchDispatcher blockEntityDispatcher;
     private AxiomBiomeBatchDispatcher biomeDispatcher;
     private AxiomEntityBatchDispatcher entityDispatcher;
     private Phase phase;
     private String status;
     private boolean finished;
+    private long blockEntityObserved;
     private long biomeObserved;
     private long entityObserved;
 
@@ -57,6 +59,10 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
 
         var capabilities =
                 com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking.capabilities();
+        if (extensionPlan.hasBlockEntities() && !capabilities.supportsBlockEntity()) {
+            throw new IllegalStateException(
+                    "Server does not advertise Builder BLOCK_ENTITY authority");
+        }
         if (extensionPlan.hasBiomes() && !capabilities.supportsBiome()) {
             throw new IllegalStateException(
                     "Server does not advertise Builder BIOME authority");
@@ -67,9 +73,16 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         }
 
         this.blocks = new AxiomClientWorldStateSource(world);
-        this.forwardTarget = new AxiomBudgetedChunkDispatchTarget(
+        ChunkDispatchTarget baseForward = new AxiomBudgetedChunkDispatchTarget(
                 new AxiomChunkMutationDispatcher(
                         Objects.requireNonNull(services, "services"), world));
+        if (extensionPlan.hasBlockEntities()) {
+            this.forwardTarget = new AxiomBlockEntityFilteringChunkDispatchTarget(
+                    baseForward,
+                    AxiomBlockEntityPositionMask.from(lease.changeSet()));
+        } else {
+            this.forwardTarget = baseForward;
+        }
         this.reverseTarget = chunk -> forwardTarget.dispatch(
                 ChunkChangeSetTransforms.reverse(chunk));
 
@@ -125,6 +138,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
             switch (phase) {
                 case BLOCKS -> pumpBlocks();
                 case BLOCK_RECONCILE -> reconcileBlocks();
+                case BLOCK_ENTITIES -> pumpBlockEntities();
                 case BIOMES -> pumpBiomes();
                 case ENTITIES -> pumpEntities();
                 case DONE -> { }
@@ -197,7 +211,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     }
 
     private void startRedoExtensions() throws IOException {
-        if (extensionPlan.hasBiomes()) {
+        if (extensionPlan.hasBlockEntities()) {
+            blockEntityObserved = 0L;
+            blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                    lease.changeSet(), world, () -> false, false);
+            phase = Phase.BLOCK_ENTITIES;
+            status = "Redoing block entities";
+        } else if (extensionPlan.hasBiomes()) {
             biomeObserved = 0L;
             biomeDispatcher = new AxiomBiomeBatchDispatcher(
                     lease.changeSet(), world, () -> false, false);
@@ -227,8 +247,63 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                     lease.changeSet(), world, () -> false, true);
             phase = Phase.BIOMES;
             status = "Undoing biomes";
+        } else if (extensionPlan.hasBlockEntities()) {
+            blockEntityObserved = 0L;
+            blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                    lease.changeSet(), world, () -> false, true);
+            phase = Phase.BLOCK_ENTITIES;
+            status = "Undoing block entities";
         } else {
             startUndoBlocks();
+        }
+    }
+
+
+    private void pumpBlockEntities() throws IOException {
+        BlockEntityBatchDispatchProgress progress = blockEntityDispatcher.pump();
+        long delta = progressDelta(progress.processedExtensions(), blockEntityObserved);
+        blockEntityObserved = progress.processedExtensions();
+        if (lease.direction() == ReplayDirection.UNDO) {
+            runtime.metrics().recordHistoryUndoBlockEntityExtensions(delta);
+        } else {
+            runtime.metrics().recordHistoryRedoBlockEntityExtensions(delta);
+        }
+        status = (lease.direction() == ReplayDirection.UNDO ? "Undo" : "Redo")
+                + " block entities: " + progress.processedExtensions();
+
+        switch (progress.state()) {
+            case YIELDED, WAITING -> { }
+            case EXHAUSTED -> {
+                blockEntityDispatcher.close();
+                blockEntityDispatcher = null;
+                verifyBlockEntityState(
+                        lease.direction() == ReplayDirection.REDO
+                                ? ReconciliationState.FULLY_APPLIED
+                                : ReconciliationState.NOT_APPLIED);
+                if (lease.direction() == ReplayDirection.REDO) {
+                    if (extensionPlan.hasBiomes()) {
+                        biomeObserved = 0L;
+                        biomeDispatcher = new AxiomBiomeBatchDispatcher(
+                                lease.changeSet(), world, () -> false, false);
+                        phase = Phase.BIOMES;
+                        status = "Redoing biomes";
+                    } else if (extensionPlan.hasEntities()) {
+                        entityObserved = 0L;
+                        entityDispatcher = new AxiomEntityBatchDispatcher(
+                                lease.changeSet(), world, () -> false, false);
+                        phase = Phase.ENTITIES;
+                        status = "Redoing entities";
+                    } else {
+                        complete();
+                    }
+                } else {
+                    startUndoBlocks();
+                }
+            }
+            case CANCELLED -> throw new IllegalStateException(
+                    "History replay cannot be cancelled internally");
+            case CONFLICT, FAILED -> throw new IllegalStateException(
+                    "block-entity replay " + progress.state() + ": " + progress.detail());
         }
     }
 
@@ -262,6 +337,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                     } else {
                         complete();
                     }
+                } else if (lease.direction() == ReplayDirection.UNDO
+                        && extensionPlan.hasBlockEntities()) {
+                    blockEntityObserved = 0L;
+                    blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                            lease.changeSet(), world, () -> false, true);
+                    phase = Phase.BLOCK_ENTITIES;
+                    status = "Undoing block entities";
                 } else {
                     startUndoBlocks();
                 }
@@ -297,6 +379,12 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                             lease.changeSet(), world, () -> false, true);
                     phase = Phase.BIOMES;
                     status = "Undoing biomes";
+                } else if (extensionPlan.hasBlockEntities()) {
+                    blockEntityObserved = 0L;
+                    blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                            lease.changeSet(), world, () -> false, true);
+                    phase = Phase.BLOCK_ENTITIES;
+                    status = "Undoing block entities";
                 } else {
                     startUndoBlocks();
                 }
@@ -320,10 +408,28 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     }
 
     private void completeAfterUndoBlockReconcile() throws IOException {
+        if (extensionPlan.hasBlockEntities()) {
+            verifyBlockEntityState(ReconciliationState.NOT_APPLIED);
+        }
         if (extensionPlan.hasBiomes()) {
             verifyBiomeState(ReconciliationState.NOT_APPLIED);
         }
         complete();
+    }
+
+
+    private void verifyBlockEntityState(ReconciliationState expected) throws IOException {
+        if (!extensionPlan.hasBlockEntities()) return;
+        ReconciliationState state = HistoryExtensionReconciler.reconcile(
+                lease.changeSet(),
+                new AxiomBlockEntityExtensionReadTarget(world)).state();
+        if (state == ReconciliationState.CONFLICT) {
+            throw new IllegalStateException("block-entity replay reconciliation conflict");
+        }
+        if (state != expected && state != ReconciliationState.EMPTY) {
+            throw new IllegalStateException(
+                    "block-entity replay expected " + expected + " but found " + state);
+        }
     }
 
     private void verifyBiomeState(ReconciliationState expected) throws IOException {
@@ -352,6 +458,10 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         if (blockDispatcher != null) {
             blockDispatcher.close();
             blockDispatcher = null;
+        }
+        if (blockEntityDispatcher != null) {
+            blockEntityDispatcher.close();
+            blockEntityDispatcher = null;
         }
         if (biomeDispatcher != null) {
             biomeDispatcher.close();
@@ -382,6 +492,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private enum Phase {
         BLOCKS,
         BLOCK_RECONCILE,
+        BLOCK_ENTITIES,
         BIOMES,
         ENTITIES,
         DONE
