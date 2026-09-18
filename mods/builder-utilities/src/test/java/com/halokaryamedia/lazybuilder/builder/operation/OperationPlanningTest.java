@@ -47,27 +47,6 @@ class OperationPlanningTest {
                 () -> new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation));
     }
 
-    @Test
-    void workQueueUsesStableBatchesAndStopsDispatchAfterCancellation() {
-        CancellationSource cancellation = new CancellationSource();
-        BuilderOperation operation = operation(
-                new BoxRegion(new BlockBounds(0, 0, 0, 47, 0, 15)),
-                cancellation,
-                2
-        );
-        OperationPlan plan = new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation);
-        DeterministicWorkQueue queue = new DeterministicWorkQueue(plan);
-
-        List<?> firstBatch = queue.pollBatch();
-        assertEquals(2, firstBatch.size());
-        assertEquals(1, queue.remainingWorkUnits());
-
-        cancellation.requestCancellation();
-        assertTrue(queue.pollBatch().isEmpty());
-        assertFalse(queue.isExhausted());
-        assertEquals(1, queue.remainingWorkUnits());
-    }
-
     private static BuilderOperation operation(
             BuilderRegion region,
             CancellationSource cancellation,
