@@ -28,6 +28,33 @@ final class MapAreaSelectionStateTest {
     }
 
     @Test
+    void moveDragPreservesSelectionSize() {
+        MapAreaSelectionState state = new MapAreaSelectionState();
+        UUID worldId = UUID.randomUUID();
+        state.activate(worldId, 2, 4, -3, -1);
+
+        state.beginDrag(MapAreaSelectionState.DragMode.MOVE, 3, -2);
+        state.updateDrag(8, 1);
+
+        assertEquals(7, state.minChunkX);
+        assertEquals(9, state.maxChunkX);
+        assertEquals(0, state.minChunkZ);
+        assertEquals(2, state.maxChunkZ);
+    }
+
+    @Test
+    void edgeDragNormalizesCrossedBounds() {
+        MapAreaSelectionState state = new MapAreaSelectionState();
+        state.activate(UUID.randomUUID(), 0, 4, 0, 4);
+
+        state.beginDrag(MapAreaSelectionState.DragMode.W, 0, 2);
+        state.updateDrag(6, 2);
+
+        assertEquals(4, state.minChunkX);
+        assertEquals(6, state.maxChunkX);
+    }
+
+    @Test
     void clearDropsSelectionIdentity() {
         MapAreaSelectionState state = new MapAreaSelectionState();
         UUID worldId = UUID.randomUUID();
