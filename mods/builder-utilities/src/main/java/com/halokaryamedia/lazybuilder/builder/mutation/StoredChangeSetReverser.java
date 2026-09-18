@@ -18,11 +18,21 @@ public final class StoredChangeSetReverser {
             long estimatedHistoryBytes,
             String operationId
     ) throws IOException {
+        if (source.extensionCount() != 0) {
+            throw new IllegalArgumentException(
+                    "reverse() is block-only; use reverseBlocks() for mixed history");
+        }
+        return reverseBlocks(source, history, estimatedHistoryBytes, operationId);
+    }
+
+    public static StoredChangeSet reverseBlocks(
+            StoredChangeSet source,
+            HistoryStorageRouter history,
+            long estimatedHistoryBytes,
+            String operationId
+    ) throws IOException {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(history, "history");
-        if (source.extensionCount() != 0) {
-            throw new IllegalArgumentException("Rollback reversal currently supports block-only History v2 plans");
-        }
         if (estimatedHistoryBytes < 0) throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         if (operationId == null || operationId.isBlank()) throw new IllegalArgumentException("operationId must be non-blank");
 

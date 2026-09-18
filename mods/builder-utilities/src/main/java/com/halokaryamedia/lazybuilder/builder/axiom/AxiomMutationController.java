@@ -26,6 +26,7 @@ public final class AxiomMutationController implements AutoCloseable {
     private final BuilderRuntime runtime;
 
     private AxiomPreparedMutationSession session;
+    private AxiomBiomePreparedMutationSession mixedSession;
     private CancellationSource cancellation;
     private Phase phase = Phase.IDLE;
     private String status = "Ready";
@@ -39,10 +40,11 @@ public final class AxiomMutationController implements AutoCloseable {
     }
 
     public boolean isActive() {
-        return session != null;
+        return session != null || mixedSession != null;
     }
 
     public OperationLifecycle lifecycle() {
+        if (mixedSession != null) return mixedSession.lifecycle();
         if (session == null) throw new IllegalStateException("No active mutation");
         return session.lifecycle();
     }
@@ -57,7 +59,9 @@ public final class AxiomMutationController implements AutoCloseable {
             CancellationSource cancellation,
             long estimatedHistoryBytes
     ) throws IOException {
-        if (session != null) throw new IllegalStateException("A mutation is already active");
+        if (session != null || mixedSession != null) {
+            throw new IllegalStateException("A mutation is already active");
+        }
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(prepared, "prepared");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
@@ -66,9 +70,21 @@ public final class AxiomMutationController implements AutoCloseable {
         }
         this.estimatedHistoryBytes = estimatedHistoryBytes;
         try {
-            this.session = new AxiomPreparedMutationSession(
-                    services, world, prepared, runtime.timeline(), cancellation.token());
-        } catch (RuntimeException failure) {
+            if (prepared.changeSet().extensionCount() == 0) {
+                this.session = new AxiomPreparedMutationSession(
+                        services, world, prepared, runtime.timeline(), cancellation.token());
+            } else {
+                this.mixedSession = new AxiomBiomePreparedMutationSession(
+                        services,
+                        world,
+                        prepared,
+                        runtime.timeline(),
+                        runtime.history(),
+                        estimatedHistoryBytes,
+                        cancellation.token()
+                );
+            }
+        } catch (RuntimeException | IOException failure) {
             try {
                 prepared.close();
             } catch (IOException closeFailure) {
@@ -85,7 +101,7 @@ public final class AxiomMutationController implements AutoCloseable {
     }
 
     public boolean requestRollbackCancellation() {
-        if (session == null || session.lifecycle().state().isTerminal()) return false;
+        if (!isActive() || lifecycle().state().isTerminal()) return false;
         boolean changed = cancellation.requestCancellation();
         status = "Cancellation requested";
         return changed;
@@ -93,8 +109,12 @@ public final class AxiomMutationController implements AutoCloseable {
 
     /** Advances at most one budgeted execution/reconciliation slice. */
     public void pump() {
-        if (session == null) return;
+        if (!isActive()) return;
         try {
+            if (mixedSession != null) {
+                pumpMixed();
+                return;
+            }
             if (cancellation.token().isCancellationRequested()
                     && phase != Phase.ROLLBACK_DISPATCH
                     && phase != Phase.ROLLBACK_RECONCILE) {
@@ -121,6 +141,32 @@ public final class AxiomMutationController implements AutoCloseable {
         OperationState result = pendingOutcome;
         pendingOutcome = null;
         return result;
+    }
+
+    private void pumpMixed() throws IOException {
+        AxiomMixedPumpResult result = mixedSession.pump(runtime.dispatchBudget());
+        status = result.detail() == null
+                ? "Mixed mutation: " + result.state()
+                : result.detail();
+        if (result.state() == AxiomMixedPumpResult.State.COMPLETED
+                || result.state() == AxiomMixedPumpResult.State.CANCELLED
+                || result.state() == AxiomMixedPumpResult.State.FAILED) {
+            OperationState finalState = mixedSession.lifecycle().state();
+            if (finalState == OperationState.FAILED) {
+                boolean preserved = mixedSession.preserveForRecovery();
+                status = preserved
+                        ? "Last mixed operation: FAILED (durable plan preserved for Recovery)"
+                        : "Last mixed operation: FAILED";
+            } else {
+                mixedSession.close();
+                status = "Last mixed operation: " + finalState;
+            }
+            mixedSession = null;
+            cancellation = null;
+            phase = Phase.IDLE;
+            pendingOutcome = finalState;
+            recordTerminalOnce(finalState);
+        }
     }
 
     private void pumpForwardDispatch() throws IOException {
@@ -207,11 +253,16 @@ public final class AxiomMutationController implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        if (session == null) return;
+        if (!isActive()) return;
         try {
-            session.preserveForRecovery();
+            if (mixedSession != null) {
+                mixedSession.preserveForRecovery();
+            } else {
+                session.preserveForRecovery();
+            }
         } finally {
             session = null;
+            mixedSession = null;
             cancellation = null;
             phase = Phase.IDLE;
         }
@@ -221,7 +272,13 @@ public final class AxiomMutationController implements AutoCloseable {
         String base = "Operation failed: " + safeMessage(failure);
         boolean preserved = false;
         Exception preserveFailure = null;
-        if (session != null) {
+        if (mixedSession != null) {
+            try {
+                preserved = mixedSession.preserveForRecovery();
+            } catch (Exception e) {
+                preserveFailure = e;
+            }
+        } else if (session != null) {
             try {
                 preserved = session.preserveForRecovery();
             } catch (Exception e) {
@@ -229,6 +286,7 @@ public final class AxiomMutationController implements AutoCloseable {
             }
         }
         session = null;
+        mixedSession = null;
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = OperationState.FAILED;

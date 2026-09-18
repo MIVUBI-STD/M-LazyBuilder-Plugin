@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * Resumable, budget-aware dispatcher over a committed block-only History v2 plan.
+ * Resumable, budget-aware dispatcher over the block frames of a committed History v2 plan.
  * One instance owns one forward-only cursor and can be called repeatedly across
  * ticks/frames without rescanning earlier chunks.
  */
@@ -35,9 +35,9 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
             CancellationToken cancellationToken
     ) {
         Objects.requireNonNull(prepared, "prepared");
-        if (prepared.extensionCount() != 0) {
-            throw new IllegalArgumentException("Budgeted block dispatcher cannot apply History extension frames");
-        }
+        // Extension frames are intentionally ignored by this block dispatcher but
+        // remain checksum/count validated by StoredChunkCursor. Callers that accept
+        // mixed plans must orchestrate extension execution separately.
         this.cursor = StoredChunkCursor.open(prepared);
         this.target = Objects.requireNonNull(target, "target");
         this.cancellationToken = Objects.requireNonNull(cancellationToken, "cancellationToken");
