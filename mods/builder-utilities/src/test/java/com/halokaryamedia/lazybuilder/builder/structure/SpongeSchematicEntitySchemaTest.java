@@ -15,9 +15,9 @@ class SpongeSchematicEntitySchemaTest {
         NbtCompound entity = new NbtCompound();
         entity.putString("Id", "minecraft:creeper");
         NbtList pos = new NbtList();
-        pos.add(NbtDouble.of(1.5));
-        pos.add(NbtDouble.of(2.0));
-        pos.add(NbtDouble.of(3.5));
+        pos.add(NbtDouble.of(0.5));
+        pos.add(NbtDouble.of(0.5));
+        pos.add(NbtDouble.of(0.5));
         entity.put("Pos", pos);
 
         NbtCompound data = new NbtCompound();
