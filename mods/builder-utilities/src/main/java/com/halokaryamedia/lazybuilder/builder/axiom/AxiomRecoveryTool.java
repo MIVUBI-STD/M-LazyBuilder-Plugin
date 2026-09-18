@@ -46,8 +46,8 @@ public final class AxiomRecoveryTool implements CustomTool {
     @Override
     public void displayImguiOptions() {
         ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. "
-                + "Block/BIOME plans use world-aware classification; ENTITY plans may resume "
-                + "through negotiated authoritative compare-and-set replay.");
+                + "Blocks/BLOCK_ENTITY/BIOME use world-aware classification when readable; "
+                + "ENTITY and other negotiated authorities resume through compare-and-set replay.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -152,12 +152,23 @@ public final class AxiomRecoveryTool implements CustomTool {
             var capabilities =
                     com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
                             .capabilities();
+            java.util.LinkedHashMap<String,
+                    com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionMutationTarget>
+                    readable = new java.util.LinkedHashMap<>();
+            if (capabilities.supportsBlockEntity()) {
+                readable.put(
+                        HistoryExtensionTypes.BLOCK_ENTITY,
+                        new AxiomBlockEntityExtensionReadTarget(world));
+            }
+            if (capabilities.supportsBiome()) {
+                readable.put(
+                        HistoryExtensionTypes.BIOME,
+                        new AxiomBiomeExtensionReadTarget(world));
+            }
             HistoryExtensionTargetRegistry extensions =
-                    capabilities.supportsBiome()
-                            ? new HistoryExtensionTargetRegistry(java.util.Map.of(
-                                    HistoryExtensionTypes.BIOME,
-                                    new AxiomBiomeExtensionReadTarget(world)))
-                            : HistoryExtensionTargetRegistry.empty();
+                    readable.isEmpty()
+                            ? HistoryExtensionTargetRegistry.empty()
+                            : new HistoryExtensionTargetRegistry(readable);
             entries = new HistoryRecoveryManager(runtime.diskHistory())
                     .discover(
                             new AxiomClientWorldStateSource(world),
@@ -214,6 +225,9 @@ public final class AxiomRecoveryTool implements CustomTool {
                 com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
                         .capabilities();
         LinkedHashSet<String> types = new LinkedHashSet<>();
+        if (capabilities.supportsBlockEntity()) {
+            types.add(HistoryExtensionTypes.BLOCK_ENTITY);
+        }
         if (capabilities.supportsBiome()) types.add(HistoryExtensionTypes.BIOME);
         if (capabilities.supportsEntity()) types.add(HistoryExtensionTypes.ENTITY);
         return Set.copyOf(types);
