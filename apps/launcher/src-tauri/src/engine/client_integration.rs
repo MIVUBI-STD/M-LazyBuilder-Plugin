@@ -1,3 +1,4 @@
+use crate::engine::persistence;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
@@ -609,50 +610,32 @@ fn legacy_config_path() -> Option<PathBuf> {
         .map(|path| path.join("LazyBuilder").join("client-integration.json"))
 }
 
+const CLIENT_CONFIG_LABEL: &str = "Client Setup configuration";
+
 fn load_config() -> Result<ClientIntegrationConfig, String> {
     let path = config_path()?;
-    if path.is_file() {
-        return read_config(&path);
-    }
-    if let Some(legacy) = legacy_config_path().filter(|candidate| candidate.is_file() && candidate != &path) {
-        let config = read_config(&legacy)?;
-        save_config(&config)?;
-        let _ = fs::remove_file(legacy);
+    persistence::recover_atomic_file(&path, CLIENT_CONFIG_LABEL)?;
+    if persistence::metadata_entry_exists(&path, CLIENT_CONFIG_LABEL)? {
+        let config = read_config(&path)?;
+        persistence::cleanup_recovery_files(&path, CLIENT_CONFIG_LABEL)?;
         return Ok(config);
+    }
+    if let Some(legacy) = legacy_config_path().filter(|candidate| candidate != &path) {
+        if persistence::metadata_entry_exists(&legacy, "legacy Client Setup configuration")? {
+            let config = persistence::read_json(&legacy, "legacy Client Setup configuration")?;
+            save_config(&config)?;
+            let _ = fs::remove_file(legacy);
+            return Ok(config);
+        }
     }
     Ok(ClientIntegrationConfig::default())
 }
 
 fn read_config(path: &Path) -> Result<ClientIntegrationConfig, String> {
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&text)
-        .map_err(|error| format!("Could not read Client Setup configuration: {error}"))
+    persistence::read_json(path, CLIENT_CONFIG_LABEL)
 }
 
 fn save_config(config: &ClientIntegrationConfig) -> Result<(), String> {
     let path = config_path()?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Client Setup config path has no parent.".to_string())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let payload = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    let incoming = path.with_extension("json.incoming");
-    let backup = path.with_extension("json.previous");
-    fs::write(&incoming, payload).map_err(|error| error.to_string())?;
-    if path.exists() {
-        let _ = fs::remove_file(&backup);
-        fs::rename(&path, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(&incoming, &path) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = fs::rename(&backup, &path);
-                Err(error.to_string())
-            }
-        }
-    } else {
-        fs::rename(incoming, path).map_err(|error| error.to_string())
-    }
+    persistence::write_json_atomically(&path, config, CLIENT_CONFIG_LABEL)
 }

@@ -1,14 +1,7 @@
-use crate::engine::paths;
+use crate::engine::{paths, persistence};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-#[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
-
-#[cfg(windows)]
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
-
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ServerConfig {
@@ -35,12 +28,14 @@ impl Default for ServerConfig {
     }
 }
 
+const SERVER_CONFIG_LABEL: &str = "server configuration";
+
 pub fn load() -> Result<ServerConfig, String> {
     let path = config_path()?;
-    recover_atomic_file(&path)?;
-    if !metadata_entry_exists(&path, "server configuration")? {
+    persistence::recover_atomic_file(&path, SERVER_CONFIG_LABEL)?;
+    if !persistence::metadata_entry_exists(&path, SERVER_CONFIG_LABEL)? {
         let legacy = legacy_config_path()?;
-        let config = if legacy.is_file() {
+        let config = if persistence::metadata_entry_exists(&legacy, "legacy server configuration")? {
             read_from(&legacy)?
         } else {
             ServerConfig::default()
@@ -49,20 +44,14 @@ pub fn load() -> Result<ServerConfig, String> {
         return Ok(config);
     }
     let config = read_from(&path)?;
-    cleanup_recovery_files(&path)?;
+    persistence::cleanup_recovery_files(&path, SERVER_CONFIG_LABEL)?;
     Ok(config)
 }
 
 pub fn save(config: &ServerConfig) -> Result<(), String> {
     validate(config)?;
     let path = config_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.tmp");
-    write_staging_file(&temporary, text.as_bytes())?;
-    replace_file(&temporary, &path)
+    persistence::write_json_atomically(&path, config, SERVER_CONFIG_LABEL)
 }
 
 pub fn ensure_java_path(java: &Path) -> Result<ServerConfig, String> {
@@ -75,9 +64,7 @@ pub fn ensure_java_path(java: &Path) -> Result<ServerConfig, String> {
 }
 
 fn read_from(path: &Path) -> Result<ServerConfig, String> {
-    ensure_regular_metadata_file(path, "server configuration")?;
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let config: ServerConfig = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let config: ServerConfig = persistence::read_json(path, SERVER_CONFIG_LABEL)?;
     validate(&config)?;
     Ok(config)
 }
@@ -108,106 +95,6 @@ fn legacy_config_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_tools_dir()?.join("server-manager.json"))
 }
 
-fn write_staging_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if metadata_entry_exists(path, "server configuration staging file")? {
-        ensure_regular_metadata_file(path, "server configuration staging file")?;
-        fs::remove_file(path).map_err(|error| format!("Could not clear stale server configuration staging file: {error}"))?;
-    }
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(path)
-        .map_err(|error| format!("Could not create server configuration staging file: {error}"))?;
-    file.write_all(bytes).map_err(|error| format!("Could not write server configuration staging file: {error}"))?;
-    file.sync_all().map_err(|error| format!("Could not flush server configuration staging file: {error}"))
-}
-
-fn recover_atomic_file(destination: &Path) -> Result<(), String> {
-    let previous = destination.with_extension("json.previous");
-    let temporary = destination.with_extension("json.tmp");
-
-    if metadata_entry_exists(destination, "server configuration")? {
-        ensure_regular_metadata_file(destination, "server configuration")?;
-        return Ok(());
-    }
-
-    if metadata_entry_exists(&previous, "previous server configuration")? {
-        ensure_regular_metadata_file(&previous, "previous server configuration")?;
-        fs::rename(&previous, destination)
-            .map_err(|error| format!("Could not restore previous server configuration: {error}"))?;
-        return Ok(());
-    }
-
-    if metadata_entry_exists(&temporary, "server configuration staging file")? {
-        ensure_regular_metadata_file(&temporary, "server configuration staging file")?;
-        fs::rename(&temporary, destination)
-            .map_err(|error| format!("Could not publish recovered server configuration: {error}"))?;
-    }
-    Ok(())
-}
-
-fn cleanup_recovery_files(destination: &Path) -> Result<(), String> {
-    remove_stale_metadata_file(&destination.with_extension("json.previous"), "previous server configuration")?;
-    remove_stale_metadata_file(&destination.with_extension("json.tmp"), "server configuration staging file")
-}
-
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
-    ensure_regular_metadata_file(source, "server configuration staging file")?;
-    if metadata_entry_exists(destination, "server configuration")? {
-        ensure_regular_metadata_file(destination, "server configuration")?;
-        let backup = destination.with_extension("json.previous");
-        remove_stale_metadata_file(&backup, "previous server configuration")?;
-        fs::rename(destination, &backup).map_err(|error| error.to_string())?;
-        match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                match fs::rename(&backup, destination) {
-                    Ok(()) => Err(format!("Could not publish server configuration; previous configuration was restored: {error}")),
-                    Err(rollback_error) => Err(format!(
-                        "Could not publish server configuration ({error}) and could not restore the previous configuration ({rollback_error}). Recovery files were preserved."
-                    )),
-                }
-            }
-        }
-    } else {
-        fs::rename(source, destination).map_err(|error| error.to_string())
-    }
-}
-
-fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Could not inspect {label}: {error}")),
-    }
-}
-
-fn remove_stale_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    if !metadata_entry_exists(path, label)? {
-        return Ok(());
-    }
-    ensure_regular_metadata_file(path, label)?;
-    fs::remove_file(path).map_err(|error| format!("Could not remove stale {label}: {error}"))
-}
-
-fn ensure_regular_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("LazyBuilder refused a symbolic link as {label}"));
-    }
-    #[cfg(windows)]
-    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(format!("LazyBuilder refused a Windows reparse point as {label}"));
-    }
-    if !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,10 +117,10 @@ mod tests {
         fs::write(&previous, b"previous").unwrap();
         fs::write(&temporary, b"incoming").unwrap();
 
-        recover_atomic_file(&path).unwrap();
+        persistence::recover_atomic_file(&path, SERVER_CONFIG_LABEL).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "previous");
         assert!(temporary.exists());
-        cleanup_recovery_files(&path).unwrap();
+        persistence::cleanup_recovery_files(&path, SERVER_CONFIG_LABEL).unwrap();
         assert!(!temporary.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -244,7 +131,7 @@ mod tests {
         let temporary = path.with_extension("json.tmp");
         fs::write(&temporary, b"incoming").unwrap();
 
-        recover_atomic_file(&path).unwrap();
+        persistence::recover_atomic_file(&path, SERVER_CONFIG_LABEL).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "incoming");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -257,7 +144,7 @@ mod tests {
         fs::write(&path, b"not-json").unwrap();
         fs::write(&previous, b"previous").unwrap();
         fs::write(&temporary, b"incoming").unwrap();
-        recover_atomic_file(&path).unwrap();
+        persistence::recover_atomic_file(&path, SERVER_CONFIG_LABEL).unwrap();
         assert!(read_from(&path).is_err());
         assert!(previous.exists());
         assert!(temporary.exists());
