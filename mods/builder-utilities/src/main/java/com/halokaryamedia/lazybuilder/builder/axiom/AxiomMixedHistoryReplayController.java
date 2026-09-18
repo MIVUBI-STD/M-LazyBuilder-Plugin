@@ -38,6 +38,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private Phase phase;
     private String status;
     private boolean finished;
+    private boolean redoExtensionsCompleted;
     private long blockEntityObserved;
     private long biomeObserved;
     private long entityObserved;
@@ -178,7 +179,12 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
             case EXHAUSTED -> {
                 blockDispatcher.close();
                 blockDispatcher = null;
-                phase = Phase.BLOCK_RECONCILE;
+                if (lease.direction() == ReplayDirection.REDO
+                        && extensionPlan.hasBlockEntities()) {
+                    startRedoExtensions();
+                } else {
+                    phase = Phase.BLOCK_RECONCILE;
+                }
             }
             case CANCELLED -> throw new IllegalStateException(
                     "History replay cannot be cancelled internally");
@@ -204,7 +210,11 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         }
 
         if (lease.direction() == ReplayDirection.REDO) {
-            startRedoExtensions();
+            if (redoExtensionsCompleted) {
+                complete();
+            } else {
+                startRedoExtensions();
+            }
         } else {
             completeAfterUndoBlockReconcile();
         }
@@ -294,7 +304,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                         phase = Phase.ENTITIES;
                         status = "Redoing entities";
                     } else {
-                        complete();
+                        finishRedoExtensions();
                     }
                 } else {
                     startUndoBlocks();
@@ -335,7 +345,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                         phase = Phase.ENTITIES;
                         status = "Redoing entities";
                     } else {
-                        complete();
+                        finishRedoExtensions();
                     }
                 } else if (lease.direction() == ReplayDirection.UNDO
                         && extensionPlan.hasBlockEntities()) {
@@ -372,7 +382,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                 entityDispatcher.close();
                 entityDispatcher = null;
                 if (lease.direction() == ReplayDirection.REDO) {
-                    complete();
+                    finishRedoExtensions();
                 } else if (extensionPlan.hasBiomes()) {
                     biomeObserved = 0L;
                     biomeDispatcher = new AxiomBiomeBatchDispatcher(
@@ -393,6 +403,17 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                     "History replay cannot be cancelled internally");
             case CONFLICT, FAILED -> throw new IllegalStateException(
                     "entity replay " + progress.state() + ": " + progress.detail());
+        }
+    }
+
+
+    private void finishRedoExtensions() {
+        redoExtensionsCompleted = true;
+        if (lease.changeSet().changeCount() == 0) {
+            complete();
+        } else {
+            phase = Phase.BLOCK_RECONCILE;
+            status = "Reconciling final mixed block state";
         }
     }
 
