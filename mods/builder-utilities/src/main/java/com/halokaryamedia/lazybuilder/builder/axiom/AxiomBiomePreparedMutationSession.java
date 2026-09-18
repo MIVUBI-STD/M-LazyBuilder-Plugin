@@ -23,11 +23,11 @@ import java.io.IOException;
 import java.util.Objects;
 
 /**
- * Mixed block + BIOME + ENTITY lifecycle owner.
+ * Mixed block + BLOCK_ENTITY + BIOME + ENTITY lifecycle owner.
  *
- * <p>Forward dependency order is blocks → biomes → entities. Cancellation rollback
- * runs entities → biomes → blocks. Biome state is reconciled from the client world;
- * entity batches are authoritative compare-and-set operations with stable Builder markers.</p>
+ * <p>Forward dependency order is blocks → block entities → biomes → entities.
+ * Cancellation rollback runs entities → biomes → block entities → blocks.
+ * Non-block batches are authoritative compare-and-set operations.</p>
  */
 public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     private final PreparedBlockMutation prepared;
@@ -248,7 +248,11 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
                 metrics::recordForwardBiomeExtensions);
         setProcessed(Math.min(
                 lifecycle.totalWork(),
-                prepared.plannedChanges() + progress.processedExtensions()));
+                Math.addExact(
+                        prepared.plannedChanges(),
+                        Math.addExact(
+                                extensionPlan.blockEntities(),
+                                progress.processedExtensions()))));
         return switch (progress.state()) {
             case YIELDED -> running("biome batch sent");
             case WAITING -> waiting("waiting for authoritative biome response");
@@ -335,20 +339,6 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             if (blockEntities != ReconciliationState.FULLY_APPLIED
                     && blockEntities != ReconciliationState.EMPTY) {
                 return waiting("waiting for block-entity reconciliation");
-            }
-        }
-
-        if (extensionPlan.hasBlockEntities()) {
-            ReconciliationState blockEntities = HistoryExtensionReconciler.reconcile(
-                    prepared.changeSet(),
-                    new AxiomBlockEntityExtensionReadTarget(world)).state();
-            if (blockEntities == ReconciliationState.CONFLICT) {
-                metrics.extensionConflict();
-                return fail("block-entity rollback reconciliation conflict");
-            }
-            if (blockEntities != ReconciliationState.NOT_APPLIED
-                    && blockEntities != ReconciliationState.EMPTY) {
-                return waiting("waiting for block-entity rollback reconciliation");
             }
         }
 
@@ -575,6 +565,20 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             }
             rollbackBlocks.close();
             rollbackBlocks = null;
+        }
+
+        if (extensionPlan.hasBlockEntities()) {
+            ReconciliationState blockEntities = HistoryExtensionReconciler.reconcile(
+                    prepared.changeSet(),
+                    new AxiomBlockEntityExtensionReadTarget(world)).state();
+            if (blockEntities == ReconciliationState.CONFLICT) {
+                metrics.extensionConflict();
+                return fail("block-entity rollback reconciliation conflict");
+            }
+            if (blockEntities != ReconciliationState.NOT_APPLIED
+                    && blockEntities != ReconciliationState.EMPTY) {
+                return waiting("waiting for block-entity rollback reconciliation");
+            }
         }
 
         if (extensionPlan.hasBiomes()) {
