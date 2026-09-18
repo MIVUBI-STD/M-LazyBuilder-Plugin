@@ -73,4 +73,37 @@ class HistoryRecoveryManagerTest {
         assertTrue(storage.listCommitted().isEmpty());
         assertNotNull(initiallyCommitted);
     }
+    @Test
+    void recoveredGuardDoesNotInflatePlannedChangesAndCanBeReclaimed() throws Exception {
+        DiskChangeSetStorage storage = new DiskChangeSetStorage(tempDir);
+        StoredChangeSet initiallyCommitted;
+        try (ChangeSetWriter writer = storage.begin("guard-only")) {
+            writer.append(new ChunkChangeSet(
+                    0, 0,
+                    List.of("minecraft:chest"),
+                    new long[]{LocalBlockPosition.pack(0, 64, 0)},
+                    new int[]{0}, new int[]{0}
+            ));
+            initiallyCommitted = writer.commit();
+        }
+
+        HistoryRecoveryManager recovery = new HistoryRecoveryManager(storage);
+        RecoveredHistoryEntry entry =
+                recovery.discover((x, y, z) -> "minecraft:chest").get(0);
+
+        assertEquals(ReconciliationState.EMPTY, entry.reconciliation().state());
+
+        var firstAttempt = entry.transferForResume();
+        assertEquals(0, firstAttempt.plannedChanges());
+
+        entry.reclaimAfterFailedStart();
+
+        var retry = entry.transferForResume();
+        assertEquals(0, retry.plannedChanges());
+        retry.close();
+
+        assertTrue(storage.listCommitted().isEmpty());
+        assertNotNull(initiallyCommitted);
+    }
+
 }
