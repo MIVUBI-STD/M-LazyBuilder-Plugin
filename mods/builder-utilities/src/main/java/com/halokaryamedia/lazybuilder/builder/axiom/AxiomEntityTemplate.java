@@ -5,6 +5,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -59,8 +60,12 @@ public record AxiomEntityTemplate(
         // Location is supplied by the extension envelope, not embedded in the snapshot.
         compound.remove("Rotation");
         String snbt = compound.toString();
-        if (snbt.length() > 32768) {
-            throw new IOException("Entity snapshot SNBT exceeds protocol limit");
+        int snbtBytes = snbt.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (snbtBytes > BuilderExtensionWireProtocol.MAX_ENTITY_TEMPLATE_BYTES) {
+            throw new IOException(
+                    "Entity snapshot SNBT exceeds protocol limit "
+                            + BuilderExtensionWireProtocol.MAX_ENTITY_TEMPLATE_BYTES
+                            + " UTF-8 bytes");
         }
         return new AxiomEntityTemplate(snbt, yaw, pitch);
     }

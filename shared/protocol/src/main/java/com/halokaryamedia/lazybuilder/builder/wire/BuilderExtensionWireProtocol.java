@@ -17,6 +17,7 @@ public final class BuilderExtensionWireProtocol {
     public static final int MAX_MESSAGE_BYTES = 512 * 1024;
     public static final int MAX_BATCH_ENTRIES = 256;
     public static final int MAX_BLOCK_ENTITY_NBT_BYTES = 240 * 1024;
+    public static final int MAX_ENTITY_TEMPLATE_BYTES = 32 * 1024;
     public static final int CAPABILITY_BIOME = 1;
     public static final int CAPABILITY_BLOCK_ENTITY = 1 << 1;
     public static final int CAPABILITY_ENTITY = 1 << 2;
@@ -84,9 +85,9 @@ public final class BuilderExtensionWireProtocol {
             }
             templateSnbt = Objects.requireNonNull(templateSnbt, "templateSnbt");
             int templateBytes = templateSnbt.getBytes(StandardCharsets.UTF_8).length;
-            if (templateSnbt.isBlank() || templateBytes > 32768) {
+            if (templateSnbt.isBlank() || templateBytes > MAX_ENTITY_TEMPLATE_BYTES) {
                 throw new IllegalArgumentException(
-                        "entity template SNBT must be non-blank and <= 32768 UTF-8 bytes");
+                        "entity template SNBT must be non-blank and <= MAX_ENTITY_TEMPLATE_BYTES UTF-8 bytes");
             }
         }
     }
@@ -380,7 +381,7 @@ public final class BuilderExtensionWireProtocol {
                                 in.readFloat(),
                                 in.readBoolean(),
                                 in.readBoolean(),
-                                readLargeString(in, 32768)
+                                readLargeString(in, MAX_ENTITY_TEMPLATE_BYTES)
                         ));
                     }
                     yield new ApplyEntityBatch(operationId, dimensionId, entries);
@@ -496,7 +497,7 @@ public final class BuilderExtensionWireProtocol {
                 out.writeFloat(entry.pitch());
                 out.writeBoolean(entry.beforePresent());
                 out.writeBoolean(entry.afterPresent());
-                writeLargeString(out, entry.templateSnbt(), 32768);
+                writeLargeString(out, entry.templateSnbt(), MAX_ENTITY_TEMPLATE_BYTES);
             }
             return;
         }
