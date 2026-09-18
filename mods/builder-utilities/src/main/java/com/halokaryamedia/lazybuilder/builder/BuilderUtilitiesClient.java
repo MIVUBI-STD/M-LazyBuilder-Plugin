@@ -91,9 +91,8 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         } catch (java.io.IOException e) {
             LOGGER.error(
                     "Failed to persist Builder runtime proof on world disconnect. "
-                            + "Timeline reset was skipped so the failed transition is not hidden.",
+                            + "World isolation will continue without publishing this proof.",
                     e);
-            return;
         }
 
         try {
