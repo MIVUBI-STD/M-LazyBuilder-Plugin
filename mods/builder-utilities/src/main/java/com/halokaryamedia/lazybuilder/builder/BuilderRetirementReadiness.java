@@ -38,6 +38,10 @@ public final class BuilderRetirementReadiness {
         long proofSnapshots = persisted.snapshotCount();
         List<String> blockers = new ArrayList<>();
 
+        int activeOperations = runtime.activeOperationCount();
+        if (activeOperations > 0) {
+            blockers.add("active Builder operations=" + activeOperations);
+        }
         if (!runtime.history().hasTier(HistoryStorageTier.DISK)) {
             blockers.add("DISK durable mutation journal is unavailable");
         }
