@@ -124,7 +124,7 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Select two source corners, then click a destination anchor. Rotation is in 90-degree Y turns. Confirm stamps through durable History v2.");
+        ImGui.textWrapped("Select two source corners, then click a destination anchor. Rotation is in 90-degree Y turns. Block entities are rejected until Axiom exposes a public mutation API that can preserve their payloads.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -190,6 +190,7 @@ public final class AxiomStructureStampTool implements CustomTool {
     private void captureSnapshot() {
         ClientWorld world = requireWorld();
         BlockBounds bounds = sourceBounds();
+        AxiomStructureCaptureGuard.requireBlockStateOnly(world, bounds);
         snapshot = StructureCapture.capture(
                 bounds,
                 new AxiomClientWorldStateSource(world),
