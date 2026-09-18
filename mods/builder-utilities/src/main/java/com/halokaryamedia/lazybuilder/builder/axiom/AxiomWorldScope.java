@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.util.WorldSavePath;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -33,10 +34,13 @@ public final class AxiomWorldScope {
         String endpoint;
         if (client.isInSingleplayer()) {
             var server = client.getServer();
-            String levelName = server == null
+            String saveIdentity = server == null
                     ? "<singleplayer>"
-                    : server.getSaveProperties().getLevelName();
-            endpoint = "singleplayer|" + levelName;
+                    : server.getSavePath(WorldSavePath.ROOT)
+                            .toAbsolutePath()
+                            .normalize()
+                            .toString();
+            endpoint = "singleplayer|" + saveIdentity;
         } else {
             ServerInfo info = client.getCurrentServerEntry();
             if (info != null && info.address != null && !info.address.isBlank()) {
