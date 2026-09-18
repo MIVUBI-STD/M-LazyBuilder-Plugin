@@ -83,6 +83,7 @@ public final class StructurePlacementBatchPlanner {
         LinkedHashMap<WorldKey, DesiredBlock> desired = new LinkedHashMap<>();
         List<HistoryExtensionFrame> extensions = new ArrayList<>();
         Set<ExtensionWorldKey> blockEntityKeys = new HashSet<>();
+        Set<WorldKey> blockEntityGuards = new HashSet<>();
         Set<ExtensionWorldKey> biomeKeys = new HashSet<>();
         long entityKey = 0L;
 
@@ -130,6 +131,8 @@ public final class StructurePlacementBatchPlanner {
                                     blockEntity.payload(), placement),
                             "transformed block entity payload").clone();
                     if (!Arrays.equals(before, after)) {
+                        blockEntityGuards.add(new WorldKey(
+                                world.x(), world.y(), world.z()));
                         extensions.add(frameAtBlock(
                                 HistoryExtensionTypes.BLOCK_ENTITY,
                                 world.x(), world.y(), world.z(),
@@ -206,13 +209,20 @@ public final class StructurePlacementBatchPlanner {
                     existing.stateAt(block.x, block.y, block.z),
                     "existing block state"
             );
-            if (before.equals(block.afterState)) continue;
             int chunkX = Math.floorDiv(block.x, 16);
             int chunkZ = Math.floorDiv(block.z, 16);
-            chunks.computeIfAbsent(
+            ChunkChangeSetBuilder builder = chunks.computeIfAbsent(
                     new ChunkKey(chunkX, chunkZ),
                     key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ)
-            ).addWorld(block.x, block.y, block.z, before, block.afterState);
+            );
+            if (before.equals(block.afterState)) {
+                if (blockEntityGuards.contains(
+                        new WorldKey(block.x, block.y, block.z))) {
+                    builder.addWorldGuard(block.x, block.y, block.z, before);
+                }
+                continue;
+            }
+            builder.addWorld(block.x, block.y, block.z, before, block.afterState);
         }
 
         return new StructurePastePlan(
