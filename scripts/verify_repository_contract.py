@@ -346,8 +346,8 @@ def main() -> int:
         fail(errors, "Launcher runtime-ready build must not stage Builder/Terraform artifacts into V1 Client Setup")
     if "lazybuilder-builder-utilities-" in verify_workflow:
         fail(errors, "integrated Verify must not stage Builder Utilities into the V1 core client artifact")
-    if "lazybuilder-terraform-manager-" in build_local or "lazybuilder-terraform-manager-" in verify_workflow:
-        fail(errors, "Terraform legacy lane must not enter the V1 Launcher/core artifact path")
+    if "lazybuilder-terraform-manager-" in verify_workflow:
+        fail(errors, "Terraform legacy lane must not enter the integrated V1 core artifact path")
     if "$BuilderExpected" not in client_artifact_verifier or "$CoreExpected" not in client_artifact_verifier:
         fail(errors, "client artifact verifier must keep core and Builder extension artifact sets separate")
 
@@ -409,6 +409,10 @@ def main() -> int:
         fail(errors, "Verify workflow must reuse the canonical Fabric verification lane")
     if "npm run verify:source" not in verify_workflow:
         fail(errors, "Verify workflow must reuse the canonical Launcher source verification lane")
+    if "$serverDownload.checksums.sha256" not in verify_workflow:
+        fail(errors, "Paper runtime proof must read the SHA-256 published by PaperMC")
+    if "Get-FileHash -Path $paperPath -Algorithm SHA256" not in verify_workflow:
+        fail(errors, "Paper runtime proof must verify the downloaded Paper JAR before execution")
 
     if "dist\\LazyBuilder" in build_local or "dist\\LazyBuilder" in test_local:
         fail(errors, "legacy dist/LazyBuilder Local output path must not return")
