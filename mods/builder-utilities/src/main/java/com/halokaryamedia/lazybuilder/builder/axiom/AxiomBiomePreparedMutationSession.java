@@ -175,7 +175,9 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
 
     private AxiomMixedPumpResult pumpForwardBlocks(ExecutionBudget budget) throws IOException {
         BudgetedDispatchSlice slice = blockDispatcher.dispatchSlice(budget);
-        setProcessed(Math.min(prepared.plannedChanges(), blockDispatcher.totalProcessedBlocks()));
+        setProcessed(Math.min(
+                prepared.plannedChanges(),
+                blockDispatcher.totalProcessedMutations()));
         return switch (slice.state()) {
             case YIELDED -> running("dispatching blocks");
             case EXHAUSTED -> {
