@@ -12,6 +12,10 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
@@ -22,7 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Authoritative Paper compare-and-set backend for negotiated Builder extension types. */
-final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener {
+final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener, Listener {
     static final String PERMISSION = "lazybuilder.utilities.builder-extension";
     private static final int BASE_SERVER_CAPABILITIES =
             BuilderExtensionWireProtocol.CAPABILITY_BIOME
@@ -54,14 +58,21 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                 plugin, BuilderExtensionWireProtocol.CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(
                 plugin, BuilderExtensionWireProtocol.CHANNEL);
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
     void stop() {
+        HandlerList.unregisterAll(this);
         reassemblers.clear();
         plugin.getServer().getMessenger().unregisterIncomingPluginChannel(
                 plugin, BuilderExtensionWireProtocol.CHANNEL, this);
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(
                 plugin, BuilderExtensionWireProtocol.CHANNEL);
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        reassemblers.remove(event.getPlayer().getUniqueId());
     }
 
     @Override
