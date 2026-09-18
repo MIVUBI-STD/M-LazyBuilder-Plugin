@@ -618,6 +618,21 @@ fn load_config() -> Result<ClientIntegrationConfig, String> {
     if persistence::metadata_entry_exists(&path, CLIENT_CONFIG_LABEL)? {
         let config = read_config(&path)?;
         persistence::cleanup_recovery_files(&path, CLIENT_CONFIG_LABEL)?;
+        cleanup_legacy_incoming(&path)?;
+        return Ok(config);
+    }
+
+    let legacy_incoming = path.with_extension("json.incoming");
+    if persistence::metadata_entry_exists(&legacy_incoming, "legacy Client Setup staging configuration")? {
+        let config = persistence::read_json(
+            &legacy_incoming,
+            "legacy Client Setup staging configuration",
+        )?;
+        save_config(&config)?;
+        persistence::safe_path::remove_regular_file_if_present(
+            &legacy_incoming,
+            "legacy Client Setup staging configuration",
+        )?;
         return Ok(config);
     }
     if let Some(legacy) = legacy_config_path().filter(|candidate| candidate != &path) {
@@ -629,6 +644,13 @@ fn load_config() -> Result<ClientIntegrationConfig, String> {
         }
     }
     Ok(ClientIntegrationConfig::default())
+}
+
+fn cleanup_legacy_incoming(path: &Path) -> Result<(), String> {
+    persistence::safe_path::remove_regular_file_if_present(
+        &path.with_extension("json.incoming"),
+        "legacy Client Setup staging configuration",
+    )
 }
 
 fn read_config(path: &Path) -> Result<ClientIntegrationConfig, String> {
