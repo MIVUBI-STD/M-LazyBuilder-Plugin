@@ -25,7 +25,9 @@ public final class HistoryExtensionReconciler {
         });
 
         ExtensionReconciliationState state;
-        if (counts.conflicts > 0) state = ExtensionReconciliationState.CONFLICT;
+        if (counts.before == 0 && counts.after == 0 && counts.conflicts == 0) {
+            state = ExtensionReconciliationState.EMPTY;
+        } else if (counts.conflicts > 0) state = ExtensionReconciliationState.CONFLICT;
         else if (counts.after > 0 && counts.before == 0) state = ExtensionReconciliationState.FULLY_APPLIED;
         else if (counts.before > 0 && counts.after == 0) state = ExtensionReconciliationState.NOT_APPLIED;
         else state = ExtensionReconciliationState.PARTIALLY_APPLIED;
