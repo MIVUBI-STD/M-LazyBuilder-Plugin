@@ -49,7 +49,7 @@ class PlacementHardeningTest {
                 new OperationSeed(10L),
                 distribution,
                 (point, seed) -> "lazybuilder:test",
-                new PlacementVariation(0, 0, 1, 1, 0, 1L),
+                new PlacementVariation(0, 0, 1, 1, 0, 0, 1L),
                 PlacementConstraints.all(),
                 new PlacementFootprint(1, 1),
                 true
