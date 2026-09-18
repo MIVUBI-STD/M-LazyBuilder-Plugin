@@ -230,7 +230,7 @@ pub fn create_world(request: &CreateWorldRequest) -> Result<ManagedWorldSummary,
     if kind != "FLAT" && kind != "VOID" {
         return Err("World type must be Flat or Void.".into());
     }
-    request_json("POST", "/v1/worlds", Some(request))
+    request_mutation_json("POST", "/v1/worlds", Some(request))
 }
 
 pub fn get_world_settings(world_id: &str) -> Result<WorldSettingsSnapshot, String> {
@@ -245,7 +245,7 @@ pub fn update_world_settings(
     world_id: &str,
     request: &UpdateWorldSettingsRequest,
 ) -> Result<WorldSettingsSnapshot, String> {
-    request_json(
+    request_mutation_json(
         "PATCH",
         &format!("/v1/worlds/{}/settings", validate_world_id(world_id)?),
         Some(request),
@@ -285,7 +285,7 @@ pub fn start_duplicate_world(request: &DuplicateWorldRequest) -> Result<WorldTas
     if request.display_name.trim().is_empty() {
         return Err("Duplicate display name must not be empty.".into());
     }
-    request_json("POST", "/v1/tasks/duplicate", Some(request))
+    request_mutation_json("POST", "/v1/tasks/duplicate", Some(request))
 }
 
 pub fn start_export_world(request: &ExportWorldRequest) -> Result<WorldTaskSnapshot, String> {
@@ -296,7 +296,7 @@ pub fn start_export_world(request: &ExportWorldRequest) -> Result<WorldTaskSnaps
     if request.artifact_name.trim().is_empty() {
         return Err("Export artifact name must not be empty.".into());
     }
-    request_json("POST", "/v1/tasks/export", Some(request))
+    request_mutation_json("POST", "/v1/tasks/export", Some(request))
 }
 
 pub fn start_import_world(request: &ImportWorldRequest) -> Result<WorldTaskSnapshot, String> {
@@ -309,7 +309,7 @@ pub fn start_import_world(request: &ImportWorldRequest) -> Result<WorldTaskSnaps
     if request.display_name.trim().is_empty() {
         return Err("Import display name must not be empty.".into());
     }
-    request_json("POST", "/v1/tasks/import", Some(request))
+    request_mutation_json("POST", "/v1/tasks/import", Some(request))
 }
 
 pub fn start_delete_world(request: &DeleteWorldRequest) -> Result<WorldTaskSnapshot, String> {
@@ -317,7 +317,7 @@ pub fn start_delete_world(request: &DeleteWorldRequest) -> Result<WorldTaskSnaps
     if request.typed_display_name.trim().is_empty() {
         return Err("Delete confirmation must not be empty.".into());
     }
-    request_json("POST", "/v1/tasks/delete", Some(request))
+    request_mutation_json("POST", "/v1/tasks/delete", Some(request))
 }
 
 pub fn upload_world_import(file_path: &str) -> Result<String, String> {
@@ -337,6 +337,7 @@ pub fn upload_world_import(file_path: &str) -> Result<String, String> {
     if total_bytes == 0 {
         return Err("World import file is empty.".into());
     }
+    ensure_bridge_compatible()?;
     let sha256 = sha256_file(&path)?;
     let options = load_or_create_control_options()?;
     let url = format!("http://127.0.0.1:{}/v1/imports/upload", options.port);
@@ -390,7 +391,20 @@ fn ensure_bridge_compatible() -> Result<(), String> {
 fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
     let world_id = validate_world_id(world_id)?;
     let body = WorldTaskStartRequest { world_id };
-    request_json("POST", &format!("/v1/tasks/{operation}"), Some(&body))
+    request_mutation_json("POST", &format!("/v1/tasks/{operation}"), Some(&body))
+}
+
+fn request_mutation_json<T, B>(
+    method: &str,
+    path: &str,
+    body: Option<&B>,
+) -> Result<T, String>
+where
+    T: DeserializeOwned,
+    B: Serialize + ?Sized,
+{
+    ensure_bridge_compatible()?;
+    request_json(method, path, body)
 }
 
 fn request_json<T, B>(method: &str, path: &str, body: Option<&B>) -> Result<T, String>
