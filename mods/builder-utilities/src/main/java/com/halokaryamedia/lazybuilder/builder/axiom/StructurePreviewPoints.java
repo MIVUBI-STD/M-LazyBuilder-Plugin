@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Integer structure preview points after mirror/quarter-turn placement. */
+/** Deterministically decimated structure preview points after placement transforms. */
 public final class StructurePreviewPoints {
     public static final int MAX_PREVIEW_POINTS = 250_000;
 
@@ -19,21 +19,51 @@ public final class StructurePreviewPoints {
             StructureSnapshot snapshot,
             StructurePlacement placement
     ) {
-        Objects.requireNonNull(snapshot, "snapshot");
-        Objects.requireNonNull(placement, "placement");
+        return createMany(List.of(new Instance(snapshot, placement)), MAX_PREVIEW_POINTS);
+    }
 
-        if (snapshot.blockCount() > MAX_PREVIEW_POINTS) {
-            throw new IllegalArgumentException(
-                    "structure preview exceeds " + MAX_PREVIEW_POINTS + " blocks");
+    public static List<PlacementPoint> createMany(
+            List<Instance> instances,
+            int maxPoints
+    ) {
+        Objects.requireNonNull(instances, "instances");
+        if (maxPoints <= 0) throw new IllegalArgumentException("maxPoints must be > 0");
+
+        long total = 0L;
+        for (Instance instance : instances) {
+            Objects.requireNonNull(instance, "instance");
+            total = Math.addExact(total, instance.snapshot().blockCount());
         }
+        if (total == 0) return List.of();
 
-        List<PlacementPoint> result = new ArrayList<>(snapshot.blockCount());
+        long stride = Math.max(1L, 1L + (total - 1L) / maxPoints);
+        List<PlacementPoint> result = new ArrayList<>((int) Math.min(total, maxPoints));
+        long global = 0L;
         int ordinal = 0;
-        for (StructureBlock block : snapshot.blocks()) {
-            StructurePlacement.WorldPosition world =
-                    placement.transform(block.x(), block.y(), block.z());
-            result.add(new PlacementPoint(world.x(), world.y(), world.z(), ordinal++));
+
+        for (Instance instance : instances) {
+            for (StructureBlock block : instance.snapshot().blocks()) {
+                boolean include = global % stride == 0L;
+                global++;
+                if (!include) continue;
+                StructurePlacement.WorldPosition world =
+                        instance.placement().transform(block.x(), block.y(), block.z());
+                result.add(new PlacementPoint(world.x(), world.y(), world.z(), ordinal++));
+                if (result.size() >= maxPoints) return List.copyOf(result);
+            }
         }
         return List.copyOf(result);
+    }
+
+    public static boolean isDecimated(long totalBlocks) {
+        if (totalBlocks < 0) throw new IllegalArgumentException("totalBlocks must be >= 0");
+        return totalBlocks > MAX_PREVIEW_POINTS;
+    }
+
+    public record Instance(StructureSnapshot snapshot, StructurePlacement placement) {
+        public Instance {
+            Objects.requireNonNull(snapshot, "snapshot");
+            Objects.requireNonNull(placement, "placement");
+        }
     }
 }

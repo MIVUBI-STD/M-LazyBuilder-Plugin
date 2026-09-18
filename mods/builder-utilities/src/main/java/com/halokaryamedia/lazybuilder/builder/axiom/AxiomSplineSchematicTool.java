@@ -52,6 +52,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Spline";
     private static final int MAX_INSTANCES = 2048;
     private static final int MAX_PREVIEW_BLOCKS = 250_000;
+    private static final int MAX_COLLISION_BLOCKS = 2_000_000;
 
     private final AxiomClientServices services;
     private final BuilderRuntime runtime;
@@ -265,14 +266,16 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                 throw new IllegalArgumentException("spline schematic instance limit exceeded");
             }
 
-            OperationPreflight.requireAtMost(
-                    selected.snapshot().blockCount(),
-                    MAX_PREVIEW_BLOCKS,
-                    "schematic block count");
             placements = collisionFilteredPlacements(splinePlan);
             previewPoints = expandPreview(selected.snapshot(), placements);
             ensurePreview().update(previewPoints);
-            idleStatus = "Spline schematic preview ready";
+            long totalPreviewSource = OperationPreflight.multiply(
+                    selected.snapshot().blockCount(),
+                    placements.size(),
+                    "spline schematic preview source size");
+            idleStatus = StructurePreviewPoints.isDecimated(totalPreviewSource)
+                    ? "Spline schematic preview sampled; Confirm applies all accepted instances"
+                    : "Spline schematic preview ready";
         } catch (Exception e) {
             placements = List.of();
             previewPoints = List.of();
@@ -313,7 +316,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
 
             OperationPreflight.requireAtMost(
                     (long) occupied.size() + instance.size(),
-                    MAX_PREVIEW_BLOCKS,
+                    MAX_COLLISION_BLOCKS,
                     "spline schematic collision workspace");
             occupied.addAll(instance);
             accepted.add(new PlacementPlanEntry(
@@ -337,20 +340,14 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             StructureSnapshot snapshot,
             List<PlacementPlanEntry> entries
     ) {
-        List<PlacementPoint> result = new ArrayList<>();
-        int ordinal = 0;
+        List<StructurePreviewPoints.Instance> instances = new ArrayList<>(entries.size());
         for (PlacementPlanEntry entry : entries) {
-            StructurePlacement placement = StructurePlacementAdapter.from(entry);
-            for (var block : snapshot.blocks()) {
-                if (result.size() >= MAX_PREVIEW_BLOCKS) {
-                    throw new IllegalArgumentException(
-                            "spline schematic preview exceeds " + MAX_PREVIEW_BLOCKS + " blocks");
-                }
-                var world = placement.transform(block.x(), block.y(), block.z());
-                result.add(new PlacementPoint(world.x(), world.y(), world.z(), ordinal++));
-            }
+            instances.add(new StructurePreviewPoints.Instance(
+                    snapshot,
+                    StructurePlacementAdapter.from(entry)
+            ));
         }
-        return List.copyOf(result);
+        return StructurePreviewPoints.createMany(instances, MAX_PREVIEW_BLOCKS);
     }
 
     private void startMutation() throws IOException {

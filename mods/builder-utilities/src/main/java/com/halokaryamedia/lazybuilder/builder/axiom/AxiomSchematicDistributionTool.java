@@ -276,11 +276,10 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             placements = raw.stream()
                     .map(this::applySchematicOffset)
                     .toList();
-            OperationPreflight.requireAtMost(
-                    estimatedPlacedBlocks(placements),
-                    MAX_PREVIEW_BLOCKS,
-                    "distributed schematic preview blocks");
             previewPoints = expandPreview(placements);
+            if (StructurePreviewPoints.isDecimated(estimatedPlacedBlocks(placements))) {
+                idleStatus = "Distribution preview sampled; Confirm applies every accepted structure block";
+            }
             ensurePreview().update(previewPoints);
             idleStatus = "Distribution preview ready";
         } catch (Exception e) {
@@ -318,22 +317,14 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private List<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> expandPreview(
             List<PlacementPlanEntry> entries
     ) {
-        LinkedHashSet<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> result =
-                new LinkedHashSet<>();
-        int ordinal = 0;
+        List<StructurePreviewPoints.Instance> instances = new ArrayList<>(entries.size());
         for (PlacementPlanEntry entry : entries) {
-            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
-            StructurePlacement placement = StructurePlacementAdapter.from(entry);
-            for (var point : StructurePreviewPoints.create(snapshot, placement)) {
-                if (result.size() >= MAX_PREVIEW_BLOCKS) {
-                    throw new IllegalArgumentException(
-                            "distributed schematic preview exceeds " + MAX_PREVIEW_BLOCKS + " blocks");
-                }
-                result.add(new com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint(
-                        point.x(), point.y(), point.z(), ordinal++));
-            }
+            instances.add(new StructurePreviewPoints.Instance(
+                    requireSource(entry.sourceId()).snapshot(),
+                    StructurePlacementAdapter.from(entry)
+            ));
         }
-        return List.copyOf(result);
+        return StructurePreviewPoints.createMany(instances, MAX_PREVIEW_BLOCKS);
     }
 
     private PlacementDistribution distribution() {
