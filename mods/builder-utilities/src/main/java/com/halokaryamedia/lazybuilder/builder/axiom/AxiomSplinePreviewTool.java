@@ -22,7 +22,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementVariation;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
 import com.halokaryamedia.lazybuilder.builder.region.DeterministicRegionPlanner;
-import com.halokaryamedia.lazybuilder.builder.region.PointSetRegion;
+import com.halokaryamedia.lazybuilder.builder.region.PackedPointRegion;
 import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
 import com.halokaryamedia.lazybuilder.builder.spline.CatmullRomSpline;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineControlPoint;
@@ -187,16 +187,13 @@ public final class AxiomSplinePreviewTool implements CustomTool {
     private void startMutation() throws IOException {
         MinecraftClient client = MinecraftClient.getInstance();
         ClientWorld world = Objects.requireNonNull(client.world, "Minecraft client world is unavailable");
-        List<SplinePreviewVoxelizer.Voxel> voxels =
-                SplinePreviewVoxelizer.voxelize(lastPlan, lastTransforms);
-        if (voxels.isEmpty()) throw new IllegalStateException("Spline preview contains no blocks");
-        if (voxels.size() > AxiomSplineToolContract.MAX_MUTATION_VOXELS) {
-            throw new IllegalStateException("Spline exceeds mutation voxel limit");
-        }
+        long[] voxels = SplinePreviewVoxelizer.voxelizePacked(
+                lastPlan,
+                lastTransforms,
+                AxiomSplineToolContract.MAX_MUTATION_VOXELS);
+        if (voxels.length == 0) throw new IllegalStateException("Spline contains no mutation blocks");
 
-        PointSetRegion region = new PointSetRegion(voxels.stream()
-                .map(v -> new PointSetRegion.Point(v.x(), v.y(), v.z()))
-                .toList());
+        PackedPointRegion region = new PackedPointRegion(voxels);
         AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
         BuilderMaterial material =
                 new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
@@ -274,7 +271,9 @@ public final class AxiomSplinePreviewTool implements CustomTool {
                 rotationalCopies[0]
         );
         ensurePreview().update(lastPlan, lastTransforms);
-        idleStatus = "Preview ready";
+        idleStatus = SplinePreviewVoxelizer.previewIsDecimated(lastPlan, lastTransforms)
+                ? "Preview sampled; Confirm applies the full sparse spline"
+                : "Preview ready";
     }
 
     private void clearGeometryPreviewOnly() {
