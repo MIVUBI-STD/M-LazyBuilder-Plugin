@@ -179,9 +179,11 @@ public final class StructurePlacementBatchPlanner {
                     byte[] before = Objects.requireNonNull(
                             auxiliary.entities().read(key, world),
                             "entity before payload").clone();
-                    byte[] after = Objects.requireNonNull(
+                    byte[] transformed = Objects.requireNonNull(
                             auxiliary.entityTransform().transform(entity.payload(), placement),
                             "transformed entity payload").clone();
+                    byte[] after = EntityExtensionPayload.present(
+                            world.x(), world.y(), world.z(), transformed).encode();
                     if (!Arrays.equals(before, after)) {
                         int blockX = floorToInt(world.x());
                         int blockZ = floorToInt(world.z());
