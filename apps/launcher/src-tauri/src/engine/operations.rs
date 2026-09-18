@@ -1,22 +1,16 @@
-use crate::engine::diagnostics;
+use crate::engine::{diagnostics, persistence};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
-
 const MAX_OPERATION_HISTORY: usize = 100;
 const MAX_OPERATION_JOURNAL_BYTES: u64 = 4 * 1024 * 1024;
 const OPERATION_JOURNAL_SCHEMA_VERSION: u32 = 1;
 const WORKSPACE_LIBRARY_RESOURCE: &str = "workspace-library";
 const WORKSPACE_RESOURCE_PREFIX: &str = "workspace:";
-#[cfg(windows)]
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 static NEXT_OPERATION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,135 +343,46 @@ fn operation_journal_path() -> Result<PathBuf, String> {
 
 fn load_journal(path: &Path) -> Result<VecDeque<OperationSnapshot>, String> {
     recover_journal_file(path)?;
-    if !metadata_entry_exists(path, "Launcher operation journal")? {
+    if !persistence::metadata_entry_exists(path, "Launcher operation journal")? {
         return Ok(VecDeque::new());
     }
-    ensure_regular_metadata_file(path, "Launcher operation journal")?;
     let entries = read_journal_file(path)?;
     cleanup_journal_recovery_files(path)?;
     Ok(entries)
 }
 
 fn recover_journal_file(path: &Path) -> Result<(), String> {
-    let incoming = path.with_extension("json.incoming");
-    let previous = path.with_extension("json.previous");
-
-    if metadata_entry_exists(path, "Launcher operation journal")? {
-        ensure_regular_metadata_file(path, "Launcher operation journal")?;
-        return Ok(());
-    }
-    if metadata_entry_exists(&previous, "previous Launcher operation journal")? {
-        ensure_regular_metadata_file(&previous, "previous Launcher operation journal")?;
-        fs::rename(&previous, path).map_err(|error| format!("Could not restore previous Launcher operation journal: {error}"))?;
-        return Ok(());
-    }
-    if metadata_entry_exists(&incoming, "Launcher operation journal staging file")? {
-        ensure_regular_metadata_file(&incoming, "Launcher operation journal staging file")?;
-        fs::rename(&incoming, path).map_err(|error| format!("Could not publish recovered Launcher operation journal: {error}"))?;
-    }
-    Ok(())
+    persistence::recover_atomic_file(path, "Launcher operation journal")
 }
 
 fn cleanup_journal_recovery_files(path: &Path) -> Result<(), String> {
-    remove_metadata_file_if_exists(&path.with_extension("json.previous"), "previous Launcher operation journal")?;
-    remove_metadata_file_if_exists(&path.with_extension("json.incoming"), "Launcher operation journal staging file")
+    persistence::cleanup_recovery_files(path, "Launcher operation journal")
 }
 
 fn read_journal_file(path: &Path) -> Result<VecDeque<OperationSnapshot>, String> {
-    let size = fs::metadata(path)
-        .map_err(|error| format!("Could not inspect Launcher operation journal: {error}"))?
-        .len();
-    if size > MAX_OPERATION_JOURNAL_BYTES {
-        return Err(format!(
-            "Launcher operation journal exceeds the {} byte metadata limit.",
-            MAX_OPERATION_JOURNAL_BYTES
-        ));
-    }
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read Launcher operation journal: {error}"))?;
-    let journal: OperationJournal = serde_json::from_str(&text).map_err(|error| format!("Could not parse Launcher operation journal: {error}"))?;
+    let journal: OperationJournal = persistence::read_json(
+        path,
+        "Launcher operation journal",
+    )?;
     if journal.schema_version != OPERATION_JOURNAL_SCHEMA_VERSION {
-        return Err(format!("Launcher operation journal schema {} is unsupported by this build", journal.schema_version));
+        return Err(format!(
+            "Launcher operation journal schema {} is unsupported by this build",
+            journal.schema_version
+        ));
     }
     Ok(journal.entries)
 }
 
 fn persist_journal(path: &Path, entries: &VecDeque<OperationSnapshot>) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Could not prepare Launcher operation journal directory: {error}"))?;
-    }
-    let incoming = path.with_extension("json.incoming");
-    remove_metadata_file_if_exists(&incoming, "Launcher operation journal staging file")?;
-
-    let journal = OperationJournal { schema_version: OPERATION_JOURNAL_SCHEMA_VERSION, entries: entries.clone() };
-    let text = serde_json::to_string_pretty(&journal).map_err(|error| error.to_string())?;
-    if text.len() as u64 > MAX_OPERATION_JOURNAL_BYTES {
-        return Err(format!(
-            "Launcher operation journal exceeds the {} byte metadata limit.",
-            MAX_OPERATION_JOURNAL_BYTES
-        ));
-    }
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&incoming)
-        .map_err(|error| format!("Could not write Launcher operation journal staging file: {error}"))?;
-    file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| format!("Could not flush Launcher operation journal: {error}"))?;
-    drop(file);
-    replace_journal_file(&incoming, path)
-}
-
-fn replace_journal_file(source: &Path, destination: &Path) -> Result<(), String> {
-    ensure_regular_metadata_file(source, "Launcher operation journal staging file")?;
-    if metadata_entry_exists(destination, "Launcher operation journal")? {
-        ensure_regular_metadata_file(destination, "Launcher operation journal")?;
-        let previous = destination.with_extension("json.previous");
-        remove_metadata_file_if_exists(&previous, "previous Launcher operation journal")?;
-        fs::rename(destination, &previous).map_err(|error| format!("Could not preserve previous Launcher operation journal: {error}"))?;
-        match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(previous);
-                Ok(())
-            }
-            Err(publish_error) => match fs::rename(&previous, destination) {
-                Ok(()) => Err(format!("Could not publish Launcher operation journal; previous journal was restored: {publish_error}")),
-                Err(rollback_error) => Err(format!(
-                    "Could not publish Launcher operation journal ({publish_error}) and could not restore the previous journal ({rollback_error}). Recovery files were preserved."
-                )),
-            },
-        }
-    } else {
-        fs::rename(source, destination).map_err(|error| format!("Could not publish Launcher operation journal: {error}"))
-    }
-}
-
-fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Could not inspect {label}: {error}")),
-    }
-}
-
-fn ensure_regular_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("LazyBuilder refused a symbolic link as {label}"));
-    }
-    #[cfg(windows)]
-    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(format!("LazyBuilder refused a Windows reparse point as {label}"));
-    }
-    if !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
-    }
-    Ok(())
-}
-
-fn remove_metadata_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    if !metadata_entry_exists(path, label)? { return Ok(()); }
-    ensure_regular_metadata_file(path, label)?;
-    fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))
+    let journal = OperationJournal {
+        schema_version: OPERATION_JOURNAL_SCHEMA_VERSION,
+        entries: entries.clone(),
+    };
+    persistence::write_json_atomically(
+        path,
+        &journal,
+        "Launcher operation journal",
+    )
 }
 
 fn ensure_active(entry: &OperationSnapshot) -> Result<(), String> { if entry.state.is_terminal() { Err("Launcher operation is already finished".into()) } else { Ok(()) } }
