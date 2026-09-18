@@ -190,10 +190,13 @@ public final class AxiomMutationController implements AutoCloseable {
     @Override
     public void close() throws IOException {
         if (session == null) return;
-        session.close();
-        session = null;
-        cancellation = null;
-        phase = Phase.IDLE;
+        try {
+            session.preserveForRecovery();
+        } finally {
+            session = null;
+            cancellation = null;
+            phase = Phase.IDLE;
+        }
     }
 
     private void preserveFailedOperation(Exception failure) {
