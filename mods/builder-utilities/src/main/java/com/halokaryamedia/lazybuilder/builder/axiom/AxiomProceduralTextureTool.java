@@ -52,6 +52,7 @@ import java.util.UUID;
  */
 public final class AxiomProceduralTextureTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Procedural Texture";
+    private static final long MAX_MUTATION_CANDIDATES = 2_000_000L;
 
     private final AxiomClientServices services;
     private final BuilderRuntime runtime;
@@ -216,6 +217,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                     MinecraftClient.getInstance().world,
                     "Minecraft client world is unavailable");
             requireWithinBuildHeight(bounds, world);
+            requireBoundedMutation(bounds);
             ScalarField field = AxiomTextureFields.create(
                     fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
             AxiomClientWorldStateSource source = new AxiomClientWorldStateSource(world);
@@ -245,6 +247,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         );
         BlockBounds bounds = bounds();
         requireWithinBuildHeight(bounds, world);
+        requireBoundedMutation(bounds);
         ScalarField field = AxiomTextureFields.create(
                 fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
         BuilderMaterial material = buildMaterial(world, field);
@@ -327,6 +330,13 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             case 2 -> MaterialMasks.existingState("minecraft:air");
             default -> throw new IllegalArgumentException("Unknown target mode: " + targetMode[0]);
         };
+    }
+
+    private static void requireBoundedMutation(BlockBounds bounds) {
+        OperationPreflight.requireAtMost(
+                bounds.blockCount(),
+                MAX_MUTATION_CANDIDATES,
+                "procedural texture candidate volume");
     }
 
     private static void requireWithinBuildHeight(
