@@ -66,7 +66,7 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
             throw new IllegalStateException("Conflicted recovery entry cannot resume automatically");
         }
         transferred = true;
-        return new RecoveredPreparedMutation(stored);
+        return new RecoveredPreparedMutation(stored, blocks.totalChanges());
     }
 
     /**
@@ -94,7 +94,19 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
                     "Missing authoritative recovery support for extension types " + missing);
         }
         transferred = true;
-        return new RecoveredPreparedMutation(stored);
+        return new RecoveredPreparedMutation(stored, blocks.totalChanges());
+    }
+
+    /**
+     * Reclaims wrapper ownership when a recovery mutation could not start and the
+     * prepared journal was deliberately left untouched.
+     */
+    public void reclaimAfterFailedStart() {
+        if (closed || !transferred) {
+            throw new IllegalStateException(
+                    "Recovery entry has no transferred ownership to reclaim");
+        }
+        transferred = false;
     }
 
     public Set<String> extensionTypeIds() throws IOException {
