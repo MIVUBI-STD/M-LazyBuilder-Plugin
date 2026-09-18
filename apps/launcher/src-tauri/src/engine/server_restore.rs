@@ -319,11 +319,45 @@ fn save_pending_restores(entries: &[PendingRestore]) -> Result<(), String> {
 }
 
 fn recover_pending_restore_file(path: &Path) -> Result<(), String> {
+    let legacy_incoming = path.with_extension("json.incoming");
+    let canonical_temporary = path.with_extension("json.tmp");
+
+    if persistence::metadata_entry_exists(&legacy_incoming, "legacy pending server restore staging metadata")? {
+        let main_exists = persistence::metadata_entry_exists(path, "pending server restore intent")?;
+        let previous_exists = persistence::metadata_entry_exists(
+            &path.with_extension("json.previous"),
+            "previous pending server restore intent",
+        )?;
+        let canonical_tmp_exists = persistence::metadata_entry_exists(
+            &canonical_temporary,
+            "pending server restore staging file",
+        )?;
+
+        if !main_exists && !previous_exists {
+            if canonical_tmp_exists {
+                return Err(
+                    "Pending server restore recovery is ambiguous because both legacy and canonical staging metadata exist. Recovery evidence was preserved."
+                        .into(),
+                );
+            }
+            persistence::safe_path::ensure_regular_file(
+                &legacy_incoming,
+                "legacy pending server restore staging metadata",
+            )?;
+            fs::rename(&legacy_incoming, &canonical_temporary)
+                .map_err(|error| format!("Could not migrate legacy pending restore staging metadata: {error}"))?;
+        }
+    }
+
     persistence::recover_atomic_file(path, "pending server restore intent")
 }
 
 fn cleanup_pending_restore_recovery_files(path: &Path) -> Result<(), String> {
-    persistence::cleanup_recovery_files(path, "pending server restore intent")
+    persistence::cleanup_recovery_files(path, "pending server restore intent")?;
+    persistence::safe_path::remove_regular_file_if_present(
+        &path.with_extension("json.incoming"),
+        "legacy pending server restore staging metadata",
+    )
 }
 
 fn ensure_no_pending_restore(workspace_id: &str) -> Result<(), String> {
