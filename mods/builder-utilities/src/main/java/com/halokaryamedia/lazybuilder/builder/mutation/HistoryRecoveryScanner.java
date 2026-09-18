@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Reopens durable orphan History files and classifies actual world state.
@@ -20,20 +21,46 @@ public final class HistoryRecoveryScanner {
             WorldBlockStateSource world,
             HistoryExtensionTargetRegistry extensions
     ) throws IOException {
+        return scan(storage, world, extensions, operationId -> true);
+    }
+
+    public static List<RecoveredMutationCandidate> scan(
+            DiskChangeSetStorage storage,
+            WorldBlockStateSource world,
+            HistoryExtensionTargetRegistry extensions,
+            Predicate<String> operationFilter
+    ) throws IOException {
         Objects.requireNonNull(storage, "storage");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(extensions, "extensions");
-        return classifyRecovered(storage.recoverCommitted(), world, extensions, false);
+        Objects.requireNonNull(operationFilter, "operationFilter");
+        storage.promoteRecoverableIncomplete();
+        return classifyRecovered(
+                storage.recoverCommitted(operationFilter),
+                world,
+                extensions,
+                false
+        );
     }
 
     public static List<RecoveredMutationCandidate> scanBlocksOnly(
             DiskChangeSetStorage storage,
             WorldBlockStateSource world
     ) throws IOException {
+        return scanBlocksOnly(storage, world, operationId -> true);
+    }
+
+    public static List<RecoveredMutationCandidate> scanBlocksOnly(
+            DiskChangeSetStorage storage,
+            WorldBlockStateSource world,
+            Predicate<String> operationFilter
+    ) throws IOException {
         Objects.requireNonNull(storage, "storage");
         Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(operationFilter, "operationFilter");
+        storage.promoteRecoverableIncomplete();
         return classifyRecovered(
-                storage.recoverCommitted(),
+                storage.recoverCommitted(operationFilter),
                 world,
                 HistoryExtensionTargetRegistry.empty(),
                 true
