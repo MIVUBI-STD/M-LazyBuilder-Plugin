@@ -59,7 +59,17 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
             int incomplete = recovery.incompleteFiles(filter).size();
             int legacyCommitted = recovery.unscopedCommittedSummaries().size();
             int legacyIncomplete = recovery.unscopedIncompleteFiles().size();
-            current.recoveryNotice().update(scope, committed, incomplete);
+            int unreadableIncomplete = recovery.unreadableIncompleteFiles().size();
+            current.recoveryNotice().update(
+                    scope,
+                    committed,
+                    Math.addExact(incomplete, unreadableIncomplete));
+            if (unreadableIncomplete > 0) {
+                LOGGER.warn(
+                        "Unreadable Builder recovery journals detected: incomplete={}. "
+                                + "They are quarantined because world ownership cannot be proven.",
+                        unreadableIncomplete);
+            }
             if (legacyCommitted > 0 || legacyIncomplete > 0) {
                 LOGGER.warn(
                         "Legacy unscoped Builder recovery journals detected: committed={}, incomplete={}. "

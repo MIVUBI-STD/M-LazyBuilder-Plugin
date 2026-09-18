@@ -25,6 +25,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
     private int scopedCommitted;
     private int scopedIncomplete;
     private int legacyUnscoped;
+    private int unreadableIncomplete;
     private long scopedBlockHistoryEntries;
     private long scopedExtensions;
     private String scopePreview = "<none>";
@@ -90,6 +91,11 @@ public final class AxiomOperationCenterTool implements CustomTool {
         if (legacyUnscoped > 0) {
             ImGui.textWrapped("Legacy unscoped journals quarantined: " + legacyUnscoped
                     + " (not auto-resumed because their original world cannot be proven)");
+        }
+        if (unreadableIncomplete > 0) {
+            ImGui.textWrapped("Unreadable incomplete journals quarantined: "
+                    + unreadableIncomplete
+                    + " (world ownership cannot be proven)");
         }
 
         try {
@@ -172,7 +178,8 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     extension.supportsEntity(),
                     scopedCommitted,
                     scopedIncomplete,
-                    legacyUnscoped
+                    legacyUnscoped,
+                    unreadableIncomplete
             );
             ImGui.textWrapped("FAWE retirement gate: " + retirement.status()
                     + " | persistedProofs=" + retirement.proofSnapshots()
@@ -277,7 +284,9 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     operationId -> ScopedOperationIds.belongsTo(operationId, scope)).size();
 
             legacyUnscoped = recovery.committedSummaries(
-                    operationId -> ScopedOperationIds.scopeOf(operationId).isEmpty()).size();
+                    operationId -> ScopedOperationIds.scopeOf(operationId).isEmpty()).size()
+                    + recovery.unscopedIncompleteFiles().size();
+            unreadableIncomplete = recovery.unreadableIncompleteFiles().size();
             status = "Builder runtime status refreshed";
         } catch (Exception e) {
             status = "Status refresh failed: "

@@ -112,10 +112,21 @@ public final class AxiomRecoveryTool implements CustomTool {
                     new HistoryRecoveryManager(runtime.diskHistory());
             int legacyCommitted = recoveryManager.unscopedCommittedSummaries().size();
             int legacyIncomplete = recoveryManager.unscopedIncompleteFiles().size();
+            int unreadableIncomplete = recoveryManager.unreadableIncompleteFiles().size();
             if (legacyCommitted > 0 || legacyIncomplete > 0) {
                 ImGui.textWrapped("Legacy unscoped journals are quarantined: committed="
                         + legacyCommitted + " incomplete=" + legacyIncomplete
                         + ". They are not auto-associated with this world.");
+            }
+            if (unreadableIncomplete > 0) {
+                ImGui.textWrapped("Unreadable incomplete journals quarantined: "
+                        + unreadableIncomplete
+                        + ". Their original world cannot be proven.");
+                if (ImGui.button("Discard Unreadable Quarantined Journals")) {
+                    int deleted = recoveryManager.discardUnreadableIncompleteFiles();
+                    status = "Discarded " + deleted
+                            + " unreadable quarantined journals";
+                }
             }
             int incomplete = recoveryManager
                     .incompleteFiles(operationId ->

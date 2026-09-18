@@ -43,7 +43,29 @@ public final class HistoryRecoveryManager {
     }
 
     public int discardIncompleteFiles() throws IOException {
-        return discardIncompleteFiles(operationId -> true);
+        storage.promoteRecoverableIncomplete();
+        int deleted = 0;
+        for (Path path : storage.listRecoverableIncomplete()) {
+            if (Files.deleteIfExists(path)) deleted++;
+        }
+        return deleted;
+    }
+
+    /** Incomplete journals whose header is too damaged to establish world ownership. */
+    public List<Path> unreadableIncompleteFiles() throws IOException {
+        return storage.listRecoverableIncomplete().stream()
+                .filter(path -> readHeaderOperationId(path) == null)
+                .toList();
+    }
+
+    /** Explicitly discards only unreadable quarantined journals. */
+    public int discardUnreadableIncompleteFiles() throws IOException {
+        storage.promoteRecoverableIncomplete();
+        int deleted = 0;
+        for (Path path : unreadableIncompleteFiles()) {
+            if (Files.deleteIfExists(path)) deleted++;
+        }
+        return deleted;
     }
 
     public int discardIncompleteFiles(Predicate<String> operationFilter) throws IOException {

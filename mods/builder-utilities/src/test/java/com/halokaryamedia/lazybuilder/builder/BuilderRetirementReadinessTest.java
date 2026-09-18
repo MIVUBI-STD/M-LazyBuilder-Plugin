@@ -25,7 +25,7 @@ class BuilderRetirementReadinessTest {
         BuilderRuntime runtime = runtime();
         try {
             var report = BuilderRetirementReadiness.evaluate(
-                    runtime, true, false, true, 0, 0, 0);
+                    runtime, true, false, true, 0, 0, 0, 0);
             assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
             assertTrue(report.blockers().stream()
                     .anyMatch(value -> value.contains("BLOCK_ENTITY")));
@@ -42,7 +42,7 @@ class BuilderRetirementReadinessTest {
         try {
             runtime.registerActiveOperation(() -> { });
             var report = BuilderRetirementReadiness.evaluate(
-                    runtime, true, true, true, 0, 0, 0);
+                    runtime, true, true, true, 0, 0, 0, 0);
             assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
             assertTrue(report.blockers().stream()
                     .anyMatch(value -> value.contains("active Builder operations=1")));
@@ -57,11 +57,26 @@ class BuilderRetirementReadinessTest {
         BuilderRuntime runtime = runtime();
         try {
             var report = BuilderRetirementReadiness.evaluate(
-                    runtime, true, true, true, 0, 0, 2);
+                    runtime, true, true, true, 0, 0, 2, 0);
             assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
             assertTrue(report.blockers().stream()
                     .anyMatch(value -> value.contains(
                             "legacy unscoped recovery journals=2")));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void unreadableRecoveryResidueBlocksRetirement() throws Exception {
+        BuilderRuntime runtime = runtime();
+        try {
+            var report = BuilderRetirementReadiness.evaluate(
+                    runtime, true, true, true, 0, 0, 0, 1);
+            assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
+            assertTrue(report.blockers().stream()
+                    .anyMatch(value -> value.contains(
+                            "unreadable incomplete recovery journals=1")));
         } finally {
             runtime.close();
         }
