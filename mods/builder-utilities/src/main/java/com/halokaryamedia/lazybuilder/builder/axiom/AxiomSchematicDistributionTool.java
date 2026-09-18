@@ -550,7 +550,10 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                 AxiomStructureAuxiliary.snapshotForApply(
                         imported.snapshot(),
                         stripBlockEntitiesOnApply[0] != 0);
-            } catch (IllegalArgumentException unsupported) {
+            } catch (IOException | IllegalArgumentException unsupported) {
+                // Catalog palette discovery is best-effort per source. One corrupt,
+                // future-version, or otherwise unsupported schematic must not make
+                // every valid palette source disappear from the tool.
                 continue;
             }
             loaded.put(entry.name(), imported);
