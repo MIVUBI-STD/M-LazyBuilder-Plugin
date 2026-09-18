@@ -94,11 +94,20 @@ public final class AxiomRecoveryTool implements CustomTool {
         }
 
         try {
-            int incomplete = new HistoryRecoveryManager(runtime.diskHistory()).incompleteFiles().size();
+            ClientWorld currentWorld = requireWorld();
+            String currentScope = AxiomWorldScope.currentScopeId(currentWorld);
+            int incomplete = new HistoryRecoveryManager(runtime.diskHistory())
+                    .incompleteFiles(operationId ->
+                            com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
+                                    .belongsTo(operationId, currentScope))
+                    .size();
             if (incomplete > 0) {
                 ImGui.textWrapped("Incomplete uncommitted journals: " + incomplete);
                 if (ImGui.button("Discard Incomplete Journals")) {
-                    int deleted = new HistoryRecoveryManager(runtime.diskHistory()).discardIncompleteFiles();
+                    int deleted = new HistoryRecoveryManager(runtime.diskHistory())
+                            .discardIncompleteFiles(operationId ->
+                                    com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
+                                            .belongsTo(operationId, currentScope));
                     status = "Discarded " + deleted + " incomplete journals";
                 }
             }
@@ -130,8 +139,12 @@ public final class AxiomRecoveryTool implements CustomTool {
         try {
             releaseWrappersWithoutDeleting();
             ClientWorld world = requireWorld();
+            String scope = AxiomWorldScope.currentScopeId(world);
             entries = new HistoryRecoveryManager(runtime.diskHistory())
-                    .discover(new AxiomClientWorldStateSource(world));
+                    .discover(
+                            new AxiomClientWorldStateSource(world),
+                            operationId -> com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
+                                    .belongsTo(operationId, scope));
             selectedIndex[0] = 0;
             status = entries.isEmpty()
                     ? "No committed recovery plans found"

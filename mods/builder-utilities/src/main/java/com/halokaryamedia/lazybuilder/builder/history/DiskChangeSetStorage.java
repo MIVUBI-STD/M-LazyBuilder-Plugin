@@ -12,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
@@ -123,6 +124,11 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
      * world state before choosing to resume, publish to timeline, or discard.</p>
      */
     public List<StoredChangeSet> recoverCommitted() throws IOException {
+        return recoverCommitted(operationId -> true);
+    }
+
+    public List<StoredChangeSet> recoverCommitted(Predicate<String> operationFilter) throws IOException {
+        Objects.requireNonNull(operationFilter, "operationFilter");
         List<StoredChangeSet> recovered = new java.util.ArrayList<>();
         try {
             for (Path path : listCommitted()) {
@@ -131,6 +137,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
                 try (InputStream input = Files.newInputStream(path)) {
                     header = ChangeSetCodec.inspect(input);
                 }
+                if (!operationFilter.test(header.operationId())) continue;
                 if (!ownedCommittedPaths.add(path)) continue;
                 recovered.add(new DiskStoredChangeSet(
                         header.operationId(),

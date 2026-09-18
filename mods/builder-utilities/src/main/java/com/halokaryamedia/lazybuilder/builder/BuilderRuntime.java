@@ -6,6 +6,8 @@ import com.halokaryamedia.lazybuilder.builder.history.HistorySizingPolicy;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimeline;
 import com.halokaryamedia.lazybuilder.builder.history.MemoryChangeSetStorage;
+import com.halokaryamedia.lazybuilder.builder.history.ScopedChangeSetStorage;
+import com.halokaryamedia.lazybuilder.builder.axiom.AxiomWorldScope;
 import com.halokaryamedia.lazybuilder.builder.operation.ExecutionBudget;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -16,7 +18,7 @@ import java.time.Duration;
 /** Shared Builder runtime ownership for history and bounded dispatch policy. */
 public final class BuilderRuntime implements AutoCloseable {
     private static final long MIB = 1024L * 1024L;
-    private final HistoryTimeline timeline;
+    private HistoryTimeline timeline;
     private final HistoryStorageRouter history;
     private final ExecutionBudget dispatchBudget;
     private final Path schematicDirectory;
@@ -46,7 +48,7 @@ public final class BuilderRuntime implements AutoCloseable {
                 new HistorySizingPolicy(8 * MIB, 64 * MIB),
                 new MemoryChangeSetStorage(),
                 new CompressedMemoryChangeSetStorage(),
-                diskHistory);
+                new ScopedChangeSetStorage(diskHistory, AxiomWorldScope::currentScopeId));
         return new BuilderRuntime(
                 new HistoryTimeline(64),
                 router,
@@ -56,7 +58,13 @@ public final class BuilderRuntime implements AutoCloseable {
         );
     }
 
-    public HistoryTimeline timeline() { return timeline; }
+    public synchronized HistoryTimeline timeline() { return timeline; }
+
+    public synchronized void resetWorldTimeline() throws IOException {
+        HistoryTimeline previous = timeline;
+        timeline = new HistoryTimeline(64);
+        previous.close();
+    }
     public HistoryStorageRouter history() { return history; }
     public ExecutionBudget dispatchBudget() { return dispatchBudget; }
     public Path schematicDirectory() { return schematicDirectory; }

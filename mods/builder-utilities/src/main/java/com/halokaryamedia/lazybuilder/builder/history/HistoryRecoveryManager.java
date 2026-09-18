@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Discovers durable History left by a previous process and classifies block-only
@@ -39,11 +40,19 @@ public final class HistoryRecoveryManager {
     }
 
     public List<RecoveredHistoryEntry> discover(WorldBlockStateSource world) throws IOException {
+        return discover(world, operationId -> true);
+    }
+
+    public List<RecoveredHistoryEntry> discover(
+            WorldBlockStateSource world,
+            Predicate<String> operationFilter
+    ) throws IOException {
         Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(operationFilter, "operationFilter");
         storage.promoteRecoverableIncomplete();
         List<RecoveredHistoryEntry> result = new ArrayList<>();
         try {
-            for (StoredChangeSet stored : storage.recoverCommitted()) {
+            for (StoredChangeSet stored : storage.recoverCommitted(operationFilter)) {
                 PreparedReconciliationReport report = null;
                 if (stored.extensionCount() == 0) {
                     report = PreparedMutationReconciler.reconcile(stored, world);

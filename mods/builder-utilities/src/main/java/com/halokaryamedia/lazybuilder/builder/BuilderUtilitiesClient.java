@@ -12,6 +12,7 @@ import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplineSchematicTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomStructureStampTool;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,8 +34,20 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomSchematicDistributionTool(services, runtime));
         services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
+        ClientPlayConnectionEvents.DISCONNECT.register(
+                (handler, client) -> resetWorldTimeline());
         LOGGER.info("Builder Utilities attached to Axiom public API with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.");
     }
+    private static void resetWorldTimeline() {
+        BuilderRuntime current = runtime;
+        if (current == null) return;
+        try {
+            current.resetWorldTimeline();
+        } catch (java.io.IOException e) {
+            LOGGER.error("Failed to reset Builder history after world disconnect", e);
+        }
+    }
+
     private static void closeRuntime() {
         BuilderRuntime current = runtime;
         runtime = null;

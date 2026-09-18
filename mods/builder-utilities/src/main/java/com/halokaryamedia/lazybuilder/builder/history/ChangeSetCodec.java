@@ -50,6 +50,11 @@ public final class ChangeSetCodec {
         return new StreamWriter(data, crc, operationId);
     }
 
+    public static String readOperationId(InputStream input) throws IOException {
+        ScanContext context = openInput(input);
+        return context.header.operationId;
+    }
+
     public static Header inspect(InputStream input) throws IOException {
         ScanContext context = openInput(input);
         Counts counts = scan(context, null, null, ReplayPhase.NONE);
