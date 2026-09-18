@@ -200,7 +200,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
 
     private AxiomMixedPumpResult pumpForwardBlockEntities() throws IOException {
         BlockEntityBatchDispatchProgress progress = blockEntityDispatcher.pump();
-        forwardBlockEntityObserved = progress.processedExtensions();
+        forwardBlockEntityObserved = recordDelta(
+                progress.processedExtensions(),
+                forwardBlockEntityObserved,
+                metrics::recordForwardBlockEntityExtensions);
         setProcessed(Math.min(
                 lifecycle.totalWork(),
                 prepared.plannedChanges() + progress.processedExtensions()));
@@ -492,7 +495,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
 
     private AxiomMixedPumpResult pumpRollbackBlockEntities() throws IOException {
         BlockEntityBatchDispatchProgress progress = blockEntityDispatcher.pump();
-        rollbackBlockEntityObserved = progress.processedExtensions();
+        rollbackBlockEntityObserved = recordDelta(
+                progress.processedExtensions(),
+                rollbackBlockEntityObserved,
+                metrics::recordRollbackBlockEntityExtensions);
         return switch (progress.state()) {
             case YIELDED -> running("rollback block-entity batch sent");
             case WAITING -> waiting("waiting for block-entity rollback response");

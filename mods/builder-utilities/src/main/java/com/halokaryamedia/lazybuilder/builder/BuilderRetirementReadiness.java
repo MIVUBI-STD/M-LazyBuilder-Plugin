@@ -77,6 +77,7 @@ public final class BuilderRetirementReadiness {
         }
 
         long currentRollbackWork = metrics.rollbackBlocksDispatched()
+                + metrics.rollbackBlockEntityExtensions()
                 + metrics.rollbackBiomeExtensions()
                 + metrics.rollbackEntityExtensions();
         long rollbackWork = Math.max(
@@ -87,6 +88,13 @@ public final class BuilderRetirementReadiness {
                 persisted.maxCancelledOperations());
         if (cancelledOps == 0 || rollbackWork == 0) {
             blockers.add("no observed cancel/rollback proof that reverted applied work");
+        }
+
+        long blockEntityProof = Math.max(
+                metrics.forwardBlockEntityExtensions(),
+                persisted.maxForwardBlockEntityExtensions());
+        if (blockEntityAuthority && blockEntityProof == 0) {
+            blockers.add("BLOCK_ENTITY authority exists but has no observed runtime apply proof");
         }
 
         long biomeProof = Math.max(

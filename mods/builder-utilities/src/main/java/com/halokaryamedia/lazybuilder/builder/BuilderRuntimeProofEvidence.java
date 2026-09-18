@@ -13,8 +13,10 @@ public record BuilderRuntimeProofEvidence(
         long maxCompletedPlannedBlocks,
         long maxCompletedPlannedExtensions,
         long maxRollbackBlocks,
+        long maxRollbackBlockEntityExtensions,
         long maxRollbackBiomeExtensions,
         long maxRollbackEntityExtensions,
+        long maxForwardBlockEntityExtensions,
         long maxForwardBiomeExtensions,
         long maxForwardEntityExtensions
 ) {
@@ -27,8 +29,10 @@ public record BuilderRuntimeProofEvidence(
                 || maxCompletedPlannedBlocks < 0
                 || maxCompletedPlannedExtensions < 0
                 || maxRollbackBlocks < 0
+                || maxRollbackBlockEntityExtensions < 0
                 || maxRollbackBiomeExtensions < 0
                 || maxRollbackEntityExtensions < 0
+                || maxForwardBlockEntityExtensions < 0
                 || maxForwardBiomeExtensions < 0
                 || maxForwardEntityExtensions < 0) {
             throw new IllegalArgumentException("proof evidence values must be >= 0");
@@ -42,12 +46,14 @@ public record BuilderRuntimeProofEvidence(
     public static BuilderRuntimeProofEvidence empty() {
         return new BuilderRuntimeProofEvidence(
                 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0);
+                0, 0, 0, 0, 0, 0, 0);
     }
 
     public long maxRollbackWork() {
         return Math.addExact(
-                Math.addExact(maxRollbackBlocks, maxRollbackBiomeExtensions),
+                Math.addExact(
+                        Math.addExact(maxRollbackBlocks, maxRollbackBlockEntityExtensions),
+                        maxRollbackBiomeExtensions),
                 maxRollbackEntityExtensions);
     }
 }

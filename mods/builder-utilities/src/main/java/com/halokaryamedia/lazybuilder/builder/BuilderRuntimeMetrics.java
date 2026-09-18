@@ -15,15 +15,19 @@ public final class BuilderRuntimeMetrics {
     private final AtomicLong forwardBlocksDispatched = new AtomicLong();
     private final AtomicLong rollbackChunksVisited = new AtomicLong();
     private final AtomicLong rollbackBlocksDispatched = new AtomicLong();
+    private final AtomicLong forwardBlockEntityExtensions = new AtomicLong();
     private final AtomicLong forwardBiomeExtensions = new AtomicLong();
     private final AtomicLong forwardEntityExtensions = new AtomicLong();
+    private final AtomicLong rollbackBlockEntityExtensions = new AtomicLong();
     private final AtomicLong rollbackBiomeExtensions = new AtomicLong();
     private final AtomicLong rollbackEntityExtensions = new AtomicLong();
     private final AtomicLong extensionConflicts = new AtomicLong();
     private final AtomicLong extensionFailures = new AtomicLong();
     private final AtomicLong historyUndoBlocks = new AtomicLong();
     private final AtomicLong historyRedoBlocks = new AtomicLong();
+    private final AtomicLong historyUndoBlockEntityExtensions = new AtomicLong();
     private final AtomicLong historyUndoBiomeExtensions = new AtomicLong();
+    private final AtomicLong historyRedoBlockEntityExtensions = new AtomicLong();
     private final AtomicLong historyRedoBiomeExtensions = new AtomicLong();
     private final AtomicLong historyUndoEntityExtensions = new AtomicLong();
     private final AtomicLong historyRedoEntityExtensions = new AtomicLong();
@@ -63,12 +67,20 @@ public final class BuilderRuntimeMetrics {
         maxSliceNanos.accumulateAndGet(elapsedNanos, Math::max);
     }
 
+    public void recordForwardBlockEntityExtensions(long count) {
+        addNonNegative(forwardBlockEntityExtensions, count, "forwardBlockEntityExtensions");
+    }
+
     public void recordForwardBiomeExtensions(long count) {
         addNonNegative(forwardBiomeExtensions, count, "forwardBiomeExtensions");
     }
 
     public void recordForwardEntityExtensions(long count) {
         addNonNegative(forwardEntityExtensions, count, "forwardEntityExtensions");
+    }
+
+    public void recordRollbackBlockEntityExtensions(long count) {
+        addNonNegative(rollbackBlockEntityExtensions, count, "rollbackBlockEntityExtensions");
     }
 
     public void recordRollbackBiomeExtensions(long count) {
@@ -96,8 +108,16 @@ public final class BuilderRuntimeMetrics {
         addNonNegative(historyRedoBlocks, count, "historyRedoBlocks");
     }
 
+    public void recordHistoryUndoBlockEntityExtensions(long count) {
+        addNonNegative(historyUndoBlockEntityExtensions, count, "historyUndoBlockEntityExtensions");
+    }
+
     public void recordHistoryUndoBiomeExtensions(long count) {
         addNonNegative(historyUndoBiomeExtensions, count, "historyUndoBiomeExtensions");
+    }
+
+    public void recordHistoryRedoBlockEntityExtensions(long count) {
+        addNonNegative(historyRedoBlockEntityExtensions, count, "historyRedoBlockEntityExtensions");
     }
 
     public void recordHistoryRedoBiomeExtensions(long count) {
@@ -173,14 +193,18 @@ public final class BuilderRuntimeMetrics {
                 forwardBlocksDispatched.get(),
                 rollbackChunksVisited.get(),
                 rollbackBlocksDispatched.get(),
+                forwardBlockEntityExtensions.get(),
                 forwardBiomeExtensions.get(),
                 forwardEntityExtensions.get(),
+                rollbackBlockEntityExtensions.get(),
                 rollbackBiomeExtensions.get(),
                 rollbackEntityExtensions.get(),
                 extensionConflicts.get(),
                 extensionFailures.get(),
                 historyUndoBlocks.get(),
+                historyUndoBlockEntityExtensions.get(),
                 historyRedoBlocks.get(),
+                historyRedoBlockEntityExtensions.get(),
                 historyUndoBiomeExtensions.get(),
                 historyRedoBiomeExtensions.get(),
                 historyUndoEntityExtensions.get(),
@@ -219,14 +243,18 @@ public final class BuilderRuntimeMetrics {
             long forwardBlocksDispatched,
             long rollbackChunksVisited,
             long rollbackBlocksDispatched,
+            long forwardBlockEntityExtensions,
             long forwardBiomeExtensions,
             long forwardEntityExtensions,
+            long rollbackBlockEntityExtensions,
             long rollbackBiomeExtensions,
             long rollbackEntityExtensions,
             long extensionConflicts,
             long extensionFailures,
             long historyUndoBlocks,
+            long historyUndoBlockEntityExtensions,
             long historyRedoBlocks,
+            long historyRedoBlockEntityExtensions,
             long historyUndoBiomeExtensions,
             long historyRedoBiomeExtensions,
             long historyUndoEntityExtensions,

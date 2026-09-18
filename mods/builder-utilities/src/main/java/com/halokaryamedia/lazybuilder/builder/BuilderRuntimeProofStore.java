@@ -51,8 +51,10 @@ public final class BuilderRuntimeProofStore {
         long maxBlocks = 0;
         long maxExtensions = 0;
         long rollbackBlocks = 0;
+        long rollbackBlockEntities = 0;
         long rollbackBiomes = 0;
         long rollbackEntities = 0;
+        long forwardBlockEntities = 0;
         long forwardBiomes = 0;
         long forwardEntities = 0;
 
@@ -95,12 +97,18 @@ public final class BuilderRuntimeProofStore {
                 rollbackBlocks = Math.max(
                         rollbackBlocks,
                         longValue(json, "rollbackBlocksDispatched"));
+                rollbackBlockEntities = Math.max(
+                        rollbackBlockEntities,
+                        longValue(json, "rollbackBlockEntityExtensions"));
                 rollbackBiomes = Math.max(
                         rollbackBiomes,
                         longValue(json, "rollbackBiomeExtensions"));
                 rollbackEntities = Math.max(
                         rollbackEntities,
                         longValue(json, "rollbackEntityExtensions"));
+                forwardBlockEntities = Math.max(
+                        forwardBlockEntities,
+                        longValue(json, "forwardBlockEntityExtensions"));
                 forwardBiomes = Math.max(
                         forwardBiomes,
                         longValue(json, "forwardBiomeExtensions"));
@@ -119,8 +127,10 @@ public final class BuilderRuntimeProofStore {
                 maxBlocks,
                 maxExtensions,
                 rollbackBlocks,
+                rollbackBlockEntities,
                 rollbackBiomes,
                 rollbackEntities,
+                forwardBlockEntities,
                 forwardBiomes,
                 forwardEntities
         );
@@ -195,7 +205,7 @@ public final class BuilderRuntimeProofStore {
             String label
     ) {
         return "{\n"
-                + "  \"schema\": 4,\n"
+                + "  \"schema\": 5,\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"
@@ -208,14 +218,18 @@ public final class BuilderRuntimeProofStore {
                 + "  \"forwardBlocksDispatched\": " + s.forwardBlocksDispatched() + ",\n"
                 + "  \"rollbackChunksVisited\": " + s.rollbackChunksVisited() + ",\n"
                 + "  \"rollbackBlocksDispatched\": " + s.rollbackBlocksDispatched() + ",\n"
+                + "  \"forwardBlockEntityExtensions\": " + s.forwardBlockEntityExtensions() + ",\n"
                 + "  \"forwardBiomeExtensions\": " + s.forwardBiomeExtensions() + ",\n"
                 + "  \"forwardEntityExtensions\": " + s.forwardEntityExtensions() + ",\n"
+                + "  \"rollbackBlockEntityExtensions\": " + s.rollbackBlockEntityExtensions() + ",\n"
                 + "  \"rollbackBiomeExtensions\": " + s.rollbackBiomeExtensions() + ",\n"
                 + "  \"rollbackEntityExtensions\": " + s.rollbackEntityExtensions() + ",\n"
                 + "  \"extensionConflicts\": " + s.extensionConflicts() + ",\n"
                 + "  \"extensionFailures\": " + s.extensionFailures() + ",\n"
                 + "  \"historyUndoBlocks\": " + s.historyUndoBlocks() + ",\n"
+                + "  \"historyUndoBlockEntityExtensions\": " + s.historyUndoBlockEntityExtensions() + ",\n"
                 + "  \"historyRedoBlocks\": " + s.historyRedoBlocks() + ",\n"
+                + "  \"historyRedoBlockEntityExtensions\": " + s.historyRedoBlockEntityExtensions() + ",\n"
                 + "  \"historyUndoBiomeExtensions\": " + s.historyUndoBiomeExtensions() + ",\n"
                 + "  \"historyRedoBiomeExtensions\": " + s.historyRedoBiomeExtensions() + ",\n"
                 + "  \"historyUndoEntityExtensions\": " + s.historyUndoEntityExtensions() + ",\n"
