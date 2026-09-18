@@ -16,6 +16,6 @@
     "minecraft": "1.21.4",
     "java": ">=21",
     "fabric-api": "*",
-    "axiom": "5.3.0"
+    "axiom": "${axiom_supported_range}"
   }
 }

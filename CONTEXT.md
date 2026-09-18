@@ -156,7 +156,7 @@ status/install/update/repair LazyBuilder-owned client components
 preserve all unrelated files in the selected profile mods directory
 ```
 
-Builder Utilities is intentionally separate from Client Setup and the required three-manager V1 bundle. It requires Axiom and has its own verification/provisioning decision boundary.
+Builder Utilities is intentionally separate from Client Setup and the required three-manager V1 bundle. It requires Axiom and has its own verification/provisioning decision boundary. For Minecraft 1.21.4 the current Builder compatibility contract accepts Axiom `>=5.3.0 <5.5.0`; widening that range requires an explicit API/runtime compatibility review.
 
 Canonical V1 required Fabric set:
 

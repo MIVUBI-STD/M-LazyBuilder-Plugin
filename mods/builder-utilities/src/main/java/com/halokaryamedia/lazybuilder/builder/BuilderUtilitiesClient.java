@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.builder;
 
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomArrayTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomClientServices;
+import com.halokaryamedia.lazybuilder.builder.axiom.AxiomCompatibility;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomProceduralTextureTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomOperationCenterTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomRecoveryTool;
@@ -26,6 +27,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BuilderExtensionClientNetworking.register();
+        AxiomCompatibility compatibility = AxiomCompatibility.current();
         AxiomClientServices services = AxiomClientServices.load();
         runtime = BuilderRuntime.createDefault();
         services.toolRegistry().register(new AxiomSplinePreviewTool(services, runtime));
@@ -44,7 +46,9 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                 (handler, sender, client) -> client.execute(BuilderUtilitiesClient::scanRecoveryNotice));
         ClientPlayConnectionEvents.DISCONNECT.register(
                 (handler, client) -> resetWorldTimeline());
-        LOGGER.info("Builder Utilities attached to Axiom public API with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.");
+        LOGGER.info(
+                "Builder Utilities attached to {} with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.",
+                compatibility.summary());
     }
     private static void scanRecoveryNotice() {
         BuilderRuntime current = runtime;

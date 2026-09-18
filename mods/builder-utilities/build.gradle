@@ -44,12 +44,13 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Axiom itself is a required runtime mod (see fabric.mod.json), but is intentionally
-    // not a Gradle mod dependency here. Axiom 5.3.0 was produced with Loom 1.14.x,
-    // while this repository is pinned to Gradle 8.12 / Loom 1.9.2.
+    // not a Gradle mod dependency here. Supported Axiom runtime versions are bounded by
+    // axiom_supported_range in gradle.properties so minor-version adoption remains
+    // explicit and reviewable while this repository stays pinned to Gradle 8.12 / Loom 1.9.2.
     //
     // Main compilation uses a tiny, non-packaged source set containing only the
     // public AxiomClientAPI surface Builder Utilities calls. At runtime those symbols
-    // resolve to the real API classes supplied by Axiom 5.3.0.
+    // resolve to the real API classes supplied by the installed supported Axiom build.
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
@@ -60,8 +61,12 @@ tasks.named('compileJava') {
 
 processResources {
     inputs.property 'version', project.version
+    inputs.property 'axiom_supported_range', project.axiom_supported_range
     filesMatching('fabric.mod.json') {
-        expand 'version': project.version
+        expand(
+                'version': project.version,
+                'axiom_supported_range': project.axiom_supported_range
+        )
     }
 }
 

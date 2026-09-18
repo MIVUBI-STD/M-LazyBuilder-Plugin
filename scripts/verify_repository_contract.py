@@ -265,6 +265,11 @@ def main() -> int:
     client_architecture = read_text("docs/04-system/client-manager-architecture-lock.md", errors)
     stable_context = read_text("CONTEXT.md", errors)
     builder_manifest = read_text("mods/builder-utilities/src/main/resources/fabric.mod.json", errors)
+    builder_properties = read_text("mods/builder-utilities/gradle.properties", errors)
+    builder_compatibility = read_text(
+        "mods/builder-utilities/src/main/java/com/halokaryamedia/lazybuilder/builder/axiom/AxiomCompatibility.java",
+        errors,
+    )
     builder_workflow = read_text(".github/workflows/builder-verify.yml", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
@@ -336,8 +341,17 @@ def main() -> int:
         fail(errors, "product authority must distinguish Builder Utilities from the three core Managers")
     if "legacy/prototype" not in module_boundaries.lower():
         fail(errors, "module boundaries must classify Terraform as legacy/prototype rather than a parallel production owner")
-    if '"axiom": "5.3.0"' not in builder_manifest:
-        fail(errors, "Builder Utilities must preserve its explicit Axiom runtime compatibility boundary")
+    axiom_range_match = re.search(r"(?m)^axiom_supported_range=(.+)$", builder_properties)
+    if not axiom_range_match:
+        fail(errors, "Builder Utilities must define axiom_supported_range in gradle.properties")
+    else:
+        axiom_range = axiom_range_match.group(1).strip()
+        if "${axiom_supported_range}" not in builder_manifest:
+            fail(errors, "fabric.mod.json must consume the canonical axiom_supported_range property")
+        if f'SUPPORTED_RANGE = "{axiom_range}"' not in builder_compatibility:
+            fail(errors, "Axiom runtime diagnostics must match the canonical supported range")
+        if axiom_range not in stable_context:
+            fail(errors, "CONTEXT.md must state the canonical Axiom compatibility range")
     if "mods/builder-utilities" not in builder_workflow:
         fail(errors, "Builder verification workflow must target the Builder Utilities source owner")
 

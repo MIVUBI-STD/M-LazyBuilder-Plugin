@@ -68,6 +68,11 @@ public final class AxiomOperationCenterTool implements CustomTool {
         }
 
         ImGui.textWrapped(status);
+        try {
+            ImGui.textWrapped("Compatibility: " + AxiomCompatibility.current().summary());
+        } catch (Exception e) {
+            ImGui.textWrapped("Compatibility identity unavailable: " + concise(e));
+        }
         var recoveryNotice = runtime.recoveryNotice().snapshot();
         if (recoveryNotice.status()
                 == com.halokaryamedia.lazybuilder.builder.BuilderRecoveryNotice.Status.SCANNED) {
@@ -152,6 +157,8 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " maxMs=" + String.format("%.3f", proof.maxOperationNanos() / 1_000_000.0));
         ImGui.textWrapped("Conflicts=" + proof.conflicts()
                 + " budgetExceeded=" + proof.budgetExceeded()
+                + " forwardYields=" + proof.forwardDispatchYields()
+                + " rollbackYields=" + proof.rollbackDispatchYields()
                 + " maxObservedSliceMs="
                 + String.format("%.3f", proof.maxSliceNanos() / 1_000_000.0)
                 + " lastOutcome=" + proof.lastOutcome());
