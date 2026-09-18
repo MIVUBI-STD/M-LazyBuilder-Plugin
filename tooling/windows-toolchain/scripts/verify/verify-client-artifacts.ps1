@@ -89,8 +89,20 @@ function Verify-Jar($Spec) {
             if ([string]$metadata.depends.minecraft -ne '1.21.4') { Fail "$($Spec.File) Minecraft contract drifted" }
             if ([string]$metadata.depends.java -ne '>=21') { Fail "$($Spec.File) Java contract drifted" }
         }
-        if ($Spec.Id -eq 'lazybuilder_builder_utilities' -and [string]$metadata.depends.axiom -ne '5.3.0') {
-            Fail "$($Spec.File) Axiom runtime contract drifted"
+        if ($Spec.Id -eq 'lazybuilder_builder_utilities') {
+            if ([string]$metadata.depends.axiom -ne '5.3.0') {
+                Fail "$($Spec.File) Axiom runtime contract drifted"
+            }
+
+            $shadowedAxiom = @($zip.Entries | Where-Object {
+                $_.FullName.StartsWith('com/moulberry/axiomclientapi/')
+            })
+            if ($shadowedAxiom.Count -gt 0) {
+                Fail "$($Spec.File) packaged compile-only AxiomClientAPI stubs"
+            }
+            if ($zip.GetEntry('imgui/moulberry92/ImGui.class')) {
+                Fail "$($Spec.File) packaged compile-only ImGui stub"
+            }
         }
     }
     catch [System.IO.InvalidDataException] {
