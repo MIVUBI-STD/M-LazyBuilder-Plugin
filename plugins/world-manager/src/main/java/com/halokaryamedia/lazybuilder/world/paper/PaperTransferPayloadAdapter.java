@@ -31,7 +31,6 @@ import java.util.logging.Level;
  */
 public final class PaperTransferPayloadAdapter implements PluginMessageListener, Listener {
     public static final String CHANNEL = "lazybuilder:transfer";
-    public static final String PERMISSION = "lazybuilder.world.manage";
     public static final int PIPELINE_WINDOW = TransferWireProtocol.PIPELINE_WINDOW;
     private static final int MAX_QUEUED_REQUESTS = PIPELINE_WINDOW * 2 + 4;
 
@@ -79,8 +78,8 @@ public final class PaperTransferPayloadAdapter implements PluginMessageListener,
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (!started || !CHANNEL.equals(channel)) return;
         UUID owner = player.getUniqueId();
-        if (!player.hasPermission(PERMISSION)) {
-            send(player, TransferWireProtocol.error("Missing permission: " + PERMISSION));
+        if (!player.hasPermission(WorldPermissionNodes.MANAGE)) {
+            send(player, TransferWireProtocol.error("Missing permission: " + WorldPermissionNodes.MANAGE));
             return;
         }
 
