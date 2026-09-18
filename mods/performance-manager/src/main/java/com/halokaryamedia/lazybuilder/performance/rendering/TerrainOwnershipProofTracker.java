@@ -4,11 +4,11 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
- * Runtime proof gate for future exclusive physical-arena ownership.
+ * Runtime proof gate for exclusive physical-arena ownership.
  *
  * A resident must survive a long sequence of successful physical draws without re-upload,
  * relocation, invalidation, or custom/sorted index ownership before it becomes a candidate.
- * This class only proves eligibility; it never removes the vanilla fallback itself.
+ * This class proves eligibility only; physical-arena ownership performs any backing retirement or recovery.
  */
 public final class TerrainOwnershipProofTracker<K> {
     static final long REQUIRED_STABLE_DRAWS = 600L;
