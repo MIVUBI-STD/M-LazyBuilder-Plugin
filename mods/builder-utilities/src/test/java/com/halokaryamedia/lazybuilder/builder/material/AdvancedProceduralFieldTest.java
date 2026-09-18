@@ -32,7 +32,7 @@ class AdvancedProceduralFieldTest {
     void flowAndFieldMathComposeWithoutLeavingRequestedRange() {
         ScalarField distortion = new FractalNoiseField(0.05, 3, 2.0, 0.5, 30L);
         ScalarField flow = new DirectionalFlowField(1, 0, 1, 0.15, 2.0, distortion);
-        ScalarField remapped = FieldMath.remap(flow, 0.0, 1.0, -2.0, 3.0);
+        ScalarField remapped = ScalarFields.remap(flow, 0.0, 1.0, -2.0, 3.0);
         for (int i = 0; i < 32; i++) {
             double value = remapped.sample(context(i, 64, i * 2));
             assertTrue(value >= -2.0 && value <= 3.0);
