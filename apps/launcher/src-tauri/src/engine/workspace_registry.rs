@@ -1,7 +1,6 @@
-use crate::engine::java_runtime;
+use crate::engine::{java_runtime, persistence};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,7 +13,6 @@ const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 const MINECRAFT_VERSION: &str = "1.21.4";
 const SERVER_PLATFORM: &str = "paper";
 const MIN_DUPLICATE_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
-const MAX_WORKSPACE_METADATA_BYTES: u64 = 4 * 1024 * 1024;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 static ACTIVE_WORKSPACE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
@@ -588,9 +586,8 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     let path = registry_path()?;
     recover_json_file(&path, "workspace registry")?;
     if !metadata_entry_exists(&path, "workspace registry")? { return Ok(WorkspaceRegistryFile::default()); }
-    ensure_regular_metadata_file(&path, "workspace registry")?;
-    let text = read_metadata_text(&path, "workspace registry")?;
-    let mut registry: WorkspaceRegistryFile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let mut registry: WorkspaceRegistryFile =
+        persistence::read_json(&path, "workspace registry")?;
     if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
     registry.servers.retain(|entry| !entry.path.trim().is_empty());
     cleanup_json_recovery_files(&path, "workspace registry")?;
@@ -599,17 +596,15 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
 
 fn save_registry(registry: &WorkspaceRegistryFile) -> Result<(), String> {
     let path = registry_path()?;
-    let text = serde_json::to_string_pretty(registry).map_err(|error| error.to_string())?;
-    write_json_file(&path, text.as_bytes(), "workspace registry")
+    persistence::write_json_atomically(&path, registry, "workspace registry")
 }
 
 fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
     let path = pending_deletions_path()?;
     recover_json_file(&path, "pending server deletions")?;
     if !metadata_entry_exists(&path, "pending server deletions")? { return Ok(Vec::new()); }
-    ensure_regular_metadata_file(&path, "pending server deletions")?;
-    let text = read_metadata_text(&path, "pending server deletions")?;
-    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not read pending server deletions: {error}"))?;
+    let entries = persistence::read_json(&path, "pending server deletions")
+        .map_err(|error| format!("Could not read pending server deletions: {error}"))?;
     cleanup_json_recovery_files(&path, "pending server deletions")?;
     Ok(entries)
 }
@@ -620,17 +615,15 @@ fn save_pending_deletions(entries: &[PendingDeletion]) -> Result<(), String> {
         remove_metadata_file_if_exists(&path, "pending server deletions")?;
         return Ok(());
     }
-    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
-    write_json_file(&path, text.as_bytes(), "pending server deletions")
+    persistence::write_json_atomically(&path, &entries, "pending server deletions")
 }
 
 fn load_pending_duplicates() -> Result<Vec<PendingDuplicate>, String> {
     let path = pending_duplicates_path()?;
     recover_json_file(&path, "pending server duplicates")?;
     if !metadata_entry_exists(&path, "pending server duplicates")? { return Ok(Vec::new()); }
-    ensure_regular_metadata_file(&path, "pending server duplicates")?;
-    let text = read_metadata_text(&path, "pending server duplicates")?;
-    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server duplicates: {error}"))?;
+    let entries = persistence::read_json(&path, "pending server duplicates")
+        .map_err(|error| format!("Could not parse pending server duplicates: {error}"))?;
     cleanup_json_recovery_files(&path, "pending server duplicates")?;
     Ok(entries)
 }
@@ -641,8 +634,7 @@ fn save_pending_duplicates(entries: &[PendingDuplicate]) -> Result<(), String> {
         remove_metadata_file_if_exists(&path, "pending server duplicates")?;
         return Ok(());
     }
-    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
-    write_json_file(&path, text.as_bytes(), "pending server duplicates")
+    persistence::write_json_atomically(&path, &entries, "pending server duplicates")
 }
 
 fn add_pending_duplicate(intent: PendingDuplicate) -> Result<(), String> {
@@ -660,131 +652,24 @@ fn clear_pending_duplicate(staging_path: &str) -> Result<(), String> {
     save_pending_duplicates(&entries)
 }
 
-fn read_metadata_text(path: &Path, label: &str) -> Result<String, String> {
-    let size = fs::metadata(path)
-        .map_err(|error| format!("Could not inspect {label}: {error}"))?
-        .len();
-    if size > MAX_WORKSPACE_METADATA_BYTES {
-        return Err(format!(
-            "{label} exceeds the {} byte metadata limit.",
-            MAX_WORKSPACE_METADATA_BYTES
-        ));
-    }
-    fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))
-}
-
-fn write_json_file(destination: &Path, bytes: &[u8], label: &str) -> Result<(), String> {
-    if bytes.len() as u64 > MAX_WORKSPACE_METADATA_BYTES {
-        return Err(format!(
-            "{label} exceeds the {} byte metadata limit.",
-            MAX_WORKSPACE_METADATA_BYTES
-        ));
-    }
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Could not prepare {label} directory: {error}"))?;
-    }
-    let incoming = destination.with_extension("json.incoming");
-    if metadata_entry_exists(&incoming, &format!("{label} staging file"))? {
-        ensure_regular_metadata_file(&incoming, &format!("{label} staging file"))?;
-        fs::remove_file(&incoming).map_err(|error| format!("Could not clear stale {label} staging file: {error}"))?;
-    }
-    let mut file = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&incoming)
-        .map_err(|error| format!("Could not create {label} staging file: {error}"))?;
-    file.write_all(bytes).map_err(|error| format!("Could not write {label} staging file: {error}"))?;
-    file.sync_all().map_err(|error| format!("Could not flush {label} staging file: {error}"))?;
-    drop(file);
-    replace_json_file(&incoming, destination, label)
-}
-
 fn recover_json_file(destination: &Path, label: &str) -> Result<(), String> {
-    let previous = destination.with_extension("json.previous");
-    let incoming = destination.with_extension("json.incoming");
-    let legacy_tmp = destination.with_extension("json.tmp");
-
-    if metadata_entry_exists(destination, label)? {
-        ensure_regular_metadata_file(destination, label)?;
-        return Ok(());
-    }
-
-    if metadata_entry_exists(&previous, &format!("previous {label}"))? {
-        ensure_regular_metadata_file(&previous, &format!("previous {label}"))?;
-        fs::rename(&previous, destination).map_err(|error| format!("Could not restore previous {label}: {error}"))?;
-        return Ok(());
-    }
-
-    let incoming_exists = metadata_entry_exists(&incoming, &format!("{label} staging file"))?;
-    let legacy_exists = metadata_entry_exists(&legacy_tmp, &format!("legacy {label} staging file"))?;
-    if incoming_exists && legacy_exists {
-        return Err(format!("LazyBuilder found ambiguous {label} recovery staging files. Both were preserved for manual review."));
-    }
-    let staging = if incoming_exists { Some(incoming) } else if legacy_exists { Some(legacy_tmp) } else { None };
-    if let Some(staging) = staging {
-        ensure_regular_metadata_file(&staging, &format!("{label} staging file"))?;
-        fs::rename(&staging, destination).map_err(|error| format!("Could not publish recovered {label}: {error}"))?;
-    }
-    Ok(())
+    persistence::recover_atomic_file(destination, label)
 }
 
 fn cleanup_json_recovery_files(destination: &Path, label: &str) -> Result<(), String> {
-    remove_metadata_file_if_exists(&destination.with_extension("json.previous"), &format!("previous {label}"))?;
-    remove_metadata_file_if_exists(&destination.with_extension("json.incoming"), &format!("{label} staging file"))?;
-    remove_metadata_file_if_exists(&destination.with_extension("json.tmp"), &format!("legacy {label} staging file"))
-}
-
-fn replace_json_file(source: &Path, destination: &Path, label: &str) -> Result<(), String> {
-    ensure_regular_metadata_file(source, &format!("{label} staging file"))?;
-    if metadata_entry_exists(destination, label)? {
-        ensure_regular_metadata_file(destination, label)?;
-        let backup = destination.with_extension("json.previous");
-        remove_metadata_file_if_exists(&backup, &format!("previous {label}"))?;
-        fs::rename(destination, &backup).map_err(|error| format!("Could not preserve previous {label}: {error}"))?;
-        match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(publish_error) => match fs::rename(&backup, destination) {
-                Ok(()) => Err(format!("Could not publish {label}; previous metadata was restored: {publish_error}")),
-                Err(rollback_error) => Err(format!("Could not publish {label} ({publish_error}) and could not restore previous metadata ({rollback_error}). Recovery files were preserved.")),
-            },
-        }
-    } else {
-        fs::rename(source, destination).map_err(|error| format!("Could not publish {label}: {error}"))
-    }
+    persistence::cleanup_recovery_files(destination, label)
 }
 
 fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Could not inspect {label}: {error}")),
-    }
+    persistence::metadata_entry_exists(path, label)
 }
 
 fn ensure_regular_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("LazyBuilder refused a symbolic link as {label}"));
-    }
-    #[cfg(windows)]
-    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(format!("LazyBuilder refused a Windows reparse point as {label}"));
-    }
-    if !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
-    }
-    Ok(())
+    persistence::safe_path::ensure_regular_file(path, label)
 }
 
 fn remove_metadata_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    if !metadata_entry_exists(path, label)? {
-        return Ok(());
-    }
-    ensure_regular_metadata_file(path, label)?;
-    fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))
+    persistence::safe_path::remove_regular_file_if_present(path, label)
 }
 
 fn add_pending_deletion(entry: PendingDeletion) -> Result<(), String> {
@@ -864,16 +749,14 @@ fn manifest_path(root: &Path) -> PathBuf { root.join("tools").join("lazybuilder"
 fn write_manifest(root: &Path, manifest: WorkspaceManifest) -> Result<(), String> {
     validate_manifest(&manifest)?;
     let path = manifest_path(root);
-    let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
-    write_json_file(&path, text.as_bytes(), "workspace manifest")
+    persistence::write_json_atomically(&path, &manifest, "workspace manifest")
 }
 fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
     let path = manifest_path(root);
     recover_json_file(&path, "workspace manifest")?;
     if !metadata_entry_exists(&path, "workspace manifest")? { return Ok(None); }
-    ensure_regular_metadata_file(&path, "workspace manifest")?;
-    let text = read_metadata_text(&path, "workspace manifest")?;
-    let manifest: WorkspaceManifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let manifest: WorkspaceManifest =
+        persistence::read_json(&path, "workspace manifest")?;
     validate_manifest(&manifest)?;
     cleanup_json_recovery_files(&path, "workspace manifest")?;
     Ok(Some(manifest))
@@ -1087,9 +970,9 @@ mod tests {
     fn oversized_workspace_metadata_is_rejected_before_parse() {
         let path = temp_metadata_path("oversized");
         let file = fs::File::create(&path).unwrap();
-        file.set_len(MAX_WORKSPACE_METADATA_BYTES + 1).unwrap();
+        file.set_len(4 * 1024 * 1024 + 1).unwrap();
 
-        let error = read_metadata_text(&path, "test workspace metadata").unwrap_err();
+        let error = persistence::read_json::<serde_json::Value>(&path, "test workspace metadata").unwrap_err();
         assert!(error.contains("metadata limit"));
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
