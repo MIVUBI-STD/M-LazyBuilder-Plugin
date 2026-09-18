@@ -1,4 +1,4 @@
-use crate::engine::workspace_registry;
+use crate::engine::{persistence, workspace_registry};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -325,8 +325,8 @@ fn validated_workspace_root(entry: &workspace_registry::WorkspaceEntry) -> Resul
 
 fn backup_snapshot_identity_matches(root: &Path, workspace_id: &str) -> Result<bool, String> {
     let path = root.join("tools").join("lazybuilder").join("config").join("workspace.json");
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read workspace manifest: {error}"))?;
-    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| format!("Could not parse workspace manifest: {error}"))?;
+    let value: serde_json::Value = persistence::read_json(&path, "backup workspace manifest")
+        .map_err(|error| format!("Could not validate backup workspace manifest: {error}"))?;
     Ok(value.get("workspaceId").and_then(serde_json::Value::as_str) == Some(workspace_id))
 }
 

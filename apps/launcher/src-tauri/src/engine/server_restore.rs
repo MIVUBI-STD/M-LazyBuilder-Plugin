@@ -405,8 +405,8 @@ where
 
 fn workspace_identity_matches(root: &Path, workspace_id: &str) -> Result<bool, String> {
     let manifest = root.join("tools").join("lazybuilder").join("config").join("workspace.json");
-    let text = fs::read_to_string(manifest).map_err(|error| format!("Could not read workspace manifest: {error}"))?;
-    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| format!("Could not parse workspace manifest: {error}"))?;
+    let value: serde_json::Value = persistence::read_json(&manifest, "restore workspace manifest")
+        .map_err(|error| format!("Could not validate restore workspace manifest: {error}"))?;
     Ok(value.get("workspaceId").and_then(serde_json::Value::as_str) == Some(workspace_id))
 }
 
