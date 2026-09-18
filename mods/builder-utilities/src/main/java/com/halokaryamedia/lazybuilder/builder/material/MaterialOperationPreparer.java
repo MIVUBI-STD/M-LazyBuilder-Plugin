@@ -27,8 +27,7 @@ public final class MaterialOperationPreparer {
             throw new IllegalArgumentException("Production material mutation requires durable history");
         }
 
-        ChangeSetWriter writer = history.begin(HistoryRequirement.REQUIRED, estimatedHistoryBytes, operation.id().toString())
-                .orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
+        ChangeSetWriter writer = history.beginDurable(operation.id().toString());
         try (writer) {
             long plannedChanges = 0L;
             for (ChunkWorkUnit unit : plan.workUnits()) {

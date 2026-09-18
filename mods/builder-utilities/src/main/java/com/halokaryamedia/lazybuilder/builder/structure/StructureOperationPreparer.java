@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.builder.structure;
 
 import com.halokaryamedia.lazybuilder.builder.history.ChangeSetWriter;
 import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSet;
-import com.halokaryamedia.lazybuilder.builder.history.HistoryRequirement;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.material.BlockStateSource;
@@ -47,11 +46,7 @@ public final class StructureOperationPreparer {
             throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         }
 
-        ChangeSetWriter writer = history.begin(
-                HistoryRequirement.REQUIRED,
-                estimatedHistoryBytes,
-                operationId
-        ).orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
+        ChangeSetWriter writer = history.beginDurable(operationId);
 
         long planned = 0L;
         try (writer) {

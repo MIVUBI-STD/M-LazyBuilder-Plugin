@@ -1,7 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.structure;
 
 import com.halokaryamedia.lazybuilder.builder.history.ChangeSetWriter;
-import com.halokaryamedia.lazybuilder.builder.history.HistoryRequirement;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
@@ -31,11 +30,7 @@ public final class StructureMutationPreparer {
             throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         }
 
-        ChangeSetWriter writer = history.begin(
-                HistoryRequirement.REQUIRED,
-                estimatedHistoryBytes,
-                operationId
-        ).orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
+        ChangeSetWriter writer = history.beginDurable(operationId);
 
         try (writer) {
             for (var chunk : plan.chunks()) {

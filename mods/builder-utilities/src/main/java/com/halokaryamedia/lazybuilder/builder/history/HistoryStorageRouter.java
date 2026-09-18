@@ -39,4 +39,24 @@ public final class HistoryStorageRouter {
         }
         return Optional.of(storage.begin(operationId));
     }
+
+    /**
+     * Starts a crash-recoverable mutation journal. Production world mutation must
+     * use this path so the complete BEFORE/AFTER plan survives process loss.
+     */
+    public ChangeSetWriter beginDurable(String operationId) throws IOException {
+        if (operationId == null || operationId.isBlank()) {
+            throw new IllegalArgumentException("operationId must be non-blank");
+        }
+        ChangeSetStorage storage = storageByTier.get(HistoryStorageTier.DISK);
+        if (storage == null) {
+            throw new IllegalStateException(
+                    "Crash-safe production mutation requires DISK History storage");
+        }
+        return storage.begin(operationId);
+    }
+
+    public boolean hasTier(HistoryStorageTier tier) {
+        return storageByTier.containsKey(Objects.requireNonNull(tier, "tier"));
+    }
 }

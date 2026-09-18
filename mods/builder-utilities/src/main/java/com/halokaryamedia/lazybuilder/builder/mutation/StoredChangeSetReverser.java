@@ -1,7 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.ChangeSetWriter;
-import com.halokaryamedia.lazybuilder.builder.history.HistoryRequirement;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 
@@ -27,11 +26,7 @@ public final class StoredChangeSetReverser {
         if (estimatedHistoryBytes < 0) throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         if (operationId == null || operationId.isBlank()) throw new IllegalArgumentException("operationId must be non-blank");
 
-        ChangeSetWriter writer = history.begin(
-                HistoryRequirement.REQUIRED,
-                estimatedHistoryBytes,
-                operationId
-        ).orElseThrow(() -> new IllegalStateException("Required history storage was not selected"));
+        ChangeSetWriter writer = history.beginDurable(operationId);
 
         try (writer) {
             source.visitChunks(chunk -> {
