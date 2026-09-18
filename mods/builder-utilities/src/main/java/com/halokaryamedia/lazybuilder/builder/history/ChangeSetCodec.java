@@ -61,8 +61,91 @@ public final class ChangeSetCodec {
         Objects.requireNonNull(direction, "direction");
         Objects.requireNonNull(consumer, "consumer");
         ScanContext context = openInput(input);
-        Counts counts = scan(context, direction, consumer, ReplayPhase.ALL);
-        return new Header(context.header.operationId, counts.changes, counts.extensions);
+        return replayOrdered(context, direction, consumer);
+    }
+
+
+    /**
+     * Single-pass ordered replay for callers that cannot reopen the input stream.
+     * REDO streams block frames immediately and buffers extension frames until the
+     * committed footer is validated. UNDO buffers both frame kinds so the complete
+     * dependency order can be reversed safely.
+     */
+    private static Header replayOrdered(
+            ScanContext context,
+            ReplayDirection direction,
+            HistoryReplayConsumer consumer
+    ) throws IOException {
+        DataInputStream data = context.data;
+        long observedChanges = 0;
+        long observedExtensions = 0;
+        Set<Long> seenChunks = new HashSet<>();
+        Set<ExtensionKey> seenExtensions = new HashSet<>();
+        List<ChunkChangeSet> undoChunks =
+                direction == ReplayDirection.UNDO ? new ArrayList<>() : List.of();
+        List<HistoryExtensionFrame> extensions = new ArrayList<>();
+
+        try {
+            while (true) {
+                int marker = data.readUnsignedByte();
+                if (marker == COMMIT_MARKER) {
+                    long committedChanges = data.readLong();
+                    long committedExtensions = data.readLong();
+                    verifyFooter(
+                            context,
+                            committedChanges,
+                            committedExtensions,
+                            observedChanges,
+                            observedExtensions
+                    );
+
+                    if (direction == ReplayDirection.REDO) {
+                        for (HistoryExtensionFrame frame : extensions) {
+                            consumer.acceptExtension(frame, frame.afterPayload());
+                        }
+                    } else {
+                        for (int i = extensions.size() - 1; i >= 0; i--) {
+                            HistoryExtensionFrame frame = extensions.get(i);
+                            consumer.acceptExtension(frame, frame.beforePayload());
+                        }
+                        for (int i = undoChunks.size() - 1; i >= 0; i--) {
+                            replayChunk(undoChunks.get(i), ReplayDirection.UNDO, consumer);
+                        }
+                    }
+                    return new Header(
+                            context.header.operationId,
+                            observedChanges,
+                            observedExtensions
+                    );
+                }
+
+                if (marker == CHUNK_MARKER) {
+                    ChunkChangeSet chunk = readChunk(data);
+                    requireUniqueChunk(seenChunks, chunk.chunkX(), chunk.chunkZ());
+                    observedChanges = Math.addExact(observedChanges, chunk.size());
+                    if (direction == ReplayDirection.REDO) {
+                        replayChunk(chunk, ReplayDirection.REDO, consumer);
+                    } else {
+                        undoChunks.add(chunk);
+                    }
+                    continue;
+                }
+
+                if (marker == EXTENSION_MARKER) {
+                    HistoryExtensionFrame frame = readExtension(data);
+                    requireUniqueExtension(seenExtensions, frame);
+                    observedExtensions = Math.addExact(observedExtensions, 1);
+                    extensions.add(frame);
+                    continue;
+                }
+
+                throw new IOException("Unknown History v2 frame marker: " + marker);
+            }
+        } catch (EOFException e) {
+            throw incomplete(e);
+        } catch (ArithmeticException e) {
+            throw new IOException("History count overflow", e);
+        }
     }
 
     public static Header replayBlocks(
