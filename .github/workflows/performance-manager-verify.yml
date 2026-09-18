@@ -1,14 +1,6 @@
 name: Performance Manager Verify
 
 on:
-  push:
-    branches: [utilities]
-    paths:
-      - 'mods/performance-manager/**'
-      - '.github/workflows/performance-manager-verify.yml'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'gradle/**'
   pull_request:
     branches: [Local, main]
     paths:
