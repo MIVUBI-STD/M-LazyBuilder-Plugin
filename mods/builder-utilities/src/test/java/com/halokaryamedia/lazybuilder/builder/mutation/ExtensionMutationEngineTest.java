@@ -4,51 +4,40 @@ import com.halokaryamedia.lazybuilder.builder.history.ChangeSetWriter;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
 import com.halokaryamedia.lazybuilder.builder.history.MemoryChangeSetStorage;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
-import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ExtensionMutationEngineTest {
     @Test
-    void executesAndReconcilesOpaqueExtensionFrames() throws Exception {
+    void reconcilesFullyAppliedOpaqueExtensionFrames() throws Exception {
         StoredChangeSet stored = stored();
-        FakeTarget target = new FakeTarget();
-        target.payload = new byte[]{1};
+        FakeTarget target = new FakeTarget(new byte[]{2});
 
         HistoryExtensionTargetRegistry registry =
                 new HistoryExtensionTargetRegistry(Map.of("lazybuilder:block_entity", target));
 
-        ExtensionMutationExecution execution = PreparedExtensionMutationExecutor.execute(
-                stored, registry, new CancellationSource().token());
-
-        assertEquals(MutationExecutionState.COMPLETED, execution.state());
-        assertArrayEquals(new byte[]{2}, target.payload);
-
         ExtensionReconciliationReport report =
                 PreparedExtensionMutationReconciler.reconcile(stored, registry);
         assertEquals(ReconciliationState.FULLY_APPLIED, report.state());
+        stored.close();
     }
 
     @Test
     void thirdPayloadStateIsConflict() throws Exception {
         StoredChangeSet stored = stored();
-        FakeTarget target = new FakeTarget();
-        target.payload = new byte[]{9};
+        FakeTarget target = new FakeTarget(new byte[]{9});
 
         HistoryExtensionTargetRegistry registry =
                 new HistoryExtensionTargetRegistry(Map.of("lazybuilder:block_entity", target));
 
-        ExtensionMutationExecution execution = PreparedExtensionMutationExecutor.execute(
-                stored, registry, new CancellationSource().token());
-
-        assertEquals(MutationExecutionState.CONFLICT, execution.state());
-        assertEquals("lazybuilder:block_entity", execution.conflictTypeId());
+        ExtensionReconciliationReport report =
+                PreparedExtensionMutationReconciler.reconcile(stored, registry);
+        assertEquals(ReconciliationState.CONFLICT, report.state());
+        stored.close();
     }
 
     private static StoredChangeSet stored() throws IOException {
@@ -61,16 +50,15 @@ class ExtensionMutationEngineTest {
     }
 
     private static final class FakeTarget implements HistoryExtensionMutationTarget {
-        byte[] payload = new byte[0];
+        private final byte[] payload;
+
+        private FakeTarget(byte[] payload) {
+            this.payload = payload.clone();
+        }
 
         @Override
         public byte[] read(HistoryExtensionFrame frame) {
             return payload.clone();
-        }
-
-        @Override
-        public void write(HistoryExtensionFrame frame, byte[] payload) {
-            this.payload = payload.clone();
         }
     }
 }
