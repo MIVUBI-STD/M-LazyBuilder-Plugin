@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder Builder Utilities");
     private static BuilderRuntime runtime;
+    private static AxiomRecoveryTool recoveryTool;
 
     @Override
     public void onInitializeClient() {
@@ -35,7 +36,8 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomStructureStampTool(services, runtime));
         services.toolRegistry().register(new AxiomSchematicCatalogTool(services, runtime));
         services.toolRegistry().register(new AxiomSchematicDistributionTool(services, runtime));
-        services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
+        recoveryTool = new AxiomRecoveryTool(services, runtime);
+        services.toolRegistry().register(recoveryTool);
         services.toolRegistry().register(new AxiomOperationCenterTool(services, runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
         ClientPlayConnectionEvents.JOIN.register(
@@ -106,6 +108,17 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         }
 
         try {
+            AxiomRecoveryTool recovery = recoveryTool;
+            if (recovery != null) recovery.releaseForWorldExit();
+        } catch (java.io.IOException e) {
+            LOGGER.error(
+                    "Failed to release Builder recovery wrappers on disconnect. "
+                            + "World timeline was intentionally left unchanged.",
+                    e);
+            return;
+        }
+
+        try {
             current.saveRuntimeProof("world-exit");
         } catch (java.io.IOException e) {
             LOGGER.error(
@@ -124,6 +137,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static void closeRuntime() {
         BuilderRuntime current = runtime;
         runtime = null;
+        recoveryTool = null;
         if (current == null) return;
         try {
             current.close();

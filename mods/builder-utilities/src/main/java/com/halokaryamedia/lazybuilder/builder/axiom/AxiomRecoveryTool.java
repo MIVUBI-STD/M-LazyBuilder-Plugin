@@ -33,6 +33,7 @@ public final class AxiomRecoveryTool implements CustomTool {
     private final int[] selectedIndex = {0};
 
     private List<RecoveredHistoryEntry> entries = List.of();
+    private String entriesScope;
     private String status = "Scan for durable Builder recovery plans";
 
     public AxiomRecoveryTool(AxiomClientServices services, BuilderRuntime runtime) {
@@ -193,6 +194,7 @@ public final class AxiomRecoveryTool implements CustomTool {
                             extensions,
                             operationId -> com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
                                     .belongsTo(operationId, scope));
+            entriesScope = entries.isEmpty() ? null : scope;
             selectedIndex[0] = 0;
             status = entries.isEmpty()
                     ? "No committed recovery plans found"
@@ -206,6 +208,7 @@ public final class AxiomRecoveryTool implements CustomTool {
     private void resumeSelected(RecoveredHistoryEntry entry) {
         boolean transferred = false;
         try {
+            requireEntriesCurrentWorld();
             ClientWorld world = requireWorld();
             var prepared = entry.blockOnly()
                     ? entry.transferForResume()
@@ -238,6 +241,7 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     private boolean canAuthoritativelyTransfer(RecoveredHistoryEntry entry) {
         try {
+            requireEntriesCurrentWorld();
             if (entry.blockReconciliation().state() == ReconciliationState.CONFLICT) {
                 return false;
             }
@@ -255,6 +259,7 @@ public final class AxiomRecoveryTool implements CustomTool {
     private void rollbackSelected(RecoveredHistoryEntry entry) {
         boolean transferred = false;
         try {
+            requireEntriesCurrentWorld();
             ClientWorld world = requireWorld();
             var prepared = entry.blockOnly()
                     ? entry.transferForResume()
@@ -293,6 +298,7 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     private void publishSelected(RecoveredHistoryEntry entry) {
         try {
+            requireEntriesCurrentWorld();
             entry.transferFullyAppliedTo(runtime.timeline());
             removeEntry(entry);
             status = "Recovered operation published to undo timeline";
@@ -315,8 +321,45 @@ public final class AxiomRecoveryTool implements CustomTool {
         ArrayList<RecoveredHistoryEntry> mutable = new ArrayList<>(entries);
         mutable.remove(entry);
         entries = List.copyOf(mutable);
+        if (entries.isEmpty()) entriesScope = null;
         if (selectedIndex[0] >= entries.size()) {
             selectedIndex[0] = Math.max(0, entries.size() - 1);
+        }
+    }
+
+    /**
+     * Releases scanned recovery wrappers when the client leaves their world.
+     * Durable journals stay on disk and become discoverable again after reconnect.
+     */
+    public void releaseForWorldExit() throws IOException {
+        if (entries.isEmpty()) {
+            entriesScope = null;
+            return;
+        }
+
+        IOException failure = null;
+        ArrayList<RecoveredHistoryEntry> remaining = new ArrayList<>();
+        for (RecoveredHistoryEntry entry : entries) {
+            try {
+                entry.releaseForRetry();
+            } catch (IOException e) {
+                remaining.add(entry);
+                if (failure == null) failure = e;
+                else failure.addSuppressed(e);
+            }
+        }
+        entries = List.copyOf(remaining);
+        selectedIndex[0] = 0;
+        if (entries.isEmpty()) entriesScope = null;
+        if (failure != null) throw failure;
+    }
+
+    private void requireEntriesCurrentWorld() {
+        if (entriesScope == null || entries.isEmpty()) return;
+        String currentScope = AxiomWorldScope.currentScopeId(requireWorld());
+        if (!entriesScope.equals(currentScope)) {
+            throw new IllegalStateException(
+                    "Recovery entries belong to a different world; rescan recovery plans");
         }
     }
 
