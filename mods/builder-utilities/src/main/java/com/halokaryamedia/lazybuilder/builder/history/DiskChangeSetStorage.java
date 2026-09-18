@@ -237,10 +237,11 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             ensureOpen();
             long changes = codec.commit();
             long extensions = codec.extensionCount();
-            channel.force(true);
-            channel.close();
 
             try {
+                channel.force(true);
+                channel.close();
+
                 try (InputStream input = Files.newInputStream(staging)) {
                     ChangeSetCodec.Header header = ChangeSetCodec.inspect(input);
                     if (!header.operationId().equals(operationId)
@@ -263,8 +264,10 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
                 return new DiskStoredChangeSet(
                         operationId, changes, extensions, committed, ownedCommittedPaths);
             } finally {
-                // On validation/publish failure finished remains false, so the enclosing
-                // try-with-resources can abort and delete the staging file safely.
+                // Release staging ownership for every commit failure, including fsync
+                // and channel-close failures. If the caller subsequently aborts, the
+                // staging file is deleted; if process teardown prevents that cleanup,
+                // the next runtime can discover it as recoverable/quarantined input.
                 ownedStagingPaths.remove(staging);
             }
         }
