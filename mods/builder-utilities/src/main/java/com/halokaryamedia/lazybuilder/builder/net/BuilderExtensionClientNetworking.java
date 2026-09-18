@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -18,10 +19,9 @@ public final class BuilderExtensionClientNetworking {
     private static final AtomicReference<BuilderExtensionCapabilities> CAPABILITIES =
             new AtomicReference<>(
                     BuilderExtensionCapabilities.unavailable("not connected"));
-    private static final ConcurrentHashMap<
-            String,
-            Consumer<BuilderExtensionWireProtocol.Response>
-            > PENDING = new ConcurrentHashMap<>();
+    private static final long REQUEST_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final ConcurrentHashMap<String, PendingRequest> PENDING =
+            new ConcurrentHashMap<>();
 
     private static volatile String pendingCapabilityRequest;
     private static boolean registered;
@@ -70,6 +70,23 @@ public final class BuilderExtensionClientNetworking {
     public static void cancelPending(String operationId) {
         if (operationId == null || operationId.isBlank()) return;
         PENDING.remove(operationId);
+    }
+
+    /**
+     * Fails requests that have received no authoritative response within the
+     * bounded transport deadline. Dispatchers call this from their normal pump
+     * loop so a connected-but-silent server cannot strand durable operations.
+     */
+    public static void expireTimedOutRequests() {
+        long now = System.nanoTime();
+        PENDING.forEach((operationId, pending) -> {
+            if (now - pending.startedNanos() < REQUEST_TIMEOUT_NANOS) return;
+            if (PENDING.remove(operationId, pending)) {
+                pending.callback().accept(new BuilderExtensionWireProtocol.Error(
+                        operationId,
+                        "Builder extension request timed out after 30 seconds"));
+            }
+        });
     }
 
     public static void sendBlockEntityBatch(
@@ -174,7 +191,8 @@ public final class BuilderExtensionClientNetworking {
             BuilderExtensionWireProtocol.Request request,
             Consumer<BuilderExtensionWireProtocol.Response> callback
     ) throws IOException {
-        if (PENDING.putIfAbsent(operationId, callback) != null) {
+        PendingRequest pending = new PendingRequest(callback, System.nanoTime());
+        if (PENDING.putIfAbsent(operationId, pending) != null) {
             throw new IllegalStateException(
                     "Operation already has a pending extension request: " + operationId);
         }
@@ -249,9 +267,8 @@ public final class BuilderExtensionClientNetworking {
                 operationId =
                         ((BuilderExtensionWireProtocol.Error) response).operationId();
             }
-            Consumer<BuilderExtensionWireProtocol.Response> callback =
-                    PENDING.remove(operationId);
-            if (callback != null) callback.accept(response);
+            PendingRequest pending = PENDING.remove(operationId);
+            if (pending != null) pending.callback().accept(response);
         } catch (IOException | RuntimeException failure) {
             String detail = "server extension response rejected: " + concise(failure);
             pendingCapabilityRequest = null;
@@ -261,9 +278,9 @@ public final class BuilderExtensionClientNetworking {
             // A malformed response must not strand active dispatchers in WAITING.
             // Fail every outstanding request explicitly; callers can then preserve
             // their durable journal for recovery instead of hanging indefinitely.
-            PENDING.forEach((operationId, callback) -> {
-                if (PENDING.remove(operationId, callback)) {
-                    callback.accept(new BuilderExtensionWireProtocol.Error(
+            PENDING.forEach((operationId, pending) -> {
+                if (PENDING.remove(operationId, pending)) {
+                    pending.callback().accept(new BuilderExtensionWireProtocol.Error(
                             operationId, detail));
                 }
             });
@@ -275,12 +292,21 @@ public final class BuilderExtensionClientNetworking {
         CAPABILITIES.set(BuilderExtensionCapabilities.unavailable(status));
 
         String detail = "Builder extension transport reset: " + status;
-        PENDING.forEach((operationId, callback) -> {
-            if (PENDING.remove(operationId, callback)) {
-                callback.accept(new BuilderExtensionWireProtocol.Error(
+        PENDING.forEach((operationId, pending) -> {
+            if (PENDING.remove(operationId, pending)) {
+                pending.callback().accept(new BuilderExtensionWireProtocol.Error(
                         operationId, detail));
             }
         });
+    }
+
+    private record PendingRequest(
+            Consumer<BuilderExtensionWireProtocol.Response> callback,
+            long startedNanos
+    ) {
+        private PendingRequest {
+            Objects.requireNonNull(callback, "callback");
+        }
     }
 
     private static String concise(Throwable failure) {
