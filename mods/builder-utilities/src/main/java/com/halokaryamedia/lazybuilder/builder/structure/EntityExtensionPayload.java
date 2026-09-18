@@ -17,7 +17,7 @@ public record EntityExtensionPayload(
         byte[] templateNbt
 ) {
     private static final int VERSION = 1;
-    private static final int MAX_TEMPLATE_BYTES = 32 * 1024;
+    public static final int MAX_TEMPLATE_BYTES = 32 * 1024;
 
     public EntityExtensionPayload {
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {

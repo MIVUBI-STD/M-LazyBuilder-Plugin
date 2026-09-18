@@ -5,6 +5,8 @@ import com.halokaryamedia.lazybuilder.builder.structure.StructureBiomeSample;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureBlockEntity;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureCapture;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureEntity;
+import com.halokaryamedia.lazybuilder.builder.structure.EntityExtensionPayload;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -71,23 +73,20 @@ public final class AxiomStructureSnapshotCapture {
                     BlockEntity blockEntity = world.getBlockEntity(pos);
                     if (blockEntity == null) continue;
 
-                    NbtCompound payload = blockEntity.createNbt(world.getRegistryManager());
-                    payload.remove("id");
-                    payload.remove("x");
-                    payload.remove("y");
-                    payload.remove("z");
-                    payload.remove("Pos");
-                    var typeId = Registries.BLOCK_ENTITY_TYPE.getId(blockEntity.getType());
-                    if (typeId == null) {
-                        throw new IOException("Block entity type is not registered at " + pos);
+                    byte[] payload = AxiomBlockEntityPayloads.capture(
+                            world, (int) x, (int) y, (int) z);
+                    if (payload.length
+                            > BuilderExtensionWireProtocol.MAX_BLOCK_ENTITY_NBT_BYTES) {
+                        throw new IOException(
+                                "Block entity payload exceeds server bridge limit at "
+                                        + pos + ": " + payload.length + " bytes");
                     }
-                    payload.putString("Id", typeId.toString());
 
                     result.add(new StructureBlockEntity(
                             Math.toIntExact(x - bounds.minX()),
                             Math.toIntExact(y - bounds.minY()),
                             Math.toIntExact(z - bounds.minZ()),
-                            serialize(payload)
+                            payload
                     ));
                 }
             }
@@ -153,11 +152,21 @@ public final class AxiomStructureSnapshotCapture {
             }
             payload.putString("Id", typeId.toString());
 
+            byte[] encoded = serialize(payload);
+            if (encoded.length > EntityExtensionPayload.MAX_TEMPLATE_BYTES) {
+                throw new IOException(
+                        "Entity template exceeds capture limit "
+                                + EntityExtensionPayload.MAX_TEMPLATE_BYTES
+                                + " bytes: " + entity.getType());
+            }
+            // Also validate the exact Paper snapshot SNBT representation now.
+            AxiomEntityTemplate.decode(encoded);
+
             result.add(new StructureEntity(
                     entity.getX() - bounds.minX(),
                     entity.getY() - bounds.minY(),
                     entity.getZ() - bounds.minZ(),
-                    serialize(payload)
+                    encoded
             ));
         }
         return List.copyOf(result);
