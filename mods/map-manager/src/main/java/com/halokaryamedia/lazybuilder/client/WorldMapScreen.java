@@ -6,7 +6,6 @@ import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.Handle;
 import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.SelectionRect;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.RotationAxis;
@@ -60,8 +59,6 @@ public final class WorldMapScreen extends Screen {
     private boolean showAllWorlds;
     private int worldListOffset;
     private UUID selectedWorldId;
-
-    private TextFieldWidget exportNameField;
 
     private final MapAreaSelectionState areaSelection = new MapAreaSelectionState();
 
@@ -147,13 +144,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void initExportNameField() {
-        MapExportWorkspacePanel.Rect field = exportPanel.nameRect(width, height);
-        exportNameField = new TextFieldWidget(
-                textRenderer, field.left(), field.top(), field.width(), field.height(), Text.literal("World Name"));
-        exportNameField.setMaxLength(80);
-        exportNameField.setText(exportWorkspace.artifactName());
-        exportNameField.setChangedListener(exportWorkspace::artifactName);
-        addDrawableChild(exportNameField);
+        addDrawableChild(exportPanel.initializeNameField(textRenderer, exportWorkspace, width, height));
     }
 
     @Override
@@ -551,7 +542,6 @@ public final class WorldMapScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (exportWorkspace.active()) {
-            if (exportNameField != null && exportNameField.mouseClicked(mouseX, mouseY, button)) return true;
             if (button == 0) {
                 MapExportWorkspacePanel.Action action = exportPanel.actionAt(
                         exportWorkspace,
@@ -798,7 +788,7 @@ public final class WorldMapScreen extends Screen {
             exitExportWorkspace();
             return true;
         }
-        if (exportWorkspace.active() && exportNameField != null && exportNameField.isFocused()) {
+        if (exportWorkspace.active() && exportPanel.nameFieldFocused()) {
             return super.keyPressed(keyCode, scanCode, modifiers);
         }
         if (keyCode == GLFW.GLFW_KEY_M) {
@@ -860,9 +850,8 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void exitExportWorkspace() {
-        if (exportNameField != null) exportWorkspace.artifactName(exportNameField.getText());
         exportWorkspace.exit();
-        exportNameField = null;
+        exportPanel.clearControls();
         clearAreaSelection();
         invalidateRasterViewport();
         clearAndInit();
@@ -910,14 +899,14 @@ public final class WorldMapScreen extends Screen {
     private void submitExport() {
         UUID currentId = currentWorldId();
         if (!exportWorkspace.active() || currentId == null || !exportWorkspace.initializedFor(currentId) || exportBusy()) return;
-        String artifact = exportNameField == null ? exportWorkspace.artifactName() : exportNameField.getText();
+        String artifact = exportWorkspace.artifactName();
         artifact = artifact == null ? "" : artifact.strip();
         if (artifact.isEmpty()) {
             LazyBuilderClientNetworking.notifyPlayer("Choose a world name before exporting.");
             return;
         }
         exportWorkspace.artifactName(artifact);
-        if (exportNameField != null && !exportNameField.getText().equals(artifact)) exportNameField.setText(artifact);
+        exportPanel.updateNameField(artifact);
 
         if (exportWorkspace.scope() == MapExportWorkspaceState.Scope.CUSTOM_AREA) {
             if (!areaSelection.active || !areaSelection.ownsWorld(currentId)) {
