@@ -24,6 +24,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private final Path schematicDirectory;
     private final DiskChangeSetStorage diskHistory;
     private final BuilderRuntimeMetrics metrics;
+    private final BuilderRuntimeProofStore proofStore;
     private boolean closed;
 
     private BuilderRuntime(
@@ -32,7 +33,8 @@ public final class BuilderRuntime implements AutoCloseable {
             ExecutionBudget dispatchBudget,
             Path schematicDirectory,
             DiskChangeSetStorage diskHistory,
-            BuilderRuntimeMetrics metrics
+            BuilderRuntimeMetrics metrics,
+            BuilderRuntimeProofStore proofStore
     ) {
         this.timeline = timeline;
         this.history = history;
@@ -40,12 +42,14 @@ public final class BuilderRuntime implements AutoCloseable {
         this.schematicDirectory = schematicDirectory;
         this.diskHistory = diskHistory;
         this.metrics = metrics;
+        this.proofStore = proofStore;
     }
 
     public static BuilderRuntime createDefault() {
         Path builderDir = FabricLoader.getInstance().getConfigDir().resolve("lazybuilder");
         Path historyDir = builderDir.resolve("builder-history");
         Path schematicDir = builderDir.resolve("schematics");
+        Path proofDir = builderDir.resolve("runtime-proofs");
         DiskChangeSetStorage diskHistory = new DiskChangeSetStorage(historyDir);
         HistoryStorageRouter router = new HistoryStorageRouter(
                 new HistorySizingPolicy(8 * MIB, 64 * MIB),
@@ -58,7 +62,8 @@ public final class BuilderRuntime implements AutoCloseable {
                 new ExecutionBudget(Duration.ofMillis(4), 4, 65_536, 16 * MIB),
                 schematicDir,
                 diskHistory,
-                new BuilderRuntimeMetrics()
+                new BuilderRuntimeMetrics(),
+                new BuilderRuntimeProofStore(proofDir)
         );
     }
 
@@ -74,11 +79,28 @@ public final class BuilderRuntime implements AutoCloseable {
     public Path schematicDirectory() { return schematicDirectory; }
     public DiskChangeSetStorage diskHistory() { return diskHistory; }
     public BuilderRuntimeMetrics metrics() { return metrics; }
+    public BuilderRuntimeProofStore proofStore() { return proofStore; }
+
+    public Path saveRuntimeProof(String label) throws IOException {
+        return proofStore.writeSnapshot(metrics.snapshot(), label);
+    }
 
     @Override
     public synchronized void close() throws IOException {
         if (closed) return;
         closed = true;
-        timeline.close();
+        IOException failure = null;
+        try {
+            proofStore.writeSnapshot(metrics.snapshot(), "shutdown");
+        } catch (IOException e) {
+            failure = e;
+        }
+        try {
+            timeline.close();
+        } catch (IOException e) {
+            if (failure == null) failure = e;
+            else failure.addSuppressed(e);
+        }
+        if (failure != null) throw failure;
     }
 }

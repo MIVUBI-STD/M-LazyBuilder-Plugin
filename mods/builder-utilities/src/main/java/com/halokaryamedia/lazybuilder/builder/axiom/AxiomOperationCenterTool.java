@@ -44,6 +44,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
         ImGui.separator();
 
         if (ImGui.button("Refresh Builder Status")) refresh();
+        if (ImGui.button("Save Runtime Proof Snapshot")) saveProof();
 
         if (replay != null && !replay.finished()) {
             ImGui.textWrapped("Mixed replay: " + replay.status());
@@ -74,6 +75,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
         }
 
         var proof = runtime.metrics().snapshot();
+        ImGui.textWrapped("Proof directory: " + runtime.proofStore().directory());
         ImGui.textWrapped("Runtime proof: started=" + proof.operationsStarted()
                 + " completed=" + proof.operationsCompleted()
                 + " cancelled=" + proof.operationsCancelled()
@@ -156,6 +158,15 @@ public final class AxiomOperationCenterTool implements CustomTool {
         return message == null || message.isBlank()
                 ? failure.getClass().getSimpleName()
                 : message;
+    }
+
+    private void saveProof() {
+        try {
+            var path = runtime.saveRuntimeProof("manual");
+            status = "Saved runtime proof: " + path.getFileName();
+        } catch (Exception e) {
+            status = "Runtime proof save failed: " + concise(e);
+        }
     }
 
     private void refresh() {
