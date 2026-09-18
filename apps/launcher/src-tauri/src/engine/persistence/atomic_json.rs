@@ -47,6 +47,8 @@ pub fn save<T: Serialize>(path: &Path, label: &str, value: &T) -> Result<(), Str
 pub fn recover(path: &Path, label: &str) -> Result<(), String> {
     let previous = previous_path(path);
     let temporary = temporary_path(path);
+    let legacy_incoming = legacy_incoming_path(path);
+
     if safe_path::entry_exists(path, label)? {
         safe_path::ensure_regular_file(path, label)?;
         return Ok(());
@@ -56,16 +58,34 @@ pub fn recover(path: &Path, label: &str) -> Result<(), String> {
         fs::rename(&previous, path).map_err(|error| format!("Could not restore previous {label}: {error}"))?;
         return Ok(());
     }
-    if safe_path::entry_exists(&temporary, &format!("{label} staging file"))? {
+
+    let has_temporary = safe_path::entry_exists(&temporary, &format!("{label} staging file"))?;
+    let has_legacy = safe_path::entry_exists(&legacy_incoming, &format!("legacy {label} staging file"))?;
+    if has_temporary && has_legacy {
+        safe_path::ensure_regular_file(&temporary, &format!("{label} staging file"))?;
+        safe_path::ensure_regular_file(&legacy_incoming, &format!("legacy {label} staging file"))?;
+        return Err(format!(
+            "{label} recovery is ambiguous because both canonical and legacy staging files exist. Recovery evidence was preserved."
+        ));
+    }
+
+    if has_temporary {
         safe_path::ensure_regular_file(&temporary, &format!("{label} staging file"))?;
         fs::rename(&temporary, path).map_err(|error| format!("Could not publish recovered {label}: {error}"))?;
+    } else if has_legacy {
+        safe_path::ensure_regular_file(&legacy_incoming, &format!("legacy {label} staging file"))?;
+        fs::rename(&legacy_incoming, path).map_err(|error| format!("Could not publish legacy recovered {label}: {error}"))?;
     }
     Ok(())
 }
 
 pub fn cleanup_recovery_files(path: &Path, label: &str) -> Result<(), String> {
     safe_path::remove_regular_file_if_present(&previous_path(path), &format!("previous {label}"))?;
-    safe_path::remove_regular_file_if_present(&temporary_path(path), &format!("{label} staging file"))
+    safe_path::remove_regular_file_if_present(&temporary_path(path), &format!("{label} staging file"))?;
+    safe_path::remove_regular_file_if_present(
+        &legacy_incoming_path(path),
+        &format!("legacy {label} staging file"),
+    )
 }
 
 fn replace(source: &Path, destination: &Path, label: &str) -> Result<(), String> {
@@ -99,6 +119,10 @@ fn previous_path(path: &Path) -> std::path::PathBuf {
     path.with_extension("json.previous")
 }
 
+fn legacy_incoming_path(path: &Path) -> std::path::PathBuf {
+    path.with_extension("json.incoming")
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -107,6 +131,47 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn legacy_incoming_recovers_when_no_canonical_copy_exists() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-atomic-json-legacy-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("legacy.json");
+        let legacy = path.with_extension("json.incoming");
+        fs::write(&legacy, br#"{"value":1}"#).unwrap();
+
+        super::recover(&path, "legacy metadata").unwrap();
+        let value: serde_json::Value = read(&path, "legacy metadata").unwrap();
+        assert_eq!(value["value"], 1);
+        assert!(!legacy.exists());
+
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn dual_staging_is_preserved_as_ambiguous() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-atomic-json-ambiguous-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("ambiguous.json");
+        let temporary = path.with_extension("json.tmp");
+        let legacy = path.with_extension("json.incoming");
+        fs::write(&temporary, b"{}").unwrap();
+        fs::write(&legacy, b"{}").unwrap();
+
+        assert!(super::recover(&path, "ambiguous metadata").is_err());
+        assert!(temporary.exists());
+        assert!(legacy.exists());
+
+        let _ = fs::remove_dir_all(directory);
+    }
 
     #[test]
     fn oversized_atomic_json_is_rejected_before_parse() {
