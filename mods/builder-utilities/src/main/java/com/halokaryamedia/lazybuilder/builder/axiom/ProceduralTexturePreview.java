@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.material.FractalNoiseField;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialContext;
+import com.halokaryamedia.lazybuilder.builder.material.ScalarField;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
@@ -32,7 +33,24 @@ public final class ProceduralTexturePreview {
             throw new IllegalArgumentException("threshold must be in [0,1]");
         }
 
-        FractalNoiseField field = field(frequency, octaves);
+        return sample(bounds, seed, field(frequency, octaves), threshold);
+    }
+
+    public static List<PlacementPoint> sample(
+            BlockBounds bounds,
+            OperationSeed seed,
+            ScalarField field,
+            double threshold
+    ) {
+        if (bounds.blockCount() > MAX_CANDIDATE_VOXELS) {
+            throw new IllegalArgumentException(
+                    "texture region exceeds " + MAX_CANDIDATE_VOXELS + " candidate blocks");
+        }
+        if (!Double.isFinite(threshold) || threshold < 0.0 || threshold > 1.0) {
+            throw new IllegalArgumentException("threshold must be in [0,1]");
+        }
+        if (field == null) throw new NullPointerException("field");
+
         List<PlacementPoint> selected = new ArrayList<>();
         int ordinal = 0;
 

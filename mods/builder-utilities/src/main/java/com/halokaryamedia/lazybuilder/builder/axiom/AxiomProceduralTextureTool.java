@@ -10,6 +10,7 @@ import com.halokaryamedia.lazybuilder.builder.material.MaterialMask;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialOperation;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialOperationPreparer;
 import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
+import com.halokaryamedia.lazybuilder.builder.material.ScalarField;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationDisposition;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
@@ -56,6 +57,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private final int[] octaves = {4};
     private final float[] threshold = {0.58f};
     private final int[] seedValue = {424242};
+    private final int[] fieldMode = {0};
 
     private BlockPos first;
     private BlockPos second;
@@ -123,7 +125,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Set two corners. Fractal noise applies Axiom's active block only where the field is above Threshold; all other blocks are preserved.");
+        ImGui.textWrapped("Set two corners. Choose Noise, Slope, or Curvature as a normalized field. Axiom's active block is applied where the field is above Threshold.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -138,8 +140,13 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         ImGui.textWrapped(idleStatus);
         boolean changed = false;
-        changed |= ImGui.sliderFloat("Frequency", frequency, 0.01f, 0.5f);
-        changed |= ImGui.sliderInt("Octaves", octaves, 1, 8);
+        changed |= ImGui.sliderInt("Field Mode (0 Noise / 1 Slope / 2 Curvature)", fieldMode, 0, 2);
+        if (fieldMode[0] == 0) {
+            changed |= ImGui.sliderFloat("Frequency", frequency, 0.01f, 0.5f);
+        }
+        if (fieldMode[0] == 0) {
+            changed |= ImGui.sliderInt("Octaves", octaves, 1, 8);
+        }
         changed |= ImGui.sliderFloat("Threshold", threshold, 0.0f, 1.0f);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
 
@@ -150,7 +157,8 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         if (changed && first != null && second != null) rebuildPreview();
         if (first != null && second != null) {
-            ImGui.textWrapped("Preview selected blocks: " + previewPoints.size());
+            ImGui.textWrapped("Field: " + AxiomTextureFields.name(fieldMode[0])
+                    + " | Preview selected blocks: " + previewPoints.size());
         }
     }
 
@@ -175,11 +183,15 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private void rebuildPreview() {
         try {
             BlockBounds bounds = bounds();
+            ClientWorld world = Objects.requireNonNull(
+                    MinecraftClient.getInstance().world,
+                    "Minecraft client world is unavailable");
+            ScalarField field = AxiomTextureFields.create(
+                    fieldMode[0], world, frequency[0], octaves[0]);
             previewPoints = ProceduralTexturePreview.sample(
                     bounds,
                     new OperationSeed(seedValue[0]),
-                    frequency[0],
-                    octaves[0],
+                    field,
                     threshold[0]
             );
             ensurePreview().update(previewPoints);
@@ -200,8 +212,10 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
         BuilderMaterial active =
                 new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
+        ScalarField field = AxiomTextureFields.create(
+                fieldMode[0], world, frequency[0], octaves[0]);
         BuilderMaterial material = new ConditionalMaterial(
-                ProceduralTexturePreview.field(frequency[0], octaves[0]),
+                field,
                 threshold[0],
                 active,
                 ExistingBlockMaterial.INSTANCE
