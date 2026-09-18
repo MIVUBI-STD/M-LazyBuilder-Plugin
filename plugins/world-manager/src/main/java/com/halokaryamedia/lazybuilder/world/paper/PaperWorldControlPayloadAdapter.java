@@ -39,8 +39,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Thin Paper adapter for the Fabric World Manager control surface. */
 public final class PaperWorldControlPayloadAdapter implements PluginMessageListener, Listener {
     public static final String CHANNEL = "lazybuilder:world";
-    public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
-    public static final String TELEPORT_PERMISSION = "lazybuilder.world.teleport";
 
     private final JavaPlugin plugin;
     private final WorldRegistry registry;
@@ -196,7 +194,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                 requireAnyWorldPermission(player);
                 List<WorldControlWireProtocol.WorldSummary> worlds = registry.all().stream().map(this::summary).toList();
                 yield new WorldControlWireProtocol.WorldList(
-                        worlds, player.hasPermission(MANAGE_PERMISSION), player.hasPermission(TELEPORT_PERMISSION));
+                        worlds, player.hasPermission(WorldPermissionNodes.MANAGE), player.hasPermission(WorldPermissionNodes.TELEPORT));
             }
             case WorldControlWireProtocol.GetExportFormats ignored -> throw new IllegalStateException("Export formats must use async capability path");
             case WorldControlWireProtocol.InspectImport ignored -> throw new IllegalStateException("Import inspection must use async path");
@@ -592,7 +590,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private void requireAnyWorldPermission(Player player) {
-        if (!player.hasPermission(MANAGE_PERMISSION) && !player.hasPermission(TELEPORT_PERMISSION)) {
+        if (!player.hasPermission(WorldPermissionNodes.MANAGE) && !player.hasPermission(WorldPermissionNodes.TELEPORT)) {
             throw new IllegalStateException("Missing LazyBuilder world permission");
         }
     }
@@ -601,8 +599,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (!player.hasPermission(permission)) throw new IllegalStateException("Missing permission: " + permission);
     }
 
-    private static void requireManage(Player player) { requirePermission(player, MANAGE_PERMISSION); }
-    private static void requireTeleport(Player player) { requirePermission(player, TELEPORT_PERMISSION); }
+    private static void requireManage(Player player) { requirePermission(player, WorldPermissionNodes.MANAGE); }
+    private static void requireTeleport(Player player) { requirePermission(player, WorldPermissionNodes.TELEPORT); }
 
     private static byte[] encode(WorldControlWireProtocol.Response response) {
         try { return WorldControlWireProtocol.encodeResponse(response); }
