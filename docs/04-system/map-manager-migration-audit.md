@@ -1,10 +1,10 @@
-# Map Manager Migration Audit
+# Map Manager Architecture Audit
 
-Status: C1 identity and source-path migration applied on the `Local` branch; exact-HEAD CI verification remains required after structural changes.
+Status: active source-of-truth for Map Manager ownership on the `Local` branch.
 
 ## Goal
 
-Maintain one clear client mod: **LazyBuilder Map Manager**, without changing runtime behavior and without creating unnecessary shared/core modules.
+Maintain one clear client mod: **LazyBuilder Map Manager**, without creating parallel client frameworks or duplicate runtime ownership.
 
 Product rule:
 
@@ -12,126 +12,113 @@ Product rule:
 1 Manager = 1 Fabric mod = 1 JAR
 ```
 
-Technical identifiers such as Fabric mod IDs and Gradle artifact names are implementation details of that one mod, not separate plugins.
-
-## Current result
-
-The former generic `client/fabric` project has been identified as Map Manager-owned and its identity has already been migrated to **LazyBuilder Map Manager**.
-
-The canonical source path is now:
+The canonical Map Manager source path is:
 
 ```text
-client/map-manager/
+mods/map-manager/
 ```
 
-The source-path move is mechanical: Java packages and runtime behavior are intentionally unchanged during this step. CI, version synchronization, and repository verification paths are updated together so there is no second active client source authority.
-
-## Ownership classification
-
-### Map Manager — definite ownership
-
-These classes belong directly to Map Manager because they implement world/map/transfer behavior:
-
-- `AddWorldScreen`
-- `ClientFileDialogs`
-- `ClientMapController`
-- `ClientMapSurfaceCache`
-- `ClientTransferController`
-- `ClientWorldController`
-- `ConfirmWorldActionScreen`
-- `CreateWorldScreen`
-- `DeleteWorldScreen`
-- `DuplicateWorldScreen`
-- `WorldManagerScreen`
-- `WorldMapScreen`
-- `WorldNavigationPreferences`
-- `WorldSettingsScreen`
-- `WorldTransferPreferences`
-- `WorldTransferScreen`
-- `net/MapPayload`
-- `net/TransferPayload`
-- `net/WorldPayload`
-- `LazyBuilderClientNetworking`
-
-### Generic-looking classes — remain inside Map Manager
-
-The following names look generic, but their current implementation is not a reusable client framework:
-
-- `LazyBuilderClient`
-- `LazyBuilderClientUi`
-- `LbUi`
-- `LbButtonWidget`
-
-Decision: **keep them in Map Manager during C1**.
-
-Reasoning:
-
-- `LazyBuilderClient` constructs only `ClientWorldController`, `ClientMapController`, and `ClientTransferController` and registers their networking/UI.
-- `LazyBuilderClientUi` registers the map entry key and opens `WorldMapScreen`.
-- `LbUi` and `LbButtonWidget` are currently visual primitives used by the existing Map Manager screens.
-- There is no proven second client manager consuming these classes yet.
-
-Do not create `client-core`, `client-common`, `shared-ui`, or another mandatory runtime dependency during C1.
-
-## Applied identity
-
-User-facing component:
+The canonical shared protocol remains:
 
 ```text
-LazyBuilder Map Manager
+shared/protocol/
 ```
 
-One deployable output:
+Server authority for managed worlds, export execution, transfer, persistence, and permission checks remains under:
 
 ```text
-lazybuilder-map-manager.jar
+plugins/world-manager/
 ```
 
-The Fabric mod ID is internal implementation metadata for this same mod and is not a separate component.
+## Current ownership
 
-## C1 migration boundary
+### Screen / client coordination
 
-C1 changes identity and organization only. It does not add Utility Manager or Performance Manager features.
+`WorldMapScreen` remains the top-level coordinator for the fullscreen map UI. It must not become the permanent owner for unrelated state.
 
-Applied/allowed C1 changes:
+State extracted from the screen is intentionally narrow:
 
-1. Fabric display identity changed from generic LazyBuilder Client to LazyBuilder Map Manager.
-2. Build artifact renamed to `lazybuilder-map-manager`.
-3. Fabric mod ID migrated to the Map Manager-specific ID.
-4. Gradle root project renamed accordingly.
-5. Source authority moved mechanically from `client/fabric/` to `client/map-manager/`.
-6. CI/version scripts updated to the canonical Map Manager path.
-7. Existing map/world/transfer behavior and protocol remain unchanged.
+- `MapViewportState` — map camera center, pan, and zoom state.
+- `MapAreaSelectionState` — chunk-aligned selection identity, bounds, and drag/resize state.
+- `MapRasterPresentationState` — raster presentation snapshot and texture lifecycle.
+- `MapExportWorkspaceState` — export workspace configuration only.
 
-Not allowed during C1:
+Do not replace these with a generic state-management framework.
 
-- no Utility Manager implementation
-- no Performance Manager implementation
-- no build/helper tools
-- no Axiom duplication
-- no generic client framework
-- no renderer/performance engine work
-- no feature redesign of world/map/transfer behavior
+### Surface cache
 
-## Package direction
+`ClientMapSurfaceCache` owns resident explored-map memory, pending sampling, bounded region residency, and async I/O coordination.
 
-Java package movement is deliberately deferred. The existing package path can remain while C1 structural changes are validated. A future package cleanup should be a dedicated mechanical change and must not be mixed with new functionality.
+Disk-format responsibilities are separate:
 
-Possible future ownership-explicit package:
+- `MapSurfaceRegionStore` — regional cache codec, atomic write, read validation, signed region naming.
+- `MapSurfaceLegacyMigrator` — one-way migration from the old whole-map cache format.
 
-```text
-com.halokaryamedia.lazybuilder.mapmanager
-```
+The cache must never force-load chunks and never become authoritative for server world state.
 
-Do not perform this rename merely for cosmetic consistency before a clean verification baseline exists.
+### Networking and authority
 
-## Compatibility rules
+- `ClientMapController` owns client request correlation and presentation state.
+- `MapActionWireProtocol` owns the bounded wire contract.
+- `PaperMapActionPayloadAdapter` and World Manager services remain server authority.
+- stale request responses must remain rejectable by request ID.
+- client-only presentation state must never bypass server permission or managed-world validation.
 
-- World-Manager wire/protocol identifiers remain unchanged.
-- Vanilla key behavior remains unchanged unless a real conflict is proven.
-- There is exactly one active Map Manager source authority: `client/map-manager/`.
-- The old `client/fabric/` source path must not remain as a duplicate compatibility copy.
+## Compatibility policy
 
-## Verification checkpoint
+Compatibility code is allowed only when a real persisted/runtime consumer still exists.
 
-C1 is considered complete only after the repository `Verify` workflow is green for the exact `Local` HEAD containing the canonical path move.
+Current rule for legacy surface cache migration:
+
+1. migration is **read-only from the legacy source**;
+2. output is written into the current regional format;
+3. a migration marker prevents repeated conversion;
+4. new code must never produce the legacy format;
+5. legacy migration should be removed only after the supported upgrade window is explicitly closed.
+
+Do not add new compatibility overloads without a known consumer. The unused legacy area-export overload was removed after the active export workspace was confirmed to always send explicit export settings.
+
+## Non-goals
+
+Do not introduce:
+
+- `client-core`
+- `client-common`
+- generic `shared-ui`
+- a second map renderer
+- a second persistence/cache authority
+- a second export workflow
+- a generic state framework
+- duplicate Utility Manager or Performance Manager features
+
+A new abstraction requires a demonstrated second consumer or a clearly independent responsibility.
+
+## Quality gates
+
+Every structural Map Manager change on `Local` must be proven on the exact resulting HEAD.
+
+Required automated gates:
+
+- `Verify` on direct `Local` pushes;
+- Fabric compile/test/package verification;
+- Paper compile/test and managed-world runtime proofs where shared/server code is affected;
+- `Minecraft UI Preview` on direct `Local` pushes for Map Manager UI/runtime changes.
+
+Visual proof must remain a real Minecraft 1.21.4 client run, not only screenshot-state injection.
+
+## Remaining audit targets
+
+The following remain valid improvement targets:
+
+1. continue reducing `WorldMapScreen` coordination breadth where a clear state owner exists;
+2. keep `ClientMapSurfaceCache` focused on resident cache/sampling rather than disk codecs;
+3. reduce reflection/private-state injection in visual proof where real interaction can replace it;
+4. prove reconnect, world/dimension change, negative-coordinate navigation, large cache pressure, and resource lifecycle behavior with runtime evidence;
+5. keep documentation aligned with the canonical `mods/map-manager/` path;
+6. remove obsolete development branches only after their work is confirmed reachable from `Local`.
+
+## Current promotion rule
+
+`Local` is the integration source of truth.
+
+A Map Manager structural change is not considered complete until the exact `Local` HEAD has green automated proof. Historical green runs are supporting evidence only.
