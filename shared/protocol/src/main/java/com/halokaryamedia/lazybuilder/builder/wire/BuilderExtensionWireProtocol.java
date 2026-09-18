@@ -508,8 +508,8 @@ public final class BuilderExtensionWireProtocol {
                 out.writeInt(entry.x());
                 out.writeInt(entry.y());
                 out.writeInt(entry.z());
-                writeString(out, entry.beforeBlockState());
-                writeString(out, entry.afterBlockState());
+                writeBoundedString(out, entry.beforeBlockState(), 512);
+                writeBoundedString(out, entry.afterBlockState(), 512);
                 writeByteArray(out, entry.beforeNbt(), MAX_BLOCK_ENTITY_NBT_BYTES);
                 writeByteArray(out, entry.afterNbt(), MAX_BLOCK_ENTITY_NBT_BYTES);
             }
@@ -603,7 +603,19 @@ public final class BuilderExtensionWireProtocol {
 
     private static void writeString(DataOutputStream out, String value)
             throws IOException {
-        byte[] bytes = safeText(value, 320).getBytes(StandardCharsets.UTF_8);
+        writeBoundedString(out, value, 320);
+    }
+
+    private static void writeBoundedString(
+            DataOutputStream out,
+            String value,
+            int maxChars
+    ) throws IOException {
+        String checked = safeText(value, maxChars);
+        if (!checked.equals(value)) {
+            throw new IOException("string exceeds " + maxChars + " characters");
+        }
+        byte[] bytes = checked.getBytes(StandardCharsets.UTF_8);
         if (bytes.length > 0xffff) throw new IOException("string too large");
         out.writeShort(bytes.length);
         out.write(bytes);

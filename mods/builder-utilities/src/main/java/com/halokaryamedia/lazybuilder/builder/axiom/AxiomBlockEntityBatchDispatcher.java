@@ -59,7 +59,10 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
             throw new IllegalStateException(
                     "Server does not advertise Builder BLOCK_ENTITY authority");
         }
-        this.maxBatchEntries = capabilities.maxBatchEntries();
+        // One entry may contain two 16 KiB NBT payloads plus block-state strings.
+        // Keep one mutation per packet so the protocol's 48 KiB hard limit is
+        // guaranteed without buffering/pushback complexity in the streaming cursor.
+        this.maxBatchEntries = 1;
         this.undo = undo;
         this.blockStates = buildBlockStateIndex(stored);
     }
