@@ -60,6 +60,7 @@ public final class AxiomSplinePreviewTool implements CustomTool {
     private final int[] quality = {16};
     private final int[] seedValue = {424242};
     private final int[] rotationalCopies = {1};
+    private final int[] parameterization = {1};
 
     private AxiomSplinePreviewRegion preview;
     private List<SplinePlacementPlanEntry> lastPlan = List.of();
@@ -135,6 +136,7 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         changed |= ImGui.sliderInt("Preview Quality", quality, 4, 64);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
+        changed |= ImGui.sliderInt("Curve Mode (0 Uniform / 1 Centripetal)", parameterization, 0, 1);
         if (ImGui.button("Clear Spline")) {
             reset();
             return;
@@ -232,7 +234,12 @@ public final class AxiomSplinePreviewTool implements CustomTool {
             return;
         }
 
-        CatmullRomSpline spline = new CatmullRomSpline(controlPoints);
+        CatmullRomSpline spline = new CatmullRomSpline(
+                controlPoints,
+                parameterization[0] == 0
+                        ? SplineParameterization.UNIFORM
+                        : SplineParameterization.CENTRIPETAL
+        );
         List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
         StructureChainSplinePayload payload = new StructureChainSplinePayload(
                 spacing[0],
