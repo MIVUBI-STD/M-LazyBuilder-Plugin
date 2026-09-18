@@ -102,6 +102,13 @@ class ClientMapSurfaceCacheTest {
     }
 
     @Test
+    void staleAsyncCompletionGenerationIsRejected() {
+        assertTrue(ClientMapSurfaceCache.isCurrentScopeGeneration(7L, 7L));
+        assertFalse(ClientMapSurfaceCache.isCurrentScopeGeneration(6L, 7L));
+        assertFalse(ClientMapSurfaceCache.isCurrentScopeGeneration(8L, 7L));
+    }
+
+    @Test
     void farZoomSampleCoordinateRemainsStableInsideWorldCell() {
         assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(16, 4));
         assertEquals(18, ClientMapSurfaceCache.stableSampleCoordinate(17, 4));
