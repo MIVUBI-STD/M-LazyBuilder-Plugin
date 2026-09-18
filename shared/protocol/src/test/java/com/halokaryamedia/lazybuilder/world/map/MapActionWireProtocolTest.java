@@ -209,6 +209,23 @@ class MapActionWireProtocolTest {
     }
 
     @Test
+    void rejectsTruncatedPayloadsAndUnknownOpcodes() {
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(new byte[9]));
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(new byte[9]));
+
+        WorldId worldId = WorldId.create();
+        byte[] request = MapActionWireProtocol.teleportRequest(81L, worldId, 1, 2);
+        byte[] unknownRequest = request.clone();
+        unknownRequest[1] = 99;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(unknownRequest));
+
+        byte[] response = MapActionWireProtocol.exportAccepted(82L, worldId);
+        byte[] unknownResponse = response.clone();
+        unknownResponse[1] = 99;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(unknownResponse));
+    }
+
+    @Test
     void rejectsUnsupportedVersionAndTrailingBytes() {
         WorldId worldId = WorldId.create();
         byte[] payload = MapActionWireProtocol.teleportRequest(61L, worldId, 1, 2);
