@@ -47,7 +47,7 @@ class StructureMutationPreparerTest {
         ).orElseThrow();
 
         assertEquals(1, prepared.plannedChanges());
-        assertEquals(1, prepared.plannedExtensions());
+        assertEquals(1, prepared.extensionChanges());
         assertEquals(1, prepared.changeSet().extensionCount());
         prepared.close();
     }
