@@ -165,4 +165,14 @@ class ClientMapSurfaceCacheTest {
         assertEquals(-8, ClientMapSurfaceCache.netherLayerCenter(-16));
         assertEquals(-24, ClientMapSurfaceCache.netherLayerCenter(-17));
     }
+    @Test
+    void failedRegionLoadsRetryOnlyWithinBoundedAttemptBudget() {
+        assertTrue(ClientMapSurfaceCache.retryRegionLoadAllowed(0));
+        assertTrue(ClientMapSurfaceCache.retryRegionLoadAllowed(1));
+        assertTrue(ClientMapSurfaceCache.retryRegionLoadAllowed(2));
+        assertFalse(ClientMapSurfaceCache.retryRegionLoadAllowed(3));
+        assertFalse(ClientMapSurfaceCache.retryRegionLoadAllowed(4));
+        assertFalse(ClientMapSurfaceCache.retryRegionLoadAllowed(-1));
+    }
+
 }
