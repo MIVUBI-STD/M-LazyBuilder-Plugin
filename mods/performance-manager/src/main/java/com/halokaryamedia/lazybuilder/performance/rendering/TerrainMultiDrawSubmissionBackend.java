@@ -183,8 +183,10 @@ public final class TerrainMultiDrawSubmissionBackend {
                     offsets,
                     baseVertices
             );
+            TerrainPhysicalArenaManager.recordMultiDrawSuccess(run.commands());
             return true;
         } catch (RuntimeException ex) {
+            TerrainPhysicalArenaManager.recordMultiDrawFailure(run.commands());
             return false;
         } finally {
             TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);

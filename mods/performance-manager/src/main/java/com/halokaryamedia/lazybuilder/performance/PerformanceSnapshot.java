@@ -73,6 +73,12 @@ public record PerformanceSnapshot(
         long terrainPhysicalRelocations,
         long terrainPhysicalRelocatedBytes,
         long terrainPhysicalRelocationFallbacks,
+        int terrainExclusiveOwnershipObservingBuffers,
+        int terrainExclusiveOwnershipCandidateBuffers,
+        int terrainExclusiveOwnershipExcludedBuffers,
+        long terrainExclusiveOwnershipProofDraws,
+        long terrainExclusiveOwnershipProofResets,
+        String terrainExclusiveOwnershipStatus,
         int terrainTransformStreamCommands,
         int terrainTransformPhysicalReadyCommands,
         int terrainMultiDrawTransformBlockedCommands,
@@ -96,6 +102,7 @@ public record PerformanceSnapshot(
         String particleDebug
 ) {
     public PerformanceSnapshot {
+        terrainExclusiveOwnershipStatus = terrainExclusiveOwnershipStatus == null ? "" : terrainExclusiveOwnershipStatus;
         terrainMultiDrawCapability = terrainMultiDrawCapability == null ? "" : terrainMultiDrawCapability;
         terrainMultiDrawSubmissionStatus = terrainMultiDrawSubmissionStatus == null ? "" : terrainMultiDrawSubmissionStatus;
         rendererPipelineOwner = rendererPipelineOwner == null ? "" : rendererPipelineOwner;

@@ -16,6 +16,7 @@ import java.util.Map;
 public final class TerrainPhysicalArenaManager {
     private static final Map<TerrainRegionAllocationRegistry.ArenaKey, Arena> ARENAS = new HashMap<>();
     private static final IdentityHashMap<VertexBuffer, Resident> RESIDENTS = new IdentityHashMap<>();
+    private static final TerrainOwnershipProofTracker<VertexBuffer> OWNERSHIP_PROOF = new TerrainOwnershipProofTracker<>();
 
     private static Arena boundArena;
     private static int boundVao = -1;
@@ -115,6 +116,7 @@ public final class TerrainPhysicalArenaManager {
                 vertexBytes,
                 indexBytes
         ));
+        OWNERSHIP_PROOF.begin(source, indexBytes > 0);
         prepared = null;
         return true;
     }
@@ -283,6 +285,7 @@ public final class TerrainPhysicalArenaManager {
                 baseVertex
         );
         physicalDraws++;
+        OWNERSHIP_PROOF.recordDraw(source);
         if (state.indexPayloadBytes() > 0) customIndexDraws++;
         prepared = null;
         return true;
@@ -301,7 +304,35 @@ public final class TerrainPhysicalArenaManager {
             return;
         }
         Resident resident = RESIDENTS.remove(source);
+        OWNERSHIP_PROOF.release(source);
         if (resident != null) detachResident(source, resident);
+    }
+
+    public static boolean exclusiveOwnershipCandidate(VertexBuffer source) {
+        if (source == null) return false;
+        Resident resident = RESIDENTS.get(source);
+        TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
+        return resident != null
+                && matches(command, resident)
+                && OWNERSHIP_PROOF.isCandidate(source);
+    }
+
+    static void recordMultiDrawSuccess(java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
+        if (commands == null) return;
+        for (TerrainMultiDrawCommandStream.PackedCommand command : commands) {
+            if (command != null && command.source() != null) OWNERSHIP_PROOF.recordDraw(command.source());
+        }
+    }
+
+    static void recordMultiDrawFailure(java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
+        if (commands == null) return;
+        for (TerrainMultiDrawCommandStream.PackedCommand command : commands) {
+            if (command != null && command.source() != null) OWNERSHIP_PROOF.reset(command.source());
+        }
+    }
+
+    public static TerrainOwnershipProofTracker.Snapshot ownershipProofSnapshot() {
+        return OWNERSHIP_PROOF.snapshot();
     }
 
     public static void clear() {
@@ -314,6 +345,7 @@ public final class TerrainPhysicalArenaManager {
         for (Arena arena : ARENAS.values()) closeArena(arena);
         ARENAS.clear();
         RESIDENTS.clear();
+        OWNERSHIP_PROOF.clear();
         uploadedBytes = 0L;
         physicalDraws = 0L;
         customIndexDraws = 0L;
@@ -453,6 +485,7 @@ public final class TerrainPhysicalArenaManager {
                 int newIndexOffset = resident.indexBytes > 0 ? checkedOffset(command.indexByteOffset()) : 0;
                 if (newVertexOffset < 0 || (resident.indexBytes > 0 && (newIndexOffset < 0 || newIndex == null))) {
                     RESIDENTS.remove(source);
+                    OWNERSHIP_PROOF.invalidate(source);
                     invalidations++;
                     continue;
                 }
@@ -477,8 +510,10 @@ public final class TerrainPhysicalArenaManager {
                             resident.vertexBytes,
                             resident.indexBytes
                     ));
+                    OWNERSHIP_PROOF.reset(source);
                 } catch (RuntimeException ex) {
                     RESIDENTS.remove(source);
+                    OWNERSHIP_PROOF.invalidate(source);
                     invalidations++;
                     relocationFallbacks++;
                 }
@@ -515,6 +550,7 @@ public final class TerrainPhysicalArenaManager {
 
     private static void invalidate(VertexBuffer source) {
         Resident resident = RESIDENTS.remove(source);
+        OWNERSHIP_PROOF.invalidate(source);
         if (resident == null) return;
         invalidations++;
         detachResident(source, resident);
@@ -524,6 +560,7 @@ public final class TerrainPhysicalArenaManager {
         VertexBuffer[] sources = arena.sources.keySet().toArray(VertexBuffer[]::new);
         for (VertexBuffer source : sources) {
             Resident removed = RESIDENTS.remove(source);
+            OWNERSHIP_PROOF.invalidate(source);
             if (removed != null) invalidations++;
         }
         arena.sources.clear();

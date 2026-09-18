@@ -79,6 +79,12 @@ final class PerformanceSnapshotTest {
                 6L,
                 32768L,
                 2L,
+                6,
+                4,
+                3,
+                12000L,
+                7L,
+                "candidate",
                 42,
                 34,
                 34,
@@ -162,6 +168,12 @@ final class PerformanceSnapshotTest {
         assertEquals(6L, snapshot.terrainPhysicalRelocations());
         assertEquals(32768L, snapshot.terrainPhysicalRelocatedBytes());
         assertEquals(2L, snapshot.terrainPhysicalRelocationFallbacks());
+        assertEquals(6, snapshot.terrainExclusiveOwnershipObservingBuffers());
+        assertEquals(4, snapshot.terrainExclusiveOwnershipCandidateBuffers());
+        assertEquals(3, snapshot.terrainExclusiveOwnershipExcludedBuffers());
+        assertEquals(12000L, snapshot.terrainExclusiveOwnershipProofDraws());
+        assertEquals(7L, snapshot.terrainExclusiveOwnershipProofResets());
+        assertEquals("candidate", snapshot.terrainExclusiveOwnershipStatus());
         assertEquals(42, snapshot.terrainTransformStreamCommands());
         assertEquals(34, snapshot.terrainTransformPhysicalReadyCommands());
         assertEquals(34, snapshot.terrainMultiDrawTransformBlockedCommands());

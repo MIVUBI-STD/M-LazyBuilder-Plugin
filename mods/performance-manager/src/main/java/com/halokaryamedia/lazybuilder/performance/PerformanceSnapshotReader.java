@@ -11,6 +11,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCapa
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubmissionBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainOwnershipProofTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainRegionAllocationRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.chunk.ChunkBuilder;
@@ -48,6 +49,7 @@ public final class PerformanceSnapshotReader {
         TerrainRegionAllocationRegistry.Snapshot arenas = TerrainGpuResidencyTracker.arenaSnapshot();
         TerrainArenaDrawPlanner.Plan drawPlan = TerrainArenaDrawDiagnostics.snapshot();
         TerrainPhysicalArenaManager.Snapshot physicalArenas = TerrainGpuResidencyTracker.physicalArenaSnapshot();
+        TerrainOwnershipProofTracker.Snapshot ownershipProof = TerrainPhysicalArenaManager.ownershipProofSnapshot();
         TerrainDrawTransformStream.Snapshot transforms = TerrainDrawTransformStream.snapshot();
         TerrainMultiDrawCommandStream.Snapshot multiDraw = TerrainMultiDrawCommandStream.snapshot();
         TerrainMultiDrawCapability.Snapshot multiDrawCapability = TerrainMultiDrawCapability.current();
@@ -126,6 +128,12 @@ public final class PerformanceSnapshotReader {
                 physicalArenas.relocations(),
                 physicalArenas.relocatedBytes(),
                 physicalArenas.relocationFallbacks(),
+                ownershipProof.observingBuffers(),
+                ownershipProof.candidateBuffers(),
+                ownershipProof.excludedCustomIndexBuffers(),
+                ownershipProof.successfulProofDraws(),
+                ownershipProof.proofResets(),
+                ownershipProof.status(),
                 transforms.commands(),
                 transforms.physicalReadyCommands(),
                 transforms.transformBlockedCommands(),
