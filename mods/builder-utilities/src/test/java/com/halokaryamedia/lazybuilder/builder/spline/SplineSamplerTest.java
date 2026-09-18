@@ -38,4 +38,16 @@ class SplineSamplerTest {
             assertTrue(samples.get(i - 1).frame().normal().dot(samples.get(i).frame().normal()) > 0.99);
         }
     }
+    @Test
+    void antiparallelTransportPreservesNormalInsteadOfResettingFrame() {
+        SplineFrame initial = ParallelTransport.initial(new BuilderVec3(1, 0, 0));
+        SplineFrame reversed = ParallelTransport.transport(
+                initial,
+                new BuilderVec3(-1, 0, 0)
+        );
+
+        assertEquals(-1.0, initial.tangent().dot(reversed.tangent()), 1e-9);
+        assertTrue(initial.normal().dot(reversed.normal()) > 0.999999);
+        assertTrue(initial.binormal().dot(reversed.binormal()) < -0.999999);
+    }
 }

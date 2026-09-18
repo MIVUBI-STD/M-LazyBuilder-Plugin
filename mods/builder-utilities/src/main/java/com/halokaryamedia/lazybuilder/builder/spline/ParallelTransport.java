@@ -22,7 +22,9 @@ public final class ParallelTransport {
         double dot = clamp(from.dot(to), -1.0, 1.0);
         BuilderVec3 normal;
         if (sin <= EPSILON) {
-            if (dot < 0.0) return initial(to);
+            // For an exact/near 180-degree reversal, keep the previous normal as
+            // the rotation axis. This maps tangent -> -tangent without resetting
+            // the frame to an unrelated world-space reference.
             normal = previous.normal();
         } else {
             normal = rotate(previous.normal(), axis.multiply(1.0 / sin), Math.atan2(sin, dot));
