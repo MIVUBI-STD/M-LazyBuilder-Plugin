@@ -37,5 +37,28 @@ public record StructurePlacement(
         );
     }
 
+    public WorldPositionD transform(double localX, double localY, double localZ) {
+        double x = mirrorX ? -localX : localX;
+        double z = mirrorZ ? -localZ : localZ;
+        double rx;
+        double rz;
+        switch (quarterTurnsY) {
+            case 0 -> { rx = x; rz = z; }
+            case 1 -> { rx = -z; rz = x; }
+            case 2 -> { rx = -x; rz = -z; }
+            case 3 -> { rx = z; rz = -x; }
+            default -> throw new AssertionError("normalized quarterTurnsY");
+        }
+        return new WorldPositionD(anchorX + rx, anchorY + localY, anchorZ + rz);
+    }
+
     public record WorldPosition(int x, int y, int z) {}
+
+    public record WorldPositionD(double x, double y, double z) {
+        public WorldPositionD {
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+                throw new IllegalArgumentException("world coordinates must be finite");
+            }
+        }
+    }
 }

@@ -7,23 +7,38 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Immutable structure snapshot for blocks plus optional block-entity payloads. */
+/** Immutable structure snapshot for blocks and optional non-block payloads. */
 public final class StructureSnapshot {
     private final List<StructureBlock> blocks;
     private final List<StructureBlockEntity> blockEntities;
+    private final List<StructureBiomeSample> biomes;
+    private final List<StructureEntity> entities;
     private final BlockBounds localBounds;
 
     public StructureSnapshot(List<StructureBlock> blocks) {
-        this(blocks, List.of());
+        this(blocks, List.of(), List.of(), List.of());
     }
 
     public StructureSnapshot(
             List<StructureBlock> blocks,
             List<StructureBlockEntity> blockEntities
     ) {
+        this(blocks, blockEntities, List.of(), List.of());
+    }
+
+    public StructureSnapshot(
+            List<StructureBlock> blocks,
+            List<StructureBlockEntity> blockEntities,
+            List<StructureBiomeSample> biomes,
+            List<StructureEntity> entities
+    ) {
         Objects.requireNonNull(blocks, "blocks");
         Objects.requireNonNull(blockEntities, "blockEntities");
-        if (blocks.isEmpty()) throw new IllegalArgumentException("structure must contain at least one block");
+        Objects.requireNonNull(biomes, "biomes");
+        Objects.requireNonNull(entities, "entities");
+        if (blocks.isEmpty()) {
+            throw new IllegalArgumentException("structure must contain at least one block");
+        }
 
         Set<Position> blockPositions = new HashSet<>();
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
@@ -52,20 +67,39 @@ public final class StructureSnapshot {
                         "block entity must reference an existing structure block");
             }
             if (!blockEntityPositions.add(position)) {
-                throw new IllegalArgumentException("duplicate structure-local block entity position");
+                throw new IllegalArgumentException(
+                        "duplicate structure-local block entity position");
             }
         }
 
+        Set<Position> biomePositions = new HashSet<>();
+        for (StructureBiomeSample biome : biomes) {
+            Objects.requireNonNull(biome, "biome");
+            Position position = new Position(biome.x(), biome.y(), biome.z());
+            if (!biomePositions.add(position)) {
+                throw new IllegalArgumentException(
+                        "duplicate structure-local biome sample position");
+            }
+        }
+
+        for (StructureEntity entity : entities) Objects.requireNonNull(entity, "entity");
+
         this.blocks = List.copyOf(blocks);
         this.blockEntities = List.copyOf(blockEntities);
+        this.biomes = List.copyOf(biomes);
+        this.entities = List.copyOf(entities);
         this.localBounds = new BlockBounds(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     public List<StructureBlock> blocks() { return blocks; }
     public List<StructureBlockEntity> blockEntities() { return blockEntities; }
+    public List<StructureBiomeSample> biomes() { return biomes; }
+    public List<StructureEntity> entities() { return entities; }
     public BlockBounds localBounds() { return localBounds; }
     public int blockCount() { return blocks.size(); }
     public int blockEntityCount() { return blockEntities.size(); }
+    public int biomeCount() { return biomes.size(); }
+    public int entityCount() { return entities.size(); }
 
     private record Position(int x, int y, int z) {}
 }
