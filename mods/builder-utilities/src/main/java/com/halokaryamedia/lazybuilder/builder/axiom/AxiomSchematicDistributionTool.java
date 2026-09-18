@@ -48,8 +48,8 @@ import java.util.UUID;
 
 /**
  * Distributes one Sponge schematic as an array or minimum-spacing scatter.
- * Single-source mode supports negotiated BIOME/ENTITY authority; palette mode remains
- * block-only so heterogeneous auxiliary requirements cannot become ambiguous.
+ * Single-source and catalog-palette modes support negotiated BIOME/ENTITY authority.
+ * Schematics containing block entities remain excluded until a generic authority exists.
  */
 public final class AxiomSchematicDistributionTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Distribution";
@@ -79,7 +79,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
     private SpongeSchematicImport selected;
-    private Map<String, SpongeSchematicImport> blockOnlyCatalog = Map.of();
+    private Map<String, SpongeSchematicImport> supportedCatalog = Map.of();
     private BlockPos origin;
     private List<PlacementPlanEntry> placements = List.of();
     private List<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> previewPoints = List.of();
@@ -129,9 +129,9 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Distribute the selected .schem as Array or Scatter. "
-                + "Single-source mode supports negotiated BIOME/ENTITY authority; "
-                + "catalog palette mode uses block-only schematics.");
+        ImGui.textWrapped("Distribute supported .schem files as Array or Scatter. "
+                + "Both single-source and catalog-palette modes can include negotiated "
+                + "BIOME/ENTITY payloads; block-entity schematics stay excluded.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -161,7 +161,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         changed |= ImGui.sliderInt("Match Origin Biome", sameBiome, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         if (useCatalogPalette[0] != 0) {
-            ImGui.textWrapped("Palette sources: " + blockOnlyCatalog.size());
+            ImGui.textWrapped("Authority-compatible palette sources: " + supportedCatalog.size());
         }
 
         if (mode[0] == 0) {
@@ -205,7 +205,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private void reload() {
         try {
             entries = catalog.list();
-            blockOnlyCatalog = loadBlockOnlyCatalog(entries);
+            supportedCatalog = loadSupportedCatalog(entries);
             if (entries.isEmpty()) {
                 selected = null;
                 selectedIndex = 0;
@@ -216,7 +216,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             loadSelected();
         } catch (Exception e) {
             entries = List.of();
-            blockOnlyCatalog = Map.of();
+            supportedCatalog = Map.of();
             selected = null;
             idleStatus = "Catalog reload failed: " + safeMessage(e);
         }
@@ -231,7 +231,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private void loadSelected() {
         try {
             String name = entries.get(selectedIndex).name();
-            selected = blockOnlyCatalog.get(name);
+            selected = supportedCatalog.get(name);
             if (selected == null) {
                 SpongeSchematicImport imported = catalog.load(entries.get(selectedIndex));
                 AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
@@ -366,9 +366,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         long estimateBytes = estimatedHistoryBytes(placements);
 
         Optional<PreparedStructureMutation> prepared;
-        if (useCatalogPalette[0] != 0
-                || (selected.snapshot().biomeCount() == 0
-                && selected.snapshot().entityCount() == 0)) {
+        if (!requiresAuxiliary(placements)) {
             prepared = PlacementStructureMutationPreparer.prepareBlocks(
                     UUID.randomUUID().toString(),
                     placements,
@@ -386,7 +384,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                     id -> requireSource(id).snapshot(),
                     new MinecraftStructureBlockStateTransform(world),
                     new AxiomClientWorldStateSource(world),
-                    AxiomStructureAuxiliary.contextFor(selected.snapshot(), world),
+                    AxiomStructureAuxiliary.contextForAuthorities(world),
                     runtime.history(),
                     estimateBytes,
                     cancellation.token()
@@ -397,6 +395,16 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         }
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private boolean requiresAuxiliary(List<PlacementPlanEntry> entries) {
+        for (PlacementPlanEntry entry : entries) {
+            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
+            if (snapshot.biomeCount() != 0 || snapshot.entityCount() != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private long estimatedHistoryBytes(List<PlacementPlanEntry> entries) {
@@ -423,10 +431,11 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         if (useCatalogPalette[0] == 0) {
             return (point, seed) -> selectedName();
         }
-        if (blockOnlyCatalog.isEmpty()) {
-            throw new IllegalStateException("catalog palette has no block-only schematics");
+        if (supportedCatalog.isEmpty()) {
+            throw new IllegalStateException(
+                    "catalog palette has no schematics compatible with current authorities");
         }
-        List<WeightedPlacementSource.Entry> weighted = blockOnlyCatalog.keySet().stream()
+        List<WeightedPlacementSource.Entry> weighted = supportedCatalog.keySet().stream()
                 .map(id -> new WeightedPlacementSource.Entry(id, 1.0))
                 .toList();
         return new WeightedPlacementSource(weighted, 0x50414c455454454cL);
@@ -435,7 +444,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private SpongeSchematicImport requireSource(String sourceId) {
         SpongeSchematicImport imported;
         if (useCatalogPalette[0] != 0) {
-            imported = blockOnlyCatalog.get(sourceId);
+            imported = supportedCatalog.get(sourceId);
         } else {
             imported = selected;
         }
@@ -464,7 +473,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         return total;
     }
 
-    private Map<String, SpongeSchematicImport> loadBlockOnlyCatalog(
+    private Map<String, SpongeSchematicImport> loadSupportedCatalog(
             List<SchematicCatalog.Entry> catalogEntries
     ) throws IOException {
         LinkedHashMap<String, SpongeSchematicImport> loaded = new LinkedHashMap<>();
@@ -472,7 +481,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             SpongeSchematicImport imported;
             try {
                 imported = catalog.load(entry);
-                ensureBlockOnly(imported);
+                AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
             } catch (IllegalArgumentException unsupported) {
                 continue;
             }

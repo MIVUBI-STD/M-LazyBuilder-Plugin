@@ -41,6 +41,27 @@ public final class AxiomStructureAuxiliary {
         }
     }
 
+    public static StructureAuxiliaryContext contextForAuthorities(ClientWorld world) {
+        Objects.requireNonNull(world, "world");
+        var capabilities = BuilderExtensionClientNetworking.capabilities();
+        return new StructureAuxiliaryContext(
+                null,
+                BlockEntityPayloadTransform.identity(),
+                capabilities.supportsBiome()
+                        ? (x, y, z) -> new AxiomWorldBiomeSource(world)
+                                .biomeAt(x, y, z)
+                                .getBytes(StandardCharsets.UTF_8)
+                        : null,
+                BiomePayloadTransform.identity(),
+                capabilities.supportsEntity()
+                        ? new AxiomEntityPlacementStateSource(world)
+                        : null,
+                capabilities.supportsEntity()
+                        ? new AxiomEntityPayloadTransform()
+                        : EntityPayloadTransform.identity()
+        );
+    }
+
     public static StructureAuxiliaryContext contextFor(
             StructureSnapshot snapshot,
             ClientWorld world
