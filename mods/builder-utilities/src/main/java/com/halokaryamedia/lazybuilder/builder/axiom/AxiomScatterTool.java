@@ -225,7 +225,7 @@ public final class AxiomScatterTool implements CustomTool {
                     mirrorX[0] != 0,
                     mirrorZ[0] != 0,
                     MAX_POINTS
-            );
+            ).stream().filter(finalConstraint::test).toList();
             points = MinimumSpacingFilter.filter(points, minimumSpacing[0]);
 
             if (points.size() > MAX_POINTS) {
