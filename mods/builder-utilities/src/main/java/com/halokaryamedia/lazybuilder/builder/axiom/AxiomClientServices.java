@@ -4,6 +4,7 @@ import com.moulberry.axiomclientapi.service.RegionProvider;
 import com.moulberry.axiomclientapi.service.ToolRegistryService;
 import com.moulberry.axiomclientapi.service.ToolService;
 
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /**
@@ -31,10 +32,20 @@ public record AxiomClientServices(
     }
 
     private static <T> T require(Class<T> serviceType) {
-        return ServiceLoader.load(serviceType, serviceType.getClassLoader())
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "Axiom client API service is unavailable: " + serviceType.getName()
-                ));
+        try {
+            return ServiceLoader.load(serviceType, serviceType.getClassLoader())
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Axiom client API service is unavailable: "
+                                    + serviceType.getName()
+                                    + " | " + AxiomCompatibility.current().summary()
+                    ));
+        } catch (ServiceConfigurationError | LinkageError failure) {
+            throw new IllegalStateException(
+                    "Axiom public API linkage failed for "
+                            + serviceType.getName()
+                            + " | " + AxiomCompatibility.current().summary(),
+                    failure);
+        }
     }
 }

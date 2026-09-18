@@ -26,9 +26,9 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        BuilderExtensionClientNetworking.register();
         AxiomCompatibility compatibility = AxiomCompatibility.current();
         AxiomClientServices services = AxiomClientServices.load();
+        BuilderExtensionClientNetworking.register();
         runtime = BuilderRuntime.createDefault();
         services.toolRegistry().register(new AxiomSplinePreviewTool(services, runtime));
         services.toolRegistry().register(new AxiomSplineSchematicTool(services, runtime));
