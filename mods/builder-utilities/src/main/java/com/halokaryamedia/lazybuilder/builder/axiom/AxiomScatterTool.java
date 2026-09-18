@@ -19,6 +19,9 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationPlan;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDistribution;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraint;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraints;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementFootprint;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
@@ -57,6 +60,8 @@ public final class AxiomScatterTool implements CustomTool {
     private final float[] minimumSpacing = {3.0f};
     private final int[] seedValue = {424242};
     private final int[] rotationalCopies = {1};
+    private final int[] footprintRadius = {1};
+    private final int[] maxHeightDelta = {3};
 
     private BlockPos center;
     private List<PlacementPoint> points = List.of();
@@ -126,6 +131,8 @@ public final class AxiomScatterTool implements CustomTool {
         changed |= ImGui.sliderFloat("Minimum Spacing", minimumSpacing, 0.0f, 32.0f);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
+        changed |= ImGui.sliderInt("Footprint Radius", footprintRadius, 0, 8);
+        changed |= ImGui.sliderInt("Max Height Delta", maxHeightDelta, 0, 16);
         if (ImGui.button("Clear Scatter")) {
             clearGeometry();
             return;
@@ -160,15 +167,20 @@ public final class AxiomScatterTool implements CustomTool {
         }
 
         try {
+            ClientWorld world = Objects.requireNonNull(
+                    MinecraftClient.getInstance().world,
+                    "Minecraft client world is unavailable");
             int r = radius[0];
             BlockBounds bounds = new BlockBounds(
                     Math.subtractExact(center.getX(), r),
-                    center.getY(),
+                    world.getBottomY(),
                     Math.subtractExact(center.getZ(), r),
                     Math.addExact(center.getX(), r),
-                    center.getY(),
+                    world.getTopYInclusive(),
                     Math.addExact(center.getZ(), r)
             );
+            AxiomWorldSurfaceHeightSource surface =
+                    new AxiomWorldSurfaceHeightSource(world, 1);
 
             MinimumSpacingScatterDistribution distribution =
                     new MinimumSpacingScatterDistribution(
@@ -178,11 +190,16 @@ public final class AxiomScatterTool implements CustomTool {
                             SCATTER_CHANNEL
                     );
 
+            PlacementConstraint slopeConstraint = PlacementConstraints.slope(
+                    surface,
+                    new PlacementFootprint(footprintRadius[0], footprintRadius[0]),
+                    maxHeightDelta[0]
+            );
             List<PlacementPoint> basePoints = distribution.generate(
                     bounds,
-                    (x, z) -> center.getY(),
+                    surface,
                     new OperationSeed(seedValue[0])
-            );
+            ).stream().filter(slopeConstraint::test).toList();
             points = PointSymmetryPlanner.rotational(
                     basePoints,
                     new BuilderVec3(center.getX(), center.getY(), center.getZ()),
