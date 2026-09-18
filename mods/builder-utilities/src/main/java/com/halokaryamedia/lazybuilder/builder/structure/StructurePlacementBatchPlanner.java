@@ -211,18 +211,20 @@ public final class StructurePlacementBatchPlanner {
             );
             int chunkX = Math.floorDiv(block.x, 16);
             int chunkZ = Math.floorDiv(block.z, 16);
-            ChunkChangeSetBuilder builder = chunks.computeIfAbsent(
-                    new ChunkKey(chunkX, chunkZ),
-                    key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ)
-            );
             if (before.equals(block.afterState)) {
                 if (blockEntityGuards.contains(
                         new WorldKey(block.x, block.y, block.z))) {
-                    builder.addWorldGuard(block.x, block.y, block.z, before);
+                    chunks.computeIfAbsent(
+                            new ChunkKey(chunkX, chunkZ),
+                            key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ)
+                    ).addWorldGuard(block.x, block.y, block.z, before);
                 }
                 continue;
             }
-            builder.addWorld(block.x, block.y, block.z, before, block.afterState);
+            chunks.computeIfAbsent(
+                    new ChunkKey(chunkX, chunkZ),
+                    key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ)
+            ).addWorld(block.x, block.y, block.z, before, block.afterState);
         }
 
         return new StructurePastePlan(
