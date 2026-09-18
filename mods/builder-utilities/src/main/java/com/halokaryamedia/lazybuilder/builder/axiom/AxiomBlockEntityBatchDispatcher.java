@@ -61,7 +61,12 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         // guaranteed without buffering/pushback complexity in the streaming cursor.
         this.maxBatchEntries = 1;
         this.undo = undo;
-        this.blockStates = buildBlockStateIndex(stored);
+        try {
+            this.blockStates = buildBlockStateIndex(stored);
+        } catch (IOException | RuntimeException failure) {
+            cursor.close();
+            throw failure;
+        }
     }
 
     public synchronized BlockEntityBatchDispatchProgress pump() throws IOException {
