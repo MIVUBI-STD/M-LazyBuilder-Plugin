@@ -90,64 +90,10 @@ public final class PreparedMutationSession implements AutoCloseable {
         return report;
     }
 
-    public synchronized void finalizeKeepChanges(AppliedMutationCompaction compaction) throws IOException {
-        Objects.requireNonNull(compaction, "compaction");
-        ensureCancelling();
-        switch (compaction.state()) {
-            case CONFLICT -> lifecycle = lifecycle.fail("Cancellation compaction conflicts with current world state");
-            case EMPTY -> cancelAfterDisposingOriginal(0);
-            case COMPACTED -> finalizeCompactedCancellation(compaction);
-        }
-    }
-
     /** Marks a successfully reconciled rollback cancellation terminal with no undo entry. */
     public synchronized void completeRollbackCancellation() throws IOException {
         ensureCancelling();
         cancelAfterDisposingOriginal(0);
-    }
-
-    private void finalizeCompactedCancellation(AppliedMutationCompaction compaction) throws IOException {
-        StoredChangeSet retained = compaction.compactedChangeSet();
-        if (!publishToTimeline) {
-            IOException failure = null;
-            try {
-                retained.close();
-            } catch (IOException e) {
-                failure = e;
-            }
-            try {
-                prepared.close();
-                disposed = true;
-            } catch (IOException e) {
-                if (failure == null) failure = e;
-                else failure.addSuppressed(e);
-            }
-            if (failure != null) {
-                lifecycle = lifecycle.fail(
-                        "Partial cancellation cleanup failed: " + failure.getMessage());
-                throw failure;
-            }
-            setProcessedWork(compaction.appliedChanges());
-            lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
-            return;
-        }
-
-        try {
-            timeline.record(retained);
-        } catch (IOException | RuntimeException e) {
-            try { retained.close(); } catch (IOException closeFailure) { e.addSuppressed(closeFailure); }
-            lifecycle = lifecycle.fail("Failed to publish partial cancellation history: " + e.getMessage());
-            throw e;
-        }
-        try {
-            prepared.close();
-            disposed = true;
-        } catch (IOException e) {
-            lifecycle = lifecycle.fail("Partial history published but original plan cleanup failed: " + e.getMessage());
-            throw e;
-        }
-        setProcessedWork(compaction.appliedChanges());
-        lifecycle = lifecycle.transitionTo(OperationState.CANCELLED);
     }
 
     private void cancelAfterDisposingOriginal(long processedWork) throws IOException {
