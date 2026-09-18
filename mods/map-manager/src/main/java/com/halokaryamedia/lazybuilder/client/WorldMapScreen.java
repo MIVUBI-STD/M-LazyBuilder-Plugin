@@ -1040,7 +1040,7 @@ public final class WorldMapScreen extends Screen {
             return;
         }
         UUID currentId = currentWorldId();
-        if (areaSelection.belongsTo(currentId)) {
+        if (areaSelection.ownsWorld(currentId)) {
             areaSelection.active = true;
             invalidateRasterViewport();
             return;
@@ -1082,7 +1082,7 @@ public final class WorldMapScreen extends Screen {
         if (exportNameField != null && !exportNameField.getText().equals(artifact)) exportNameField.setText(artifact);
 
         if (exportWorkspace.scope() == MapExportWorkspaceState.Scope.CUSTOM_AREA) {
-            if (!areaSelection.active || areaSelection.worldId == null || !areaSelection.worldId.equals(currentId)) {
+            if (!areaSelection.active || !areaSelection.ownsWorld(currentId)) {
                 LazyBuilderClientNetworking.notifyPlayer("Choose an area in the current world before exporting.");
                 return;
             }
