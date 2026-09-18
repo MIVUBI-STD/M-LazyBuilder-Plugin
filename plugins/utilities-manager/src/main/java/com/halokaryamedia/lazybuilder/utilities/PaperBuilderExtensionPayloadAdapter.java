@@ -18,7 +18,7 @@ import java.io.IOException;
 /** Authoritative Paper compare-and-set backend for negotiated Builder extension types. */
 final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener {
     static final String PERMISSION = "lazybuilder.utilities.builder-extension";
-    private static final int SERVER_CAPABILITIES =
+    private static final int BASE_SERVER_CAPABILITIES =
             BuilderExtensionWireProtocol.CAPABILITY_BIOME
                     | BuilderExtensionWireProtocol.CAPABILITY_ENTITY;
     private static final int MAX_BATCH =
@@ -26,10 +26,19 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
 
     private final UtilitiesManagerPlugin plugin;
     private final NamespacedKey entityMarkerKey;
+    private final PaperBlockEntityNbtBridge blockEntities;
 
     PaperBuilderExtensionPayloadAdapter(UtilitiesManagerPlugin plugin) {
         this.plugin = plugin;
         this.entityMarkerKey = new NamespacedKey(plugin, "builder_entity_marker");
+        this.blockEntities = PaperBlockEntityNbtBridge.tryCreate(plugin);
+    }
+
+    private int serverCapabilities() {
+        return BASE_SERVER_CAPABILITIES
+                | (blockEntities != null
+                        ? BuilderExtensionWireProtocol.CAPABILITY_BLOCK_ENTITY
+                        : 0);
     }
 
     void start() {
@@ -66,7 +75,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
 
         if (request instanceof BuilderExtensionWireProtocol.CapabilitiesRequest capabilities) {
             int mask = player.hasPermission(PERMISSION)
-                    ? SERVER_CAPABILITIES
+                    ? serverCapabilities()
                     : 0;
             send(player, new BuilderExtensionWireProtocol.Capabilities(
                     capabilities.requestId(), mask, MAX_BATCH));
@@ -74,10 +83,15 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
         }
 
         if (!player.hasPermission(PERMISSION)) {
-            String operationId =
-                    request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch biome
-                            ? biome.operationId()
-                            : ((BuilderExtensionWireProtocol.ApplyEntityBatch) request).operationId();
+            String operationId;
+            if (request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch biome) {
+                operationId = biome.operationId();
+            } else if (request instanceof BuilderExtensionWireProtocol.ApplyEntityBatch entity) {
+                operationId = entity.operationId();
+            } else {
+                operationId = ((BuilderExtensionWireProtocol.ApplyBlockEntityBatch) request)
+                        .operationId();
+            }
             send(player, new BuilderExtensionWireProtocol.Error(
                     operationId, "permission denied"));
             return;
@@ -86,10 +100,12 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
         Runnable apply;
         if (request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch batch) {
             apply = () -> applyBiomeBatch(player, batch);
-        } else {
-            BuilderExtensionWireProtocol.ApplyEntityBatch batch =
-                    (BuilderExtensionWireProtocol.ApplyEntityBatch) request;
+        } else if (request instanceof BuilderExtensionWireProtocol.ApplyEntityBatch batch) {
             apply = () -> applyEntityBatch(player, batch);
+        } else {
+            BuilderExtensionWireProtocol.ApplyBlockEntityBatch batch =
+                    (BuilderExtensionWireProtocol.ApplyBlockEntityBatch) request;
+            apply = () -> applyBlockEntityBatch(player, batch);
         }
         if (Bukkit.isPrimaryThread()) apply.run();
         else plugin.getServer().getScheduler().runTask(plugin, apply);
@@ -154,6 +170,56 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
         }
 
         send(player, BuilderExtensionWireProtocol.BatchResult.completed(
+                batch.operationId(), processed));
+    }
+
+
+    private void applyBlockEntityBatch(
+            Player player,
+            BuilderExtensionWireProtocol.ApplyBlockEntityBatch batch
+    ) {
+        if (blockEntities == null) {
+            send(player, new BuilderExtensionWireProtocol.Error(
+                    batch.operationId(),
+                    "BLOCK_ENTITY authority unavailable on this Paper runtime"));
+            return;
+        }
+
+        World world = player.getWorld();
+        if (!world.getKey().toString().equals(batch.dimensionId())) {
+            send(player, new BuilderExtensionWireProtocol.Error(
+                    batch.operationId(),
+                    "player changed dimension before block-entity batch execution"));
+            return;
+        }
+
+        int processed = 0;
+        for (int i = 0; i < batch.entries().size(); i++) {
+            BuilderExtensionWireProtocol.BlockEntityMutation mutation =
+                    batch.entries().get(i);
+            try {
+                PaperBlockEntityNbtBridge.ApplyResult result =
+                        blockEntities.applyCompareAndSet(world, mutation);
+                if (result.state()
+                        == PaperBlockEntityNbtBridge.ApplyState.CONFLICT) {
+                    send(player,
+                            BuilderExtensionWireProtocol.BlockEntityBatchResult.conflict(
+                                    batch.operationId(),
+                                    processed,
+                                    i,
+                                    result.detail()));
+                    return;
+                }
+                processed++;
+            } catch (Exception failure) {
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(),
+                        "block entity mutation failed: " + concise(failure)));
+                return;
+            }
+        }
+
+        send(player, BuilderExtensionWireProtocol.BlockEntityBatchResult.completed(
                 batch.operationId(), processed));
     }
 
