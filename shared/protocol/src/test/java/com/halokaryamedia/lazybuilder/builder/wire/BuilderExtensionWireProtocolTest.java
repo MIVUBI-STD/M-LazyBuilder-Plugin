@@ -60,4 +60,35 @@ class BuilderExtensionWireProtocolTest {
                 new BuilderExtensionWireProtocol.ApplyBiomeBatch(
                         "too-large", "minecraft:overworld", entries));
     }
+    @Test
+    void blockEntityBatchRoundTripsBoundedBinaryPayloads() throws Exception {
+        var mutation = new BuilderExtensionWireProtocol.BlockEntityMutation(
+                -12, 64, 33,
+                "minecraft:air",
+                "minecraft:chest[facing=north,type=single,waterlogged=false]",
+                new byte[0],
+                new byte[]{10, 0, 0, 0}
+        );
+        var request = new BuilderExtensionWireProtocol.ApplyBlockEntityBatch(
+                "be-op",
+                "minecraft:overworld",
+                java.util.List.of(mutation)
+        );
+
+        var decoded = (BuilderExtensionWireProtocol.ApplyBlockEntityBatch)
+                BuilderExtensionWireProtocol.decodeRequest(
+                        BuilderExtensionWireProtocol.encodeRequest(request));
+        assertEquals(request.operationId(), decoded.operationId());
+        assertEquals(request.dimensionId(), decoded.dimensionId());
+        assertEquals(1, decoded.entries().size());
+        assertArrayEquals(mutation.afterNbt(), decoded.entries().get(0).afterNbt());
+
+        var response = BuilderExtensionWireProtocol.BlockEntityBatchResult.conflict(
+                "be-op", 0, 0, "block entity mismatch");
+        var decodedResponse = (BuilderExtensionWireProtocol.BlockEntityBatchResult)
+                BuilderExtensionWireProtocol.decodeResponse(
+                        BuilderExtensionWireProtocol.encodeResponse(response));
+        assertEquals(response, decodedResponse);
+    }
+
 }

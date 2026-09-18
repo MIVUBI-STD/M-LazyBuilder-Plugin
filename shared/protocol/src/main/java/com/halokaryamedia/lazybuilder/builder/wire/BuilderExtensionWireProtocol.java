@@ -16,6 +16,7 @@ public final class BuilderExtensionWireProtocol {
     public static final int VERSION = 1;
     public static final int MAX_MESSAGE_BYTES = 48 * 1024;
     public static final int MAX_BATCH_ENTRIES = 256;
+    public static final int MAX_BLOCK_ENTITY_NBT_BYTES = 16 * 1024;
     public static final int CAPABILITY_BIOME = 1;
     public static final int CAPABILITY_BLOCK_ENTITY = 1 << 1;
     public static final int CAPABILITY_ENTITY = 1 << 2;
@@ -23,8 +24,8 @@ public final class BuilderExtensionWireProtocol {
 
     private BuilderExtensionWireProtocol() {}
 
-    public sealed interface Request permits CapabilitiesRequest, ApplyBiomeBatch, ApplyEntityBatch {}
-    public sealed interface Response permits Capabilities, BatchResult, EntityBatchResult, Error {}
+    public sealed interface Request permits CapabilitiesRequest, ApplyBiomeBatch, ApplyEntityBatch, ApplyBlockEntityBatch {}
+    public sealed interface Response permits Capabilities, BatchResult, EntityBatchResult, BlockEntityBatchResult, Error {}
 
     public record CapabilitiesRequest(String requestId) implements Request {
         public CapabilitiesRequest { requireId(requestId, "requestId"); }
@@ -103,6 +104,57 @@ public final class BuilderExtensionWireProtocol {
                         "entity batch entry count must be in 1.." + MAX_BATCH_ENTRIES);
             }
             for (EntityMutation entry : entries) Objects.requireNonNull(entry, "entry");
+        }
+    }
+
+
+    public record BlockEntityMutation(
+            int x,
+            int y,
+            int z,
+            String beforeBlockState,
+            String afterBlockState,
+            byte[] beforeNbt,
+            byte[] afterNbt
+    ) {
+        public BlockEntityMutation {
+            beforeBlockState = safeText(beforeBlockState, 512);
+            afterBlockState = safeText(afterBlockState, 512);
+            if (beforeBlockState.isBlank() || afterBlockState.isBlank()) {
+                throw new IllegalArgumentException("block entity block states must be non-blank");
+            }
+            beforeNbt = copyBoundedNbt(beforeNbt, "beforeNbt");
+            afterNbt = copyBoundedNbt(afterNbt, "afterNbt");
+            if (beforeBlockState.equals(afterBlockState)
+                    && java.util.Arrays.equals(beforeNbt, afterNbt)) {
+                throw new IllegalArgumentException("block entity mutation must change state or NBT");
+            }
+        }
+
+        @Override public byte[] beforeNbt() {
+            return java.util.Arrays.copyOf(beforeNbt, beforeNbt.length);
+        }
+
+        @Override public byte[] afterNbt() {
+            return java.util.Arrays.copyOf(afterNbt, afterNbt.length);
+        }
+    }
+
+    public record ApplyBlockEntityBatch(
+            String operationId,
+            String dimensionId,
+            List<BlockEntityMutation> entries
+    ) implements Request {
+        public ApplyBlockEntityBatch {
+            requireId(operationId, "operationId");
+            dimensionId = requireResourceId(dimensionId, "dimensionId");
+            Objects.requireNonNull(entries, "entries");
+            entries = List.copyOf(entries);
+            if (entries.isEmpty() || entries.size() > MAX_BATCH_ENTRIES) {
+                throw new IllegalArgumentException(
+                        "block entity batch entry count must be in 1.." + MAX_BATCH_ENTRIES);
+            }
+            for (BlockEntityMutation entry : entries) Objects.requireNonNull(entry, "entry");
         }
     }
 
@@ -221,6 +273,53 @@ public final class BuilderExtensionWireProtocol {
         }
     }
 
+
+    public record BlockEntityBatchResult(
+            String operationId,
+            BatchState state,
+            int processedEntries,
+            int conflictIndex,
+            String detail
+    ) implements Response {
+        public BlockEntityBatchResult {
+            requireId(operationId, "operationId");
+            Objects.requireNonNull(state, "state");
+            if (processedEntries < 0 || processedEntries > MAX_BATCH_ENTRIES) {
+                throw new IllegalArgumentException("processedEntries out of range");
+            }
+            if (state == BatchState.COMPLETED) {
+                if (conflictIndex != -1 || detail != null) {
+                    throw new IllegalArgumentException(
+                            "COMPLETED block-entity result cannot contain conflict detail");
+                }
+            } else {
+                if (conflictIndex < 0 || conflictIndex >= MAX_BATCH_ENTRIES) {
+                    throw new IllegalArgumentException("conflictIndex out of range");
+                }
+                detail = safeText(detail, 320);
+            }
+        }
+
+        public static BlockEntityBatchResult completed(
+                String operationId,
+                int processedEntries
+        ) {
+            return new BlockEntityBatchResult(
+                    operationId, BatchState.COMPLETED, processedEntries, -1, null);
+        }
+
+        public static BlockEntityBatchResult conflict(
+                String operationId,
+                int processedEntries,
+                int conflictIndex,
+                String detail
+        ) {
+            return new BlockEntityBatchResult(
+                    operationId, BatchState.CONFLICT,
+                    processedEntries, conflictIndex, detail);
+        }
+    }
+
     public record Error(String operationId, String message) implements Response {
         public Error {
             operationId = operationId == null || operationId.isBlank()
@@ -285,6 +384,27 @@ public final class BuilderExtensionWireProtocol {
                     }
                     yield new ApplyEntityBatch(operationId, dimensionId, entries);
                 }
+                case 4 -> {
+                    String operationId = readString(in, 160);
+                    String dimensionId = readString(in, 128);
+                    int count = in.readUnsignedShort();
+                    if (count <= 0 || count > MAX_BATCH_ENTRIES) {
+                        throw new IOException("invalid block entity batch count");
+                    }
+                    List<BlockEntityMutation> entries = new ArrayList<>(count);
+                    for (int i = 0; i < count; i++) {
+                        entries.add(new BlockEntityMutation(
+                                in.readInt(),
+                                in.readInt(),
+                                in.readInt(),
+                                readString(in, 512),
+                                readString(in, 512),
+                                readByteArray(in, MAX_BLOCK_ENTITY_NBT_BYTES),
+                                readByteArray(in, MAX_BLOCK_ENTITY_NBT_BYTES)
+                        ));
+                    }
+                    yield new ApplyBlockEntityBatch(operationId, dimensionId, entries);
+                }
                 default -> throw new IOException("unknown Builder extension request");
             };
             requireExhausted(in);
@@ -320,6 +440,16 @@ public final class BuilderExtensionWireProtocol {
                     int conflictIndex = in.readInt();
                     String detail = readNullableString(in, 320);
                     yield new EntityBatchResult(
+                            operationId, state, processed, conflictIndex, detail);
+                }
+                case 5 -> {
+                    String operationId = readString(in, 160);
+                    BatchState state = enumValue(
+                            BatchState.values(), in.readUnsignedByte(), "block entity batch state");
+                    int processed = in.readUnsignedShort();
+                    int conflictIndex = in.readInt();
+                    String detail = readNullableString(in, 320);
+                    yield new BlockEntityBatchResult(
                             operationId, state, processed, conflictIndex, detail);
                 }
                 default -> throw new IOException("unknown Builder extension response");
@@ -369,6 +499,22 @@ public final class BuilderExtensionWireProtocol {
             }
             return;
         }
+        if (request instanceof ApplyBlockEntityBatch batch) {
+            out.writeByte(4);
+            writeString(out, batch.operationId());
+            writeString(out, batch.dimensionId());
+            out.writeShort(batch.entries().size());
+            for (BlockEntityMutation entry : batch.entries()) {
+                out.writeInt(entry.x());
+                out.writeInt(entry.y());
+                out.writeInt(entry.z());
+                writeString(out, entry.beforeBlockState());
+                writeString(out, entry.afterBlockState());
+                writeByteArray(out, entry.beforeNbt(), MAX_BLOCK_ENTITY_NBT_BYTES);
+                writeByteArray(out, entry.afterNbt(), MAX_BLOCK_ENTITY_NBT_BYTES);
+            }
+            return;
+        }
         throw new IOException("unsupported Builder extension request");
     }
 
@@ -399,6 +545,15 @@ public final class BuilderExtensionWireProtocol {
         }
         if (response instanceof EntityBatchResult result) {
             out.writeByte(4);
+            writeString(out, result.operationId());
+            out.writeByte(result.state().ordinal());
+            out.writeShort(result.processedEntries());
+            out.writeInt(result.conflictIndex());
+            writeNullableString(out, result.detail());
+            return;
+        }
+        if (response instanceof BlockEntityBatchResult result) {
+            out.writeByte(5);
             writeString(out, result.operationId());
             out.writeByte(result.state().ordinal());
             out.writeShort(result.processedEntries());
@@ -471,6 +626,40 @@ public final class BuilderExtensionWireProtocol {
     private static String readNullableString(DataInputStream in, int maxChars)
             throws IOException {
         return in.readBoolean() ? readString(in, maxChars) : null;
+    }
+
+
+    private static byte[] copyBoundedNbt(byte[] value, String label) {
+        Objects.requireNonNull(value, label);
+        if (value.length > MAX_BLOCK_ENTITY_NBT_BYTES) {
+            throw new IllegalArgumentException(
+                    label + " exceeds " + MAX_BLOCK_ENTITY_NBT_BYTES + " bytes");
+        }
+        return java.util.Arrays.copyOf(value, value.length);
+    }
+
+    private static void writeByteArray(
+            DataOutputStream out,
+            byte[] value,
+            int maxBytes
+    ) throws IOException {
+        Objects.requireNonNull(value, "value");
+        if (value.length > maxBytes) {
+            throw new IOException("byte array exceeds " + maxBytes + " bytes");
+        }
+        out.writeShort(value.length);
+        out.write(value);
+    }
+
+    private static byte[] readByteArray(
+            DataInputStream in,
+            int maxBytes
+    ) throws IOException {
+        int size = in.readUnsignedShort();
+        if (size > maxBytes) throw new IOException("byte array exceeds limit");
+        byte[] value = in.readNBytes(size);
+        if (value.length != size) throw new EOFException();
+        return value;
     }
 
     private static void writeLargeString(
