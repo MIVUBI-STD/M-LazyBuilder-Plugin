@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::os::windows::fs::MetadataExt;
 
 const MAX_OPERATION_HISTORY: usize = 100;
+const MAX_OPERATION_JOURNAL_BYTES: u64 = 4 * 1024 * 1024;
 const OPERATION_JOURNAL_SCHEMA_VERSION: u32 = 1;
 const WORKSPACE_LIBRARY_RESOURCE: &str = "workspace-library";
 const WORKSPACE_RESOURCE_PREFIX: &str = "workspace:";
@@ -383,6 +384,15 @@ fn cleanup_journal_recovery_files(path: &Path) -> Result<(), String> {
 }
 
 fn read_journal_file(path: &Path) -> Result<VecDeque<OperationSnapshot>, String> {
+    let size = fs::metadata(path)
+        .map_err(|error| format!("Could not inspect Launcher operation journal: {error}"))?
+        .len();
+    if size > MAX_OPERATION_JOURNAL_BYTES {
+        return Err(format!(
+            "Launcher operation journal exceeds the {} byte metadata limit.",
+            MAX_OPERATION_JOURNAL_BYTES
+        ));
+    }
     let text = fs::read_to_string(path).map_err(|error| format!("Could not read Launcher operation journal: {error}"))?;
     let journal: OperationJournal = serde_json::from_str(&text).map_err(|error| format!("Could not parse Launcher operation journal: {error}"))?;
     if journal.schema_version != OPERATION_JOURNAL_SCHEMA_VERSION {
@@ -400,6 +410,12 @@ fn persist_journal(path: &Path, entries: &VecDeque<OperationSnapshot>) -> Result
 
     let journal = OperationJournal { schema_version: OPERATION_JOURNAL_SCHEMA_VERSION, entries: entries.clone() };
     let text = serde_json::to_string_pretty(&journal).map_err(|error| error.to_string())?;
+    if text.len() as u64 > MAX_OPERATION_JOURNAL_BYTES {
+        return Err(format!(
+            "Launcher operation journal exceeds the {} byte metadata limit.",
+            MAX_OPERATION_JOURNAL_BYTES
+        ));
+    }
     let mut file = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -664,4 +680,22 @@ mod tests {
         assert!(registry.begin("backup-server", "workspace:test", false).is_err());
         assert!(registry.list().is_err());
     }
+    #[test]
+    fn oversized_operation_journal_is_rejected_before_parse() {
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-operation-journal-limit-{}-{}",
+            std::process::id(),
+            NEXT_OPERATION_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("operations.json");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(MAX_OPERATION_JOURNAL_BYTES + 1).unwrap();
+
+        let error = read_journal_file(&path).unwrap_err();
+        assert!(error.contains("metadata limit"));
+
+        let _ = fs::remove_dir_all(directory);
+    }
+
 }
