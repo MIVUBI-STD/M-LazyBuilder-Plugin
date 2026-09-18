@@ -219,7 +219,17 @@ def main() -> int:
     forbid(errors, "runtime update metadata", runtime_updates, "fn write_json_atomic(", "fn update_manifest_field(")
     require(errors, "diagnostics manifest", diagnostics_command, "workspace_registry::manifest(Path::new(&entry.path))", "build_commit", "build_channel", "build_target")
 
-    require(errors, "restore recovery", restore, "pending-restores.json", "recover_pending_restores")
+    require(
+        errors,
+        "restore recovery",
+        restore,
+        "pending-restores.json",
+        "recover_pending_restores",
+        "server_backups::verify(workspace_id, backup_id)",
+        "BackupIntegrityStatus::Verified",
+        "BackupIntegrityStatus::LegacyUnverified",
+        "no per-file SHA-256 integrity proof",
+    )
     require(errors, "backup integrity", backups, "BACKUP_SCHEMA_VERSION: u32 = 2", "sha256", "pub fn verify(", "verify_snapshot_integrity")
     require(
         errors,

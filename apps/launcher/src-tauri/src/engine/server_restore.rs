@@ -69,7 +69,13 @@ where
         return Err(RestoreFailure::failed("Registered server identity does not match its workspace manifest"));
     }
 
-    progress("validating", "Validating restore point", "Checking backup identity and compatibility before changing the current server.", None);
+    progress("validating", "Validating restore point", "Checking backup identity, compatibility, and SHA-256 integrity before changing the current server.", None);
+    let integrity = server_backups::verify(workspace_id, backup_id)
+        .map_err(|error| RestoreFailure::failed(format!(
+            "Restore point integrity verification failed: {error}"
+        )))?;
+    require_verified_restore_point(&integrity).map_err(RestoreFailure::failed)?;
+
     let backup = server_backups::list(workspace_id)
         .map_err(RestoreFailure::failed)?
         .into_iter()
@@ -416,6 +422,18 @@ fn reject_existing_reparse_points(paths: &[&Path]) -> Result<(), String> {
     Ok(())
 }
 
+fn require_verified_restore_point(
+    report: &server_backups::BackupIntegrityReport,
+) -> Result<(), String> {
+    match report.status {
+        server_backups::BackupIntegrityStatus::Verified => Ok(()),
+        server_backups::BackupIntegrityStatus::LegacyUnverified => Err(
+            "This legacy backup has no per-file SHA-256 integrity proof and cannot be restored automatically. Create a current-format verified backup before relying on restore."
+                .into(),
+        ),
+    }
+}
+
 fn validate_backup_id(value: &str) -> Result<(), String> {
     if value.starts_with("backup-") && value.chars().all(|character| character.is_ascii_alphanumeric() || character == '-') {
         Ok(())
@@ -477,6 +495,24 @@ mod tests {
             Path::new("D:/Other/.Build.lazybuilder-restoring-1-2"),
             Path::new("D:/Servers/.Build.lazybuilder-restore-rollback-1-2"),
         ));
+    }
+
+    #[test]
+    fn restore_requires_verified_backup_integrity() {
+        let verified = server_backups::BackupIntegrityReport {
+            status: server_backups::BackupIntegrityStatus::Verified,
+            files_verified: 2,
+            bytes_verified: 42,
+        };
+        assert!(require_verified_restore_point(&verified).is_ok());
+
+        let legacy = server_backups::BackupIntegrityReport {
+            status: server_backups::BackupIntegrityStatus::LegacyUnverified,
+            files_verified: 0,
+            bytes_verified: 0,
+        };
+        let error = require_verified_restore_point(&legacy).unwrap_err();
+        assert!(error.contains("no per-file SHA-256 integrity proof"));
     }
 
     #[test]
