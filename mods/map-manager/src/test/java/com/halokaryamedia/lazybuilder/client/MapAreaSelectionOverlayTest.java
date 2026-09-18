@@ -17,14 +17,14 @@ final class MapAreaSelectionOverlayTest {
                 100, 0, 900, 600,
                 500, 300,
                 -96.0, -80.0,
-                4.0);
+                1.0);
 
         assertEquals(
                 MapAreaSelectionState.DragMode.NW,
                 overlay.hit(selection, viewport, 500, 300));
         assertEquals(
                 MapAreaSelectionState.DragMode.MOVE,
-                overlay.hit(selection, viewport, 512, 308));
+                overlay.hit(selection, viewport, 548, 332));
     }
 
     @Test
