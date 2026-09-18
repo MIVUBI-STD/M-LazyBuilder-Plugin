@@ -1,0 +1,8 @@
+package com.halokaryamedia.lazybuilder.builder.mutation;
+
+public enum ExtensionReconciliationState {
+    NOT_APPLIED,
+    FULLY_APPLIED,
+    PARTIALLY_APPLIED,
+    CONFLICT
+}
