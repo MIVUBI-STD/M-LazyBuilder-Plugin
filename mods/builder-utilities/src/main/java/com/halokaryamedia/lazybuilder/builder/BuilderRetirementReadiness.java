@@ -33,7 +33,9 @@ public final class BuilderRetirementReadiness {
         }
 
         var metrics = runtime.metrics().snapshot();
-        long proofSnapshots = runtime.proofStore().snapshotCount();
+        BuilderRuntimeProofEvidence persisted =
+                runtime.proofStore().aggregateEvidence();
+        long proofSnapshots = persisted.snapshotCount();
         List<String> blockers = new ArrayList<>();
 
         if (!runtime.history().hasTier(HistoryStorageTier.DISK)) {
@@ -57,40 +59,84 @@ public final class BuilderRetirementReadiness {
         if (proofSnapshots == 0) {
             blockers.add("no persisted runtime proof snapshot exists");
         }
-        if (metrics.operationsCompleted() == 0) {
-            blockers.add("no completed Builder mutation observed in this runtime");
+        long completedOps = Math.max(
+                metrics.operationsCompleted(),
+                persisted.maxCompletedOperations());
+        if (completedOps == 0) {
+            blockers.add("no completed Builder mutation observed in runtime evidence");
         }
-        if (metrics.maxCompletedPlannedBlocks() < MIN_LARGE_EDIT_PROOF_BLOCKS) {
+
+        long maxCompletedBlocks = Math.max(
+                metrics.maxCompletedPlannedBlocks(),
+                persisted.maxCompletedPlannedBlocks());
+        if (maxCompletedBlocks < MIN_LARGE_EDIT_PROOF_BLOCKS) {
             blockers.add("no completed large-edit proof >= "
                     + MIN_LARGE_EDIT_PROOF_BLOCKS + " blocks");
         }
-        long rollbackWork = metrics.rollbackBlocksDispatched()
+
+        long currentRollbackWork = metrics.rollbackBlocksDispatched()
                 + metrics.rollbackBiomeExtensions()
                 + metrics.rollbackEntityExtensions();
-        if (metrics.operationsCancelled() == 0 || rollbackWork == 0) {
+        long rollbackWork = Math.max(
+                currentRollbackWork,
+                persisted.maxRollbackWork());
+        long cancelledOps = Math.max(
+                metrics.operationsCancelled(),
+                persisted.maxCancelledOperations());
+        if (cancelledOps == 0 || rollbackWork == 0) {
             blockers.add("no observed cancel/rollback proof that reverted applied work");
         }
-        if (biomeAuthority && metrics.forwardBiomeExtensions() == 0) {
+
+        long biomeProof = Math.max(
+                metrics.forwardBiomeExtensions(),
+                persisted.maxForwardBiomeExtensions());
+        if (biomeAuthority && biomeProof == 0) {
             blockers.add("BIOME authority exists but has no observed runtime apply proof");
         }
-        if (entityAuthority && metrics.forwardEntityExtensions() == 0) {
+
+        long entityProof = Math.max(
+                metrics.forwardEntityExtensions(),
+                persisted.maxForwardEntityExtensions());
+        if (entityAuthority && entityProof == 0) {
             blockers.add("ENTITY authority exists but has no observed runtime apply proof");
         }
-        if (metrics.operationsFailed() > 0) {
-            blockers.add("runtime has failed operations=" + metrics.operationsFailed());
+
+        long failedOps = Math.max(
+                metrics.operationsFailed(),
+                persisted.maxFailedOperations());
+        if (failedOps > 0) {
+            blockers.add("runtime evidence contains failed operations=" + failedOps);
         }
-        if (metrics.budgetExceeded() > 0) {
-            blockers.add("dispatch budget exceeded=" + metrics.budgetExceeded());
+
+        long budgetFailures = Math.max(
+                metrics.budgetExceeded(),
+                persisted.maxBudgetExceeded());
+        if (budgetFailures > 0) {
+            blockers.add("runtime evidence contains dispatch budget exceeded="
+                    + budgetFailures);
         }
-        if (metrics.extensionFailures() > 0) {
-            blockers.add("extension failures=" + metrics.extensionFailures());
+
+        long extensionFailures = Math.max(
+                metrics.extensionFailures(),
+                persisted.maxExtensionFailures());
+        if (extensionFailures > 0) {
+            blockers.add("runtime evidence contains extension failures="
+                    + extensionFailures);
+        }
+
+        long replayFailures = Math.max(
+                metrics.historyReplayFailures(),
+                persisted.maxHistoryReplayFailures());
+        if (replayFailures > 0) {
+            blockers.add("runtime evidence contains history replay failures="
+                    + replayFailures);
         }
 
         return new Report(
                 blockers.isEmpty() ? Status.READY_FOR_RETIREMENT_VALIDATION : Status.BLOCKED,
                 List.copyOf(blockers),
                 proofSnapshots,
-                metrics.operationsCompleted()
+                Math.max(metrics.operationsCompleted(), persisted.maxCompletedOperations())
         );
     }
 

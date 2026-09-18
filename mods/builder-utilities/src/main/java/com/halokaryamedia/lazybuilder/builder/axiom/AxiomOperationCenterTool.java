@@ -88,6 +88,18 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     + " (not auto-resumed because their original world cannot be proven)");
         }
 
+        try {
+            var persisted = runtime.proofStore().aggregateEvidence();
+            ImGui.textWrapped("Persisted proof evidence: snapshots="
+                    + persisted.snapshotCount()
+                    + " maxCompletedBlocks=" + persisted.maxCompletedPlannedBlocks()
+                    + " rollbackWork=" + persisted.maxRollbackWork()
+                    + " BIOME=" + persisted.maxForwardBiomeExtensions()
+                    + " ENTITY=" + persisted.maxForwardEntityExtensions());
+        } catch (Exception e) {
+            ImGui.textWrapped("Persisted proof evidence unavailable: " + concise(e));
+        }
+
         var proof = runtime.metrics().snapshot();
         ImGui.textWrapped("Proof directory: " + runtime.proofStore().directory());
         ImGui.textWrapped("Runtime proof: started=" + proof.operationsStarted()

@@ -12,6 +12,9 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import java.util.UUID;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /** Atomic JSON proof snapshots for real Builder runtime sessions. */
 public final class BuilderRuntimeProofStore {
@@ -32,6 +35,109 @@ public final class BuilderRuntimeProofStore {
 
     public Path directory() {
         return directory;
+    }
+
+    public synchronized BuilderRuntimeProofEvidence aggregateEvidence()
+            throws IOException {
+        if (!Files.isDirectory(directory)) {
+            return BuilderRuntimeProofEvidence.empty();
+        }
+
+        long snapshots = 0;
+        long completed = 0;
+        long cancelled = 0;
+        long failed = 0;
+        long maxBlocks = 0;
+        long maxExtensions = 0;
+        long rollbackBlocks = 0;
+        long rollbackBiomes = 0;
+        long rollbackEntities = 0;
+        long forwardBiomes = 0;
+        long forwardEntities = 0;
+        long budgetExceeded = 0;
+        long extensionFailures = 0;
+        long replayFailures = 0;
+
+        try (var stream = Files.list(directory)) {
+            for (Path path : stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .sorted()
+                    .toList()) {
+                JsonObject json;
+                try {
+                    JsonElement parsed = JsonParser.parseString(
+                            Files.readString(path, StandardCharsets.UTF_8));
+                    if (!parsed.isJsonObject()) continue;
+                    json = parsed.getAsJsonObject();
+                } catch (RuntimeException malformed) {
+                    continue;
+                }
+
+                snapshots++;
+                completed = Math.max(completed, longValue(json, "operationsCompleted"));
+                cancelled = Math.max(cancelled, longValue(json, "operationsCancelled"));
+                failed = Math.max(failed, longValue(json, "operationsFailed"));
+                maxBlocks = Math.max(
+                        maxBlocks,
+                        longValue(json, "maxCompletedPlannedBlocks"));
+                maxExtensions = Math.max(
+                        maxExtensions,
+                        longValue(json, "maxCompletedPlannedExtensions"));
+                rollbackBlocks = Math.max(
+                        rollbackBlocks,
+                        longValue(json, "rollbackBlocksDispatched"));
+                rollbackBiomes = Math.max(
+                        rollbackBiomes,
+                        longValue(json, "rollbackBiomeExtensions"));
+                rollbackEntities = Math.max(
+                        rollbackEntities,
+                        longValue(json, "rollbackEntityExtensions"));
+                forwardBiomes = Math.max(
+                        forwardBiomes,
+                        longValue(json, "forwardBiomeExtensions"));
+                forwardEntities = Math.max(
+                        forwardEntities,
+                        longValue(json, "forwardEntityExtensions"));
+                budgetExceeded = Math.max(
+                        budgetExceeded,
+                        longValue(json, "budgetExceeded"));
+                extensionFailures = Math.max(
+                        extensionFailures,
+                        longValue(json, "extensionFailures"));
+                replayFailures = Math.max(
+                        replayFailures,
+                        longValue(json, "historyReplayFailures"));
+            }
+        }
+
+        return new BuilderRuntimeProofEvidence(
+                snapshots,
+                completed,
+                cancelled,
+                failed,
+                maxBlocks,
+                maxExtensions,
+                rollbackBlocks,
+                rollbackBiomes,
+                rollbackEntities,
+                forwardBiomes,
+                forwardEntities,
+                budgetExceeded,
+                extensionFailures,
+                replayFailures
+        );
+    }
+
+    private static long longValue(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        if (value == null || !value.isJsonPrimitive()) return 0L;
+        try {
+            long result = value.getAsLong();
+            return Math.max(0L, result);
+        } catch (RuntimeException invalid) {
+            return 0L;
+        }
     }
 
     public synchronized long snapshotCount() throws IOException {
