@@ -26,7 +26,10 @@ def main() -> int:
     workspace_creation = RUST / "workspace_creation.rs"
     adoption = RUST / "adoption.rs"
     server_restore = RUST / "server_restore.rs"
+    backup_recovery = RUST / "backup_recovery.rs"
 
+    # App-data migration owns a migration transaction rather than normal runtime
+    # metadata, so its dedicated recovery journal remains intentionally separate.
     require(
         app_data,
         "recover_manifest_file(&path)?",
@@ -43,54 +46,10 @@ def main() -> int:
         "existing_manifest_preserves_recovery_evidence_until_validation",
     )
 
-    require(
-        operations,
-        "recover_journal_file(path)?",
-        "cleanup_journal_recovery_files(path)?",
-        "replace_journal_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.incoming")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        "operation_journal_recovery_prefers_previous_committed_copy",
-        "operation_journal_incoming_recovers_without_committed_copy",
-        "malformed_operation_journal_preserves_recovery_evidence",
-    )
-
-    require(
-        server_config,
-        "recover_atomic_file(&path)?",
-        "cleanup_recovery_files(&path)?",
-        "write_staging_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.tmp")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        "interrupted_publish_prefers_previous_committed_config",
-        "staging_config_recovers_when_no_committed_copy_exists",
-        "malformed_main_config_preserves_recovery_evidence",
-    )
-
-    # Launcher settings deliberately delegate atomic publication to the canonical
-    # persistence owner rather than carrying a second JSON writer implementation.
-    require(
-        launcher_settings,
-        "persistence::recover_atomic_file(&path, SETTINGS_LABEL)?",
-        "persistence::cleanup_recovery_files(&path, SETTINGS_LABEL)?",
-        "persistence::metadata_entry_exists(&path, SETTINGS_LABEL)?",
-        "persistence::write_json_atomically(&path, &normalized, SETTINGS_LABEL)?",
-        "interrupted_settings_publish_prefers_previous_committed_copy",
-        "settings_staging_recovers_when_no_committed_copy_exists",
-        "malformed_main_settings_preserve_recovery_evidence",
-    )
+    # Ordinary Launcher-owned JSON metadata has one publication/recovery owner.
     require(
         atomic_json,
+        "MAX_ATOMIC_JSON_BYTES",
         "OpenOptions::new()",
         ".create_new(true)",
         "file.sync_all()",
@@ -99,25 +58,60 @@ def main() -> int:
         "safe_path::remove_regular_file_if_present",
         'path.with_extension("json.tmp")',
         'path.with_extension("json.previous")',
-        "Recovery files were preserved",
+        'path.with_extension("json.incoming")',
+        "recovery is ambiguous",
+        "legacy_incoming_recovers_when_no_canonical_copy_exists",
+        "dual_staging_is_preserved_as_ambiguous",
+        "oversized_atomic_json_is_rejected_before_parse",
+    )
+
+    delegated = (
+        ("operation journal", operations, "operations.json"),
+        ("server configuration", server_config, "server-manager.json"),
+        ("launcher settings", launcher_settings, "settings.json"),
+        ("workspace registry", workspace_registry, "workspaces.json"),
+        ("creation recovery", workspace_creation, "pending-creations.json"),
+        ("adoption recovery", adoption, "pending-adoptions.json"),
+        ("restore recovery", server_restore, "pending-restores.json"),
+        ("backup recovery", backup_recovery, "pending-backups.json"),
+    )
+    for label, source, filename in delegated:
+        require(
+            source,
+            filename,
+            "persistence::recover_atomic_file",
+            "persistence::read_json",
+            "persistence::write_json_atomically",
+        )
+
+    require(
+        operations,
+        "OPERATION_JOURNAL_SCHEMA_VERSION",
+        "MAX_OPERATION_HISTORY: usize = 100",
+        "operation_journal_recovery_prefers_previous_committed_copy",
+        "operation_journal_incoming_recovers_without_committed_copy",
+        "malformed_operation_journal_preserves_recovery_evidence",
+        "oversized_operation_journal_is_rejected_before_parse",
+    )
+
+    require(
+        server_config,
+        "interrupted_publish_prefers_previous_committed_config",
+        "staging_config_recovers_when_no_committed_copy_exists",
+        "malformed_main_config_preserves_recovery_evidence",
+    )
+
+    require(
+        launcher_settings,
+        "interrupted_settings_publish_prefers_previous_committed_copy",
+        "settings_staging_recovers_when_no_committed_copy_exists",
+        "malformed_main_settings_preserve_recovery_evidence",
     )
 
     require(
         workspace_registry,
-        "recover_json_file(&path, \"workspace registry\")?",
-        "recover_json_file(&path, \"pending server deletions\")?",
-        "recover_json_file(&path, \"pending server duplicates\")?",
-        "recover_json_file(&path, \"workspace manifest\")?",
-        "cleanup_json_recovery_files",
-        "write_json_file",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.incoming")',
-        'with_extension("json.tmp")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
-        "FILE_ATTRIBUTE_REPARSE_POINT",
-        "ambiguous {label} recovery staging files",
+        "pending-deletions.json",
+        "pending-duplicates.json",
         "pub fn manifest(root: &Path)",
         "pub fn update_paper_build(root: &Path",
         "pub fn update_core_versions(root: &Path",
@@ -127,58 +121,52 @@ def main() -> int:
         "workspace_metadata_recovery_preserves_ambiguous_staging",
         "workspace_metadata_preserves_recovery_evidence_until_validation",
         "workspace_manifest_semantic_validation_preserves_recovery_evidence",
-        "let workspace_created = manifest(&root)",
+        "oversized_workspace_metadata_is_rejected_before_parse",
     )
 
     require(
         workspace_creation,
-        "recover_pending_creation_file(&path)?",
-        "cleanup_pending_creation_recovery_files(&path)?",
-        "replace_pending_creation_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.incoming")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
         "creation_intent_recovery_prefers_previous_committed_copy",
         "creation_intent_incoming_recovers_without_committed_copy",
         "malformed_creation_intent_preserves_recovery_evidence",
     )
-
     require(
         adoption,
-        "recover_pending_adoption_file(&path)?",
-        "cleanup_pending_adoption_recovery_files(&path)?",
-        "replace_pending_adoption_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.incoming")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
         "adoption_intent_recovery_prefers_previous_committed_copy",
         "adoption_intent_incoming_recovers_without_committed_copy",
         "malformed_adoption_intent_preserves_recovery_evidence",
     )
-
     require(
         server_restore,
-        "recover_pending_restore_file(&path)?",
-        "cleanup_pending_restore_recovery_files(&path)?",
-        "replace_pending_restore_file",
-        "create_new(true)",
-        "file.sync_all()",
-        'with_extension("json.previous")',
-        'with_extension("json.incoming")',
-        "metadata_entry_exists",
-        "ensure_regular_metadata_file",
         "restore_intent_recovery_prefers_previous_committed_copy",
         "restore_intent_incoming_recovers_without_committed_copy",
         "malformed_restore_intent_preserves_recovery_evidence",
     )
 
-    print("Launcher metadata durability contract OK")
+    for label, source in (
+        ("operation journal", operations),
+        ("workspace registry", workspace_registry),
+        ("creation recovery", workspace_creation),
+        ("adoption recovery", adoption),
+        ("restore recovery", server_restore),
+        ("backup recovery", backup_recovery),
+    ):
+        text = source.read_text(encoding="utf-8")
+        forbidden = (
+            "fn replace_journal_file",
+            "fn replace_json_file",
+            "fn replace_pending_creation_file",
+            "fn replace_pending_adoption_file",
+            "fn replace_pending_restore_file",
+            "fn atomic_write_json",
+        )
+        leaked = [marker for marker in forbidden if marker in text]
+        if leaked:
+            raise SystemExit(
+                f"{source.relative_to(ROOT)} restored duplicate JSON persistence owner(s): {leaked}"
+            )
+
+    print("Launcher metadata durability contract OK (canonical persistence ownership)")
     return 0
 
 
