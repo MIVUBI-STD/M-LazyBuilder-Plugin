@@ -1,7 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder.structure;
 
 import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSet;
-import com.halokaryamedia.lazybuilder.builder.history.LocalBlockPosition;
+import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSetBuilder;
 import com.halokaryamedia.lazybuilder.builder.material.BlockStateSource;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 
@@ -58,7 +58,7 @@ public final class StructurePlacementCompiler {
             }
         }
 
-        LinkedHashMap<ChunkKey, ChunkBuilder> chunks = new LinkedHashMap<>();
+        LinkedHashMap<ChunkKey, ChunkChangeSetBuilder> chunks = new LinkedHashMap<>();
         for (Map.Entry<WorldKey, String> entry : desired.entrySet()) {
             WorldKey pos = entry.getKey();
             String before = requireState(existing.stateAt(pos.x(), pos.y(), pos.z()));
@@ -66,12 +66,14 @@ public final class StructurePlacementCompiler {
             if (before.equals(after)) continue;
             int chunkX = Math.floorDiv(pos.x(), 16);
             int chunkZ = Math.floorDiv(pos.z(), 16);
-            chunks.computeIfAbsent(new ChunkKey(chunkX, chunkZ), ignored -> new ChunkBuilder(chunkX, chunkZ))
-                    .add(pos.x(), pos.y(), pos.z(), before, after);
+            chunks.computeIfAbsent(
+                            new ChunkKey(chunkX, chunkZ),
+                            ignored -> new ChunkChangeSetBuilder(chunkX, chunkZ))
+                    .addWorld(pos.x(), pos.y(), pos.z(), before, after);
         }
 
         List<ChunkChangeSet> result = new ArrayList<>(chunks.size());
-        for (ChunkBuilder builder : chunks.values()) result.add(builder.build());
+        for (ChunkChangeSetBuilder builder : chunks.values()) result.add(builder.build());
         return List.copyOf(result);
     }
 
@@ -85,50 +87,4 @@ public final class StructurePlacementCompiler {
     private record WorldKey(int x, int y, int z) {}
     private record ChunkKey(int x, int z) {}
 
-    private static final class ChunkBuilder {
-        private final int chunkX;
-        private final int chunkZ;
-        private final LinkedHashMap<String, Integer> palette = new LinkedHashMap<>();
-        private final List<Long> positions = new ArrayList<>();
-        private final List<Integer> before = new ArrayList<>();
-        private final List<Integer> after = new ArrayList<>();
-
-        private ChunkBuilder(int chunkX, int chunkZ) {
-            this.chunkX = chunkX;
-            this.chunkZ = chunkZ;
-        }
-
-        private void add(int x, int y, int z, String beforeState, String afterState) {
-            positions.add(LocalBlockPosition.pack(Math.floorMod(x, 16), y, Math.floorMod(z, 16)));
-            before.add(index(beforeState));
-            after.add(index(afterState));
-        }
-
-        private int index(String state) {
-            Integer existing = palette.get(state);
-            if (existing != null) return existing;
-            int index = palette.size();
-            palette.put(state, index);
-            return index;
-        }
-
-        private ChunkChangeSet build() {
-            long[] packed = new long[positions.size()];
-            int[] beforeArray = new int[positions.size()];
-            int[] afterArray = new int[positions.size()];
-            for (int i = 0; i < positions.size(); i++) {
-                packed[i] = positions.get(i);
-                beforeArray[i] = before.get(i);
-                afterArray[i] = after.get(i);
-            }
-            return new ChunkChangeSet(
-                    chunkX,
-                    chunkZ,
-                    List.copyOf(palette.keySet()),
-                    packed,
-                    beforeArray,
-                    afterArray
-            );
-        }
-    }
 }
