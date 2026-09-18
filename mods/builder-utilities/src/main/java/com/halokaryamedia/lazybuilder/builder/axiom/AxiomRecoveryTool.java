@@ -91,6 +91,9 @@ public final class AxiomRecoveryTool implements CustomTool {
             if (canResume(entry) && ImGui.button("Resume Selected")) {
                 resumeSelected(entry);
             }
+            if (canRollback(entry) && ImGui.button("Roll Back Selected Applied Work")) {
+                rollbackSelected(entry);
+            }
 
             if (entry.state().orElse(null) == ReconciliationState.FULLY_APPLIED
                     && ImGui.button("Publish Selected as Undo")) {
@@ -206,6 +209,14 @@ public final class AxiomRecoveryTool implements CustomTool {
     }
 
     private boolean canResume(RecoveredHistoryEntry entry) {
+        return canAuthoritativelyTransfer(entry);
+    }
+
+    private boolean canRollback(RecoveredHistoryEntry entry) {
+        return canAuthoritativelyTransfer(entry);
+    }
+
+    private boolean canAuthoritativelyTransfer(RecoveredHistoryEntry entry) {
         try {
             if (entry.state().isPresent()) {
                 return entry.state().get() != ReconciliationState.CONFLICT;
@@ -217,6 +228,27 @@ public final class AxiomRecoveryTool implements CustomTool {
         } catch (IOException e) {
             status = "Recovery inspection failed: " + safeMessage(e);
             return false;
+        }
+    }
+
+    private void rollbackSelected(RecoveredHistoryEntry entry) {
+        try {
+            ClientWorld world = requireWorld();
+            var prepared = entry.state().isPresent()
+                    ? entry.transferForResume()
+                    : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
+            CancellationSource cancellation = new CancellationSource();
+            long estimate = Math.max(
+                    1L,
+                    Math.addExact(
+                            Math.multiplyExact(prepared.plannedChanges(), 96L),
+                            Math.multiplyExact(entry.extensionCount(), 256L)));
+            mutation.start(world, prepared, cancellation, estimate);
+            mutation.requestRollbackCancellation();
+            removeEntry(entry);
+            status = "Recovery rollback started";
+        } catch (Exception e) {
+            status = "Recovery rollback failed to start: " + safeMessage(e);
         }
     }
 
