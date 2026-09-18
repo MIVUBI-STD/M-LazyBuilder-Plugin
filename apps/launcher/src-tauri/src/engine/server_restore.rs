@@ -143,6 +143,30 @@ where
         }
     }
 
+    progress(
+        "staging-verify",
+        "Verifying staged restore",
+        "Re-hashing the exact staged workspace that will be published to close the restore integrity window.",
+        Some((backup.source_bytes, backup.source_bytes)),
+    );
+    let staged_integrity = match server_backups::verify_snapshot_for_restore(
+        workspace_id,
+        backup_id,
+        &staging,
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(RestoreFailure::failed(format!(
+                "Staged restore integrity verification failed: {error}"
+            )));
+        }
+    };
+    if let Err(error) = require_verified_restore_point(&staged_integrity) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(RestoreFailure::failed(error));
+    }
+
     let intent = PendingRestore {
         workspace_id: workspace_id.to_string(),
         backup_id: backup_id.to_string(),

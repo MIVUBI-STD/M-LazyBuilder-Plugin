@@ -226,6 +226,8 @@ def main() -> int:
         "pending-restores.json",
         "recover_pending_restores",
         "server_backups::verify(workspace_id, backup_id)",
+        "server_backups::verify_snapshot_for_restore(",
+        "Staged restore integrity verification failed",
         "BackupIntegrityStatus::Verified",
         "BackupIntegrityStatus::LegacyUnverified",
         "no per-file SHA-256 integrity proof",

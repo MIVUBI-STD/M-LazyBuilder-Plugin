@@ -222,6 +222,31 @@ pub fn verify(workspace_id: &str, backup_id: &str) -> Result<BackupIntegrityRepo
     verify_snapshot_integrity(&snapshot, &manifest)
 }
 
+pub(crate) fn verify_snapshot_for_restore(
+    workspace_id: &str,
+    backup_id: &str,
+    snapshot: &Path,
+) -> Result<BackupIntegrityReport, String> {
+    validate_backup_id(backup_id)?;
+    let entry = workspace_registry::get(workspace_id)?;
+    let root = validated_workspace_root(&entry)?;
+    let backup_root = backup_root_for(&root, workspace_id)?;
+    reject_reparse_point(&backup_root)?;
+
+    let target = backup_root.join(backup_id);
+    if !target.is_dir() {
+        return Err("Server backup was not found".into());
+    }
+    reject_reparse_point(&target)?;
+    let manifest = read_backup_manifest(&target)?;
+    validate_backup_manifest_identity(&manifest, workspace_id, backup_id)?;
+
+    if !snapshot.is_dir() || !backup_snapshot_identity_matches(snapshot, workspace_id)? {
+        return Err("Staged restore workspace identity does not match the selected server".into());
+    }
+    verify_snapshot_integrity(snapshot, &manifest)
+}
+
 pub fn delete(workspace_id: &str, backup_id: &str) -> Result<(), String> {
     validate_backup_id(backup_id)?;
     let entry = workspace_registry::get(workspace_id)?;
