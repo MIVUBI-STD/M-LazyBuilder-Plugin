@@ -64,6 +64,15 @@ class TransferWireProtocolTest {
     }
 
     @Test
+    void descriptorRejectsInconsistentChunkGeometry() {
+        UUID id = UUID.randomUUID();
+        assertThrows(IllegalArgumentException.class, () -> new TransferDescriptor(
+                id, "build.zip", 100L, 24, 4, "b".repeat(64)));
+        assertThrows(IllegalArgumentException.class, () -> new TransferDescriptor(
+                id, "build.zip", 100L, TransferWireProtocol.MAX_CHUNK_BYTES + 1, 1, "b".repeat(64)));
+    }
+
+    @Test
     void responseChunkRemainsInsideWireCeiling() throws Exception {
         UUID id = UUID.randomUUID();
         byte[] data = new byte[TransferWireProtocol.MAX_CHUNK_BYTES];

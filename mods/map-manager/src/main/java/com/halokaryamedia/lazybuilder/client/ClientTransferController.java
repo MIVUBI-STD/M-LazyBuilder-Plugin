@@ -16,6 +16,7 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
@@ -103,7 +104,12 @@ public final class ClientTransferController {
             case TransferWireProtocol.UploadProgressResponse progress -> onUploadProgress(progress);
             case TransferWireProtocol.UploadFinished finished -> {
                 Upload state = upload;
-                if (state == null || !isCurrent(state.generation)) return;
+                if (state == null || !isCurrent(state.generation) || state.descriptor == null) return;
+                if (!state.descriptor.sessionId().equals(finished.sessionId())
+                        || !state.source.getFileName().toString().equals(finished.fileName())) {
+                    abortUpload("Upload completion did not match the active transfer");
+                    return;
+                }
                 upload = null;
                 closeQuietly(state.channel);
                 Consumer<String> callback = uploadFinished;
@@ -235,7 +241,14 @@ public final class ClientTransferController {
         Upload state = upload;
         if (state == null || !isCurrent(state.generation) || state.descriptor == null
                 || !state.descriptor.sessionId().equals(progress.sessionId())) return;
-        state.acknowledged = Math.max(state.acknowledged, progress.nextChunkIndex());
+        if (progress.totalBytes() != state.descriptor.totalBytes()
+                || progress.totalChunks() != state.descriptor.totalChunks()
+                || progress.nextChunkIndex() > state.nextChunkToSend
+                || progress.nextChunkIndex() < state.acknowledged) {
+            abortUpload("Upload progress did not match the active transfer");
+            return;
+        }
+        state.acknowledged = progress.nextChunkIndex();
         long completed = Math.min(state.descriptor.totalBytes(),
                 (long) state.acknowledged * state.descriptor.chunkBytes());
         setStatus(new TransferStatus(TransferPhase.UPLOADING,
@@ -336,6 +349,7 @@ public final class ClientTransferController {
         state.batchStart = start;
         state.batchEnd = end;
         state.receivedInBatch = 0;
+        state.receivedBatchChunks.clear();
         state.pendingWrites = 0;
         state.batchSawLast = false;
         state.nextChunkToRequest = end;
@@ -353,6 +367,18 @@ public final class ClientTransferController {
             return;
         }
 
+        int batchIndex = chunk.chunkIndex() - state.batchStart;
+        if (state.receivedBatchChunks.get(batchIndex)) {
+            abortDownload("Duplicate download chunk received: " + chunk.chunkIndex());
+            return;
+        }
+        int expectedLength = expectedDownloadChunkLength(state.descriptor, chunk.chunkIndex());
+        boolean expectedLast = chunk.chunkIndex() == state.descriptor.totalChunks() - 1;
+        if (chunk.data().length != expectedLength || chunk.last() != expectedLast) {
+            abortDownload("Download chunk metadata did not match the active transfer");
+            return;
+        }
+        state.receivedBatchChunks.set(batchIndex);
         state.receivedInBatch++;
         state.receivedChunks++;
         state.pendingWrites++;
@@ -489,6 +515,15 @@ public final class ClientTransferController {
         }
     }
 
+    static int expectedDownloadChunkLength(TransferDescriptor descriptor, int chunkIndex) {
+        Objects.requireNonNull(descriptor, "descriptor");
+        if (chunkIndex < 0 || chunkIndex >= descriptor.totalChunks()) {
+            throw new IllegalArgumentException("chunkIndex is outside transfer descriptor");
+        }
+        long offset = (long) chunkIndex * descriptor.chunkBytes();
+        return (int) Math.min(descriptor.chunkBytes(), descriptor.totalBytes() - offset);
+    }
+
     private static void readFully(FileChannel channel, ByteBuffer target, long position) throws IOException {
         long cursor = position;
         while (target.hasRemaining()) {
@@ -615,6 +650,7 @@ public final class ClientTransferController {
         private int batchStart;
         private int batchEnd;
         private int receivedInBatch;
+        private final BitSet receivedBatchChunks = new BitSet(TransferWireProtocol.PIPELINE_WINDOW);
         private int receivedChunks;
         private int pendingWrites;
         private boolean batchSawLast;
