@@ -90,6 +90,41 @@ class StructurePlacementAuxiliaryBatchTest {
         assertEquals(1, plan.extensionChanges());
     }
 
+    @Test
+    void overlappingEntitySlotsAreRejectedBeforeMutation() {
+        StructureSnapshot snapshot = new StructureSnapshot(
+                List.of(new StructureBlock(0, 0, 0, "minecraft:stone")),
+                List.of(),
+                List.of(),
+                List.of(new StructureEntity(0.5, 0.5, 0.5, new byte[]{6}))
+        );
+
+        StructureAuxiliaryContext auxiliary = new StructureAuxiliaryContext(
+                null,
+                BlockEntityPayloadTransform.identity(),
+                null,
+                BiomePayloadTransform.identity(),
+                (key, pos) -> {
+                    try {
+                        return EntityExtensionPayload.absent(
+                                pos.x(), pos.y(), pos.z()).encode();
+                    } catch (java.io.IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                },
+                EntityPayloadTransform.identity()
+        );
+
+        assertThrows(IllegalArgumentException.class, () ->
+                StructurePlacementBatchPlanner.planAll(
+                        List.of(entry(0, 64, 0, 0), entry(0, 64, 0, 1)),
+                        id -> snapshot,
+                        BlockStateTransform.identity(),
+                        (x, y, z) -> "minecraft:air",
+                        auxiliary
+                ));
+    }
+
     private static PlacementPlanEntry entry(int x, int y, int z, int ordinal) {
         return new PlacementPlanEntry(
                 new PlacementPoint(x, y, z, ordinal),
