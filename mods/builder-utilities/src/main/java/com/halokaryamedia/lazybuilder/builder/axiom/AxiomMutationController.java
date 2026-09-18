@@ -76,12 +76,14 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             throw new IllegalArgumentException("estimatedHistoryBytes must be > 0");
         }
 
-        // Claim runtime ownership before constructing a session. If registration
-        // fails, a recovered prepared mutation is still untouched and its caller can
-        // reclaim the recovery wrapper safely.
-        runtime.registerActiveOperation(this);
+        // Claim runtime ownership before constructing a session. Registration may
+        // race with world shutdown, so keep fresh-plan cleanup inside the same failure
+        // boundary instead of leaking an owned durable journal.
+        boolean registered = false;
         boolean sessionCreated = false;
         try {
+            runtime.registerActiveOperation(this);
+            registered = true;
             this.cancellation = requestedCancellation;
             this.estimatedHistoryBytes = estimatedHistoryBytes;
             if (prepared.changeSet().extensionCount() == 0) {
@@ -101,7 +103,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             }
             sessionCreated = true;
         } catch (RuntimeException | IOException failure) {
-            runtime.unregisterActiveOperation(this);
+            if (registered) runtime.unregisterActiveOperation(this);
             session = null;
             mixedSession = null;
             this.cancellation = null;
