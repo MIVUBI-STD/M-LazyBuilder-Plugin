@@ -46,6 +46,11 @@ final class PaperBlockEntityNbtBridge {
         blockEntityClass = Class.forName(
                 "net.minecraft.world.level.block.entity.BlockEntity");
         Class<?> nbtIoClass = Class.forName("net.minecraft.nbt.NbtIo");
+        Class<?> craftWorldClass = Class.forName("org.bukkit.craftbukkit.CraftWorld");
+        Class<?> serverLevelClass = Class.forName("net.minecraft.server.level.ServerLevel");
+        craftWorldClass.getMethod("getHandle");
+        serverLevelClass.getMethod("getBlockEntity", blockPosClass);
+        serverLevelClass.getMethod("registryAccess");
 
         blockPosConstructor = blockPosClass.getConstructor(
                 int.class, int.class, int.class);
@@ -94,11 +99,11 @@ final class PaperBlockEntityNbtBridge {
                 mutation.afterBlockState());
 
         Snapshot actual = snapshot(world, mutation.x(), mutation.y(), mutation.z());
-        Snapshot before = new Snapshot(
-                block.getBlockData().equals(beforeBlock),
+        Expected before = new Expected(
+                beforeBlock,
                 decodePayload(mutation.beforeNbt()));
-        Snapshot after = new Snapshot(
-                block.getBlockData().equals(afterBlock),
+        Expected after = new Expected(
+                afterBlock,
                 decodePayload(mutation.afterNbt()));
 
         if (matches(actual, after)) {
@@ -147,13 +152,15 @@ final class PaperBlockEntityNbtBridge {
     }
 
     private Snapshot snapshot(World world, int x, int y, int z) throws Exception {
+        Block block = world.getBlockAt(x, y, z);
         Object entity = blockEntity(world, x, y, z);
         Object nbt = entity == null ? null : canonicalize(save(entity, world));
-        return new Snapshot(true, nbt);
+        return new Snapshot(block.getBlockData(), nbt);
     }
 
-    private boolean matches(Snapshot actual, Snapshot expected) {
-        return expected.blockMatches() && Objects.equals(actual.nbt(), expected.nbt());
+    private boolean matches(Snapshot actual, Expected expected) {
+        return actual.blockData().equals(expected.blockData())
+                && Objects.equals(actual.nbt(), expected.nbt());
     }
 
     private Object blockEntity(World world, int x, int y, int z) throws Exception {
@@ -274,5 +281,6 @@ final class PaperBlockEntityNbtBridge {
 
     record ApplyResult(ApplyState state, String detail) {}
 
-    private record Snapshot(boolean blockMatches, Object nbt) {}
+    private record Snapshot(BlockData blockData, Object nbt) {}
+    private record Expected(BlockData blockData, Object nbt) {}
 }
