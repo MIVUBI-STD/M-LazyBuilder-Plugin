@@ -15,13 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -35,7 +32,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * Persistent client-side world-map memory split into bounded regional files.
@@ -53,7 +49,6 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class ClientMapSurfaceCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMapSurfaceCache.class);
-    private static final int FORMAT_VERSION = 5;
     private static final int LEGACY_FORMAT_VERSION = 1;
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
@@ -354,9 +349,9 @@ public final class ClientMapSurfaceCache {
         }
 
         region.loadScheduled = true;
-        Path file = regionFile(directory, regionKey);
+        Path file = MapSurfaceRegionStore.regionFile(directory, regionKey);
         try {
-            CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
+            CompletableFuture.supplyAsync(() -> MapSurfaceRegionStore.read(file), ioExecutor)
                     .whenComplete((snapshot, failure) -> {
                         regionLoadsInFlight.decrementAndGet();
                         if (generation != scopeGeneration) return;
@@ -489,10 +484,10 @@ public final class ClientMapSurfaceCache {
         if (ioExecutor.isShutdown() || snapshot.size() == 0) return;
         if (!region.markWriteQueued(snapshot.revision)) return;
 
-        Path destination = regionFile(directory, regionKey);
+        Path destination = MapSurfaceRegionStore.regionFile(directory, regionKey);
         try {
             ioExecutor.execute(() -> {
-                boolean success = writeRegionWithRetry(destination, snapshot);
+                boolean success = MapSurfaceRegionStore.writeWithRetry(destination, snapshot);
                 completedWrites.add(new RegionWriteCompletion(
                         generation, regionKey, region, snapshot.revision, success));
             });
@@ -517,7 +512,7 @@ public final class ClientMapSurfaceCache {
             if (partitioned.isEmpty() || generation != scopeGeneration) return;
             boolean complete = true;
             for (Map.Entry<Long, RegionData> entry : partitioned.entrySet()) {
-                complete &= writeRegionWithRetry(regionFile(targetDirectory, entry.getKey()), entry.getValue().snapshot());
+                complete &= MapSurfaceRegionStore.writeWithRetry(MapSurfaceRegionStore.regionFile(targetDirectory, entry.getKey()), entry.getValue().snapshot());
             }
             if (!complete || generation != scopeGeneration) return;
             try {
@@ -550,72 +545,6 @@ public final class ClientMapSurfaceCache {
             result.clear();
         }
         return result;
-    }
-
-    static RegionSnapshot readRegion(Path source) {
-        if (source == null || !Files.isRegularFile(source)) return RegionSnapshot.EMPTY;
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                new GZIPInputStream(Files.newInputStream(source))))) {
-            if (in.readInt() != FORMAT_VERSION) return RegionSnapshot.EMPTY;
-            int count = in.readInt();
-            if (count < 0 || count > REGION_CAPACITY) {
-                throw new IOException("Invalid LazyBuilder map region entry count: " + count);
-            }
-            int[] indices = new int[count];
-            int[] colors = new int[count];
-            int[] heights = new int[count];
-            for (int i = 0; i < count; i++) {
-                int index = in.readUnsignedShort();
-                if (index >= REGION_CAPACITY) {
-                    throw new IOException("Invalid LazyBuilder map region index: " + index);
-                }
-                indices[i] = index;
-                colors[i] = in.readInt();
-                heights[i] = in.readInt();
-            }
-            return new RegionSnapshot(indices, colors, heights, 0L);
-        } catch (IOException error) {
-            throw new IllegalStateException("Could not read LazyBuilder map region " + source, error);
-        }
-    }
-
-    private static boolean writeRegionWithRetry(Path destination, RegionSnapshot snapshot) {
-        if (writeRegion(destination, snapshot)) return true;
-        return writeRegion(destination, snapshot);
-    }
-
-    private static boolean writeRegion(Path destination, RegionSnapshot snapshot) {
-        Path parent = destination.getParent();
-        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
-        try {
-            if (parent != null) Files.createDirectories(parent);
-            try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(
-                    new GZIPOutputStream(Files.newOutputStream(temporary))))) {
-                out.writeInt(FORMAT_VERSION);
-                out.writeInt(snapshot.size());
-                for (int i = 0; i < snapshot.size(); i++) {
-                    out.writeShort(snapshot.indices[i]);
-                    out.writeInt(snapshot.colors[i]);
-                    out.writeInt(snapshot.heights[i]);
-                }
-            }
-            try {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailure) {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return true;
-        } catch (IOException error) {
-            try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
-            LOGGER.warn("Could not persist LazyBuilder map region: {}", destination, error);
-            return false;
-        }
-    }
-
-    private static Path regionFile(Path directory, long regionKey) {
-        int regionX = unpackX(regionKey);
-        int regionZ = unpackZ(regionKey);
-        return directory.resolve("r." + regionX + "." + regionZ + ".surface.gz");
     }
 
     private static int localIndex(int x, int z) {
