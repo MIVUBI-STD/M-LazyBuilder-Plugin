@@ -302,6 +302,13 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         switch (progress.state()) {
             case YIELDED, WAITING -> { }
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.blockEntities()) {
+                    throw new IllegalStateException(
+                            "block-entity replay authority acknowledged "
+                                    + progress.processedExtensions() + " of "
+                                    + extensionPlan.blockEntities()
+                                    + " planned block-entity extensions");
+                }
                 blockEntityDispatcher.close();
                 blockEntityDispatcher = null;
                 verifyBlockEntityState(
@@ -349,6 +356,12 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         switch (progress.state()) {
             case YIELDED, WAITING -> { }
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.biomes()) {
+                    throw new IllegalStateException(
+                            "biome replay authority acknowledged "
+                                    + progress.processedExtensions() + " of "
+                                    + extensionPlan.biomes() + " planned biome extensions");
+                }
                 biomeDispatcher.close();
                 biomeDispatcher = null;
                 verifyBiomeState(
