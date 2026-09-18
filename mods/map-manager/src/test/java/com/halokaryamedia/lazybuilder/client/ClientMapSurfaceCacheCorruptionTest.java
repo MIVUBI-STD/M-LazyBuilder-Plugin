@@ -22,7 +22,7 @@ class ClientMapSurfaceCacheCorruptionTest {
             out.writeInt(16_385);
         }
 
-        assertThrows(IllegalStateException.class, () -> ClientMapSurfaceCache.readRegion(region));
+        assertThrows(IllegalStateException.class, () -> MapSurfaceRegionStore.read(region));
     }
 
     @Test
@@ -36,7 +36,7 @@ class ClientMapSurfaceCacheCorruptionTest {
             out.writeInt(72);
         }
 
-        assertThrows(IllegalStateException.class, () -> ClientMapSurfaceCache.readRegion(region));
+        assertThrows(IllegalStateException.class, () -> MapSurfaceRegionStore.read(region));
     }
 
     private static DataOutputStream output(Path destination) throws Exception {
