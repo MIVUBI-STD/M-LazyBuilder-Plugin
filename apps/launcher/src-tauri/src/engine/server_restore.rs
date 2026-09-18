@@ -425,7 +425,7 @@ fn reject_existing_reparse_points(paths: &[&Path]) -> Result<(), String> {
 fn require_verified_restore_point(
     report: &server_backups::BackupIntegrityReport,
 ) -> Result<(), String> {
-    match report.status {
+    match &report.status {
         server_backups::BackupIntegrityStatus::Verified => Ok(()),
         server_backups::BackupIntegrityStatus::LegacyUnverified => Err(
             "This legacy backup has no per-file SHA-256 integrity proof and cannot be restored automatically. Create a current-format verified backup before relying on restore."
