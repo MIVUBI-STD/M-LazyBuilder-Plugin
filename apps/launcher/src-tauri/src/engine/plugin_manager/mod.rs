@@ -128,7 +128,13 @@ impl PluginManagerState {
         }
 
         let current = &existing[0];
-        let current_version = current.metadata.as_ref().expect("validated scan").version.clone();
+        let current_version = current.metadata.as_ref()
+            .ok_or_else(|| format!(
+                "Installed plugin metadata became unavailable during update: {}",
+                current.path.display()
+            ))?
+            .version
+            .clone();
         let target_dir = if current.enabled { plugins_directory(&workspace) } else { disabled_directory(&workspace) };
         fs::create_dir_all(&target_dir).map_err(|error| error.to_string())?;
         let destination = target_dir.join(safe_jar_name(&incoming.name, &incoming.version));
@@ -183,7 +189,11 @@ impl PluginManagerState {
         }
 
         if enabled {
-            let metadata = existing.metadata.as_ref().expect("validated scan");
+            let metadata = existing.metadata.as_ref()
+                .ok_or_else(|| format!(
+                    "Installed plugin metadata became unavailable before enable: {}",
+                    existing.path.display()
+                ))?;
             if let Some(problem) = dependency_problem(&workspace, metadata, Some(&canonical_id))? {
                 return Err(problem);
             }
@@ -356,15 +366,21 @@ fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
         .collect();
 
     let mut groups: BTreeMap<String, Vec<&ScannedPlugin>> = BTreeMap::new();
-    for item in scanned.iter().filter(|item| item.metadata.is_some()) {
-        let id = item.metadata.as_ref().expect("filtered metadata").id.clone();
-        groups.entry(id).or_default().push(item);
+    for item in &scanned {
+        let Some(metadata) = item.metadata.as_ref() else {
+            continue;
+        };
+        groups.entry(metadata.id.clone()).or_default().push(item);
     }
 
     let mut result = Vec::new();
     for (id, items) in groups {
-        let primary = items.iter().find(|item| item.enabled).copied().unwrap_or(items[0]);
-        let metadata = primary.metadata.as_ref().expect("validated scan");
+        let Some(primary) = items.iter().find(|item| item.enabled).copied().or_else(|| items.first().copied()) else {
+            continue;
+        };
+        let Some(metadata) = primary.metadata.as_ref() else {
+            continue;
+        };
         let mut state = if primary.enabled { "Enabled" } else { "Disabled" }.to_string();
         let mut problem = None;
         let mut candidate_files = None;
