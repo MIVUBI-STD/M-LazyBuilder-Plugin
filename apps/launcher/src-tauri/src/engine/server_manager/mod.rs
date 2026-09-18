@@ -1,4 +1,4 @@
-use crate::engine::{paths, resource_settings, server_config, world_manager};
+use crate::engine::{paths, persistence, resource_settings, server_config, world_manager};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::OpenOptions;
@@ -211,9 +211,31 @@ impl ServerManagerState {
 
     fn process_marker_path(&self) -> Result<PathBuf, String> { Ok(self.workspace_root()?.join("tools").join("lazybuilder").join("cache").join("server-process.json")) }
     fn write_process_marker(&self, pid: u32) -> Result<(), String> { let pid_value = Pid::from_u32(pid); let mut system = System::new_all(); system.refresh_process(pid_value); let process = system.process(pid_value).ok_or_else(|| format!("Paper PID {pid} exited before its process marker could be recorded"))?; let marker = ServerProcessMarker { pid, process_start_time: process.start_time() }; self.write_process_marker_value(&marker)?; self.clear_legacy_process_identity(); Ok(()) }
-    fn write_process_marker_value(&self, marker: &ServerProcessMarker) -> Result<(), String> { let path = self.process_marker_path()?; if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; } let text = serde_json::to_string_pretty(marker).map_err(|error| error.to_string())?; let temporary = path.with_extension("json.tmp"); fs::write(&temporary, text).map_err(|error| error.to_string())?; replace_file(&temporary, &path) }
-    fn read_process_marker(&self) -> Result<Option<ServerProcessMarker>, String> { let path = self.process_marker_path()?; if !path.is_file() { self.clear_legacy_process_identity(); return Ok(None); } let text = fs::read_to_string(&path).map_err(|error| format!("Could not read managed Paper process marker {}: {error}", path.display()))?; let marker = serde_json::from_str(&text).map_err(|error| format!("Managed Paper process marker {} is malformed and requires recovery before another server lifecycle action: {error}", path.display()))?; Ok(Some(marker)) }
-    fn remove_process_marker_if_matches(&self, pid: u32) -> Result<(), String> { let path = self.process_marker_path()?; let Some(marker) = self.read_process_marker()? else { return Ok(()); }; if marker.pid == pid { fs::remove_file(path).map_err(|error| error.to_string())?; self.clear_legacy_process_identity(); } Ok(()) }
+    fn write_process_marker_value(&self, marker: &ServerProcessMarker) -> Result<(), String> {
+        let path = self.process_marker_path()?;
+        persistence::write_json_atomically(&path, marker, "managed Paper process marker")
+    }
+    fn read_process_marker(&self) -> Result<Option<ServerProcessMarker>, String> {
+        let path = self.process_marker_path()?;
+        persistence::recover_atomic_file(&path, "managed Paper process marker")?;
+        if !persistence::metadata_entry_exists(&path, "managed Paper process marker")? {
+            self.clear_legacy_process_identity();
+            return Ok(None);
+        }
+        let marker = persistence::read_json(&path, "managed Paper process marker")
+            .map_err(|error| format!("{error}. Recovery is required before another server lifecycle action."))?;
+        persistence::cleanup_recovery_files(&path, "managed Paper process marker")?;
+        Ok(Some(marker))
+    }
+    fn remove_process_marker_if_matches(&self, pid: u32) -> Result<(), String> {
+        let path = self.process_marker_path()?;
+        let Some(marker) = self.read_process_marker()? else { return Ok(()); };
+        if marker.pid == pid {
+            persistence::safe_path::remove_regular_file_if_present(&path, "managed Paper process marker")?;
+            self.clear_legacy_process_identity();
+        }
+        Ok(())
+    }
     fn looks_like_managed_paper(&self, process: &Process) -> Result<bool, String> { let process_name = process.name().to_ascii_lowercase(); let command_lower = process.cmd().join(" ").to_ascii_lowercase(); let worlds = self.workspace_root()?.join("world-system").join("worlds").display().to_string().to_ascii_lowercase(); Ok(process_name.contains("java") && command_lower.contains("-jar") && command_lower.contains("--universe") && command_lower.contains("nogui") && command_lower.contains(&worlds)) }
     fn clear_legacy_process_identity(&self) { if let Ok(root) = self.workspace_root() { let path = root.join("tools").join("lazybuilder").join("cache").join("server-process-identity.json"); let _ = fs::remove_file(&path); let _ = fs::remove_file(path.with_extension("json.previous")); let _ = fs::remove_file(path.with_extension("json.tmp")); } }
 }
@@ -240,4 +262,3 @@ fn resolve_java(configured: &str) -> Result<PathBuf, String> {
 fn java_major_and_text(java: &Path) -> Result<(u32, String), String> { let mut command = Command::new(java); hide_windows_console(&mut command); let output = command.arg("--version").output().map_err(|error| error.to_string())?; let text = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)); let normalized = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("Unknown Java").trim().to_string(); let major = text.split_whitespace().find_map(|part| part.trim_matches(|ch: char| !ch.is_ascii_digit() && ch != '.').split('.').next()?.parse::<u32>().ok()).ok_or_else(|| "Could not determine Java runtime version".to_string())?; Ok((major, normalized)) }
 fn validate_java_21(java: &Path) -> Result<(), String> { let (major, _) = java_major_and_text(java)?; if major != 21 { return Err(format!("LazyBuilder Paper 1.21.4 requires Java 21. Detected Java {major}.")); } Ok(()) }
 fn hide_windows_console(command: &mut Command) { #[cfg(windows)] { command.creation_flags(CREATE_NO_WINDOW); } }
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> { if destination.exists() { let backup = destination.with_extension("json.previous"); let _ = fs::remove_file(&backup); fs::rename(destination, &backup).map_err(|error| error.to_string())?; match fs::rename(source, destination) { Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }, Err(error) => { let _ = fs::rename(&backup, destination); Err(error.to_string()) } } } else { fs::rename(source, destination).map_err(|error| error.to_string()) } }

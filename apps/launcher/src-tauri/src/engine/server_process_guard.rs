@@ -1,4 +1,4 @@
-use crate::engine::workspace_registry;
+use crate::engine::{persistence, workspace_registry};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,14 +42,16 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
     for server in servers {
         let root = PathBuf::from(&server.path);
         let marker_path = process_marker_path(&root);
-        if !marker_path.is_file() { continue; }
-        let text = match fs::read_to_string(&marker_path) {
-            Ok(text) => text,
-            Err(error) => { result.issues.push(format!("Could not read process marker for {}: {error}", server.name)); continue; }
-        };
-        let marker: ProcessMarker = match serde_json::from_str(&text) {
-            Ok(marker) => marker,
-            Err(error) => { result.issues.push(format!("Process marker for {} is malformed and was preserved for manual recovery: {error}", server.name)); continue; }
+        let marker = match read_marker(&marker_path) {
+            Ok(Some(marker)) => marker,
+            Ok(None) => continue,
+            Err(error) => {
+                result.issues.push(format!(
+                    "Process marker for {} is unsafe or malformed and was preserved for recovery: {error}",
+                    server.name
+                ));
+                continue;
+            }
         };
         let pid = Pid::from_u32(marker.pid);
         system.refresh_process(pid);
@@ -60,7 +62,7 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
             Some(_) => false,
         };
         if stale {
-            match fs::remove_file(&marker_path) {
+            match persistence::safe_path::remove_regular_file_if_present(&marker_path, "managed Paper process marker") {
                 Ok(()) => result.stale_markers_cleared = result.stale_markers_cleared.saturating_add(1),
                 Err(error) => result.issues.push(format!("Could not clear stale process marker for {}: {error}", server.name)),
             }
@@ -149,11 +151,16 @@ pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
 fn process_marker_path(workspace: &Path) -> PathBuf { workspace.join("tools").join("lazybuilder").join("cache").join("server-process.json") }
 
 fn read_marker(path: &Path) -> Result<Option<ProcessMarker>, String> {
-    if !path.is_file() { return Ok(None); }
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("Could not read managed Paper process marker {}: {error}", path.display()))?;
-    let marker = serde_json::from_str(&text)
-        .map_err(|error| format!("Managed Paper process marker {} is malformed and requires recovery before another server lifecycle action: {error}", path.display()))?;
+    persistence::recover_atomic_file(path, "managed Paper process marker")?;
+    if !persistence::metadata_entry_exists(path, "managed Paper process marker")? {
+        return Ok(None);
+    }
+    let marker = persistence::read_json(path, "managed Paper process marker")
+        .map_err(|error| format!(
+            "Managed Paper process marker {} is unsafe or malformed: {error}",
+            path.display()
+        ))?;
+    persistence::cleanup_recovery_files(path, "managed Paper process marker")?;
     Ok(Some(marker))
 }
 
