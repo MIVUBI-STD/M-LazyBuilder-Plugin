@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.builder;
 
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomClientServices;
+import com.halokaryamedia.lazybuilder.builder.axiom.AxiomProceduralTextureTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomScatterTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplinePreviewTool;
 import net.fabricmc.api.ClientModInitializer;
@@ -17,6 +18,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         runtime = BuilderRuntime.createDefault();
         services.toolRegistry().register(new AxiomSplinePreviewTool(services, runtime));
         services.toolRegistry().register(new AxiomScatterTool(services, runtime));
-        LOGGER.info("Builder Utilities attached to Axiom public API with durable budgeted spline and scatter mutation enabled.");
+        services.toolRegistry().register(new AxiomProceduralTextureTool(services, runtime));
+        LOGGER.info("Builder Utilities attached to Axiom public API with durable spline, scatter, and procedural texturing.");
     }
 }
