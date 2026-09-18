@@ -159,6 +159,20 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
         transferred = true;
     }
 
+    /**
+     * Releases runtime ownership while leaving the durable journal on disk.
+     * Used when discovery/inspection fails before the user has chosen an action.
+     */
+    public void releaseForRetry() throws IOException {
+        ensureOwned();
+        if (!stored.preserveForRecovery()) {
+            throw new IOException(
+                    "Recovery journal could not be released for a later retry: "
+                            + stored.operationId());
+        }
+        transferred = true;
+    }
+
     @Override
     public void close() throws IOException {
         if (closed || transferred) return;
