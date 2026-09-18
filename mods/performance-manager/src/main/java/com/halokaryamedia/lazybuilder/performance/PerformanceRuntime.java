@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.culling.CullingRuntime;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
@@ -61,6 +62,11 @@ public final class PerformanceRuntime {
         if (updated == null) return;
         boolean cullingDisabled = (preferences.entityCulling() && !updated.entityCulling())
                 || (preferences.blockEntityCulling() && !updated.blockEntityCulling());
+        boolean renderingDisabled = preferences.renderingOptimizations() && !updated.renderingOptimizations();
+        if (renderingDisabled && !TerrainPhysicalArenaManager.recoverAllExclusive()) {
+            return;
+        }
+
         preferences = updated;
         configStore.save(updated);
         if (cullingDisabled) cullingRuntime.clear();

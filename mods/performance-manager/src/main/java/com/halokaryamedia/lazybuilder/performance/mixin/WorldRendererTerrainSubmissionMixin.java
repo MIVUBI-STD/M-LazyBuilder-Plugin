@@ -50,6 +50,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private int lazybuilder$cachedVisibleCount = -1;
     @Unique private RenderLayer lazybuilder$currentLayer;
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
+    @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -73,6 +74,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         this.lazybuilder$currentLayer = layer;
         this.lazybuilder$physicalPreparedBuffer = null;
+        this.lazybuilder$blockedVanillaFallbackBuffer = null;
 
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
             this.lazybuilder$submissionIndexActive = false;
@@ -134,6 +136,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             CallbackInfo ci
     ) {
         this.lazybuilder$physicalPreparedBuffer = null;
+        this.lazybuilder$blockedVanillaFallbackBuffer = null;
         TerrainMultiDrawSubmissionBackend.finishLayer();
         TerrainPhysicalArenaManager.noteExternalBind();
     }
@@ -187,6 +190,10 @@ abstract class WorldRendererTerrainSubmissionMixin {
 
         this.lazybuilder$physicalPreparedBuffer = null;
         TerrainPhysicalArenaManager.noteExternalBind();
+        if (!TerrainPhysicalArenaManager.recoverVanillaBacking(buffer)) {
+            this.lazybuilder$blockedVanillaFallbackBuffer = buffer;
+            return;
+        }
         buffer.bind();
     }
 
@@ -195,6 +202,11 @@ abstract class WorldRendererTerrainSubmissionMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gl/VertexBuffer;draw()V")
     )
     private void lazybuilder$drawPhysicalArenaOrVanilla(VertexBuffer buffer) {
+        if (this.lazybuilder$blockedVanillaFallbackBuffer == buffer) {
+            this.lazybuilder$blockedVanillaFallbackBuffer = null;
+            return;
+        }
+
         TerrainMultiDrawSubmissionBackend.DrawAction multi = TerrainMultiDrawSubmissionBackend.onDraw(buffer);
         if (multi == TerrainMultiDrawSubmissionBackend.DrawAction.SUBMITTED
                 || multi == TerrainMultiDrawSubmissionBackend.DrawAction.SKIP) {
@@ -203,7 +215,11 @@ abstract class WorldRendererTerrainSubmissionMixin {
         }
         if (multi == TerrainMultiDrawSubmissionBackend.DrawAction.FALLBACK) {
             this.lazybuilder$physicalPreparedBuffer = null;
+            if (TerrainPhysicalArenaManager.bind(buffer) && TerrainPhysicalArenaManager.draw(buffer)) {
+                return;
+            }
             TerrainPhysicalArenaManager.noteExternalBind();
+            if (!TerrainPhysicalArenaManager.recoverVanillaBacking(buffer)) return;
             buffer.bind();
             buffer.draw();
             return;
@@ -218,6 +234,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
 
         if (expectedPhysical) {
             TerrainPhysicalArenaManager.noteExternalBind();
+            if (!TerrainPhysicalArenaManager.recoverVanillaBacking(buffer)) return;
             buffer.bind();
         }
         buffer.draw();
