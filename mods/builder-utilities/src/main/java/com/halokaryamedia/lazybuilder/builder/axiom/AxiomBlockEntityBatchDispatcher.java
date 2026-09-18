@@ -9,7 +9,6 @@ import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworki
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.BlockPos;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -25,7 +24,6 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
     private final StoredExtensionCursor cursor;
     private final CancellationToken cancellation;
     private final ClientWorld world;
-    private final AxiomBlockStateCodec codec;
     private final String dimensionId;
     private final int maxBatchEntries;
     private final boolean undo;
@@ -51,7 +49,6 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         this.cursor = StoredExtensionCursor.open(stored);
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
         this.world = Objects.requireNonNull(world, "world");
-        this.codec = new AxiomBlockStateCodec(world);
         this.dimensionId = world.getRegistryKey().getValue().toString();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsBlockEntity()) {
@@ -151,8 +148,9 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
         Position key = new Position(x, y, z);
         StatePair pair = blockStates.get(key);
         if (pair == null) {
-            String current = codec.encode(world.getBlockState(new BlockPos(x, y, z)));
-            pair = new StatePair(current, current);
+            throw new IOException(
+                    "BLOCK_ENTITY history is missing a durable block-state guard at "
+                            + x + "," + y + "," + z);
         }
 
         return undo
