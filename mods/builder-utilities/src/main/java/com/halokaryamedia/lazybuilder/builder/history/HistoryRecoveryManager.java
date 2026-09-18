@@ -143,13 +143,24 @@ public final class HistoryRecoveryManager {
             return List.copyOf(result);
         } catch (IOException | RuntimeException failure) {
             for (RecoveredHistoryEntry entry : result) {
-                try { entry.close(); }
-                catch (IOException suppressed) { failure.addSuppressed(suppressed); }
+                try {
+                    entry.releaseForRetry();
+                } catch (IOException suppressed) {
+                    failure.addSuppressed(suppressed);
+                }
             }
             for (StoredChangeSet stored : recovered) {
-                if (result.stream().noneMatch(e -> e.operationId().equals(stored.operationId()))) {
-                    try { stored.close(); }
-                    catch (IOException suppressed) { failure.addSuppressed(suppressed); }
+                if (result.stream().noneMatch(
+                        e -> e.operationId().equals(stored.operationId()))) {
+                    try {
+                        if (!stored.preserveForRecovery()) {
+                            failure.addSuppressed(new IOException(
+                                    "Recovery journal could not be released after discovery failure: "
+                                            + stored.operationId()));
+                        }
+                    } catch (RuntimeException suppressed) {
+                        failure.addSuppressed(suppressed);
+                    }
                 }
             }
             throw failure;
