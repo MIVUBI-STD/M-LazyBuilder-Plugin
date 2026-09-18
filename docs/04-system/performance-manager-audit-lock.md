@@ -10,11 +10,14 @@ The primary goal is to keep the Minecraft client smooth, stable, and responsive 
 
 ```text
 Performance Manager
-├── frame stability signals
-├── LazyBuilder workload pressure policy
+├── frame stability + pressure signals
 ├── first-party background/minimized FPS policy
-├── on-demand diagnostics
-└── future measured client optimizations
+├── conservative culling + pressure-aware pacing
+├── chunk/render/buffer efficiency
+├── targeted memory reduction
+├── terrain residency + guarded physical arena ownership
+├── compatibility-gated terrain submission / multi-draw
+└── on-demand diagnostics + opt-in runtime proof
 ```
 
 LazyBuilder owns the performance capabilities it requires. Core behavior must not require a third-party optimization mod to be installed, updated, or maintained.
@@ -95,21 +98,19 @@ remove duplicate work
 → only then review deeper renderer/chunk optimizations
 ```
 
-## Deferred optimization layers
+## Current deeper optimization boundary
 
-The following are valid future investigation areas but are not P0 acceptance requirements:
+The current source now implements measured first-party work for chunk rebuild/upload pacing, conservative visibility/culling, allocation hot-path reduction, buffer reuse, terrain residency/reclamation, physical shared arenas, transform streaming, and guarded multi-draw submission.
 
-- redundant render/update suppression;
-- chunk rebuild coalescing;
-- burst workload scheduling;
-- allocation hot-path reduction;
-- bounded cache lifecycle improvements;
-- entity visibility/culling;
-- block-face culling;
-- immediate-render optimization;
-- renderer batching.
+These paths remain acceptance-gated:
 
-Each future optimization requires measurable client benefit, bounded runtime cost, maintainable ownership, and an explicit regression-risk review.
+- external renderer ownership or compatibility uncertainty must disable overlapping first-party hooks;
+- exclusive arena ownership must remain recoverable to vanilla backing before fallback/disable;
+- disabling rendering optimizations must release deferred work and terrain residency/arena resources;
+- custom/sorted-index and unsupported shader states remain conservative fallbacks;
+- further renderer ownership expansion requires representative runtime evidence, not feature-count pressure.
+
+The implementation may evolve, but a second renderer, scheduler, residency registry, or generic performance framework is not justified while these owners remain sufficient.
 
 ## Rejected by default
 
