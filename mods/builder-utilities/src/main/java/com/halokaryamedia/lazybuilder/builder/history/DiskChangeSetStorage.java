@@ -211,27 +211,34 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             long extensions = codec.extensionCount();
             channel.force(true);
             channel.close();
-            finished = true;
-
-            try (InputStream input = Files.newInputStream(staging)) {
-                ChangeSetCodec.Header header = ChangeSetCodec.inspect(input);
-                if (!header.operationId().equals(operationId)
-                        || header.changeCount() != changes
-                        || header.extensionCount() != extensions) {
-                    throw new IOException("Staged History metadata mismatch");
-                }
-            }
 
             try {
-                Files.move(staging, committed, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                throw new IOException("History directory does not support atomic commit", e);
+                try (InputStream input = Files.newInputStream(staging)) {
+                    ChangeSetCodec.Header header = ChangeSetCodec.inspect(input);
+                    if (!header.operationId().equals(operationId)
+                            || header.changeCount() != changes
+                            || header.extensionCount() != extensions) {
+                        throw new IOException("Staged History metadata mismatch");
+                    }
+                }
+
+                try {
+                    Files.move(staging, committed, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    throw new IOException("History directory does not support atomic commit", e);
+                }
+
+                // Atomic publication is the commit point. After this line, close()/abort()
+                // must never delete the committed file.
+                finished = true;
+                ownedCommittedPaths.add(committed);
+                return new DiskStoredChangeSet(
+                        operationId, changes, extensions, committed, ownedCommittedPaths);
             } finally {
+                // On validation/publish failure finished remains false, so the enclosing
+                // try-with-resources can abort and delete the staging file safely.
                 ownedStagingPaths.remove(staging);
             }
-            ownedCommittedPaths.add(committed);
-            return new DiskStoredChangeSet(
-                    operationId, changes, extensions, committed, ownedCommittedPaths);
         }
 
         @Override
