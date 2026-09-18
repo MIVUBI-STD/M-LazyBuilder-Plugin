@@ -4,7 +4,7 @@
 
 This is the V1 execution handoff for the required LazyBuilder Fabric client components after architecture/scope simplification. The next phase is proof and bounded defect fixing, not feature expansion.
 
-`mods/performance-manager/` remains deferred research source. It is not bundled by the Launcher, not installed by Client Setup, and does not block V1 readiness.
+`mods/performance-manager/` is a required V1 client component. It is built with the Fabric suite, bundled by the Launcher, installed/repaired by Client Setup, and participates in client readiness.
 
 ## Target
 
@@ -49,7 +49,7 @@ mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
 mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
 ```
 
-Performance Manager may be built separately when explicitly investigating performance research, but it is outside the V1 package/runtime gate.
+Performance Manager is part of the V1 package/runtime gate. Performance-specific runtime effectiveness still requires representative workload evidence beyond source/build proof.
 
 ## 3. Compile defect policy
 
@@ -77,7 +77,7 @@ Fix the smallest owning file/package, rerun the failing Manager first, then reru
 [ ] Copy Review Reference contains exact world name/id/location/dimension
 [ ] Teleport Here works
 [ ] Export Area selection works and clears on world change
-[ ] World Control V5 / Map Action V2 interoperate with Paper
+[ ] World Control V5 / Map Action V5 interoperate with Paper
 [ ] transfer shutdown/reconnect behavior is clean
 ```
 
@@ -124,7 +124,7 @@ Install the two required JARs together and verify:
 [ ] Vanilla/Axiom/WorldEdit workflows remain familiar and unaffected
 ```
 
-Do not add Performance Manager to this combined V1 test unless performance research is being tested explicitly.
+Keep Performance Manager in the combined V1 client test. Treat renderer/performance effectiveness as a separate acceptance dimension rather than removing the required component from the suite.
 
 ## Failure priority
 
