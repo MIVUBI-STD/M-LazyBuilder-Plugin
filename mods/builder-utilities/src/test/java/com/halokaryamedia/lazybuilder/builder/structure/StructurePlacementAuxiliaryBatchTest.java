@@ -17,7 +17,7 @@ class StructurePlacementAuxiliaryBatchTest {
                 List.of(new StructureBlock(0, 0, 0, "minecraft:chest")),
                 List.of(new StructureBlockEntity(0, 0, 0, new byte[]{2})),
                 List.of(new StructureBiomeSample(0, 0, 0, new byte[]{4})),
-                List.of(new StructureEntity(0.5, 1.0, 0.5, new byte[]{6}))
+                List.of(new StructureEntity(0.5, 0.5, 0.5, new byte[]{6}))
         );
 
         StructureAuxiliaryContext auxiliary = new StructureAuxiliaryContext(
@@ -25,7 +25,8 @@ class StructurePlacementAuxiliaryBatchTest {
                 BlockEntityPayloadTransform.identity(),
                 (x, y, z) -> new byte[]{3},
                 BiomePayloadTransform.identity(),
-                (key, pos) -> new byte[]{5},
+                (key, pos) -> EntityExtensionPayload.absent(
+                        pos.x(), pos.y(), pos.z()).encode(),
                 EntityPayloadTransform.identity()
         );
 
@@ -47,6 +48,15 @@ class StructurePlacementAuxiliaryBatchTest {
                 .toList();
         assertEquals(2, entities.size());
         assertNotEquals(entities.get(0).localKey(), entities.get(1).localKey());
+
+        EntityExtensionPayload firstBefore =
+                EntityExtensionPayload.decode(entities.get(0).beforePayload());
+        EntityExtensionPayload firstAfter =
+                EntityExtensionPayload.decode(entities.get(0).afterPayload());
+        assertFalse(firstBefore.present());
+        assertTrue(firstAfter.present());
+        assertTrue(firstBefore.sameSlot(firstAfter));
+        assertArrayEquals(new byte[]{6}, firstAfter.templateNbt());
     }
 
     private static PlacementPlanEntry entry(int x, int y, int z, int ordinal) {
