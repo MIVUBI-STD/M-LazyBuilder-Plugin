@@ -83,8 +83,10 @@ public final class BuilderExtensionWireProtocol {
                 throw new IllegalArgumentException("entity mutation must toggle presence");
             }
             templateSnbt = Objects.requireNonNull(templateSnbt, "templateSnbt");
-            if (templateSnbt.isBlank() || templateSnbt.length() > 32768) {
-                throw new IllegalArgumentException("entity template SNBT is invalid");
+            int templateBytes = templateSnbt.getBytes(StandardCharsets.UTF_8).length;
+            if (templateSnbt.isBlank() || templateBytes > 32768) {
+                throw new IllegalArgumentException(
+                        "entity template SNBT must be non-blank and <= 32768 UTF-8 bytes");
             }
         }
     }
