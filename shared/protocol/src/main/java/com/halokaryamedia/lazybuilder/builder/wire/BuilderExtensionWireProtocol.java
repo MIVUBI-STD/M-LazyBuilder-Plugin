@@ -118,11 +118,10 @@ public final class BuilderExtensionWireProtocol {
             byte[] afterNbt
     ) {
         public BlockEntityMutation {
-            beforeBlockState = safeText(beforeBlockState, 512);
-            afterBlockState = safeText(afterBlockState, 512);
-            if (beforeBlockState.isBlank() || afterBlockState.isBlank()) {
-                throw new IllegalArgumentException("block entity block states must be non-blank");
-            }
+            beforeBlockState = requireBoundedText(
+                    beforeBlockState, 512, "beforeBlockState");
+            afterBlockState = requireBoundedText(
+                    afterBlockState, 512, "afterBlockState");
             beforeNbt = copyBoundedNbt(beforeNbt, "beforeNbt");
             afterNbt = copyBoundedNbt(afterNbt, "afterNbt");
             if (beforeBlockState.equals(afterBlockState)
@@ -697,6 +696,18 @@ public final class BuilderExtensionWireProtocol {
         byte[] bytes = in.readNBytes(size);
         if (bytes.length != size) throw new EOFException();
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static String requireBoundedText(
+            String value,
+            int maxChars,
+            String label
+    ) {
+        if (value == null || value.isBlank() || value.length() > maxChars) {
+            throw new IllegalArgumentException(
+                    label + " must be non-blank and <= " + maxChars + " characters");
+        }
+        return value;
     }
 
     private static String safeText(String value, int maxChars) {
