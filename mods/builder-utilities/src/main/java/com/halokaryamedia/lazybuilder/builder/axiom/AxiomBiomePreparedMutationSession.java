@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedPreparedMutationDispatcher;
+import com.halokaryamedia.lazybuilder.builder.mutation.ChunkDispatchTarget;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedBlockMutation;
 import com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedMutationReconciler;
@@ -36,16 +37,19 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     private final ClientWorld world;
     private final AxiomClientWorldStateSource worldBlocks;
     private final CancellationToken cancellation;
-    private final AxiomBudgetedChunkDispatchTarget blockTarget;
+    private final ChunkDispatchTarget blockTarget;
     private final AxiomMixedExtensionSupport.Plan extensionPlan;
     private final BuilderRuntimeMetrics metrics;
 
+    private long forwardBlockEntityObserved;
     private long forwardBiomeObserved;
     private long forwardEntityObserved;
+    private long rollbackBlockEntityObserved;
     private long rollbackBiomeObserved;
     private long rollbackEntityObserved;
 
     private BudgetedPreparedMutationDispatcher blockDispatcher;
+    private AxiomBlockEntityBatchDispatcher blockEntityDispatcher;
     private AxiomBiomeBatchDispatcher biomeDispatcher;
     private AxiomEntityBatchDispatcher entityDispatcher;
     private StoredChangeSet rollbackBlocks;
@@ -82,6 +86,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
         this.extensionPlan = AxiomMixedExtensionSupport.inspect(prepared.changeSet());
 
         var capabilities = com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking.capabilities();
+        if (extensionPlan.hasBlockEntities() && !capabilities.supportsBlockEntity()) {
+            throw new IllegalStateException(
+                    "Server does not advertise Builder BLOCK_ENTITY authority");
+        }
         if (extensionPlan.hasBiomes() && !capabilities.supportsBiome()) {
             throw new IllegalStateException("Server does not advertise Builder BIOME authority");
         }
@@ -90,8 +98,16 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
         }
 
         this.worldBlocks = new AxiomClientWorldStateSource(world);
-        this.blockTarget = new AxiomBudgetedChunkDispatchTarget(
+        ChunkDispatchTarget baseBlockTarget = new AxiomBudgetedChunkDispatchTarget(
                 new AxiomChunkMutationDispatcher(services, world));
+        if (extensionPlan.hasBlockEntities()) {
+            this.blockTarget = new AxiomBlockEntityFilteringChunkDispatchTarget(
+                    baseBlockTarget,
+                    AxiomBlockEntityPositionMask.from(prepared.changeSet())
+            );
+        } else {
+            this.blockTarget = baseBlockTarget;
+        }
         if (prepared.plannedChanges() > 0) {
             this.blockDispatcher = new BudgetedPreparedMutationDispatcher(
                     prepared.changeSet(), blockTarget, cancellation);
@@ -116,17 +132,20 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
         if (cancellation.isCancellationRequested()
                 && phase != Phase.ROLLBACK_ENTITIES
                 && phase != Phase.ROLLBACK_BIOMES
+                && phase != Phase.ROLLBACK_BLOCK_ENTITIES
                 && phase != Phase.ROLLBACK_BLOCKS
                 && phase != Phase.ROLLBACK_RECONCILE) {
             beginRollback();
         }
         return switch (phase) {
             case FORWARD_BLOCKS -> pumpForwardBlocks(budget);
+            case FORWARD_BLOCK_ENTITIES -> pumpForwardBlockEntities();
             case FORWARD_BIOMES -> pumpForwardBiomes();
             case FORWARD_ENTITIES -> pumpForwardEntities();
             case FORWARD_RECONCILE -> pumpForwardReconcile();
             case ROLLBACK_ENTITIES -> pumpRollbackEntities();
             case ROLLBACK_BIOMES -> pumpRollbackBiomes();
+            case ROLLBACK_BLOCK_ENTITIES -> pumpRollbackBlockEntities();
             case ROLLBACK_BLOCKS -> pumpRollbackBlocks(budget);
             case ROLLBACK_RECONCILE -> pumpRollbackReconcile();
             case TERMINAL -> terminalResult();
@@ -178,6 +197,49 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
         };
     }
 
+
+    private AxiomMixedPumpResult pumpForwardBlockEntities() throws IOException {
+        BlockEntityBatchDispatchProgress progress = blockEntityDispatcher.pump();
+        forwardBlockEntityObserved = progress.processedExtensions();
+        setProcessed(Math.min(
+                lifecycle.totalWork(),
+                prepared.plannedChanges() + progress.processedExtensions()));
+        return switch (progress.state()) {
+            case YIELDED -> running("block-entity batch sent");
+            case WAITING -> waiting("waiting for authoritative block-entity response");
+            case EXHAUSTED -> {
+                blockEntityDispatcher.close();
+                blockEntityDispatcher = null;
+                if (extensionPlan.hasBiomes()) {
+                    biomeDispatcher = new AxiomBiomeBatchDispatcher(
+                            prepared.changeSet(), world, cancellation, false);
+                    phase = Phase.FORWARD_BIOMES;
+                    yield running("block entities applied; starting biome batches");
+                }
+                if (extensionPlan.hasEntities()) {
+                    entityDispatcher = new AxiomEntityBatchDispatcher(
+                            prepared.changeSet(), world, cancellation, false);
+                    phase = Phase.FORWARD_ENTITIES;
+                    yield running("block entities applied; starting entity batches");
+                }
+                phase = Phase.FORWARD_RECONCILE;
+                yield running("block entities applied; reconciling");
+            }
+            case CANCELLED -> {
+                beginRollback();
+                yield running("cancellation requested");
+            }
+            case CONFLICT -> {
+                metrics.extensionConflict();
+                yield fail("block-entity dispatch " + progress.state() + ": " + progress.detail());
+            }
+            case FAILED -> {
+                metrics.extensionFailure();
+                yield fail("block-entity dispatch " + progress.state() + ": " + progress.detail());
+            }
+        };
+    }
+
     private AxiomMixedPumpResult pumpForwardBiomes() throws IOException {
         BiomeBatchDispatchProgress progress = biomeDispatcher.pump();
         forwardBiomeObserved = recordDelta(
@@ -223,7 +285,9 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
                 progress.processedExtensions(),
                 forwardEntityObserved,
                 metrics::recordForwardEntityExtensions);
-        long base = Math.addExact(prepared.plannedChanges(), extensionPlan.biomes());
+        long base = Math.addExact(
+                prepared.plannedChanges(),
+                Math.addExact(extensionPlan.blockEntities(), extensionPlan.biomes()));
         setProcessed(Math.min(lifecycle.totalWork(), base + progress.processedExtensions()));
         return switch (progress.state()) {
             case YIELDED -> running("entity batch sent");
@@ -260,6 +324,34 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             return waiting("waiting for Axiom block application");
         }
 
+        if (extensionPlan.hasBlockEntities()) {
+            ReconciliationState blockEntities = HistoryExtensionReconciler.reconcile(
+                    prepared.changeSet(),
+                    new AxiomBlockEntityExtensionReadTarget(world)).state();
+            if (blockEntities == ReconciliationState.CONFLICT) {
+                metrics.extensionConflict();
+                return fail("block-entity reconciliation conflict");
+            }
+            if (blockEntities != ReconciliationState.FULLY_APPLIED
+                    && blockEntities != ReconciliationState.EMPTY) {
+                return waiting("waiting for block-entity reconciliation");
+            }
+        }
+
+        if (extensionPlan.hasBlockEntities()) {
+            ReconciliationState blockEntities = HistoryExtensionReconciler.reconcile(
+                    prepared.changeSet(),
+                    new AxiomBlockEntityExtensionReadTarget(world)).state();
+            if (blockEntities == ReconciliationState.CONFLICT) {
+                metrics.extensionConflict();
+                return fail("block-entity rollback reconciliation conflict");
+            }
+            if (blockEntities != ReconciliationState.NOT_APPLIED
+                    && blockEntities != ReconciliationState.EMPTY) {
+                return waiting("waiting for block-entity rollback reconciliation");
+            }
+        }
+
         if (extensionPlan.hasBiomes()) {
             ReconciliationState biomes = HistoryExtensionReconciler.reconcile(
                     prepared.changeSet(), new AxiomBiomeExtensionReadTarget(world)).state();
@@ -282,7 +374,11 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     }
 
     private void startNextForwardExtension() throws IOException {
-        if (extensionPlan.hasBiomes()) {
+        if (extensionPlan.hasBlockEntities()) {
+            blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                    prepared.changeSet(), world, cancellation, false);
+            phase = Phase.FORWARD_BLOCK_ENTITIES;
+        } else if (extensionPlan.hasBiomes()) {
             biomeDispatcher = new AxiomBiomeBatchDispatcher(
                     prepared.changeSet(), world, cancellation, false);
             phase = Phase.FORWARD_BIOMES;
@@ -303,6 +399,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             blockDispatcher.close();
             blockDispatcher = null;
         }
+        if (blockEntityDispatcher != null) {
+            blockEntityDispatcher.close();
+            blockEntityDispatcher = null;
+        }
         if (biomeDispatcher != null) {
             biomeDispatcher.close();
             biomeDispatcher = null;
@@ -320,6 +420,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             biomeDispatcher = new AxiomBiomeBatchDispatcher(
                     prepared.changeSet(), world, () -> false, true);
             phase = Phase.ROLLBACK_BIOMES;
+        } else if (extensionPlan.hasBlockEntities()) {
+            blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                    prepared.changeSet(), world, () -> false, true);
+            phase = Phase.ROLLBACK_BLOCK_ENTITIES;
         } else {
             startRollbackBlocksOrReconcile();
         }
@@ -341,6 +445,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
                     biomeDispatcher = new AxiomBiomeBatchDispatcher(
                             prepared.changeSet(), world, () -> false, true);
                     phase = Phase.ROLLBACK_BIOMES;
+                } else if (extensionPlan.hasBlockEntities()) {
+                    blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                            prepared.changeSet(), world, () -> false, true);
+                    phase = Phase.ROLLBACK_BLOCK_ENTITIES;
                 } else {
                     startRollbackBlocksOrReconcile();
                 }
@@ -370,7 +478,13 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case EXHAUSTED -> {
                 biomeDispatcher.close();
                 biomeDispatcher = null;
-                startRollbackBlocksOrReconcile();
+                if (extensionPlan.hasBlockEntities()) {
+                    blockEntityDispatcher = new AxiomBlockEntityBatchDispatcher(
+                            prepared.changeSet(), world, () -> false, true);
+                    phase = Phase.ROLLBACK_BLOCK_ENTITIES;
+                } else {
+                    startRollbackBlocksOrReconcile();
+                }
                 yield running("biomes rolled back");
             }
             case CANCELLED -> throw new IllegalStateException("rollback biome dispatcher cannot be cancelled");
@@ -381,6 +495,32 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case FAILED -> {
                 metrics.extensionFailure();
                 yield fail("biome rollback " + progress.state() + ": " + progress.detail());
+            }
+        };
+    }
+
+
+    private AxiomMixedPumpResult pumpRollbackBlockEntities() throws IOException {
+        BlockEntityBatchDispatchProgress progress = blockEntityDispatcher.pump();
+        rollbackBlockEntityObserved = progress.processedExtensions();
+        return switch (progress.state()) {
+            case YIELDED -> running("rollback block-entity batch sent");
+            case WAITING -> waiting("waiting for block-entity rollback response");
+            case EXHAUSTED -> {
+                blockEntityDispatcher.close();
+                blockEntityDispatcher = null;
+                startRollbackBlocksOrReconcile();
+                yield running("block entities rolled back");
+            }
+            case CANCELLED -> throw new IllegalStateException(
+                    "rollback block-entity dispatcher cannot be cancelled");
+            case CONFLICT -> {
+                metrics.extensionConflict();
+                yield fail("block-entity rollback " + progress.state() + ": " + progress.detail());
+            }
+            case FAILED -> {
+                metrics.extensionFailure();
+                yield fail("block-entity rollback " + progress.state() + ": " + progress.detail());
             }
         };
     }
@@ -492,6 +632,7 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
 
     private void closeTransient() throws IOException {
         if (blockDispatcher != null) { blockDispatcher.close(); blockDispatcher = null; }
+        if (blockEntityDispatcher != null) { blockEntityDispatcher.close(); blockEntityDispatcher = null; }
         if (biomeDispatcher != null) { biomeDispatcher.close(); biomeDispatcher = null; }
         if (entityDispatcher != null) { entityDispatcher.close(); entityDispatcher = null; }
         if (rollbackBlockDispatcher != null) { rollbackBlockDispatcher.close(); rollbackBlockDispatcher = null; }
@@ -520,11 +661,13 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
 
     private enum Phase {
         FORWARD_BLOCKS,
+        FORWARD_BLOCK_ENTITIES,
         FORWARD_BIOMES,
         FORWARD_ENTITIES,
         FORWARD_RECONCILE,
         ROLLBACK_ENTITIES,
         ROLLBACK_BIOMES,
+        ROLLBACK_BLOCK_ENTITIES,
         ROLLBACK_BLOCKS,
         ROLLBACK_RECONCILE,
         TERMINAL
