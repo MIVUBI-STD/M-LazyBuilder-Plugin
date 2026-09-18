@@ -87,6 +87,37 @@ class BudgetedPreparedMutationDispatcherTest {
         }
     }
 
+    @Test
+    void noOpHistoryGuardsDoNotCountAsProcessedMutations() throws Exception {
+        StoredChangeSet stored;
+        try (ChangeSetWriter writer = new MemoryChangeSetStorage().begin("guard-progress")) {
+            writer.append(new ChunkChangeSet(
+                    0, 0,
+                    List.of("minecraft:chest", "minecraft:stone", "minecraft:dirt"),
+                    new long[]{
+                            LocalBlockPosition.pack(0, 64, 0),
+                            LocalBlockPosition.pack(1, 64, 0)
+                    },
+                    new int[]{0, 1},
+                    new int[]{0, 2}
+            ));
+            stored = writer.commit();
+        }
+
+        try (stored; BudgetedPreparedMutationDispatcher dispatcher =
+                     new BudgetedPreparedMutationDispatcher(
+                             stored,
+                             chunk -> ChunkDispatchOutcome.dispatched(1),
+                             () -> false)) {
+            ExecutionBudget budget =
+                    new ExecutionBudget(Duration.ofSeconds(1), 8, 32, 1_000_000);
+            assertEquals(BudgetedDispatchState.EXHAUSTED,
+                    dispatcher.dispatchSlice(budget).state());
+            assertEquals(2, dispatcher.totalProcessedBlocks());
+            assertEquals(1, dispatcher.totalProcessedMutations());
+        }
+    }
+
     private static StoredChangeSet prepared(int chunks, int changesPerChunk) throws Exception {
         MemoryChangeSetStorage storage = new MemoryChangeSetStorage();
         try (ChangeSetWriter writer = storage.begin("budget-test-" + chunks + "-" + changesPerChunk)) {
