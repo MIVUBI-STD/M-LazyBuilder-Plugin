@@ -52,6 +52,21 @@ class BuilderRetirementReadinessTest {
         }
     }
 
+    @Test
+    void legacyUnscopedRecoveryResidueBlocksRetirement() throws Exception {
+        BuilderRuntime runtime = runtime();
+        try {
+            var report = BuilderRetirementReadiness.evaluate(
+                    runtime, true, true, true, 0, 0, 2);
+            assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
+            assertTrue(report.blockers().stream()
+                    .anyMatch(value -> value.contains(
+                            "legacy unscoped recovery journals=2")));
+        } finally {
+            runtime.close();
+        }
+    }
+
     private BuilderRuntime runtime() throws Exception {
         Constructor<BuilderRuntime> constructor = BuilderRuntime.class.getDeclaredConstructor(
                 HistoryTimeline.class,
