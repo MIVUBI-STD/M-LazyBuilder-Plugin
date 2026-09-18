@@ -107,6 +107,27 @@ For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEdi
 
 `PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, transform-stream readiness, and guarded multi-draw submission health.
 
+## Live runtime proof
+
+Performance Manager has an opt-in structured proof logger for representative builder workloads. It is disabled during normal play and does not create a metrics history database.
+
+Enable it for a benchmark run with:
+
+```text
+-Dlazybuilder.performance.proof=true
+```
+
+While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, average/worst recent frame time, upload queue pressure, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, and active renderer ownership.
+
+A useful two-run comparison keeps the same world, camera route, render distance, FPS target, resource pack, resolution, and other mods:
+
+```text
+baseline  -> rendering.optimizations=false
+optimized -> rendering.optimizations=true
+```
+
+Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. FPS alone is not the acceptance criterion; average/worst frame time and recovery health are equally important.
+
 ## Migration rule
 
 External performance mods remain migration references until matching first-party behavior is implemented and proven in representative builder workloads. Custom FRAPI renderer owners keep control of the chunk pipeline while installed, Iris keeps shader-sensitive terrain submission, ImmediatelyFast keeps overlapping render/upload hooks, and FerriteCore keeps baked-quad deduplication.
