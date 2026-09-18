@@ -49,7 +49,8 @@ class StructureBlockEntityPlanTest {
                 BlockEntityPayloadTransform.identity()
         );
 
-        assertEquals(1, plan.blockChanges());
+        assertEquals(0, plan.blockChanges());
+        assertEquals(1, plan.historyBlockEntries());
         var guardChunk = plan.chunks().get(0);
         assertEquals("minecraft:chest", guardChunk.beforeState(0));
         assertEquals("minecraft:chest", guardChunk.afterState(0));
