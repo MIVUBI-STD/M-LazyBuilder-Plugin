@@ -57,6 +57,9 @@ public final class AxiomArrayTool implements CustomTool {
     private final int[] rotationalCopies = {1};
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
+    private final int[] rotationalCopies = {1};
+    private final int[] mirrorX = {0};
+    private final int[] mirrorZ = {0};
 
     private BlockPos origin;
     private List<PlacementPoint> points = List.of();
@@ -121,6 +124,9 @@ public final class AxiomArrayTool implements CustomTool {
         changed |= ImGui.sliderInt("Count", count, 1, MAX_COUNT);
         changed |= ImGui.sliderInt("Step X", stepX, -64, 64);
         changed |= ImGui.sliderInt("Step Z", stepZ, -64, 64);
+        changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
+        changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
+        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);

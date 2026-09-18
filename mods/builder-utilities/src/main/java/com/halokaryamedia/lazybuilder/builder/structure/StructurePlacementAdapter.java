@@ -33,7 +33,7 @@ public final class StructurePlacementAdapter {
                 entry.point().z(),
                 Math.toIntExact(rounded),
                 transform.mirrorX(),
-                false
+                transform.mirrorZ()
         );
     }
 }

@@ -63,8 +63,12 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private final int[] quality = {20};
     private final int[] rotationOffset = {0};
     private final int[] mirrorX = {0};
+    private final int[] mirrorZ = {0};
     private final int[] seedValue = {424242};
     private final int[] parameterization = {1};
+    private final float[] normalOffset = {0.0f};
+    private final float[] binormalOffset = {0.0f};
+    private final float[] jitter = {0.0f};
     private final float[] taperEndScale = {1.0f};
     private final float[] twistDegrees = {0.0f};
     private final float[] jitter = {0.0f};
@@ -149,8 +153,12 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         changed |= ImGui.sliderInt("Preview Quality", quality, 4, 64);
         changed |= ImGui.sliderInt("Rotation Offset (quarter turns)", rotationOffset, 0, 3);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
+        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Curve Mode (0 Uniform / 1 Centripetal)", parameterization, 0, 1);
+        changed |= ImGui.sliderFloat("Normal Offset", normalOffset, -16.0f, 16.0f);
+        changed |= ImGui.sliderFloat("Binormal Offset", binormalOffset, -16.0f, 16.0f);
+        changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
         changed |= ImGui.sliderFloat("End Radius Scale", taperEndScale, 0.0f, 4.0f);
         changed |= ImGui.sliderFloat("Twist Degrees", twistDegrees, -720.0f, 720.0f);
         changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
@@ -295,7 +303,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                     rounded(entry.position().y()),
                     rounded(entry.position().z()));
             StructurePlacement placement = SchematicPlacements.atPasteBase(
-                    selected, pasteBase, quarterTurns, mirrorX[0] != 0, false);
+                    selected, pasteBase, quarterTurns, mirrorX[0] != 0, mirrorZ[0] != 0);
 
             List<WorldKey> instance = new ArrayList<>(snapshot.blockCount());
             boolean collision = false;
@@ -325,7 +333,8 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                     new PlacementTransform(
                             quarterTurns * 90.0,
                             1.0,
-                            mirrorX[0] != 0)
+                            mirrorX[0] != 0,
+                            mirrorZ[0] != 0)
             ));
         }
         return List.copyOf(accepted);

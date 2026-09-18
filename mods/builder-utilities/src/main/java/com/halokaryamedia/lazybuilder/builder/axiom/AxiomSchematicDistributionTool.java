@@ -64,6 +64,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private final float[] minimumSpacing = {8.0f};
     private final int[] quarterTurns = {0};
     private final int[] mirrorX = {0};
+    private final int[] mirrorZ = {0};
     private final int[] seedValue = {424242};
 
     private List<SchematicCatalog.Entry> entries = List.of();
@@ -144,6 +145,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         changed |= ImGui.sliderInt("Mode (0 Array / 1 Scatter)", mode, 0, 1);
         changed |= ImGui.sliderInt("Quarter Turns", quarterTurns, 0, 3);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
+        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
 
         if (mode[0] == 0) {
@@ -281,7 +283,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                 pasteBase,
                 quarterTurns[0],
                 mirrorX[0] != 0,
-                false
+                mirrorZ[0] != 0
         );
         return new PlacementPlanEntry(
                 new com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint(
@@ -291,7 +293,11 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                         entry.point().ordinal()
                 ),
                 entry.sourceId(),
-                entry.transform()
+                new com.halokaryamedia.lazybuilder.builder.placement.PlacementTransform(
+                        entry.transform().yawDegrees(),
+                        entry.transform().scale(),
+                        entry.transform().mirrorX(),
+                        mirrorZ[0] != 0)
         );
     }
 

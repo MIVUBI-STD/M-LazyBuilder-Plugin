@@ -1,6 +1,19 @@
 package com.halokaryamedia.lazybuilder.builder.placement;
 
-public record PlacementTransform(double yawDegrees, double scale, boolean mirrorX) {
+/**
+ * Deterministic placement orientation/scale. mirrorZ was added after the original
+ * contract; the three-argument constructor remains source-compatible and defaults it off.
+ */
+public record PlacementTransform(
+        double yawDegrees,
+        double scale,
+        boolean mirrorX,
+        boolean mirrorZ
+) {
+    public PlacementTransform(double yawDegrees, double scale, boolean mirrorX) {
+        this(yawDegrees, scale, mirrorX, false);
+    }
+
     public PlacementTransform {
         if (!Double.isFinite(yawDegrees)) {
             throw new IllegalArgumentException("yawDegrees must be finite");
