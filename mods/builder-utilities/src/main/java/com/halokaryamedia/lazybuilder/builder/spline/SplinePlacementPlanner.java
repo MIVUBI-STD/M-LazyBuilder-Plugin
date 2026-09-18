@@ -98,7 +98,8 @@ public final class SplinePlacementPlanner {
         normal = binormal.cross(tangent).normalized();
         SplineFrame frame = new SplineFrame(tangent, normal, binormal);
         double radius = from.radius() + (to.radius() - from.radius()) * alpha;
-        double roll = from.rollDegrees() + (to.rollDegrees() - from.rollDegrees()) * alpha;
+        double roll = SplineAngles.lerpDegreesShortest(
+                from.rollDegrees(), to.rollDegrees(), alpha);
         double t = from.t() + (to.t() - from.t()) * alpha;
         return new SplineSample(t, position, frame, radius, roll);
     }
