@@ -3,8 +3,13 @@ use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 
 const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
+const MAX_INSTANCE_MARKER_BYTES: u64 = 4096;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,8 +76,7 @@ pub fn acquire() -> Result<(LauncherInstanceLease, InstanceStartupState), String
 
 impl Drop for LauncherInstanceLease {
     fn drop(&mut self) {
-        let Ok(text) = fs::read_to_string(&self.path) else { return; };
-        let Ok(existing) = serde_json::from_str::<InstanceMarker>(&text) else { return; };
+        let Ok(Some(existing)) = read_instance_marker(&self.path) else { return; };
         if existing.launcher_pid == self.marker.launcher_pid
             && existing.process_start_time == self.marker.process_start_time
         {
@@ -108,15 +112,7 @@ fn current_launcher_marker() -> Result<InstanceMarker, String> {
 }
 
 fn instance_owner_is_alive(path: &Path) -> Result<bool, String> {
-    let text = match fs::read_to_string(path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(format!("Could not inspect Launcher instance state: {error}")),
-    };
-    let marker = match serde_json::from_str::<InstanceMarker>(&text) {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
-    };
+    let Some(marker) = read_instance_marker(path)? else { return Ok(false); };
 
     let pid = Pid::from_u32(marker.launcher_pid);
     let mut system = System::new_all();
@@ -125,6 +121,40 @@ fn instance_owner_is_alive(path: &Path) -> Result<bool, String> {
         .process(pid)
         .map(|process| process.start_time() == marker.process_start_time)
         .unwrap_or(false))
+}
+
+fn read_instance_marker(path: &Path) -> Result<Option<InstanceMarker>, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Could not inspect Launcher instance state: {error}")),
+    };
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
+        return Err("LazyBuilder refused unsafe Launcher instance state.".into());
+    }
+    if metadata.len() > MAX_INSTANCE_MARKER_BYTES {
+        return Err(format!(
+            "Launcher instance state exceeds the {} byte limit.",
+            MAX_INSTANCE_MARKER_BYTES
+        ));
+    }
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read Launcher instance state: {error}"))?;
+    let marker = match serde_json::from_str::<InstanceMarker>(&text) {
+        Ok(marker) => marker,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(marker))
+}
+
+#[cfg(windows)]
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 fn instance_path() -> Result<PathBuf, String> {
@@ -151,6 +181,22 @@ mod tests {
         let decoded: InstanceMarker = serde_json::from_str(&encoded).expect("deserialize marker");
         assert_eq!(decoded.launcher_pid, 42);
         assert_eq!(decoded.process_start_time, 1234);
+    }
+
+    #[test]
+    fn oversized_instance_marker_is_rejected_before_parse() {
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-instance-limit-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("launcher-instance.json");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(MAX_INSTANCE_MARKER_BYTES + 1).unwrap();
+
+        assert!(read_instance_marker(&path).is_err());
+
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
