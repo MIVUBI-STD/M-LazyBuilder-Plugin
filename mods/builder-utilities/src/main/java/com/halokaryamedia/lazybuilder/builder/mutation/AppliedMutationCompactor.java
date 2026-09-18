@@ -80,16 +80,24 @@ public final class AppliedMutationCompactor {
         int[] keptBefore = new int[positions.length];
         int[] keptAfter = new int[positions.length];
         int kept = 0;
+        final int chunkBaseX;
+        final int chunkBaseZ;
+        try {
+            chunkBaseX = Math.multiplyExact(chunk.chunkX(), 16);
+            chunkBaseZ = Math.multiplyExact(chunk.chunkZ(), 16);
+        } catch (ArithmeticException e) {
+            throw new IOException("History chunk coordinate overflow during compaction", e);
+        }
 
         for (int i = 0; i < positions.length; i++) {
             long packed = positions[i];
             int worldX;
             int worldZ;
             try {
-                worldX = Math.addExact(Math.multiplyExact(chunk.chunkX(), 16), LocalBlockPosition.localX(packed));
-                worldZ = Math.addExact(Math.multiplyExact(chunk.chunkZ(), 16), LocalBlockPosition.localZ(packed));
+                worldX = Math.addExact(chunkBaseX, LocalBlockPosition.localX(packed));
+                worldZ = Math.addExact(chunkBaseZ, LocalBlockPosition.localZ(packed));
             } catch (ArithmeticException e) {
-                throw new IOException("History chunk coordinate overflow during compaction", e);
+                throw new IOException("History block coordinate overflow during compaction", e);
             }
             int y = LocalBlockPosition.y(packed);
             String actual = requireState(world.readBlockState(worldX, y, worldZ));
