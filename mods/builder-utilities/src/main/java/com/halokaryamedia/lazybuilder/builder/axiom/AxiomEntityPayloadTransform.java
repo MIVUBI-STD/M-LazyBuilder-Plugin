@@ -21,26 +21,42 @@ public final class AxiomEntityPayloadTransform implements EntityPayloadTransform
     public byte[] transform(byte[] payload, StructurePlacement placement) {
         try {
             NbtCompound compound = read(payload);
-            compound.remove("UUID");
-            compound.remove("UUIDMost");
-            compound.remove("UUIDLeast");
-            compound.remove("Pos");
-
-            NbtList rotation = compound.getList("Rotation", NbtElement.FLOAT_TYPE);
-            if (rotation.size() == 2
-                    && rotation.get(0) instanceof AbstractNbtNumber yawNumber
-                    && rotation.get(1) instanceof AbstractNbtNumber pitchNumber) {
-                float yaw = yawNumber.floatValue();
-                float pitch = pitchNumber.floatValue();
-                NbtList transformed = new NbtList();
-                transformed.add(NbtFloat.of(transformYaw(yaw, placement)));
-                transformed.add(NbtFloat.of(pitch));
-                compound.put("Rotation", transformed);
-            }
+            normalizeAndTransformCompound(compound, placement);
             return write(compound);
         } catch (IOException e) {
             throw new IllegalArgumentException("Invalid entity template NBT", e);
         }
+    }
+
+    static void normalizeAndTransformCompound(
+            NbtCompound compound,
+            StructurePlacement placement
+    ) {
+        compound.remove("UUID");
+        compound.remove("UUIDMost");
+        compound.remove("UUIDLeast");
+        compound.remove("Pos");
+        compound.remove("pos");
+
+        transformRotationList(compound, "Rotation", placement);
+        transformRotationList(compound, "rotation", placement);
+    }
+
+    private static void transformRotationList(
+            NbtCompound compound,
+            String key,
+            StructurePlacement placement
+    ) {
+        NbtList rotation = compound.getList(key, NbtElement.FLOAT_TYPE);
+        if (rotation.size() != 2
+                || !(rotation.get(0) instanceof AbstractNbtNumber yawNumber)
+                || !(rotation.get(1) instanceof AbstractNbtNumber pitchNumber)) {
+            return;
+        }
+        NbtList transformed = new NbtList();
+        transformed.add(NbtFloat.of(transformYaw(yawNumber.floatValue(), placement)));
+        transformed.add(NbtFloat.of(pitchNumber.floatValue()));
+        compound.put(key, transformed);
     }
 
     static float transformYaw(float yawDegrees, StructurePlacement placement) {
