@@ -262,7 +262,7 @@ public final class AxiomSplinePreviewTool implements CustomTool {
         StructureChainSplinePayload payload = new StructureChainSplinePayload(
                 spacing[0],
                 (point, seed) -> "lazybuilder:preview-segment",
-                new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0L)
+                new PlacementVariation(0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0L)
         );
 
         lastPlan = payload.plan(samples, operationSeed);
