@@ -83,7 +83,8 @@ class StructurePlacementAuxiliaryBatchTest {
                 auxiliary
         );
 
-        assertEquals(1, plan.blockChanges());
+        assertEquals(0, plan.blockChanges());
+        assertEquals(1, plan.historyBlockEntries());
         assertEquals("minecraft:chest", plan.chunks().get(0).beforeState(0));
         assertEquals("minecraft:chest", plan.chunks().get(0).afterState(0));
         assertEquals(1, plan.extensionChanges());
