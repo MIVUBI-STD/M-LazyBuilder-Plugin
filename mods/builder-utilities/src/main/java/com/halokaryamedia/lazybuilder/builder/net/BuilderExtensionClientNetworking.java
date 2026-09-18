@@ -213,10 +213,20 @@ public final class BuilderExtensionClientNetworking {
                     PENDING.remove(operationId);
             if (callback != null) callback.accept(response);
         } catch (IOException | RuntimeException failure) {
+            String detail = "server extension response rejected: " + concise(failure);
+            pendingCapabilityRequest = null;
             CAPABILITIES.set(
-                    BuilderExtensionCapabilities.unavailable(
-                            "server extension response rejected: "
-                                    + concise(failure)));
+                    BuilderExtensionCapabilities.unavailable(detail));
+
+            // A malformed response must not strand active dispatchers in WAITING.
+            // Fail every outstanding request explicitly; callers can then preserve
+            // their durable journal for recovery instead of hanging indefinitely.
+            PENDING.forEach((operationId, callback) -> {
+                if (PENDING.remove(operationId, callback)) {
+                    callback.accept(new BuilderExtensionWireProtocol.Error(
+                            operationId, detail));
+                }
+            });
         }
     }
 
