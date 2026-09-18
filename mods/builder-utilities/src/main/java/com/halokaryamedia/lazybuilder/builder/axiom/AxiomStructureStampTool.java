@@ -8,7 +8,8 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.structure.PreparedStructureMutation;
-import com.halokaryamedia.lazybuilder.builder.structure.StructureCapture;
+import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicImport;
+import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicV3Exporter;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureMutationPreparer;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlan;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlanner;
@@ -16,6 +17,7 @@ import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
+import net.minecraft.SharedConstants;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
@@ -26,6 +28,10 @@ import net.minecraft.util.math.BlockPos;
 import org.joml.Matrix4f;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -44,6 +50,8 @@ public final class AxiomStructureStampTool implements CustomTool {
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
     private final int[] includeAir = {0};
+    private final int[] captureBiomes = {0};
+    private final int[] captureEntities = {1};
 
     private BlockPos firstCorner;
     private BlockPos secondCorner;
@@ -125,7 +133,7 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Select two source corners, then click a destination anchor. Rotation is in 90-degree Y turns. Block entities are rejected until Axiom exposes a public mutation API that can preserve their payloads.");
+        ImGui.textWrapped("Select two source corners, then click a destination anchor. Capture preserves block-entity NBT and can optionally preserve full biomes/entities for .schem export. Axiom stamping remains block-only until the authoritative extension mutation channel is available.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -144,14 +152,17 @@ public final class AxiomStructureStampTool implements CustomTool {
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         boolean airChanged = ImGui.sliderInt("Include Air", includeAir, 0, 1);
-        changed |= airChanged;
+        boolean biomeChanged = ImGui.sliderInt("Capture Biomes", captureBiomes, 0, 1);
+        boolean entityChanged = ImGui.sliderInt("Capture Entities", captureEntities, 0, 1);
+        changed |= airChanged || biomeChanged || entityChanged;
 
         if (ImGui.button("Clear Capture")) {
             clearAll();
             return;
         }
 
-        if (airChanged && firstCorner != null && secondCorner != null) {
+        if ((airChanged || biomeChanged || entityChanged)
+                && firstCorner != null && secondCorner != null) {
             try {
                 captureSnapshot();
             } catch (RuntimeException e) {
@@ -161,7 +172,13 @@ public final class AxiomStructureStampTool implements CustomTool {
         if (changed && snapshot != null && destination != null) rebuildPreview();
 
         if (snapshot != null) {
-            ImGui.textWrapped("Captured blocks: " + snapshot.blockCount());
+            ImGui.textWrapped("Captured blocks=" + snapshot.blockCount()
+                    + " blockEntities=" + snapshot.blockEntityCount()
+                    + " biomes=" + snapshot.biomeCount()
+                    + " entities=" + snapshot.entityCount());
+            if (ImGui.button("Save Capture to Schematic Catalog")) {
+                saveCapture();
+            }
         }
     }
 
@@ -191,12 +208,17 @@ public final class AxiomStructureStampTool implements CustomTool {
     private void captureSnapshot() {
         ClientWorld world = requireWorld();
         BlockBounds bounds = sourceBounds();
-        AxiomStructureCaptureGuard.requireBlockStateOnly(world, bounds);
-        snapshot = StructureCapture.capture(
-                bounds,
-                new AxiomClientWorldStateSource(world),
-                includeAir[0] != 0
-        );
+        try {
+            snapshot = AxiomStructureSnapshotCapture.capture(
+                    world,
+                    bounds,
+                    includeAir[0] != 0,
+                    captureBiomes[0] != 0,
+                    captureEntities[0] != 0
+            );
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Failed to capture auxiliary payloads", e);
+        }
         destination = null;
         previewPoints = List.of();
         if (preview != null) preview.clear();
@@ -217,6 +239,7 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
+        ensureBlockOnlyForAxiom(snapshot);
         StructurePastePlan plan = new StructurePastePlan(
                 StructurePastePlanner.plan(
                         snapshot,
@@ -240,6 +263,48 @@ public final class AxiomStructureStampTool implements CustomTool {
 
         mutation.start(world, prepared, cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private void saveCapture() {
+        if (snapshot == null) return;
+        try {
+            Files.createDirectories(runtime.schematicDirectory());
+            String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+            Path path = uniqueCapturePath(stamp);
+            int dataVersion = SharedConstants.getGameVersion().getSaveVersion().getId();
+            SpongeSchematicV3Exporter.writeCompressed(
+                    new SpongeSchematicImport(snapshot, 0, 0, 0, dataVersion),
+                    path
+            );
+            idleStatus = "Saved " + path.getFileName()
+                    + " (blocks=" + snapshot.blockCount()
+                    + ", blockEntities=" + snapshot.blockEntityCount()
+                    + ", biomes=" + snapshot.biomeCount()
+                    + ", entities=" + snapshot.entityCount() + ")";
+        } catch (Exception e) {
+            idleStatus = "Capture export failed: " + safeMessage(e);
+        }
+    }
+
+    private Path uniqueCapturePath(String stamp) {
+        Path base = runtime.schematicDirectory().resolve("capture-" + stamp + ".schem");
+        if (!Files.exists(base)) return base;
+        for (int i = 2; i <= 9999; i++) {
+            Path candidate = runtime.schematicDirectory()
+                    .resolve("capture-" + stamp + "-" + i + ".schem");
+            if (!Files.exists(candidate)) return candidate;
+        }
+        throw new IllegalStateException("Could not allocate unique capture filename");
+    }
+
+    private static void ensureBlockOnlyForAxiom(StructureSnapshot snapshot) {
+        if (snapshot.blockEntityCount() != 0
+                || snapshot.biomeCount() != 0
+                || snapshot.entityCount() != 0) {
+            throw new IllegalStateException(
+                    "Axiom public mutation path is block-only; export this capture as .schem "
+                            + "or disable biome/entity capture and select a source without block entities");
+        }
     }
 
     private StructurePlacement placement() {
