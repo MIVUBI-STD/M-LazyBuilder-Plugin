@@ -14,13 +14,9 @@ import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -31,7 +27,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.zip.GZIPInputStream;
 
 /**
  * Persistent client-side world-map memory split into bounded regional files.
@@ -49,7 +44,6 @@ import java.util.zip.GZIPInputStream;
  */
 public final class ClientMapSurfaceCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMapSurfaceCache.class);
-    private static final int LEGACY_FORMAT_VERSION = 1;
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
@@ -114,8 +108,14 @@ public final class ClientMapSurfaceCache {
 
         clearResidentState();
 
-        if (scopeDirectory != null) {
-            migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
+        if (scopeDirectory != null && !ioExecutor.isShutdown()) {
+            Path legacy = storageRoot.resolve(safeName(normalized) + ".surface.gz");
+            MapSurfaceLegacyMigrator.migrateAsync(
+                    legacy,
+                    scopeDirectory,
+                    scopeGeneration,
+                    () -> scopeGeneration,
+                    ioExecutor);
         }
     }
 
@@ -494,57 +494,6 @@ public final class ClientMapSurfaceCache {
         } catch (RuntimeException rejected) {
             region.completeWrite(snapshot.revision, false);
         }
-    }
-
-    private void migrateLegacySnapshot(
-            Path storageRoot,
-            String normalizedScope,
-            Path targetDirectory,
-            long generation
-    ) {
-        Path legacy = storageRoot.resolve(safeName(normalizedScope) + ".surface.gz");
-        if (!Files.isRegularFile(legacy) || ioExecutor.isShutdown()) return;
-        Path migratedMarker = targetDirectory.resolve(".legacy-v1-migrated");
-        if (Files.exists(migratedMarker)) return;
-
-        CompletableFuture.runAsync(() -> {
-            Map<Long, RegionData> partitioned = readLegacySnapshot(legacy);
-            if (partitioned.isEmpty() || generation != scopeGeneration) return;
-            boolean complete = true;
-            for (Map.Entry<Long, RegionData> entry : partitioned.entrySet()) {
-                complete &= MapSurfaceRegionStore.writeWithRetry(MapSurfaceRegionStore.regionFile(targetDirectory, entry.getKey()), entry.getValue().snapshot());
-            }
-            if (!complete || generation != scopeGeneration) return;
-            try {
-                Files.createDirectories(targetDirectory);
-                Files.writeString(migratedMarker, "v1\n");
-            } catch (IOException error) {
-                LOGGER.warn("Could not mark LazyBuilder legacy map migration complete: {}", migratedMarker, error);
-            }
-        }, ioExecutor);
-    }
-
-    private static Map<Long, RegionData> readLegacySnapshot(Path source) {
-        Map<Long, RegionData> result = new HashMap<>();
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                new GZIPInputStream(Files.newInputStream(source))))) {
-            if (in.readInt() != LEGACY_FORMAT_VERSION) return result;
-            int count = Math.max(0, Math.min(262_144, in.readInt()));
-            for (int i = 0; i < count; i++) {
-                long packed = in.readLong();
-                int x = unpackX(packed);
-                int z = unpackZ(packed);
-                int color = in.readInt();
-                int height = in.readInt();
-                long regionKey = pack(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(z, REGION_SIZE));
-                result.computeIfAbsent(regionKey, ignored -> new RegionData())
-                        .put(localIndex(x, z), color, height);
-            }
-        } catch (IOException error) {
-            LOGGER.warn("Could not read LazyBuilder legacy map cache: {}", source, error);
-            result.clear();
-        }
-        return result;
     }
 
     private static int localIndex(int x, int z) {
