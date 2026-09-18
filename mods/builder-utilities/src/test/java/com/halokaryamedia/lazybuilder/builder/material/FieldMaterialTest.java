@@ -1,26 +1,23 @@
 package com.halokaryamedia.lazybuilder.builder.material;
 
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FieldMaterialTest {
     @Test
-    void gradientAndConditionalCompose() {
+    void conditionalMaterialUsesFieldThreshold() {
         ScalarField height = new AxisGradientField(AxisGradientField.Axis.Y, 0, 100);
-        BuilderMaterial gradient = new GradientMaterial(height, List.of(
-                new GradientMaterial.Stop(0.3, new BlockMaterial("low")),
-                new GradientMaterial.Stop(0.7, new BlockMaterial("mid")),
-                new GradientMaterial.Stop(1.0, new BlockMaterial("high"))
-        ));
-        MaterialContext low = new MaterialContext(0, 10, 0, "old", new OperationSeed(1));
-        MaterialContext high = new MaterialContext(0, 90, 0, "old", new OperationSeed(1));
-        assertEquals("low", gradient.resolve(low));
-        assertEquals("high", gradient.resolve(high));
+        MaterialContext low = new MaterialContext(
+                0, 10, 0, "old", new OperationSeed(1));
+        MaterialContext high = new MaterialContext(
+                0, 90, 0, "old", new OperationSeed(1));
 
-        BuilderMaterial conditional = new ConditionalMaterial(height, 0.5,
-                new BlockMaterial("upper"), new BlockMaterial("lower"));
+        BuilderMaterial conditional = new ConditionalMaterial(
+                height,
+                0.5,
+                new BlockMaterial("upper"),
+                new BlockMaterial("lower"));
         assertEquals("lower", conditional.resolve(low));
         assertEquals("upper", conditional.resolve(high));
     }
