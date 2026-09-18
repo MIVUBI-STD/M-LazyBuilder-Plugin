@@ -107,6 +107,12 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
             return;
         }
 
+        String permissionDenial = MapActionPermissionPolicy.denial(request, player::hasPermission);
+        if (permissionDenial != null) {
+            send(player, MapActionWireProtocol.error(request.requestId(), permissionDenial));
+            return;
+        }
+
         switch (request) {
             case MapActionWireProtocol.CurrentWorldRequest current -> handleCurrentWorld(player, current);
             case MapActionWireProtocol.TeleportLocation teleport -> handleTeleport(player, teleport);
@@ -115,10 +121,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     }
 
     private void handleCurrentWorld(Player player, MapActionWireProtocol.CurrentWorldRequest request) {
-        if (!hasAnyWorldPermission(player)) {
-            send(player, MapActionWireProtocol.error(request.requestId(), "Missing LazyBuilder world permission"));
-            return;
-        }
         sendCurrentWorldState(player, request.requestId());
     }
 
@@ -137,11 +139,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     }
 
     private void handleTeleport(Player player, MapActionWireProtocol.TeleportLocation request) {
-        if (!player.hasPermission(TELEPORT_PERMISSION)) {
-            send(player, MapActionWireProtocol.error(
-                    request.requestId(), "Missing permission: " + TELEPORT_PERMISSION));
-            return;
-        }
         try {
             var result = teleportService.teleport(
                     player.getUniqueId(), request.worldId(), request.blockX(), request.blockZ());
@@ -154,11 +151,6 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     }
 
     private void handleExportArea(Player player, MapActionWireProtocol.ExportArea request) {
-        if (!player.hasPermission(MANAGE_PERMISSION)) {
-            send(player, MapActionWireProtocol.error(
-                    request.requestId(), "Missing permission: " + MANAGE_PERMISSION));
-            return;
-        }
         if (stopping) {
             send(player, MapActionWireProtocol.error(request.requestId(), "LazyBuilder is shutting down"));
             return;
