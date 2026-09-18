@@ -103,6 +103,8 @@ public final class HistoryRecoveryManager {
         storage.promoteRecoverableIncomplete();
 
         List<RecoveredHistoryEntry> result = new ArrayList<>();
+        java.util.Set<StoredChangeSet> wrapped =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         List<StoredChangeSet> recovered = storage.recoverCommitted(operationFilter);
         try {
             for (StoredChangeSet stored : recovered) {
@@ -116,6 +118,7 @@ public final class HistoryRecoveryManager {
                                     0, 0, 0, 0, ReconciliationState.EMPTY),
                             blockReport.state(),
                             null));
+                    wrapped.add(stored);
                     continue;
                 }
 
@@ -127,6 +130,7 @@ public final class HistoryRecoveryManager {
                             null,
                             null,
                             "no recovery authority for extension type " + unsupported));
+                    wrapped.add(stored);
                     continue;
                 }
 
@@ -139,6 +143,7 @@ public final class HistoryRecoveryManager {
                         HistoryRecoveryScanner.combine(
                                 blockReport.state(), extensionReport.state()),
                         null));
+                wrapped.add(stored);
             }
             return List.copyOf(result);
         } catch (IOException | RuntimeException failure) {
@@ -150,8 +155,7 @@ public final class HistoryRecoveryManager {
                 }
             }
             for (StoredChangeSet stored : recovered) {
-                if (result.stream().noneMatch(
-                        e -> e.operationId().equals(stored.operationId()))) {
+                if (!wrapped.contains(stored)) {
                     try {
                         if (!stored.preserveForRecovery()) {
                             failure.addSuppressed(new IOException(
