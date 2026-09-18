@@ -8,11 +8,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Persistent pure-Java allocation registry for future shared terrain region GPU arenas.
+ * Persistent pure-Java allocation registry for shared terrain region GPU arenas.
  *
  * One logical arena is owned by one 8x4x8 accounting region and one vanilla terrain layer. The
  * registry owns no GPU resource; it keeps stable allocation handles and models compaction/growth so
- * physical GPU backing can later adopt the same lifecycle without changing section ownership.
+ * physical GPU backing consumes the same lifecycle without changing section ownership.
  */
 public final class TerrainRegionAllocationRegistry<K> {
     private static final int REGION_XZ_SIZE = 8;
