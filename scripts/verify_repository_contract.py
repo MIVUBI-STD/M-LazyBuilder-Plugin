@@ -30,6 +30,7 @@ REQUIRED_FILES = [
     "docs/05-operations/current-verification.md",
     ".github/workflows/verify.yml",
     ".github/workflows/builder-verify.yml",
+    ".github/workflows/builder-benchmark.yml",
     "mods/builder-utilities/build.gradle",
     "mods/builder-utilities/src/main/resources/fabric.mod.json",
 ]
@@ -271,6 +272,7 @@ def main() -> int:
         errors,
     )
     builder_workflow = read_text(".github/workflows/builder-verify.yml", errors)
+    builder_benchmark_workflow = read_text(".github/workflows/builder-benchmark.yml", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
@@ -354,6 +356,10 @@ def main() -> int:
             fail(errors, "CONTEXT.md must state the canonical Axiom compatibility range")
     if "mods/builder-utilities" not in builder_workflow:
         fail(errors, "Builder verification workflow must target the Builder Utilities source owner")
+    if "benchmarkGolden" not in builder_benchmark_workflow:
+        fail(errors, "Builder Benchmark workflow must run the canonical benchmarkGolden task")
+    if "not Minecraft runtime proof" not in builder_benchmark_workflow:
+        fail(errors, "Builder Benchmark workflow must preserve the synthetic-proof boundary")
 
     if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
         fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")

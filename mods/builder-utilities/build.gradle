@@ -80,7 +80,7 @@ tasks.withType(Test).configureEach {
 
 tasks.named('test') {
     useJUnitPlatform {
-        excludeTags 'benchmark'
+        excludeTags 'benchmark', 'golden-benchmark'
     }
 }
 
@@ -97,6 +97,19 @@ tasks.register('benchmarkHistory', Test) {
             providers.gradleProperty('builderBenchmarkChanges').getOrElse('1000000')
     systemProperty 'lazybuilder.benchmark.storage',
             providers.gradleProperty('builderBenchmarkStorage').getOrElse('compressed')
+}
+
+tasks.register('benchmarkGolden', Test) {
+    group = 'verification'
+    description = 'Runs synthetic Golden Builder dispatcher workloads; not Minecraft runtime proof.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    maxHeapSize = '2g'
+    useJUnitPlatform {
+        includeTags 'golden-benchmark'
+    }
+    systemProperty 'lazybuilder.golden.changes',
+            providers.gradleProperty('builderGoldenChanges').getOrElse('1000000')
 }
 
 java {

@@ -101,6 +101,10 @@ Launcher UI Preview
 
 Minecraft UI Preview
 → manual or pull-request real-renderer visual evidence
+
+Builder Benchmark
+→ manual synthetic dispatcher throughput/yield baseline
+→ never treated as Minecraft FPS, Axiom runtime, or target-PC acceptance proof
 ```
 
 These workflows may provide faster specialist evidence during review or debugging. Repository/package readiness is still determined from the integrated `Verify` workflow for the exact candidate revision.

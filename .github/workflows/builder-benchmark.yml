@@ -1,0 +1,43 @@
+name: Builder Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      changes:
+        description: Synthetic prepared mutations to dispatch
+        required: false
+        default: '1000000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: builder-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Run synthetic Golden Builder workload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".artifacts" -Force | Out-Null
+          .\gradlew.bat -p mods/builder-utilities --no-daemon benchmarkGolden -PbuilderGoldenChanges="${{ inputs.changes }}" 2>&1 |
+            Tee-Object -FilePath ".artifacts/builder-golden-benchmark.txt"
+      - name: Upload benchmark log
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
+        with:
+          name: builder-golden-benchmark
+          path: .artifacts/builder-golden-benchmark.txt
+          if-no-files-found: error
+          retention-days: 14
