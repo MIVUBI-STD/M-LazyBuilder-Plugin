@@ -14,6 +14,9 @@ public interface ChatHudAccessor {
     @Accessor("messages")
     List<ChatHudLine> lazybuilder$getMessages();
 
+    @Accessor("visibleMessages")
+    List<ChatHudLine.Visible> lazybuilder$getVisibleMessages();
+
     @Invoker("toChatLineX")
     double lazybuilder$toChatLineX(double x);
 

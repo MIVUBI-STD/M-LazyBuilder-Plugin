@@ -16,9 +16,9 @@ final class MapActionPermissionPolicyTest {
         var request = new MapActionWireProtocol.CurrentWorldRequest(11L);
 
         assertNull(MapActionPermissionPolicy.denial(
-                request, Set.of(PaperMapActionPayloadAdapter.TELEPORT_PERMISSION)::contains));
+                request, Set.of(WorldPermissionNodes.TELEPORT)::contains));
         assertNull(MapActionPermissionPolicy.denial(
-                request, Set.of(PaperMapActionPayloadAdapter.MANAGE_PERMISSION)::contains));
+                request, Set.of(WorldPermissionNodes.MANAGE)::contains));
         assertEquals(
                 "Missing LazyBuilder world permission",
                 MapActionPermissionPolicy.denial(request, ignored -> false));
@@ -30,11 +30,11 @@ final class MapActionPermissionPolicyTest {
                 12L, WorldId.create(), -128, -64);
 
         assertNull(MapActionPermissionPolicy.denial(
-                request, Set.of(PaperMapActionPayloadAdapter.TELEPORT_PERMISSION)::contains));
+                request, Set.of(WorldPermissionNodes.TELEPORT)::contains));
         assertEquals(
-                "Missing permission: " + PaperMapActionPayloadAdapter.TELEPORT_PERMISSION,
+                "Missing permission: " + WorldPermissionNodes.TELEPORT,
                 MapActionPermissionPolicy.denial(
-                        request, Set.of(PaperMapActionPayloadAdapter.MANAGE_PERMISSION)::contains));
+                        request, Set.of(WorldPermissionNodes.MANAGE)::contains));
     }
 
     @Test
@@ -49,10 +49,10 @@ final class MapActionPermissionPolicyTest {
                 ExportSettingsWire.Settings.inherit());
 
         assertNull(MapActionPermissionPolicy.denial(
-                request, Set.of(PaperMapActionPayloadAdapter.MANAGE_PERMISSION)::contains));
+                request, Set.of(WorldPermissionNodes.MANAGE)::contains));
         assertEquals(
-                "Missing permission: " + PaperMapActionPayloadAdapter.MANAGE_PERMISSION,
+                "Missing permission: " + WorldPermissionNodes.MANAGE,
                 MapActionPermissionPolicy.denial(
-                        request, Set.of(PaperMapActionPayloadAdapter.TELEPORT_PERMISSION)::contains));
+                        request, Set.of(WorldPermissionNodes.TELEPORT)::contains));
     }
 }

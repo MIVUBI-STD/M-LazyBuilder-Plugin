@@ -117,8 +117,22 @@ Import inspection is read-only review after upload completion; final Import is a
 TeleportLocation
 ExportArea
 CurrentWorldRequest
+TeleportOk
+ExportAccepted
+ExportComplete
 CurrentWorldResult
 CurrentWorldCleared
+ErrorResponse
+```
+
+Correlation semantics:
+
+```text
+requests                     -> positive request id
+TeleportOk/ExportAccepted/
+ExportComplete               -> matching positive request id
+unsolicited CurrentWorld*    -> request id 0
+unbound server ErrorResponse -> request id 0
 ```
 
 Entering an unmanaged world clears prior managed-world presentation state.

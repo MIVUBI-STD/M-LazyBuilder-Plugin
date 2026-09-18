@@ -113,9 +113,15 @@ public final class UtilityManagerClient implements ClientModInitializer {
     public static void updatePreferences(UtilityPreferences updated) {
         Objects.requireNonNull(updated, "updated");
         boolean compactDebugDisabled = preferences.compactDebugHud() && !updated.compactDebugHud();
+        boolean compactDebugEnabled = !preferences.compactDebugHud() && updated.compactDebugHud();
         boolean narratorSuppressionEnabled = !preferences.suppressNarrator() && updated.suppressNarrator();
+        boolean chatSearchDisabled = preferences.chatSearch() && !updated.chatSearch();
+        boolean keepChatDraftDisabled = preferences.keepChatDraft() && !updated.keepChatDraft();
         preferences = updated;
         if (configStore != null) configStore.save(updated);
+
+        if (chatSearchDisabled) CHAT_SEARCH_HISTORY.clearSession();
+        if (keepChatDraftDisabled) ChatDraftState.clear();
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
@@ -125,6 +131,8 @@ public final class UtilityManagerClient implements ClientModInitializer {
                 CompactDebugInteraction.invalidate(client);
                 CompactDebugServerState.clear();
             });
+        } else if (compactDebugEnabled) {
+            client.execute(CompactDebugNetworking::requestSnapshot);
         }
         if (narratorSuppressionEnabled) {
             client.execute(() -> NarratorSuppressionController.applyIfEnabled(client, true));

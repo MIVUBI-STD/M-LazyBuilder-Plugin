@@ -40,7 +40,6 @@ public final class MapActionWireProtocol {
             requireRequestId(requestId);
             Objects.requireNonNull(worldId, "worldId");
         }
-        public TeleportLocation(WorldId worldId, int blockX, int blockZ) { this(1L, worldId, blockX, blockZ); }
     }
 
     public record ExportArea(
@@ -63,19 +62,12 @@ public final class MapActionWireProtocol {
             artifactName = requireString(artifactName, "artifactName");
             settings = Objects.requireNonNull(settings, "settings");
         }
-        public ExportArea(
-                WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-                String targetFormat, String artifactName, ExportSettingsWire.Settings settings
-        ) {
-            this(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
-        }
     }
 
     public record CurrentWorldRequest(long requestId) implements Request {
         public CurrentWorldRequest {
             requireRequestId(requestId);
         }
-        public CurrentWorldRequest() { this(1L); }
     }
 
     public sealed interface Response permits TeleportOk, ExportAccepted, ExportComplete,
@@ -84,28 +76,31 @@ public final class MapActionWireProtocol {
     }
 
     public record TeleportOk(long requestId, WorldId worldId, double x, double y, double z) implements Response {
-        public TeleportOk { Objects.requireNonNull(worldId, "worldId"); }
-        public TeleportOk(WorldId worldId, double x, double y, double z) { this(0L, worldId, x, y, z); }
+        public TeleportOk {
+            requireRequestId(requestId);
+            Objects.requireNonNull(worldId, "worldId");
+        }
     }
 
     public record ExportAccepted(long requestId, WorldId worldId) implements Response {
-        public ExportAccepted { Objects.requireNonNull(worldId, "worldId"); }
-        public ExportAccepted(WorldId worldId) { this(0L, worldId); }
+        public ExportAccepted {
+            requireRequestId(requestId);
+            Objects.requireNonNull(worldId, "worldId");
+        }
     }
 
     public record ExportComplete(long requestId, WorldId worldId, String fileName, String targetFormat) implements Response {
         public ExportComplete {
+            requireRequestId(requestId);
             Objects.requireNonNull(worldId, "worldId");
             fileName = requireString(fileName, "fileName");
             targetFormat = requireString(targetFormat, "targetFormat");
-        }
-        public ExportComplete(WorldId worldId, String fileName, String targetFormat) {
-            this(0L, worldId, fileName, targetFormat);
         }
     }
 
     public record CurrentWorldResult(long requestId, WorldId worldId, String displayName, String folderName) implements Response {
         public CurrentWorldResult {
+            requireResponseId(requestId);
             Objects.requireNonNull(worldId, "worldId");
             displayName = requireString(displayName, "displayName");
             folderName = requireString(folderName, "folderName");
@@ -117,11 +112,17 @@ public final class MapActionWireProtocol {
 
     /** Explicitly means the player is currently outside all managed worlds. */
     public record CurrentWorldCleared(long requestId) implements Response {
+        public CurrentWorldCleared {
+            requireResponseId(requestId);
+        }
         public CurrentWorldCleared() { this(0L); }
     }
 
     public record ErrorResponse(long requestId, String message) implements Response {
-        public ErrorResponse { message = requireString(message, "message"); }
+        public ErrorResponse {
+            requireResponseId(requestId);
+            message = requireString(message, "message");
+        }
         public ErrorResponse(String message) { this(0L, message); }
     }
 
@@ -224,10 +225,13 @@ public final class MapActionWireProtocol {
             if (version != VERSION) throw new IOException("Unsupported map protocol version: " + version);
             int opcode = in.readUnsignedByte();
             long requestId = in.readLong();
+            if (requestId < 0L) throw new IOException("Invalid map response request id");
             Response response = switch (opcode) {
-                case TELEPORT_OK -> new TeleportOk(requestId, readWorldId(in), in.readDouble(), in.readDouble(), in.readDouble());
-                case EXPORT_ACCEPTED -> new ExportAccepted(requestId, readWorldId(in));
-                case EXPORT_COMPLETE -> new ExportComplete(requestId, readWorldId(in), readString(in), readString(in));
+                case TELEPORT_OK -> new TeleportOk(
+                        requireBoundResponseId(requestId), readWorldId(in), in.readDouble(), in.readDouble(), in.readDouble());
+                case EXPORT_ACCEPTED -> new ExportAccepted(requireBoundResponseId(requestId), readWorldId(in));
+                case EXPORT_COMPLETE -> new ExportComplete(
+                        requireBoundResponseId(requestId), readWorldId(in), readString(in), readString(in));
                 case CURRENT_WORLD_RESULT -> new CurrentWorldResult(requestId, readWorldId(in), readString(in), readString(in));
                 case CURRENT_WORLD_CLEARED -> new CurrentWorldCleared(requestId);
                 case ERROR -> new ErrorResponse(requestId, readString(in));
@@ -238,27 +242,8 @@ public final class MapActionWireProtocol {
         }
     }
 
-    public static byte[] teleportRequest(WorldId worldId, int blockX, int blockZ) {
-        return teleportRequest(1L, worldId, blockX, blockZ);
-    }
-
     public static byte[] teleportRequest(long requestId, WorldId worldId, int blockX, int blockZ) {
         return encodeRequest(new TeleportLocation(requestId, worldId, blockX, blockZ));
-    }
-
-    public static byte[] exportAreaRequest(
-            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-            String targetFormat, String artifactName
-    ) {
-        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2,
-                targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
-    }
-
-    public static byte[] exportAreaRequest(
-            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
-            String targetFormat, String artifactName, ExportSettingsWire.Settings settings
-    ) {
-        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
     }
 
     public static byte[] exportAreaRequest(
@@ -269,7 +254,6 @@ public final class MapActionWireProtocol {
                 requestId, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings));
     }
 
-    public static byte[] currentWorldRequest() { return currentWorldRequest(1L); }
     public static byte[] currentWorldRequest(long requestId) {
         return encodeRequest(new CurrentWorldRequest(requestId));
     }
@@ -277,22 +261,12 @@ public final class MapActionWireProtocol {
     public static byte[] teleportOk(long requestId, WorldId worldId, double x, double y, double z) {
         return encodeResponse(new TeleportOk(requestId, worldId, x, y, z));
     }
-    public static byte[] teleportOk(WorldId worldId, double x, double y, double z) {
-        return teleportOk(0L, worldId, x, y, z);
-    }
-
     public static byte[] exportAccepted(long requestId, WorldId worldId) {
         return encodeResponse(new ExportAccepted(requestId, worldId));
     }
-    public static byte[] exportAccepted(WorldId worldId) { return exportAccepted(0L, worldId); }
-
     public static byte[] exportComplete(long requestId, WorldId worldId, String fileName, String targetFormat) {
         return encodeResponse(new ExportComplete(requestId, worldId, fileName, targetFormat));
     }
-    public static byte[] exportComplete(WorldId worldId, String fileName, String targetFormat) {
-        return exportComplete(0L, worldId, fileName, targetFormat);
-    }
-
     public static byte[] currentWorld(long requestId, WorldId worldId, String displayName, String folderName) {
         return encodeResponse(new CurrentWorldResult(requestId, worldId, displayName, folderName));
     }
@@ -314,6 +288,16 @@ public final class MapActionWireProtocol {
 
     private static long requireRequestId(long requestId) {
         if (requestId <= 0L) throw new IllegalArgumentException("requestId must be positive");
+        return requestId;
+    }
+
+    private static long requireResponseId(long requestId) {
+        if (requestId < 0L) throw new IllegalArgumentException("response requestId must not be negative");
+        return requestId;
+    }
+
+    private static long requireBoundResponseId(long requestId) throws IOException {
+        if (requestId <= 0L) throw new IOException("Request-bound map response requires a positive request id");
         return requestId;
     }
 

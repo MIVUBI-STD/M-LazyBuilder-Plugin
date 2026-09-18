@@ -22,16 +22,13 @@ The fullscreen map and area-selection experience are first-party LazyBuilder UI.
 
 ## Native area selection
 
-`WorldMapScreen` owns transient area-selection presentation:
+Area selection is split by concrete presentation responsibility:
 
 ```text
-chunk grid
-region grid
-selection rectangle
-move/edge/corner resize
-chunk snapping
-coordinate + size HUD
-transient selected-area state
+MapAreaSelectionState     -> transient selection + drag/resize state
+MapAreaSelectionGeometry  -> pure handle/rectangle hit geometry
+MapAreaSelectionOverlay   -> grid, dimming, border, handles
+WorldMapScreen            -> coordinates actions and export workflow
 ```
 
 Selection is bound to the current managed world and clears when the world changes or the operation finishes. It is presentation/request context, not durable world metadata or a saved export preset.
@@ -64,19 +61,15 @@ Map Manager
 
 Utility Manager
 → passive non-building client convenience
-```
 
-Deferred source:
-
-```text
 Performance Manager
-→ isolated performance/resource research only
-→ not a required V1 client owner unless explicitly promoted from measured evidence
+→ frame/resource policy, conservative culling, rendering/chunk pipeline efficiency,
+  targeted memory reduction, terrain GPU residency/arena ownership, diagnostics
 ```
 
-No Fabric Manager imports another Manager's implementation packages. Required managers must not depend on Performance Manager while it is deferred.
+No Fabric Manager imports another Manager's implementation packages. Renderer/performance hooks remain inside Performance Manager and stand down when an overlapping external renderer owner is authoritative.
 
-Current `Local` Launcher/client-packaging source may still reference Performance Manager while active Launcher/installer consolidation is in progress. That transitional packaging state does not change the client ownership model in this document.
+Launcher Client Setup, artifact verification, and installer packaging treat the three managers as one required tested client suite.
 
 ## World Manager surface
 
@@ -139,7 +132,7 @@ Import is file-first. Upload is followed by bounded server inspection/review; fi
 
 ## Current-world state
 
-`lazybuilder:map` uses **Map Action V2**. Paper pushes the current managed-world state from actual world transitions. Entering an unmanaged world sends an explicit clear so `You are here`, Recent, map identity, and contextual actions cannot retain stale state.
+`lazybuilder:map` uses **Map Action V5**. Paper pushes the current managed-world state from actual world transitions. Entering an unmanaged world sends an explicit clear so `You are here`, Recent, map identity, and contextual actions cannot retain stale state.
 
 ## Permissions and world protocol
 

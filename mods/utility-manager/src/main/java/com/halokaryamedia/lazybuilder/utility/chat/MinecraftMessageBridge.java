@@ -7,10 +7,9 @@ import net.minecraft.text.Text;
 /**
  * Thin Fabric adapter for received server/game messages.
  *
- * Action-bar messages and unrecognized system text remain untouched. Only
- * recognized GAME/WARNING/ERROR messages are compacted, which keeps this layer
- * compatible with vanilla and other mods that attach styling/click behavior to
- * unrelated chat lines.
+ * Action-bar messages and unrecognized system text remain untouched. Compact
+ * replacement is limited to plain literal Text so Utility Manager never flattens
+ * translatable, styled, hoverable, clickable, or sibling-based Minecraft text.
  */
 public final class MinecraftMessageBridge {
     private static boolean registered;
@@ -22,18 +21,20 @@ public final class MinecraftMessageBridge {
         if (registered) return;
         registered = true;
 
-        ClientReceiveMessageEvents.MODIFY_GAME.register((message, overlay) -> {
-            if (overlay || message == null) return message;
+        ClientReceiveMessageEvents.MODIFY_GAME.register(MinecraftMessageBridge::transformMessage);
+    }
 
-            ChatMessage classified = MinecraftMessageClassifier.systemMessage(message.getString());
-            if (!shouldCompact(classified)) return message;
+    static Text transformMessage(Text message, boolean overlay) {
+        if (overlay || message == null) return message;
 
-            String compact = ChatPresentationFormatter.chatLine(classified, 1);
-            if (eligibleForCollapse(classified)) {
-                UtilityManagerClient.chatCollapseState().prepareEligible(compact);
-            }
-            return Text.literal(compact);
-        });
+        ChatMessage classified = MinecraftMessageClassifier.systemMessage(message.getString());
+        if (!shouldCompact(classified) || !isPlainLiteral(message)) return message;
+
+        String compact = ChatPresentationFormatter.chatLine(classified, 1);
+        if (eligibleForCollapse(classified)) {
+            UtilityManagerClient.chatCollapseState().prepareEligible(compact);
+        }
+        return Text.literal(compact);
     }
 
     static boolean shouldCompact(ChatMessage message) {
@@ -41,6 +42,10 @@ public final class MinecraftMessageBridge {
             case GAME, WARNING, ERROR -> true;
             case CHAT, SYSTEM -> false;
         };
+    }
+
+    private static boolean isPlainLiteral(Text message) {
+        return message.getLiteralString() != null;
     }
 
     private static boolean eligibleForCollapse(ChatMessage message) {

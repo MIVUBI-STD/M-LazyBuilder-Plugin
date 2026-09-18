@@ -125,6 +125,107 @@ class MapActionWireProtocolTest {
     }
 
     @Test
+    void constructorsRejectInvalidResponseCorrelationIds() {
+        WorldId worldId = WorldId.create();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.TeleportOk(0L, worldId, 1.0, 64.0, 2.0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ExportAccepted(0L, worldId));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ExportComplete(
+                        0L, worldId, "area.zip", "JAVA_1_21_4"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.CurrentWorldResult(
+                        -1L, worldId, "Build World", "build-world"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ErrorResponse(-1L, "invalid"));
+    }
+
+    @Test
+    void rejectsZeroCorrelationForRequestBoundResponses() {
+        WorldId worldId = WorldId.create();
+
+        byte[] teleport = MapActionWireProtocol.teleportOk(71L, worldId, 1.0, 64.0, 2.0);
+        byte[] zeroTeleport = teleport.clone();
+        Arrays.fill(zeroTeleport, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroTeleport));
+
+        byte[] accepted = MapActionWireProtocol.exportAccepted(72L, worldId);
+        byte[] zeroAccepted = accepted.clone();
+        Arrays.fill(zeroAccepted, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroAccepted));
+
+        byte[] complete = MapActionWireProtocol.exportComplete(
+                73L, worldId, "area.zip", "JAVA_1_21_4");
+        byte[] zeroComplete = complete.clone();
+        Arrays.fill(zeroComplete, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroComplete));
+    }
+
+    @Test
+    void rejectsNegativeResponseCorrelationIds() {
+        WorldId worldId = WorldId.create();
+        byte[] response = MapActionWireProtocol.currentWorld(
+                74L, worldId, "Build World", "build-world");
+        byte[] negative = response.clone();
+        Arrays.fill(negative, 2, 10, (byte) 0xFF);
+
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(negative));
+    }
+
+    @Test
+    void rejectsOversizedMapPayloadsAndRequestStrings() {
+        assertThrows(
+                IOException.class,
+                () -> MapActionWireProtocol.decodeResponse(
+                        new byte[MapActionWireProtocol.MAX_MESSAGE_BYTES + 1]));
+
+        String oversized = "x".repeat(193);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MapActionWireProtocol.exportAreaRequest(
+                        75L,
+                        WorldId.create(),
+                        "minecraft:overworld",
+                        0, 0, 15, 15,
+                        "JAVA_1_21_4",
+                        oversized,
+                        ExportSettingsWire.Settings.inherit()));
+    }
+
+    @Test
+    void oversizedErrorMessageFallsBackToBoundedGenericMessage() throws Exception {
+        byte[] payload = MapActionWireProtocol.error(76L, "x".repeat(193));
+
+        var decoded = (MapActionWireProtocol.ErrorResponse) MapActionWireProtocol.decodeResponse(payload);
+        assertEquals(76L, decoded.requestId());
+        assertEquals("Map action failed", decoded.message());
+    }
+
+    @Test
+    void rejectsTruncatedPayloadsAndUnknownOpcodes() {
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(new byte[9]));
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(new byte[9]));
+
+        WorldId worldId = WorldId.create();
+        byte[] request = MapActionWireProtocol.teleportRequest(81L, worldId, 1, 2);
+        byte[] unknownRequest = request.clone();
+        unknownRequest[1] = 99;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(unknownRequest));
+
+        byte[] response = MapActionWireProtocol.exportAccepted(82L, worldId);
+        byte[] unknownResponse = response.clone();
+        unknownResponse[1] = 99;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(unknownResponse));
+    }
+
+    @Test
     void rejectsUnsupportedVersionAndTrailingBytes() {
         WorldId worldId = WorldId.create();
         byte[] payload = MapActionWireProtocol.teleportRequest(61L, worldId, 1, 2);

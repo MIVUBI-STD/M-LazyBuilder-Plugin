@@ -58,6 +58,7 @@ final class UtilityConfigStoreTest {
         store.save(expected);
 
         assertEquals(expected, store.load());
+        assertFalse(Files.exists(store.configFile().resolveSibling(store.configFile().getFileName() + ".tmp")));
     }
 
     @Test
@@ -103,5 +104,19 @@ final class UtilityConfigStoreTest {
         UtilityPreferences preferences = store.load();
 
         assertTrue(preferences.contextualScreenshotNames());
+    }
+
+    @Test
+    void canonicalScreenshotPreferenceWinsOverLegacyAlias() throws IOException {
+        UtilityConfigStore store = new UtilityConfigStore(tempDir);
+        Files.writeString(
+                store.configFile(),
+                "screenshots.contextual_names=FALSE\n"
+                        + "screenshots.organize_by_project=TRUE\n"
+        );
+
+        UtilityPreferences preferences = store.load();
+
+        assertFalse(preferences.contextualScreenshotNames());
     }
 }

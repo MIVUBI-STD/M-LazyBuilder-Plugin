@@ -217,16 +217,20 @@ MultiplayerScreen/server-list fallback
 
 ### Performance Manager (Fabric)
 
-`mods/performance-manager/` is a required V1 client manager for passive performance observation/policy. Its scope remains narrow:
+`mods/performance-manager/` is the required first-party client performance owner. It owns performance behavior that remains independent from Map Manager and Utility Manager product semantics:
 
-- frame-time pressure observation;
-- bounded background/unfocused FPS policy;
-- passive/on-demand performance diagnostics;
-- no ownership of Map Manager workloads;
-- no ownership of Utility Manager behavior;
-- no required third-party optimization mod.
+- frame-time pressure observation and bounded background/unfocused FPS policy;
+- conservative entity/block-entity and render-side culling;
+- chunk rebuild, upload, visibility, buffer, and terrain-submission efficiency;
+- targeted memory/deduplication work;
+- terrain GPU residency/reclamation and region/layer allocation;
+- guarded physical-arena, per-draw transform, and multi-draw submission paths with reversible vanilla fallback;
+- passive/on-demand diagnostics and opt-in runtime proof logging;
+- compatibility gating when another renderer or optimization owner must remain authoritative.
 
-Required status does not permit cross-manager implementation dependencies or duplicate performance ownership.
+It does not own Map Manager workloads or Utility Manager behavior, and it does not require a third-party optimization mod. External renderer/performance mods remain compatibility/migration references only where the corresponding first-party path is not authoritative.
+
+Required status does not permit cross-manager implementation dependencies or duplicate performance ownership. Source/build proof establishes the implemented ownership path; representative runtime effectiveness and visual correctness remain separate performance acceptance evidence.
 
 ## Shared protocol
 

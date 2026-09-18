@@ -19,10 +19,16 @@ public final class ReconnectState {
     public static void capture(ServerInfo serverInfo) {
         if (serverInfo != null && serverInfo.address != null && !serverInfo.address.isBlank()) {
             lastServer = serverInfo;
-            LOGGER.info("Captured reconnect target {}", serverInfo.address);
-        } else {
-            LOGGER.debug("Reconnect target capture skipped because ServerInfo/address was unavailable");
+            LOGGER.debug("Captured reconnect target for the current client session");
+            return;
         }
+
+        clear();
+        LOGGER.debug("Cleared reconnect target because the current client context has no multiplayer target");
+    }
+
+    public static void clear() {
+        lastServer = null;
     }
 
     public static boolean canReconnect() {
@@ -40,7 +46,7 @@ public final class ReconnectState {
         }
 
         MinecraftClient client = MinecraftClient.getInstance();
-        LOGGER.info("Reconnect requested for {}", lastServer.address);
+        LOGGER.debug("Reconnect requested for the captured client-session target");
         ConnectScreen.connect(
                 parent,
                 client,
