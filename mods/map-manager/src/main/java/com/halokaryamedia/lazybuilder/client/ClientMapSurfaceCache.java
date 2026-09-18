@@ -379,7 +379,7 @@ public final class ClientMapSurfaceCache {
             if (activeCompletedSnapshot == null) {
                 LoadedRegion loaded = completedLoads.poll();
                 if (loaded == null) break;
-                if (loaded.!isCurrentScopeGeneration(generation, scopeGeneration)) continue;
+                if (!isCurrentScopeGeneration(loaded.generation, scopeGeneration)) continue;
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
@@ -440,7 +440,7 @@ public final class ClientMapSurfaceCache {
 
     private void drainCompletedWrites() {
         for (RegionWriteCompletion completion; (completion = completedWrites.poll()) != null;) {
-            if (completion.!isCurrentScopeGeneration(generation, scopeGeneration)) continue;
+            if (!isCurrentScopeGeneration(completion.generation, scopeGeneration)) continue;
             RegionData current = regions.get(completion.regionKey);
             if (current == completion.region) {
                 current.completeWrite(completion.revision, completion.success);
