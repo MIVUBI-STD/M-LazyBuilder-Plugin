@@ -25,6 +25,7 @@ import com.halokaryamedia.lazybuilder.builder.structure.SchematicCatalog;
 import com.halokaryamedia.lazybuilder.builder.structure.SchematicPlacements;
 import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicImport;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
+import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacementBounds;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacementAdapter;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
 import com.moulberry.axiomclientapi.CustomTool;
@@ -297,7 +298,10 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             List<SplinePlacementPlanEntry> splinePlan
     ) {
         StructureSnapshot snapshot = selected.snapshot();
-        Set<WorldKey> occupied = new HashSet<>();
+        Set<WorldKey> occupiedBlocks = new HashSet<>();
+        List<StructurePlacementBounds> occupiedAuxiliaryVolumes = new ArrayList<>();
+        boolean requiresVolumeIsolation =
+                snapshot.biomeCount() != 0 || snapshot.entityCount() != 0;
         List<PlacementPlanEntry> accepted = new ArrayList<>();
 
         for (SplinePlacementPlanEntry entry : splinePlan) {
@@ -310,12 +314,19 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             StructurePlacement placement = SchematicPlacements.atPasteBase(
                     selected, pasteBase, quarterTurns, mirrorX[0] != 0, mirrorZ[0] != 0);
 
+            StructurePlacementBounds placementBounds =
+                    StructurePlacementBounds.of(snapshot, placement);
+            if (requiresVolumeIsolation
+                    && occupiedAuxiliaryVolumes.stream().anyMatch(placementBounds::overlaps)) {
+                continue;
+            }
+
             List<WorldKey> instance = new ArrayList<>(snapshot.blockCount());
             boolean collision = false;
             for (var block : snapshot.blocks()) {
                 var world = placement.transform(block.x(), block.y(), block.z());
                 WorldKey key = new WorldKey(world.x(), world.y(), world.z());
-                if (occupied.contains(key)) {
+                if (occupiedBlocks.contains(key)) {
                     collision = true;
                     break;
                 }
@@ -324,10 +335,13 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             if (collision) continue;
 
             OperationPreflight.requireAtMost(
-                    (long) occupied.size() + instance.size(),
+                    (long) occupiedBlocks.size() + instance.size(),
                     MAX_COLLISION_BLOCKS,
                     "spline schematic collision workspace");
-            occupied.addAll(instance);
+            occupiedBlocks.addAll(instance);
+            if (requiresVolumeIsolation) {
+                occupiedAuxiliaryVolumes.add(placementBounds);
+            }
             accepted.add(new PlacementPlanEntry(
                     new PlacementPoint(
                             placement.anchorX(),
@@ -363,6 +377,15 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         ClientWorld world = requireWorld();
         SpongeSchematicImport applyImport = applyImport();
         AxiomSchematicCompatibility.validateForApply(applyImport, world);
+        for (PlacementPlanEntry entry : placements) {
+            StructurePlacementBounds placementBounds = StructurePlacementBounds.of(
+                    applyImport.snapshot(), StructurePlacementAdapter.from(entry));
+            if (placementBounds.minY() < world.getBottomY()
+                    || placementBounds.maxY() > world.getTopYInclusive()) {
+                throw new IllegalArgumentException(
+                        "spline schematic placement exceeds current world build height");
+            }
+        }
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(applyImport.snapshot());
 
@@ -406,30 +429,42 @@ public final class AxiomSplineSchematicTool implements CustomTool {
 
     private long estimatedHistoryBytes(StructureSnapshot snapshot) {
         long instances = placements.size();
-        long total = OperationPreflight.multiply(
-                snapshot.blockCount(), instances, "spline schematic block estimate");
-        total = Math.multiplyExact(total, 96L);
+        long total = Math.multiplyExact(
+                OperationPreflight.multiply(
+                        snapshot.blockCount(), instances,
+                        "spline schematic block estimate"),
+                96L);
+
+        long blockEntityPayloadBytes = 0L;
+        for (var blockEntity : snapshot.blockEntities()) {
+            blockEntityPayloadBytes = Math.addExact(
+                    blockEntityPayloadBytes,
+                    Math.addExact(128L, Math.multiplyExact(blockEntity.payload().length, 2L)));
+        }
         total = Math.addExact(
                 total,
-                Math.multiplyExact(
-                        OperationPreflight.multiply(
-                                snapshot.blockEntityCount(), instances,
-                                "spline schematic block-entity estimate"),
-                        512L));
+                Math.multiplyExact(blockEntityPayloadBytes, instances));
+
+        long biomePayloadBytes = 0L;
+        for (var biome : snapshot.biomes()) {
+            biomePayloadBytes = Math.addExact(
+                    biomePayloadBytes,
+                    Math.addExact(96L, Math.multiplyExact(biome.payload().length, 2L)));
+        }
         total = Math.addExact(
                 total,
-                Math.multiplyExact(
-                        OperationPreflight.multiply(
-                                snapshot.biomeCount(), instances,
-                                "spline schematic biome estimate"),
-                        192L));
+                Math.multiplyExact(biomePayloadBytes, instances));
+
+        long entityPayloadBytes = 0L;
+        for (var entity : snapshot.entities()) {
+            entityPayloadBytes = Math.addExact(
+                    entityPayloadBytes,
+                    Math.addExact(160L, Math.multiplyExact(entity.payload().length, 2L)));
+        }
         total = Math.addExact(
                 total,
-                Math.multiplyExact(
-                        OperationPreflight.multiply(
-                                snapshot.entityCount(), instances,
-                                "spline schematic entity estimate"),
-                        256L));
+                Math.multiplyExact(entityPayloadBytes, instances));
+
         return Math.max(1L, total);
     }
 
