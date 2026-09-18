@@ -7,6 +7,7 @@ on:
       - 'mods/builder-utilities/**'
       - 'gradlew.bat'
       - 'tooling/windows-toolchain/scripts/wrappers/**'
+      - 'tooling/windows-toolchain/scripts/verify/verify-client-artifacts.ps1'
       - '.github/workflows/builder-verify.yml'
   workflow_dispatch:
 
@@ -33,6 +34,9 @@ jobs:
       - name: Build and test Builder Utilities
         shell: pwsh
         run: .\gradlew.bat -p mods/builder-utilities --no-daemon build
+      - name: Verify packaged Builder artifact
+        shell: pwsh
+        run: .\tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1 -ClientModsDir "mods\builder-utilities\build\libs" -RepoRoot "." -OnlyBuilder
       - name: Upload Builder Utilities artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
         with:

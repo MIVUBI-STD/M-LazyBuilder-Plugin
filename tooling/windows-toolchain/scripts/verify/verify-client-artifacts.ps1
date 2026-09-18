@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$ClientModsDir,
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [switch]$OnlyBuilder
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,12 +14,17 @@ $ClientModsDir = Resolve-Path $ClientModsDir
 $ProductVersion = (Get-Content (Join-Path $RepoRoot 'VERSION') -Raw).Trim()
 $SnapshotVersion = "$ProductVersion-SNAPSHOT"
 
-$Expected = @(
+$AllExpected = @(
     [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
     [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
     [pscustomobject]@{ File="lazybuilder-builder-utilities-$SnapshotVersion.jar"; Id='lazybuilder_builder_utilities'; Name='LazyBuilder Builder Utilities' }
 )
+$Expected = if ($OnlyBuilder) {
+    @($AllExpected | Where-Object { $_.Id -eq 'lazybuilder_builder_utilities' })
+} else {
+    @($AllExpected)
+}
 $Terraform = [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
 
 function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
@@ -116,12 +122,15 @@ function Verify-Jar($Spec) {
 $actual = @(Get-ChildItem $ClientModsDir -Filter '*.jar' -File | ForEach-Object Name | Sort-Object)
 $expectedNames = @($Expected | ForEach-Object File | Sort-Object)
 $missing = @($expectedNames | Where-Object { $_ -notin $actual })
-$allowed = @($expectedNames + $Terraform.File)
+$allowed = if ($OnlyBuilder) { @($expectedNames) } else { @($expectedNames + $Terraform.File) }
 $unexpected = @($actual | Where-Object { $_ -notin $allowed })
 if ($missing.Count -gt 0) { Fail "missing required JARs: $($missing -join ', ')" }
 if ($unexpected.Count -gt 0) { Fail "unexpected client JARs: $($unexpected -join ', ')" }
 
 foreach ($spec in $Expected) { Verify-Jar $spec }
-$terraformPath = Join-Path $ClientModsDir $Terraform.File
-if (Test-Path $terraformPath) { Verify-Jar $Terraform }
-Write-Host "Client artifacts OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
+if (-not $OnlyBuilder) {
+    $terraformPath = Join-Path $ClientModsDir $Terraform.File
+    if (Test-Path $terraformPath) { Verify-Jar $Terraform }
+}
+$scope = if ($OnlyBuilder) { 'Builder artifact' } else { 'Client artifacts' }
+Write-Host "$scope OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
