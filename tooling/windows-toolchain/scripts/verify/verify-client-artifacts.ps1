@@ -15,7 +15,12 @@ $ProductVersion = (Get-Content (Join-Path $RepoRoot 'VERSION') -Raw).Trim()
 $SnapshotVersion = "$ProductVersion-SNAPSHOT"
 
 $BuilderPropertiesPath = Join-Path $RepoRoot 'mods\builder-utilities\gradle.properties'
-$AxiomRangeMatch = Select-String -Path $BuilderPropertiesPath -Pattern '^axiom_supported_range=(.+)    [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
+$AxiomRangeMatch = Select-String -Path $BuilderPropertiesPath -Pattern '^axiom_supported_range=(.+)$'
+if (-not $AxiomRangeMatch) { throw "Client artifact verification failed: missing axiom_supported_range" }
+$AxiomSupportedRange = $AxiomRangeMatch.Matches[0].Groups[1].Value.Trim()
+
+$AllExpected = @(
+    [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
     [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
     [pscustomobject]@{ File="lazybuilder-builder-utilities-$SnapshotVersion.jar"; Id='lazybuilder_builder_utilities'; Name='LazyBuilder Builder Utilities' }
