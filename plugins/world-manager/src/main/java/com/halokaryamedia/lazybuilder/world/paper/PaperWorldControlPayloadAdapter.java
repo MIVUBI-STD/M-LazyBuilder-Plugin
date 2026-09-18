@@ -54,7 +54,7 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     private final TransferSessionService transfers;
     private final WorldHeavyOperationOrchestrator heavyOperations;
     private final Set<UUID> heavyInFlight = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, byte[]> pendingHeavyCompletion = new ConcurrentHashMap<>();
+    private final PendingMapExportCompletionStore pendingHeavyCompletions;
     private final Map<UUID, String> reviewedImportArtifacts = new ConcurrentHashMap<>();
     private final Map<UUID, String> inspectionInFlight = new ConcurrentHashMap<>();
     private final Set<UUID> abandonedInspectionOwners = ConcurrentHashMap.newKeySet();
@@ -88,11 +88,25 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         this.conversionUpdates = Objects.requireNonNull(conversionUpdates, "conversionUpdates");
         this.transfers = Objects.requireNonNull(transfers, "transfers");
         this.heavyOperations = Objects.requireNonNull(heavyOperations, "heavyOperations");
+        this.pendingHeavyCompletions = PendingMapExportCompletionStore.withPayloadLimit(
+                plugin.getDataFolder().toPath().resolve("pending-world-control-completions"),
+                WorldControlWireProtocol.MAX_MESSAGE_BYTES);
     }
 
     public void start() {
         if (started) return;
         stopping = false;
+        try {
+            int recoveredTemps = pendingHeavyCompletions.recoverTemps();
+            if (recoveredTemps > 0) {
+                plugin.getLogger().info("Recovered " + recoveredTemps
+                        + " interrupted pending world-control completion write"
+                        + (recoveredTemps == 1 ? "" : "s") + ".");
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not recover pending world-control completion writes: "
+                    + exception.getMessage());
+        }
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
@@ -116,7 +130,6 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
 
         started = false;
-        pendingHeavyCompletion.clear();
         formatWaiters.clear();
         formatRefreshInFlight.set(false);
     }
@@ -168,8 +181,13 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
     }
 
     private void flushPendingCompletion(Player player) {
-        byte[] pending = pendingHeavyCompletion.remove(player.getUniqueId());
-        if (pending != null) send(player, pending);
+        try {
+            byte[] pending = pendingHeavyCompletions.take(player.getUniqueId());
+            if (pending != null) send(player, pending);
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not load pending world-control completion for "
+                    + player.getUniqueId() + ": " + exception.getMessage());
+        }
     }
 
     private WorldControlWireProtocol.Response handle(Player player, WorldControlWireProtocol.Request request) {
@@ -477,7 +495,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         }
         scheduleHeavy(player,
                 () -> heavyOperations.exportWorld(new WorldId(request.worldId()), request.targetFormat(),
-                        request.artifactName(), options, WorldHeavyOperationOrchestrator.Progress.NONE),
+                        request.artifactName(), options, WorldHeavyOperationOrchestrator.Progress.NONE,
+                        () -> stopping || !started),
                 result -> encode(new WorldControlWireProtocol.ExportReady(
                         request.worldId(), result.artifact().getFileName().toString(), result.targetFormat())));
     }
@@ -534,8 +553,16 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             if (stopping || !started) return;
             byte[] payload = responseSupplier.get();
             Player online = plugin.getServer().getPlayer(owner);
-            if (online != null && online.isOnline()) send(online, payload);
-            else pendingHeavyCompletion.put(owner, payload);
+            if (online != null && online.isOnline()) {
+                send(online, payload);
+                return;
+            }
+            try {
+                pendingHeavyCompletions.put(owner, payload);
+            } catch (IOException exception) {
+                plugin.getLogger().warning("Could not persist pending world-control completion for " + owner
+                        + ": " + exception.getMessage());
+            }
         } finally {
             discardDeferredReviewedArtifact(owner);
             heavyInFlight.remove(owner);

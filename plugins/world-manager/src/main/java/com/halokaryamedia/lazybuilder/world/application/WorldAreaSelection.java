@@ -12,6 +12,8 @@ import java.util.Set;
  */
 public record WorldAreaSelection(String dimensionId, int minBlockX, int minBlockZ, int maxBlockX, int maxBlockZ) {
     private static final int CHUNK_BLOCKS = 16;
+    /** Safety/resource ceiling: at most 512 x 512 chunks per area export request. */
+    public static final long MAX_CHUNK_COUNT = 512L * 512L;
     private static final Set<String> VANILLA_DIMENSIONS = Set.of(
             "minecraft:overworld",
             "minecraft:the_nether",
@@ -33,6 +35,17 @@ public record WorldAreaSelection(String dimensionId, int minBlockX, int minBlock
         int minChunkZ = Math.floorDiv(minBlockZ, CHUNK_BLOCKS);
         int maxChunkX = Math.floorDiv(maxBlockX, CHUNK_BLOCKS);
         int maxChunkZ = Math.floorDiv(maxBlockZ, CHUNK_BLOCKS);
+        long chunkWidth = (long) maxChunkX - minChunkX + 1L;
+        long chunkDepth = (long) maxChunkZ - minChunkZ + 1L;
+        long chunks;
+        try {
+            chunks = Math.multiplyExact(chunkWidth, chunkDepth);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("Selected Area is too large", overflow);
+        }
+        if (chunks > MAX_CHUNK_COUNT) {
+            throw new IllegalArgumentException("Selected Area exceeds the maximum of " + MAX_CHUNK_COUNT + " chunks");
+        }
 
         minBlockX = Math.multiplyExact(minChunkX, CHUNK_BLOCKS);
         minBlockZ = Math.multiplyExact(minChunkZ, CHUNK_BLOCKS);

@@ -233,8 +233,8 @@ Required status does not permit cross-manager implementation dependencies or dup
 `shared/protocol/` is the only neutral Paper/Fabric contract source.
 
 ```text
-lazybuilder:world     World Control V5
-lazybuilder:map       Map Action V2
+lazybuilder:world     World Control V7
+lazybuilder:map       Map Action V5
 lazybuilder:transfer  bounded file bytes only
 ```
 

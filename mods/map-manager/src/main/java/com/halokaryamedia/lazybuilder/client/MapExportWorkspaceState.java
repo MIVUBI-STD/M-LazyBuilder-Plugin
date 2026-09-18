@@ -17,10 +17,7 @@ import java.util.UUID;
 final class MapExportWorkspaceState {
     enum Scope { FULL_WORLD, CUSTOM_AREA }
 
-    private static final String BUILDER_GAME_MODE = "CREATIVE";
-    private static final String BUILDER_DIFFICULTY = "NORMAL";
-    private static final WorldTransferPreferences VERSION_PREFERENCES = new WorldTransferPreferences();
-
+    private final WorldTransferPreferences versionPreferences;
     private UUID worldId;
     private WorldControlWireProtocol.SettingsSnapshot source;
     private Scope scope = Scope.FULL_WORLD;
@@ -30,6 +27,14 @@ final class MapExportWorkspaceState {
     private Integer spawnY;
     private Integer spawnZ;
     private boolean worldSettingsExpanded;
+
+    MapExportWorkspaceState() {
+        this(new WorldTransferPreferences());
+    }
+
+    MapExportWorkspaceState(WorldTransferPreferences versionPreferences) {
+        this.versionPreferences = Objects.requireNonNull(versionPreferences, "versionPreferences");
+    }
 
     void initialize(
             UUID worldId,
@@ -42,10 +47,15 @@ final class MapExportWorkspaceState {
         boolean differentWorld = this.worldId == null || !this.worldId.equals(worldId);
         this.worldId = worldId;
         this.source = source;
-        if (!differentWorld) return;
+        List<String> ordered = versionPreferences.preferredFirst(formats);
+        if (!differentWorld) {
+            if (!ordered.isEmpty() && ordered.stream().noneMatch(value -> value.equalsIgnoreCase(format))) {
+                format = ordered.get(0);
+            }
+            return;
+        }
 
         artifactName = sanitizeWorldName(displayName);
-        List<String> ordered = VERSION_PREFERENCES.preferredFirst(formats);
         format = ordered.isEmpty() ? "JAVA_1_21_4" : ordered.get(0);
         spawnX = round(source.spawnX());
         spawnY = round(source.spawnY());
@@ -62,7 +72,7 @@ final class MapExportWorkspaceState {
     String artifactName() { return artifactName; }
     void artifactName(String value) { artifactName = Objects.requireNonNullElse(value, ""); }
     String format() { return format; }
-    boolean formatPreferred() { return VERSION_PREFERENCES.isPreferredFormat(format); }
+    boolean formatPreferred() { return versionPreferences.isPreferredFormat(format); }
     int spawnX() { return spawnX == null ? 0 : spawnX; }
     int spawnY() { return spawnY == null ? 0 : spawnY; }
     int spawnZ() { return spawnZ == null ? 0 : spawnZ; }
@@ -70,10 +80,10 @@ final class MapExportWorkspaceState {
     void toggleWorldSettings() { worldSettingsExpanded = !worldSettingsExpanded; }
 
     void cycleFormat(List<String> formats) {
-        List<String> ordered = VERSION_PREFERENCES.preferredFirst(formats);
+        List<String> ordered = versionPreferences.preferredFirst(formats);
         if (ordered.isEmpty()) return;
         format = next(ordered.toArray(String[]::new), format);
-        VERSION_PREFERENCES.setExportFormat(format);
+        versionPreferences.setExportFormat(format);
     }
 
     void useSpawn(int x, int y, int z) {
@@ -84,7 +94,7 @@ final class MapExportWorkspaceState {
 
     ExportSettingsWire.Settings toWire() {
         WorldControlWireProtocol.SettingsSnapshot base = Objects.requireNonNull(source, "source settings");
-        VERSION_PREFERENCES.setExportFormat(format);
+        versionPreferences.setExportFormat(format);
 
         Integer outSpawnX = null;
         Integer outSpawnY = null;
@@ -96,8 +106,8 @@ final class MapExportWorkspaceState {
         }
 
         return new ExportSettingsWire.Settings(
-                same(BUILDER_GAME_MODE, base.defaultGameMode()) ? "" : BUILDER_GAME_MODE,
-                same(BUILDER_DIFFICULTY, base.difficulty()) ? "" : BUILDER_DIFFICULTY,
+                "",
+                "",
                 outSpawnX, outSpawnY, outSpawnZ,
                 null,
                 "",
@@ -110,14 +120,6 @@ final class MapExportWorkspaceState {
         if (value == null || value.isBlank()) return "";
         String lower = value.toLowerCase(Locale.ROOT).replace('_', ' ');
         return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
-    }
-
-    private static boolean same(String a, String b) {
-        return Objects.equals(normalize(a), normalize(b));
-    }
-
-    private static String normalize(String value) {
-        return Objects.requireNonNullElse(value, "").strip().toUpperCase(Locale.ROOT);
     }
 
     private static String next(String[] values, String current) {

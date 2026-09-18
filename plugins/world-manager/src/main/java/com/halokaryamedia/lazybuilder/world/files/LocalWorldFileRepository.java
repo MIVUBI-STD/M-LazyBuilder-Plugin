@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /**
  * Local filesystem implementation for managed-world copies and deletion.
@@ -40,6 +41,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String JAVA_END_DIRECTORY = "DIM1";
     private static final long COPY_ENTRY_OVERHEAD_BYTES = 4L * 1024L;
     private static final long COPY_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
+    private static final BooleanSupplier NEVER_CANCELLED = () -> false;
 
     private final Path worldRoot;
     private final Path workspaceRoot;
@@ -51,9 +53,21 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
     @Override
     public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException {
+        return stageCopy(source, operationId, profile, NEVER_CANCELLED);
+    }
+
+    @Override
+    public Path stageCopy(
+            WorldRecord source,
+            UUID operationId,
+            WorldCopyProfile profile,
+            BooleanSupplier cancellationRequested
+    ) throws IOException {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(operationId, "operationId");
         Objects.requireNonNull(profile, "profile");
+        Objects.requireNonNull(cancellationRequested, "cancellationRequested");
+        requireCopyActive(cancellationRequested);
 
         Path sourcePath = worldPath(source.folderName());
         if (!Files.isDirectory(sourcePath) || Files.isSymbolicLink(sourcePath)) {
@@ -71,9 +85,14 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
         Files.createDirectories(workspaceRoot);
         requireSafeWorkspaceRoot();
-        long requiredBytes = estimateCopyBytes(sourcePath, profile);
-        if (netherSource != null) requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(netherSource, profile));
-        if (endSource != null) requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(endSource, profile));
+        long requiredBytes = estimateCopyBytes(sourcePath, profile, cancellationRequested);
+        if (netherSource != null) {
+            requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(netherSource, profile, cancellationRequested));
+        }
+        if (endSource != null) {
+            requiredBytes = addCopyBytes(requiredBytes, estimateTreeBytes(endSource, profile, cancellationRequested));
+        }
+        requireCopyActive(cancellationRequested);
         long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
         if (usableBytes < requiredBytes) {
             throw new IOException("Insufficient disk space for managed world copy; required="
@@ -82,9 +101,89 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
         Path destination = reserveTypedWorkspace(operationId, COPY_SUFFIX);
         try {
-            copyTree(sourcePath, destination, profile);
-            if (netherSource != null) copyTree(netherSource, destination.resolve(JAVA_NETHER_DIRECTORY), profile);
-            if (endSource != null) copyTree(endSource, destination.resolve(JAVA_END_DIRECTORY), profile);
+            copyTree(sourcePath, destination, profile, cancellationRequested);
+            if (netherSource != null) {
+                copyTree(netherSource, destination.resolve(JAVA_NETHER_DIRECTORY), profile, cancellationRequested);
+            }
+            if (endSource != null) {
+                copyTree(endSource, destination.resolve(JAVA_END_DIRECTORY), profile, cancellationRequested);
+            }
+            requireCopyActive(cancellationRequested);
+            return destination;
+        } catch (IOException | RuntimeException exception) {
+            try { deleteTree(destination); }
+            catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
+            throw exception;
+        }
+    }
+
+    @Override
+    public Path stageAreaCopy(WorldRecord source, UUID operationId, AreaCopySelection selection) throws IOException {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(operationId, "operationId");
+        Objects.requireNonNull(selection, "selection");
+
+        Path sourcePath = worldPath(source.folderName());
+        if (!Files.isDirectory(sourcePath) || Files.isSymbolicLink(sourcePath)) {
+            throw new IOException("Managed world folder is missing or unsafe: " + source.folderName());
+        }
+
+        Path selectedDimensionSource = null;
+        String selectedDimensionDirectory = null;
+        if (selection.dimensionId().equals("minecraft:the_nether")) {
+            selectedDimensionDirectory = JAVA_NETHER_DIRECTORY;
+            Path canonical = sourcePath.resolve(JAVA_NETHER_DIRECTORY).normalize();
+            if (Files.exists(canonical)) {
+                if (!Files.isDirectory(canonical) || Files.isSymbolicLink(canonical)) {
+                    throw new IOException("Managed Nether dimension is unsafe: " + canonical);
+                }
+                selectedDimensionSource = canonical;
+            } else {
+                selectedDimensionSource = externalDimensionSource(
+                        source.folderName() + PAPER_NETHER_SUFFIX, JAVA_NETHER_DIRECTORY);
+            }
+        } else if (selection.dimensionId().equals("minecraft:the_end")) {
+            selectedDimensionDirectory = JAVA_END_DIRECTORY;
+            Path canonical = sourcePath.resolve(JAVA_END_DIRECTORY).normalize();
+            if (Files.exists(canonical)) {
+                if (!Files.isDirectory(canonical) || Files.isSymbolicLink(canonical)) {
+                    throw new IOException("Managed End dimension is unsafe: " + canonical);
+                }
+                selectedDimensionSource = canonical;
+            } else {
+                selectedDimensionSource = externalDimensionSource(
+                        source.folderName() + PAPER_END_SUFFIX, JAVA_END_DIRECTORY);
+            }
+        }
+        if (selectedDimensionDirectory != null && selectedDimensionSource == null) {
+            throw new IOException("Selected dimension data is missing for area snapshot: " + selection.dimensionId());
+        }
+
+        Files.createDirectories(workspaceRoot);
+        requireSafeWorkspaceRoot();
+        long requiredBytes = addCopyBytes(
+                COPY_SPACE_RESERVE_BYTES,
+                AreaSnapshotTreeCopier.estimateRootBytes(sourcePath, selection, COPY_ENTRY_OVERHEAD_BYTES));
+        if (selectedDimensionSource != null) {
+            requiredBytes = addCopyBytes(requiredBytes,
+                    AreaSnapshotTreeCopier.estimateDimensionBytes(
+                            selectedDimensionSource, selection, COPY_ENTRY_OVERHEAD_BYTES));
+        }
+        long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
+        if (usableBytes < requiredBytes) {
+            throw new IOException("Insufficient disk space for selected area snapshot; required="
+                    + requiredBytes + ", usable=" + usableBytes);
+        }
+
+        Path destination = reserveTypedWorkspace(operationId, COPY_SUFFIX);
+        try {
+            AreaSnapshotTreeCopier.copyRoot(sourcePath, destination, selection);
+            if (selectedDimensionSource != null) {
+                AreaSnapshotTreeCopier.copyDimension(
+                        selectedDimensionSource,
+                        destination.resolve(selectedDimensionDirectory),
+                        selection);
+            }
             return destination;
         } catch (IOException | RuntimeException exception) {
             try { deleteTree(destination); }
@@ -471,15 +570,25 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
     }
 
-    private long estimateCopyBytes(Path source, WorldCopyProfile profile) throws IOException {
-        return addCopyBytes(COPY_SPACE_RESERVE_BYTES, estimateTreeBytes(source, profile));
+    private long estimateCopyBytes(
+            Path source,
+            WorldCopyProfile profile,
+            BooleanSupplier cancellationRequested
+    ) throws IOException {
+        return addCopyBytes(COPY_SPACE_RESERVE_BYTES, estimateTreeBytes(source, profile, cancellationRequested));
     }
 
-    private long estimateTreeBytes(Path source, WorldCopyProfile profile) throws IOException {
+    private long estimateTreeBytes(
+            Path source,
+            WorldCopyProfile profile,
+            BooleanSupplier cancellationRequested
+    ) throws IOException {
+        requireCopyActive(cancellationRequested);
         long[] total = {0L};
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
+                requireCopyActive(cancellationRequested);
                 if (Files.isSymbolicLink(directory)) {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + directory);
                 }
@@ -494,6 +603,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                requireCopyActive(cancellationRequested);
                 if (Files.isSymbolicLink(file)) {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + file);
                 }
@@ -532,10 +642,17 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
     }
 
-    private void copyTree(Path source, Path destination, WorldCopyProfile profile) throws IOException {
+    private void copyTree(
+            Path source,
+            Path destination,
+            WorldCopyProfile profile,
+            BooleanSupplier cancellationRequested
+    ) throws IOException {
+        requireCopyActive(cancellationRequested);
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
+                requireCopyActive(cancellationRequested);
                 if (Files.isSymbolicLink(directory)) {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + directory);
                 }
@@ -550,6 +667,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                requireCopyActive(cancellationRequested);
                 if (Files.isSymbolicLink(file)) {
                     throw new IOException("Symbolic links are not supported in managed world copies: " + file);
                 }
@@ -562,6 +680,10 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    private static void requireCopyActive(BooleanSupplier cancellationRequested) throws IOException {
+        if (cancellationRequested.getAsBoolean()) throw new IOException("Managed world copy was cancelled");
     }
 
     private static boolean shouldSkipFile(Path relative, WorldCopyProfile profile) {

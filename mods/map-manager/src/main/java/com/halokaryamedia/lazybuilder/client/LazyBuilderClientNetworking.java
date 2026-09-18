@@ -59,15 +59,17 @@ public final class LazyBuilderClientNetworking {
             transferController.reset();
         }));
 
-        // World changes can happen outside LazyBuilder via portals, commands, or other
-        // plugins. Detect only the identity edge and refresh server authority once per
-        // actual world transition; this does not continuously poll the network.
+        // World/dimension changes can happen outside LazyBuilder via portals, commands, or
+        // other plugins. Invalidate only map presentation identity on a connected edge so
+        // a dimension-local selection cannot survive into another dimension. Request-bound
+        // teleport/export work remains active and resolves only through its correlated reply.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             String current = currentWorldKey(client);
             if (Objects.equals(current, observedWorldKey)) return;
             observedWorldKey = current;
-            if (current != null && client.getNetworkHandler() != null) {
-                refreshManagedContext();
+            if (client.getNetworkHandler() != null) {
+                mapController.clearCurrentWorldForTransition();
+                if (current != null) refreshManagedContext();
             } else {
                 mapController.reset();
             }

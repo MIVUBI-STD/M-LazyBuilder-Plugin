@@ -8,13 +8,17 @@ import com.halokaryamedia.lazybuilder.world.application.WorldImportService;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 
+import java.io.IOException;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 /**
  * Shared phased orchestration for heavy World-Manager operations used by both
  * desktop local control and Fabric plugin-message transports.
  */
 public final class WorldHeavyOperationOrchestrator {
+    private static final BooleanSupplier NEVER_CANCELLED = () -> false;
+
     private final PaperMainThreadDispatcher mainThread;
     private final WorldDuplicateService duplicateService;
     private final WorldDeleteService deleteService;
@@ -104,7 +108,8 @@ public final class WorldHeavyOperationOrchestrator {
             String artifactName,
             Progress progress
     ) throws Exception {
-        return exportWorld(worldId, targetFormat, artifactName, WorldExportOptions.legacyDefaults(), progress);
+        return exportWorld(worldId, targetFormat, artifactName,
+                WorldExportOptions.legacyDefaults(), progress, NEVER_CANCELLED);
     }
 
     public WorldExportService.ExportResult exportWorld(
@@ -114,21 +119,43 @@ public final class WorldHeavyOperationOrchestrator {
             WorldExportOptions options,
             Progress progress
     ) throws Exception {
+        return exportWorld(worldId, targetFormat, artifactName, options, progress, NEVER_CANCELLED);
+    }
+
+    public WorldExportService.ExportResult exportWorld(
+            WorldId worldId,
+            String targetFormat,
+            String artifactName,
+            WorldExportOptions options,
+            Progress progress,
+            BooleanSupplier cancellationRequested
+    ) throws Exception {
         Progress reporter = progressOrNone(progress);
         WorldExportOptions exportOptions = Objects.requireNonNull(options, "options");
+        BooleanSupplier cancellation = Objects.requireNonNull(cancellationRequested, "cancellationRequested");
+        requireExportActive(cancellation);
         reporter.update(10, "Preparing source world on Paper.");
         WorldExportService.ExportTask task = mainThread.call(
                 () -> exportService.prepare(worldId, targetFormat, artifactName, exportOptions));
         Exception failure = null;
         WorldExportService.ExportResult result = null;
         try {
-            reporter.update(25, "Capturing consistent world snapshot.");
-            exportService.captureSnapshot(task);
+            requireExportActive(cancellation);
+            reporter.update(25, "Validating snapshot source on Paper.");
+            mainThread.call(() -> {
+                exportService.validateSnapshotSourceForAsyncCapture(task);
+                return null;
+            });
+            requireExportActive(cancellation);
+            reporter.update(30, "Capturing consistent world snapshot.");
+            exportService.captureSnapshotAfterValidation(task, cancellation);
+            requireExportActive(cancellation);
             reporter.update(45, "Restoring source runtime state.");
             mainThread.call(() -> {
                 exportService.resumeSourceAfterSnapshot(task);
                 return null;
             });
+            requireExportActive(cancellation);
             reporter.update(60, "Packaging export artifact.");
             result = exportService.processSnapshot(task);
             reporter.update(90, "Export artifact ready; finalizing task.");
@@ -174,6 +201,10 @@ public final class WorldHeavyOperationOrchestrator {
         if (failure != null) throw failure;
         reporter.update(95, "Import finalized.");
         return Objects.requireNonNull(imported, "imported");
+    }
+
+    private static void requireExportActive(BooleanSupplier cancellationRequested) throws IOException {
+        if (cancellationRequested.getAsBoolean()) throw new IOException("World export was cancelled");
     }
 
     private static Exception combine(Exception primary, Exception secondary) {

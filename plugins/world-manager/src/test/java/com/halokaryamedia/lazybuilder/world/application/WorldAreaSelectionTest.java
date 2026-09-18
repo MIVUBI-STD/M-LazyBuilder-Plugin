@@ -74,4 +74,28 @@ class WorldAreaSelectionTest {
         assertThrows(IllegalArgumentException.class, () -> WorldAreaSelection.ofCorners(
                 "example:custom_dimension", 0, 0, 15, 15));
     }
+
+    @Test
+    void selectedAreaAcceptsMaximumChunkBudget() {
+        WorldAreaSelection area = WorldAreaSelection.ofCorners(
+                "minecraft:overworld", 0, 0, 8191, 8191);
+
+        assertEquals(WorldAreaSelection.MAX_CHUNK_COUNT, area.chunkCount());
+        assertEquals(512, area.chunkWidth());
+        assertEquals(512, area.chunkDepth());
+    }
+
+    @Test
+    void selectedAreaRejectsChunkBudgetOverflow() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () ->
+                WorldAreaSelection.ofCorners("minecraft:overworld", 0, 0, 8192, 8191));
+
+        assertTrue(failure.getMessage().contains("maximum"));
+    }
+
+    @Test
+    void selectedAreaRejectsExtremeCoordinateExpansionInsteadOfOverflowing() {
+        assertThrows(IllegalArgumentException.class, () -> WorldAreaSelection.ofCorners(
+                "minecraft:overworld", Integer.MIN_VALUE, 0, Integer.MAX_VALUE, 15));
+    }
 }
