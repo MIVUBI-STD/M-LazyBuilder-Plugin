@@ -10,6 +10,8 @@ import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDis
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementVariation;
+import com.halokaryamedia.lazybuilder.builder.placement.PlacementSource;
+import com.halokaryamedia.lazybuilder.builder.placement.WeightedPlacementSource;
 import com.halokaryamedia.lazybuilder.builder.placement.StructureFootprint;
 import com.halokaryamedia.lazybuilder.builder.placement.StructurePlacementPlanner;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
@@ -34,8 +36,10 @@ import org.joml.Matrix4f;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,11 +69,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private final int[] quarterTurns = {0};
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
+    private final int[] useCatalogPalette = {0};
     private final int[] seedValue = {424242};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
     private SpongeSchematicImport selected;
+    private Map<String, SpongeSchematicImport> blockOnlyCatalog = Map.of();
     private BlockPos origin;
     private List<PlacementPlanEntry> placements = List.of();
     private List<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> previewPoints = List.of();
@@ -146,7 +152,11 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         changed |= ImGui.sliderInt("Quarter Turns", quarterTurns, 0, 3);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
+        changed |= ImGui.sliderInt("Use Catalog Palette", useCatalogPalette, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
+        if (useCatalogPalette[0] != 0) {
+            ImGui.textWrapped("Palette sources: " + blockOnlyCatalog.size());
+        }
 
         if (mode[0] == 0) {
             changed |= ImGui.sliderInt("Array Count", arrayCount, 1, MAX_INSTANCES);
@@ -189,6 +199,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private void reload() {
         try {
             entries = catalog.list();
+            blockOnlyCatalog = loadBlockOnlyCatalog(entries);
             if (entries.isEmpty()) {
                 selected = null;
                 selectedIndex = 0;
@@ -199,6 +210,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             loadSelected();
         } catch (Exception e) {
             entries = List.of();
+            blockOnlyCatalog = Map.of();
             selected = null;
             idleStatus = "Catalog reload failed: " + safeMessage(e);
         }
@@ -212,8 +224,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     private void loadSelected() {
         try {
-            selected = catalog.load(entries.get(selectedIndex));
-            ensureBlockOnly(selected);
+            String name = entries.get(selectedIndex).name();
+            selected = blockOnlyCatalog.get(name);
+            if (selected == null) {
+                SpongeSchematicImport imported = catalog.load(entries.get(selectedIndex));
+                ensureBlockOnly(imported);
+                selected = imported;
+            }
             clearPreview();
             idleStatus = "Loaded " + selectedName();
             if (origin != null) rebuildPreview();
@@ -231,19 +248,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             OperationSeed seed = new OperationSeed(seedValue[0]);
             BlockBounds distributionBounds = distributionBounds(world);
             PlacementDistribution distribution = distribution();
-            StructureSnapshot snapshot = selected.snapshot();
-            var localBounds = snapshot.localBounds();
-            StructureFootprint footprint = new StructureFootprint(
-                    (long) localBounds.maxX() - localBounds.minX() + 1L,
-                    (long) localBounds.maxZ() - localBounds.minZ() + 1L
-            );
-
+            PlacementSource source = placementSource();
             List<PlacementPlanEntry> raw = StructurePlacementPlanner.plan(
                     distributionBounds,
                     mode[0] == 0 ? (x, z) -> origin.getY() : new AxiomWorldSurfaceHeightSource(world, 1),
                     seed,
                     distribution,
-                    (point, ignored) -> selectedName(),
+                    source,
                     new PlacementVariation(
                             quarterTurns[0] * 90.0,
                             quarterTurns[0] * 90.0,
@@ -253,7 +264,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                             0x534348454d415452L
                     ),
                     point -> true,
-                    ignored -> footprint,
+                    sourceId -> footprint(requireSource(sourceId).snapshot()),
                     true
             );
 
@@ -261,13 +272,10 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                     .map(this::applySchematicOffset)
                     .toList();
             OperationPreflight.requireAtMost(
-                    OperationPreflight.multiply(
-                            snapshot.blockCount(),
-                            placements.size(),
-                            "distributed schematic preview estimate"),
+                    estimatedPlacedBlocks(placements),
                     MAX_PREVIEW_BLOCKS,
                     "distributed schematic preview blocks");
-            previewPoints = expandPreview(snapshot, placements);
+            previewPoints = expandPreview(placements);
             ensurePreview().update(previewPoints);
             idleStatus = "Distribution preview ready";
         } catch (Exception e) {
@@ -277,9 +285,10 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     }
 
     private PlacementPlanEntry applySchematicOffset(PlacementPlanEntry entry) {
+        SpongeSchematicImport imported = requireSource(entry.sourceId());
         BlockPos pasteBase = new BlockPos(entry.point().x(), entry.point().y(), entry.point().z());
         StructurePlacement placement = SchematicPlacements.atPasteBase(
-                selected,
+                imported,
                 pasteBase,
                 quarterTurns[0],
                 mirrorX[0] != 0,
@@ -302,13 +311,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     }
 
     private List<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> expandPreview(
-            StructureSnapshot snapshot,
             List<PlacementPlanEntry> entries
     ) {
         LinkedHashSet<com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint> result =
                 new LinkedHashSet<>();
         int ordinal = 0;
         for (PlacementPlanEntry entry : entries) {
+            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
             StructurePlacement placement = StructurePlacementAdapter.from(entry);
             for (var point : StructurePreviewPoints.create(snapshot, placement)) {
                 if (result.size() >= MAX_PREVIEW_BLOCKS) {
@@ -356,10 +365,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         ClientWorld world = requireWorld();
         ensureBlockOnly(selected);
         CancellationSource cancellation = new CancellationSource();
-        long estimatedBlocks = OperationPreflight.multiply(
-                selected.snapshot().blockCount(),
-                placements.size(),
-                "distributed schematic block estimate");
+        long estimatedBlocks = estimatedPlacedBlocks(placements);
         long estimateBytes = OperationPreflight.estimateBytes(
                 estimatedBlocks, 96L, "distributed schematic history estimate");
 
@@ -367,7 +373,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                 PlacementStructureMutationPreparer.prepareBlocks(
                         UUID.randomUUID().toString(),
                         placements,
-                        id -> selected.snapshot(),
+                        id -> requireSource(id).snapshot(),
                         new MinecraftStructureBlockStateTransform(world),
                         new AxiomClientWorldStateSource(world),
                         runtime.history(),
@@ -379,6 +385,68 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         }
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private PlacementSource placementSource() {
+        if (useCatalogPalette[0] == 0) {
+            return (point, seed) -> selectedName();
+        }
+        if (blockOnlyCatalog.isEmpty()) {
+            throw new IllegalStateException("catalog palette has no block-only schematics");
+        }
+        List<WeightedPlacementSource.Entry> weighted = blockOnlyCatalog.keySet().stream()
+                .map(id -> new WeightedPlacementSource.Entry(id, 1.0))
+                .toList();
+        return new WeightedPlacementSource(weighted, 0x50414c455454454cL);
+    }
+
+    private SpongeSchematicImport requireSource(String sourceId) {
+        SpongeSchematicImport imported;
+        if (useCatalogPalette[0] != 0) {
+            imported = blockOnlyCatalog.get(sourceId);
+        } else {
+            imported = selected;
+        }
+        if (imported == null) {
+            throw new IllegalArgumentException("unknown schematic source: " + sourceId);
+        }
+        return imported;
+    }
+
+    private static StructureFootprint footprint(StructureSnapshot snapshot) {
+        var bounds = snapshot.localBounds();
+        return new StructureFootprint(
+                (long) bounds.maxX() - bounds.minX() + 1L,
+                (long) bounds.maxZ() - bounds.minZ() + 1L
+        );
+    }
+
+    private long estimatedPlacedBlocks(List<PlacementPlanEntry> entries) {
+        long total = 0L;
+        for (PlacementPlanEntry entry : entries) {
+            total = Math.addExact(
+                    total,
+                    requireSource(entry.sourceId()).snapshot().blockCount()
+            );
+        }
+        return total;
+    }
+
+    private Map<String, SpongeSchematicImport> loadBlockOnlyCatalog(
+            List<SchematicCatalog.Entry> catalogEntries
+    ) throws IOException {
+        LinkedHashMap<String, SpongeSchematicImport> loaded = new LinkedHashMap<>();
+        for (SchematicCatalog.Entry entry : catalogEntries) {
+            SpongeSchematicImport imported;
+            try {
+                imported = catalog.load(entry);
+                ensureBlockOnly(imported);
+            } catch (IllegalArgumentException unsupported) {
+                continue;
+            }
+            loaded.put(entry.name(), imported);
+        }
+        return Map.copyOf(loaded);
     }
 
     private static void ensureBlockOnly(SpongeSchematicImport imported) {
