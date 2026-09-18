@@ -4,8 +4,19 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
+const MAX_ATOMIC_JSON_BYTES: u64 = 4 * 1024 * 1024;
+
 pub fn read<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, String> {
     safe_path::ensure_regular_file(path, label)?;
+    let size = fs::metadata(path)
+        .map_err(|error| format!("Could not inspect {label}: {error}"))?
+        .len();
+    if size > MAX_ATOMIC_JSON_BYTES {
+        return Err(format!(
+            "{label} exceeds the {} byte metadata limit.",
+            MAX_ATOMIC_JSON_BYTES
+        ));
+    }
     let text = fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))?;
     serde_json::from_str(&text).map_err(|error| format!("Could not parse {label}: {error}"))
 }
@@ -17,6 +28,12 @@ pub fn save<T: Serialize>(path: &Path, label: &str, value: &T) -> Result<(), Str
     let temporary = temporary_path(path);
     safe_path::remove_regular_file_if_present(&temporary, &format!("{label} staging file"))?;
     let text = serde_json::to_string_pretty(value).map_err(|error| format!("Could not encode {label}: {error}"))?;
+    if text.len() as u64 > MAX_ATOMIC_JSON_BYTES {
+        return Err(format!(
+            "{label} exceeds the {} byte metadata limit.",
+            MAX_ATOMIC_JSON_BYTES
+        ));
+    }
     let mut file = OpenOptions::new()
         .create_new(true)
         .write(true)

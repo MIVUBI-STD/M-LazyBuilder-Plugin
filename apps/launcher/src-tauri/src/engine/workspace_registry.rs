@@ -14,6 +14,7 @@ const WORKSPACE_SCHEMA_VERSION: u32 = 1;
 const MINECRAFT_VERSION: &str = "1.21.4";
 const SERVER_PLATFORM: &str = "paper";
 const MIN_DUPLICATE_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_WORKSPACE_METADATA_BYTES: u64 = 4 * 1024 * 1024;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 static ACTIVE_WORKSPACE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
@@ -588,7 +589,7 @@ fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     recover_json_file(&path, "workspace registry")?;
     if !metadata_entry_exists(&path, "workspace registry")? { return Ok(WorkspaceRegistryFile::default()); }
     ensure_regular_metadata_file(&path, "workspace registry")?;
-    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let text = read_metadata_text(&path, "workspace registry")?;
     let mut registry: WorkspaceRegistryFile = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
     registry.servers.retain(|entry| !entry.path.trim().is_empty());
@@ -607,7 +608,7 @@ fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {
     recover_json_file(&path, "pending server deletions")?;
     if !metadata_entry_exists(&path, "pending server deletions")? { return Ok(Vec::new()); }
     ensure_regular_metadata_file(&path, "pending server deletions")?;
-    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let text = read_metadata_text(&path, "pending server deletions")?;
     let entries = serde_json::from_str(&text).map_err(|error| format!("Could not read pending server deletions: {error}"))?;
     cleanup_json_recovery_files(&path, "pending server deletions")?;
     Ok(entries)
@@ -628,7 +629,7 @@ fn load_pending_duplicates() -> Result<Vec<PendingDuplicate>, String> {
     recover_json_file(&path, "pending server duplicates")?;
     if !metadata_entry_exists(&path, "pending server duplicates")? { return Ok(Vec::new()); }
     ensure_regular_metadata_file(&path, "pending server duplicates")?;
-    let text = fs::read_to_string(&path).map_err(|error| format!("Could not read pending server duplicates: {error}"))?;
+    let text = read_metadata_text(&path, "pending server duplicates")?;
     let entries = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server duplicates: {error}"))?;
     cleanup_json_recovery_files(&path, "pending server duplicates")?;
     Ok(entries)
@@ -659,7 +660,26 @@ fn clear_pending_duplicate(staging_path: &str) -> Result<(), String> {
     save_pending_duplicates(&entries)
 }
 
+fn read_metadata_text(path: &Path, label: &str) -> Result<String, String> {
+    let size = fs::metadata(path)
+        .map_err(|error| format!("Could not inspect {label}: {error}"))?
+        .len();
+    if size > MAX_WORKSPACE_METADATA_BYTES {
+        return Err(format!(
+            "{label} exceeds the {} byte metadata limit.",
+            MAX_WORKSPACE_METADATA_BYTES
+        ));
+    }
+    fs::read_to_string(path).map_err(|error| format!("Could not read {label}: {error}"))
+}
+
 fn write_json_file(destination: &Path, bytes: &[u8], label: &str) -> Result<(), String> {
+    if bytes.len() as u64 > MAX_WORKSPACE_METADATA_BYTES {
+        return Err(format!(
+            "{label} exceeds the {} byte metadata limit.",
+            MAX_WORKSPACE_METADATA_BYTES
+        ));
+    }
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("Could not prepare {label} directory: {error}"))?;
     }
@@ -852,7 +872,7 @@ fn read_manifest(root: &Path) -> Result<Option<WorkspaceManifest>, String> {
     recover_json_file(&path, "workspace manifest")?;
     if !metadata_entry_exists(&path, "workspace manifest")? { return Ok(None); }
     ensure_regular_metadata_file(&path, "workspace manifest")?;
-    let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let text = read_metadata_text(&path, "workspace manifest")?;
     let manifest: WorkspaceManifest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     validate_manifest(&manifest)?;
     cleanup_json_recovery_files(&path, "workspace manifest")?;
