@@ -54,6 +54,11 @@ public final class WorldManagerScreen extends Screen {
         this(null, controller, transfers, maps);
     }
 
+    void prepareVisualProof(UUID selectedWorld, boolean compactDetail) {
+        this.selectedWorld = selectedWorld;
+        this.compactDetail = compactDetail;
+    }
+
     @Override
     protected void init() {
         if (!requestedInitialRefresh) {
@@ -289,7 +294,7 @@ public final class WorldManagerScreen extends Screen {
         addDrawableChild(delete);
     }
 
-    private void openExport(WorldControlWireProtocol.WorldSummary world) {
+    void openExport(WorldControlWireProtocol.WorldSummary world) {
         if (client == null || operationBusy()) return;
         if (!isCurrentWorld(world.worldId())) {
             client.setScreen(WorldTransferScreen.forWorldExport(this, controller, transfers, world));
