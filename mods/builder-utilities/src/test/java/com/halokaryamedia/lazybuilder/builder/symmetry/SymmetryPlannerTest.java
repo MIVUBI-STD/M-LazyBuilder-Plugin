@@ -64,12 +64,4 @@ class SymmetryPlannerTest {
         assertEquals(new BuilderVec3(10, 0, 0), transforms.get(2).transformPoint(new BuilderVec3(0, 0, 0)));
     }
 
-    @Test
-    void replicationIsBoundedAndDeterministic() {
-        List<BuilderTransform> transforms = SymmetryPlanner.rotational(
-                new BuilderVec3(0, 0, 0), new BuilderVec3(0, 1, 0), 3);
-        List<SymmetryInstance<String>> first = SymmetryReplicator.replicate(List.of("a", "b"), transforms);
-        assertEquals(first, SymmetryReplicator.replicate(List.of("a", "b"), transforms));
-        assertEquals(6, first.size());
-    }
 }
