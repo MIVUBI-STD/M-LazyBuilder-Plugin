@@ -76,15 +76,22 @@ public final class MapActionWireProtocol {
     }
 
     public record TeleportOk(long requestId, WorldId worldId, double x, double y, double z) implements Response {
-        public TeleportOk { Objects.requireNonNull(worldId, "worldId"); }
+        public TeleportOk {
+            requireRequestId(requestId);
+            Objects.requireNonNull(worldId, "worldId");
+        }
     }
 
     public record ExportAccepted(long requestId, WorldId worldId) implements Response {
-        public ExportAccepted { Objects.requireNonNull(worldId, "worldId"); }
+        public ExportAccepted {
+            requireRequestId(requestId);
+            Objects.requireNonNull(worldId, "worldId");
+        }
     }
 
     public record ExportComplete(long requestId, WorldId worldId, String fileName, String targetFormat) implements Response {
         public ExportComplete {
+            requireRequestId(requestId);
             Objects.requireNonNull(worldId, "worldId");
             fileName = requireString(fileName, "fileName");
             targetFormat = requireString(targetFormat, "targetFormat");
@@ -93,6 +100,7 @@ public final class MapActionWireProtocol {
 
     public record CurrentWorldResult(long requestId, WorldId worldId, String displayName, String folderName) implements Response {
         public CurrentWorldResult {
+            requireResponseId(requestId);
             Objects.requireNonNull(worldId, "worldId");
             displayName = requireString(displayName, "displayName");
             folderName = requireString(folderName, "folderName");
@@ -104,11 +112,17 @@ public final class MapActionWireProtocol {
 
     /** Explicitly means the player is currently outside all managed worlds. */
     public record CurrentWorldCleared(long requestId) implements Response {
+        public CurrentWorldCleared {
+            requireResponseId(requestId);
+        }
         public CurrentWorldCleared() { this(0L); }
     }
 
     public record ErrorResponse(long requestId, String message) implements Response {
-        public ErrorResponse { message = requireString(message, "message"); }
+        public ErrorResponse {
+            requireResponseId(requestId);
+            message = requireString(message, "message");
+        }
         public ErrorResponse(String message) { this(0L, message); }
     }
 
@@ -274,6 +288,11 @@ public final class MapActionWireProtocol {
 
     private static long requireRequestId(long requestId) {
         if (requestId <= 0L) throw new IllegalArgumentException("requestId must be positive");
+        return requestId;
+    }
+
+    private static long requireResponseId(long requestId) {
+        if (requestId < 0L) throw new IllegalArgumentException("response requestId must not be negative");
         return requestId;
     }
 
