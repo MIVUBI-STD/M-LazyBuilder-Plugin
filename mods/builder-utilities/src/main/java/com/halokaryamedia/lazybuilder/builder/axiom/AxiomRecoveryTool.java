@@ -108,7 +108,16 @@ public final class AxiomRecoveryTool implements CustomTool {
         try {
             ClientWorld currentWorld = requireWorld();
             String currentScope = AxiomWorldScope.currentScopeId(currentWorld);
-            int incomplete = new HistoryRecoveryManager(runtime.diskHistory())
+            HistoryRecoveryManager recoveryManager =
+                    new HistoryRecoveryManager(runtime.diskHistory());
+            int legacyCommitted = recoveryManager.unscopedCommittedSummaries().size();
+            int legacyIncomplete = recoveryManager.unscopedIncompleteFiles().size();
+            if (legacyCommitted > 0 || legacyIncomplete > 0) {
+                ImGui.textWrapped("Legacy unscoped journals are quarantined: committed="
+                        + legacyCommitted + " incomplete=" + legacyIncomplete
+                        + ". They are not auto-associated with this world.");
+            }
+            int incomplete = recoveryManager
                     .incompleteFiles(operationId ->
                             com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
                                     .belongsTo(operationId, currentScope))
