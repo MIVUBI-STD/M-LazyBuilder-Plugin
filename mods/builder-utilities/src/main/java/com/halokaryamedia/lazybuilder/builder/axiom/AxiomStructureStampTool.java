@@ -52,6 +52,7 @@ public final class AxiomStructureStampTool implements CustomTool {
     private final int[] includeAir = {0};
     private final int[] captureBiomes = {0};
     private final int[] captureEntities = {1};
+    private final int[] stripBlockEntitiesOnApply = {0};
 
     private BlockPos firstCorner;
     private BlockPos secondCorner;
@@ -156,6 +157,11 @@ public final class AxiomStructureStampTool implements CustomTool {
         boolean airChanged = ImGui.sliderInt("Include Air", includeAir, 0, 1);
         boolean biomeChanged = ImGui.sliderInt("Capture Biomes", captureBiomes, 0, 1);
         boolean entityChanged = ImGui.sliderInt("Capture Entities", captureEntities, 0, 1);
+        changed |= ImGui.sliderInt(
+                "Strip Block Entity Payloads On Apply (Lossy)",
+                stripBlockEntitiesOnApply,
+                0,
+                1);
         changed |= airChanged || biomeChanged || entityChanged;
 
         if (ImGui.button("Clear Capture")) {
@@ -241,9 +247,11 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
-        AxiomStructureAuxiliary.requireApplySupported(snapshot);
+        StructureSnapshot applySnapshot = AxiomStructureAuxiliary.snapshotForApply(
+                snapshot,
+                stripBlockEntitiesOnApply[0] != 0);
         StructurePastePlan plan =
-                AxiomStructureAuxiliary.planSingle(snapshot, placement(), world);
+                AxiomStructureAuxiliary.planSingle(applySnapshot, placement(), world);
 
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = AxiomStructureAuxiliary.estimateHistoryBytes(plan);

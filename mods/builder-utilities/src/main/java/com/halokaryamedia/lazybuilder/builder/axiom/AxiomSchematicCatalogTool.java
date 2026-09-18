@@ -41,6 +41,7 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     private final int[] quarterTurns = {0};
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
+    private final int[] stripBlockEntitiesOnApply = {0};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
@@ -124,6 +125,11 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
             changed |= ImGui.sliderInt("Quarter Turns", quarterTurns, 0, 3);
             changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
             changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
+            changed |= ImGui.sliderInt(
+                    "Strip Block Entity Payloads On Apply (Lossy)",
+                    stripBlockEntitiesOnApply,
+                    0,
+                    1);
             if (changed && destination != null) rebuildPreview();
         }
     }
@@ -184,7 +190,6 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
             selected = catalog.load(entries.get(selectedIndex));
             com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
                     .requireNotFuture(selected.dataVersion());
-            AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             destination = null;
             previewPoints = List.of();
             if (preview != null) preview.clear();
@@ -218,11 +223,13 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
         ClientWorld world = Objects.requireNonNull(
                 MinecraftClient.getInstance().world,
                 "Minecraft client world is unavailable");
-        AxiomSchematicCompatibility.validateForApply(selected, world);
-        AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
+        SpongeSchematicImport applyImport = AxiomStructureAuxiliary.importForApply(
+                selected,
+                stripBlockEntitiesOnApply[0] != 0);
+        AxiomSchematicCompatibility.validateForApply(applyImport, world);
 
         StructurePastePlan plan = AxiomStructureAuxiliary.planSingle(
-                selected.snapshot(), placement(), world);
+                applyImport.snapshot(), placement(), world);
 
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = AxiomStructureAuxiliary.estimateHistoryBytes(plan);

@@ -10,11 +10,13 @@ import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlan;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlanner;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
+import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicImport;
 import net.minecraft.client.world.ClientWorld;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.List;
 
 /** Shared capability policy and BIOME adapters for structure tools. */
 public final class AxiomStructureAuxiliary {
@@ -29,6 +31,47 @@ public final class AxiomStructureAuxiliary {
                             + report.blockerSummary()
                             + ". Unsupported payloads remain preserved for .schem export.");
         }
+    }
+
+    /**
+     * Returns an apply-only snapshot. When stripping is explicitly requested,
+     * block-entity payloads are omitted while blocks/biomes/entities stay intact.
+     * The source snapshot is never modified.
+     */
+    public static StructureSnapshot snapshotForApply(
+            StructureSnapshot source,
+            boolean stripBlockEntities
+    ) {
+        Objects.requireNonNull(source, "source");
+        StructureSnapshot result = source;
+        if (stripBlockEntities && source.blockEntityCount() != 0) {
+            result = new StructureSnapshot(
+                    source.blocks(),
+                    List.of(),
+                    source.biomes(),
+                    source.entities()
+            );
+        }
+        requireApplySupported(result);
+        return result;
+    }
+
+    public static SpongeSchematicImport importForApply(
+            SpongeSchematicImport source,
+            boolean stripBlockEntities
+    ) {
+        Objects.requireNonNull(source, "source");
+        StructureSnapshot snapshot = snapshotForApply(
+                source.snapshot(), stripBlockEntities);
+        if (snapshot == source.snapshot()) return source;
+        return new SpongeSchematicImport(
+                snapshot,
+                source.offsetX(),
+                source.offsetY(),
+                source.offsetZ(),
+                source.dataVersion(),
+                source.metadataPayload()
+        );
     }
 
     public static StructureAuxiliaryContext contextForAuthorities(ClientWorld world) {
