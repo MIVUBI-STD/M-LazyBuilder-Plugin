@@ -23,7 +23,10 @@ public final class TerrainShaderSourceTransformer {
     private static final int MAX_TRANSFORMS = 1024;
 
     private static volatile boolean builtInTerrainSource;
+    private static volatile boolean compileFallbackActive;
     private static volatile String status = "unseen";
+    private static volatile long transformedCompiles;
+    private static volatile long compileFallbacks;
 
     private TerrainShaderSourceTransformer() {
     }
@@ -31,6 +34,7 @@ public final class TerrainShaderSourceTransformer {
     public static void observeResource(Identifier id, CompiledShader.Type type, String packId) {
         if (!isTerrainResource(id, type)) return;
 
+        compileFallbackActive = false;
         RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
         if (!renderer.terrainSubmissionSafe()) {
             builtInTerrainSource = false;
@@ -44,11 +48,27 @@ public final class TerrainShaderSourceTransformer {
 
     public static String transform(Identifier id, CompiledShader.Type type, String source) {
         if (!isTerrainShader(id, type)) return source;
-        if (!builtInTerrainSource || !RendererCompatibility.detect().terrainSubmissionSafe()) return source;
+        if (compileFallbackActive || !builtInTerrainSource
+                || !RendererCompatibility.detect().terrainSubmissionSafe()) {
+            return source;
+        }
 
         String transformed = transformSource(true, source);
-        status = transformed == source || transformed.equals(source) ? "contract-missing" : "activated";
+        if (transformed == source || transformed.equals(source)) {
+            status = "contract-missing";
+            return source;
+        }
+
+        transformedCompiles++;
+        status = "activated";
         return transformed;
+    }
+
+    public static void recordCompileFallback() {
+        compileFallbacks++;
+        compileFallbackActive = true;
+        builtInTerrainSource = false;
+        status = "compile-fallback";
     }
 
     static String transformSource(boolean allowed, String source) {
@@ -89,13 +109,20 @@ public final class TerrainShaderSourceTransformer {
                 + replacedTail;
     }
 
+    public static Snapshot snapshot() {
+        return new Snapshot(status, transformedCompiles, compileFallbacks, compileFallbackActive);
+    }
+
     public static String status() {
         return status;
     }
 
     public static void reset() {
         builtInTerrainSource = false;
+        compileFallbackActive = false;
         status = "unseen";
+        transformedCompiles = 0L;
+        compileFallbacks = 0L;
     }
 
     private static boolean isTerrainResource(Identifier id, CompiledShader.Type type) {
@@ -110,5 +137,13 @@ public final class TerrainShaderSourceTransformer {
                 && type == CompiledShader.Type.VERTEX
                 && "minecraft".equals(id.getNamespace())
                 && TERRAIN_SHADER_PATH.equals(id.getPath());
+    }
+
+    public record Snapshot(
+            String status,
+            long transformedCompiles,
+            long compileFallbacks,
+            boolean compileFallbackActive
+    ) {
     }
 }

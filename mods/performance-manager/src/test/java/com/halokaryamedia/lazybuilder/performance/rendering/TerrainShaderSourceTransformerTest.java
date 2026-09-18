@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,5 +40,22 @@ final class TerrainShaderSourceTransformerTest {
         assertEquals(transformed, TerrainShaderSourceTransformer.transformSource(true, transformed));
         assertEquals("#version 150\nvoid main() {}\n",
                 TerrainShaderSourceTransformer.transformSource(true, "#version 150\nvoid main() {}\n"));
+    }
+
+    @Test
+    void compileFallbackBecomesStickyUntilReset() {
+        TerrainShaderSourceTransformer.reset();
+        TerrainShaderSourceTransformer.recordCompileFallback();
+
+        TerrainShaderSourceTransformer.Snapshot failed = TerrainShaderSourceTransformer.snapshot();
+        assertEquals("compile-fallback", failed.status());
+        assertEquals(1L, failed.compileFallbacks());
+        assertTrue(failed.compileFallbackActive());
+
+        TerrainShaderSourceTransformer.reset();
+        TerrainShaderSourceTransformer.Snapshot reset = TerrainShaderSourceTransformer.snapshot();
+        assertEquals("unseen", reset.status());
+        assertEquals(0L, reset.compileFallbacks());
+        assertFalse(reset.compileFallbackActive());
     }
 }

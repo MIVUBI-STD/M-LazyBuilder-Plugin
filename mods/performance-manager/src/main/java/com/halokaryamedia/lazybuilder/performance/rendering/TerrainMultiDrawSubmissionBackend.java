@@ -20,6 +20,7 @@ public final class TerrainMultiDrawSubmissionBackend {
 
     private static ShaderProgram activeProgram;
     private static Run pendingRun;
+    private static volatile boolean sessionDisabled;
     private static volatile String status = "inactive";
     private static volatile long prepareAttempts;
     private static volatile long preparedRuns;
@@ -34,6 +35,11 @@ public final class TerrainMultiDrawSubmissionBackend {
     public static boolean prepare(ShaderProgram program, TerrainMultiDrawCommandStream.LayerPacket packet) {
         prepareAttempts++;
         clearSession();
+
+        if (sessionDisabled) {
+            status = "session-disabled-after-failure";
+            return false;
+        }
 
         TerrainMultiDrawCapability.Snapshot capability = TerrainMultiDrawCapability.current(program);
         if (!capability.ready()) {
@@ -105,7 +111,9 @@ public final class TerrainMultiDrawSubmissionBackend {
         if (!submit(run)) {
             run.failed = true;
             submissionFailures++;
-            status = "submission-failed";
+            sessionDisabled = true;
+            status = "session-disabled-after-failure";
+            clearSession();
             return DrawAction.FALLBACK;
         }
 
@@ -224,19 +232,21 @@ public final class TerrainMultiDrawSubmissionBackend {
                 submittedBatches,
                 submittedCommands,
                 reducedDrawCalls,
-                submissionFailures
+                submissionFailures,
+                sessionDisabled
         );
     }
 
     public static void finishLayer() {
         if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
-        if ("active".equals(status) || "ready".equals(status)) status = "inactive";
+        if (!sessionDisabled && ("active".equals(status) || "ready".equals(status))) status = "inactive";
     }
 
     public static void clear() {
         if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
+        sessionDisabled = false;
         status = "inactive";
         prepareAttempts = 0L;
         preparedRuns = 0L;
@@ -291,7 +301,8 @@ public final class TerrainMultiDrawSubmissionBackend {
             long submittedBatches,
             long submittedCommands,
             long reducedDrawCalls,
-            long submissionFailures
+            long submissionFailures,
+            boolean sessionDisabled
     ) {
     }
 }
