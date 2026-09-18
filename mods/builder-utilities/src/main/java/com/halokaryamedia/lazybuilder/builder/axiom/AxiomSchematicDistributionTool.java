@@ -47,8 +47,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Distributes one block-only Sponge schematic as an array or minimum-spacing scatter,
- * then commits every accepted instance through one durable History mutation.
+ * Distributes one Sponge schematic as an array or minimum-spacing scatter.
+ * Single-source mode supports negotiated BIOME/ENTITY authority; palette mode remains
+ * block-only so heterogeneous auxiliary requirements cannot become ambiguous.
  */
 public final class AxiomSchematicDistributionTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Distribution";
@@ -128,8 +129,9 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Distribute the selected block-only .schem as Array or Scatter. "
-                + "All instances are collision-filtered and committed as one durable operation.");
+        ImGui.textWrapped("Distribute the selected .schem as Array or Scatter. "
+                + "Single-source mode supports negotiated BIOME/ENTITY authority; "
+                + "catalog palette mode uses block-only schematics.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -232,7 +234,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             selected = blockOnlyCatalog.get(name);
             if (selected == null) {
                 SpongeSchematicImport imported = catalog.load(entries.get(selectedIndex));
-                ensureBlockOnly(imported);
+                AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
                 selected = imported;
             }
             clearPreview();
@@ -361,26 +363,51 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         ClientWorld world = requireWorld();
         AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
         CancellationSource cancellation = new CancellationSource();
-        long estimatedBlocks = estimatedPlacedBlocks(placements);
-        long estimateBytes = OperationPreflight.estimateBytes(
-                estimatedBlocks, 96L, "distributed schematic history estimate");
+        long estimateBytes = estimatedHistoryBytes(placements);
 
-        Optional<PreparedStructureMutation> prepared =
-                PlacementStructureMutationPreparer.prepareBlocks(
-                        UUID.randomUUID().toString(),
-                        placements,
-                        id -> requireSource(id).snapshot(),
-                        new MinecraftStructureBlockStateTransform(world),
-                        new AxiomClientWorldStateSource(world),
-                        runtime.history(),
-                        estimateBytes,
-                        cancellation.token()
-                );
+        Optional<PreparedStructureMutation> prepared;
+        if (useCatalogPalette[0] != 0
+                || (selected.snapshot().biomeCount() == 0
+                && selected.snapshot().entityCount() == 0)) {
+            prepared = PlacementStructureMutationPreparer.prepareBlocks(
+                    UUID.randomUUID().toString(),
+                    placements,
+                    id -> requireSource(id).snapshot(),
+                    new MinecraftStructureBlockStateTransform(world),
+                    new AxiomClientWorldStateSource(world),
+                    runtime.history(),
+                    estimateBytes,
+                    cancellation.token()
+            );
+        } else {
+            prepared = PlacementStructureMutationPreparer.prepareAll(
+                    UUID.randomUUID().toString(),
+                    placements,
+                    id -> requireSource(id).snapshot(),
+                    new MinecraftStructureBlockStateTransform(world),
+                    new AxiomClientWorldStateSource(world),
+                    AxiomStructureAuxiliary.contextFor(selected.snapshot(), world),
+                    runtime.history(),
+                    estimateBytes,
+                    cancellation.token()
+            );
+        }
         if (prepared.isEmpty()) {
             throw new IllegalStateException("Distributed schematic preparation was cancelled");
         }
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private long estimatedHistoryBytes(List<PlacementPlanEntry> entries) {
+        long total = 0L;
+        for (PlacementPlanEntry entry : entries) {
+            StructureSnapshot snapshot = requireSource(entry.sourceId()).snapshot();
+            total = Math.addExact(total, Math.multiplyExact(snapshot.blockCount(), 96L));
+            total = Math.addExact(total, Math.multiplyExact((long) snapshot.biomeCount(), 192L));
+            total = Math.addExact(total, Math.multiplyExact((long) snapshot.entityCount(), 256L));
+        }
+        return Math.max(1L, total);
     }
 
     private PlacementConstraint placementConstraint(ClientWorld world) {

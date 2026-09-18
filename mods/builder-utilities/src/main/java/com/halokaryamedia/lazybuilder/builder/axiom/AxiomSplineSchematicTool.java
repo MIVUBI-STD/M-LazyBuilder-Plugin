@@ -47,7 +47,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/** Places one block-only catalog schematic repeatedly along a spline. */
+/** Places one catalog schematic repeatedly along a spline with negotiated auxiliary authority. */
 public final class AxiomSplineSchematicTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Spline";
     private static final int MAX_INSTANCES = 2048;
@@ -124,7 +124,8 @@ public final class AxiomSplineSchematicTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Place the selected block-only .schem at arc-length intervals along a spline. "
+        ImGui.textWrapped("Place the selected .schem at arc-length intervals along a spline. "
+                + "Blocks use Axiom; BIOME/ENTITY payloads use negotiated server authority. "
                 + "Spline tangent is snapped to the nearest 90-degree structure rotation.");
         ImGui.separator();
 
@@ -353,15 +354,11 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
         CancellationSource cancellation = new CancellationSource();
-        long estimatedBlocks = OperationPreflight.multiply(
-                selected.snapshot().blockCount(),
-                placements.size(),
-                "spline schematic block estimate");
-        long estimateBytes = OperationPreflight.estimateBytes(
-                estimatedBlocks, 96L, "spline schematic history estimate");
+        long estimateBytes = estimatedHistoryBytes();
 
         Optional<PreparedStructureMutation> prepared =
                 selected.snapshot().biomeCount() == 0
+                        && selected.snapshot().entityCount() == 0
                         ? PlacementStructureMutationPreparer.prepareBlocks(
                                 UUID.randomUUID().toString(),
                                 placements,
@@ -388,6 +385,29 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         }
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private long estimatedHistoryBytes() {
+        StructureSnapshot snapshot = selected.snapshot();
+        long instances = placements.size();
+        long total = OperationPreflight.multiply(
+                snapshot.blockCount(), instances, "spline schematic block estimate");
+        total = Math.multiplyExact(total, 96L);
+        total = Math.addExact(
+                total,
+                Math.multiplyExact(
+                        OperationPreflight.multiply(
+                                snapshot.biomeCount(), instances,
+                                "spline schematic biome estimate"),
+                        192L));
+        total = Math.addExact(
+                total,
+                Math.multiplyExact(
+                        OperationPreflight.multiply(
+                                snapshot.entityCount(), instances,
+                                "spline schematic entity estimate"),
+                        256L));
+        return Math.max(1L, total);
     }
 
     private int tangentQuarterTurns(BuilderVec3 tangent) {
