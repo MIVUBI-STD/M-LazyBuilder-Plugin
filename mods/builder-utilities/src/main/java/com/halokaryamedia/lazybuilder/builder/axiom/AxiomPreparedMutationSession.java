@@ -9,14 +9,10 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import net.minecraft.client.world.ClientWorld;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.Objects;
 
 /** Axiom-facing orchestration wrapper for one durable prepared block mutation. */
 public final class AxiomPreparedMutationSession implements AutoCloseable {
-    private static final ExecutionBudget LEGACY_UNBOUNDED_BUDGET = new ExecutionBudget(
-            Duration.ofSeconds(30), Integer.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
-
     private final PreparedMutationSession core;
     private final AxiomBudgetedChunkDispatchTarget axiomTarget;
     private final BudgetedPreparedMutationDispatcher budgetedDispatcher;
@@ -72,24 +68,6 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
             case BUDGET_EXCEEDED -> core.fail("Mutation dispatch budget exceeded: " + result.detail());
         }
         return result;
-    }
-
-    @Deprecated
-    public synchronized AxiomPreparedDispatchResult dispatch() throws IOException {
-        while (true) {
-            BudgetedDispatchSlice slice = dispatchSlice(LEGACY_UNBOUNDED_BUDGET);
-            switch (slice.state()) {
-                case YIELDED -> { continue; }
-                case EXHAUSTED -> { return new AxiomPreparedDispatchResult(AxiomPreparedDispatchResult.State.DISPATCHED,
-                        slice.totalVisitedChunks(), slice.totalDispatchedBlocks(), null, null, null); }
-                case CANCELLED -> { return new AxiomPreparedDispatchResult(AxiomPreparedDispatchResult.State.CANCELLED,
-                        slice.totalVisitedChunks(), slice.totalDispatchedBlocks(), null, null, null); }
-                case CONFLICT -> { return new AxiomPreparedDispatchResult(AxiomPreparedDispatchResult.State.CONFLICT,
-                        slice.totalVisitedChunks(), slice.totalDispatchedBlocks(),
-                        slice.conflictX(), slice.conflictY(), slice.conflictZ()); }
-                case BUDGET_EXCEEDED -> throw new IllegalStateException(slice.detail());
-            }
-        }
     }
 
     public synchronized PreparedReconciliationReport reconcile() throws IOException {
