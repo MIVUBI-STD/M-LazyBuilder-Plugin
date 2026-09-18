@@ -17,7 +17,7 @@ class StructurePlacementPlannerTest {
                 new PlacementPoint(12, 64, 0, 2)
         );
         PlacementSource source = (point, seed) -> point.ordinal() == 1 ? "large" : "small";
-        PlacementVariation variation = new PlacementVariation(45, 45, 1, 1, 0, 0);
+        PlacementVariation variation = new PlacementVariation(45, 45, 1, 1, 0, 0, 0);
 
         List<PlacementPlanEntry> plan = StructurePlacementPlanner.plan(
                 new BlockBounds(-32, 64, -32, 32, 64, 32),
