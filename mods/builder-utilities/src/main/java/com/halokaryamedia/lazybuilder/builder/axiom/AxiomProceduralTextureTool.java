@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.builder.material.BlockMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.BuilderMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.ConditionalMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.ExistingBlockMaterial;
+import com.halokaryamedia.lazybuilder.builder.material.FieldBlendMaterial;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialMask;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialMasks;
 import com.halokaryamedia.lazybuilder.builder.material.MaterialOperation;
@@ -62,6 +63,10 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private final int[] fieldMode = {0};
     private final float[] flowAngle = {270.0f};
     private final int[] targetMode = {0};
+    private final int[] materialMode = {0};
+
+    private String materialAState;
+    private String materialBState;
 
     private BlockPos first;
     private BlockPos second;
@@ -154,9 +159,25 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         if (fieldMode[0] == 3) {
             changed |= ImGui.sliderFloat("Flow Angle", flowAngle, 0.0f, 360.0f);
         }
-        changed |= ImGui.sliderFloat("Threshold", threshold, 0.0f, 1.0f);
+        changed |= ImGui.sliderInt(
+                "Material Mode (0 Active/Existing / 1 A-B Threshold / 2 A-B Field Blend)",
+                materialMode, 0, 2);
+        if (materialMode[0] != 2) {
+            changed |= ImGui.sliderFloat("Threshold", threshold, 0.0f, 1.0f);
+        }
         changed |= ImGui.sliderInt("Target (0 All / 1 Non-Air / 2 Air Only)", targetMode, 0, 2);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
+
+        if (ImGui.button("Capture Material A")) {
+            materialAState = captureActiveState();
+            changed = true;
+        }
+        if (ImGui.button("Capture Material B")) {
+            materialBState = captureActiveState();
+            changed = true;
+        }
+        if (materialAState != null) ImGui.textWrapped("Material A: " + materialAState);
+        if (materialBState != null) ImGui.textWrapped("Material B: " + materialBState);
 
         if (ImGui.button("Clear Texture Box")) {
             clearGeometry();
@@ -197,11 +218,11 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             ScalarField field = AxiomTextureFields.create(
                     fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
             AxiomClientWorldStateSource source = new AxiomClientWorldStateSource(world);
-            previewPoints = ProceduralTexturePreview.sample(
+            BuilderMaterial material = buildMaterial(world, field);
+            previewPoints = ProceduralTexturePreview.sampleResolved(
                     bounds,
                     new OperationSeed(seedValue[0]),
-                    field,
-                    threshold[0],
+                    material,
                     source,
                     targetMask()
             );
@@ -220,17 +241,9 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                 "Minecraft client world is unavailable"
         );
         BlockBounds bounds = bounds();
-        AxiomBlockStateCodec codec = new AxiomBlockStateCodec(world);
-        BuilderMaterial active =
-                new BlockMaterial(codec.encode(services.toolService().getActiveBlock()));
         ScalarField field = AxiomTextureFields.create(
                 fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
-        BuilderMaterial material = new ConditionalMaterial(
-                field,
-                threshold[0],
-                active,
-                ExistingBlockMaterial.INSTANCE
-        );
+        BuilderMaterial material = buildMaterial(world, field);
 
         CancellationSource cancellation = new CancellationSource();
         TextureOperation operation = new TextureOperation(
@@ -257,6 +270,50 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         mutation.start(world, prepared.get(), cancellation, estimateBytes);
         idleStatus = "Mutation started";
+    }
+
+    private BuilderMaterial buildMaterial(ClientWorld world, ScalarField field) {
+        return switch (materialMode[0]) {
+            case 0 -> new ConditionalMaterial(
+                    field,
+                    threshold[0],
+                    new BlockMaterial(captureActiveState(world)),
+                    ExistingBlockMaterial.INSTANCE
+            );
+            case 1 -> new ConditionalMaterial(
+                    field,
+                    threshold[0],
+                    capturedMaterial(materialBState, "B"),
+                    capturedMaterial(materialAState, "A")
+            );
+            case 2 -> new FieldBlendMaterial(
+                    field,
+                    capturedMaterial(materialAState, "A"),
+                    capturedMaterial(materialBState, "B"),
+                    0x4d4154424c454e44L
+            );
+            default -> throw new IllegalArgumentException(
+                    "Unknown material mode: " + materialMode[0]);
+        };
+    }
+
+    private BuilderMaterial capturedMaterial(String state, String slot) {
+        if (state == null || state.isBlank()) {
+            throw new IllegalStateException("Capture Material " + slot + " first");
+        }
+        return new BlockMaterial(state);
+    }
+
+    private String captureActiveState() {
+        ClientWorld world = Objects.requireNonNull(
+                MinecraftClient.getInstance().world,
+                "Minecraft client world is unavailable");
+        return captureActiveState(world);
+    }
+
+    private String captureActiveState(ClientWorld world) {
+        return new AxiomBlockStateCodec(world)
+                .encode(services.toolService().getActiveBlock());
     }
 
     private MaterialMask targetMask() {
