@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use zip::ZipArchive;
 
+const MAX_PLUGIN_METADATA_BYTES: u64 = 256 * 1024;
+
 #[derive(Default)]
 pub struct PluginManagerState {
     mutation_gate: Mutex<()>,
@@ -479,10 +481,21 @@ fn read_metadata(path: &Path) -> Result<PluginMetadata, String> {
     } else {
         return Err("JAR does not contain plugin.yml or paper-plugin.yml".into());
     };
-    let mut entry = archive.by_name(metadata_entry_name)
+    let entry = archive.by_name(metadata_entry_name)
         .map_err(|error| format!("Failed to read plugin metadata: {error}"))?;
+    if entry.size() > MAX_PLUGIN_METADATA_BYTES {
+        return Err(format!(
+            "Plugin metadata is unexpectedly large ({} bytes; limit {} bytes).",
+            entry.size(),
+            MAX_PLUGIN_METADATA_BYTES
+        ));
+    }
     let mut text = String::new();
-    entry.read_to_string(&mut text).map_err(|error| error.to_string())?;
+    let mut bounded = entry.take(MAX_PLUGIN_METADATA_BYTES + 1);
+    bounded.read_to_string(&mut text).map_err(|error| error.to_string())?;
+    if text.len() as u64 > MAX_PLUGIN_METADATA_BYTES {
+        return Err("Plugin metadata exceeded the inspection limit.".into());
+    }
     let parsed: PluginYaml = serde_yaml::from_str(&text)
         .map_err(|error| format!("Invalid plugin metadata: {error}"))?;
 
@@ -824,8 +837,14 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 
 #[cfg(test)]
 mod tests {
-    use super::parse_paper_dependencies;
+    use super::{parse_paper_dependencies, MAX_PLUGIN_METADATA_BYTES};
     use serde_yaml::Value;
+
+    #[test]
+    fn plugin_metadata_limit_is_bounded() {
+        assert!(MAX_PLUGIN_METADATA_BYTES >= 64 * 1024);
+        assert!(MAX_PLUGIN_METADATA_BYTES <= 1024 * 1024);
+    }
 
     #[test]
     fn parses_scoped_paper_dependencies_without_treating_scope_names_as_plugins() {
