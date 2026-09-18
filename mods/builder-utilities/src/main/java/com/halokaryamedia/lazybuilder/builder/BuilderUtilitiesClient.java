@@ -75,25 +75,30 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static void resetWorldTimeline() {
         BuilderRuntime current = runtime;
         if (current == null) return;
-        java.io.IOException failure = null;
+
         try {
             current.preserveActiveOperations();
         } catch (java.io.IOException e) {
-            failure = e;
             LOGGER.error(
-                    "Failed to preserve one or more active Builder operations on disconnect", e);
+                    "Failed to preserve one or more active Builder operations on disconnect. "
+                            + "World timeline and proof were intentionally left unchanged.",
+                    e);
+            return;
         }
+
         try {
             current.saveRuntimeProof("world-exit");
         } catch (java.io.IOException e) {
-            if (failure == null) failure = e;
-            else failure.addSuppressed(e);
-            LOGGER.error("Failed to persist Builder runtime proof on world disconnect", e);
+            LOGGER.error(
+                    "Failed to persist Builder runtime proof on world disconnect. "
+                            + "Timeline reset was skipped so the failed transition is not hidden.",
+                    e);
+            return;
         }
+
         try {
             current.resetWorldTimeline();
         } catch (java.io.IOException e) {
-            if (failure != null) e.addSuppressed(failure);
             LOGGER.error("Failed to reset Builder history after world disconnect", e);
         }
     }
