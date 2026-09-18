@@ -36,6 +36,7 @@ public final class HistoryRecoveryManager {
 
     public List<RecoveredHistoryEntry> discover(WorldBlockStateSource world) throws IOException {
         Objects.requireNonNull(world, "world");
+        storage.promoteRecoverableIncomplete();
         List<RecoveredHistoryEntry> result = new ArrayList<>();
         try {
             for (StoredChangeSet stored : storage.recoverCommitted()) {

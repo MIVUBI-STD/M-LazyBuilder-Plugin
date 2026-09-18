@@ -73,6 +73,34 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
     }
 
     /**
+     * Promotes staging files that already contain a valid committed footer/checksum.
+     * This closes the crash window between fsync/validation and the final atomic rename.
+     * Invalid or truncated staging files remain quarantined under .incomplete.
+     */
+    public List<Path> promoteRecoverableIncomplete() throws IOException {
+        List<Path> promoted = new java.util.ArrayList<>();
+        for (Path staging : listIncomplete()) {
+            try (InputStream input = Files.newInputStream(staging)) {
+                ChangeSetCodec.inspect(input);
+            } catch (IOException invalidOrIncomplete) {
+                continue;
+            }
+
+            String fileName = staging.getFileName().toString();
+            String committedName = fileName.substring(
+                    0, fileName.length() - ".incomplete".length());
+            Path committed = staging.resolveSibling(committedName);
+            try {
+                Files.move(staging, committed, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                throw new IOException("History directory does not support atomic recovery promotion", e);
+            }
+            promoted.add(committed);
+        }
+        return List.copyOf(promoted);
+    }
+
+    /**
      * Reopens committed History files left on disk, typically after an unclean
      * shutdown. Each file is checksum/count validated before it is returned.
      *

@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.structure;
 import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSet;
 import com.halokaryamedia.lazybuilder.builder.history.ChunkChangeSetBuilder;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
+import com.halokaryamedia.lazybuilder.builder.history.LocalBlockPosition;
 import com.halokaryamedia.lazybuilder.builder.material.BlockStateSource;
 
 import java.io.IOException;
