@@ -9,6 +9,7 @@ import com.halokaryamedia.lazybuilder.builder.structure.StructureAuxiliaryPayloa
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlan;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePastePlanner;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
+import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacementBounds;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
 import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicImport;
 import net.minecraft.client.world.ClientWorld;
@@ -127,12 +128,30 @@ public final class AxiomStructureAuxiliary {
         );
     }
 
+    public static void requirePlacementInsideWorld(
+            StructureSnapshot snapshot,
+            StructurePlacement placement,
+            ClientWorld world
+    ) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(placement, "placement");
+        Objects.requireNonNull(world, "world");
+        StructurePlacementBounds bounds =
+                StructurePlacementBounds.of(snapshot, placement);
+        if (bounds.minY() < world.getBottomY()
+                || bounds.maxY() > world.getTopYInclusive()) {
+            throw new IllegalArgumentException(
+                    "structure placement exceeds current world build height");
+        }
+    }
+
     public static StructurePastePlan planSingle(
             StructureSnapshot snapshot,
             StructurePlacement placement,
             ClientWorld world
     ) throws IOException {
         requireApplySupported(snapshot);
+        requirePlacementInsideWorld(snapshot, placement, world);
         StructurePastePlan blockAndBlockEntities;
         if (snapshot.blockEntityCount() == 0) {
             blockAndBlockEntities = new StructurePastePlan(
