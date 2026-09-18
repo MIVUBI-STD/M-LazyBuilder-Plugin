@@ -27,9 +27,6 @@ import java.util.UUID;
  */
 public final class WorldMapScreen extends Screen {
     private static final int BOTTOM_BAR = 24;
-    private static final int COLLAPSED_SIDEBAR = 34;
-    private static final int MIN_SIDEBAR = 152;
-    private static final int MAX_SIDEBAR = 176;
     private static final int SIDEBAR_GAP = 1;
     private static final int SAMPLE_BUDGET_PER_TICK = 4096;
     private static final int RASTER_CONTENT_REFRESH_TICKS = 4;
@@ -40,7 +37,6 @@ public final class WorldMapScreen extends Screen {
     private static final int CHUNK_GRID_COLOR = 0x2EFFFFFF;
     private static final int REGION_GRID_COLOR = 0x667F8FA3;
     private static final int OUTSIDE_SELECTION_DIM = 0x48101418;
-    private static final int SIDEBAR_ROW_HEIGHT = 27;
     private static final int MAX_FAVORITES = 5;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 64.0;
@@ -54,6 +50,7 @@ public final class WorldMapScreen extends Screen {
     private final ClientMapController maps;
     private final MapExportWorkspaceState exportWorkspace = new MapExportWorkspaceState();
     private final MapExportWorkspacePanel exportPanel = new MapExportWorkspacePanel();
+    private final WorldMapSidebarPanel sidebarPanel = new WorldMapSidebarPanel();
 
     private final MapViewportState camera = new MapViewportState();
     private boolean centeredOnce;
@@ -419,109 +416,33 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderSidebar(DrawContext context, int mouseX, int mouseY) {
-        int sidebar = sidebarWidth();
-        context.fill(0, 0, sidebar, height, 0xF214181E);
-        context.fill(sidebar - 1, 0, sidebar, height, LbUi.BORDER);
-
-        if (sidebarCollapsed) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("›"), sidebar / 2, 13, LbUi.TEXT_PRIMARY);
-            return;
-        }
-
-        context.drawTextWithShadow(textRenderer, Text.literal("Worlds"), 12, 12, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("‹"), sidebar - 18, 12, LbUi.TEXT_MUTED);
-        LbUi.divider(context, 10, 29, sidebar - 10);
-
-        context.drawTextWithShadow(textRenderer, Text.literal("Current world"), 12, 39, LbUi.TEXT_MUTED);
-        Rect currentRect = currentWorldRect();
-        if (currentRect.contains(mouseX, mouseY)) {
-            context.fill(currentRect.left, currentRect.top, currentRect.right, currentRect.bottom, LbUi.SURFACE_2);
-        }
-        UUID currentId = currentWorldId();
-        String currentName = maps.currentWorld() == null ? "Loading…" : maps.currentWorld().displayName();
-        context.drawTextWithShadow(textRenderer, Text.literal("●"), 12, currentRect.top + 8,
-                currentId == null ? LbUi.TEXT_MUTED : LbUi.SUCCESS);
-        context.drawTextWithShadow(textRenderer, Text.literal(trim(currentName, sidebar - 54)), 27,
-                currentRect.top + 6, LbUi.TEXT_PRIMARY);
-        if (client != null && client.world != null) {
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(friendlyDimension(client.world.getRegistryKey().getValue().getPath())), 27,
-                    currentRect.top + 17, LbUi.TEXT_MUTED);
-        }
-        if (currentId != null) {
-            context.drawTextWithShadow(textRenderer,
-                    Text.literal(NAVIGATION.isPinned(currentId) ? "★" : "☆"), sidebar - 20,
-                    currentRect.top + 8, NAVIGATION.isPinned(currentId) ? LbUi.ACCENT_BRIGHT : LbUi.TEXT_MUTED);
-        }
-
-        Rect favoritesTab = favoritesTabRect();
-        Rect allWorldsTab = allWorldsTabRect();
-        if (favoritesTab.contains(mouseX, mouseY) && showAllWorlds) {
-            context.fill(favoritesTab.left, favoritesTab.top, favoritesTab.right, favoritesTab.bottom, LbUi.SURFACE_2);
-        }
-        if (allWorldsTab.contains(mouseX, mouseY) && !showAllWorlds) {
-            context.fill(allWorldsTab.left, allWorldsTab.top, allWorldsTab.right, allWorldsTab.bottom, LbUi.SURFACE_2);
-        }
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("Favorites"),
-                (favoritesTab.left + favoritesTab.right) / 2, favoritesTab.top + 5,
-                showAllWorlds ? LbUi.TEXT_MUTED : LbUi.TEXT_PRIMARY);
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal("All worlds"),
-                (allWorldsTab.left + allWorldsTab.right) / 2, allWorldsTab.top + 5,
-                showAllWorlds ? LbUi.TEXT_PRIMARY : LbUi.TEXT_MUTED);
-        Rect activeTab = showAllWorlds ? allWorldsTab : favoritesTab;
-        context.fill(activeTab.left + 6, activeTab.bottom - 2, activeTab.right - 6, activeTab.bottom - 1, LbUi.ACCENT_BRIGHT);
-
-        List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
-        int rowY = 108;
-        if (!showAllWorlds && rows.isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("No favorites yet"),
-                    sidebar / 2, rowY + 7, LbUi.TEXT_MUTED);
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Pin a world with ☆"),
-                    sidebar / 2, rowY + 20, LbUi.TEXT_DISABLED);
-        }
-        for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
-            WorldControlWireProtocol.WorldSummary world = rows.get(i);
-            Rect rect = new Rect(8, rowY, sidebar - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
-            boolean selected = world.worldId().equals(selectedWorldId);
-            boolean hover = rect.contains(mouseX, mouseY);
-            if (selected) context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), LbUi.ACCENT_FILL);
-            else if (hover) context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), LbUi.SURFACE_2);
-
-            boolean pinned = NAVIGATION.isPinned(world.worldId());
-            context.drawTextWithShadow(textRenderer, Text.literal(pinned ? "★" : "☆"), 12, rowY + 8,
-                    pinned ? LbUi.ACCENT_BRIGHT : LbUi.TEXT_MUTED);
-            context.drawTextWithShadow(textRenderer, Text.literal(trim(world.displayName(), sidebar - 49)), 28,
-                    rowY + 8, LbUi.TEXT_PRIMARY);
-            if (isCurrentWorld(world.worldId())) {
-                context.drawTextWithShadow(textRenderer, Text.literal("●"), sidebar - 20, rowY + 8, LbUi.SUCCESS);
-            }
-            rowY += SIDEBAR_ROW_HEIGHT;
-        }
-
-        renderSelectedWorldAction(context, mouseX, mouseY);
-
-        Rect manage = manageWorldsRect();
-        if (manage.contains(mouseX, mouseY)) context.fill(manage.left, manage.top, manage.right, manage.bottom, LbUi.SURFACE_2);
-        context.fill(10, manage.top - 6, sidebar - 10, manage.top - 5, LbUi.BORDER);
-        context.drawTextWithShadow(textRenderer, Text.literal("Manage worlds"), 12, manage.top + 8, LbUi.TEXT_SECONDARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("›"), sidebar - 18, manage.top + 8, LbUi.TEXT_MUTED);
+        sidebarPanel.render(
+                context,
+                textRenderer,
+                NAVIGATION,
+                sidebarView(),
+                width,
+                height,
+                mouseX,
+                mouseY);
     }
 
-    private void renderSelectedWorldAction(DrawContext context, int mouseX, int mouseY) {
-        if (sidebarCollapsed || selectedWorldId == null) return;
-        WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
-        if (selected == null || isCurrentWorld(selected.worldId())) return;
-        Rect action = selectedActionRect();
-        if (action.top < 110) return;
-        boolean pending = teleportBusy();
-        boolean enabled = worlds.canTeleport() && !pending;
-        int color = enabled ? LbUi.ACCENT_FILL : LbUi.SURFACE_1;
-        if (action.contains(mouseX, mouseY) && enabled) color = LbUi.ACCENT_HOVER;
-        context.fill(action.left, action.top, action.right, action.bottom, color);
-        String label = pending ? "Teleporting…" : worlds.canTeleport() ? "Teleport →" : "Teleport unavailable";
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
-                (action.left + action.right) / 2, action.top + 7,
-                enabled ? LbUi.TEXT_PRIMARY : LbUi.TEXT_MUTED);
+    private WorldMapSidebarPanel.View sidebarView() {
+        UUID currentId = currentWorldId();
+        String currentName = maps.currentWorld() == null ? "Loading…" : maps.currentWorld().displayName();
+        String dimensionPath = client != null && client.world != null
+                ? client.world.getRegistryKey().getValue().getPath()
+                : "";
+        return new WorldMapSidebarPanel.View(
+                sidebarCollapsed,
+                showAllWorlds,
+                selectedWorldId,
+                currentId,
+                currentName,
+                dimensionPath,
+                sidebarWorlds(),
+                worlds.canTeleport(),
+                teleportBusy());
     }
 
     private void renderExportSidebar(DrawContext context, int mouseX, int mouseY) {
@@ -643,72 +564,14 @@ public final class WorldMapScreen extends Screen {
             }
             if (exportPanel.panelRect(width, height).contains(mouseX, mouseY)) return true;
         } else {
-            if (sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
-                if (mustCollapseSidebar()) return true;
-                sidebarCollapsed = false;
-                sidebarManuallyToggled = true;
-                invalidateRasterViewport();
-                return true;
-            }
-
-            if (!sidebarCollapsed && button == 0 && mouseX < sidebarWidth()) {
-                if (mouseY < 31 && mouseX > sidebarWidth() - 32) {
-                    sidebarCollapsed = true;
-                    sidebarManuallyToggled = true;
-                    contextOpen = false;
-                    invalidateRasterViewport();
-                    return true;
-                }
-                if (currentWorldRect().contains(mouseX, mouseY)) {
-                    UUID currentId = currentWorldId();
-                    if (currentId != null && mouseX >= sidebarWidth() - 32) NAVIGATION.togglePinned(currentId);
-                    else selectedWorldId = currentId;
-                    return true;
-                }
-                if (favoritesTabRect().contains(mouseX, mouseY)) {
-                    if (showAllWorlds) {
-                        showAllWorlds = false;
-                        worldListOffset = 0;
-                        normalizeSelectionForSection();
-                    }
-                    return true;
-                }
-                if (allWorldsTabRect().contains(mouseX, mouseY)) {
-                    if (!showAllWorlds) {
-                        showAllWorlds = true;
-                        worldListOffset = 0;
-                    }
-                    return true;
-                }
-
-                List<WorldControlWireProtocol.WorldSummary> rows = sidebarWorlds();
-                int rowY = 108;
-                for (int i = 0; i < rows.size() && i < visibleSidebarRows(); i++) {
-                    Rect rect = new Rect(8, rowY, sidebarWidth() - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
-                    if (rect.contains(mouseX, mouseY)) {
-                        WorldControlWireProtocol.WorldSummary world = rows.get(i);
-                        if (mouseX < 27) {
-                            NAVIGATION.togglePinned(world.worldId());
-                            if (!showAllWorlds) normalizeSelectionForSection();
-                        } else selectedWorldId = world.worldId();
-                        return true;
-                    }
-                    rowY += SIDEBAR_ROW_HEIGHT;
-                }
-
-                if (selectedActionRect().contains(mouseX, mouseY)) {
-                    WorldControlWireProtocol.WorldSummary selected = findActiveWorld(selectedWorldId);
-                    if (selected != null && !isCurrentWorld(selected.worldId())
-                            && worlds.canTeleport() && !teleportBusy()) {
-                        closeAfterWorldTeleport = true;
-                        worlds.teleport(selected.worldId());
-                    }
-                    return true;
-                }
-                if (manageWorldsRect().contains(mouseX, mouseY)) {
-                    if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
-                    return true;
-                }
+            if (button == 0 && sidebarPanel.contains(mouseX, width, sidebarCollapsed)) {
+                WorldMapSidebarPanel.Action action = sidebarPanel.actionAt(
+                        sidebarView(),
+                        width,
+                        height,
+                        mouseX,
+                        mouseY);
+                handleSidebarAction(action);
                 return true;
             }
         }
@@ -785,6 +648,58 @@ public final class WorldMapScreen extends Screen {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private void handleSidebarAction(WorldMapSidebarPanel.Action action) {
+        switch (action.type()) {
+            case EXPAND -> {
+                if (!mustCollapseSidebar()) {
+                    sidebarCollapsed = false;
+                    sidebarManuallyToggled = true;
+                    invalidateRasterViewport();
+                }
+            }
+            case COLLAPSE -> {
+                sidebarCollapsed = true;
+                sidebarManuallyToggled = true;
+                contextOpen = false;
+                invalidateRasterViewport();
+            }
+            case SELECT_CURRENT -> selectedWorldId = action.worldId();
+            case TOGGLE_CURRENT_PIN, TOGGLE_ROW_PIN -> {
+                if (action.worldId() != null) {
+                    NAVIGATION.togglePinned(action.worldId());
+                    if (!showAllWorlds) normalizeSelectionForSection();
+                }
+            }
+            case SHOW_FAVORITES -> {
+                if (showAllWorlds) {
+                    showAllWorlds = false;
+                    worldListOffset = 0;
+                    normalizeSelectionForSection();
+                }
+            }
+            case SHOW_ALL -> {
+                if (!showAllWorlds) {
+                    showAllWorlds = true;
+                    worldListOffset = 0;
+                }
+            }
+            case SELECT_ROW -> selectedWorldId = action.worldId();
+            case TELEPORT_SELECTED -> {
+                WorldControlWireProtocol.WorldSummary selected = findActiveWorld(action.worldId());
+                if (selected != null && !isCurrentWorld(selected.worldId())
+                        && worlds.canTeleport() && !teleportBusy()) {
+                    closeAfterWorldTeleport = true;
+                    worlds.teleport(selected.worldId());
+                }
+            }
+            case MANAGE -> {
+                if (client != null) client.setScreen(new WorldManagerScreen(this, worlds, transfers, maps));
+            }
+            case NONE -> {
+            }
+        }
     }
 
     private boolean handleExportPanelAction(MapExportWorkspacePanel.Action action) {
@@ -1239,9 +1154,7 @@ public final class WorldMapScreen extends Screen {
     private boolean mustCollapseSidebar() { return width < 400 || height < 220; }
 
     private int sidebarWidth() {
-        if (sidebarCollapsed) return COLLAPSED_SIDEBAR;
-        if (width < 620) return MIN_SIDEBAR;
-        return Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, width / 6));
+        return sidebarPanel.sidebarWidth(width, sidebarCollapsed);
     }
 
     private Bounds mapBounds() {
@@ -1251,17 +1164,6 @@ public final class WorldMapScreen extends Screen {
         return new Bounds(sidebarWidth() + SIDEBAR_GAP, 0, width, height - BOTTOM_BAR);
     }
 
-    private Rect currentWorldRect() { return new Rect(8, 50, sidebarWidth() - 8, 82); }
-    private Rect favoritesTabRect() {
-        int middle = sidebarWidth() / 2;
-        return new Rect(8, 87, middle - 2, 104);
-    }
-    private Rect allWorldsTabRect() {
-        int middle = sidebarWidth() / 2;
-        return new Rect(middle + 2, 87, sidebarWidth() - 8, 104);
-    }
-    private Rect manageWorldsRect() { return new Rect(8, height - 34, sidebarWidth() - 8, height - 7); }
-    private Rect selectedActionRect() { return new Rect(8, height - 67, sidebarWidth() - 8, height - 41); }
     private Rect recenterMapRect() {
         Bounds map = mapBounds();
         int center = map.centerX();
@@ -1327,9 +1229,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private int visibleSidebarRows() {
-        if (sidebarCollapsed) return 0;
-        int available = height - 108 - 76;
-        return Math.max(0, available / SIDEBAR_ROW_HEIGHT);
+        return sidebarPanel.visibleRows(height, sidebarCollapsed);
     }
 
     private WorldControlWireProtocol.WorldSummary findActiveWorld(UUID id) {
@@ -1351,15 +1251,6 @@ public final class WorldMapScreen extends Screen {
         String base = value;
         while (base.length() > 1 && textRenderer.getWidth(base + "…") > maxWidth) base = base.substring(0, base.length() - 1);
         return textRenderer.getWidth(base + "…") <= maxWidth ? base + "…" : "";
-    }
-
-    private static String friendlyDimension(String raw) {
-        return switch (raw) {
-            case "overworld" -> "Overworld";
-            case "the_nether" -> "Nether";
-            case "the_end" -> "The End";
-            default -> raw.replace('_', ' ');
-        };
     }
 
     private void invalidateRasterViewport() {
