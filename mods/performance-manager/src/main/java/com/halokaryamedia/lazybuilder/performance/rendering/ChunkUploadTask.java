@@ -104,7 +104,21 @@ public final class ChunkUploadTask implements Runnable {
     }
 
     public void fail(Throwable throwable) {
+        if (future.isDone()) return;
+        closePayload();
         future.completeExceptionally(throwable);
+    }
+
+    private void closePayload() {
+        try {
+            if (vertexData != null) {
+                vertexData.close();
+            } else if (indexData != null) {
+                indexData.close();
+            }
+        } catch (Throwable ignored) {
+            // Preserve the original upload/bind failure as the authoritative future cause.
+        }
     }
 
     @Override

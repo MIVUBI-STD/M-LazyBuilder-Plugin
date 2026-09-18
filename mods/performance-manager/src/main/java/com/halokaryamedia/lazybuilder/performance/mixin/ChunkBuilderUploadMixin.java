@@ -38,6 +38,7 @@ abstract class ChunkBuilderUploadMixin {
     ) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
         if (this.stopped) {
+            if (builtBuffer != null) builtBuffer.close();
             cir.setReturnValue(CompletableFuture.completedFuture(null));
             return;
         }
@@ -55,6 +56,7 @@ abstract class ChunkBuilderUploadMixin {
     ) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
         if (this.stopped) {
+            if (indexBuffer != null) indexBuffer.close();
             cir.setReturnValue(CompletableFuture.completedFuture(null));
             return;
         }
