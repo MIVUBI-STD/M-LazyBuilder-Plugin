@@ -23,7 +23,7 @@ import java.util.UUID;
 public final class BuilderExtensionTransport {
     private static final int MAGIC = 0x4c424658; // LBFX
     private static final int VERSION = 1;
-    private static final int MAX_CONCURRENT_TRANSFERS = 16;
+    private static final int MAX_CONCURRENT_TRANSFERS = 4;
     private static final long TRANSFER_TIMEOUT_MILLIS = 30_000L;
 
     /** Conservative ceiling below Bukkit Messenger.MAX_MESSAGE_SIZE (32766). */

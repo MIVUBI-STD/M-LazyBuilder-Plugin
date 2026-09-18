@@ -91,4 +91,31 @@ class BuilderExtensionWireProtocolTest {
         assertEquals(response, decodedResponse);
     }
 
+    @Test
+    void blockEntityBatchSupportsLargeNbtThroughVersionFourLengthEncoding() throws Exception {
+        byte[] before = new byte[96 * 1024];
+        byte[] after = new byte[128 * 1024];
+        for (int i = 0; i < before.length; i++) before[i] = (byte) i;
+        for (int i = 0; i < after.length; i++) after[i] = (byte) (i * 7);
+
+        var request = new BuilderExtensionWireProtocol.ApplyBlockEntityBatch(
+                "large-be",
+                "minecraft:overworld",
+                java.util.List.of(new BuilderExtensionWireProtocol.BlockEntityMutation(
+                        1, 64, 2,
+                        "minecraft:chest[facing=north,type=single,waterlogged=false]",
+                        "minecraft:chest[facing=south,type=single,waterlogged=false]",
+                        before,
+                        after
+                ))
+        );
+
+        byte[] encoded = BuilderExtensionWireProtocol.encodeRequest(request);
+        assertTrue(encoded.length > 64 * 1024);
+        var decoded = (BuilderExtensionWireProtocol.ApplyBlockEntityBatch)
+                BuilderExtensionWireProtocol.decodeRequest(encoded);
+        assertArrayEquals(before, decoded.entries().get(0).beforeNbt());
+        assertArrayEquals(after, decoded.entries().get(0).afterNbt());
+    }
+
 }

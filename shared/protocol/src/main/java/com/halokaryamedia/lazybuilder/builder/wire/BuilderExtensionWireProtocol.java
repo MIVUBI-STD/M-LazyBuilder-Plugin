@@ -14,9 +14,9 @@ import java.util.Objects;
 /** Bounded transport-neutral Fabric↔Paper protocol for Builder non-block authorities. */
 public final class BuilderExtensionWireProtocol {
     public static final int VERSION = 1;
-    public static final int MAX_MESSAGE_BYTES = 48 * 1024;
+    public static final int MAX_MESSAGE_BYTES = 512 * 1024;
     public static final int MAX_BATCH_ENTRIES = 256;
-    public static final int MAX_BLOCK_ENTITY_NBT_BYTES = 16 * 1024;
+    public static final int MAX_BLOCK_ENTITY_NBT_BYTES = 240 * 1024;
     public static final int CAPABILITY_BIOME = 1;
     public static final int CAPABILITY_BLOCK_ENTITY = 1 << 1;
     public static final int CAPABILITY_ENTITY = 1 << 2;
@@ -658,7 +658,7 @@ public final class BuilderExtensionWireProtocol {
         if (value.length > maxBytes) {
             throw new IOException("byte array exceeds " + maxBytes + " bytes");
         }
-        out.writeShort(value.length);
+        out.writeInt(value.length);
         out.write(value);
     }
 
@@ -666,8 +666,8 @@ public final class BuilderExtensionWireProtocol {
             DataInputStream in,
             int maxBytes
     ) throws IOException {
-        int size = in.readUnsignedShort();
-        if (size > maxBytes) throw new IOException("byte array exceeds limit");
+        int size = in.readInt();
+        if (size < 0 || size > maxBytes) throw new IOException("byte array exceeds limit");
         byte[] value = in.readNBytes(size);
         if (value.length != size) throw new EOFException();
         return value;
