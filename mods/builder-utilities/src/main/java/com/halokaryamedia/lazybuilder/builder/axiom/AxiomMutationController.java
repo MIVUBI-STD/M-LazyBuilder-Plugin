@@ -31,6 +31,7 @@ public final class AxiomMutationController implements AutoCloseable {
     private String status = "Ready";
     private long estimatedHistoryBytes;
     private OperationState pendingOutcome;
+    private boolean terminalMetricRecorded;
 
     public AxiomMutationController(AxiomClientServices services, BuilderRuntime runtime) {
         this.services = Objects.requireNonNull(services, "services");
@@ -78,6 +79,7 @@ public final class AxiomMutationController implements AutoCloseable {
         }
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
+        this.terminalMetricRecorded = false;
         runtime.metrics().operationStarted();
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
     }
@@ -200,6 +202,7 @@ public final class AxiomMutationController implements AutoCloseable {
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = finalState;
+        recordTerminalOnce(finalState);
     }
 
     @Override
@@ -229,6 +232,7 @@ public final class AxiomMutationController implements AutoCloseable {
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = OperationState.FAILED;
+        recordTerminalOnce(OperationState.FAILED);
         if (preserved) {
             status = base + " | durable plan preserved for Recovery";
         } else if (preserveFailure != null) {
@@ -237,6 +241,12 @@ public final class AxiomMutationController implements AutoCloseable {
         } else {
             status = base;
         }
+    }
+
+    private void recordTerminalOnce(OperationState state) {
+        if (terminalMetricRecorded) return;
+        runtime.metrics().terminal(state);
+        terminalMetricRecorded = true;
     }
 
     private static String safeMessage(Exception e) {
