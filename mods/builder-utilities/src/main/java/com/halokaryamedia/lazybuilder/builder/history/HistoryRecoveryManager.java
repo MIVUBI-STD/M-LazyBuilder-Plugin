@@ -61,6 +61,16 @@ public final class HistoryRecoveryManager {
         return deleted;
     }
 
+    public List<Path> unscopedIncompleteFiles() throws IOException {
+        return incompleteFiles(operationId ->
+                ScopedOperationIds.scopeOf(operationId).isEmpty());
+    }
+
+    public List<HistoryJournalSummary> unscopedCommittedSummaries() throws IOException {
+        return committedSummaries(operationId ->
+                ScopedOperationIds.scopeOf(operationId).isEmpty());
+    }
+
     public List<HistoryJournalSummary> committedSummaries(
             Predicate<String> operationFilter
     ) throws IOException {
