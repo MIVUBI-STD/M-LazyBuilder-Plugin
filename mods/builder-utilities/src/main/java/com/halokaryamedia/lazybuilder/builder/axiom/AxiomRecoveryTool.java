@@ -186,7 +186,7 @@ public final class AxiomRecoveryTool implements CustomTool {
     private void resumeSelected(RecoveredHistoryEntry entry) {
         try {
             ClientWorld world = requireWorld();
-            var prepared = entry.state().isPresent()
+            var prepared = entry.blockOnly()
                     ? entry.transferForResume()
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
             CancellationSource cancellation = new CancellationSource();
@@ -213,12 +213,13 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     private boolean canAuthoritativelyTransfer(RecoveredHistoryEntry entry) {
         try {
-            if (entry.state().isPresent()) {
-                return entry.state().get() != ReconciliationState.CONFLICT;
-            }
             if (entry.blockReconciliation().state() == ReconciliationState.CONFLICT) {
                 return false;
             }
+            if (entry.state().orElse(null) == ReconciliationState.CONFLICT) {
+                return false;
+            }
+            if (entry.blockOnly()) return true;
             return authoritativeResumeTypes().containsAll(entry.extensionTypeIds());
         } catch (IOException e) {
             status = "Recovery inspection failed: " + safeMessage(e);
@@ -229,7 +230,7 @@ public final class AxiomRecoveryTool implements CustomTool {
     private void rollbackSelected(RecoveredHistoryEntry entry) {
         try {
             ClientWorld world = requireWorld();
-            var prepared = entry.state().isPresent()
+            var prepared = entry.blockOnly()
                     ? entry.transferForResume()
                     : entry.transferForAuthoritativeResume(authoritativeResumeTypes());
             CancellationSource cancellation = new CancellationSource();
