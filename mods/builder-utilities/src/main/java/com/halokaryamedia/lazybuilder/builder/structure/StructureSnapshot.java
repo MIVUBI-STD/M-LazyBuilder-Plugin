@@ -76,13 +76,27 @@ public final class StructureSnapshot {
         for (StructureBiomeSample biome : biomes) {
             Objects.requireNonNull(biome, "biome");
             Position position = new Position(biome.x(), biome.y(), biome.z());
+            if (!withinBlockBounds(
+                    biome.x(), biome.y(), biome.z(),
+                    minX, minY, minZ, maxX, maxY, maxZ)) {
+                throw new IllegalArgumentException(
+                        "biome sample must stay inside structure block bounds");
+            }
             if (!biomePositions.add(position)) {
                 throw new IllegalArgumentException(
                         "duplicate structure-local biome sample position");
             }
         }
 
-        for (StructureEntity entity : entities) Objects.requireNonNull(entity, "entity");
+        for (StructureEntity entity : entities) {
+            Objects.requireNonNull(entity, "entity");
+            if (!withinEntityBounds(
+                    entity.x(), entity.y(), entity.z(),
+                    minX, minY, minZ, maxX, maxY, maxZ)) {
+                throw new IllegalArgumentException(
+                        "entity must stay inside structure block volume");
+            }
+        }
 
         this.blocks = List.copyOf(blocks);
         this.blockEntities = List.copyOf(blockEntities);
@@ -100,6 +114,26 @@ public final class StructureSnapshot {
     public int blockEntityCount() { return blockEntities.size(); }
     public int biomeCount() { return biomes.size(); }
     public int entityCount() { return entities.size(); }
+
+    private static boolean withinBlockBounds(
+            int x, int y, int z,
+            int minX, int minY, int minZ,
+            int maxX, int maxY, int maxZ
+    ) {
+        return x >= minX && x <= maxX
+                && y >= minY && y <= maxY
+                && z >= minZ && z <= maxZ;
+    }
+
+    private static boolean withinEntityBounds(
+            double x, double y, double z,
+            int minX, int minY, int minZ,
+            int maxX, int maxY, int maxZ
+    ) {
+        return x >= minX && x < (double) maxX + 1.0
+                && y >= minY && y < (double) maxY + 1.0
+                && z >= minZ && z < (double) maxZ + 1.0;
+    }
 
     private record Position(int x, int y, int z) {}
 }
