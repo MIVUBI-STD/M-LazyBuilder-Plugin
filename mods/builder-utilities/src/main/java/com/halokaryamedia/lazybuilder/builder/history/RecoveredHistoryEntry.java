@@ -63,7 +63,7 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
             throw new IllegalStateException("Conflicted recovery entry cannot resume automatically");
         }
         transferred = true;
-        return new RecoveredPreparedMutation(stored, blocks.totalChanges());
+        return new RecoveredPreparedMutation(stored, actualBlockMutationCount());
     }
 
     /**
@@ -91,7 +91,7 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
                     "Missing authoritative recovery support for extension types " + missing);
         }
         transferred = true;
-        return new RecoveredPreparedMutation(stored, blocks.totalChanges());
+        return new RecoveredPreparedMutation(stored, actualBlockMutationCount());
     }
 
     /**
@@ -104,6 +104,19 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
                     "Recovery entry has no transferred ownership to reclaim");
         }
         transferred = false;
+    }
+
+    private long actualBlockMutationCount() throws IOException {
+        long[] total = {0L};
+        stored.visitChunks(chunk -> {
+            for (int i = 0; i < chunk.size(); i++) {
+                if (!chunk.beforeState(i).equals(chunk.afterState(i))) {
+                    total[0] = Math.addExact(total[0], 1L);
+                }
+            }
+            return true;
+        });
+        return total[0];
     }
 
     public long estimatedHistoryBytes() throws IOException {
