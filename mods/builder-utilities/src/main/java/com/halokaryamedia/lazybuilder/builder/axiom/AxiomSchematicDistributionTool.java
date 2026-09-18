@@ -414,8 +414,13 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
         for (PlacementPlanEntry entry : placements) {
-            AxiomSchematicCompatibility.validateForApply(
-                    applyImport(requireSource(entry.sourceId())), world);
+            SpongeSchematicImport imported =
+                    applyImport(requireSource(entry.sourceId()));
+            AxiomSchematicCompatibility.validateForApply(imported, world);
+            AxiomStructureAuxiliary.requirePlacementInsideWorld(
+                    imported.snapshot(),
+                    StructurePlacementAdapter.from(entry),
+                    world);
         }
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(placements);
