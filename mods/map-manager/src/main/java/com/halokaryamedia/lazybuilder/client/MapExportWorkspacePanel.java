@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.client;
 
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 import java.util.Locale;
@@ -13,6 +14,7 @@ import java.util.Locale;
  * export workspace's visual geometry and maps pointer locations to presentation intents.</p>
  */
 final class MapExportWorkspacePanel {
+    private TextFieldWidget nameField;
     private static final int SIDEBAR_MIN = 218;
     private static final int SIDEBAR_MAX = 254;
     private static final int FOOTER = 46;
@@ -42,6 +44,40 @@ final class MapExportWorkspacePanel {
     Rect nameRect(int screenWidth, int screenHeight) {
         Rect panel = panelRect(screenWidth, screenHeight);
         return new Rect(panel.left + 12, 91, panel.right - 12, 113);
+    }
+
+    TextFieldWidget initializeNameField(
+            TextRenderer textRenderer,
+            MapExportWorkspaceState state,
+            int screenWidth,
+            int screenHeight
+    ) {
+        Rect field = nameRect(screenWidth, screenHeight);
+        nameField = new TextFieldWidget(
+                textRenderer,
+                field.left(),
+                field.top(),
+                field.width(),
+                field.height(),
+                Text.literal("World Name"));
+        nameField.setMaxLength(80);
+        nameField.setText(state.artifactName());
+        nameField.setChangedListener(state::artifactName);
+        return nameField;
+    }
+
+    boolean nameFieldFocused() {
+        return nameField != null && nameField.isFocused();
+    }
+
+    void updateNameField(String value) {
+        if (nameField != null && !nameField.getText().equals(value)) {
+            nameField.setText(value);
+        }
+    }
+
+    void clearControls() {
+        nameField = null;
     }
 
     Rect advancedViewport(int screenWidth, int screenHeight) {
