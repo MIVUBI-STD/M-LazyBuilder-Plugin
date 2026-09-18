@@ -18,7 +18,16 @@ public final class AxiomClientWorldStateSource implements WorldBlockStateSource,
     }
 
     @Override
-    public String stateAt(int worldX, int y, int worldZ) {
-        return codec.encode(world.getBlockState(new BlockPos(worldX, y, worldZ)));
+    public String readBlockState(int worldX, int y, int worldZ) {
+        return encode(worldX, y, worldZ);
+    }
+
+    @Override
+    public String stateAt(int x, int y, int z) {
+        return encode(x, y, z);
+    }
+
+    private String encode(int x, int y, int z) {
+        return codec.encode(world.getBlockState(new BlockPos(x, y, z)));
     }
 }

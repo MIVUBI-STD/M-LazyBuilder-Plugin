@@ -97,7 +97,7 @@ public final class AppliedMutationCompactor {
                 throw new IOException("History chunk coordinate overflow during compaction", e);
             }
             int y = LocalBlockPosition.y(packed);
-            String actual = requireState(world.stateAt(worldX, y, worldZ));
+            String actual = requireState(world.readBlockState(worldX, y, worldZ));
             String before = chunk.palette().get(beforeIndexes[i]);
             String after = chunk.palette().get(afterIndexes[i]);
 
