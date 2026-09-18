@@ -215,6 +215,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             ClientWorld world = Objects.requireNonNull(
                     MinecraftClient.getInstance().world,
                     "Minecraft client world is unavailable");
+            requireWithinBuildHeight(bounds, world);
             ScalarField field = AxiomTextureFields.create(
                     fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
             AxiomClientWorldStateSource source = new AxiomClientWorldStateSource(world);
@@ -243,6 +244,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                 "Minecraft client world is unavailable"
         );
         BlockBounds bounds = bounds();
+        requireWithinBuildHeight(bounds, world);
         ScalarField field = AxiomTextureFields.create(
                 fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
         BuilderMaterial material = buildMaterial(world, field);
@@ -325,6 +327,17 @@ public final class AxiomProceduralTextureTool implements CustomTool {
             case 2 -> MaterialMasks.existingState("minecraft:air");
             default -> throw new IllegalArgumentException("Unknown target mode: " + targetMode[0]);
         };
+    }
+
+    private static void requireWithinBuildHeight(
+            BlockBounds bounds,
+            ClientWorld world
+    ) {
+        if (bounds.minY() < world.getBottomY()
+                || bounds.maxY() > world.getTopYInclusive()) {
+            throw new IllegalArgumentException(
+                    "texture region exceeds current world build height");
+        }
     }
 
     private BlockBounds bounds() {
