@@ -22,12 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Opt-in scalability probe. This test asserts only correctness; timing numbers are
- * emitted as metrics so Builder can later be compared against FAWE on identical hardware.
+ * Opt-in scalability probe. It asserts correctness only and emits timing metrics
+ * for apples-to-apples comparison with FAWE on the same hardware.
  */
 @Tag("benchmark")
 class HistoryScalabilityBenchmarkTest {
-    private static final int CHANGES_PER_CHUNK = 4_096;
+    private static final int CHANGES_PER_CHUNK = 4096;
 
     @TempDir
     Path tempDir;
@@ -63,7 +63,6 @@ class HistoryScalabilityBenchmarkTest {
             stored = writer.commit();
         }
         long writeNanos = System.nanoTime() - writeStarted;
-
         assertEquals(requestedChanges, stored.changeCount());
 
         long scanStarted = System.nanoTime();
@@ -88,8 +87,6 @@ class HistoryScalabilityBenchmarkTest {
 
         double writeSeconds = writeNanos / 1_000_000_000.0;
         double scanSeconds = scanNanos / 1_000_000_000.0;
-        double writeMps = requestedChanges / Math.max(writeSeconds, 1e-9) / 1_000_000.0;
-        double scanMps = requestedChanges / Math.max(scanSeconds, 1e-9) / 1_000_000.0;
 
         System.out.printf(Locale.ROOT,
                 "LAZYBUILDER_BENCHMARK storage=%s changes=%d chunks=%d "
@@ -99,8 +96,8 @@ class HistoryScalabilityBenchmarkTest {
                 chunks,
                 writeNanos / 1_000_000.0,
                 scanNanos / 1_000_000.0,
-                writeMps,
-                scanMps
+                requestedChanges / Math.max(writeSeconds, 1e-9) / 1_000_000.0,
+                requestedChanges / Math.max(scanSeconds, 1e-9) / 1_000_000.0
         );
     }
 
@@ -108,6 +105,7 @@ class HistoryScalabilityBenchmarkTest {
         long[] positions = new long[count];
         int[] before = new int[count];
         int[] after = new int[count];
+
         for (int i = 0; i < count; i++) {
             int localIndex = i & 4095;
             int localX = localIndex & 15;
@@ -116,6 +114,7 @@ class HistoryScalabilityBenchmarkTest {
             positions[i] = LocalBlockPosition.pack(localX, y, localZ);
             after[i] = 1;
         }
+
         return new ChunkChangeSet(
                 ordinal,
                 0,
