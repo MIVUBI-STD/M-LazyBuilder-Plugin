@@ -26,7 +26,9 @@ public final class AxiomStructureCapabilityMatrix {
                                 : PayloadSupport.UNAVAILABLE,
                 snapshot.blockEntityCount() == 0
                         ? PayloadSupport.NOT_PRESENT
-                        : PayloadSupport.PRESERVE_ONLY
+                        : server.supportsBlockEntity()
+                                ? PayloadSupport.AUTHORITATIVE_SERVER
+                                : PayloadSupport.PRESERVE_ONLY
         );
     }
 
@@ -40,7 +42,9 @@ public final class AxiomStructureCapabilityMatrix {
                 server.supportsEntity()
                         ? PayloadSupport.AUTHORITATIVE_SERVER
                         : PayloadSupport.UNAVAILABLE,
-                PayloadSupport.PRESERVE_ONLY
+                server.supportsBlockEntity()
+                        ? PayloadSupport.AUTHORITATIVE_SERVER
+                        : PayloadSupport.PRESERVE_ONLY
         );
     }
 

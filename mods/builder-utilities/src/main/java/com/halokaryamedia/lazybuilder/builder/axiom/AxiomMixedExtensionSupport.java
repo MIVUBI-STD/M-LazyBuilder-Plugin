@@ -12,12 +12,14 @@ final class AxiomMixedExtensionSupport {
 
     static Plan inspect(StoredChangeSet set) throws IOException {
         Objects.requireNonNull(set, "set");
-        long[] counts = new long[2];
+        long[] counts = new long[3];
         set.visitExtensions(frame -> {
-            if (HistoryExtensionTypes.BIOME.equals(frame.typeId())) {
+            if (HistoryExtensionTypes.BLOCK_ENTITY.equals(frame.typeId())) {
                 counts[0]++;
-            } else if (HistoryExtensionTypes.ENTITY.equals(frame.typeId())) {
+            } else if (HistoryExtensionTypes.BIOME.equals(frame.typeId())) {
                 counts[1]++;
+            } else if (HistoryExtensionTypes.ENTITY.equals(frame.typeId())) {
+                counts[2]++;
             } else {
                 throw new IOException(
                         "No authoritative Axiom mixed mutation path for extension type "
@@ -25,20 +27,21 @@ final class AxiomMixedExtensionSupport {
             }
             return true;
         });
-        return new Plan(counts[0], counts[1]);
+        return new Plan(counts[0], counts[1], counts[2]);
     }
 
-    record Plan(long biomes, long entities) {
+    record Plan(long blockEntities, long biomes, long entities) {
         Plan {
-            if (biomes < 0 || entities < 0) {
+            if (blockEntities < 0 || biomes < 0 || entities < 0) {
                 throw new IllegalArgumentException("extension counts must be >= 0");
             }
         }
 
         long total() {
-            return Math.addExact(biomes, entities);
+            return Math.addExact(blockEntities, Math.addExact(biomes, entities));
         }
 
+        boolean hasBlockEntities() { return blockEntities > 0; }
         boolean hasBiomes() { return biomes > 0; }
         boolean hasEntities() { return entities > 0; }
     }

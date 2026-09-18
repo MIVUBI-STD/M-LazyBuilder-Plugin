@@ -78,8 +78,12 @@ public final class AxiomStructureAuxiliary {
         Objects.requireNonNull(world, "world");
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         return new StructureAuxiliaryContext(
-                null,
-                BlockEntityPayloadTransform.identity(),
+                capabilities.supportsBlockEntity()
+                        ? new AxiomBlockEntityStateSource(world)
+                        : null,
+                capabilities.supportsBlockEntity()
+                        ? new AxiomBlockEntityPayloadTransform()
+                        : BlockEntityPayloadTransform.identity(),
                 capabilities.supportsBiome()
                         ? (x, y, z) -> new AxiomWorldBiomeSource(world)
                                 .biomeAt(x, y, z)
@@ -102,8 +106,12 @@ public final class AxiomStructureAuxiliary {
         requireApplySupported(snapshot);
         Objects.requireNonNull(world, "world");
         return new StructureAuxiliaryContext(
-                null,
-                BlockEntityPayloadTransform.identity(),
+                snapshot.blockEntityCount() == 0
+                        ? null
+                        : new AxiomBlockEntityStateSource(world),
+                snapshot.blockEntityCount() == 0
+                        ? BlockEntityPayloadTransform.identity()
+                        : new AxiomBlockEntityPayloadTransform(),
                 snapshot.biomeCount() == 0
                         ? null
                         : (x, y, z) -> new AxiomWorldBiomeSource(world)
@@ -125,13 +133,29 @@ public final class AxiomStructureAuxiliary {
             ClientWorld world
     ) throws IOException {
         requireApplySupported(snapshot);
-        var blocks = StructurePastePlanner.plan(
-                snapshot,
-                placement,
-                new MinecraftStructureBlockStateTransform(world),
-                new AxiomClientWorldStateSource(world)
-        );
-        var extensions = StructureAuxiliaryPayloadPlanner.plan(
+        StructurePastePlan blockAndBlockEntities;
+        if (snapshot.blockEntityCount() == 0) {
+            blockAndBlockEntities = new StructurePastePlan(
+                    StructurePastePlanner.plan(
+                            snapshot,
+                            placement,
+                            new MinecraftStructureBlockStateTransform(world),
+                            new AxiomClientWorldStateSource(world)
+                    ),
+                    List.of()
+            );
+        } else {
+            blockAndBlockEntities = StructurePastePlanner.planWithBlockEntities(
+                    snapshot,
+                    placement,
+                    new MinecraftStructureBlockStateTransform(world),
+                    new AxiomClientWorldStateSource(world),
+                    new AxiomBlockEntityStateSource(world),
+                    new AxiomBlockEntityPayloadTransform()
+            );
+        }
+
+        var auxiliary = StructureAuxiliaryPayloadPlanner.plan(
                 snapshot,
                 placement,
                 snapshot.biomeCount() == 0
@@ -147,7 +171,10 @@ public final class AxiomStructureAuxiliary {
                         ? EntityPayloadTransform.identity()
                         : new AxiomEntityPayloadTransform()
         );
-        return new StructurePastePlan(blocks, extensions);
+        java.util.ArrayList<com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame> extensions =
+                new java.util.ArrayList<>(blockAndBlockEntities.extensions());
+        extensions.addAll(auxiliary);
+        return new StructurePastePlan(blockAndBlockEntities.chunks(), extensions);
     }
 
     public static long estimateHistoryBytes(StructurePastePlan plan) {
