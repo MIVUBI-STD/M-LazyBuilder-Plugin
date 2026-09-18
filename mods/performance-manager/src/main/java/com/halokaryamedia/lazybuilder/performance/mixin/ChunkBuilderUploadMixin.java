@@ -68,7 +68,10 @@ abstract class ChunkBuilderUploadMixin {
     private void lazybuilder$batchUploads(CallbackInfo ci) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
 
-        int budget = ChunkUploadDrainPolicy.taskBudget(this.stopped);
+        int budget = ChunkUploadDrainPolicy.taskBudget(
+                this.stopped,
+                PerformanceManagerClient.pressure()
+        );
         int processed = 0;
         Runnable runnable;
         while (processed < budget && (runnable = this.uploadQueue.poll()) != null) {

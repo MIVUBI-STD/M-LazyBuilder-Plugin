@@ -51,6 +51,8 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private RenderLayer lazybuilder$currentLayer;
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
+    @Unique private final ArrayList<TerrainDrawTransformStream.Input>[] lazybuilder$transformInputs =
+            lazybuilder$newTransformInputWorkspaces();
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -297,12 +299,12 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         if (chunks.isEmpty()) return TerrainArenaDrawPlanner.Plan.EMPTY;
 
-        List<TerrainArenaDrawPlanner.Command> commands = new ArrayList<>(chunks.size());
+        TerrainArenaDrawPlanner.Accumulator planner = TerrainArenaDrawPlanner.accumulator(layerSlot);
         for (ChunkBuilder.BuiltChunk chunk : chunks) {
             VertexBuffer buffer = chunk.getBuffer(layer);
-            commands.add(TerrainGpuResidencyTracker.drawCommand(buffer));
+            planner.accept(TerrainGpuResidencyTracker.drawCommand(buffer));
         }
-        return TerrainArenaDrawPlanner.plan(commands, layerSlot);
+        return planner.finish();
     }
 
     @Unique
@@ -311,7 +313,9 @@ abstract class WorldRendererTerrainSubmissionMixin {
         int layerSlot = lazybuilder$layerSlot(layer);
         if (chunks == null || layerSlot < 0) return;
 
-        List<TerrainDrawTransformStream.Input> inputs = new ArrayList<>(chunks.size());
+        ArrayList<TerrainDrawTransformStream.Input> inputs = this.lazybuilder$transformInputs[layerSlot];
+        inputs.clear();
+        inputs.ensureCapacity(chunks.size());
         for (ChunkBuilder.BuiltChunk chunk : chunks) {
             VertexBuffer buffer = chunk.getBuffer(layer);
             BlockPos origin = chunk.getOrigin();
@@ -357,5 +361,13 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique
     private static boolean lazybuilder$isBlockLayer(RenderLayer layer) {
         return lazybuilder$layerSlot(layer) >= 0;
+    }
+
+    @Unique
+    @SuppressWarnings("unchecked")
+    private static ArrayList<TerrainDrawTransformStream.Input>[] lazybuilder$newTransformInputWorkspaces() {
+        ArrayList<TerrainDrawTransformStream.Input>[] workspaces = new ArrayList[5];
+        for (int i = 0; i < workspaces.length; i++) workspaces[i] = new ArrayList<>();
+        return workspaces;
     }
 }

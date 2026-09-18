@@ -12,6 +12,9 @@ public final class TerrainMultiDrawCommandStream {
     private static final int LAYER_COUNT = 5;
     private static final int COMMAND_BYTES = 24;
     private static final int TRANSFORM_BYTES = 16;
+    private static final ByteBuffer EMPTY = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
+    private static ByteBuffer commandScratch = ByteBuffer.allocateDirect(COMMAND_BYTES).order(ByteOrder.nativeOrder());
+    private static ByteBuffer transformScratch = ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
     private static volatile LayerPacket[] current = emptyLayers();
 
     private TerrainMultiDrawCommandStream() {
@@ -92,31 +95,35 @@ public final class TerrainMultiDrawCommandStream {
         return new Snapshot(commands, runs, reductions, commandBytes, transformBytes);
     }
 
-    public static ByteBuffer packCommands(LayerPacket packet) {
+    public static synchronized ByteBuffer packCommands(LayerPacket packet) {
         if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
-        ByteBuffer buffer = ByteBuffer.allocateDirect(packet.commands().size() * COMMAND_BYTES).order(ByteOrder.nativeOrder());
+        int required = Math.multiplyExact(packet.commands().size(), COMMAND_BYTES);
+        commandScratch = ensureCapacity(commandScratch, required);
+        commandScratch.clear();
         for (PackedCommand command : packet.commands()) {
-            buffer.putInt(command.indexCount());
-            buffer.putInt(command.baseVertex());
-            buffer.putLong(command.indexByteOffset());
-            buffer.putInt(command.transformIndex());
-            buffer.putInt(0);
+            commandScratch.putInt(command.indexCount());
+            commandScratch.putInt(command.baseVertex());
+            commandScratch.putLong(command.indexByteOffset());
+            commandScratch.putInt(command.transformIndex());
+            commandScratch.putInt(0);
         }
-        buffer.flip();
-        return buffer.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
+        commandScratch.flip();
+        return commandScratch.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
     }
 
-    public static ByteBuffer packTransforms(LayerPacket packet) {
+    public static synchronized ByteBuffer packTransforms(LayerPacket packet) {
         if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
-        ByteBuffer buffer = ByteBuffer.allocateDirect(packet.commands().size() * TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
+        int required = Math.multiplyExact(packet.commands().size(), TRANSFORM_BYTES);
+        transformScratch = ensureCapacity(transformScratch, required);
+        transformScratch.clear();
         for (PackedCommand command : packet.commands()) {
-            buffer.putFloat(command.modelOffsetX());
-            buffer.putFloat(command.modelOffsetY());
-            buffer.putFloat(command.modelOffsetZ());
-            buffer.putFloat(0.0F);
+            transformScratch.putFloat(command.modelOffsetX());
+            transformScratch.putFloat(command.modelOffsetY());
+            transformScratch.putFloat(command.modelOffsetZ());
+            transformScratch.putFloat(0.0F);
         }
-        buffer.flip();
-        return buffer.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
+        transformScratch.flip();
+        return transformScratch.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
     }
 
     public static synchronized void clear() {
@@ -124,7 +131,21 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     private static ByteBuffer emptyBuffer() {
-        return ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
+        return EMPTY.duplicate().order(ByteOrder.nativeOrder());
+    }
+
+    private static ByteBuffer ensureCapacity(ByteBuffer current, int required) {
+        if (required <= current.capacity()) return current;
+        int capacity = Math.max(current.capacity(), 1);
+        while (capacity < required) {
+            int next = capacity << 1;
+            if (next <= 0 || next < capacity) {
+                capacity = required;
+                break;
+            }
+            capacity = next;
+        }
+        return ByteBuffer.allocateDirect(capacity).order(ByteOrder.nativeOrder());
     }
 
     private static LayerPacket[] emptyLayers() {

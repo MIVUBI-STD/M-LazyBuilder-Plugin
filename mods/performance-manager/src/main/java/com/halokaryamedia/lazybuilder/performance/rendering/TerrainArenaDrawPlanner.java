@@ -16,30 +16,40 @@ public final class TerrainArenaDrawPlanner {
 
     public static Plan plan(List<Command> commands, int expectedLayerSlot) {
         if (commands == null || commands.isEmpty()) return Plan.EMPTY;
+        Accumulator accumulator = new Accumulator(expectedLayerSlot);
+        for (Command command : commands) accumulator.accept(command);
+        return accumulator.finish();
+    }
 
-        int eligible = 0;
-        int fallback = 0;
-        int batches = 0;
-        long bindReductions = 0L;
-        Command previous = null;
-        int currentBatchSize = 0;
+    public static Accumulator accumulator(int expectedLayerSlot) {
+        return new Accumulator(expectedLayerSlot);
+    }
 
-        int baseVertexReady = 0;
-        int baseVertexBatches = 0;
-        long baseVertexBindReductions = 0L;
-        Command previousBaseVertex = null;
-        int currentBaseVertexBatchSize = 0;
+    public static final class Accumulator {
+        private final int expectedLayerSlot;
+        private int eligible;
+        private int fallback;
+        private int batches;
+        private long bindReductions;
+        private Command previous;
+        private int currentBatchSize;
+        private int baseVertexReady;
+        private int baseVertexBatches;
+        private long baseVertexBindReductions;
+        private Command previousBaseVertex;
+        private int currentBaseVertexBatchSize;
 
-        for (Command command : commands) {
+        private Accumulator(int expectedLayerSlot) {
+            this.expectedLayerSlot = expectedLayerSlot;
+        }
+
+        public void accept(Command command) {
             if (!eligible(command, expectedLayerSlot)) {
                 fallback++;
-                bindReductions += completedBatchReduction(currentBatchSize);
-                baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
-                currentBatchSize = 0;
-                currentBaseVertexBatchSize = 0;
+                flushBatches();
                 previous = null;
                 previousBaseVertex = null;
-                continue;
+                return;
             }
 
             eligible++;
@@ -56,7 +66,7 @@ public final class TerrainArenaDrawPlanner {
                 baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
                 currentBaseVertexBatchSize = 0;
                 previousBaseVertex = null;
-                continue;
+                return;
             }
 
             baseVertexReady++;
@@ -70,17 +80,28 @@ public final class TerrainArenaDrawPlanner {
             previousBaseVertex = command;
         }
 
-        bindReductions += completedBatchReduction(currentBatchSize);
-        baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
-        return new Plan(
-                eligible,
-                fallback,
-                batches,
-                bindReductions,
-                baseVertexReady,
-                baseVertexBatches,
-                baseVertexBindReductions
-        );
+        public Plan finish() {
+            bindReductions += completedBatchReduction(currentBatchSize);
+            baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
+            currentBatchSize = 0;
+            currentBaseVertexBatchSize = 0;
+            return new Plan(
+                    eligible,
+                    fallback,
+                    batches,
+                    bindReductions,
+                    baseVertexReady,
+                    baseVertexBatches,
+                    baseVertexBindReductions
+            );
+        }
+
+        private void flushBatches() {
+            bindReductions += completedBatchReduction(currentBatchSize);
+            baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
+            currentBatchSize = 0;
+            currentBaseVertexBatchSize = 0;
+        }
     }
 
     public static Plan combine(Plan left, Plan right) {
