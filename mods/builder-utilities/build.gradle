@@ -68,6 +68,27 @@ tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
 
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'benchmark'
+    }
+}
+
+tasks.register('benchmarkHistory', Test) {
+    group = 'verification'
+    description = 'Runs opt-in Builder History scalability benchmarks.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    maxHeapSize = '2g'
+    useJUnitPlatform {
+        includeTags 'benchmark'
+    }
+    systemProperty 'lazybuilder.benchmark.changes',
+            providers.gradleProperty('builderBenchmarkChanges').getOrElse('1000000')
+    systemProperty 'lazybuilder.benchmark.storage',
+            providers.gradleProperty('builderBenchmarkStorage').getOrElse('compressed')
+}
+
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
     withSourcesJar()
