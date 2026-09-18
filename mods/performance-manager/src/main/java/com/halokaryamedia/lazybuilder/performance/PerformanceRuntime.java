@@ -39,7 +39,7 @@ public final class PerformanceRuntime {
 
     public void tick(MinecraftClient client) {
         backgroundPolicy.update(client, preferences);
-        cullingRuntime.tick(client, preferences);
+        cullingRuntime.tick(client, preferences, frameMonitor.pressure());
     }
 
     public boolean shouldRender(Entity entity) {

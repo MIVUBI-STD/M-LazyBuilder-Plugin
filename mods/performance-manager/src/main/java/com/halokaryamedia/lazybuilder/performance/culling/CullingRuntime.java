@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.culling;
 
+import com.halokaryamedia.lazybuilder.performance.FramePressure;
 import com.halokaryamedia.lazybuilder.performance.PerformancePreferences;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.BlockState;
@@ -31,8 +32,12 @@ import java.util.WeakHashMap;
  * Modded entity and block-entity types are left to their owning renderer and are never culled here.
  */
 public final class CullingRuntime {
-    private static final int ENTITY_BUDGET_PER_TICK = 8;
-    private static final int BLOCK_ENTITY_BUDGET_PER_TICK = 4;
+    private static final int NORMAL_ENTITY_BUDGET = 8;
+    private static final int ELEVATED_ENTITY_BUDGET = 4;
+    private static final int HEAVY_ENTITY_BUDGET = 2;
+    private static final int NORMAL_BLOCK_ENTITY_BUDGET = 4;
+    private static final int ELEVATED_BLOCK_ENTITY_BUDGET = 2;
+    private static final int HEAVY_BLOCK_ENTITY_BUDGET = 1;
     private static final int MAX_ENTITY_QUEUE = 64;
     private static final int MAX_BLOCK_ENTITY_QUEUE = 32;
     private static final int MAX_TRANSPARENT_PASSES = 8;
@@ -95,7 +100,11 @@ public final class CullingRuntime {
         return entry.decision != VisibilityDecision.OCCLUDED;
     }
 
-    public void tick(MinecraftClient client, PerformancePreferences preferences) {
+    public void tick(
+            MinecraftClient client,
+            PerformancePreferences preferences,
+            FramePressure pressure
+    ) {
         if (client == null || client.world == null) {
             clear();
             return;
@@ -111,14 +120,17 @@ public final class CullingRuntime {
         }
         if (!preferences.entityCulling() && !preferences.blockEntityCulling()) return;
 
-        for (int i = 0; i < ENTITY_BUDGET_PER_TICK; i++) {
+        int entityBudget = entityBudget(pressure);
+        int blockEntityBudget = blockEntityBudget(pressure);
+
+        for (int i = 0; i < entityBudget; i++) {
             Entity entity = entityQueue.poll();
             if (entity == null) break;
             queuedEntities.remove(entity);
             if (!preferences.entityCulling() || !eligible(client, entity)) continue;
             evaluateEntity(client, entity);
         }
-        for (int i = 0; i < BLOCK_ENTITY_BUDGET_PER_TICK; i++) {
+        for (int i = 0; i < blockEntityBudget; i++) {
             BlockEntity blockEntity = blockEntityQueue.poll();
             if (blockEntity == null) break;
             queuedBlockEntities.remove(blockEntity);
@@ -129,6 +141,18 @@ public final class CullingRuntime {
             }
             evaluateBlockEntity(client, blockEntity);
         }
+    }
+
+    private static int entityBudget(FramePressure pressure) {
+        if (pressure == FramePressure.HEAVY) return HEAVY_ENTITY_BUDGET;
+        if (pressure == FramePressure.ELEVATED) return ELEVATED_ENTITY_BUDGET;
+        return NORMAL_ENTITY_BUDGET;
+    }
+
+    private static int blockEntityBudget(FramePressure pressure) {
+        if (pressure == FramePressure.HEAVY) return HEAVY_BLOCK_ENTITY_BUDGET;
+        if (pressure == FramePressure.ELEVATED) return ELEVATED_BLOCK_ENTITY_BUDGET;
+        return NORMAL_BLOCK_ENTITY_BUDGET;
     }
 
     public void clear() {
