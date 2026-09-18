@@ -60,6 +60,7 @@ class DiskHistoryRecoveryTest {
         }
 
         Path path = storage.listCommitted().get(0);
+        assertTrue(set.preserveForRecovery());
         byte[] bytes = java.nio.file.Files.readAllBytes(path);
         bytes[Math.max(12, bytes.length / 2)] ^= 1;
         java.nio.file.Files.write(path, bytes);

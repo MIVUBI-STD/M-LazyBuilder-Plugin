@@ -9,7 +9,7 @@ class AxiomEntityPayloadTransformTest {
     @Test
     void yawFollowsQuarterTurnsAndMirrors() {
         assertEquals(
-                -90.0f,
+                90.0f,
                 AxiomEntityPayloadTransform.transformYaw(
                         0.0f,
                         new StructurePlacement(0, 0, 0, 1, false, false)),

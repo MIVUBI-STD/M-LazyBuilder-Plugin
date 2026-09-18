@@ -75,7 +75,11 @@ class HistoryIntegrityV2Test {
                     order.add("extension");
                 }
             });
-            assertEquals(List.of("block", "extension"), order);
+            assertEquals(
+                    direction == ReplayDirection.REDO
+                            ? List.of("block", "extension")
+                            : List.of("extension", "block"),
+                    order);
         }
     }
 

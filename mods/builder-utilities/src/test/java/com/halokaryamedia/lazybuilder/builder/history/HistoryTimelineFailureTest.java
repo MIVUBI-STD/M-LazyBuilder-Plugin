@@ -24,10 +24,12 @@ class HistoryTimelineFailureTest {
         TrackingStored incoming = new TrackingStored("incoming", false);
         assertThrows(IOException.class, () -> timeline.record(incoming));
 
-        // first was successfully closed and removed; failing remains as the only redo owner.
-        assertEquals(1, first.closeCalls.get());
-        assertEquals(1, timeline.redoSize());
-        assertEquals("failing", timeline.nextRedoOperationId().orElseThrow());
+        // Cleanup starts from the oldest redo owner. If that close fails, no later
+        // owner is closed or removed, so the redo stack remains fully usable.
+        assertEquals(0, first.closeCalls.get());
+        assertEquals(1, failing.closeCalls.get());
+        assertEquals(2, timeline.redoSize());
+        assertEquals("first", timeline.nextRedoOperationId().orElseThrow());
 
         failing.failClose = false;
         timeline.close();
