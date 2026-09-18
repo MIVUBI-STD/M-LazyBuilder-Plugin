@@ -15,7 +15,7 @@ class BuilderRuntimeProofEvidenceTest {
     void aggregatesMaximaWithoutDoubleCountingRepeatedSnapshots() throws Exception {
         Files.writeString(tempDir.resolve("one.json"), """
                 {
-                  "schema": 4,
+                  "schema": 6,
                   "operationsCompleted": 2,
                   "operationsCancelled": 1,
                   "operationsFailed": 0,
@@ -33,7 +33,7 @@ class BuilderRuntimeProofEvidenceTest {
                 """);
         Files.writeString(tempDir.resolve("two.json"), """
                 {
-                  "schema": 4,
+                  "schema": 6,
                   "operationsCompleted": 2,
                   "operationsCancelled": 1,
                   "operationsFailed": 0,

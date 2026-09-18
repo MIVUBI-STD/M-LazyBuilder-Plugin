@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
     private final StoredExtensionCursor cursor;
     private final CancellationToken cancellation;
-    private final ClientWorld world;
     private final String dimensionId;
     private final int maxBatchEntries;
     private final boolean undo;
@@ -49,7 +48,7 @@ public final class AxiomBlockEntityBatchDispatcher implements AutoCloseable {
     ) throws IOException {
         Objects.requireNonNull(stored, "stored");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
-        this.world = Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(world, "world");
         this.dimensionId = world.getRegistryKey().getValue().toString();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsBlockEntity()) {

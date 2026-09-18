@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** Async authoritative ENTITY extension dispatcher with stable Builder-owned markers. */
 public final class AxiomEntityBatchDispatcher implements AutoCloseable {
-    private static final int MAX_SAFE_ENTITY_BATCH_ENTRIES = 12;
     private final StoredExtensionCursor cursor;
     private final CancellationToken cancellation;
     private final String dimensionId;
