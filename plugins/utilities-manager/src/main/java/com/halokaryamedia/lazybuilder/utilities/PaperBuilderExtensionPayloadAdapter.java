@@ -264,34 +264,101 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             return;
         }
 
-        int processed = 0;
+        // Match BIOME/ENTITY semantics: ordinary conflicts are detected before any
+        // mutation. A re-entrant/plugin-induced failure during apply rolls back only
+        // entries that this batch actually changed, in reverse order.
+        for (int i = 0; i < batch.entries().size(); i++) {
+            BuilderExtensionWireProtocol.BlockEntityMutation mutation =
+                    batch.entries().get(i);
+            try {
+                PaperBlockEntityNbtBridge.PreflightResult result =
+                        blockEntities.preflightCompareAndSet(world, mutation);
+                if (result.state() == PaperBlockEntityNbtBridge.PreflightState.CONFLICT) {
+                    send(player,
+                            BuilderExtensionWireProtocol.BlockEntityBatchResult.conflict(
+                                    batch.operationId(), 0, i, result.detail()));
+                    return;
+                }
+            } catch (Exception failure) {
+                send(player, new BuilderExtensionWireProtocol.Error(
+                        batch.operationId(),
+                        "block entity preflight failed: " + concise(failure)));
+                return;
+            }
+        }
+
+        List<BuilderExtensionWireProtocol.BlockEntityMutation> changed =
+                new ArrayList<>();
         for (int i = 0; i < batch.entries().size(); i++) {
             BuilderExtensionWireProtocol.BlockEntityMutation mutation =
                     batch.entries().get(i);
             try {
                 PaperBlockEntityNbtBridge.ApplyResult result =
                         blockEntities.applyCompareAndSet(world, mutation);
-                if (result.state()
-                        == PaperBlockEntityNbtBridge.ApplyState.CONFLICT) {
-                    send(player,
-                            BuilderExtensionWireProtocol.BlockEntityBatchResult.conflict(
-                                    batch.operationId(),
-                                    processed,
-                                    i,
-                                    result.detail()));
+                if (result.state() == PaperBlockEntityNbtBridge.ApplyState.CONFLICT) {
+                    String rollbackFailure = rollbackBlockEntitySteps(world, changed);
+                    if (rollbackFailure != null) {
+                        send(player, new BuilderExtensionWireProtocol.Error(
+                                batch.operationId(),
+                                "block entity conflict at batch index " + i
+                                        + "; rollback failed: " + rollbackFailure));
+                    } else {
+                        send(player,
+                                BuilderExtensionWireProtocol.BlockEntityBatchResult.conflict(
+                                        batch.operationId(), 0, i, result.detail()));
+                    }
                     return;
                 }
-                processed++;
+                if (result.changed()) changed.add(mutation);
             } catch (Exception failure) {
+                String rollbackFailure = rollbackBlockEntitySteps(world, changed);
+                String detail = "block entity mutation failed: " + concise(failure)
+                        + (rollbackFailure == null
+                                ? "; batch rolled back"
+                                : "; rollback failed: " + rollbackFailure);
                 send(player, new BuilderExtensionWireProtocol.Error(
-                        batch.operationId(),
-                        "block entity mutation failed: " + concise(failure)));
+                        batch.operationId(), detail));
                 return;
             }
         }
 
         send(player, BuilderExtensionWireProtocol.BlockEntityBatchResult.completed(
-                batch.operationId(), processed));
+                batch.operationId(), batch.entries().size()));
+    }
+
+    private String rollbackBlockEntitySteps(
+            World world,
+            List<BuilderExtensionWireProtocol.BlockEntityMutation> changed
+    ) {
+        String failure = null;
+        for (int i = changed.size() - 1; i >= 0; i--) {
+            BuilderExtensionWireProtocol.BlockEntityMutation reverse =
+                    reverseBlockEntityMutation(changed.get(i));
+            try {
+                PaperBlockEntityNbtBridge.ApplyResult result =
+                        blockEntities.applyCompareAndSet(world, reverse);
+                if (result.state() == PaperBlockEntityNbtBridge.ApplyState.CONFLICT) {
+                    failure = appendFailure(failure, result.detail());
+                }
+            } catch (Exception rollbackFailure) {
+                failure = appendFailure(failure, concise(rollbackFailure));
+            }
+        }
+        return failure;
+    }
+
+    static BuilderExtensionWireProtocol.BlockEntityMutation reverseBlockEntityMutation(
+            BuilderExtensionWireProtocol.BlockEntityMutation mutation
+    ) {
+        return new BuilderExtensionWireProtocol.BlockEntityMutation(
+                mutation.x(),
+                mutation.y(),
+                mutation.z(),
+                mutation.afterBlockState(),
+                mutation.beforeBlockState(),
+                mutation.afterNbt(),
+                mutation.beforeNbt()
+        );
     }
 
     private void applyEntityBatch(

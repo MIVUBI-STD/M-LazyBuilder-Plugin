@@ -84,6 +84,30 @@ final class PaperBlockEntityNbtBridge {
         }
     }
 
+    PreflightResult preflightCompareAndSet(
+            World world,
+            BuilderExtensionWireProtocol.BlockEntityMutation mutation
+    ) throws Exception {
+        Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(mutation, "mutation");
+
+        BlockData beforeBlock = Bukkit.createBlockData(mutation.beforeBlockState());
+        BlockData afterBlock = Bukkit.createBlockData(mutation.afterBlockState());
+        Snapshot actual = snapshot(world, mutation.x(), mutation.y(), mutation.z());
+        Expected before = new Expected(beforeBlock, decodePayload(mutation.beforeNbt()));
+        Expected after = new Expected(afterBlock, decodePayload(mutation.afterNbt()));
+
+        if (matches(actual, after)) {
+            return new PreflightResult(PreflightState.ALREADY_APPLIED, "already applied");
+        }
+        if (!matches(actual, before)) {
+            return new PreflightResult(
+                    PreflightState.CONFLICT,
+                    "expected block/NBT before-state but actual state differs");
+        }
+        return new PreflightResult(PreflightState.READY, "ready");
+    }
+
     ApplyResult applyCompareAndSet(
             World world,
             BuilderExtensionWireProtocol.BlockEntityMutation mutation
@@ -107,12 +131,13 @@ final class PaperBlockEntityNbtBridge {
                 decodePayload(mutation.afterNbt()));
 
         if (matches(actual, after)) {
-            return new ApplyResult(ApplyState.APPLIED, "already applied");
+            return new ApplyResult(ApplyState.APPLIED, "already applied", false);
         }
         if (!matches(actual, before)) {
             return new ApplyResult(
                     ApplyState.CONFLICT,
-                    "expected block/NBT before-state but actual state differs");
+                    "expected block/NBT before-state but actual state differs",
+                    false);
         }
 
         try {
@@ -120,13 +145,14 @@ final class PaperBlockEntityNbtBridge {
             Snapshot verified = snapshot(
                     world, mutation.x(), mutation.y(), mutation.z());
             if (matches(verified, after)) {
-                return new ApplyResult(ApplyState.APPLIED, "applied");
+                return new ApplyResult(ApplyState.APPLIED, "applied", true);
             }
 
             restoreOrThrow(world, block, actual, null);
             return new ApplyResult(
                     ApplyState.CONFLICT,
-                    "block entity verification failed; BEFORE state restored");
+                    "block entity verification failed; BEFORE state restored",
+                    false);
         } catch (Exception applyFailure) {
             try {
                 restoreOrThrow(world, block, actual, applyFailure);
@@ -139,7 +165,8 @@ final class PaperBlockEntityNbtBridge {
             return new ApplyResult(
                     ApplyState.CONFLICT,
                     "block entity write failed; BEFORE state restored: "
-                            + concise(applyFailure));
+                            + concise(applyFailure),
+                    false);
         }
     }
 
@@ -334,12 +361,20 @@ final class PaperBlockEntityNbtBridge {
                 owner.getName() + "#" + name + "/" + parameterCount);
     }
 
+    enum PreflightState {
+        READY,
+        ALREADY_APPLIED,
+        CONFLICT
+    }
+
+    record PreflightResult(PreflightState state, String detail) {}
+
     enum ApplyState {
         APPLIED,
         CONFLICT
     }
 
-    record ApplyResult(ApplyState state, String detail) {}
+    record ApplyResult(ApplyState state, String detail, boolean changed) {}
 
     private record Snapshot(BlockData blockData, Object nbt) {}
     private record Expected(BlockData blockData, Object nbt) {}
