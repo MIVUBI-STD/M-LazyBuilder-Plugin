@@ -23,16 +23,22 @@ public final class BlockSideVisibilityCache {
         if (state == null || otherState == null || side == null) return null;
         Probe probe = probes.get();
         probe.set(state, otherState, side);
-        return decisions.get(probe);
+        Boolean result = decisions.get(probe);
+        probe.lastLookupHit = result != null;
+        return result;
     }
 
     public void put(BlockState state, BlockState otherState, Direction side, boolean result) {
         if (state == null || otherState == null || side == null) return;
 
         Probe probe = probes.get();
-        probe.set(state, otherState, side);
-        if (decisions.containsKey(probe)) return;
+        if (probe.matches(state, otherState, side) && probe.lastLookupHit) {
+            probe.lastLookupHit = false;
+            return;
+        }
 
+        probe.set(state, otherState, side);
+        probe.lastLookupHit = false;
         if (decisions.size() >= MAX_ENTRIES) decisions.clear();
         decisions.putIfAbsent(new Key(state, otherState, side), result);
     }
@@ -53,12 +59,17 @@ public final class BlockSideVisibilityCache {
         private BlockState otherState;
         private Direction side;
         private int hash;
+        private boolean lastLookupHit;
 
         void set(BlockState state, BlockState otherState, Direction side) {
             this.state = state;
             this.otherState = otherState;
             this.side = side;
             this.hash = BlockSideVisibilityCache.hash(state, otherState, side);
+        }
+
+        boolean matches(BlockState state, BlockState otherState, Direction side) {
+            return this.state == state && this.otherState == otherState && this.side == side;
         }
 
         @Override public BlockState state() { return state; }
