@@ -52,6 +52,9 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
                 captureExportWorkspace(context, state, 620, 480, 2, true, false,
                         "map-manager-export-custom-area-620x480-gui2");
 
+                captureNegativeCoordinateExport(context, state, 1440, 900, 2,
+                        "map-manager-export-negative-area-1440x900-gui2");
+
                 captureDedicatedExport(context, state, 1440, 900, 2, true,
                         "world-transfer-export-advanced-1440x900-gui2");
                 captureDedicatedExport(context, state, 620, 480, 2, false,
@@ -165,6 +168,29 @@ public final class MapManagerVisualProofTest implements FabricClientGameTest {
             }
             screen.openExportWorkspaceForProof(customArea);
             if (expandAdvanced) screen.expandWorldSettingsForProof();
+        });
+        context.waitTicks(18);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureNegativeCoordinateExport(
+            ClientGameTestContext context,
+            PreviewState state,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        openMap(context, state);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof WorldMapScreen screen)) {
+                throw new IllegalStateException("Negative-coordinate Map proof screen is not open");
+            }
+            screen.openExportWorkspaceForProof(true, -96, -80);
         });
         context.waitTicks(18);
         context.takeScreenshot(screenshotName);
