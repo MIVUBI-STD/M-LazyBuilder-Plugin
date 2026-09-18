@@ -1,4 +1,5 @@
 name: Builder Benchmark
+# Synthetic source benchmark only; not Minecraft runtime proof.
 
 on:
   workflow_dispatch:
