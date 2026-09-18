@@ -1,8 +1,8 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
-import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
+import com.halokaryamedia.lazybuilder.builder.mutation.PreparedBlockMutation;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedReconciliationReport;
 import com.halokaryamedia.lazybuilder.builder.mutation.RollbackPreparationResult;
@@ -52,7 +52,7 @@ public final class AxiomMutationController implements AutoCloseable {
 
     public void start(
             ClientWorld world,
-            PreparedMaterialMutation prepared,
+            PreparedBlockMutation prepared,
             CancellationSource cancellation,
             long estimatedHistoryBytes
     ) {

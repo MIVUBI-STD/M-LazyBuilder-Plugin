@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimeline;
-import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
 import com.halokaryamedia.lazybuilder.builder.mutation.*;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
 import com.halokaryamedia.lazybuilder.builder.operation.ExecutionBudget;
@@ -30,13 +29,17 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
     public AxiomPreparedMutationSession(
             AxiomClientServices services,
             ClientWorld world,
-            PreparedMaterialMutation prepared,
+            PreparedBlockMutation prepared,
             HistoryTimeline timeline,
             CancellationToken cancellationToken
     ) {
         Objects.requireNonNull(services, "services");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(prepared, "prepared");
+        if (prepared.changeSet().extensionCount() != 0) {
+            throw new IllegalArgumentException(
+                    "Axiom public block mutation path cannot apply History extension frames");
+        }
         this.core = new PreparedMutationSession(prepared, Objects.requireNonNull(timeline, "timeline"));
         AxiomChunkMutationDispatcher dispatcher = new AxiomChunkMutationDispatcher(services, world);
         this.axiomTarget = new AxiomBudgetedChunkDispatchTarget(dispatcher);

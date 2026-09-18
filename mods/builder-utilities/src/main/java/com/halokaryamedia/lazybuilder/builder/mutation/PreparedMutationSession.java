@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimeline;
 import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
-import com.halokaryamedia.lazybuilder.builder.material.PreparedMaterialMutation;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
 
@@ -11,14 +10,18 @@ import java.util.Objects;
 
 /** Lifecycle owner for one prepared durable mutation. */
 public final class PreparedMutationSession implements AutoCloseable {
-    private final PreparedMaterialMutation prepared;
+    private final PreparedBlockMutation prepared;
     private final HistoryTimeline timeline;
     private OperationLifecycle lifecycle;
     private boolean ownershipTransferred;
     private boolean disposed;
 
-    public PreparedMutationSession(PreparedMaterialMutation prepared, HistoryTimeline timeline) {
+    public PreparedMutationSession(PreparedBlockMutation prepared, HistoryTimeline timeline) {
         this.prepared = Objects.requireNonNull(prepared, "prepared");
+        if (prepared.changeSet().extensionCount() != 0) {
+            throw new IllegalArgumentException(
+                    "PreparedMutationSession is block-only; extension frames require an extension-aware session");
+        }
         this.timeline = Objects.requireNonNull(timeline, "timeline");
         this.lifecycle = OperationLifecycle.created(prepared.plannedChanges())
                 .transitionTo(OperationState.VALIDATING)
@@ -27,7 +30,7 @@ public final class PreparedMutationSession implements AutoCloseable {
     }
 
     public synchronized OperationLifecycle lifecycle() { return lifecycle; }
-    public PreparedMaterialMutation prepared() { return prepared; }
+    public PreparedBlockMutation prepared() { return prepared; }
 
     public synchronized void startDispatch() {
         ensureOwned();
