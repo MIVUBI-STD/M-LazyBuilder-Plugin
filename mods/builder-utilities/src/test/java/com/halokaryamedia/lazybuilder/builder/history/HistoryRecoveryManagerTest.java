@@ -35,7 +35,7 @@ class HistoryRecoveryManagerTest {
         assertEquals(1, entries.size());
         RecoveredHistoryEntry entry = entries.get(0);
         assertTrue(entry.blockOnly());
-        assertEquals(ReconciliationState.FULLY_APPLIED, entry.reconciliation().state());
+        assertEquals(ReconciliationState.FULLY_APPLIED, entry.blockReconciliation().state());
 
         try (HistoryTimeline timeline = new HistoryTimeline(4)) {
             entry.transferFullyAppliedTo(timeline);
@@ -66,7 +66,7 @@ class HistoryRecoveryManagerTest {
         HistoryRecoveryManager recovery = new HistoryRecoveryManager(storage);
         RecoveredHistoryEntry entry = recovery.discover(
                 (x, y, z) -> x == 0 ? "minecraft:air" : "minecraft:stone").get(0);
-        assertEquals(ReconciliationState.PARTIALLY_APPLIED, entry.reconciliation().state());
+        assertEquals(ReconciliationState.PARTIALLY_APPLIED, entry.blockReconciliation().state());
         var resumed = entry.transferForResume();
         assertEquals(2, resumed.plannedChanges());
         resumed.close();
@@ -91,7 +91,7 @@ class HistoryRecoveryManagerTest {
         RecoveredHistoryEntry entry =
                 recovery.discover((x, y, z) -> "minecraft:chest").get(0);
 
-        assertEquals(ReconciliationState.EMPTY, entry.reconciliation().state());
+        assertEquals(ReconciliationState.EMPTY, entry.blockReconciliation().state());
 
         var firstAttempt = entry.transferForResume();
         assertEquals(0, firstAttempt.plannedChanges());
