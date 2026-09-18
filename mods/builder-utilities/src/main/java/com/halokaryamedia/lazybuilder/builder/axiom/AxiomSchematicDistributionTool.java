@@ -24,6 +24,7 @@ import com.halokaryamedia.lazybuilder.builder.structure.SchematicPlacements;
 import com.halokaryamedia.lazybuilder.builder.structure.SpongeSchematicImport;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacement;
 import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacementAdapter;
+import com.halokaryamedia.lazybuilder.builder.structure.StructurePlacementBounds;
 import com.halokaryamedia.lazybuilder.builder.structure.StructureSnapshot;
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
@@ -288,19 +289,47 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                     true
             );
 
-            placements = raw.stream()
-                    .map(this::applySchematicOffset)
-                    .toList();
+            placements = filterTransformedCollisions(
+                    raw.stream().map(this::applySchematicOffset).toList());
             previewPoints = expandPreview(placements);
-            if (StructurePreviewPoints.isDecimated(estimatedPlacedBlocks(placements))) {
-                idleStatus = "Distribution preview sampled; Confirm applies every accepted structure block";
-            }
+            boolean decimated =
+                    StructurePreviewPoints.isDecimated(estimatedPlacedBlocks(placements));
             ensurePreview().update(previewPoints);
-            idleStatus = "Distribution preview ready";
+            idleStatus = decimated
+                    ? "Distribution preview sampled; Confirm applies every accepted structure block"
+                    : "Distribution preview ready";
         } catch (Exception e) {
             clearPreview();
             idleStatus = "Preview failed: " + safeMessage(e);
         }
+    }
+
+    private List<PlacementPlanEntry> filterTransformedCollisions(
+            List<PlacementPlanEntry> candidates
+    ) {
+        List<PlacementPlanEntry> accepted = new ArrayList<>(candidates.size());
+        List<StructurePlacementBounds> occupied = new ArrayList<>(candidates.size());
+
+        for (PlacementPlanEntry candidate : candidates) {
+            StructureSnapshot snapshot =
+                    applyImport(requireSource(candidate.sourceId())).snapshot();
+            StructurePlacement placement = StructurePlacementAdapter.from(candidate);
+            StructurePlacementBounds bounds =
+                    StructurePlacementBounds.of(snapshot, placement);
+
+            boolean collision = false;
+            for (StructurePlacementBounds existing : occupied) {
+                if (bounds.overlaps(existing)) {
+                    collision = true;
+                    break;
+                }
+            }
+            if (collision) continue;
+
+            accepted.add(candidate);
+            occupied.add(bounds);
+        }
+        return List.copyOf(accepted);
     }
 
     private PlacementPlanEntry applySchematicOffset(PlacementPlanEntry entry) {
