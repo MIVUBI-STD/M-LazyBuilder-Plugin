@@ -11,9 +11,11 @@ import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -85,6 +87,7 @@ public final class StructurePlacementBatchPlanner {
         Set<ExtensionWorldKey> blockEntityKeys = new HashSet<>();
         Set<WorldKey> blockEntityGuards = new HashSet<>();
         Set<ExtensionWorldKey> biomeKeys = new HashSet<>();
+        EntitySlotIndex entitySlots = new EntitySlotIndex();
         long entityKey = 0L;
 
         for (PlacementPlanEntry entry : placements) {
@@ -178,6 +181,11 @@ public final class StructurePlacementBatchPlanner {
                 for (StructureEntity entity : snapshot.entities()) {
                     StructurePlacement.WorldPositionD world =
                             placement.transform(entity.x(), entity.y(), entity.z());
+                    if (!entitySlots.add(world)) {
+                        throw new IllegalArgumentException(
+                                "structure entity collision near "
+                                        + world.x() + "," + world.y() + "," + world.z());
+                    }
                     long key = entityKey++;
                     byte[] before = Objects.requireNonNull(
                             auxiliary.entities().read(key, world),
@@ -275,6 +283,49 @@ public final class StructurePlacementBatchPlanner {
         return state;
     }
 
+    private static final class EntitySlotIndex {
+        private static final double EPSILON = 0.125;
+        private final Map<EntityCell, List<StructurePlacement.WorldPositionD>> cells =
+                new HashMap<>();
+
+        boolean add(StructurePlacement.WorldPositionD position) {
+            EntityCell center = cell(position);
+            for (long dx = -1; dx <= 1; dx++) {
+                for (long dy = -1; dy <= 1; dy++) {
+                    for (long dz = -1; dz <= 1; dz++) {
+                        List<StructurePlacement.WorldPositionD> nearby =
+                                cells.get(new EntityCell(
+                                        center.x + dx,
+                                        center.y + dy,
+                                        center.z + dz));
+                        if (nearby == null) continue;
+                        for (StructurePlacement.WorldPositionD existing : nearby) {
+                            if (Math.abs(existing.x() - position.x()) <= EPSILON
+                                    && Math.abs(existing.y() - position.y()) <= EPSILON
+                                    && Math.abs(existing.z() - position.z()) <= EPSILON) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+            cells.computeIfAbsent(center, ignored -> new ArrayList<>()).add(position);
+            return true;
+        }
+
+        private static EntityCell cell(StructurePlacement.WorldPositionD position) {
+            return new EntityCell(
+                    floorCell(position.x()),
+                    floorCell(position.y()),
+                    floorCell(position.z()));
+        }
+
+        private static long floorCell(double coordinate) {
+            return (long) Math.floor(coordinate / EPSILON);
+        }
+    }
+
+    private record EntityCell(long x, long y, long z) {}
     private record WorldKey(int x, int y, int z) {}
     private record ExtensionWorldKey(int x, int y, int z) {}
     private record ChunkKey(int chunkX, int chunkZ) {}
