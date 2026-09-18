@@ -1,7 +1,6 @@
-use crate::engine::workspace_registry;
+use crate::engine::{persistence, workspace_registry};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const RECOVERY_SCHEMA_VERSION: u32 = 1;
@@ -78,17 +77,28 @@ pub fn recover_pending() -> Result<BackupRecoveryReport, String> {
 
 pub fn legacy_sweep_required() -> Result<bool, String> {
     let path = legacy_sweep_marker_path()?;
-    if !existing_regular_file(&path, "backup recovery migration marker")? {
+    persistence::recover_atomic_file(&path, "backup recovery migration marker")?;
+    if !persistence::metadata_entry_exists(&path, "backup recovery migration marker")? {
         return Ok(true);
     }
-    let text = fs::read_to_string(&path)
-        .map_err(|error| format!("Could not read backup recovery migration marker: {error}"))?;
-    Ok(legacy_marker_requires_sweep(&text))
+    let marker = match persistence::read_json::<LegacySweepMarker>(
+        &path,
+        "backup recovery migration marker",
+    ) {
+        Ok(marker) => marker,
+        Err(_) => return Ok(true),
+    };
+    persistence::cleanup_recovery_files(&path, "backup recovery migration marker")?;
+    Ok(marker.schema_version != LEGACY_SWEEP_SCHEMA_VERSION)
 }
 
 pub fn mark_legacy_sweep_complete() -> Result<(), String> {
     let path = legacy_sweep_marker_path()?;
-    atomic_write_json(&path, &LegacySweepMarker { schema_version: LEGACY_SWEEP_SCHEMA_VERSION })
+    persistence::write_json_atomically(
+        &path,
+        &LegacySweepMarker { schema_version: LEGACY_SWEEP_SCHEMA_VERSION },
+        "backup recovery migration marker",
+    )
 }
 
 fn legacy_marker_requires_sweep(text: &str) -> bool {
@@ -151,123 +161,42 @@ fn load_pending() -> Result<PendingBackupRecovery, String> {
 }
 
 fn load_pending_from(path: &Path) -> Result<PendingBackupRecovery, String> {
-    let incoming = path.with_extension("json.incoming");
-    let previous = path.with_extension("json.previous");
-
-    if existing_regular_file(path, "pending backup recovery index")? {
-        let pending = read_pending_file(path)?;
-        remove_regular_if_exists(&incoming, "stale pending backup incoming metadata")?;
-        remove_regular_if_exists(&previous, "stale pending backup previous metadata")?;
-        return Ok(pending);
+    persistence::recover_atomic_file(path, "pending backup recovery index")?;
+    if !persistence::metadata_entry_exists(path, "pending backup recovery index")? {
+        return Ok(PendingBackupRecovery {
+            schema_version: RECOVERY_SCHEMA_VERSION,
+            workspace_ids: Vec::new(),
+        });
     }
 
-    // If the process died after committed metadata was moved aside but before the new
-    // file was published, prefer the previous committed copy over the incoming copy.
-    if existing_regular_file(&previous, "pending backup previous metadata")? {
-        fs::rename(&previous, path)
-            .map_err(|error| format!("Could not restore previous pending backup recovery index: {error}"))?;
-        let pending = read_pending_file(path)?;
-        remove_regular_if_exists(&incoming, "stale pending backup incoming metadata")?;
-        return Ok(pending);
-    }
-
-    if existing_regular_file(&incoming, "pending backup incoming metadata")? {
-        let pending = read_pending_file(&incoming)?;
-        fs::rename(&incoming, path)
-            .map_err(|error| format!("Could not publish recovered pending backup recovery index: {error}"))?;
-        return Ok(pending);
-    }
-
-    Ok(PendingBackupRecovery { schema_version: RECOVERY_SCHEMA_VERSION, workspace_ids: Vec::new() })
-}
-
-fn read_pending_file(path: &Path) -> Result<PendingBackupRecovery, String> {
-    let text = fs::read_to_string(path).map_err(|error| format!("Could not read pending backup recovery index: {error}"))?;
-    let pending: PendingBackupRecovery = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending backup recovery index: {error}"))?;
+    let pending: PendingBackupRecovery =
+        persistence::read_json(path, "pending backup recovery index")
+            .map_err(|error| format!("Could not parse pending backup recovery index: {error}"))?;
     if pending.schema_version != RECOVERY_SCHEMA_VERSION {
-        return Err(format!("Backup recovery index schema {} is unsupported by this Launcher", pending.schema_version));
+        return Err(format!(
+            "Backup recovery index schema {} is unsupported by this Launcher",
+            pending.schema_version
+        ));
     }
+    persistence::cleanup_recovery_files(path, "pending backup recovery index")?;
     Ok(pending)
 }
 
 fn save_pending(pending: &PendingBackupRecovery) -> Result<(), String> {
     let path = pending_path()?;
     if pending.workspace_ids.is_empty() {
-        remove_regular_if_exists(&path, "pending backup recovery index")?;
-        remove_regular_if_exists(&path.with_extension("json.incoming"), "pending backup incoming metadata")?;
-        remove_regular_if_exists(&path.with_extension("json.previous"), "pending backup previous metadata")?;
+        persistence::safe_path::remove_regular_file_if_present(
+            &path,
+            "pending backup recovery index",
+        )?;
+        persistence::cleanup_recovery_files(&path, "pending backup recovery index")?;
         return Ok(());
     }
-    atomic_write_json(&path, pending)
-}
-
-fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        reject_link(parent)?;
-    }
-    let incoming = path.with_extension("json.incoming");
-    let previous = path.with_extension("json.previous");
-
-    let mut path_exists = existing_regular_file(path, "backup recovery metadata")?;
-    let incoming_exists = existing_regular_file(&incoming, "backup recovery incoming metadata")?;
-    let previous_exists = existing_regular_file(&previous, "backup recovery previous metadata")?;
-
-    // Repair an interrupted prior publication before starting a new one. A previous
-    // committed copy wins over an incoming copy when the main path is absent.
-    if !path_exists && previous_exists {
-        fs::rename(&previous, path).map_err(|error| format!("Could not restore previous backup recovery metadata: {error}"))?;
-        path_exists = true;
-    }
-    if incoming_exists {
-        fs::remove_file(&incoming).map_err(|error| format!("Could not clear stale backup recovery incoming metadata: {error}"))?;
-    }
-    if path_exists && existing_regular_file(&previous, "stale backup recovery previous metadata")? {
-        fs::remove_file(&previous).map_err(|error| format!("Could not clear stale backup recovery previous metadata: {error}"))?;
-    }
-
-    let text = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
-    {
-        let mut file = OpenOptions::new().create_new(true).write(true).open(&incoming)
-            .map_err(|error| format!("Could not write backup recovery staging metadata: {error}"))?;
-        file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| format!("Could not flush backup recovery metadata: {error}"))?;
-    }
-    if path_exists {
-        fs::rename(path, &previous).map_err(|error| error.to_string())?;
-        match fs::rename(&incoming, path) {
-            Ok(()) => { let _ = fs::remove_file(previous); Ok(()) }
-            Err(error) => {
-                let rollback = fs::rename(&previous, path);
-                if let Err(rollback_error) = rollback {
-                    return Err(format!("Could not publish backup recovery metadata ({error}) and could not restore previous metadata ({rollback_error}). Recovery files were preserved."));
-                }
-                Err(format!("Could not publish backup recovery metadata: {error}"))
-            }
-        }
-    } else {
-        fs::rename(incoming, path).map_err(|error| format!("Could not publish backup recovery metadata: {error}"))
-    }
-}
-
-fn remove_regular_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    if existing_regular_file(path, label)? {
-        fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))?;
-    }
-    Ok(())
-}
-
-fn existing_regular_file(path: &Path, label: &str) -> Result<bool, String> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
-                return Err(format!("{label} is not a safe regular file: {}", path.display()));
-            }
-            Ok(true)
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Could not inspect {label}: {error}")),
-    }
+    persistence::write_json_atomically(
+        &path,
+        pending,
+        "pending backup recovery index",
+    )
 }
 
 fn app_data_root() -> Result<PathBuf, String> {
