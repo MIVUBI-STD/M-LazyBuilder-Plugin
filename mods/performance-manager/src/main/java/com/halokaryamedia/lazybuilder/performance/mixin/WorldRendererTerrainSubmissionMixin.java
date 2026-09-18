@@ -145,7 +145,8 @@ abstract class WorldRendererTerrainSubmissionMixin {
             method = "renderLayer",
             at = @At(
                     value = "INVOKE",
-                    target = "Lit/unimi/dsi/fastutil/objects/ObjectArrayList;listIterator(I)Lit/unimi/dsi/fastutil/objects/ObjectListIterator;"
+                    target = "Lit/unimi/dsi/fastutil/objects/ObjectArrayList;listIterator(I)Lit/unimi/dsi/fastutil/objects/ObjectListIterator;",
+                    remap = false
             )
     )
     private ObjectListIterator<ChunkBuilder.BuiltChunk> lazybuilder$indexedIterator(
