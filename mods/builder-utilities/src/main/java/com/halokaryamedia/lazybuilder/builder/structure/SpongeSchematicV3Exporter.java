@@ -116,13 +116,49 @@ public final class SpongeSchematicV3Exporter {
         if (!snapshot.blockEntities().isEmpty()) {
             NbtList list = new NbtList();
             for (StructureBlockEntity blockEntity : snapshot.blockEntities()) {
-                NbtCompound compound = deserialize(blockEntity.payload());
-                compound.putIntArray("Pos", new int[]{
+                NbtCompound payload = deserialize(blockEntity.payload());
+                String id = payload.getString("Id");
+                if (id.isBlank()) id = payload.getString("id");
+                if (id.isBlank()) {
+                    throw new IOException("BlockEntity payload has no Id");
+                }
+
+                NbtCompound entry = new NbtCompound();
+                entry.putString("Id", id);
+                entry.putIntArray("Pos", new int[]{
                         blockEntity.x() - minX,
                         blockEntity.y() - minY,
                         blockEntity.z() - minZ
                 });
-                list.add(compound);
+
+                NbtCompound data = new NbtCompound();
+                for (String key : payload.getKeys()) {
+                    if (key.equals("Id") || key.equals("id")
+                            || key.equals("Pos") || key.equals("pos")
+                            || key.equals("x") || key.equals("y") || key.equals("z")
+                            || key.equals("Data")) {
+                        continue;
+                    }
+                    var value = payload.get(key);
+                    if (value != null) data.put(key, value.copy());
+                }
+
+                var nestedData = payload.get("Data");
+                if (nestedData instanceof NbtCompound nested) {
+                    for (String key : nested.getKeys()) {
+                        var value = nested.get(key);
+                        if (value == null) continue;
+                        var existing = data.get(key);
+                        if (existing != null && !existing.equals(value)) {
+                            throw new IOException(
+                                    "BlockEntity payload contains conflicting flat/Data field: "
+                                            + key);
+                        }
+                        data.put(key, value.copy());
+                    }
+                }
+                if (!data.isEmpty()) entry.put("Data", data);
+                list.add(entry);
             }
             result.put("BlockEntities", list);
         }

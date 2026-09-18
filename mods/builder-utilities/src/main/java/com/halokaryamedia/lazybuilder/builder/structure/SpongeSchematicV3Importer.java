@@ -121,10 +121,49 @@ public final class SpongeSchematicV3Importer {
             if (pos.length != 3) {
                 throw new IOException("BlockEntity Pos must contain exactly three integers");
             }
+            NbtCompound payload = flattenBlockEntityPayload(entry, id);
             result.add(new StructureBlockEntity(
-                    pos[0], pos[1], pos[2], serialize(entry)));
+                    pos[0], pos[1], pos[2], serialize(payload)));
         }
         return List.copyOf(result);
+    }
+
+    private static NbtCompound flattenBlockEntityPayload(
+            NbtCompound entry,
+            String id
+    ) throws IOException {
+        NbtCompound payload = new NbtCompound();
+        payload.putString("Id", id);
+
+        for (String key : entry.getKeys()) {
+            if (key.equals("Id") || key.equals("Pos") || key.equals("Data")) continue;
+            NbtElement value = entry.get(key);
+            if (value != null) payload.put(key, value.copy());
+        }
+
+        NbtElement dataElement = entry.get("Data");
+        if (dataElement != null) {
+            if (!(dataElement instanceof NbtCompound data)) {
+                throw new IOException("BlockEntity Data must be an NBT compound");
+            }
+            for (String key : data.getKeys()) {
+                if (key.equals("Id") || key.equals("id")
+                        || key.equals("Pos") || key.equals("pos")
+                        || key.equals("x") || key.equals("y") || key.equals("z")) {
+                    continue;
+                }
+                NbtElement value = data.get(key);
+                if (value == null) continue;
+                NbtElement existing = payload.get(key);
+                if (existing != null && !existing.equals(value)) {
+                    throw new IOException(
+                            "BlockEntity field appears with conflicting root/Data values: "
+                                    + key);
+                }
+                payload.put(key, value.copy());
+            }
+        }
+        return payload;
     }
 
     private static List<StructureBiomeSample> parseBiomes(
