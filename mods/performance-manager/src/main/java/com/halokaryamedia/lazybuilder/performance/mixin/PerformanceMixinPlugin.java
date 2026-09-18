@@ -15,7 +15,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String TEXT_RENDERER_MIXIN = MIXIN_PACKAGE + "TextRendererDrawerMixin";
     private static final String VERTEX_BUFFER_MIXIN = MIXIN_PACKAGE + "VertexBufferMixin";
     private static final String CHUNK_REBUILD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBuiltChunkMixin";
+    private static final String CHUNK_BACKPRESSURE_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBackpressureMixin";
     private static final String CHUNK_UPLOAD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderUploadMixin";
+    private static final String PARTICLE_MANAGER_MIXIN = MIXIN_PACKAGE + "ParticleManagerMixin";
     private static final String BUILT_CHUNK_STORAGE_MIXIN = MIXIN_PACKAGE + "BuiltChunkStorageMixin";
     private static final String CHUNK_DATA_VISIBILITY_MIXIN = MIXIN_PACKAGE + "ChunkDataVisibilityMixin";
     private static final String BUILT_CHUNK_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "BuiltChunkBufferLookupMixin";
@@ -51,7 +53,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
                 ? RendererCompatibility.detect()
                 : this.rendererCompatibility;
 
-        if ((TEXT_RENDERER_MIXIN.equals(mixinClassName) || VERTEX_BUFFER_MIXIN.equals(mixinClassName))
+        if ((TEXT_RENDERER_MIXIN.equals(mixinClassName)
+                || VERTEX_BUFFER_MIXIN.equals(mixinClassName)
+                || PARTICLE_MANAGER_MIXIN.equals(mixinClassName))
                 && immediatelyFast) {
             return false;
         }
@@ -66,6 +70,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
             return false;
         }
         if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)
+                || CHUNK_BACKPRESSURE_MIXIN.equals(mixinClassName)
                 || BUILT_CHUNK_STORAGE_MIXIN.equals(mixinClassName)
                 || CHUNK_DATA_VISIBILITY_MIXIN.equals(mixinClassName)
                 || BUILT_CHUNK_BUFFER_LOOKUP_MIXIN.equals(mixinClassName)

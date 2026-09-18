@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.culling.CullingRuntime;
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressure;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
@@ -42,6 +43,12 @@ public final class PerformanceRuntime {
     public void tick(MinecraftClient client) {
         backgroundPolicy.update(client, preferences);
         cullingRuntime.tick(client, preferences, frameMonitor.pressure());
+        if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
+            ChunkRebuildBackpressure.drain(
+                    client.worldRenderer.getChunkBuilder(),
+                    frameMonitor.pressure()
+            );
+        }
     }
 
     public boolean shouldRender(Entity entity) {
