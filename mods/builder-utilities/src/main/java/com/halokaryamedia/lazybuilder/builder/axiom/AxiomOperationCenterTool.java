@@ -63,6 +63,19 @@ public final class AxiomOperationCenterTool implements CustomTool {
         }
 
         ImGui.textWrapped(status);
+        var recoveryNotice = runtime.recoveryNotice().snapshot();
+        if (recoveryNotice.status()
+                == com.halokaryamedia.lazybuilder.builder.BuilderRecoveryNotice.Status.SCANNED) {
+            ImGui.textWrapped("Join recovery notice: committed="
+                    + recoveryNotice.committedJournals()
+                    + " incomplete=" + recoveryNotice.incompleteJournals()
+                    + (recoveryNotice.hasRecoveryWork()
+                            ? " | ACTION REQUIRED"
+                            : " | clean"));
+        } else if (recoveryNotice.status()
+                == com.halokaryamedia.lazybuilder.builder.BuilderRecoveryNotice.Status.FAILED) {
+            ImGui.textWrapped("Join recovery notice failed: " + recoveryNotice.failure());
+        }
         ImGui.textWrapped("World scope: " + scopePreview);
         ImGui.textWrapped("Internal durable timeline: undo=" + runtime.timeline().undoSize()
                 + " redo=" + runtime.timeline().redoSize());

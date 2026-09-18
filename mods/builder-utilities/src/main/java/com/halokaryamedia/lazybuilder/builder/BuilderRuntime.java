@@ -25,6 +25,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private final DiskChangeSetStorage diskHistory;
     private final BuilderRuntimeMetrics metrics;
     private final BuilderRuntimeProofStore proofStore;
+    private final BuilderRecoveryNotice recoveryNotice = new BuilderRecoveryNotice();
     private boolean closed;
 
     private BuilderRuntime(
@@ -73,6 +74,7 @@ public final class BuilderRuntime implements AutoCloseable {
         HistoryTimeline previous = timeline;
         timeline = new HistoryTimeline(64);
         previous.close();
+        recoveryNotice.clear();
     }
     public HistoryStorageRouter history() { return history; }
     public ExecutionBudget dispatchBudget() { return dispatchBudget; }
@@ -80,6 +82,7 @@ public final class BuilderRuntime implements AutoCloseable {
     public DiskChangeSetStorage diskHistory() { return diskHistory; }
     public BuilderRuntimeMetrics metrics() { return metrics; }
     public BuilderRuntimeProofStore proofStore() { return proofStore; }
+    public BuilderRecoveryNotice recoveryNotice() { return recoveryNotice; }
 
     public Path saveRuntimeProof(String label) throws IOException {
         return proofStore.writeSnapshot(metrics.snapshot(), label);

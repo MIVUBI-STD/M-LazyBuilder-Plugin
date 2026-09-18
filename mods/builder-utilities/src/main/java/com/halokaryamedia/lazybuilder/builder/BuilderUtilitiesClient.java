@@ -38,10 +38,40 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
         services.toolRegistry().register(new AxiomOperationCenterTool(services, runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
+        ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> client.execute(BuilderUtilitiesClient::scanRecoveryNotice));
         ClientPlayConnectionEvents.DISCONNECT.register(
                 (handler, client) -> resetWorldTimeline());
         LOGGER.info("Builder Utilities attached to Axiom public API with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.");
     }
+    private static void scanRecoveryNotice() {
+        BuilderRuntime current = runtime;
+        if (current == null) return;
+        try {
+            String scope = com.halokaryamedia.lazybuilder.builder.axiom.AxiomWorldScope
+                    .currentScopeId();
+            var recovery = new com.halokaryamedia.lazybuilder.builder.history.HistoryRecoveryManager(
+                    current.diskHistory());
+            var filter = (java.util.function.Predicate<String>) operationId ->
+                    com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
+                            .belongsTo(operationId, scope);
+            int committed = recovery.committedSummaries(filter).size();
+            int incomplete = recovery.incompleteFiles(filter).size();
+            current.recoveryNotice().update(scope, committed, incomplete);
+            if (committed > 0 || incomplete > 0) {
+                LOGGER.warn(
+                        "LazyBuilder recovery work detected for current world: committed={}, incomplete={}. "
+                                + "Open LazyBuilder Recovery or Operation Center to inspect it.",
+                        committed,
+                        incomplete);
+            }
+        } catch (Exception e) {
+            current.recoveryNotice().failure(
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            LOGGER.error("Failed to inspect LazyBuilder recovery journals on world join", e);
+        }
+    }
+
     private static void resetWorldTimeline() {
         BuilderRuntime current = runtime;
         if (current == null) return;

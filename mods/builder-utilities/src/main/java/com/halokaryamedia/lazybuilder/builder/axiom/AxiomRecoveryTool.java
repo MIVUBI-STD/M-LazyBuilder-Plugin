@@ -62,6 +62,12 @@ public final class AxiomRecoveryTool implements CustomTool {
         }
 
         ImGui.textWrapped(status);
+        var joinNotice = runtime.recoveryNotice().snapshot();
+        if (joinNotice.hasRecoveryWork()) {
+            ImGui.textWrapped("Detected on world join: committed="
+                    + joinNotice.committedJournals()
+                    + " incomplete=" + joinNotice.incompleteJournals());
+        }
         if (ImGui.button("Scan Recovery Plans")) {
             scan();
         }
