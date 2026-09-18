@@ -377,6 +377,12 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         switch (progress.state()) {
             case YIELDED, WAITING -> { }
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.entities()) {
+                    throw new IllegalStateException(
+                            "entity replay authority acknowledged "
+                                    + progress.processedExtensions() + " of "
+                                    + extensionPlan.entities() + " planned entity extensions");
+                }
                 entityDispatcher.close();
                 entityDispatcher = null;
                 if (lease.direction() == ReplayDirection.REDO) {
