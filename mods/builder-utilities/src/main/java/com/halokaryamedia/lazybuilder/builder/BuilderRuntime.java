@@ -114,8 +114,8 @@ public final class BuilderRuntime implements AutoCloseable {
 
     public synchronized void resetWorldTimeline() throws IOException {
         HistoryTimeline previous = timeline;
-        timeline = new HistoryTimeline(64);
         previous.close();
+        timeline = new HistoryTimeline(64);
         recoveryNotice.clear();
     }
     public HistoryStorageRouter history() { return history; }
