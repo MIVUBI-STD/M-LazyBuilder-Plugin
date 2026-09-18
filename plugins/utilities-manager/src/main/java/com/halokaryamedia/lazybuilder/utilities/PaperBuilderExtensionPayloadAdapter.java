@@ -370,8 +370,21 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                             "multiple Builder-owned entities share one marker"));
                     return;
                 }
+                Entity existing = marked.get(0);
+                if (!isAtTargetSlot(existing, location)) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), 0, i,
+                            "Builder-owned entity moved away from target slot"));
+                    return;
+                }
+                if (!foreignNearby.isEmpty()) {
+                    send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                            batch.operationId(), 0, i,
+                            "entity target slot occupied by another entity"));
+                    return;
+                }
                 steps.add(new EntityStep(
-                        mutation, location, snapshot, marked.get(0), false));
+                        mutation, location, snapshot, existing, false));
             }
         }
 
