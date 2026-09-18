@@ -80,6 +80,12 @@ public final class PerformanceRuntime {
         if (renderingDisabled && !TerrainPhysicalArenaManager.recoverAllExclusive()) {
             return;
         }
+        if (renderingDisabled) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client != null && client.worldRenderer != null) {
+                ChunkRebuildBackpressure.releaseAll(client.worldRenderer.getChunkBuilder());
+            }
+        }
 
         preferences = updated;
         configStore.save(updated);

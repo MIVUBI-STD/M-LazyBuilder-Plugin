@@ -26,23 +26,30 @@ public final class ChunkRebuildBackpressure {
             ChunkBuilder.BuiltChunk.Task task,
             FramePressure pressure
     ) {
-        if (builder == null || task == null || Boolean.TRUE.equals(RELEASING.get())) return false;
-
-        ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.computeIfAbsent(
-                builder,
-                ignored -> new ArrayDeque<>()
-        );
-        if (!ChunkRebuildBackpressurePolicy.shouldDefer(
-                pressure,
-                task.isPrioritized(),
-                builder.getToBatchCount(),
-                builder.getFreeBufferCount(),
-                queue.size()
-        )) {
-            if (queue.isEmpty()) DEFERRED.remove(builder);
+        if (builder == null
+                || task == null
+                || pressure != FramePressure.HEAVY
+                || task.isPrioritized()
+                || Boolean.TRUE.equals(RELEASING.get())) {
             return false;
         }
 
+        ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
+        int deferredTasks = queue == null ? 0 : queue.size();
+        if (!ChunkRebuildBackpressurePolicy.shouldDefer(
+                pressure,
+                false,
+                builder.getToBatchCount(),
+                builder.getFreeBufferCount(),
+                deferredTasks
+        )) {
+            return false;
+        }
+
+        if (queue == null) {
+            queue = new ArrayDeque<>();
+            DEFERRED.put(builder, queue);
+        }
         queue.addLast(task);
         ChunkPipelineMetrics.recordRebuildBackpressureDeferral();
         return true;
@@ -53,6 +60,28 @@ public final class ChunkRebuildBackpressure {
 
         int budget = ChunkRebuildBackpressurePolicy.releaseBudget(pressure);
         for (int released = 0; released < budget; released++) {
+            ChunkBuilder.BuiltChunk.Task task;
+            synchronized (ChunkRebuildBackpressure.class) {
+                ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
+                if (queue == null) return;
+                task = queue.pollFirst();
+                if (queue.isEmpty()) DEFERRED.remove(builder);
+            }
+            if (task == null) return;
+
+            RELEASING.set(true);
+            try {
+                builder.send(task);
+                ChunkPipelineMetrics.recordRebuildBackpressureRelease();
+            } finally {
+                RELEASING.set(false);
+            }
+        }
+    }
+
+    public static void releaseAll(ChunkBuilder builder) {
+        if (builder == null) return;
+        while (true) {
             ChunkBuilder.BuiltChunk.Task task;
             synchronized (ChunkRebuildBackpressure.class) {
                 ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
