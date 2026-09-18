@@ -186,9 +186,15 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             OperationState finalState = mixedSession.lifecycle().state();
             if (finalState == OperationState.FAILED) {
                 boolean preserved = mixedSession.preserveForRecovery();
-                status = preserved
-                        ? "Last mixed operation: FAILED (durable plan preserved for Recovery)"
-                        : "Last mixed operation: FAILED";
+                pendingOutcome = finalState;
+                recordTerminalOnce(finalState);
+                if (!preserved) {
+                    recoveryTransferBlocked = true;
+                    phase = Phase.IDLE;
+                    status = "Last mixed operation: FAILED | durable plan retained for preservation retry";
+                    return;
+                }
+                status = "Last mixed operation: FAILED (durable plan preserved for Recovery)";
             } else {
                 mixedSession.close();
                 status = "Last mixed operation: " + finalState;
@@ -196,6 +202,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             mixedSession = null;
             cancellation = null;
             phase = Phase.IDLE;
+            recoveryTransferBlocked = false;
             pendingOutcome = finalState;
             runtime.unregisterActiveOperation(this);
             recordTerminalOnce(finalState);
@@ -270,9 +277,15 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         OperationState finalState = session.lifecycle().state();
         if (finalState == OperationState.FAILED) {
             boolean preserved = session.preserveForRecovery();
-            status = preserved
-                    ? "Last operation: FAILED (durable plan preserved for Recovery)"
-                    : "Last operation: FAILED (plan could not be exposed to Recovery in this runtime)";
+            pendingOutcome = finalState;
+            recordTerminalOnce(finalState);
+            if (!preserved) {
+                recoveryTransferBlocked = true;
+                phase = Phase.IDLE;
+                status = "Last operation: FAILED | durable plan retained for preservation retry";
+                return;
+            }
+            status = "Last operation: FAILED (durable plan preserved for Recovery)";
         } else {
             session.close();
             status = "Last operation: " + finalState;
@@ -280,6 +293,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         session = null;
         cancellation = null;
         phase = Phase.IDLE;
+        recoveryTransferBlocked = false;
         pendingOutcome = finalState;
         runtime.unregisterActiveOperation(this);
         recordTerminalOnce(finalState);
