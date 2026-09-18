@@ -1,6 +1,11 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
+
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 
 pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
 const WORLD_FILE_NAME: &str = "World-Manager-0.1.0-SNAPSHOT.jar";
@@ -59,8 +64,8 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
         .join("tools")
         .join("lazybuilder")
         .join("plugin-backups");
-    fs::create_dir_all(&plugins).map_err(|e| e.to_string())?;
-    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
+    ensure_owned_directory(workspace, &plugins, "core plugin directory")?;
+    ensure_owned_directory(workspace, &backups, "core rollback directory")?;
 
     let mut modules = vec![
         ModuleInstall::new(
@@ -127,10 +132,65 @@ pub fn remove_stale_core_jars(workspace: &Path) -> Result<(), String> {
         .join("disabled-plugins");
     let legacy_disabled = workspace.join("server").join("plugins-disabled");
 
+    ensure_existing_owned_directory(workspace, &plugins, "core plugin directory")?;
+    ensure_existing_owned_directory(workspace, &disabled, "disabled plugin directory")?;
+    ensure_existing_owned_directory(workspace, &legacy_disabled, "legacy disabled plugin directory")?;
+
     remove_stale_from_directory(&plugins, true)?;
     remove_stale_from_directory(&disabled, false)?;
     remove_stale_from_directory(&legacy_disabled, false)?;
     Ok(())
+}
+
+fn ensure_owned_directory(workspace: &Path, directory: &Path, label: &str) -> Result<(), String> {
+    fs::create_dir_all(directory).map_err(|e| format!("Could not create {label}: {e}"))?;
+    ensure_directory_confined(workspace, directory, label)
+}
+
+fn ensure_existing_owned_directory(workspace: &Path, directory: &Path, label: &str) -> Result<(), String> {
+    if !directory.exists() {
+        return Ok(());
+    }
+    ensure_directory_confined(workspace, directory, label)
+}
+
+fn ensure_directory_confined(workspace: &Path, directory: &Path, label: &str) -> Result<(), String> {
+    let workspace = workspace
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve core workspace: {e}"))?;
+    let directory = directory
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve {label}: {e}"))?;
+    if !directory.starts_with(&workspace) {
+        return Err(format!("LazyBuilder refused {label} outside the active workspace."));
+    }
+
+    let relative = directory
+        .strip_prefix(&workspace)
+        .map_err(|_| format!("LazyBuilder refused {label} outside the active workspace."))?;
+    let mut current = workspace.clone();
+    for component in relative.components() {
+        current.push(component.as_os_str());
+        let metadata = fs::symlink_metadata(&current)
+            .map_err(|e| format!("Could not inspect {label}: {e}"))?;
+        if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+            return Err(format!("LazyBuilder refused symbolic-link/reparse indirection in {label}."));
+        }
+        if !metadata.file_type().is_dir() {
+            return Err(format!("LazyBuilder expected {label} to contain directories only."));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 fn remove_stale_from_directory(directory: &Path, keep_canonical: bool) -> Result<(), String> {
@@ -449,5 +509,19 @@ mod tests {
         assert!(!disabled.join("Utilities-Manager-0.0.9.jar").exists());
         assert!(plugins.join("Some-Plugin-1.0.jar").is_file());
         let _ = fs::remove_dir_all(workspace);
+    }    #[test]
+    fn owned_directory_guard_rejects_directory_outside_workspace() {
+        let workspace = test_root("core-owned-root");
+        let outside = test_root("core-owned-outside");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        let error = ensure_existing_owned_directory(&workspace, &outside, "test directory").unwrap_err();
+        assert!(error.contains("outside the active workspace"));
+
+        let _ = fs::remove_dir_all(workspace);
+        let _ = fs::remove_dir_all(outside);
     }
+
+
 }
