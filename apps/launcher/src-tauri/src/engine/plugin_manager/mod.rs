@@ -643,8 +643,13 @@ fn ensure_third_party_id(id: &str) -> Result<(), String> {
 fn ensure_plugin_manager_layout(workspace: &Path) -> Result<(), String> {
     let disabled = disabled_directory(workspace);
     let backups = backup_directory(workspace);
-    fs::create_dir_all(&disabled).map_err(|error| error.to_string())?;
-    fs::create_dir_all(&backups).map_err(|error| error.to_string())?;
+    paths::ensure_owned_directory(workspace, &disabled, "disabled plugin directory")?;
+    paths::ensure_owned_directory(workspace, &backups, "plugin rollback directory")?;
+    paths::ensure_existing_owned_directory(
+        workspace,
+        &plugins_directory(workspace),
+        "Paper plugin directory",
+    )?;
 
     let legacy_disabled = legacy_disabled_directory(workspace);
     if legacy_disabled.is_dir() {
