@@ -188,13 +188,50 @@ public final class SpongeSchematicV3Exporter {
     ) throws IOException {
         NbtList list = new NbtList();
         for (StructureEntity entity : snapshot.entities()) {
-            NbtCompound compound = deserialize(entity.payload());
+            NbtCompound payload = deserialize(entity.payload());
+            String id = payload.getString("Id");
+            if (id.isBlank()) id = payload.getString("id");
+            if (id.isBlank()) {
+                throw new IOException("Entity payload has no Id");
+            }
+
+            NbtCompound entry = new NbtCompound();
+            entry.putString("Id", id);
+
             NbtList pos = new NbtList();
             pos.add(NbtDouble.of(entity.x() - minX));
             pos.add(NbtDouble.of(entity.y() - minY));
             pos.add(NbtDouble.of(entity.z() - minZ));
-            compound.put("Pos", pos);
-            list.add(compound);
+            entry.put("Pos", pos);
+
+            NbtCompound data = new NbtCompound();
+            for (String key : payload.getKeys()) {
+                if (key.equals("Id") || key.equals("id")
+                        || key.equals("Pos") || key.equals("pos")
+                        || key.equals("Data")) {
+                    continue;
+                }
+                var value = payload.get(key);
+                if (value != null) data.put(key, value.copy());
+            }
+
+            // Backward compatibility for legacy internal payloads that still
+            // contain a nested Data compound.
+            var nestedData = payload.get("Data");
+            if (nestedData instanceof NbtCompound nested) {
+                for (String key : nested.getKeys()) {
+                    var value = nested.get(key);
+                    if (value == null) continue;
+                    var existing = data.get(key);
+                    if (existing != null && !existing.equals(value)) {
+                        throw new IOException(
+                                "Entity payload contains conflicting flat/Data field: " + key);
+                    }
+                    data.put(key, value.copy());
+                }
+            }
+            if (!data.isEmpty()) entry.put("Data", data);
+            list.add(entry);
         }
         return list;
     }

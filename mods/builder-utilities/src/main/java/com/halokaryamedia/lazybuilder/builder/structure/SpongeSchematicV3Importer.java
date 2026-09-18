@@ -170,14 +170,52 @@ public final class SpongeSchematicV3Importer {
             if (position.size() != 3) {
                 throw new IOException("Entity Pos must contain exactly three doubles");
             }
+            NbtCompound payload = flattenEntityPayload(entry, id);
             result.add(new StructureEntity(
                     number(position.get(0), "entity x"),
                     number(position.get(1), "entity y"),
                     number(position.get(2), "entity z"),
-                    serialize(entry)
+                    serialize(payload)
             ));
         }
         return List.copyOf(result);
+    }
+
+    private static NbtCompound flattenEntityPayload(
+            NbtCompound entry,
+            String id
+    ) throws IOException {
+        NbtCompound payload = new NbtCompound();
+        payload.putString("Id", id);
+
+        // Accept legacy/non-conforming root extras for backward compatibility.
+        for (String key : entry.getKeys()) {
+            if (key.equals("Id") || key.equals("Pos") || key.equals("Data")) continue;
+            NbtElement value = entry.get(key);
+            if (value != null) payload.put(key, value.copy());
+        }
+
+        NbtElement dataElement = entry.get("Data");
+        if (dataElement != null) {
+            if (!(dataElement instanceof NbtCompound data)) {
+                throw new IOException("Entity Data must be an NBT compound");
+            }
+            for (String key : data.getKeys()) {
+                if (key.equals("Id") || key.equals("id")
+                        || key.equals("Pos") || key.equals("pos")) {
+                    continue;
+                }
+                NbtElement value = data.get(key);
+                if (value == null) continue;
+                NbtElement existing = payload.get(key);
+                if (existing != null && !existing.equals(value)) {
+                    throw new IOException(
+                            "Entity field appears with conflicting root/Data values: " + key);
+                }
+                payload.put(key, value.copy());
+            }
+        }
+        return payload;
     }
 
     private static double number(NbtElement element, String label) throws IOException {
