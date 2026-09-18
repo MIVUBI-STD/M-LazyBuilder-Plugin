@@ -18,6 +18,7 @@ public final class ClientWorldController {
     private static final String NATIVE_EXPORT_FORMAT = "JAVA_1_21_4";
 
     private final Consumer<String> completedExportHandler;
+    private final Consumer<WorldControlWireProtocol.Request> requestSender;
     private List<WorldControlWireProtocol.WorldSummary> worlds = List.of();
     private List<String> exportFormats = List.of(NATIVE_EXPORT_FORMAT);
     private final Map<UUID, WorldControlWireProtocol.SettingsSnapshot> settings = new HashMap<>();
@@ -36,7 +37,15 @@ public final class ClientWorldController {
     private long revision;
 
     public ClientWorldController(Consumer<String> completedExportHandler) {
+        this(completedExportHandler, ClientWorldController::sendNetworkRequest);
+    }
+
+    ClientWorldController(
+            Consumer<String> completedExportHandler,
+            Consumer<WorldControlWireProtocol.Request> requestSender
+    ) {
         this.completedExportHandler = Objects.requireNonNull(completedExportHandler, "completedExportHandler");
+        this.requestSender = Objects.requireNonNull(requestSender, "requestSender");
     }
 
     public void refresh() {
@@ -285,7 +294,11 @@ public final class ClientWorldController {
         worlds = worlds.stream().filter(world -> !world.worldId().equals(worldId)).toList();
     }
 
-    private static void send(WorldControlWireProtocol.Request request) {
+    private void send(WorldControlWireProtocol.Request request) {
+        requestSender.accept(request);
+    }
+
+    private static void sendNetworkRequest(WorldControlWireProtocol.Request request) {
         try {
             LazyBuilderClientNetworking.sendWorld(WorldControlWireProtocol.encodeRequest(request));
         } catch (IOException exception) {
