@@ -31,6 +31,6 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(new AxiomSchematicCatalogTool(services, runtime));
         services.toolRegistry().register(new AxiomSchematicDistributionTool(services, runtime));
         services.toolRegistry().register(new AxiomRecoveryTool(services, runtime));
-        LOGGER.info("Builder Utilities attached to Axiom public API with durable spline, array, scatter, procedural texturing, structure stamping, Sponge schematic catalog, and restart recovery.");
+        LOGGER.info("Builder Utilities attached to Axiom public API with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.");
     }
 }
