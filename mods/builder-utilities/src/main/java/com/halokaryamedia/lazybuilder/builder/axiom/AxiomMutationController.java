@@ -55,7 +55,7 @@ public final class AxiomMutationController implements AutoCloseable {
             PreparedBlockMutation prepared,
             CancellationSource cancellation,
             long estimatedHistoryBytes
-    ) {
+    ) throws IOException {
         if (session != null) throw new IllegalStateException("A mutation is already active");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(prepared, "prepared");
@@ -64,8 +64,18 @@ public final class AxiomMutationController implements AutoCloseable {
             throw new IllegalArgumentException("estimatedHistoryBytes must be > 0");
         }
         this.estimatedHistoryBytes = estimatedHistoryBytes;
-        this.session = new AxiomPreparedMutationSession(
-                services, world, prepared, runtime.timeline(), cancellation.token());
+        try {
+            this.session = new AxiomPreparedMutationSession(
+                    services, world, prepared, runtime.timeline(), cancellation.token());
+        } catch (RuntimeException failure) {
+            try {
+                prepared.close();
+            } catch (IOException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            this.cancellation = null;
+            throw failure;
+        }
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
@@ -97,9 +107,7 @@ public final class AxiomMutationController implements AutoCloseable {
                 case IDLE -> { }
             }
         } catch (Exception e) {
-            status = "Operation failed: " + safeMessage(e);
-            pendingOutcome = OperationState.FAILED;
-            closeActiveQuietly();
+            preserveFailedOperation(e);
         }
     }
 
@@ -164,12 +172,19 @@ public final class AxiomMutationController implements AutoCloseable {
     private void finishIfTerminal() throws IOException {
         if (session == null || !session.lifecycle().state().isTerminal()) return;
         OperationState finalState = session.lifecycle().state();
-        session.close();
+        if (finalState == OperationState.FAILED) {
+            boolean preserved = session.preserveForRecovery();
+            status = preserved
+                    ? "Last operation: FAILED (durable plan preserved for Recovery)"
+                    : "Last operation: FAILED (plan could not be exposed to Recovery in this runtime)";
+        } else {
+            session.close();
+            status = "Last operation: " + finalState;
+        }
         session = null;
         cancellation = null;
         phase = Phase.IDLE;
         pendingOutcome = finalState;
-        status = "Last operation: " + finalState;
     }
 
     @Override
@@ -181,16 +196,29 @@ public final class AxiomMutationController implements AutoCloseable {
         phase = Phase.IDLE;
     }
 
-    private void closeActiveQuietly() {
+    private void preserveFailedOperation(Exception failure) {
+        String base = "Operation failed: " + safeMessage(failure);
+        boolean preserved = false;
+        Exception preserveFailure = null;
         if (session != null) {
             try {
-                session.close();
-            } catch (IOException ignored) {
+                preserved = session.preserveForRecovery();
+            } catch (Exception e) {
+                preserveFailure = e;
             }
         }
         session = null;
         cancellation = null;
         phase = Phase.IDLE;
+        pendingOutcome = OperationState.FAILED;
+        if (preserved) {
+            status = base + " | durable plan preserved for Recovery";
+        } else if (preserveFailure != null) {
+            status = base + " | recovery release failed: " + safeMessage(preserveFailure)
+                    + " (journal remains on disk for restart recovery)";
+        } else {
+            status = base;
+        }
     }
 
     private static String safeMessage(Exception e) {

@@ -153,6 +153,19 @@ public final class PreparedMutationSession implements AutoCloseable {
         lifecycle = new OperationLifecycle(lifecycle.state(), processedWork, lifecycle.totalWork(), null);
     }
 
+    /**
+     * Detaches a durable prepared plan from this session without deleting it.
+     * Used when execution fails after world mutation may already be partial.
+     */
+    public synchronized boolean preserveForRecovery() throws IOException {
+        if (ownershipTransferred || disposed) {
+            throw new IllegalStateException("Prepared mutation ownership has already been released");
+        }
+        boolean preserved = prepared.changeSet().preserveForRecovery();
+        if (preserved) ownershipTransferred = true;
+        return preserved;
+    }
+
     private void ensureCancelling() {
         ensureOwned();
         if (lifecycle.state() != OperationState.CANCELLING) {

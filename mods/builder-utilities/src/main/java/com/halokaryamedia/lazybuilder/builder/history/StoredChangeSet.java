@@ -27,6 +27,14 @@ public interface StoredChangeSet extends AutoCloseable {
         replayAll(direction, HistoryReplayConsumer.blocksOnly(consumer));
     }
 
+    /**
+     * Releases current-process ownership without deleting the committed backing data,
+     * making it discoverable by recovery. Non-durable implementations return false.
+     */
+    default boolean preserveForRecovery() throws IOException {
+        return false;
+    }
+
     @Override
     default void close() throws IOException {
     }

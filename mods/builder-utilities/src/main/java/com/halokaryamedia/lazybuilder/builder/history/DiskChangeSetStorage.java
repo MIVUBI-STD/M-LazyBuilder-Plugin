@@ -299,6 +299,12 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         }
 
         @Override
+        public boolean preserveForRecovery() {
+            ownedCommittedPaths.remove(path);
+            return Files.exists(path);
+        }
+
+        @Override
         public void close() throws IOException {
             try {
                 Files.deleteIfExists(path);

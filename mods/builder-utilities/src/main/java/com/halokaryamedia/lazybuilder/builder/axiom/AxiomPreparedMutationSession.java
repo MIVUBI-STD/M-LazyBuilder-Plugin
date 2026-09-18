@@ -179,6 +179,39 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
         core.completeRollbackCancellation();
     }
 
+    /**
+     * Stops active cursors and leaves the original durable plan discoverable by
+     * recovery. Temporary rollback plans are discarded because the original plan
+     * is sufficient to classify the resulting world state.
+     */
+    public synchronized boolean preserveForRecovery() throws IOException {
+        IOException failure = null;
+        if (rollbackDispatcher != null) {
+            rollbackDispatcher.close();
+            rollbackDispatcher = null;
+        }
+        if (rollback != null) {
+            try {
+                rollback.close();
+            } catch (IOException e) {
+                failure = e;
+            } finally {
+                rollback = null;
+            }
+        }
+        budgetedDispatcher.close();
+
+        boolean preserved = false;
+        try {
+            preserved = core.preserveForRecovery();
+        } catch (IOException e) {
+            if (failure == null) failure = e;
+            else failure.addSuppressed(e);
+        }
+        if (failure != null) throw failure;
+        return preserved;
+    }
+
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;
