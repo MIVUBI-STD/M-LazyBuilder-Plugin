@@ -65,13 +65,54 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
     }
 
     public List<Path> listIncomplete() throws IOException {
-        if (!Files.isDirectory(directory)) {
-            return List.of();
+        return listPathsWithSuffix(INCOMPLETE_SUFFIX);
+    }
+
+    public List<Path> listCommitted() throws IOException {
+        return listPathsWithSuffix(COMMITTED_SUFFIX);
+    }
+
+    /**
+     * Reopens committed History files left on disk, typically after an unclean
+     * shutdown. Each file is checksum/count validated before it is returned.
+     *
+     * <p>The caller owns returned change sets and may reconcile them against
+     * world state before choosing to resume, publish to timeline, or discard.</p>
+     */
+    public List<StoredChangeSet> recoverCommitted() throws IOException {
+        List<StoredChangeSet> recovered = new java.util.ArrayList<>();
+        try {
+            for (Path path : listCommitted()) {
+                ChangeSetCodec.Header header;
+                try (InputStream input = Files.newInputStream(path)) {
+                    header = ChangeSetCodec.inspect(input);
+                }
+                recovered.add(new DiskStoredChangeSet(
+                        header.operationId(),
+                        header.changeCount(),
+                        header.extensionCount(),
+                        path
+                ));
+            }
+            return List.copyOf(recovered);
+        } catch (IOException | RuntimeException failure) {
+            for (StoredChangeSet set : recovered) {
+                try {
+                    set.close();
+                } catch (IOException suppressed) {
+                    failure.addSuppressed(suppressed);
+                }
+            }
+            throw failure;
         }
+    }
+
+    private List<Path> listPathsWithSuffix(String suffix) throws IOException {
+        if (!Files.isDirectory(directory)) return List.of();
         try (Stream<Path> paths = Files.list(directory)) {
             return paths
                     .filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(INCOMPLETE_SUFFIX))
+                    .filter(path -> path.getFileName().toString().endsWith(suffix))
                     .sorted()
                     .toList();
         }

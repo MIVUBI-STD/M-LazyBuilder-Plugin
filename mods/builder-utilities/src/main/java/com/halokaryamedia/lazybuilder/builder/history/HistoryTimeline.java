@@ -16,20 +16,18 @@ public final class HistoryTimeline implements AutoCloseable {
     private final Deque<StoredChangeSet> redo = new ArrayDeque<>();
 
     public HistoryTimeline(int maxEntries) {
-        if (maxEntries <= 0) {
-            throw new IllegalArgumentException("maxEntries must be > 0");
-        }
+        if (maxEntries <= 0) throw new IllegalArgumentException("maxEntries must be > 0");
         this.maxEntries = maxEntries;
     }
 
     public synchronized void record(StoredChangeSet changeSet) throws IOException {
         Objects.requireNonNull(changeSet, "changeSet");
-        // Clear redo first. If cleanup fails, the new entry has not been published.
-        closeAll(redo);
-        redo.clear();
 
-        // Evict before adding the new entry so an eviction failure cannot leave a
-        // newly-published entry behind while record() reports failure.
+        // Remove entries only after their close succeeds. If cleanup fails,
+        // the remaining stack never contains entries already closed earlier
+        // in this cleanup pass.
+        closeAndRemoveAll(redo);
+
         while (undo.size() >= maxEntries) {
             StoredChangeSet oldest = undo.peekFirst();
             oldest.close();
@@ -51,9 +49,7 @@ public final class HistoryTimeline implements AutoCloseable {
     public synchronized boolean undo(HistoryApplier applier) throws IOException {
         Objects.requireNonNull(applier, "applier");
         StoredChangeSet next = undo.peekLast();
-        if (next == null) {
-            return false;
-        }
+        if (next == null) return false;
         applier.apply(next, ReplayDirection.UNDO);
         undo.removeLast();
         redo.addLast(next);
@@ -63,52 +59,43 @@ public final class HistoryTimeline implements AutoCloseable {
     public synchronized boolean redo(HistoryApplier applier) throws IOException {
         Objects.requireNonNull(applier, "applier");
         StoredChangeSet next = redo.peekLast();
-        if (next == null) {
-            return false;
-        }
+        if (next == null) return false;
         applier.apply(next, ReplayDirection.REDO);
         redo.removeLast();
         undo.addLast(next);
         return true;
     }
 
-    public synchronized int undoSize() {
-        return undo.size();
-    }
-
-    public synchronized int redoSize() {
-        return redo.size();
-    }
+    public synchronized int undoSize() { return undo.size(); }
+    public synchronized int redoSize() { return redo.size(); }
 
     @Override
     public synchronized void close() throws IOException {
         IOException failure = null;
-        failure = closeAllCollecting(undo, failure);
-        failure = closeAllCollecting(redo, failure);
-        undo.clear();
-        redo.clear();
-        if (failure != null) {
-            throw failure;
+        failure = closeAllCollectingAndRemoving(undo, failure);
+        failure = closeAllCollectingAndRemoving(redo, failure);
+        if (failure != null) throw failure;
+    }
+
+    private static void closeAndRemoveAll(Deque<StoredChangeSet> sets) throws IOException {
+        while (!sets.isEmpty()) {
+            StoredChangeSet next = sets.peekFirst();
+            next.close();
+            sets.removeFirst();
         }
     }
 
-    private static void closeAll(Deque<StoredChangeSet> sets) throws IOException {
-        IOException failure = closeAllCollecting(sets, null);
-        if (failure != null) {
-            throw failure;
-        }
-    }
-
-    private static IOException closeAllCollecting(Deque<StoredChangeSet> sets, IOException failure) {
-        for (StoredChangeSet set : sets) {
+    private static IOException closeAllCollectingAndRemoving(
+            Deque<StoredChangeSet> sets,
+            IOException failure
+    ) {
+        while (!sets.isEmpty()) {
+            StoredChangeSet next = sets.removeFirst();
             try {
-                set.close();
+                next.close();
             } catch (IOException e) {
-                if (failure == null) {
-                    failure = e;
-                } else {
-                    failure.addSuppressed(e);
-                }
+                if (failure == null) failure = e;
+                else failure.addSuppressed(e);
             }
         }
         return failure;
