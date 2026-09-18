@@ -103,11 +103,15 @@ public final class AxiomStructureSnapshotCapture {
         for (long y = bounds.minY(); y <= (long) bounds.maxY(); y++) {
             for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z++) {
                 for (long x = bounds.minX(); x <= (long) bounds.maxX(); x++) {
-                    String biome = world.getBiome(new BlockPos((int) x, (int) y, (int) z))
+                    int worldX = Math.toIntExact(x);
+                    int worldY = Math.toIntExact(y);
+                    int worldZ = Math.toIntExact(z);
+                    String biome = world.getBiome(new BlockPos(worldX, worldY, worldZ))
                             .getKey()
                             .map(key -> key.getValue().toString())
                             .orElseThrow(() -> new IllegalStateException(
-                                    "Biome has no registry key at " + x + "," + y + "," + z));
+                                    "Biome has no registry key at "
+                                            + worldX + "," + worldY + "," + worldZ));
                     result.add(new StructureBiomeSample(
                             Math.toIntExact(x - bounds.minX()),
                             Math.toIntExact(y - bounds.minY()),
