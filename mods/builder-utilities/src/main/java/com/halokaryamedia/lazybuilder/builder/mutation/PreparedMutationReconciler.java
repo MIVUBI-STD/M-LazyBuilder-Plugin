@@ -5,7 +5,7 @@ import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
 import java.io.IOException;
 import java.util.Objects;
 
-/** Reconciles a committed block-only History v2 plan against current world state. */
+/** Reconciles the block frames of a committed History v2 plan against current world state. */
 public final class PreparedMutationReconciler {
     private PreparedMutationReconciler() {
     }
@@ -16,10 +16,6 @@ public final class PreparedMutationReconciler {
     ) throws IOException {
         Objects.requireNonNull(prepared, "prepared");
         Objects.requireNonNull(world, "world");
-        if (prepared.extensionCount() != 0) {
-            throw new IllegalArgumentException("Block-only reconciler cannot inspect History extension frames");
-        }
-
         Aggregate aggregate = new Aggregate();
         prepared.visitChunks(chunk -> {
             ChunkReconciliationReport report = ChunkMutationReconciler.reconcile(chunk, world);
