@@ -62,6 +62,8 @@ public final class AxiomScatterTool implements CustomTool {
     private final int[] rotationalCopies = {1};
     private final int[] footprintRadius = {1};
     private final int[] maxHeightDelta = {3};
+    private final int[] mirrorX = {0};
+    private final int[] mirrorZ = {0};
 
     private BlockPos center;
     private List<PlacementPoint> points = List.of();
@@ -133,6 +135,8 @@ public final class AxiomScatterTool implements CustomTool {
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
         changed |= ImGui.sliderInt("Footprint Radius", footprintRadius, 0, 8);
         changed |= ImGui.sliderInt("Max Height Delta", maxHeightDelta, 0, 16);
+        changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
+        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         if (ImGui.button("Clear Scatter")) {
             clearGeometry();
             return;
@@ -200,10 +204,12 @@ public final class AxiomScatterTool implements CustomTool {
                     surface,
                     new OperationSeed(seedValue[0])
             ).stream().filter(slopeConstraint::test).toList();
-            points = PointSymmetryPlanner.rotational(
+            points = PointSymmetryPlanner.rotationalAndMirrors(
                     basePoints,
                     new BuilderVec3(center.getX(), center.getY(), center.getZ()),
                     rotationalCopies[0],
+                    mirrorX[0] != 0,
+                    mirrorZ[0] != 0,
                     MAX_POINTS
             );
 
