@@ -171,7 +171,8 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     extension.supportsBlockEntity(),
                     extension.supportsEntity(),
                     scopedCommitted,
-                    scopedIncomplete
+                    scopedIncomplete,
+                    legacyUnscoped
             );
             ImGui.textWrapped("FAWE retirement gate: " + retirement.status()
                     + " | persistedProofs=" + retirement.proofSnapshots()
