@@ -354,7 +354,7 @@ public final class ClientMapSurfaceCache {
             CompletableFuture.supplyAsync(() -> MapSurfaceRegionStore.read(file), ioExecutor)
                     .whenComplete((snapshot, failure) -> {
                         regionLoadsInFlight.decrementAndGet();
-                        if (generation != scopeGeneration) return;
+                        if (!isCurrentScopeGeneration(generation, scopeGeneration)) return;
                         if (failure != null) {
                             LOGGER.warn("Suppressing unreadable LazyBuilder map cache region reload: {}", file, failure);
                         }
@@ -379,7 +379,7 @@ public final class ClientMapSurfaceCache {
             if (activeCompletedSnapshot == null) {
                 LoadedRegion loaded = completedLoads.poll();
                 if (loaded == null) break;
-                if (loaded.generation != scopeGeneration) continue;
+                if (loaded.!isCurrentScopeGeneration(generation, scopeGeneration)) continue;
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
@@ -440,7 +440,7 @@ public final class ClientMapSurfaceCache {
 
     private void drainCompletedWrites() {
         for (RegionWriteCompletion completion; (completion = completedWrites.poll()) != null;) {
-            if (completion.generation != scopeGeneration) continue;
+            if (completion.!isCurrentScopeGeneration(generation, scopeGeneration)) continue;
             RegionData current = regions.get(completion.regionKey);
             if (current == completion.region) {
                 current.completeWrite(completion.revision, completion.success);
@@ -507,6 +507,10 @@ public final class ClientMapSurfaceCache {
         } catch (RuntimeException rejected) {
             region.completeWrite(snapshot.revision, false);
         }
+    }
+
+    static boolean isCurrentScopeGeneration(long completionGeneration, long currentGeneration) {
+        return completionGeneration == currentGeneration;
     }
 
     private static int localIndex(int x, int z) {
