@@ -261,7 +261,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         OperationPlan plan =
                 new DefaultOperationPlanner(new DeterministicRegionPlanner()).plan(operation);
         long estimateBytes = OperationPreflight.estimateBytes(
-                previewPoints.size(), 96L, "procedural texture history estimate");
+                bounds.blockCount(), 96L, "procedural texture history estimate");
         Optional<PreparedMaterialMutation> prepared = MaterialOperationPreparer.prepare(
                 plan,
                 new AxiomClientWorldStateSource(world),
