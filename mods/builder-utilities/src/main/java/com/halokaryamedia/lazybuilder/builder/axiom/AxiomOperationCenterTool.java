@@ -99,6 +99,13 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " | ENTITY: undo=" + proof.historyUndoEntityExtensions()
                 + " redo=" + proof.historyRedoEntityExtensions()
                 + " | replayFailures=" + proof.historyReplayFailures());
+        ImGui.textWrapped("Last operation: id=" + proof.lastOperationId()
+                + " plannedBlocks=" + proof.lastOperationPlannedBlocks()
+                + " plannedExtensions=" + proof.lastOperationPlannedExtensions()
+                + " elapsedMs=" + String.format("%.3f", proof.lastOperationNanos() / 1_000_000.0));
+        ImGui.textWrapped("Operation timing: totalMs="
+                + String.format("%.3f", proof.totalOperationNanos() / 1_000_000.0)
+                + " maxMs=" + String.format("%.3f", proof.maxOperationNanos() / 1_000_000.0));
         ImGui.textWrapped("Conflicts=" + proof.conflicts()
                 + " budgetExceeded=" + proof.budgetExceeded()
                 + " maxObservedSliceMs="

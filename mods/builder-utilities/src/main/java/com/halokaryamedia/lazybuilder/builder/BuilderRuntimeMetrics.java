@@ -28,6 +28,12 @@ public final class BuilderRuntimeMetrics {
     private final AtomicLong historyUndoEntityExtensions = new AtomicLong();
     private final AtomicLong historyRedoEntityExtensions = new AtomicLong();
     private final AtomicLong historyReplayFailures = new AtomicLong();
+    private final AtomicLong totalOperationNanos = new AtomicLong();
+    private final AtomicLong maxOperationNanos = new AtomicLong();
+    private final AtomicLong lastOperationNanos = new AtomicLong();
+    private final AtomicLong lastOperationPlannedBlocks = new AtomicLong();
+    private final AtomicLong lastOperationPlannedExtensions = new AtomicLong();
+    private final AtomicReference<String> lastOperationId = new AtomicReference<>("none");
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong budgetExceeded = new AtomicLong();
     private final AtomicLong maxSliceNanos = new AtomicLong();
@@ -117,8 +123,24 @@ public final class BuilderRuntimeMetrics {
     }
 
     public void terminal(OperationState state) {
+        terminal(state, 0L, "unknown", 0L, 0L);
+    }
+
+    public void terminal(
+            OperationState state,
+            long elapsedNanos,
+            String operationId,
+            long plannedBlocks,
+            long plannedExtensions
+    ) {
         if (state == null || !state.isTerminal()) {
             throw new IllegalArgumentException("terminal state required");
+        }
+        requireNonNegative(elapsedNanos, "elapsedNanos");
+        requireNonNegative(plannedBlocks, "plannedBlocks");
+        requireNonNegative(plannedExtensions, "plannedExtensions");
+        if (operationId == null || operationId.isBlank()) {
+            throw new IllegalArgumentException("operationId must be non-blank");
         }
         switch (state) {
             case COMPLETED -> operationsCompleted.incrementAndGet();
@@ -127,6 +149,12 @@ public final class BuilderRuntimeMetrics {
             default -> throw new IllegalArgumentException("unexpected terminal state: " + state);
         }
         lastOutcome.set(state.name());
+        totalOperationNanos.addAndGet(elapsedNanos);
+        maxOperationNanos.accumulateAndGet(elapsedNanos, Math::max);
+        lastOperationNanos.set(elapsedNanos);
+        lastOperationPlannedBlocks.set(plannedBlocks);
+        lastOperationPlannedExtensions.set(plannedExtensions);
+        lastOperationId.set(operationId);
     }
 
     public Snapshot snapshot() {
@@ -152,6 +180,12 @@ public final class BuilderRuntimeMetrics {
                 historyUndoEntityExtensions.get(),
                 historyRedoEntityExtensions.get(),
                 historyReplayFailures.get(),
+                totalOperationNanos.get(),
+                maxOperationNanos.get(),
+                lastOperationNanos.get(),
+                lastOperationPlannedBlocks.get(),
+                lastOperationPlannedExtensions.get(),
+                lastOperationId.get(),
                 conflicts.get(),
                 budgetExceeded.get(),
                 maxSliceNanos.get(),
@@ -190,6 +224,12 @@ public final class BuilderRuntimeMetrics {
             long historyUndoEntityExtensions,
             long historyRedoEntityExtensions,
             long historyReplayFailures,
+            long totalOperationNanos,
+            long maxOperationNanos,
+            long lastOperationNanos,
+            long lastOperationPlannedBlocks,
+            long lastOperationPlannedExtensions,
+            String lastOperationId,
             long conflicts,
             long budgetExceeded,
             long maxSliceNanos,

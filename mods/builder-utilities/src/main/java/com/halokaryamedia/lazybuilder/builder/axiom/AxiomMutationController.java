@@ -33,6 +33,10 @@ public final class AxiomMutationController implements AutoCloseable {
     private long estimatedHistoryBytes;
     private OperationState pendingOutcome;
     private boolean terminalMetricRecorded;
+    private long operationStartedNanos;
+    private String operationId = "unknown";
+    private long operationPlannedBlocks;
+    private long operationPlannedExtensions;
 
     public AxiomMutationController(AxiomClientServices services, BuilderRuntime runtime) {
         this.services = Objects.requireNonNull(services, "services");
@@ -97,6 +101,10 @@ public final class AxiomMutationController implements AutoCloseable {
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
         this.terminalMetricRecorded = false;
+        this.operationStartedNanos = System.nanoTime();
+        this.operationId = prepared.changeSet().operationId();
+        this.operationPlannedBlocks = prepared.plannedChanges();
+        this.operationPlannedExtensions = prepared.changeSet().extensionCount();
         runtime.metrics().operationStarted();
         this.status = "Prepared " + prepared.plannedChanges() + " block changes";
     }
@@ -304,8 +312,19 @@ public final class AxiomMutationController implements AutoCloseable {
 
     private void recordTerminalOnce(OperationState state) {
         if (terminalMetricRecorded) return;
-        runtime.metrics().terminal(state);
+        runtime.metrics().terminal(
+                state,
+                elapsedOperationNanos(),
+                operationId,
+                operationPlannedBlocks,
+                operationPlannedExtensions);
         terminalMetricRecorded = true;
+    }
+
+    private long elapsedOperationNanos() {
+        if (operationStartedNanos == 0L) return 0L;
+        long elapsed = System.nanoTime() - operationStartedNanos;
+        return Math.max(0L, elapsed);
     }
 
     private static String safeMessage(Exception e) {

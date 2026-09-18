@@ -92,7 +92,7 @@ public final class BuilderRuntimeProofStore {
             String label
     ) {
         return "{\n"
-                + "  \"schema\": 3,\n"
+                + "  \"schema\": 4,\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"
@@ -118,6 +118,12 @@ public final class BuilderRuntimeProofStore {
                 + "  \"historyUndoEntityExtensions\": " + s.historyUndoEntityExtensions() + ",\n"
                 + "  \"historyRedoEntityExtensions\": " + s.historyRedoEntityExtensions() + ",\n"
                 + "  \"historyReplayFailures\": " + s.historyReplayFailures() + ",\n"
+                + "  \"totalOperationNanos\": " + s.totalOperationNanos() + ",\n"
+                + "  \"maxOperationNanos\": " + s.maxOperationNanos() + ",\n"
+                + "  \"lastOperationNanos\": " + s.lastOperationNanos() + ",\n"
+                + "  \"lastOperationPlannedBlocks\": " + s.lastOperationPlannedBlocks() + ",\n"
+                + "  \"lastOperationPlannedExtensions\": " + s.lastOperationPlannedExtensions() + ",\n"
+                + "  \"lastOperationId\": \"" + escape(s.lastOperationId()) + "\",\n"
                 + "  \"conflicts\": " + s.conflicts() + ",\n"
                 + "  \"budgetExceeded\": " + s.budgetExceeded() + ",\n"
                 + "  \"maxSliceNanos\": " + s.maxSliceNanos() + ",\n"
