@@ -234,7 +234,7 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = AxiomStructureAuxiliary.estimateHistoryBytes(plan);
         PreparedStructureMutation prepared = StructureMutationPreparer.prepare(
-                UUID.randomUUID().toString(),
+                AxiomDurableOperationIds.random(world),
                 plan,
                 runtime.history(),
                 estimateBytes,
