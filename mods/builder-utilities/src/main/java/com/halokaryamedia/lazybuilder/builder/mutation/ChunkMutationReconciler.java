@@ -21,6 +21,7 @@ public final class ChunkMutationReconciler {
         long before = 0;
         long after = 0;
         long conflicts = 0;
+        long effectiveTotal = 0;
         long[] positions = changes.positions();
 
         int chunkBaseX = Math.multiplyExact(changes.chunkX(), 16);
@@ -37,13 +38,18 @@ public final class ChunkMutationReconciler {
             String beforeState = changes.beforeState(i);
             String afterState = changes.afterState(i);
             if (beforeState.equals(afterState)) {
-                if (actual.equals(beforeState)) {
-                    before++;
-                    after++;
-                } else {
+                // Matching no-op entries are durable precondition guards, not block
+                // mutations. A mismatch is still a real conflict and must block
+                // replay/recovery.
+                if (!actual.equals(beforeState)) {
+                    effectiveTotal++;
                     conflicts++;
                 }
-            } else if (actual.equals(afterState)) {
+                continue;
+            }
+
+            effectiveTotal++;
+            if (actual.equals(afterState)) {
                 after++;
             } else if (actual.equals(beforeState)) {
                 before++;
@@ -55,11 +61,11 @@ public final class ChunkMutationReconciler {
         return new ChunkReconciliationReport(
                 changes.chunkX(),
                 changes.chunkZ(),
-                positions.length,
+                effectiveTotal,
                 before,
                 after,
                 conflicts,
-                classify(positions.length, before, after, conflicts)
+                classify(effectiveTotal, before, after, conflicts)
         );
     }
 
