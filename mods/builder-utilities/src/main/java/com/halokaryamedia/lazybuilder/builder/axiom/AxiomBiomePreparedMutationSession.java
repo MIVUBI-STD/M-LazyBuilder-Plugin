@@ -47,6 +47,8 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     private long rollbackBlockEntityObserved;
     private long rollbackBiomeObserved;
     private long rollbackEntityObserved;
+    private boolean forwardEntityAuthorityVerified;
+    private boolean rollbackEntityAuthorityVerified;
 
     private BudgetedPreparedMutationDispatcher blockDispatcher;
     private AxiomBlockEntityBatchDispatcher blockEntityDispatcher;
@@ -300,10 +302,17 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("entity batch sent");
             case WAITING -> waiting("waiting for authoritative entity response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.entities()) {
+                    metrics.extensionFailure();
+                    yield fail("entity authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.entities() + " planned entity extensions");
+                }
+                forwardEntityAuthorityVerified = true;
                 entityDispatcher.close();
                 entityDispatcher = null;
                 phase = Phase.FORWARD_RECONCILE;
-                yield running("entities applied; reconciling");
+                yield running("entities authoritatively verified; reconciling");
             }
             case CANCELLED -> {
                 beginRollback();
@@ -357,6 +366,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             }
         }
 
+        if (extensionPlan.hasEntities() && !forwardEntityAuthorityVerified) {
+            return waiting("waiting for authoritative entity verification");
+        }
+
         setProcessed(lifecycle.totalWork());
         lifecycle = lifecycle.transitionTo(OperationState.COMMITTING);
         timeline.record(prepared.changeSet());
@@ -385,6 +398,7 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
     }
 
     private void beginRollback() throws IOException {
+        rollbackEntityAuthorityVerified = false;
         if (lifecycle.state() == OperationState.RUNNING) {
             lifecycle = lifecycle.transitionTo(OperationState.CANCELLING);
         }
@@ -432,6 +446,13 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             case YIELDED -> running("rollback entity batch sent");
             case WAITING -> waiting("waiting for entity rollback response");
             case EXHAUSTED -> {
+                if (progress.processedExtensions() != extensionPlan.entities()) {
+                    metrics.extensionFailure();
+                    yield fail("entity rollback authority acknowledged "
+                            + progress.processedExtensions() + " of "
+                            + extensionPlan.entities() + " planned entity extensions");
+                }
+                rollbackEntityAuthorityVerified = true;
                 entityDispatcher.close();
                 entityDispatcher = null;
                 if (extensionPlan.hasBiomes()) {
@@ -597,6 +618,10 @@ public final class AxiomBiomePreparedMutationSession implements AutoCloseable {
             if (biomes != ReconciliationState.NOT_APPLIED && biomes != ReconciliationState.EMPTY) {
                 return waiting("waiting for biome rollback reconciliation");
             }
+        }
+
+        if (extensionPlan.hasEntities() && !rollbackEntityAuthorityVerified) {
+            return waiting("waiting for authoritative entity rollback verification");
         }
 
         prepared.close();
