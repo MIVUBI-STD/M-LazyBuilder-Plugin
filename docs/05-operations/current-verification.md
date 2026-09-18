@@ -75,7 +75,7 @@ Required Fabric
 └── Performance Manager
 ```
 
-All three are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager remains bounded to client performance policy/diagnostics; it does not become a cross-manager scheduler or workload authority.
+All three are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager owns client performance behavior, including compatibility-gated rendering/chunk/GPU optimizations and diagnostics; it does not become a cross-manager scheduler or workload authority.
 
 ## Dedicated workflows
 
@@ -222,7 +222,7 @@ Current source must continue to satisfy:
 - World Control and Map Action protocols remain separate from desktop loopback protocol;
 - Map Manager consumes shared protocol contracts, not World Manager implementation source;
 - Utility Manager has no hidden World Manager implementation dependency;
-- Performance Manager remains bounded to performance policy/diagnostics and does not own other managers' workloads;
+- Performance Manager remains bounded to client performance behavior and does not own Map Manager or Utility Manager workloads;
 - Client Setup mutates only LazyBuilder-owned prefixes and preserves unrelated mods;
 - packaged core/client resolution has one runtime authority: bundled tested resources;
 - server start does not rewrite unrelated Paper gameplay/performance settings;
