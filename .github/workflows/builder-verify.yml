@@ -29,6 +29,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
       - name: Build and test Builder Utilities
         shell: pwsh
         run: .\gradlew.bat -p mods/builder-utilities --no-daemon build
