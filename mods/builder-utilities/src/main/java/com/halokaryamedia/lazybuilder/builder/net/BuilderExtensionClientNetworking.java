@@ -88,7 +88,14 @@ public final class BuilderExtensionClientNetworking {
                     "Block entity batch exceeds negotiated server limit "
                             + capabilities.maxBatchEntries());
         }
-        sendOperationRequest(batch.operationId(), batch, callback);
+        sendOperationRequest(
+                batch.operationId(),
+                batch,
+                typedCallback(
+                        batch.operationId(),
+                        callback,
+                        BuilderExtensionWireProtocol.BlockEntityBatchResult.class,
+                        "BLOCK_ENTITY"));
     }
 
     public static void sendEntityBatch(
@@ -107,7 +114,14 @@ public final class BuilderExtensionClientNetworking {
                     "Entity batch exceeds negotiated server limit "
                             + capabilities.maxBatchEntries());
         }
-        sendOperationRequest(batch.operationId(), batch, callback);
+        sendOperationRequest(
+                batch.operationId(),
+                batch,
+                typedCallback(
+                        batch.operationId(),
+                        callback,
+                        BuilderExtensionWireProtocol.EntityBatchResult.class,
+                        "ENTITY"));
     }
 
     public static void sendBiomeBatch(
@@ -126,7 +140,33 @@ public final class BuilderExtensionClientNetworking {
                     "Biome batch exceeds negotiated server limit "
                             + capabilities.maxBatchEntries());
         }
-        sendOperationRequest(batch.operationId(), batch, callback);
+        sendOperationRequest(
+                batch.operationId(),
+                batch,
+                typedCallback(
+                        batch.operationId(),
+                        callback,
+                        BuilderExtensionWireProtocol.BatchResult.class,
+                        "BIOME"));
+    }
+
+    private static Consumer<BuilderExtensionWireProtocol.Response> typedCallback(
+            String operationId,
+            Consumer<BuilderExtensionWireProtocol.Response> callback,
+            Class<? extends BuilderExtensionWireProtocol.Response> expectedType,
+            String label
+    ) {
+        return response -> {
+            if (response instanceof BuilderExtensionWireProtocol.Error
+                    || expectedType.isInstance(response)) {
+                callback.accept(response);
+                return;
+            }
+            callback.accept(new BuilderExtensionWireProtocol.Error(
+                    operationId,
+                    "Unexpected " + label + " response type: "
+                            + response.getClass().getSimpleName()));
+        };
     }
 
     private static void sendOperationRequest(
