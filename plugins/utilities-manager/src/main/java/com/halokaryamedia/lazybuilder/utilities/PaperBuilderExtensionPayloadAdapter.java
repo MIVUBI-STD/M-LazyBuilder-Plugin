@@ -305,6 +305,9 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             Location location = entityLocation(world, mutation);
             var nearby = nearbyNonPlayers(world, location);
             var marked = markedEntitiesInWorld(world, mutation.markerId());
+            var foreignNearby = nearby.stream()
+                    .filter(entity -> !mutation.markerId().equals(entityMarker(entity)))
+                    .toList();
 
             final org.bukkit.entity.EntitySnapshot snapshot;
             try {
@@ -324,8 +327,21 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
 
             if (mutation.afterPresent()) {
                 if (marked.size() == 1) {
+                    Entity existing = marked.get(0);
+                    if (!isAtTargetSlot(existing, location)) {
+                        send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                                batch.operationId(), 0, i,
+                                "Builder-owned entity moved away from target slot"));
+                        return;
+                    }
+                    if (!foreignNearby.isEmpty()) {
+                        send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
+                                batch.operationId(), 0, i,
+                                "entity target slot occupied by another entity"));
+                        return;
+                    }
                     steps.add(new EntityStep(
-                            mutation, location, snapshot, marked.get(0), true));
+                            mutation, location, snapshot, existing, true));
                     continue;
                 }
                 if (marked.size() > 1) {
@@ -334,7 +350,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                             "multiple Builder-owned entities share one marker"));
                     return;
                 }
-                if (!nearby.isEmpty()) {
+                if (!foreignNearby.isEmpty()) {
                     send(player, BuilderExtensionWireProtocol.EntityBatchResult.conflict(
                             batch.operationId(), 0, i,
                             "entity target slot occupied"));
@@ -434,10 +450,21 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
     ) {
         return world.getEntities().stream()
                 .filter(entity -> !(entity instanceof Player))
-                .filter(entity -> markerId.equals(
-                        entity.getPersistentDataContainer().get(
-                                entityMarkerKey, PersistentDataType.STRING)))
+                .filter(entity -> markerId.equals(entityMarker(entity)))
                 .toList();
+    }
+
+    private String entityMarker(Entity entity) {
+        return entity.getPersistentDataContainer().get(
+                entityMarkerKey, PersistentDataType.STRING);
+    }
+
+    private static boolean isAtTargetSlot(Entity entity, Location target) {
+        Location actual = entity.getLocation();
+        if (actual.getWorld() != target.getWorld()) return false;
+        return Math.abs(actual.getX() - target.getX()) <= 0.125
+                && Math.abs(actual.getY() - target.getY()) <= 0.125
+                && Math.abs(actual.getZ() - target.getZ()) <= 0.125;
     }
 
     private boolean entityStateMatchesDesired(
