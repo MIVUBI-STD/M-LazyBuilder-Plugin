@@ -114,9 +114,18 @@ public final class BuilderRuntime implements AutoCloseable {
 
     public synchronized void resetWorldTimeline() throws IOException {
         HistoryTimeline previous = timeline;
-        previous.close();
+        IOException failure = null;
+        try {
+            previous.close();
+        } catch (IOException e) {
+            failure = e;
+        }
+        // Never carry an old world's undo/redo stack into the next world. Disk
+        // entries whose cleanup failed are already released by their storage owner
+        // and remain discoverable through Recovery.
         timeline = new HistoryTimeline(64);
         recoveryNotice.clear();
+        if (failure != null) throw failure;
     }
     public HistoryStorageRouter history() { return history; }
     public ExecutionBudget dispatchBudget() { return dispatchBudget; }
