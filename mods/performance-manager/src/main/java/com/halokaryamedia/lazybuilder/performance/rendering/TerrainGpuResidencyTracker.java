@@ -23,6 +23,14 @@ public final class TerrainGpuResidencyTracker {
         int sectionX = ChunkSectionPos.unpackX(sectionPos);
         int sectionY = ChunkSectionPos.unpackY(sectionPos);
         int sectionZ = ChunkSectionPos.unpackZ(sectionPos);
+        TerrainRegionAllocationRegistry.Handle current = ARENAS.handle(buffer);
+        TerrainRegionAllocationRegistry.ArenaKey next = TerrainRegionAllocationRegistry.arenaFor(
+                sectionX, sectionY, sectionZ, layerSlot
+        );
+        if (current != null && !current.arenaKey().equals(next)
+                && !TerrainPhysicalArenaManager.recoverVanillaBacking(buffer)) {
+            return;
+        }
         LEDGER.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
         ARENAS.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
 

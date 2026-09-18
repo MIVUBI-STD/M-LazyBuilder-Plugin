@@ -230,7 +230,7 @@ public final class TerrainRegionAllocationRegistry<K> {
         );
     }
 
-    private static ArenaKey arenaFor(int sectionX, int sectionY, int sectionZ, int layerSlot) {
+    static ArenaKey arenaFor(int sectionX, int sectionY, int sectionZ, int layerSlot) {
         return new ArenaKey(
                 Math.floorDiv(sectionX, REGION_XZ_SIZE),
                 Math.floorDiv(sectionY, REGION_Y_SIZE),

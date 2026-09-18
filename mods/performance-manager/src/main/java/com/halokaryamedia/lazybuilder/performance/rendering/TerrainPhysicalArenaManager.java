@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.GlBufferTarget;
+import net.minecraft.client.gl.GpuBuffer;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.VertexFormat;
@@ -16,6 +18,7 @@ import java.util.Map;
 public final class TerrainPhysicalArenaManager {
     private static final Map<TerrainRegionAllocationRegistry.ArenaKey, Arena> ARENAS = new HashMap<>();
     private static final IdentityHashMap<VertexBuffer, Resident> RESIDENTS = new IdentityHashMap<>();
+    private static final IdentityHashMap<VertexBuffer, Long> EXCLUSIVE_RESIDENTS = new IdentityHashMap<>();
     private static final TerrainOwnershipProofTracker<VertexBuffer> OWNERSHIP_PROOF = new TerrainOwnershipProofTracker<>();
 
     private static Arena boundArena;
@@ -32,6 +35,10 @@ public final class TerrainPhysicalArenaManager {
     private static long relocations;
     private static long relocatedBytes;
     private static long relocationFallbacks;
+    private static long exclusiveRetiredBytes;
+    private static long exclusivePromotions;
+    private static long exclusiveRecoveries;
+    private static long exclusiveRecoveryFailures;
 
     private TerrainPhysicalArenaManager() {
     }
@@ -286,6 +293,7 @@ public final class TerrainPhysicalArenaManager {
         );
         physicalDraws++;
         OWNERSHIP_PROOF.recordDraw(source);
+        promoteExclusiveIfEligible(source);
         if (state.indexPayloadBytes() > 0) customIndexDraws++;
         prepared = null;
         return true;
@@ -304,8 +312,34 @@ public final class TerrainPhysicalArenaManager {
             return;
         }
         Resident resident = RESIDENTS.remove(source);
+        removeExclusiveState(source);
         OWNERSHIP_PROOF.release(source);
         if (resident != null) detachResident(source, resident);
+    }
+
+    public static void prepareForVanillaUpload(VertexBuffer source) {
+        if (source == null || !RenderSystem.isOnRenderThread()) return;
+        if (removeExclusiveState(source)) OWNERSHIP_PROOF.reset(source);
+    }
+
+    public static boolean isExclusive(VertexBuffer source) {
+        return source != null && EXCLUSIVE_RESIDENTS.containsKey(source);
+    }
+
+    public static boolean recoverVanillaBacking(VertexBuffer source) {
+        if (source == null || !isExclusive(source)) return true;
+        if (!RenderSystem.isOnRenderThread()) return false;
+        return recoverVanillaBackingInternal(source);
+    }
+
+    public static boolean recoverAllExclusive() {
+        if (!RenderSystem.isOnRenderThread()) return EXCLUSIVE_RESIDENTS.isEmpty();
+        VertexBuffer[] sources = EXCLUSIVE_RESIDENTS.keySet().toArray(VertexBuffer[]::new);
+        boolean recovered = true;
+        for (VertexBuffer source : sources) {
+            if (!recoverVanillaBackingInternal(source)) recovered = false;
+        }
+        return recovered;
     }
 
     public static boolean exclusiveOwnershipCandidate(VertexBuffer source) {
@@ -320,7 +354,10 @@ public final class TerrainPhysicalArenaManager {
     static void recordMultiDrawSuccess(java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
         if (commands == null) return;
         for (TerrainMultiDrawCommandStream.PackedCommand command : commands) {
-            if (command != null && command.source() != null) OWNERSHIP_PROOF.recordDraw(command.source());
+            if (command != null && command.source() != null) {
+                OWNERSHIP_PROOF.recordDraw(command.source());
+                promoteExclusiveIfEligible(command.source());
+            }
         }
     }
 
@@ -345,6 +382,7 @@ public final class TerrainPhysicalArenaManager {
         for (Arena arena : ARENAS.values()) closeArena(arena);
         ARENAS.clear();
         RESIDENTS.clear();
+        EXCLUSIVE_RESIDENTS.clear();
         OWNERSHIP_PROOF.clear();
         uploadedBytes = 0L;
         physicalDraws = 0L;
@@ -356,6 +394,10 @@ public final class TerrainPhysicalArenaManager {
         relocations = 0L;
         relocatedBytes = 0L;
         relocationFallbacks = 0L;
+        exclusiveRetiredBytes = 0L;
+        exclusivePromotions = 0L;
+        exclusiveRecoveries = 0L;
+        exclusiveRecoveryFailures = 0L;
     }
 
     public static Snapshot snapshot() {
@@ -434,6 +476,10 @@ public final class TerrainPhysicalArenaManager {
     /** Rebuild a physical arena, preserving mirrored data whose current logical handles are valid. */
     private static void relocateArena(Arena arena, int requestedVertexCapacity, int requestedIndexCapacity) {
         if (arena == null || !RenderSystem.isOnRenderThread()) return;
+        if (!recoverExclusiveResidents(arena)) {
+            relocationFallbacks++;
+            return;
+        }
 
         TerrainPhysicalBuffer oldVertex = arena.vertexBuffer;
         TerrainPhysicalBuffer oldIndex = arena.indexBuffer;
@@ -549,6 +595,10 @@ public final class TerrainPhysicalArenaManager {
     }
 
     private static void invalidate(VertexBuffer source) {
+        if (isExclusive(source) && !recoverVanillaBackingInternal(source)) {
+            OWNERSHIP_PROOF.reset(source);
+            return;
+        }
         Resident resident = RESIDENTS.remove(source);
         OWNERSHIP_PROOF.invalidate(source);
         if (resident == null) return;
@@ -559,11 +609,88 @@ public final class TerrainPhysicalArenaManager {
     private static void invalidateArenaResidents(Arena arena) {
         VertexBuffer[] sources = arena.sources.keySet().toArray(VertexBuffer[]::new);
         for (VertexBuffer source : sources) {
+            if (isExclusive(source) && !recoverVanillaBackingInternal(source)) {
+                OWNERSHIP_PROOF.reset(source);
+                continue;
+            }
             Resident removed = RESIDENTS.remove(source);
             OWNERSHIP_PROOF.invalidate(source);
-            if (removed != null) invalidations++;
+            if (removed != null) {
+                arena.sources.remove(source);
+                invalidations++;
+            }
         }
-        arena.sources.clear();
+    }
+
+    private static boolean recoverExclusiveResidents(Arena arena) {
+        VertexBuffer[] sources = arena.sources.keySet().toArray(VertexBuffer[]::new);
+        for (VertexBuffer source : sources) {
+            if (isExclusive(source) && !recoverVanillaBackingInternal(source)) return false;
+        }
+        return true;
+    }
+
+    private static void promoteExclusiveIfEligible(VertexBuffer source) {
+        if (source == null || isExclusive(source) || !OWNERSHIP_PROOF.isCandidate(source)) return;
+        Resident resident = RESIDENTS.get(source);
+        TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
+        if (resident == null || resident.indexBytes > 0 || !matches(command, resident)) return;
+        if (!(source instanceof TerrainVanillaBackingAccess access)
+                || access.lazybuilder$isVanillaBackingRetired()) return;
+
+        long retiredBytes = access.lazybuilder$retireVanillaBacking();
+        if (retiredBytes <= 0L) return;
+        EXCLUSIVE_RESIDENTS.put(source, retiredBytes);
+        exclusiveRetiredBytes += retiredBytes;
+        exclusivePromotions++;
+        TerrainGpuResidencyTracker.recordCapacity(source, 0, 0);
+    }
+
+    private static boolean recoverVanillaBackingInternal(VertexBuffer source) {
+        Long retiredBytes = EXCLUSIVE_RESIDENTS.get(source);
+        if (retiredBytes == null) return true;
+
+        Resident resident = RESIDENTS.get(source);
+        TerrainArenaDrawStateRegistry.DrawState state = TerrainGpuResidencyTracker.drawState(source);
+        Arena arena = resident == null ? null : ARENAS.get(resident.arenaKey);
+        if (resident == null || state == null || arena == null || resident.arenaEpoch != arena.epoch
+                || resident.vertexBytes <= 0 || resident.vertexBytes != state.vertexPayloadBytes()
+                || resident.indexBytes != 0 || state.indexPayloadBytes() != 0
+                || !(source instanceof TerrainVanillaBackingAccess access)) {
+            exclusiveRecoveryFailures++;
+            return false;
+        }
+
+        GpuBuffer recoveredVertex = null;
+        try {
+            recoveredVertex = new GpuBuffer(GlBufferTarget.VERTICES, access.lazybuilder$usage(), resident.vertexBytes);
+            arena.vertexBuffer.copyTo(recoveredVertex, resident.vertexOffset, 0, resident.vertexBytes);
+            access.lazybuilder$installRecoveredVanillaBacking(
+                    recoveredVertex,
+                    null,
+                    state.format(),
+                    state.mode(),
+                    state.indexType(),
+                    state.indexCount()
+            );
+            recoveredVertex = null;
+            removeExclusiveState(source);
+            OWNERSHIP_PROOF.reset(source);
+            TerrainGpuResidencyTracker.recordCapacity(source, resident.vertexBytes, 0);
+            exclusiveRecoveries++;
+            return true;
+        } catch (RuntimeException ex) {
+            if (recoveredVertex != null) recoveredVertex.close();
+            exclusiveRecoveryFailures++;
+            return false;
+        }
+    }
+
+    private static boolean removeExclusiveState(VertexBuffer source) {
+        Long retired = EXCLUSIVE_RESIDENTS.remove(source);
+        if (retired == null) return false;
+        exclusiveRetiredBytes = Math.max(0L, exclusiveRetiredBytes - retired);
+        return true;
     }
 
     private static void detachResident(VertexBuffer source, Resident resident) {
