@@ -22,6 +22,7 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
     private long totalVisitedChunks;
     private long totalDispatchedBlocks;
     private long totalProcessedBlocks;
+    private long totalProcessedMutations;
     private BudgetedDispatchState terminalState;
     private Integer conflictX;
     private Integer conflictY;
@@ -100,14 +101,17 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
             }
 
             ChunkDispatchOutcome outcome = target.dispatch(chunk);
+            long mutationCount = mutationCount(chunk);
             sliceChunks++;
             totalVisitedChunks++;
             if (outcome.state() == ChunkDispatchOutcome.State.DISPATCHED) {
                 sliceBlocks = Math.addExact(sliceBlocks, outcome.dispatchedBlocks());
                 totalDispatchedBlocks = Math.addExact(totalDispatchedBlocks, outcome.dispatchedBlocks());
                 totalProcessedBlocks = Math.addExact(totalProcessedBlocks, chunk.size());
+                totalProcessedMutations = Math.addExact(totalProcessedMutations, mutationCount);
             } else if (outcome.state() == ChunkDispatchOutcome.State.ALREADY_APPLIED) {
                 totalProcessedBlocks = Math.addExact(totalProcessedBlocks, chunk.size());
+                totalProcessedMutations = Math.addExact(totalProcessedMutations, mutationCount);
             } else if (outcome.state() == ChunkDispatchOutcome.State.CONFLICT) {
                 terminalState = BudgetedDispatchState.CONFLICT;
                 conflictX = outcome.conflictX();
@@ -121,6 +125,7 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
     public synchronized long totalVisitedChunks() { return totalVisitedChunks; }
     public synchronized long totalDispatchedBlocks() { return totalDispatchedBlocks; }
     public synchronized long totalProcessedBlocks() { return totalProcessedBlocks; }
+    public synchronized long totalProcessedMutations() { return totalProcessedMutations; }
     public synchronized boolean terminal() { return terminalState != null; }
 
     @Override
@@ -157,6 +162,16 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
                 totalDispatchedBlocks,
                 x, y, z, detail
         );
+    }
+
+    private static long mutationCount(ChunkChangeSet chunk) {
+        long count = 0L;
+        for (int i = 0; i < chunk.size(); i++) {
+            if (!chunk.beforeState(i).equals(chunk.afterState(i))) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static long elapsedNanos(long started) {
