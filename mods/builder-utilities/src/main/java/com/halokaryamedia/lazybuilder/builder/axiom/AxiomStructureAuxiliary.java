@@ -181,7 +181,15 @@ public final class AxiomStructureAuxiliary {
         Objects.requireNonNull(plan, "plan");
         try {
             long blocks = Math.multiplyExact(plan.blockChanges(), 96L);
-            long extensions = Math.multiplyExact((long) plan.extensionChanges(), 192L);
+            long extensions = 0L;
+            for (var frame : plan.extensions()) {
+                long payloadBytes = Math.addExact(
+                        frame.beforePayload().length,
+                        frame.afterPayload().length);
+                extensions = Math.addExact(
+                        extensions,
+                        Math.addExact(96L, payloadBytes));
+            }
             return Math.max(1L, Math.addExact(blocks, extensions));
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException("structure History estimate overflow", e);

@@ -98,8 +98,8 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     @Override
     public void displayImguiOptions() {
         ImGui.textWrapped("Reads Sponge v3 .schem files from " + catalog.directory()
-                + ". Blocks use Axiom; BIOME/ENTITY payloads use negotiated server authority. "
-                + "Block entities remain preserved/export-only until a generic authority exists.");
+                + ". Blocks use Axiom; BLOCK_ENTITY/BIOME/ENTITY payloads use negotiated server authority. "
+                + "Lossy block-entity stripping remains an explicit fallback.");
         ImGui.separator();
 
         if (mutation.isActive()) {

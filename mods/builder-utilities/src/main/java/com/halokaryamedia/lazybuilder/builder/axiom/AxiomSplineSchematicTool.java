@@ -367,7 +367,8 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         long estimateBytes = estimatedHistoryBytes(applyImport.snapshot());
 
         Optional<PreparedStructureMutation> prepared =
-                applyImport.snapshot().biomeCount() == 0
+                applyImport.snapshot().blockEntityCount() == 0
+                        && applyImport.snapshot().biomeCount() == 0
                         && applyImport.snapshot().entityCount() == 0
                         ? PlacementStructureMutationPreparer.prepareBlocks(
                                 UUID.randomUUID().toString(),
@@ -408,6 +409,13 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         long total = OperationPreflight.multiply(
                 snapshot.blockCount(), instances, "spline schematic block estimate");
         total = Math.multiplyExact(total, 96L);
+        total = Math.addExact(
+                total,
+                Math.multiplyExact(
+                        OperationPreflight.multiply(
+                                snapshot.blockEntityCount(), instances,
+                                "spline schematic block-entity estimate"),
+                        512L));
         total = Math.addExact(
                 total,
                 Math.multiplyExact(

@@ -49,7 +49,7 @@ import java.util.UUID;
 /**
  * Distributes one Sponge schematic as an array or minimum-spacing scatter.
  * Single-source and catalog-palette modes support negotiated BIOME/ENTITY authority.
- * Schematics containing block entities remain excluded until a generic authority exists.
+ * BLOCK_ENTITY payloads use negotiated server authority when available; explicit lossy stripping remains a fallback.
  */
 public final class AxiomSchematicDistributionTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Distribution";
@@ -132,8 +132,8 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     public void displayImguiOptions() {
         ImGui.textWrapped("Distribute supported .schem files as Array or Scatter. "
                 + "Both single-source and catalog-palette modes can include negotiated "
-                + "BIOME/ENTITY payloads. Block-entity schematics require the explicit "
-                + "lossy strip toggle until generic BLOCK_ENTITY authority exists.");
+                + "BLOCK_ENTITY/BIOME/ENTITY payloads when the server advertises authority. "
+                + "Lossy block-entity stripping remains an explicit fallback.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -416,7 +416,9 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
     private boolean requiresAuxiliary(List<PlacementPlanEntry> entries) {
         for (PlacementPlanEntry entry : entries) {
             StructureSnapshot snapshot = applyImport(requireSource(entry.sourceId())).snapshot();
-            if (snapshot.biomeCount() != 0 || snapshot.entityCount() != 0) {
+            if (snapshot.blockEntityCount() != 0
+                    || snapshot.biomeCount() != 0
+                    || snapshot.entityCount() != 0) {
                 return true;
             }
         }
@@ -428,6 +430,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         for (PlacementPlanEntry entry : entries) {
             StructureSnapshot snapshot = applyImport(requireSource(entry.sourceId())).snapshot();
             total = Math.addExact(total, Math.multiplyExact(snapshot.blockCount(), 96L));
+            total = Math.addExact(total, Math.multiplyExact((long) snapshot.blockEntityCount(), 512L));
             total = Math.addExact(total, Math.multiplyExact((long) snapshot.biomeCount(), 192L));
             total = Math.addExact(total, Math.multiplyExact((long) snapshot.entityCount(), 256L));
         }
