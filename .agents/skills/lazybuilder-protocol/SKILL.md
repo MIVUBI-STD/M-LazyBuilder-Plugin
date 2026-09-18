@@ -117,8 +117,12 @@ Import inspection is read-only review after upload completion; final Import is a
 TeleportLocation
 ExportArea
 CurrentWorldRequest
+TeleportOk
+ExportAccepted
+ExportComplete
 CurrentWorldResult
 CurrentWorldCleared
+ErrorResponse
 ```
 
 Correlation semantics:
