@@ -143,6 +143,29 @@ def main() -> int:
     )
 
     require(errors, "create recovery", creation, "pending-creations.json", "CREATE_RECOVERY_REQUIRED", "recover_pending_creations")
+    for label, source in (
+        ("create recovery persistence", creation),
+        ("adoption recovery persistence", adoption),
+        ("restore recovery persistence", restore),
+        ("backup recovery persistence", backup_recovery),
+    ):
+        require(
+            errors,
+            label,
+            source,
+            "persistence::recover_atomic_file",
+            "persistence::read_json",
+            "persistence::write_json_atomically",
+        )
+        forbid(
+            errors,
+            label,
+            source,
+            "fn replace_pending_creation_file",
+            "fn replace_pending_adoption_file",
+            "fn replace_pending_restore_file",
+            "fn atomic_write_json",
+        )
     require(
         errors,
         "create command",
