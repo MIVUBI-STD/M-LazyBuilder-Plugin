@@ -289,19 +289,20 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
             runtime.unregisterActiveOperation(this);
             return;
         }
-        try {
-            if (mixedSession != null) {
-                mixedSession.preserveForRecovery();
-            } else {
-                session.preserveForRecovery();
-            }
-        } finally {
-            session = null;
-            mixedSession = null;
-            cancellation = null;
-            phase = Phase.IDLE;
-            runtime.unregisterActiveOperation(this);
+
+        boolean preserved = mixedSession != null
+                ? mixedSession.preserveForRecovery()
+                : session.preserveForRecovery();
+        if (!preserved) {
+            throw new IOException(
+                    "Active Builder mutation could not transfer its durable plan to Recovery");
         }
+
+        session = null;
+        mixedSession = null;
+        cancellation = null;
+        phase = Phase.IDLE;
+        runtime.unregisterActiveOperation(this);
     }
 
     @Override
