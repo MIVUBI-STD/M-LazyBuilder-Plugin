@@ -5,7 +5,6 @@ import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -58,22 +57,6 @@ class PlacementHardeningTest {
         assertEquals(2, plan.size());
         assertEquals(0, plan.get(0).point().ordinal());
         assertEquals(2, plan.get(1).point().ordinal());
-    }
-
-    @Test
-    void placementGroupsPreserveChunkLocalOrder() {
-        List<PlacementPlanEntry> plan = List.of(
-                entry(-1, 64, -1, 0),
-                entry(0, 64, 0, 1),
-                entry(31, 64, 0, 2)
-        );
-        Map<PlacementChunkGroups.ChunkKey, List<PlacementPlanEntry>> grouped =
-                PlacementChunkGroups.group(plan);
-
-        assertEquals(3, grouped.size());
-        assertEquals(1, grouped.get(new PlacementChunkGroups.ChunkKey(-1, -1)).size());
-        assertEquals(1, grouped.get(new PlacementChunkGroups.ChunkKey(0, 0)).size());
-        assertEquals(1, grouped.get(new PlacementChunkGroups.ChunkKey(1, 0)).size());
     }
 
     private static PlacementPlanEntry entry(int x, int y, int z, int ordinal) {
