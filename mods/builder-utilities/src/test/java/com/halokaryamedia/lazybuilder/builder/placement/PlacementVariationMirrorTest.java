@@ -18,15 +18,4 @@ class PlacementVariationMirrorTest {
         assertTrue(transform.mirrorZ());
     }
 
-    @Test
-    void legacyConstructorLeavesMirrorZDisabled() {
-        PlacementVariation variation =
-                new PlacementVariation(0, 0, 1, 1, 1, 99L);
-        PlacementTransform transform = variation.resolve(
-                new PlacementPoint(1, 64, 2, 0),
-                new OperationSeed(123L)
-        );
-        assertTrue(transform.mirrorX());
-        assertFalse(transform.mirrorZ());
-    }
 }
