@@ -17,8 +17,8 @@ final class MapAreaSelectionState {
     int minChunkZ;
     int maxChunkZ;
 
-    boolean belongsTo(UUID candidateWorldId) {
-        return active && worldId != null && worldId.equals(candidateWorldId);
+    boolean ownsWorld(UUID candidateWorldId) {
+        return worldId != null && worldId.equals(candidateWorldId);
     }
 
     void activate(UUID worldId, int minChunkX, int maxChunkX, int minChunkZ, int maxChunkZ) {
