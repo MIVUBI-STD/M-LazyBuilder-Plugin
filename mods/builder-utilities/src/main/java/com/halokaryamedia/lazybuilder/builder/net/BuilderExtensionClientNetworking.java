@@ -232,8 +232,15 @@ public final class BuilderExtensionClientNetworking {
 
     private static void reset(String status) {
         pendingCapabilityRequest = null;
-        PENDING.clear();
         CAPABILITIES.set(BuilderExtensionCapabilities.unavailable(status));
+
+        String detail = "Builder extension transport reset: " + status;
+        PENDING.forEach((operationId, callback) -> {
+            if (PENDING.remove(operationId, callback)) {
+                callback.accept(new BuilderExtensionWireProtocol.Error(
+                        operationId, detail));
+            }
+        });
     }
 
     private static String concise(Throwable failure) {
