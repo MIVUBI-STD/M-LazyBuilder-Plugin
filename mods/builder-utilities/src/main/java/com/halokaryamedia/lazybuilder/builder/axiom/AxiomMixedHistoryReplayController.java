@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimelineLease;
 import com.halokaryamedia.lazybuilder.builder.history.ReplayDirection;
+import com.halokaryamedia.lazybuilder.builder.operation.RecoverableActiveOperation;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedPreparedMutationDispatcher;
@@ -24,7 +25,8 @@ import java.util.Objects;
  * <p>Redo order: regular blocks → block entities → biomes → entities.
  * Undo order: entities → biomes → block entities → regular blocks.</p>
  */
-public final class AxiomMixedHistoryReplayController implements AutoCloseable {
+public final class AxiomMixedHistoryReplayController
+        implements AutoCloseable, RecoverableActiveOperation {
     private final BuilderRuntime runtime;
     private final ClientWorld world;
     private final HistoryTimelineLease lease;
@@ -105,7 +107,10 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         HistoryTimelineLease lease = runtime.timeline().beginUndo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to undo"));
         try {
-            return new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            AxiomMixedHistoryReplayController controller =
+                    new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            runtime.registerActiveOperation(controller);
+            return controller;
         } catch (IOException | RuntimeException failure) {
             lease.abort();
             throw failure;
@@ -120,7 +125,10 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         HistoryTimelineLease lease = runtime.timeline().beginRedo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to redo"));
         try {
-            return new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            AxiomMixedHistoryReplayController controller =
+                    new AxiomMixedHistoryReplayController(services, runtime, world, lease);
+            runtime.registerActiveOperation(controller);
+            return controller;
         } catch (IOException | RuntimeException failure) {
             lease.abort();
             throw failure;
@@ -155,6 +163,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
                 lease.abort();
             }
             closeTransports();
+            runtime.unregisterActiveOperation(this);
             status = "Replay failed: " + concise(failure)
                     + (preserved
                             ? " | durable journal moved to Recovery"
@@ -168,10 +177,24 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     }
 
     @Override
+    public void preserveForWorldExit() throws IOException {
+        if (finished) return;
+        if (!lease.preserveForRecovery()) {
+            throw new IOException(
+                    "Active history replay journal could not be detached for recovery");
+        }
+        closeTransports();
+        finished = true;
+        phase = Phase.DONE;
+        status = "Replay paused by world exit; durable journal moved to Recovery";
+    }
+
+    @Override
     public void close() {
         if (finished) return;
         lease.abort();
         closeTransports();
+        runtime.unregisterActiveOperation(this);
         finished = true;
         phase = Phase.DONE;
         status = "Replay aborted";
@@ -521,6 +544,7 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
     private void complete() {
         lease.complete();
         closeTransports();
+        runtime.unregisterActiveOperation(this);
         finished = true;
         phase = Phase.DONE;
         status = (lease.direction() == ReplayDirection.UNDO ? "Undo" : "Redo")
