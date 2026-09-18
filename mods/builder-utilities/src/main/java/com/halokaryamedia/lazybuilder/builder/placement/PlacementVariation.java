@@ -11,26 +11,6 @@ public record PlacementVariation(
         double mirrorZProbability,
         long channel
 ) {
-    /** Backward-compatible constructor: original mirror probability controls X only. */
-    public PlacementVariation(
-            double minYawDegrees,
-            double maxYawDegrees,
-            double minScale,
-            double maxScale,
-            double mirrorProbability,
-            long channel
-    ) {
-        this(
-                minYawDegrees,
-                maxYawDegrees,
-                minScale,
-                maxScale,
-                mirrorProbability,
-                0.0,
-                channel
-        );
-    }
-
     public PlacementVariation {
         if (!Double.isFinite(minYawDegrees) || !Double.isFinite(maxYawDegrees)
                 || maxYawDegrees < minYawDegrees) {
