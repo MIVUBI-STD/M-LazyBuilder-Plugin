@@ -123,6 +123,8 @@ public final class BuilderRuntimeProofStore {
                 + "  \"lastOperationNanos\": " + s.lastOperationNanos() + ",\n"
                 + "  \"lastOperationPlannedBlocks\": " + s.lastOperationPlannedBlocks() + ",\n"
                 + "  \"lastOperationPlannedExtensions\": " + s.lastOperationPlannedExtensions() + ",\n"
+                + "  \"maxCompletedPlannedBlocks\": " + s.maxCompletedPlannedBlocks() + ",\n"
+                + "  \"maxCompletedPlannedExtensions\": " + s.maxCompletedPlannedExtensions() + ",\n"
                 + "  \"lastOperationId\": \"" + escape(s.lastOperationId()) + "\",\n"
                 + "  \"conflicts\": " + s.conflicts() + ",\n"
                 + "  \"budgetExceeded\": " + s.budgetExceeded() + ",\n"

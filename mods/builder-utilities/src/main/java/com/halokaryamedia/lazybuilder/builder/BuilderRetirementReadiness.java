@@ -15,6 +15,8 @@ import java.util.Objects;
  * observed runtime proof.</p>
  */
 public final class BuilderRetirementReadiness {
+    public static final long MIN_LARGE_EDIT_PROOF_BLOCKS = 1_000_000L;
+
     private BuilderRetirementReadiness() {}
 
     public static Report evaluate(
@@ -57,6 +59,22 @@ public final class BuilderRetirementReadiness {
         }
         if (metrics.operationsCompleted() == 0) {
             blockers.add("no completed Builder mutation observed in this runtime");
+        }
+        if (metrics.maxCompletedPlannedBlocks() < MIN_LARGE_EDIT_PROOF_BLOCKS) {
+            blockers.add("no completed large-edit proof >= "
+                    + MIN_LARGE_EDIT_PROOF_BLOCKS + " blocks");
+        }
+        long rollbackWork = metrics.rollbackBlocksDispatched()
+                + metrics.rollbackBiomeExtensions()
+                + metrics.rollbackEntityExtensions();
+        if (metrics.operationsCancelled() == 0 || rollbackWork == 0) {
+            blockers.add("no observed cancel/rollback proof that reverted applied work");
+        }
+        if (biomeAuthority && metrics.forwardBiomeExtensions() == 0) {
+            blockers.add("BIOME authority exists but has no observed runtime apply proof");
+        }
+        if (entityAuthority && metrics.forwardEntityExtensions() == 0) {
+            blockers.add("ENTITY authority exists but has no observed runtime apply proof");
         }
         if (metrics.operationsFailed() > 0) {
             blockers.add("runtime has failed operations=" + metrics.operationsFailed());

@@ -33,6 +33,8 @@ public final class BuilderRuntimeMetrics {
     private final AtomicLong lastOperationNanos = new AtomicLong();
     private final AtomicLong lastOperationPlannedBlocks = new AtomicLong();
     private final AtomicLong lastOperationPlannedExtensions = new AtomicLong();
+    private final AtomicLong maxCompletedPlannedBlocks = new AtomicLong();
+    private final AtomicLong maxCompletedPlannedExtensions = new AtomicLong();
     private final AtomicReference<String> lastOperationId = new AtomicReference<>("none");
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong budgetExceeded = new AtomicLong();
@@ -143,7 +145,11 @@ public final class BuilderRuntimeMetrics {
             throw new IllegalArgumentException("operationId must be non-blank");
         }
         switch (state) {
-            case COMPLETED -> operationsCompleted.incrementAndGet();
+            case COMPLETED -> {
+                operationsCompleted.incrementAndGet();
+                maxCompletedPlannedBlocks.accumulateAndGet(plannedBlocks, Math::max);
+                maxCompletedPlannedExtensions.accumulateAndGet(plannedExtensions, Math::max);
+            }
             case CANCELLED -> operationsCancelled.incrementAndGet();
             case FAILED -> operationsFailed.incrementAndGet();
             default -> throw new IllegalArgumentException("unexpected terminal state: " + state);
@@ -185,6 +191,8 @@ public final class BuilderRuntimeMetrics {
                 lastOperationNanos.get(),
                 lastOperationPlannedBlocks.get(),
                 lastOperationPlannedExtensions.get(),
+                maxCompletedPlannedBlocks.get(),
+                maxCompletedPlannedExtensions.get(),
                 lastOperationId.get(),
                 conflicts.get(),
                 budgetExceeded.get(),
@@ -229,6 +237,8 @@ public final class BuilderRuntimeMetrics {
             long lastOperationNanos,
             long lastOperationPlannedBlocks,
             long lastOperationPlannedExtensions,
+            long maxCompletedPlannedBlocks,
+            long maxCompletedPlannedExtensions,
             String lastOperationId,
             long conflicts,
             long budgetExceeded,

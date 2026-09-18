@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Directory-backed Sponge .schem browser and durable block-only stamp tool. */
+/** Directory-backed Sponge .schem browser and durable mixed-payload stamp tool. */
 public final class AxiomSchematicCatalogTool implements CustomTool {
     private static final String TOOL_NAME = "LazyBuilder Schematic Catalog";
 
