@@ -58,7 +58,7 @@ public final class BlockSideVisibilityCache {
             this.state = state;
             this.otherState = otherState;
             this.side = side;
-            this.hash = hash(state, otherState, side);
+            this.hash = BlockSideVisibilityCache.hash(state, otherState, side);
         }
 
         @Override public BlockState state() { return state; }
@@ -87,7 +87,7 @@ public final class BlockSideVisibilityCache {
             this.state = state;
             this.otherState = otherState;
             this.side = side;
-            this.hash = hash(state, otherState, side);
+            this.hash = BlockSideVisibilityCache.hash(state, otherState, side);
         }
 
         @Override public BlockState state() { return state; }
