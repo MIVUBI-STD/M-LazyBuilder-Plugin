@@ -29,6 +29,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private final BuilderRecoveryNotice recoveryNotice = new BuilderRecoveryNotice();
     private final java.util.Set<RecoverableActiveOperation> activeOperations =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private boolean closing;
     private boolean closed;
 
     private BuilderRuntime(
@@ -74,7 +75,7 @@ public final class BuilderRuntime implements AutoCloseable {
     public synchronized HistoryTimeline timeline() { return timeline; }
 
     public synchronized void registerActiveOperation(RecoverableActiveOperation operation) {
-        if (closed) throw new IllegalStateException("Builder runtime is closed");
+        if (closed || closing) throw new IllegalStateException("Builder runtime is closing or closed");
         if (!activeOperations.add(java.util.Objects.requireNonNull(operation, "operation"))) {
             throw new IllegalStateException("Builder operation is already registered");
         }
@@ -132,7 +133,8 @@ public final class BuilderRuntime implements AutoCloseable {
     @Override
     public synchronized void close() throws IOException {
         if (closed) return;
-        closed = true;
+        if (closing) throw new IllegalStateException("Builder runtime close is already in progress");
+        closing = true;
         IOException failure = null;
         try {
             proofStore.writeSnapshot(metrics.snapshot(), "shutdown");
@@ -151,6 +153,11 @@ public final class BuilderRuntime implements AutoCloseable {
             if (failure == null) failure = e;
             else failure.addSuppressed(e);
         }
-        if (failure != null) throw failure;
+        if (failure != null) {
+            closing = false;
+            throw failure;
+        }
+        closed = true;
+        closing = false;
     }
 }
