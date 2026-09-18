@@ -91,7 +91,7 @@ CurrentWorldCleared
 ErrorResponse
 ```
 
-V5 correlates request-bound responses with request IDs so stale completions/errors cannot resolve a newer map operation.
+V5 correlates request-bound responses with request IDs so stale completions/errors cannot resolve a newer map operation. Requests and request-bound responses use positive IDs; ID `0` is reserved for unsolicited current-world state and unbound server errors.
 
 Paper may push current-world changes from actual `PlayerChangedWorldEvent` transitions. Entering an unmanaged world explicitly clears prior managed-world state on the client.
 
