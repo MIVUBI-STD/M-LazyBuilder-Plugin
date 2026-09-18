@@ -26,6 +26,8 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
     private static final String COMMITTED_SUFFIX = ".lbh2";
 
     private final Path directory;
+    private final java.util.Set<Path> ownedCommittedPaths =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public DiskChangeSetStorage(Path directory) {
         this.directory = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
@@ -61,7 +63,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             }
             throw failure;
         }
-        return new Writer(operationId, staging, committed, channel, codec);
+        return new Writer(operationId, staging, committed, channel, codec, ownedCommittedPaths);
     }
 
     public List<Path> listIncomplete() throws IOException {
@@ -111,15 +113,18 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         List<StoredChangeSet> recovered = new java.util.ArrayList<>();
         try {
             for (Path path : listCommitted()) {
+                if (ownedCommittedPaths.contains(path)) continue;
                 ChangeSetCodec.Header header;
                 try (InputStream input = Files.newInputStream(path)) {
                     header = ChangeSetCodec.inspect(input);
                 }
+                if (!ownedCommittedPaths.add(path)) continue;
                 recovered.add(new DiskStoredChangeSet(
                         header.operationId(),
                         header.changeCount(),
                         header.extensionCount(),
-                        path
+                        path,
+                        ownedCommittedPaths
                 ));
             }
             return List.copyOf(recovered);
@@ -152,15 +157,23 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         private final Path committed;
         private final FileChannel channel;
         private final ChangeSetCodec.StreamWriter codec;
+        private final java.util.Set<Path> ownedCommittedPaths;
         private boolean finished;
 
-        private Writer(String operationId, Path staging, Path committed, FileChannel channel,
-                       ChangeSetCodec.StreamWriter codec) {
+        private Writer(
+                String operationId,
+                Path staging,
+                Path committed,
+                FileChannel channel,
+                ChangeSetCodec.StreamWriter codec,
+                java.util.Set<Path> ownedCommittedPaths
+        ) {
             this.operationId = operationId;
             this.staging = staging;
             this.committed = committed;
             this.channel = channel;
             this.codec = codec;
+            this.ownedCommittedPaths = ownedCommittedPaths;
         }
 
         @Override
@@ -198,7 +211,9 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             } catch (AtomicMoveNotSupportedException e) {
                 throw new IOException("History directory does not support atomic commit", e);
             }
-            return new DiskStoredChangeSet(operationId, changes, extensions, committed);
+            ownedCommittedPaths.add(committed);
+            return new DiskStoredChangeSet(
+                    operationId, changes, extensions, committed, ownedCommittedPaths);
         }
 
         @Override
@@ -219,11 +234,17 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         }
     }
 
-    private record DiskStoredChangeSet(String operationId, long changeCount, long extensionCount, Path path)
-            implements StoredChangeSet {
+    private record DiskStoredChangeSet(
+            String operationId,
+            long changeCount,
+            long extensionCount,
+            Path path,
+            java.util.Set<Path> ownedCommittedPaths
+    ) implements StoredChangeSet {
         private DiskStoredChangeSet {
             Objects.requireNonNull(operationId, "operationId");
             Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(ownedCommittedPaths, "ownedCommittedPaths");
         }
 
         @Override
@@ -279,7 +300,11 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
 
         @Override
         public void close() throws IOException {
-            Files.deleteIfExists(path);
+            try {
+                Files.deleteIfExists(path);
+            } finally {
+                ownedCommittedPaths.remove(path);
+            }
         }
     }
 }
