@@ -58,6 +58,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private final float[] threshold = {0.58f};
     private final int[] seedValue = {424242};
     private final int[] fieldMode = {0};
+    private final float[] flowAngle = {270.0f};
 
     private BlockPos first;
     private BlockPos second;
@@ -125,7 +126,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Set two corners. Choose Noise, Slope, or Curvature as a normalized field. Axiom's active block is applied where the field is above Threshold.");
+        ImGui.textWrapped("Set two corners. Choose Noise, Slope, Curvature, Flow, or Light as a normalized field. Axiom's active block is applied where the field is above Threshold.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -140,12 +141,15 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
         ImGui.textWrapped(idleStatus);
         boolean changed = false;
-        changed |= ImGui.sliderInt("Field Mode (0 Noise / 1 Slope / 2 Curvature)", fieldMode, 0, 2);
+        changed |= ImGui.sliderInt("Field Mode (0 Noise / 1 Slope / 2 Curvature / 3 Flow / 4 Light)", fieldMode, 0, 4);
         if (fieldMode[0] == 0) {
             changed |= ImGui.sliderFloat("Frequency", frequency, 0.01f, 0.5f);
         }
         if (fieldMode[0] == 0) {
             changed |= ImGui.sliderInt("Octaves", octaves, 1, 8);
+        }
+        if (fieldMode[0] == 3) {
+            changed |= ImGui.sliderFloat("Flow Angle", flowAngle, 0.0f, 360.0f);
         }
         changed |= ImGui.sliderFloat("Threshold", threshold, 0.0f, 1.0f);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
@@ -187,7 +191,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                     MinecraftClient.getInstance().world,
                     "Minecraft client world is unavailable");
             ScalarField field = AxiomTextureFields.create(
-                    fieldMode[0], world, frequency[0], octaves[0]);
+                    fieldMode[0], world, frequency[0], octaves[0], flowAngle[0]);
             previewPoints = ProceduralTexturePreview.sample(
                     bounds,
                     new OperationSeed(seedValue[0]),
