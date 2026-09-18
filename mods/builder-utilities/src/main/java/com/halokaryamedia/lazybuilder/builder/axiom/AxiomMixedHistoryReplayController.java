@@ -202,7 +202,10 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         if (state == ReconciliationState.CONFLICT) {
             throw new IllegalStateException("block replay reconciliation conflict");
         }
-        if (state != desired && state != ReconciliationState.EMPTY) {
+        boolean guardOnlyUndo = lease.direction() == ReplayDirection.UNDO
+                && state == ReconciliationState.FULLY_APPLIED
+                && allBlockFramesAreNoop();
+        if (state != desired && state != ReconciliationState.EMPTY && !guardOnlyUndo) {
             status = "Waiting for Axiom block replay";
             return;
         }
@@ -216,6 +219,23 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
         } else {
             completeAfterUndoBlockReconcile();
         }
+    }
+
+    private boolean allBlockFramesAreNoop() throws IOException {
+        boolean[] sawBlock = {false};
+        boolean[] allNoop = {true};
+        lease.changeSet().visitChunks(chunk -> {
+            long[] positions = chunk.positions();
+            if (positions.length != 0) sawBlock[0] = true;
+            for (int i = 0; i < positions.length; i++) {
+                if (!chunk.beforeState(i).equals(chunk.afterState(i))) {
+                    allNoop[0] = false;
+                    return false;
+                }
+            }
+            return true;
+        });
+        return sawBlock[0] && allNoop[0];
     }
 
     private void startRedoExtensions() throws IOException {
