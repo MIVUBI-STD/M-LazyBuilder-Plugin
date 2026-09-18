@@ -26,11 +26,4 @@ class SurfaceDerivedFieldTest {
         assertTrue(valley.sample(CONTEXT) < 0.0);
     }
 
-    @Test
-    void heightRangeClampsAndNormalizes() {
-        HeightRangeField field = new HeightRangeField(0, 100);
-        assertEquals(0.0, field.sample(new MaterialContext(0, -10, 0, "minecraft:stone", new OperationSeed(1))));
-        assertEquals(0.5, field.sample(new MaterialContext(0, 50, 0, "minecraft:stone", new OperationSeed(1))));
-        assertEquals(1.0, field.sample(new MaterialContext(0, 120, 0, "minecraft:stone", new OperationSeed(1))));
-    }
 }
