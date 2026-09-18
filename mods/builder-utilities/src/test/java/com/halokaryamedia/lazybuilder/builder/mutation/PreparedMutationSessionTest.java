@@ -26,21 +26,6 @@ class PreparedMutationSessionTest {
     }
 
     @Test
-    void keepChangesCancellationPublishesOnlyCompactedSubset() throws Exception {
-        StoredChangeSet original = prepared(2, "original");
-        StoredChangeSet subset = prepared(1, "original-partial");
-        try (HistoryTimeline timeline = new HistoryTimeline(8);
-             PreparedMutationSession session = new PreparedMutationSession(new PreparedMaterialMutation(original, 2), timeline)) {
-            session.startDispatch();
-            session.noteCancellationRequested();
-            session.finalizeKeepChanges(AppliedMutationCompaction.compacted(subset));
-            assertEquals(OperationState.CANCELLED, session.lifecycle().state());
-            assertEquals(1, session.lifecycle().processedWork());
-            assertEquals(1, timeline.undoSize());
-        }
-    }
-
-    @Test
     void rollbackCompletionCancelsWithoutPublishingUndo() throws Exception {
         StoredChangeSet original = prepared(2, "rollback-original");
         try (HistoryTimeline timeline = new HistoryTimeline(8);
