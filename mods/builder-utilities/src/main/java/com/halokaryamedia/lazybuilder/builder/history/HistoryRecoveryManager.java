@@ -25,8 +25,12 @@ public final class HistoryRecoveryManager {
         return storage.listIncomplete();
     }
 
-    /** Deletes only staging journals that never reached a valid committed footer. */
+    /**
+     * Promotes any staging journal that already has a valid committed footer/checksum,
+     * then deletes only the remaining invalid/truncated staging files.
+     */
     public int discardIncompleteFiles() throws IOException {
+        storage.promoteRecoverableIncomplete();
         int deleted = 0;
         for (Path path : storage.listIncomplete()) {
             if (java.nio.file.Files.deleteIfExists(path)) deleted++;

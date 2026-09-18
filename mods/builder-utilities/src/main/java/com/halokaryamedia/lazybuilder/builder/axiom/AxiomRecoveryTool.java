@@ -113,7 +113,9 @@ public final class AxiomRecoveryTool implements CustomTool {
         OperationState outcome = mutation.pollOutcome();
         if (outcome != null) {
             status = "Recovery operation finished: " + outcome;
-            scan();
+            if (entries.isEmpty()) {
+                scan();
+            }
         }
     }
 
