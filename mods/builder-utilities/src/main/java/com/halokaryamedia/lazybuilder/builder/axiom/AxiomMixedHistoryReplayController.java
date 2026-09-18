@@ -144,9 +144,24 @@ public final class AxiomMixedHistoryReplayController implements AutoCloseable {
             }
         } catch (Exception failure) {
             runtime.metrics().historyReplayFailure();
-            status = "Replay failed: " + concise(failure);
-            lease.abort();
+            boolean preserved = false;
+            Exception preserveFailure = null;
+            try {
+                preserved = lease.preserveForRecovery();
+            } catch (Exception e) {
+                preserveFailure = e;
+            }
+            if (!preserved) {
+                lease.abort();
+            }
             closeTransports();
+            status = "Replay failed: " + concise(failure)
+                    + (preserved
+                            ? " | durable journal moved to Recovery"
+                            : " | recovery detach failed"
+                                    + (preserveFailure == null
+                                            ? ""
+                                            : ": " + concise(preserveFailure)));
             finished = true;
             phase = Phase.DONE;
         }
