@@ -1011,6 +1011,10 @@ public final class WorldMapScreen extends Screen {
         openExportWorkspace(customArea);
     }
 
+    void expandWorldSettingsForProof() {
+        if (!exportWorkspace.worldSettingsExpanded()) exportWorkspace.toggleWorldSettings();
+    }
+
     private void exitExportWorkspace() {
         if (exportNameField != null) exportWorkspace.artifactName(exportNameField.getText());
         exportMode = false;
