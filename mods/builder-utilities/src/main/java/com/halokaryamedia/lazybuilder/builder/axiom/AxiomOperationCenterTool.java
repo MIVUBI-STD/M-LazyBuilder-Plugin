@@ -96,6 +96,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
                     + " rejected=" + persisted.rejectedSnapshotCount()
                     + " maxCompletedBlocks=" + persisted.maxCompletedPlannedBlocks()
                     + " rollbackWork=" + persisted.maxRollbackWork()
+                    + " BLOCK_ENTITY=" + persisted.maxForwardBlockEntityExtensions()
                     + " BIOME=" + persisted.maxForwardBiomeExtensions()
                     + " ENTITY=" + persisted.maxForwardEntityExtensions());
         } catch (Exception e) {
@@ -112,16 +113,22 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " blocks=" + proof.forwardBlocksDispatched()
                 + " | rollback chunks=" + proof.rollbackChunksVisited()
                 + " blocks=" + proof.rollbackBlocksDispatched());
-        ImGui.textWrapped("Extensions forward: BIOME=" + proof.forwardBiomeExtensions()
+        ImGui.textWrapped("Extensions forward: BLOCK_ENTITY="
+                + proof.forwardBlockEntityExtensions()
+                + " BIOME=" + proof.forwardBiomeExtensions()
                 + " ENTITY=" + proof.forwardEntityExtensions()
-                + " | rollback: BIOME=" + proof.rollbackBiomeExtensions()
+                + " | rollback: BLOCK_ENTITY="
+                + proof.rollbackBlockEntityExtensions()
+                + " BIOME=" + proof.rollbackBiomeExtensions()
                 + " ENTITY=" + proof.rollbackEntityExtensions());
         ImGui.textWrapped("Extension conflicts=" + proof.extensionConflicts()
                 + " failures=" + proof.extensionFailures());
         ImGui.textWrapped("Mixed history replay blocks: undo=" + proof.historyUndoBlocks()
                 + " redo=" + proof.historyRedoBlocks());
-        ImGui.textWrapped("Mixed history replay BIOME: undo="
-                + proof.historyUndoBiomeExtensions()
+        ImGui.textWrapped("Mixed history replay BLOCK_ENTITY: undo="
+                + proof.historyUndoBlockEntityExtensions()
+                + " redo=" + proof.historyRedoBlockEntityExtensions()
+                + " | BIOME: undo=" + proof.historyUndoBiomeExtensions()
                 + " redo=" + proof.historyRedoBiomeExtensions()
                 + " | ENTITY: undo=" + proof.historyUndoEntityExtensions()
                 + " redo=" + proof.historyRedoEntityExtensions()
