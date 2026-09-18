@@ -14,6 +14,7 @@ public final class PerformanceRuntime {
     private final FrameMonitor frameMonitor = new FrameMonitor();
     private final BackgroundResourcePolicy backgroundPolicy = new BackgroundResourcePolicy();
     private final CullingRuntime cullingRuntime = new CullingRuntime();
+    private final PerformanceRuntimeProofLogger proofLogger = new PerformanceRuntimeProofLogger();
     private final PerformanceConfigStore configStore;
     private PerformancePreferences preferences;
 
@@ -35,6 +36,7 @@ public final class PerformanceRuntime {
 
         int targetFps = Math.max(1, client.options.getMaxFps().getValue());
         frameMonitor.recordFrame(nowNanos, targetFps);
+        proofLogger.record(client, frameMonitor);
     }
 
     public void tick(MinecraftClient client) {
