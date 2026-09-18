@@ -18,6 +18,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationPlan;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
+import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingFilter;
 import com.halokaryamedia.lazybuilder.builder.placement.MinimumSpacingScatterDistribution;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraint;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementConstraints;
@@ -212,6 +213,7 @@ public final class AxiomScatterTool implements CustomTool {
                     mirrorZ[0] != 0,
                     MAX_POINTS
             );
+            points = MinimumSpacingFilter.filter(points, minimumSpacing[0]);
 
             if (points.size() > MAX_POINTS) {
                 throw new IllegalStateException("Scatter point limit exceeded");
