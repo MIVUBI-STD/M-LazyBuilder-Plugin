@@ -1,4 +1,4 @@
-use crate::engine::paths;
+use crate::engine::{paths, persistence};
 use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,6 +13,7 @@ pub const PORT_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_PORT";
 pub const DEFAULT_PORT: u16 = 17842;
 const EXPECTED_PROTOCOL_VERSION: u32 = 2;
 const CONTROL_PORT_SCAN_LIMIT: u16 = 128;
+const CONTROL_OPTIONS_LABEL: &str = "World Manager control options";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -154,9 +155,9 @@ struct ImportUploadResponse {
 
 pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
     let path = control_config_path()?;
-    let mut options = if path.is_file() {
-        let text = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        serde_json::from_str::<WorldControlOptions>(&text).map_err(|error| error.to_string())?
+    persistence::recover_atomic_file(&path, CONTROL_OPTIONS_LABEL)?;
+    let mut options = if persistence::metadata_entry_exists(&path, CONTROL_OPTIONS_LABEL)? {
+        persistence::read_json::<WorldControlOptions>(&path, CONTROL_OPTIONS_LABEL)?
     } else {
         let legacy = legacy_control_config_path()?;
         if legacy.is_file() {
@@ -174,6 +175,8 @@ pub fn load_or_create_control_options() -> Result<WorldControlOptions, String> {
     if options.token.trim().is_empty() {
         options.token = generate_token();
         save_control_options(&path, &options)?;
+    } else {
+        persistence::cleanup_recovery_files(&path, CONTROL_OPTIONS_LABEL)?;
     }
     Ok(options)
 }
@@ -458,18 +461,8 @@ fn legacy_control_config_path() -> Result<PathBuf, String> {
     Ok(paths::lazybuilder_tools_dir()?.join("world-control.json"))
 }
 
-fn save_control_options(path: &PathBuf, options: &WorldControlOptions) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let temporary = path.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(options).map_err(|error| error.to_string())?;
-    fs::write(&temporary, text).map_err(|error| error.to_string())?;
-    if path.exists() {
-        fs::remove_file(path).map_err(|error| error.to_string())?;
-    }
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    Ok(())
+fn save_control_options(path: &Path, options: &WorldControlOptions) -> Result<(), String> {
+    persistence::write_json_atomically(path, options, CONTROL_OPTIONS_LABEL)
 }
 
 fn generate_token() -> String {
