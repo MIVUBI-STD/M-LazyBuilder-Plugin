@@ -2,7 +2,7 @@ name: Verify
 
 on:
   push:
-    branches: [main]
+    branches: [Local, main]
     paths-ignore:
       - 'docs/04-system/*-audit.md'
       - 'docs/04-system/*-lock.md'
