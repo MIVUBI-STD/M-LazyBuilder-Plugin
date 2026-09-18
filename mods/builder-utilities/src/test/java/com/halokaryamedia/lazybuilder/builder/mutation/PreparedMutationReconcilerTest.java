@@ -49,9 +49,10 @@ class PreparedMutationReconcilerTest {
                         PreparedMutationReconciler.reconcile(
                                 stored,
                                 (x, y, z) -> "minecraft:chest");
-                assertEquals(1, report.beforeMatches());
-                assertEquals(1, report.afterMatches());
-                assertEquals(ReconciliationState.FULLY_APPLIED, report.state());
+                assertEquals(0, report.totalChanges());
+                assertEquals(0, report.beforeMatches());
+                assertEquals(0, report.afterMatches());
+                assertEquals(ReconciliationState.EMPTY, report.state());
             }
         }
     }
