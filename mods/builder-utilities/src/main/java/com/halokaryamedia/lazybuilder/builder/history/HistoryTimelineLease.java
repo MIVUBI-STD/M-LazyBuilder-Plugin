@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.history;
 
+import java.io.IOException;
 import java.util.Objects;
 
 /**
@@ -30,6 +31,13 @@ public final class HistoryTimelineLease implements AutoCloseable {
         ensureOpen();
         owner.completeLease(this);
         finished = true;
+    }
+
+    public synchronized boolean preserveForRecovery() throws IOException {
+        ensureOpen();
+        boolean preserved = owner.preserveLeaseForRecovery(this);
+        if (preserved) finished = true;
+        return preserved;
     }
 
     public synchronized void abort() {
