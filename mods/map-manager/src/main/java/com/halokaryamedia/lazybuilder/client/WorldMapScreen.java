@@ -543,6 +543,7 @@ public final class WorldMapScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (exportWorkspace.active()) {
             if (button == 0) {
+                if (exportPanel.clickNameField(mouseX, mouseY, button)) return true;
                 MapExportWorkspacePanel.Action action = exportPanel.actionAt(
                         exportWorkspace,
                         exportWorkspace.initializedFor(currentWorldId()),
