@@ -34,6 +34,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
     private long estimatedHistoryBytes;
     private OperationState pendingOutcome;
     private boolean terminalMetricRecorded;
+    private boolean recoveryTransferBlocked;
     private long operationStartedNanos;
     private String operationId = "unknown";
     private long operationPlannedBlocks;
@@ -122,6 +123,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         this.phase = Phase.DISPATCHING;
         this.pendingOutcome = null;
         this.terminalMetricRecorded = false;
+        this.recoveryTransferBlocked = false;
         this.operationStartedNanos = System.nanoTime();
         this.operationId = prepared.changeSet().operationId();
         this.operationPlannedBlocks = prepared.plannedChanges();
@@ -139,7 +141,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
 
     /** Advances at most one budgeted execution/reconciliation slice. */
     public void pump() {
-        if (!isActive()) return;
+        if (!isActive() || recoveryTransferBlocked) return;
         try {
             if (mixedSession != null) {
                 pumpMixed();
@@ -302,6 +304,7 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         mixedSession = null;
         cancellation = null;
         phase = Phase.IDLE;
+        recoveryTransferBlocked = false;
         runtime.unregisterActiveOperation(this);
     }
 
@@ -327,21 +330,29 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
                 preserveFailure = e;
             }
         }
-        session = null;
-        mixedSession = null;
-        cancellation = null;
+
         phase = Phase.IDLE;
         pendingOutcome = OperationState.FAILED;
-        runtime.unregisterActiveOperation(this);
         recordTerminalOnce(OperationState.FAILED);
+
         if (preserved) {
+            session = null;
+            mixedSession = null;
+            cancellation = null;
+            recoveryTransferBlocked = false;
+            runtime.unregisterActiveOperation(this);
             status = base + " | durable plan preserved for Recovery";
-        } else if (preserveFailure != null) {
-            status = base + " | recovery release failed: " + safeMessage(preserveFailure)
-                    + " (journal remains on disk for restart recovery)";
-        } else {
-            status = base;
+            return;
         }
+
+        // Keep the session and runtime registration alive when durable ownership
+        // could not be transferred. Pumping is blocked, but world-exit/close may
+        // retry preservation instead of silently orphaning an owned journal.
+        recoveryTransferBlocked = true;
+        status = base + (preserveFailure != null
+                ? " | recovery transfer failed: " + safeMessage(preserveFailure)
+                : " | durable plan was not transferred to Recovery")
+                + " | operation retained for preservation retry";
     }
 
     private void recordTerminalOnce(OperationState state) {
