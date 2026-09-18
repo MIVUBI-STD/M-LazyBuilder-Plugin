@@ -29,4 +29,16 @@ class ChunkChangeSetTest {
         assertThrows(IllegalArgumentException.class, () -> new ChunkChangeSet(
                 0, 0, List.of("minecraft:stone"), new long[]{0}, new int[]{0}, new int[]{1}));
     }
+    @Test
+    void rejectsDuplicateLocalPositions() {
+        long position = LocalBlockPosition.pack(1, 64, 2);
+        assertThrows(IllegalArgumentException.class, () -> new ChunkChangeSet(
+                0, 0,
+                java.util.List.of("minecraft:stone", "minecraft:air"),
+                new long[]{position, position},
+                new int[]{0, 0},
+                new int[]{1, 1}
+        ));
+    }
+
 }
