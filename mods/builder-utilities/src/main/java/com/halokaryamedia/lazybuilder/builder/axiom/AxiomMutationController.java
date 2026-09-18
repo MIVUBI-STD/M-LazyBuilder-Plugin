@@ -70,15 +70,23 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
         }
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(prepared, "prepared");
-        this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
+        CancellationSource requestedCancellation =
+                Objects.requireNonNull(cancellation, "cancellation");
         if (estimatedHistoryBytes <= 0) {
             throw new IllegalArgumentException("estimatedHistoryBytes must be > 0");
         }
-        this.estimatedHistoryBytes = estimatedHistoryBytes;
+
+        // Claim runtime ownership before constructing a session. If registration
+        // fails, a recovered prepared mutation is still untouched and its caller can
+        // reclaim the recovery wrapper safely.
+        runtime.registerActiveOperation(this);
+        boolean sessionCreated = false;
         try {
+            this.cancellation = requestedCancellation;
+            this.estimatedHistoryBytes = estimatedHistoryBytes;
             if (prepared.changeSet().extensionCount() == 0) {
                 this.session = new AxiomPreparedMutationSession(
-                        services, world, prepared, runtime.timeline(), cancellation.token());
+                        services, world, prepared, runtime.timeline(), requestedCancellation.token());
             } else {
                 this.mixedSession = new AxiomBiomePreparedMutationSession(
                         services,
@@ -87,37 +95,32 @@ public final class AxiomMutationController implements AutoCloseable, Recoverable
                         runtime.timeline(),
                         runtime.history(),
                         estimatedHistoryBytes,
-                        cancellation.token(),
+                        requestedCancellation.token(),
                         runtime.metrics()
                 );
             }
+            sessionCreated = true;
         } catch (RuntimeException | IOException failure) {
-            try {
-                prepared.close();
-            } catch (IOException closeFailure) {
-                failure.addSuppressed(closeFailure);
-            }
+            runtime.unregisterActiveOperation(this);
+            session = null;
+            mixedSession = null;
             this.cancellation = null;
+
+            // Fresh plans have never touched the world and may be discarded. A
+            // recovered plan may describe partial world state, so deleting it here
+            // would destroy the only recovery authority.
+            if (!(prepared instanceof com.halokaryamedia.lazybuilder.builder.mutation.RecoveredPreparedMutation)) {
+                try {
+                    prepared.close();
+                } catch (IOException closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
             throw failure;
         }
-        try {
-            runtime.registerActiveOperation(this);
-        } catch (RuntimeException registrationFailure) {
-            IOException cleanupFailure = null;
-            try {
-                if (mixedSession != null) mixedSession.close();
-                else if (session != null) session.close();
-            } catch (IOException e) {
-                cleanupFailure = e;
-            } finally {
-                session = null;
-                mixedSession = null;
-                this.cancellation = null;
-            }
-            if (cleanupFailure != null) {
-                registrationFailure.addSuppressed(cleanupFailure);
-            }
-            throw registrationFailure;
+
+        if (!sessionCreated) {
+            throw new IllegalStateException("Builder mutation session was not created");
         }
 
         this.phase = Phase.DISPATCHING;
