@@ -1,6 +1,5 @@
 use crate::engine::{persistence, workspace_registry};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
 

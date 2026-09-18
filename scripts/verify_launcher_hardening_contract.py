@@ -124,11 +124,19 @@ def main() -> int:
         "operations.json",
         "persist_journal",
         "recover_journal_file",
-        "replace_journal_file",
-        "create_new(true)",
+        "persistence::read_json",
+        "persistence::write_json_atomically",
         "INTERRUPTED_LAUNCHER_OPERATION",
         "RecoveryRequired",
         "resources_conflict",
+    )
+    forbid(
+        errors,
+        "operation journal",
+        operations,
+        "fn replace_journal_file",
+        "fn metadata_entry_exists",
+        "fn ensure_regular_metadata_file",
     )
 
     require(
