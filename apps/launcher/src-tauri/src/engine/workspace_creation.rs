@@ -1,7 +1,6 @@
-use crate::engine::workspace_registry::{self, WorkspaceEntry};
+use crate::engine::{persistence, workspace_registry::{self, WorkspaceEntry}};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -290,10 +289,11 @@ fn pending_creations_path() -> Result<PathBuf, String> {
 fn load_pending_creations() -> Result<Vec<PendingCreation>, String> {
     let path = pending_creations_path()?;
     recover_pending_creation_file(&path)?;
-    if !metadata_entry_exists(&path, "pending server creation intent")? { return Ok(Vec::new()); }
-    ensure_regular_metadata_file(&path, "pending server creation intent")?;
-    let text = fs::read_to_string(&path).map_err(|error| format!("Could not read pending server creations: {error}"))?;
-    let entries = serde_json::from_str(&text).map_err(|error| format!("Could not parse pending server creations: {error}"))?;
+    if !persistence::metadata_entry_exists(&path, "pending server creation intent")? {
+        return Ok(Vec::new());
+    }
+    let entries = persistence::read_json(&path, "pending server creation intent")
+        .map_err(|error| format!("Could not parse pending server creations: {error}"))?;
     cleanup_pending_creation_recovery_files(&path)?;
     Ok(entries)
 }
@@ -301,92 +301,26 @@ fn load_pending_creations() -> Result<Vec<PendingCreation>, String> {
 fn save_pending_creations(entries: &[PendingCreation]) -> Result<(), String> {
     let path = pending_creations_path()?;
     if entries.is_empty() {
-        remove_metadata_file_if_exists(&path, "pending server creation intent")?;
+        persistence::safe_path::remove_regular_file_if_present(
+            &path,
+            "pending server creation intent",
+        )?;
         cleanup_pending_creation_recovery_files(&path)?;
         return Ok(());
     }
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
-    let incoming = path.with_extension("json.incoming");
-    remove_metadata_file_if_exists(&incoming, "pending server creation staging metadata")?;
-    let text = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
-    {
-        let mut file = OpenOptions::new().create_new(true).write(true).open(&incoming)
-            .map_err(|error| format!("Could not write pending server creation intent: {error}"))?;
-        file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| format!("Could not flush pending server creation intent: {error}"))?;
-    }
-    replace_pending_creation_file(&incoming, &path)
+    persistence::write_json_atomically(
+        &path,
+        &entries,
+        "pending server creation intent",
+    )
 }
 
 fn recover_pending_creation_file(path: &Path) -> Result<(), String> {
-    let previous = path.with_extension("json.previous");
-    let incoming = path.with_extension("json.incoming");
-    if metadata_entry_exists(path, "pending server creation intent")? {
-        ensure_regular_metadata_file(path, "pending server creation intent")?;
-        return Ok(());
-    }
-    if metadata_entry_exists(&previous, "previous pending server creation intent")? {
-        ensure_regular_metadata_file(&previous, "previous pending server creation intent")?;
-        fs::rename(&previous, path).map_err(|error| format!("Could not restore previous pending server creation intent: {error}"))?;
-        return Ok(());
-    }
-    if metadata_entry_exists(&incoming, "pending server creation staging metadata")? {
-        ensure_regular_metadata_file(&incoming, "pending server creation staging metadata")?;
-        fs::rename(&incoming, path).map_err(|error| format!("Could not publish recovered pending server creation intent: {error}"))?;
-    }
-    Ok(())
+    persistence::recover_atomic_file(path, "pending server creation intent")
 }
 
 fn cleanup_pending_creation_recovery_files(path: &Path) -> Result<(), String> {
-    remove_metadata_file_if_exists(&path.with_extension("json.previous"), "previous pending server creation intent")?;
-    remove_metadata_file_if_exists(&path.with_extension("json.incoming"), "pending server creation staging metadata")
-}
-
-fn replace_pending_creation_file(source: &Path, destination: &Path) -> Result<(), String> {
-    ensure_regular_metadata_file(source, "pending server creation staging metadata")?;
-    if metadata_entry_exists(destination, "pending server creation intent")? {
-        ensure_regular_metadata_file(destination, "pending server creation intent")?;
-        let previous = destination.with_extension("json.previous");
-        remove_metadata_file_if_exists(&previous, "previous pending server creation intent")?;
-        fs::rename(destination, &previous).map_err(|error| format!("Could not preserve previous pending server creation intent: {error}"))?;
-        match fs::rename(source, destination) {
-            Ok(()) => {
-                let _ = fs::remove_file(previous);
-                Ok(())
-            }
-            Err(publish_error) => match fs::rename(&previous, destination) {
-                Ok(()) => Err(format!("Could not publish pending server creation intent; previous intent was restored: {publish_error}")),
-                Err(rollback_error) => Err(format!("Could not publish pending server creation intent ({publish_error}) and could not restore previous intent ({rollback_error}). Recovery files were preserved.")),
-            },
-        }
-    } else {
-        fs::rename(source, destination).map_err(|error| format!("Could not publish pending server creation intent: {error}"))
-    }
-}
-
-fn metadata_entry_exists(path: &Path, label: &str) -> Result<bool, String> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => Ok(true),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Could not inspect {label}: {error}")),
-    }
-}
-
-fn ensure_regular_metadata_file(path: &Path, label: &str) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
-    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
-        return Err(format!("LazyBuilder refused a symbolic link or Windows reparse point as {label}"));
-    }
-    if !metadata.file_type().is_file() {
-        return Err(format!("LazyBuilder expected {label} to be a regular file"));
-    }
-    Ok(())
-}
-
-fn remove_metadata_file_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    if !metadata_entry_exists(path, label)? { return Ok(()); }
-    ensure_regular_metadata_file(path, label)?;
-    fs::remove_file(path).map_err(|error| format!("Could not remove {label}: {error}"))
+    persistence::cleanup_recovery_files(path, "pending server creation intent")
 }
 
 fn add_pending_creation(intent: PendingCreation) -> Result<(), String> {
