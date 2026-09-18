@@ -6,7 +6,7 @@
   "environment": "client",
   "entrypoints": {
     "fabric-client-gametest": [
-      "com.halokaryamedia.lazybuilder.client.visualproof.MapManagerVisualProofTest"
+      "com.halokaryamedia.lazybuilder.client.MapManagerVisualProofTest"
     ]
   }
 }
