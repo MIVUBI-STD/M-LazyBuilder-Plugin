@@ -16,9 +16,37 @@ import java.util.Optional;
 public final class MaterialOperationPreparer {
     private MaterialOperationPreparer() { }
 
-    public static Optional<PreparedMaterialMutation> prepare(OperationPlan plan, BlockStateSource source,
-            HistoryStorageRouter history, long estimatedHistoryBytes) throws IOException {
-        Objects.requireNonNull(plan, "plan"); Objects.requireNonNull(source, "source"); Objects.requireNonNull(history, "history");
+    public static Optional<PreparedMaterialMutation> prepare(
+            OperationPlan plan,
+            BlockStateSource source,
+            HistoryStorageRouter history,
+            long estimatedHistoryBytes
+    ) throws IOException {
+        if (!(plan.operation() instanceof MaterialOperation operation)) {
+            throw new IllegalArgumentException("OperationPlan does not contain a MaterialOperation");
+        }
+        return prepare(
+                plan,
+                source,
+                history,
+                estimatedHistoryBytes,
+                operation.id().toString()
+        );
+    }
+
+    public static Optional<PreparedMaterialMutation> prepare(
+            OperationPlan plan,
+            BlockStateSource source,
+            HistoryStorageRouter history,
+            long estimatedHistoryBytes,
+            String durableOperationId
+    ) throws IOException {
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(history, "history");
+        if (durableOperationId == null || durableOperationId.isBlank()) {
+            throw new IllegalArgumentException("durableOperationId must be non-blank");
+        }
         if (estimatedHistoryBytes < 0) throw new IllegalArgumentException("estimatedHistoryBytes must be >= 0");
         if (!(plan.operation() instanceof MaterialOperation operation)) {
             throw new IllegalArgumentException("OperationPlan does not contain a MaterialOperation");
@@ -27,7 +55,7 @@ public final class MaterialOperationPreparer {
             throw new IllegalArgumentException("Production material mutation requires durable history");
         }
 
-        ChangeSetWriter writer = history.beginDurable(operation.id().toString());
+        ChangeSetWriter writer = history.beginDurable(durableOperationId);
         try (writer) {
             long plannedChanges = 0L;
             for (ChunkWorkUnit unit : plan.workUnits()) {
