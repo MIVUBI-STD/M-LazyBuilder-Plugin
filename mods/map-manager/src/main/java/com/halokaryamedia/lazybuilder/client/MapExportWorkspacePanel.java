@@ -66,6 +66,10 @@ final class MapExportWorkspacePanel {
         return nameField;
     }
 
+    boolean clickNameField(double mouseX, double mouseY, int button) {
+        return nameField != null && nameField.mouseClicked(mouseX, mouseY, button);
+    }
+
     boolean nameFieldFocused() {
         return nameField != null && nameField.isFocused();
     }
