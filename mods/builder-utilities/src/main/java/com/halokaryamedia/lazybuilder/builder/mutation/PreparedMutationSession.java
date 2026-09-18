@@ -40,6 +40,19 @@ public final class PreparedMutationSession implements AutoCloseable {
         lifecycle = lifecycle.transitionTo(OperationState.RUNNING);
     }
 
+    public synchronized void noteProcessedWork(long processedWork) {
+        ensureOwned();
+        if (lifecycle.state() != OperationState.RUNNING) {
+            return;
+        }
+        if (processedWork < lifecycle.processedWork() || processedWork > lifecycle.totalWork()) {
+            throw new IllegalArgumentException(
+                    "processedWork must be monotonic and <= totalWork");
+        }
+        lifecycle = new OperationLifecycle(
+                lifecycle.state(), processedWork, lifecycle.totalWork(), null);
+    }
+
     public synchronized void noteCancellationRequested() {
         ensureOwned();
         if (lifecycle.state() == OperationState.QUEUED || lifecycle.state() == OperationState.RUNNING) {

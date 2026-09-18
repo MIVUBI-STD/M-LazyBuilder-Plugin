@@ -21,6 +21,7 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
     private ChunkChangeSet pendingChunk;
     private long totalVisitedChunks;
     private long totalDispatchedBlocks;
+    private long totalProcessedBlocks;
     private BudgetedDispatchState terminalState;
     private Integer conflictX;
     private Integer conflictY;
@@ -104,6 +105,9 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
             if (outcome.state() == ChunkDispatchOutcome.State.DISPATCHED) {
                 sliceBlocks = Math.addExact(sliceBlocks, outcome.dispatchedBlocks());
                 totalDispatchedBlocks = Math.addExact(totalDispatchedBlocks, outcome.dispatchedBlocks());
+                totalProcessedBlocks = Math.addExact(totalProcessedBlocks, chunk.size());
+            } else if (outcome.state() == ChunkDispatchOutcome.State.ALREADY_APPLIED) {
+                totalProcessedBlocks = Math.addExact(totalProcessedBlocks, chunk.size());
             } else if (outcome.state() == ChunkDispatchOutcome.State.CONFLICT) {
                 terminalState = BudgetedDispatchState.CONFLICT;
                 conflictX = outcome.conflictX();
@@ -116,6 +120,7 @@ public final class BudgetedPreparedMutationDispatcher implements AutoCloseable {
 
     public synchronized long totalVisitedChunks() { return totalVisitedChunks; }
     public synchronized long totalDispatchedBlocks() { return totalDispatchedBlocks; }
+    public synchronized long totalProcessedBlocks() { return totalProcessedBlocks; }
     public synchronized boolean terminal() { return terminalState != null; }
 
     @Override
