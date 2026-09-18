@@ -261,6 +261,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
                             1.0,
                             1.0,
                             mirrorX[0] != 0 ? 1.0 : 0.0,
+                            mirrorZ[0] != 0 ? 1.0 : 0.0,
                             0x534348454d415452L
                     ),
                     point -> true,
