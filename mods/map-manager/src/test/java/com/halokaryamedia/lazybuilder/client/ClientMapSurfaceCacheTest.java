@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.client;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,6 +56,81 @@ class ClientMapSurfaceCacheTest {
         assertFalse(region.isDirty());
         assertEquals(0L, region.revision());
         assertEquals(1, region.size());
+    }
+
+    @Test
+    void cleanRegionEvictionRespectsBoundAndActiveRegion() {
+        LinkedHashMap<Long, ClientMapSurfaceCache.RegionData> regions =
+                new LinkedHashMap<>(128, 0.75f, true);
+        ClientMapSurfaceCache.RegionData active = null;
+
+        for (long key = 0; key < 100; key++) {
+            ClientMapSurfaceCache.RegionData region = new ClientMapSurfaceCache.RegionData();
+            region.putIfAbsent((int) key, 0xFF112233, 64);
+            regions.put(key, region);
+            if (key == 0) active = region;
+        }
+
+        int removedSamples = ClientMapSurfaceCache.pruneCleanRegions(regions, 96, active);
+
+        assertEquals(96, regions.size());
+        assertEquals(4, removedSamples);
+        assertTrue(regions.containsValue(active));
+    }
+
+    @Test
+    void dirtyRegionIsNeverEvictedBeforePersistence() {
+        LinkedHashMap<Long, ClientMapSurfaceCache.RegionData> regions =
+                new LinkedHashMap<>(8, 0.75f, true);
+
+        ClientMapSurfaceCache.RegionData dirty = new ClientMapSurfaceCache.RegionData();
+        dirty.put(0, 0xFF445566, 70);
+        regions.put(0L, dirty);
+
+        for (long key = 1; key <= 4; key++) {
+            ClientMapSurfaceCache.RegionData clean = new ClientMapSurfaceCache.RegionData();
+            clean.putIfAbsent((int) key, 0xFF778899, 71);
+            regions.put(key, clean);
+        }
+
+        int removedSamples = ClientMapSurfaceCache.pruneCleanRegions(regions, 3, null);
+
+        assertEquals(3, regions.size());
+        assertEquals(2, removedSamples);
+        assertTrue(regions.containsValue(dirty));
+        assertTrue(dirty.isDirty());
+    }
+
+    @Test
+    void regionWithWriteInFlightIsNotEvicted() {
+        LinkedHashMap<Long, ClientMapSurfaceCache.RegionData> regions =
+                new LinkedHashMap<>(8, 0.75f, true);
+
+        ClientMapSurfaceCache.RegionData writing = new ClientMapSurfaceCache.RegionData();
+        writing.put(0, 0xFF335577, 72);
+        ClientMapSurfaceCache.RegionSnapshot snapshot = writing.snapshot();
+        assertTrue(writing.markWriteQueued(snapshot.revision()));
+        regions.put(0L, writing);
+
+        for (long key = 1; key <= 4; key++) {
+            ClientMapSurfaceCache.RegionData clean = new ClientMapSurfaceCache.RegionData();
+            clean.putIfAbsent((int) key, 0xFF7799BB, 73);
+            regions.put(key, clean);
+        }
+
+        int removedSamples = ClientMapSurfaceCache.pruneCleanRegions(regions, 3, null);
+
+        assertEquals(3, regions.size());
+        assertEquals(2, removedSamples);
+        assertTrue(regions.containsValue(writing));
+        assertTrue(writing.hasWritesInFlight());
+    }
+
+    @Test
+    void staleAsyncCompletionGenerationIsRejected() {
+        assertTrue(ClientMapSurfaceCache.isCurrentScopeGeneration(7L, 7L));
+        assertFalse(ClientMapSurfaceCache.isCurrentScopeGeneration(6L, 7L));
+        assertFalse(ClientMapSurfaceCache.isCurrentScopeGeneration(8L, 7L));
     }
 
     @Test

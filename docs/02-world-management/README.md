@@ -325,10 +325,11 @@ Chunker/converter runtime names are implementation details and must not become p
 - native Java 1.21.4 keeps a direct fast path;
 - additional Java/Bedrock targets appear only from the verified runtime catalog;
 - whole-world and Map Export Area reuse `WorldExportService`;
-- selected map rectangle is transient request context;
+- selected map rectangle is transient request context and is server-bounded before export work starts;
 - extension is derived by target (`.zip` Java, `.mcworld` Bedrock);
 - snapshot source is restored as soon as the consistent snapshot is secured;
-- occupied-world export is blocked rather than silently ejecting builders.
+- when an ACTIVE source is loaded with builders inside, export uses the managed live-snapshot window: Paper saves player/world state, temporarily pauses autosave while the filesystem snapshot is captured, then restores the prior save policy on the primary thread;
+- live export never silently evacuates builders; source runtime restoration and save-policy restoration remain part of the export task cleanup contract.
 
 ### Import
 
@@ -373,14 +374,14 @@ Fabric presentation is canonical in `docs/03-client-ui/`.
 Current shared contracts:
 
 ```text
-World Control V3
-Map Action V2
+World Control V7
+Map Action V5
 Transfer bounded protocol
 ```
 
-World Control V3 intentionally excludes manual runtime-state product actions and carries `canManage` / `canTeleport` only for presentation shaping; Paper still performs final authorization.
+World Control V7 carries the current World Manager request/result, settings/export customization, and presentation-capability contract; Paper remains the final authorization and world-runtime authority.
 
-Map Action V2 can push authoritative current-world changes from actual player world transitions, including an explicit clear when the player enters an unmanaged world.
+Map Action V5 correlates request-bound responses so stale teleport/export/errors cannot resolve another operation. Request id `0` is reserved for authoritative server-pushed current-world transitions; client requests use positive correlation ids. Current-world pushes still include an explicit clear when the player enters an unmanaged world.
 
 ## Safety rules
 
@@ -391,7 +392,7 @@ Map Action V2 can push authoritative current-world changes from actual player wo
 - Runtime load state is derived from Paper, never persisted as lifecycle.
 - File operations resolve canonical owned roots only.
 - Conflicting world operations are rejected by one operation coordinator.
-- Occupied worlds are not silently evacuated for heavy/destructive file operations.
+- Builders are not silently evacuated for heavy/destructive file operations; export uses the explicit managed live-snapshot path when the source remains occupied.
 - Fallback/default world remains protected.
 - Import/export transfer validates bounds/checksums and cleans partial state.
 - Runtime claims require LIVE_SERVER proof.
@@ -404,11 +405,11 @@ Final validation must cover:
 
 ```text
 compile/unit tests
-Paper + Fabric World V3 / Map V2 interoperability
+Paper + Fabric World V7 / Map V5 interoperability
 existing-world adoption
 Teleport auto-load
 idle auto-unload
-occupied-world guards
+occupied-world guards and managed live-export snapshot restoration
 World Settings
 Duplicate
 Archive / Restore / Delete

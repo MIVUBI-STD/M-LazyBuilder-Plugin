@@ -14,16 +14,9 @@ import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,8 +27,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 /**
  * Persistent client-side world-map memory split into bounded regional files.
@@ -53,11 +44,10 @@ import java.util.zip.GZIPOutputStream;
  */
 public final class ClientMapSurfaceCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(ClientMapSurfaceCache.class);
-    private static final int FORMAT_VERSION = 5;
-    private static final int LEGACY_FORMAT_VERSION = 1;
     private static final int REGION_SIZE = 128;
     private static final int REGION_CAPACITY = REGION_SIZE * REGION_SIZE;
     private static final int MAX_LOADED_REGIONS = 96;
+    private static final int MAX_FAILED_REGION_LOADS = 4096;
     private static final int MAX_PENDING = 262_144;
     private static final int MAX_REGION_LOADS_IN_FLIGHT = 32;
     private static final int MAX_LIVE_SAMPLES_PER_TICK = 1024;
@@ -73,6 +63,7 @@ public final class ClientMapSurfaceCache {
     /** Access-order LRU; all mutation happens on the Minecraft client thread. */
     private final LinkedHashMap<Long, RegionData> regions = new LinkedHashMap<>(32, 0.75f, true);
     private final LongLinkedOpenHashSet pending = new LongLinkedOpenHashSet();
+    private final LongLinkedOpenHashSet failedRegionLoads = new LongLinkedOpenHashSet();
     private final ConcurrentLinkedQueue<LoadedRegion> completedLoads = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<RegionWriteCompletion> completedWrites = new ConcurrentLinkedQueue<>();
     private final AtomicInteger regionLoadsInFlight = new AtomicInteger();
@@ -98,7 +89,11 @@ public final class ClientMapSurfaceCache {
     }
 
     public void useScope(String scope, Path storageRoot) {
-        String normalized = Objects.requireNonNullElse(scope, "");
+        String localScope = Objects.requireNonNullElse(scope, "");
+        boolean identifiedManagedWorld = !localScope.startsWith("unmanaged|");
+        String normalized = identifiedManagedWorld && !localScope.isBlank()
+                ? ClientServerIdentity.mapScope(localScope)
+                : localScope;
         if (this.scope.equals(normalized)) return;
 
         flushAsync();
@@ -106,7 +101,6 @@ public final class ClientMapSurfaceCache {
         this.scopeGeneration++;
         this.activeNetherLayerCenter = null;
 
-        boolean identifiedManagedWorld = !normalized.startsWith("unmanaged|");
         this.baseScopeDirectory = !identifiedManagedWorld || normalized.isBlank() || storageRoot == null
                 ? null
                 : storageRoot.resolve(safeName(normalized));
@@ -114,14 +108,21 @@ public final class ClientMapSurfaceCache {
 
         clearResidentState();
 
-        if (scopeDirectory != null) {
-            migrateLegacySnapshot(storageRoot, normalized, scopeDirectory, scopeGeneration);
+        if (scopeDirectory != null && !ioExecutor.isShutdown()) {
+            Path legacy = storageRoot.resolve(safeName(normalized) + ".surface.gz");
+            MapSurfaceLegacyMigrator.migrateAsync(
+                    legacy,
+                    scopeDirectory,
+                    scopeGeneration,
+                    () -> scopeGeneration,
+                    ioExecutor);
         }
     }
 
     private void clearResidentState() {
         regions.clear();
         pending.clear();
+        failedRegionLoads.clear();
         completedLoads.clear();
         activeCompletedSnapshot = null;
         activeCompletedRegion = null;
@@ -325,7 +326,8 @@ public final class ClientMapSurfaceCache {
         RegionData existing = regions.get(regionKey);
         Path directory = scopeDirectory;
         if (existing != null) {
-            if (scheduleLoad && directory != null && !existing.loaded && !existing.loadScheduled) {
+            if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)
+                    && !existing.loaded && !existing.loadScheduled) {
                 scheduleRegionLoad(directory, regionKey, existing, scopeGeneration);
             }
             return existing;
@@ -333,7 +335,9 @@ public final class ClientMapSurfaceCache {
 
         RegionData created = new RegionData();
         regions.put(regionKey, created);
-        if (scheduleLoad && directory != null) scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        if (scheduleLoad && directory != null && !failedRegionLoads.contains(regionKey)) {
+            scheduleRegionLoad(directory, regionKey, created, scopeGeneration);
+        }
         return created;
     }
 
@@ -345,12 +349,15 @@ public final class ClientMapSurfaceCache {
         }
 
         region.loadScheduled = true;
-        Path file = regionFile(directory, regionKey);
+        Path file = MapSurfaceRegionStore.regionFile(directory, regionKey);
         try {
-            CompletableFuture.supplyAsync(() -> readRegion(file), ioExecutor)
+            CompletableFuture.supplyAsync(() -> MapSurfaceRegionStore.read(file), ioExecutor)
                     .whenComplete((snapshot, failure) -> {
                         regionLoadsInFlight.decrementAndGet();
-                        if (generation != scopeGeneration) return;
+                        if (!isCurrentScopeGeneration(generation, scopeGeneration)) return;
+                        if (failure != null) {
+                            LOGGER.warn("Suppressing unreadable LazyBuilder map cache region reload: {}", file, failure);
+                        }
                         completedLoads.add(new LoadedRegion(
                                 generation,
                                 regionKey,
@@ -372,11 +379,15 @@ public final class ClientMapSurfaceCache {
             if (activeCompletedSnapshot == null) {
                 LoadedRegion loaded = completedLoads.poll();
                 if (loaded == null) break;
-                if (loaded.generation != scopeGeneration) continue;
+                if (!isCurrentScopeGeneration(loaded.generation, scopeGeneration)) continue;
 
                 RegionData region = regions.get(loaded.regionKey);
                 if (loaded.failed) {
-                    if (region != null) region.loadScheduled = false;
+                    rememberFailedRegionLoad(loaded.regionKey);
+                    if (region != null) {
+                        region.loaded = true;
+                        region.loadScheduled = false;
+                    }
                     continue;
                 }
 
@@ -409,6 +420,14 @@ public final class ClientMapSurfaceCache {
         return processed;
     }
 
+    private void rememberFailedRegionLoad(long regionKey) {
+        failedRegionLoads.remove(regionKey);
+        failedRegionLoads.add(regionKey);
+        while (failedRegionLoads.size() > MAX_FAILED_REGION_LOADS) {
+            failedRegionLoads.removeFirstLong();
+        }
+    }
+
     private void finishActiveCompletedLoad() {
         if (activeCompletedRegion != null) {
             activeCompletedRegion.loaded = true;
@@ -421,7 +440,7 @@ public final class ClientMapSurfaceCache {
 
     private void drainCompletedWrites() {
         for (RegionWriteCompletion completion; (completion = completedWrites.poll()) != null;) {
-            if (completion.generation != scopeGeneration) continue;
+            if (!isCurrentScopeGeneration(completion.generation, scopeGeneration)) continue;
             RegionData current = regions.get(completion.regionKey);
             if (current == completion.region) {
                 current.completeWrite(completion.revision, completion.success);
@@ -433,20 +452,33 @@ public final class ClientMapSurfaceCache {
         if (regions.size() <= MAX_LOADED_REGIONS) return;
         Path directory = scopeDirectory;
         long generation = scopeGeneration;
-        Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
-        while (regions.size() > MAX_LOADED_REGIONS && iterator.hasNext()) {
-            Map.Entry<Long, RegionData> eldest = iterator.next();
-            RegionData region = eldest.getValue();
+
+        for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
+            if (regions.size() <= MAX_LOADED_REGIONS) break;
+            RegionData region = entry.getValue();
             if (region == activeCompletedRegion) continue;
-
             if (region.isDirty() && directory != null && region.shouldQueueWrite()) {
-                enqueueRegionWrite(directory, eldest.getKey(), region, region.snapshot(), generation);
+                enqueueRegionWrite(directory, entry.getKey(), region, region.snapshot(), generation);
             }
-            if (region.isDirty() || region.hasWritesInFlight()) continue;
+        }
 
-            residentSampleCount -= region.size();
+        residentSampleCount -= pruneCleanRegions(regions, MAX_LOADED_REGIONS, activeCompletedRegion);
+    }
+
+    static int pruneCleanRegions(
+            LinkedHashMap<Long, RegionData> regions,
+            int maxRegions,
+            RegionData activeRegion
+    ) {
+        int removedSamples = 0;
+        Iterator<Map.Entry<Long, RegionData>> iterator = regions.entrySet().iterator();
+        while (regions.size() > maxRegions && iterator.hasNext()) {
+            RegionData region = iterator.next().getValue();
+            if (region == activeRegion || region.isDirty() || region.hasWritesInFlight()) continue;
+            removedSamples += region.size();
             iterator.remove();
         }
+        return removedSamples;
     }
 
     private void queueIfLoaded(ClientWorld world, int blockX, int blockZ, long key) {
@@ -465,10 +497,10 @@ public final class ClientMapSurfaceCache {
         if (ioExecutor.isShutdown() || snapshot.size() == 0) return;
         if (!region.markWriteQueued(snapshot.revision)) return;
 
-        Path destination = regionFile(directory, regionKey);
+        Path destination = MapSurfaceRegionStore.regionFile(directory, regionKey);
         try {
             ioExecutor.execute(() -> {
-                boolean success = writeRegionWithRetry(destination, snapshot);
+                boolean success = MapSurfaceRegionStore.writeWithRetry(destination, snapshot);
                 completedWrites.add(new RegionWriteCompletion(
                         generation, regionKey, region, snapshot.revision, success));
             });
@@ -477,114 +509,8 @@ public final class ClientMapSurfaceCache {
         }
     }
 
-    private void migrateLegacySnapshot(
-            Path storageRoot,
-            String normalizedScope,
-            Path targetDirectory,
-            long generation
-    ) {
-        Path legacy = storageRoot.resolve(safeName(normalizedScope) + ".surface.gz");
-        if (!Files.isRegularFile(legacy) || ioExecutor.isShutdown()) return;
-        Path migratedMarker = targetDirectory.resolve(".legacy-v1-migrated");
-        if (Files.exists(migratedMarker)) return;
-
-        CompletableFuture.runAsync(() -> {
-            Map<Long, RegionData> partitioned = readLegacySnapshot(legacy);
-            if (partitioned.isEmpty() || generation != scopeGeneration) return;
-            boolean complete = true;
-            for (Map.Entry<Long, RegionData> entry : partitioned.entrySet()) {
-                complete &= writeRegionWithRetry(regionFile(targetDirectory, entry.getKey()), entry.getValue().snapshot());
-            }
-            if (!complete || generation != scopeGeneration) return;
-            try {
-                Files.createDirectories(targetDirectory);
-                Files.writeString(migratedMarker, "v1\n");
-            } catch (IOException error) {
-                LOGGER.warn("Could not mark LazyBuilder legacy map migration complete: {}", migratedMarker, error);
-            }
-        }, ioExecutor);
-    }
-
-    private static Map<Long, RegionData> readLegacySnapshot(Path source) {
-        Map<Long, RegionData> result = new HashMap<>();
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                new GZIPInputStream(Files.newInputStream(source))))) {
-            if (in.readInt() != LEGACY_FORMAT_VERSION) return result;
-            int count = Math.max(0, Math.min(262_144, in.readInt()));
-            for (int i = 0; i < count; i++) {
-                long packed = in.readLong();
-                int x = unpackX(packed);
-                int z = unpackZ(packed);
-                int color = in.readInt();
-                int height = in.readInt();
-                long regionKey = pack(Math.floorDiv(x, REGION_SIZE), Math.floorDiv(z, REGION_SIZE));
-                result.computeIfAbsent(regionKey, ignored -> new RegionData())
-                        .put(localIndex(x, z), color, height);
-            }
-        } catch (IOException error) {
-            LOGGER.warn("Could not read LazyBuilder legacy map cache: {}", source, error);
-            result.clear();
-        }
-        return result;
-    }
-
-    private static RegionSnapshot readRegion(Path source) {
-        if (source == null || !Files.isRegularFile(source)) return RegionSnapshot.EMPTY;
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(
-                new GZIPInputStream(Files.newInputStream(source))))) {
-            if (in.readInt() != FORMAT_VERSION) return RegionSnapshot.EMPTY;
-            int count = Math.max(0, Math.min(REGION_CAPACITY, in.readInt()));
-            int[] indices = new int[count];
-            int[] colors = new int[count];
-            int[] heights = new int[count];
-            for (int i = 0; i < count; i++) {
-                indices[i] = in.readUnsignedShort();
-                colors[i] = in.readInt();
-                heights[i] = in.readInt();
-            }
-            return new RegionSnapshot(indices, colors, heights, 0L);
-        } catch (IOException error) {
-            throw new IllegalStateException("Could not read LazyBuilder map region " + source, error);
-        }
-    }
-
-    private static boolean writeRegionWithRetry(Path destination, RegionSnapshot snapshot) {
-        if (writeRegion(destination, snapshot)) return true;
-        return writeRegion(destination, snapshot);
-    }
-
-    private static boolean writeRegion(Path destination, RegionSnapshot snapshot) {
-        Path parent = destination.getParent();
-        Path temporary = destination.resolveSibling(destination.getFileName() + ".tmp");
-        try {
-            if (parent != null) Files.createDirectories(parent);
-            try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(
-                    new GZIPOutputStream(Files.newOutputStream(temporary))))) {
-                out.writeInt(FORMAT_VERSION);
-                out.writeInt(snapshot.size());
-                for (int i = 0; i < snapshot.size(); i++) {
-                    out.writeShort(snapshot.indices[i]);
-                    out.writeInt(snapshot.colors[i]);
-                    out.writeInt(snapshot.heights[i]);
-                }
-            }
-            try {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailure) {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return true;
-        } catch (IOException error) {
-            try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
-            LOGGER.warn("Could not persist LazyBuilder map region: {}", destination, error);
-            return false;
-        }
-    }
-
-    private static Path regionFile(Path directory, long regionKey) {
-        int regionX = unpackX(regionKey);
-        int regionZ = unpackZ(regionKey);
-        return directory.resolve("r." + regionX + "." + regionZ + ".surface.gz");
+    static boolean isCurrentScopeGeneration(long completionGeneration, long currentGeneration) {
+        return completionGeneration == currentGeneration;
     }
 
     private static int localIndex(int x, int z) {
@@ -902,7 +828,7 @@ public final class ClientMapSurfaceCache {
     }
 
     record RegionSnapshot(int[] indices, int[] colors, int[] heights, long revision) {
-        private static final RegionSnapshot EMPTY = new RegionSnapshot(new int[0], new int[0], new int[0], 0L);
+        static final RegionSnapshot EMPTY = new RegionSnapshot(new int[0], new int[0], new int[0], 0L);
 
         RegionSnapshot {
             if (indices.length != colors.length || colors.length != heights.length) {

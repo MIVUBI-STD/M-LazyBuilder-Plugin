@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
+import com.halokaryamedia.lazybuilder.world.export.ExportSettingsWire;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -80,6 +81,15 @@ public final class WorldTransferScreen extends Screen {
             WorldControlWireProtocol.WorldSummary world
     ) {
         return new WorldTransferScreen(parent, worlds, transfers, world, Tab.EXPORT);
+    }
+
+    void prepareVisualProof(boolean advanced, WorldControlWireProtocol.ImportInspection inspection) {
+        this.advanced = advanced;
+        if (inspection != null) {
+            this.importInspection = inspection;
+            this.importArtifactName = inspection.artifactName();
+            this.importDisplayName = inspection.suggestedName();
+        }
     }
 
     @Override
@@ -236,7 +246,7 @@ public final class WorldTransferScreen extends Screen {
         validation = null;
         exporting = true;
         try {
-            worlds.exportWorld(world.worldId(), selectedExportFormat, artifact);
+            worlds.exportWorld(world.worldId(), selectedExportFormat, artifact, ExportSettingsWire.Settings.inherit());
             observedWorldRevision = worlds.revision();
             clearAndInit();
         } catch (RuntimeException exception) {

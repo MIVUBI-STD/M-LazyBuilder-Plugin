@@ -7,6 +7,8 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
 
+import java.util.Arrays;
+
 /**
  * Owns one nearest-filtered dynamic texture for the fullscreen map raster.
  *
@@ -22,6 +24,7 @@ final class ClientMapRasterTexture implements AutoCloseable {
     private NativeImageBackedTexture texture;
     private int width;
     private int height;
+    private int[] uploadedPixels = new int[0];
 
     ClientMapRasterTexture(MinecraftClient client) {
         this.client = client;
@@ -45,11 +48,19 @@ final class ClientMapRasterTexture implements AutoCloseable {
 
     /**
      * Uploads a complete ARGB raster. Reuses the existing GL texture when its
-     * dimensions match so normal map refreshes do not churn texture objects.
+     * dimensions match, skips identical frames entirely, and avoids rewriting
+     * unchanged NativeImage texels when only part of the raster changed.
      */
     void upload(int[] argb, int width, int height) {
         if (width <= 0 || height <= 0 || argb == null || argb.length != width * height) {
             throw new IllegalArgumentException("Map raster dimensions do not match pixel data");
+        }
+        boolean reusablePixels = texture != null
+                && this.width == width
+                && this.height == height
+                && uploadedPixels.length == argb.length;
+        if (reusablePixels && Arrays.equals(uploadedPixels, argb)) {
+            return;
         }
 
         ensureTexture(width, height);
@@ -59,10 +70,15 @@ final class ClientMapRasterTexture implements AutoCloseable {
         int index = 0;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                image.setColorArgb(x, y, argb[index++]);
+                if (!reusablePixels || uploadedPixels[index] != argb[index]) {
+                    image.setColorArgb(x, y, argb[index]);
+                }
+                index++;
             }
         }
         texture.upload();
+        if (uploadedPixels.length != argb.length) uploadedPixels = new int[argb.length];
+        System.arraycopy(argb, 0, uploadedPixels, 0, argb.length);
     }
 
     /**
@@ -107,10 +123,10 @@ final class ClientMapRasterTexture implements AutoCloseable {
     }
 
     private void destroyTexture() {
-        if (texture == null) return;
-        client.getTextureManager().destroyTexture(TEXTURE_ID);
+        if (texture != null) client.getTextureManager().destroyTexture(TEXTURE_ID);
         texture = null;
         width = 0;
         height = 0;
+        uploadedPixels = new int[0];
     }
 }

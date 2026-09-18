@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /** Small versioned wire format shared by Paper and the Fabric map client. */
 public final class MapActionWireProtocol {
-    /** V4 scopes custom-area export requests to the map's active dimension. */
-    public static final int VERSION = 4;
+    /** V5 correlates request-bound responses so stale/errors cannot resolve another map operation. */
+    public static final int VERSION = 5;
     public static final int MAX_MESSAGE_BYTES = 4096;
     private static final int MAX_STRING_BYTES = 192;
 
@@ -31,13 +31,20 @@ public final class MapActionWireProtocol {
 
     private MapActionWireProtocol() {}
 
-    public sealed interface Request permits TeleportLocation, ExportArea, CurrentWorldRequest {}
+    public sealed interface Request permits TeleportLocation, ExportArea, CurrentWorldRequest {
+        long requestId();
+    }
 
-    public record TeleportLocation(WorldId worldId, int blockX, int blockZ) implements Request {
-        public TeleportLocation { Objects.requireNonNull(worldId, "worldId"); }
+    public record TeleportLocation(long requestId, WorldId worldId, int blockX, int blockZ) implements Request {
+        public TeleportLocation {
+            requireRequestId(requestId);
+            Objects.requireNonNull(worldId, "worldId");
+        }
+        public TeleportLocation(WorldId worldId, int blockX, int blockZ) { this(1L, worldId, blockX, blockZ); }
     }
 
     public record ExportArea(
+            long requestId,
             WorldId worldId,
             String dimensionId,
             int x1,
@@ -49,58 +56,85 @@ public final class MapActionWireProtocol {
             ExportSettingsWire.Settings settings
     ) implements Request {
         public ExportArea {
+            requireRequestId(requestId);
             Objects.requireNonNull(worldId, "worldId");
             dimensionId = requireString(dimensionId, "dimensionId");
             targetFormat = requireString(targetFormat, "targetFormat");
             artifactName = requireString(artifactName, "artifactName");
             settings = Objects.requireNonNull(settings, "settings");
         }
+        public ExportArea(
+                WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
+                String targetFormat, String artifactName, ExportSettingsWire.Settings settings
+        ) {
+            this(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
+        }
     }
 
-    public record CurrentWorldRequest() implements Request {}
+    public record CurrentWorldRequest(long requestId) implements Request {
+        public CurrentWorldRequest {
+            requireRequestId(requestId);
+        }
+        public CurrentWorldRequest() { this(1L); }
+    }
 
     public sealed interface Response permits TeleportOk, ExportAccepted, ExportComplete,
-            CurrentWorldResult, CurrentWorldCleared, ErrorResponse {}
+            CurrentWorldResult, CurrentWorldCleared, ErrorResponse {
+        long requestId();
+    }
 
-    public record TeleportOk(WorldId worldId, double x, double y, double z) implements Response {
+    public record TeleportOk(long requestId, WorldId worldId, double x, double y, double z) implements Response {
         public TeleportOk { Objects.requireNonNull(worldId, "worldId"); }
+        public TeleportOk(WorldId worldId, double x, double y, double z) { this(0L, worldId, x, y, z); }
     }
 
-    public record ExportAccepted(WorldId worldId) implements Response {
+    public record ExportAccepted(long requestId, WorldId worldId) implements Response {
         public ExportAccepted { Objects.requireNonNull(worldId, "worldId"); }
+        public ExportAccepted(WorldId worldId) { this(0L, worldId); }
     }
 
-    public record ExportComplete(WorldId worldId, String fileName, String targetFormat) implements Response {
+    public record ExportComplete(long requestId, WorldId worldId, String fileName, String targetFormat) implements Response {
         public ExportComplete {
             Objects.requireNonNull(worldId, "worldId");
             fileName = requireString(fileName, "fileName");
             targetFormat = requireString(targetFormat, "targetFormat");
         }
+        public ExportComplete(WorldId worldId, String fileName, String targetFormat) {
+            this(0L, worldId, fileName, targetFormat);
+        }
     }
 
-    public record CurrentWorldResult(WorldId worldId, String displayName, String folderName) implements Response {
+    public record CurrentWorldResult(long requestId, WorldId worldId, String displayName, String folderName) implements Response {
         public CurrentWorldResult {
             Objects.requireNonNull(worldId, "worldId");
             displayName = requireString(displayName, "displayName");
             folderName = requireString(folderName, "folderName");
         }
+        public CurrentWorldResult(WorldId worldId, String displayName, String folderName) {
+            this(0L, worldId, displayName, folderName);
+        }
     }
 
     /** Explicitly means the player is currently outside all managed worlds. */
-    public record CurrentWorldCleared() implements Response {}
+    public record CurrentWorldCleared(long requestId) implements Response {
+        public CurrentWorldCleared() { this(0L); }
+    }
 
-    public record ErrorResponse(String message) implements Response {
+    public record ErrorResponse(long requestId, String message) implements Response {
         public ErrorResponse { message = requireString(message, "message"); }
+        public ErrorResponse(String message) { this(0L, message); }
     }
 
     public static byte[] encodeRequest(Request request) {
         Objects.requireNonNull(request, "request");
+        requireRequestId(request.requestId());
         int opcode = switch (request) {
             case TeleportLocation ignored -> TELEPORT_LOCATION;
             case ExportArea ignored -> EXPORT_AREA;
             case CurrentWorldRequest ignored -> CURRENT_WORLD;
         };
         return encode(opcode, out -> {
+            out.writeLong(request.requestId());
             switch (request) {
                 case TeleportLocation teleport -> {
                     writeWorldId(out, teleport.worldId());
@@ -125,18 +159,20 @@ public final class MapActionWireProtocol {
 
     public static Request decodeRequest(byte[] payload) throws IOException {
         Objects.requireNonNull(payload, "payload");
-        if (payload.length < 2 || payload.length > MAX_MESSAGE_BYTES) throw new IOException("Invalid map payload size");
+        if (payload.length < 10 || payload.length > MAX_MESSAGE_BYTES) throw new IOException("Invalid map payload size");
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
             int version = in.readUnsignedByte();
             if (version != VERSION) throw new IOException("Unsupported map protocol version: " + version);
             int opcode = in.readUnsignedByte();
+            long requestId = in.readLong();
+            if (requestId <= 0L) throw new IOException("Invalid map request id");
             Request request = switch (opcode) {
-                case TELEPORT_LOCATION -> new TeleportLocation(readWorldId(in), in.readInt(), in.readInt());
+                case TELEPORT_LOCATION -> new TeleportLocation(requestId, readWorldId(in), in.readInt(), in.readInt());
                 case EXPORT_AREA -> new ExportArea(
-                        readWorldId(in), readString(in),
+                        requestId, readWorldId(in), readString(in),
                         in.readInt(), in.readInt(), in.readInt(), in.readInt(),
                         readString(in), readString(in), ExportSettingsWire.read(in));
-                case CURRENT_WORLD -> new CurrentWorldRequest();
+                case CURRENT_WORLD -> new CurrentWorldRequest(requestId);
                 default -> throw new IOException("Unknown map request opcode: " + opcode);
             };
             if (in.available() != 0) throw new IOException("Trailing bytes in map request");
@@ -155,6 +191,7 @@ public final class MapActionWireProtocol {
             case ErrorResponse ignored -> ERROR;
         };
         return encode(opcode, out -> {
+            out.writeLong(response.requestId());
             switch (response) {
                 case TeleportOk teleport -> {
                     writeWorldId(out, teleport.worldId());
@@ -181,18 +218,19 @@ public final class MapActionWireProtocol {
 
     public static Response decodeResponse(byte[] payload) throws IOException {
         Objects.requireNonNull(payload, "payload");
-        if (payload.length < 2 || payload.length > MAX_MESSAGE_BYTES) throw new IOException("Invalid map payload size");
+        if (payload.length < 10 || payload.length > MAX_MESSAGE_BYTES) throw new IOException("Invalid map payload size");
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
             int version = in.readUnsignedByte();
             if (version != VERSION) throw new IOException("Unsupported map protocol version: " + version);
             int opcode = in.readUnsignedByte();
+            long requestId = in.readLong();
             Response response = switch (opcode) {
-                case TELEPORT_OK -> new TeleportOk(readWorldId(in), in.readDouble(), in.readDouble(), in.readDouble());
-                case EXPORT_ACCEPTED -> new ExportAccepted(readWorldId(in));
-                case EXPORT_COMPLETE -> new ExportComplete(readWorldId(in), readString(in), readString(in));
-                case CURRENT_WORLD_RESULT -> new CurrentWorldResult(readWorldId(in), readString(in), readString(in));
-                case CURRENT_WORLD_CLEARED -> new CurrentWorldCleared();
-                case ERROR -> new ErrorResponse(readString(in));
+                case TELEPORT_OK -> new TeleportOk(requestId, readWorldId(in), in.readDouble(), in.readDouble(), in.readDouble());
+                case EXPORT_ACCEPTED -> new ExportAccepted(requestId, readWorldId(in));
+                case EXPORT_COMPLETE -> new ExportComplete(requestId, readWorldId(in), readString(in), readString(in));
+                case CURRENT_WORLD_RESULT -> new CurrentWorldResult(requestId, readWorldId(in), readString(in), readString(in));
+                case CURRENT_WORLD_CLEARED -> new CurrentWorldCleared(requestId);
+                case ERROR -> new ErrorResponse(requestId, readString(in));
                 default -> throw new IOException("Unknown map response opcode: " + opcode);
             };
             if (in.available() != 0) throw new IOException("Trailing bytes in map response");
@@ -201,66 +239,82 @@ public final class MapActionWireProtocol {
     }
 
     public static byte[] teleportRequest(WorldId worldId, int blockX, int blockZ) {
-        return encodeRequest(new TeleportLocation(worldId, blockX, blockZ));
+        return teleportRequest(1L, worldId, blockX, blockZ);
+    }
+
+    public static byte[] teleportRequest(long requestId, WorldId worldId, int blockX, int blockZ) {
+        return encodeRequest(new TeleportLocation(requestId, worldId, blockX, blockZ));
     }
 
     public static byte[] exportAreaRequest(
-            WorldId worldId,
-            String dimensionId,
-            int x1,
-            int z1,
-            int x2,
-            int z2,
-            String targetFormat,
-            String artifactName
+            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
+            String targetFormat, String artifactName
     ) {
-        return exportAreaRequest(worldId, dimensionId, x1, z1, x2, z2,
+        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2,
                 targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
     }
 
     public static byte[] exportAreaRequest(
-            WorldId worldId,
-            String dimensionId,
-            int x1,
-            int z1,
-            int x2,
-            int z2,
-            String targetFormat,
-            String artifactName,
-            ExportSettingsWire.Settings settings
+            WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
+            String targetFormat, String artifactName, ExportSettingsWire.Settings settings
+    ) {
+        return exportAreaRequest(1L, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings);
+    }
+
+    public static byte[] exportAreaRequest(
+            long requestId, WorldId worldId, String dimensionId, int x1, int z1, int x2, int z2,
+            String targetFormat, String artifactName, ExportSettingsWire.Settings settings
     ) {
         return encodeRequest(new ExportArea(
-                worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings));
+                requestId, worldId, dimensionId, x1, z1, x2, z2, targetFormat, artifactName, settings));
     }
 
-    public static byte[] currentWorldRequest() {
-        return encodeRequest(new CurrentWorldRequest());
+    public static byte[] currentWorldRequest() { return currentWorldRequest(1L); }
+    public static byte[] currentWorldRequest(long requestId) {
+        return encodeRequest(new CurrentWorldRequest(requestId));
     }
 
+    public static byte[] teleportOk(long requestId, WorldId worldId, double x, double y, double z) {
+        return encodeResponse(new TeleportOk(requestId, worldId, x, y, z));
+    }
     public static byte[] teleportOk(WorldId worldId, double x, double y, double z) {
-        return encodeResponse(new TeleportOk(worldId, x, y, z));
+        return teleportOk(0L, worldId, x, y, z);
     }
 
-    public static byte[] exportAccepted(WorldId worldId) {
-        return encodeResponse(new ExportAccepted(worldId));
+    public static byte[] exportAccepted(long requestId, WorldId worldId) {
+        return encodeResponse(new ExportAccepted(requestId, worldId));
     }
+    public static byte[] exportAccepted(WorldId worldId) { return exportAccepted(0L, worldId); }
 
+    public static byte[] exportComplete(long requestId, WorldId worldId, String fileName, String targetFormat) {
+        return encodeResponse(new ExportComplete(requestId, worldId, fileName, targetFormat));
+    }
     public static byte[] exportComplete(WorldId worldId, String fileName, String targetFormat) {
-        return encodeResponse(new ExportComplete(worldId, fileName, targetFormat));
+        return exportComplete(0L, worldId, fileName, targetFormat);
     }
 
+    public static byte[] currentWorld(long requestId, WorldId worldId, String displayName, String folderName) {
+        return encodeResponse(new CurrentWorldResult(requestId, worldId, displayName, folderName));
+    }
     public static byte[] currentWorld(WorldId worldId, String displayName, String folderName) {
-        return encodeResponse(new CurrentWorldResult(worldId, displayName, folderName));
+        return currentWorld(0L, worldId, displayName, folderName);
     }
 
-    public static byte[] currentWorldCleared() {
-        return encodeResponse(new CurrentWorldCleared());
+    public static byte[] currentWorldCleared(long requestId) {
+        return encodeResponse(new CurrentWorldCleared(requestId));
     }
+    public static byte[] currentWorldCleared() { return currentWorldCleared(0L); }
 
-    public static byte[] error(String message) {
+    public static byte[] error(long requestId, String message) {
         String safe = message == null || message.isBlank() ? "Map action failed" : message.strip();
         if (safe.getBytes(StandardCharsets.UTF_8).length > MAX_STRING_BYTES) safe = "Map action failed";
-        return encodeResponse(new ErrorResponse(safe));
+        return encodeResponse(new ErrorResponse(requestId, safe));
+    }
+    public static byte[] error(String message) { return error(0L, message); }
+
+    private static long requireRequestId(long requestId) {
+        if (requestId <= 0L) throw new IllegalArgumentException("requestId must be positive");
+        return requestId;
     }
 
     private static byte[] encode(int opcode, Writer writer) {

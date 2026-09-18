@@ -6,11 +6,36 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /** Path-safe filesystem boundary for World Manager file operations. */
 public interface WorldFileRepository {
     Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException;
+
+    /**
+     * Stages a copy that can observe cooperative cancellation. Implementations that do not
+     * provide a cancellable traversal retain compatibility through the normal copy path.
+     */
+    default Path stageCopy(
+            WorldRecord source,
+            UUID operationId,
+            WorldCopyProfile profile,
+            BooleanSupplier cancellationRequested
+    ) throws IOException {
+        Objects.requireNonNull(cancellationRequested, "cancellationRequested");
+        if (cancellationRequested.getAsBoolean()) throw new IOException("Managed world copy was cancelled");
+        return stageCopy(source, operationId, profile);
+    }
+
+    /**
+     * Stages an area snapshot. Implementations may optimize filesystem work to the
+     * selected region files; the default preserves compatibility by staging a normal snapshot.
+     */
+    default Path stageAreaCopy(WorldRecord source, UUID operationId, AreaCopySelection selection) throws IOException {
+        return stageCopy(source, operationId, WorldCopyProfile.SNAPSHOT);
+    }
 
     /** Move one managed world into an owned workspace before destructive deletion is committed. */
     Path stageDelete(WorldRecord world, UUID operationId) throws IOException;
