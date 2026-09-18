@@ -14,6 +14,8 @@ import com.halokaryamedia.lazybuilder.builder.spline.CatmullRomSpline;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineControlPoint;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineParameterization;
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineModifierPipeline;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineModifiers;
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanner;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSample;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSampler;
@@ -63,6 +65,9 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private final int[] mirrorX = {0};
     private final int[] seedValue = {424242};
     private final int[] parameterization = {1};
+    private final float[] taperEndScale = {1.0f};
+    private final float[] twistDegrees = {0.0f};
+    private final float[] jitter = {0.0f};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
@@ -146,6 +151,9 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
         changed |= ImGui.sliderInt("Curve Mode (0 Uniform / 1 Centripetal)", parameterization, 0, 1);
+        changed |= ImGui.sliderFloat("End Radius Scale", taperEndScale, 0.0f, 4.0f);
+        changed |= ImGui.sliderFloat("Twist Degrees", twistDegrees, -720.0f, 720.0f);
+        changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
 
         if (ImGui.button("Clear Spline")) {
             clearSpline();
@@ -232,8 +240,19 @@ public final class AxiomSplineSchematicTool implements CustomTool {
                     parameterization[0] == 0
                             ? SplineParameterization.UNIFORM
                             : SplineParameterization.CENTRIPETAL);
-            List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
             OperationSeed seed = new OperationSeed(seedValue[0]);
+            List<SplineSample> samples = SplineSampler.sample(spline, quality[0]);
+            samples = SplineModifierPipeline.apply(
+                    samples,
+                    SplineModifiers.compose(
+                            SplineModifiers.taper(1.0, taperEndScale[0]),
+                            SplineModifiers.twist(0.0, twistDegrees[0]),
+                            SplineModifiers.jitter(
+                                    jitter[0], jitter[0], jitter[0] * 0.25,
+                                    0x5343484a49545452L)
+                    ),
+                    seed
+            );
             List<SplinePlacementPlanEntry> splinePlan = SplinePlacementPlanner.plan(
                     samples,
                     spacing[0],

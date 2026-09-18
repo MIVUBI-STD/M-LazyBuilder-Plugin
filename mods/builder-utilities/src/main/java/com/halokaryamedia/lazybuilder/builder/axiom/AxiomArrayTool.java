@@ -24,6 +24,8 @@ import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
 import com.halokaryamedia.lazybuilder.builder.region.DeterministicRegionPlanner;
 import com.halokaryamedia.lazybuilder.builder.region.PointSetRegion;
+import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
+import com.halokaryamedia.lazybuilder.builder.symmetry.PointSymmetryPlanner;
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
 import net.minecraft.client.MinecraftClient;
@@ -52,6 +54,9 @@ public final class AxiomArrayTool implements CustomTool {
     private final int[] count = {16};
     private final int[] stepX = {2};
     private final int[] stepZ = {0};
+    private final int[] rotationalCopies = {1};
+    private final int[] mirrorX = {0};
+    private final int[] mirrorZ = {0};
 
     private BlockPos origin;
     private List<PlacementPoint> points = List.of();
@@ -116,6 +121,9 @@ public final class AxiomArrayTool implements CustomTool {
         changed |= ImGui.sliderInt("Count", count, 1, MAX_COUNT);
         changed |= ImGui.sliderInt("Step X", stepX, -64, 64);
         changed |= ImGui.sliderInt("Step Z", stepZ, -64, 64);
+        changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
+        changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
+        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
 
         if (ImGui.button("Clear Array")) {
             clearGeometry();
@@ -147,10 +155,18 @@ public final class AxiomArrayTool implements CustomTool {
             BlockBounds bounds = bounds();
             ArrayDistribution distribution = new ArrayDistribution(
                     origin.getX(), origin.getZ(), count[0], stepX[0], stepZ[0]);
-            points = distribution.generate(
+            List<PlacementPoint> basePoints = distribution.generate(
                     bounds,
                     (x, z) -> origin.getY(),
                     new OperationSeed(0L)
+            );
+            points = PointSymmetryPlanner.rotationalAndMirrors(
+                    basePoints,
+                    new BuilderVec3(origin.getX(), origin.getY(), origin.getZ()),
+                    rotationalCopies[0],
+                    mirrorX[0] != 0,
+                    mirrorZ[0] != 0,
+                    MAX_COUNT * 64
             );
             ensurePreview().update(points);
             idleStatus = "Preview ready: " + points.size() + " points";
