@@ -1011,6 +1011,13 @@ public final class WorldMapScreen extends Screen {
         openExportWorkspace(customArea);
     }
 
+    void openExportWorkspaceForProof(boolean customArea, int blockX, int blockZ) {
+        camera.centerOn(blockX, blockZ);
+        enterExportWorkspace(customArea
+                ? MapExportWorkspaceState.Scope.CUSTOM_AREA
+                : MapExportWorkspaceState.Scope.FULL_WORLD, blockX, blockZ);
+    }
+
     void expandWorldSettingsForProof() {
         if (!exportWorkspace.worldSettingsExpanded()) exportWorkspace.toggleWorldSettings();
     }
