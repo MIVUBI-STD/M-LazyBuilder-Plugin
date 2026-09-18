@@ -125,6 +125,29 @@ class MapActionWireProtocolTest {
     }
 
     @Test
+    void constructorsRejectInvalidResponseCorrelationIds() {
+        WorldId worldId = WorldId.create();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.TeleportOk(0L, worldId, 1.0, 64.0, 2.0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ExportAccepted(0L, worldId));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ExportComplete(
+                        0L, worldId, "area.zip", "JAVA_1_21_4"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.CurrentWorldResult(
+                        -1L, worldId, "Build World", "build-world"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MapActionWireProtocol.ErrorResponse(-1L, "invalid"));
+    }
+
+    @Test
     void rejectsZeroCorrelationForRequestBoundResponses() {
         WorldId worldId = WorldId.create();
 
