@@ -36,7 +36,14 @@ public final class ChunkMutationReconciler {
 
             String beforeState = changes.beforeState(i);
             String afterState = changes.afterState(i);
-            if (actual.equals(afterState)) {
+            if (beforeState.equals(afterState)) {
+                if (actual.equals(beforeState)) {
+                    before++;
+                    after++;
+                } else {
+                    conflicts++;
+                }
+            } else if (actual.equals(afterState)) {
                 after++;
             } else if (actual.equals(beforeState)) {
                 before++;
