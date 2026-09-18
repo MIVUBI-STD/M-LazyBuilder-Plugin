@@ -125,6 +125,51 @@ class MapActionWireProtocolTest {
     }
 
     @Test
+    void rejectsZeroCorrelationForRequestBoundResponses() {
+        WorldId worldId = WorldId.create();
+
+        byte[] teleport = MapActionWireProtocol.teleportOk(71L, worldId, 1.0, 64.0, 2.0);
+        byte[] zeroTeleport = teleport.clone();
+        Arrays.fill(zeroTeleport, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroTeleport));
+
+        byte[] accepted = MapActionWireProtocol.exportAccepted(72L, worldId);
+        byte[] zeroAccepted = accepted.clone();
+        Arrays.fill(zeroAccepted, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroAccepted));
+
+        byte[] complete = MapActionWireProtocol.exportComplete(
+                73L, worldId, "area.zip", "JAVA_1_21_4");
+        byte[] zeroComplete = complete.clone();
+        Arrays.fill(zeroComplete, 2, 10, (byte) 0);
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(zeroComplete));
+    }
+
+    @Test
+    void rejectsNegativeResponseCorrelationIds() {
+        WorldId worldId = WorldId.create();
+        byte[] response = MapActionWireProtocol.currentWorld(
+                74L, worldId, "Build World", "build-world");
+        byte[] negative = response.clone();
+        Arrays.fill(negative, 2, 10, (byte) 0xFF);
+
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(negative));
+    }
+
+    @Test
+    void rejectsOversizedMapPayloadsAndStrings() {
+        assertThrows(
+                IOException.class,
+                () -> MapActionWireProtocol.decodeResponse(
+                        new byte[MapActionWireProtocol.MAX_MESSAGE_BYTES + 1]));
+
+        String oversized = "x".repeat(193);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MapActionWireProtocol.error(75L, oversized));
+    }
+
+    @Test
     void rejectsUnsupportedVersionAndTrailingBytes() {
         WorldId worldId = WorldId.create();
         byte[] payload = MapActionWireProtocol.teleportRequest(61L, worldId, 1, 2);
