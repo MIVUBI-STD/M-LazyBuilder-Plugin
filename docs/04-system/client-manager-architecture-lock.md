@@ -92,30 +92,29 @@ Owns required LazyBuilder performance behavior first-party.
 
 Current scope:
 
-- target-aware actual frame-time monitoring with rolling pressure state;
-- `NORMAL / ELEVATED / HEAVY` diagnostic pressure;
+- target-aware actual frame-time monitoring with rolling `NORMAL / ELEVATED / HEAVY` pressure state;
 - render-discontinuity protection during world/loading/focus transitions;
 - first-party unfocused/minimized FPS policy;
-- on-demand FPS/frame-time/JVM-memory status;
-- on-demand render-distance and simulation-distance status;
-- on-demand window focus/minimized state;
-- on-demand Vanilla chunk/entity/particle workload diagnostics.
+- conservative entity/block-entity and render-side culling;
+- chunk rebuild/backpressure, upload, visibility, buffer, and terrain-submission efficiency;
+- targeted memory/deduplication;
+- terrain GPU residency/reclamation and region/layer allocation;
+- guarded physical-arena ownership, reversible vanilla backing recovery, per-draw transform streaming, and multi-draw submission when compatibility permits;
+- pressure-aware distant-particle suppression;
+- on-demand diagnostics and opt-in runtime proof logging.
 
 Performance Manager intentionally does not expose an unused cross-manager workload scheduler. Each Manager bounds its own workload at its actual source owner until a second real consumer proves a shared scheduling contract is necessary.
 
-Performance Manager has no mandatory external optimization dependency. External optimization mods may coexist, but required LazyBuilder behavior does not hand ownership to them.
+Performance Manager has no mandatory external optimization dependency. Custom FRAPI renderer ownership, Iris, ImmediatelyFast, FerriteCore, and compatibility uncertainty gate overlapping first-party paths so only one owner is authoritative.
 
-Current explicit non-scope until profiling justifies it:
+Explicit non-scope remains:
 
-- renderer replacement;
-- shader implementation/management;
-- generic entity or block-entity culling replacement;
-- particle-frustum bridge;
-- chunk-renderer replacement;
 - automatic visual-quality reduction;
-- permanent performance HUD/history database.
+- generic shader/resource-pack replacement;
+- permanent performance HUD/history database;
+- cross-manager workload ownership.
 
-Vanilla 1.21.4 already owns important entity visibility and block-entity render-distance behavior. LazyBuilder should not duplicate those paths merely to claim an optimization.
+Source/build proof establishes the implementation boundary. Representative gameplay still has to prove smoothness, visual correctness, frame-time improvement, and safe recovery under the actual renderer/mod stack.
 
 Canonical source:
 
@@ -164,7 +163,7 @@ Performance Manager  implemented / active client component
 Cross-manager audit  architecture locked
 ```
 
-Renderer-level work is not automatically next. It is gated by runtime profiling evidence from the on-demand diagnostics already exposed by Performance Manager.
+Further renderer expansion is not automatically next. The implemented renderer path now requires exact-state verification and representative runtime evidence before any ownership is widened.
 
 ## Next gate
 
