@@ -37,4 +37,29 @@ public final class PlacementStructureMutationPreparer {
                 cancellationToken
         );
     }
+
+    public static Optional<PreparedStructureMutation> prepareAll(
+            String operationId,
+            List<PlacementPlanEntry> placements,
+            StructureSourceResolver resolver,
+            BlockStateTransform stateTransform,
+            BlockStateSource existing,
+            StructureAuxiliaryContext auxiliary,
+            HistoryStorageRouter history,
+            long estimatedHistoryBytes,
+            CancellationToken cancellationToken
+    ) throws IOException {
+        Objects.requireNonNull(cancellationToken, "cancellationToken");
+        if (cancellationToken.isCancellationRequested()) return Optional.empty();
+
+        StructurePastePlan plan = StructurePlacementBatchPlanner.planAll(
+                placements, resolver, stateTransform, existing, auxiliary);
+        return StructureMutationPreparer.prepare(
+                operationId,
+                plan,
+                history,
+                estimatedHistoryBytes,
+                cancellationToken
+        );
+    }
 }

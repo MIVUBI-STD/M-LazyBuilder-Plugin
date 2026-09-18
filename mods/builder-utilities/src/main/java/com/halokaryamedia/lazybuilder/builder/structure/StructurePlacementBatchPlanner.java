@@ -30,13 +30,12 @@ public final class StructurePlacementBatchPlanner {
             BlockStateSource existing
     ) {
         try {
-            return plan(
+            return planAll(
                     placements,
                     resolver,
                     stateTransform,
                     existing,
-                    null,
-                    BlockEntityPayloadTransform.identity()
+                    StructureAuxiliaryContext.none()
             );
         } catch (IOException impossible) {
             throw new IllegalStateException("block-only structure planning unexpectedly failed", impossible);
@@ -51,15 +50,40 @@ public final class StructurePlacementBatchPlanner {
             StructureBlockEntityStateSource blockEntitySource,
             BlockEntityPayloadTransform payloadTransform
     ) throws IOException {
+        return planAll(
+                placements,
+                resolver,
+                stateTransform,
+                existing,
+                new StructureAuxiliaryContext(
+                        blockEntitySource,
+                        payloadTransform,
+                        null,
+                        BiomePayloadTransform.identity(),
+                        null,
+                        EntityPayloadTransform.identity()
+                )
+        );
+    }
+
+    public static StructurePastePlan planAll(
+            List<PlacementPlanEntry> placements,
+            StructureSourceResolver resolver,
+            BlockStateTransform stateTransform,
+            BlockStateSource existing,
+            StructureAuxiliaryContext auxiliary
+    ) throws IOException {
         Objects.requireNonNull(placements, "placements");
         Objects.requireNonNull(resolver, "resolver");
         Objects.requireNonNull(stateTransform, "stateTransform");
         Objects.requireNonNull(existing, "existing");
-        Objects.requireNonNull(payloadTransform, "payloadTransform");
+        Objects.requireNonNull(auxiliary, "auxiliary");
 
         LinkedHashMap<WorldKey, DesiredBlock> desired = new LinkedHashMap<>();
-        List<DesiredExtension> desiredExtensions = new ArrayList<>();
-        Set<ExtensionWorldKey> extensionKeys = new HashSet<>();
+        List<HistoryExtensionFrame> extensions = new ArrayList<>();
+        Set<ExtensionWorldKey> blockEntityKeys = new HashSet<>();
+        Set<ExtensionWorldKey> biomeKeys = new HashSet<>();
+        long entityKey = 0L;
 
         for (PlacementPlanEntry entry : placements) {
             Objects.requireNonNull(entry, "entry");
@@ -84,7 +108,7 @@ public final class StructurePlacementBatchPlanner {
             }
 
             if (!snapshot.blockEntities().isEmpty()) {
-                if (blockEntitySource == null) {
+                if (auxiliary.blockEntities() == null) {
                     throw new IllegalArgumentException(
                             "block entity source is required for structure snapshots containing block entities");
                 }
@@ -92,22 +116,82 @@ public final class StructurePlacementBatchPlanner {
                     StructurePlacement.WorldPosition world =
                             placement.transform(blockEntity.x(), blockEntity.y(), blockEntity.z());
                     ExtensionWorldKey key = new ExtensionWorldKey(world.x(), world.y(), world.z());
-                    if (!extensionKeys.add(key)) {
+                    if (!blockEntityKeys.add(key)) {
                         throw new IllegalArgumentException(
                                 "structure block entity collision at "
                                         + world.x() + "," + world.y() + "," + world.z());
                     }
                     byte[] before = Objects.requireNonNull(
-                            blockEntitySource.read(world.x(), world.y(), world.z()),
-                            "block entity before payload"
-                    ).clone();
+                            auxiliary.blockEntities().read(world.x(), world.y(), world.z()),
+                            "block entity before payload").clone();
                     byte[] after = Objects.requireNonNull(
-                            payloadTransform.transform(blockEntity.payload(), placement),
-                            "transformed block entity payload"
-                    ).clone();
+                            auxiliary.blockEntityTransform().transform(
+                                    blockEntity.payload(), placement),
+                            "transformed block entity payload").clone();
                     if (!Arrays.equals(before, after)) {
-                        desiredExtensions.add(new DesiredExtension(
-                                world.x(), world.y(), world.z(), before, after));
+                        extensions.add(frameAtBlock(
+                                HistoryExtensionTypes.BLOCK_ENTITY,
+                                world.x(), world.y(), world.z(),
+                                before, after));
+                    }
+                }
+            }
+
+            if (!snapshot.biomes().isEmpty()) {
+                if (auxiliary.biomes() == null) {
+                    throw new IllegalArgumentException(
+                            "biome source is required for structure snapshots containing biomes");
+                }
+                for (StructureBiomeSample biome : snapshot.biomes()) {
+                    StructurePlacement.WorldPosition world =
+                            placement.transform(biome.x(), biome.y(), biome.z());
+                    ExtensionWorldKey key = new ExtensionWorldKey(world.x(), world.y(), world.z());
+                    if (!biomeKeys.add(key)) {
+                        throw new IllegalArgumentException(
+                                "structure biome collision at "
+                                        + world.x() + "," + world.y() + "," + world.z());
+                    }
+                    byte[] before = Objects.requireNonNull(
+                            auxiliary.biomes().read(world.x(), world.y(), world.z()),
+                            "biome before payload").clone();
+                    byte[] after = Objects.requireNonNull(
+                            auxiliary.biomeTransform().transform(biome.payload(), placement),
+                            "transformed biome payload").clone();
+                    if (!Arrays.equals(before, after)) {
+                        extensions.add(frameAtBlock(
+                                HistoryExtensionTypes.BIOME,
+                                world.x(), world.y(), world.z(),
+                                before, after));
+                    }
+                }
+            }
+
+            if (!snapshot.entities().isEmpty()) {
+                if (auxiliary.entities() == null) {
+                    throw new IllegalArgumentException(
+                            "entity source is required for structure snapshots containing entities");
+                }
+                for (StructureEntity entity : snapshot.entities()) {
+                    StructurePlacement.WorldPositionD world =
+                            placement.transform(entity.x(), entity.y(), entity.z());
+                    long key = entityKey++;
+                    byte[] before = Objects.requireNonNull(
+                            auxiliary.entities().read(key, world),
+                            "entity before payload").clone();
+                    byte[] after = Objects.requireNonNull(
+                            auxiliary.entityTransform().transform(entity.payload(), placement),
+                            "transformed entity payload").clone();
+                    if (!Arrays.equals(before, after)) {
+                        int blockX = floorToInt(world.x());
+                        int blockZ = floorToInt(world.z());
+                        extensions.add(new HistoryExtensionFrame(
+                                HistoryExtensionTypes.ENTITY,
+                                Math.floorDiv(blockX, 16),
+                                Math.floorDiv(blockZ, 16),
+                                key,
+                                before,
+                                after
+                        ));
                     }
                 }
             }
@@ -128,28 +212,40 @@ public final class StructurePlacementBatchPlanner {
             ).add(block.x, block.y, block.z, before, block.afterState);
         }
 
-        List<HistoryExtensionFrame> extensions = new ArrayList<>(desiredExtensions.size());
-        for (DesiredExtension extension : desiredExtensions) {
-            int chunkX = Math.floorDiv(extension.x, 16);
-            int chunkZ = Math.floorDiv(extension.z, 16);
-            extensions.add(new HistoryExtensionFrame(
-                    HistoryExtensionTypes.BLOCK_ENTITY,
-                    chunkX,
-                    chunkZ,
-                    LocalBlockPosition.pack(
-                            Math.floorMod(extension.x, 16),
-                            extension.y,
-                            Math.floorMod(extension.z, 16)
-                    ),
-                    extension.beforePayload,
-                    extension.afterPayload
-            ));
-        }
-
         return new StructurePastePlan(
                 chunks.values().stream().map(ChunkBuilder::build).toList(),
                 extensions
         );
+    }
+
+    private static HistoryExtensionFrame frameAtBlock(
+            String typeId,
+            int worldX,
+            int y,
+            int worldZ,
+            byte[] before,
+            byte[] after
+    ) {
+        return new HistoryExtensionFrame(
+                typeId,
+                Math.floorDiv(worldX, 16),
+                Math.floorDiv(worldZ, 16),
+                LocalBlockPosition.pack(
+                        Math.floorMod(worldX, 16),
+                        y,
+                        Math.floorMod(worldZ, 16)
+                ),
+                before,
+                after
+        );
+    }
+
+    private static int floorToInt(double value) {
+        double floored = Math.floor(value);
+        if (floored < Integer.MIN_VALUE || floored > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("entity position exceeds integer world range");
+        }
+        return (int) floored;
     }
 
     private static IllegalArgumentException collision(int x, int y, int z) {
@@ -168,7 +264,6 @@ public final class StructurePlacementBatchPlanner {
     private record ExtensionWorldKey(int x, int y, int z) {}
     private record ChunkKey(int chunkX, int chunkZ) {}
     private record DesiredBlock(int x, int y, int z, String afterState) {}
-    private record DesiredExtension(int x, int y, int z, byte[] beforePayload, byte[] afterPayload) {}
 
     private static final class ChunkBuilder {
         private final int chunkX;
