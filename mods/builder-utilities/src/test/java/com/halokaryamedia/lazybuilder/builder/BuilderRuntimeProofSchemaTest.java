@@ -15,7 +15,7 @@ class BuilderRuntimeProofSchemaTest {
     void ignoresProofSnapshotsFromUnknownSchemas() throws Exception {
         Files.writeString(
                 tempDir.resolve("old.json"),
-                "{\"schema\":4,\"operationsCompleted\":99,"
+                "{\"schema\":5,\"operationsCompleted\":99,"
                         + "\"maxCompletedPlannedBlocks\":9999999}");
         BuilderRuntimeProofStore store = new BuilderRuntimeProofStore(tempDir);
         BuilderRuntimeProofEvidence evidence = store.aggregateEvidence();
