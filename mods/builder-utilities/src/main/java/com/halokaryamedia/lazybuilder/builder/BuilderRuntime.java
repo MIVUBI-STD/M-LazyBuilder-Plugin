@@ -20,33 +20,38 @@ public final class BuilderRuntime implements AutoCloseable {
     private final HistoryStorageRouter history;
     private final ExecutionBudget dispatchBudget;
     private final Path schematicDirectory;
+    private final DiskChangeSetStorage diskHistory;
 
     private BuilderRuntime(
             HistoryTimeline timeline,
             HistoryStorageRouter history,
             ExecutionBudget dispatchBudget,
-            Path schematicDirectory
+            Path schematicDirectory,
+            DiskChangeSetStorage diskHistory
     ) {
         this.timeline = timeline;
         this.history = history;
         this.dispatchBudget = dispatchBudget;
         this.schematicDirectory = schematicDirectory;
+        this.diskHistory = diskHistory;
     }
 
     public static BuilderRuntime createDefault() {
         Path builderDir = FabricLoader.getInstance().getConfigDir().resolve("lazybuilder");
         Path historyDir = builderDir.resolve("builder-history");
         Path schematicDir = builderDir.resolve("schematics");
+        DiskChangeSetStorage diskHistory = new DiskChangeSetStorage(historyDir);
         HistoryStorageRouter router = new HistoryStorageRouter(
                 new HistorySizingPolicy(8 * MIB, 64 * MIB),
                 new MemoryChangeSetStorage(),
                 new CompressedMemoryChangeSetStorage(),
-                new DiskChangeSetStorage(historyDir));
+                diskHistory);
         return new BuilderRuntime(
                 new HistoryTimeline(64),
                 router,
                 new ExecutionBudget(Duration.ofMillis(4), 4, 65_536, 16 * MIB),
-                schematicDir
+                schematicDir,
+                diskHistory
         );
     }
 
@@ -54,6 +59,7 @@ public final class BuilderRuntime implements AutoCloseable {
     public HistoryStorageRouter history() { return history; }
     public ExecutionBudget dispatchBudget() { return dispatchBudget; }
     public Path schematicDirectory() { return schematicDirectory; }
+    public DiskChangeSetStorage diskHistory() { return diskHistory; }
 
     @Override public void close() throws IOException { timeline.close(); }
 }
