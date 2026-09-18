@@ -53,6 +53,38 @@ class HistoryIntegrityV2Test {
     }
 
     @Test
+    void rejectsTrailingBytesAfterCommittedFooter() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ChangeSetCodec.StreamWriter writer = ChangeSetCodec.openWriter(bytes, "trailing");
+        writer.append(chunk(0, 0, 0));
+        writer.commit();
+
+        byte[] committed = bytes.toByteArray();
+        byte[] withTrailing = java.util.Arrays.copyOf(committed, committed.length + 3);
+        withTrailing[committed.length] = 1;
+        withTrailing[committed.length + 1] = 2;
+        withTrailing[committed.length + 2] = 3;
+
+        IOException error = assertThrows(IOException.class,
+                () -> ChangeSetCodec.inspect(new ByteArrayInputStream(withTrailing)));
+        assertTrue(error.getMessage().contains("trailing data"));
+    }
+
+    @Test
+    void rejectsTruncatedCommitChecksum() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ChangeSetCodec.StreamWriter writer = ChangeSetCodec.openWriter(bytes, "truncated");
+        writer.append(chunk(0, 0, 0));
+        writer.commit();
+
+        byte[] committed = bytes.toByteArray();
+        byte[] truncated = java.util.Arrays.copyOf(committed, committed.length - 2);
+        IOException error = assertThrows(IOException.class,
+                () -> ChangeSetCodec.inspect(new ByteArrayInputStream(truncated)));
+        assertTrue(error.getMessage().toLowerCase().contains("incomplete"));
+    }
+
+    @Test
     void replayRunsBlocksBeforeExtensionsForBothDirections() throws Exception {
         StoredChangeSet stored;
         try (ChangeSetWriter writer = new MemoryChangeSetStorage().begin("phases")) {

@@ -372,6 +372,9 @@ public final class ChangeSetCodec {
                 throw new IOException("History checksum mismatch");
             }
         }
+        if (context.data.read() != -1) {
+            throw new IOException("History stream contains trailing data after commit footer");
+        }
     }
 
     private static void requireUniqueChunk(Set<Long> seen, int chunkX, int chunkZ) throws IOException {
