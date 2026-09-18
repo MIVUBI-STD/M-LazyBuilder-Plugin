@@ -6,12 +6,16 @@ import com.halokaryamedia.lazybuilder.builder.history.HistoryStorageRouter;
 import com.halokaryamedia.lazybuilder.builder.history.MemoryChangeSetStorage;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class StructureMutationPreparerTest {
+    @TempDir Path tempDir;
     @Test
     void commitsBlocksAndExtensionsBeforeMutation() throws Exception {
         StructureSnapshot snapshot = new StructureSnapshot(
@@ -30,7 +34,8 @@ class StructureMutationPreparerTest {
         HistoryStorageRouter history = new HistoryStorageRouter(
                 new HistorySizingPolicy(1024, 2048),
                 new MemoryChangeSetStorage(),
-                new CompressedMemoryChangeSetStorage()
+                new CompressedMemoryChangeSetStorage(),
+                new com.halokaryamedia.lazybuilder.builder.history.DiskChangeSetStorage(tempDir)
         );
 
         var prepared = StructureMutationPreparer.prepare(

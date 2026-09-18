@@ -7,6 +7,9 @@ import com.halokaryamedia.lazybuilder.builder.placement.PlacementPlanEntry;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementTransform;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import java.util.List;
 import java.util.UUID;
@@ -14,6 +17,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StructureOperationPreparerTest {
+    @TempDir Path tempDir;
     @Test
     void compilesIntoDurableGenericPreparedMutation() throws Exception {
         StructureTemplate template = StructureTemplate.of(
@@ -23,7 +27,8 @@ class StructureOperationPreparerTest {
         );
         HistoryStorageRouter history = new HistoryStorageRouter(
                 new HistorySizingPolicy(1024 * 1024, 2 * 1024 * 1024),
-                new MemoryChangeSetStorage()
+                new MemoryChangeSetStorage(),
+                new com.halokaryamedia.lazybuilder.builder.history.DiskChangeSetStorage(tempDir)
         );
 
         try (PreparedStructureMutation prepared = StructureOperationPreparer.compileAndPrepare(

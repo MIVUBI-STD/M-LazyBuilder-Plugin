@@ -2,6 +2,9 @@ package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AppliedMutationCompactorTest {
+    @TempDir Path tempDir;
     @Test
     void compactsOnlyBlocksWhoseAfterStateIsPresent() throws Exception {
         MemoryChangeSetStorage sourceStorage = new MemoryChangeSetStorage();
@@ -20,7 +24,8 @@ class AppliedMutationCompactorTest {
 
         HistoryStorageRouter router = new HistoryStorageRouter(
                 new HistorySizingPolicy(1024, 2048),
-                new MemoryChangeSetStorage()
+                new MemoryChangeSetStorage(),
+                new DiskChangeSetStorage(tempDir)
         );
         WorldBlockStateSource world = (x, y, z) -> x == 0 ? "minecraft:dirt" : "minecraft:stone";
 
@@ -43,7 +48,10 @@ class AppliedMutationCompactorTest {
     void returnsEmptyWhenNothingWasApplied() throws Exception {
         StoredChangeSet prepared = prepared();
         HistoryStorageRouter router = new HistoryStorageRouter(
-                new HistorySizingPolicy(1024, 2048), new MemoryChangeSetStorage());
+                new HistorySizingPolicy(1024, 2048),
+                new MemoryChangeSetStorage(),
+                new DiskChangeSetStorage(tempDir)
+        );
         try (prepared) {
             AppliedMutationCompaction result = AppliedMutationCompactor.compact(
                     prepared, (x, y, z) -> "minecraft:stone", router, 128, "empty-cancel");
@@ -56,7 +64,10 @@ class AppliedMutationCompactorTest {
     void conflictFailsClosedWithoutPublishingSubset() throws Exception {
         StoredChangeSet prepared = prepared();
         HistoryStorageRouter router = new HistoryStorageRouter(
-                new HistorySizingPolicy(1024, 2048), new MemoryChangeSetStorage());
+                new HistorySizingPolicy(1024, 2048),
+                new MemoryChangeSetStorage(),
+                new DiskChangeSetStorage(tempDir)
+        );
         try (prepared) {
             AppliedMutationCompaction result = AppliedMutationCompactor.compact(
                     prepared, (x, y, z) -> "minecraft:gold_block", router, 128, "conflict-cancel");

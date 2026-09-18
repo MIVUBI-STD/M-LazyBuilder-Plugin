@@ -2,6 +2,9 @@ package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StoredChangeSetReverserTest {
+    @TempDir Path tempDir;
     @Test
     void reversedRedoRestoresOriginalBeforeStates() throws Exception {
         MemoryChangeSetStorage storage = new MemoryChangeSetStorage();
@@ -25,7 +29,9 @@ class StoredChangeSetReverserTest {
         }
 
         HistoryStorageRouter router = new HistoryStorageRouter(
-                new HistorySizingPolicy(1024, 2048), new MemoryChangeSetStorage());
+                new HistorySizingPolicy(1024, 2048),
+                new MemoryChangeSetStorage(),
+                new DiskChangeSetStorage(tempDir));
         try (source; StoredChangeSet reversed = StoredChangeSetReverser.reverse(source, router, 128, "rollback")) {
             List<String> redo = new ArrayList<>();
             reversed.replay(ReplayDirection.REDO,

@@ -2,6 +2,9 @@ package com.halokaryamedia.lazybuilder.builder.mutation;
 
 import com.halokaryamedia.lazybuilder.builder.history.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +12,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RollbackCancellationPreparerTest {
+    @TempDir Path tempDir;
     @Test
     void preparesReversePlanForOnlyAppliedSubset() throws Exception {
         StoredChangeSet original = original();
@@ -42,8 +46,11 @@ class RollbackCancellationPreparerTest {
         }
     }
 
-    private static HistoryStorageRouter router() {
-        return new HistoryStorageRouter(new HistorySizingPolicy(1024, 2048), new MemoryChangeSetStorage());
+    private HistoryStorageRouter router() {
+        return new HistoryStorageRouter(
+                new HistorySizingPolicy(1024, 2048),
+                new MemoryChangeSetStorage(),
+                new DiskChangeSetStorage(tempDir));
     }
 
     private static StoredChangeSet original() throws Exception {
