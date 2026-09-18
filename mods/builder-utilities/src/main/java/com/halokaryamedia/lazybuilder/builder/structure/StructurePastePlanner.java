@@ -62,9 +62,37 @@ public final class StructurePastePlanner {
         Objects.requireNonNull(blockEntities, "blockEntities");
         Objects.requireNonNull(payloadTransform, "payloadTransform");
 
-        List<ChunkChangeSet> chunks = plan(snapshot, placement, stateTransform, existing);
-        List<HistoryExtensionFrame> extensions = new ArrayList<>();
+        LinkedHashMap<ChunkKey, ChunkChangeSetBuilder> chunkBuilders = new LinkedHashMap<>();
+        for (ChunkChangeSet chunk : plan(snapshot, placement, stateTransform, existing)) {
+            ChunkChangeSetBuilder builder =
+                    new ChunkChangeSetBuilder(chunk.chunkX(), chunk.chunkZ());
+            long[] positions = chunk.positions();
+            for (int i = 0; i < positions.length; i++) {
+                long packed = positions[i];
+                int worldX = Math.addExact(
+                        Math.multiplyExact(chunk.chunkX(), 16),
+                        LocalBlockPosition.localX(packed));
+                int worldZ = Math.addExact(
+                        Math.multiplyExact(chunk.chunkZ(), 16),
+                        LocalBlockPosition.localZ(packed));
+                builder.addWorld(
+                        worldX,
+                        LocalBlockPosition.y(packed),
+                        worldZ,
+                        chunk.beforeState(i),
+                        chunk.afterState(i));
+            }
+            chunkBuilders.put(new ChunkKey(chunk.chunkX(), chunk.chunkZ()), builder);
+        }
 
+        Map<LocalPosition, StructureBlock> blocksByPosition = new LinkedHashMap<>();
+        for (StructureBlock block : snapshot.blocks()) {
+            blocksByPosition.put(
+                    new LocalPosition(block.x(), block.y(), block.z()),
+                    block);
+        }
+
+        List<HistoryExtensionFrame> extensions = new ArrayList<>();
         for (StructureBlockEntity blockEntity : snapshot.blockEntities()) {
             StructurePlacement.WorldPosition world =
                     placement.transform(blockEntity.x(), blockEntity.y(), blockEntity.z());
@@ -76,8 +104,27 @@ public final class StructurePastePlanner {
                     "block entity transformed payload").clone();
             if (Arrays.equals(before, after)) continue;
 
+            StructureBlock sourceBlock = Objects.requireNonNull(
+                    blocksByPosition.get(new LocalPosition(
+                            blockEntity.x(), blockEntity.y(), blockEntity.z())),
+                    "block entity source block");
+            String beforeState = requireState(
+                    existing.stateAt(world.x(), world.y(), world.z()),
+                    "existing block state");
+            String afterState = requireState(
+                    stateTransform.transform(sourceBlock.blockState(), placement),
+                    "transformed block state");
+
             int chunkX = Math.floorDiv(world.x(), 16);
             int chunkZ = Math.floorDiv(world.z(), 16);
+            ChunkKey chunkKey = new ChunkKey(chunkX, chunkZ);
+            ChunkChangeSetBuilder builder = chunkBuilders.computeIfAbsent(
+                    chunkKey,
+                    key -> new ChunkChangeSetBuilder(key.chunkX, key.chunkZ));
+            if (beforeState.equals(afterState)) {
+                builder.addWorldGuard(world.x(), world.y(), world.z(), beforeState);
+            }
+
             long localKey = LocalBlockPosition.pack(
                     Math.floorMod(world.x(), 16),
                     world.y(),
@@ -93,6 +140,10 @@ public final class StructurePastePlanner {
             ));
         }
 
+        List<ChunkChangeSet> chunks = chunkBuilders.values().stream()
+                .map(ChunkChangeSetBuilder::build)
+                .filter(chunk -> chunk.size() != 0)
+                .toList();
         return new StructurePastePlan(chunks, extensions);
     }
 
@@ -104,5 +155,6 @@ public final class StructurePastePlanner {
     }
 
     private record ChunkKey(int chunkX, int chunkZ) {}
+    private record LocalPosition(int x, int y, int z) {}
 
 }
