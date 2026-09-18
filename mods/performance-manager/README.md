@@ -61,7 +61,11 @@ Physical arena growth and logical compaction no longer have to discard every mir
 
 Relocation remains conservative: if a current handle is missing, changes region, has invalid draw state, or cannot fit the rebuilt backing safely, that resident is invalidated and vanilla rendering remains authoritative until a later upload. Diagnostics report relocation count, copied bytes, and relocation fallbacks separately from ordinary invalidations.
 
-The physical path is still mirrored rather than exclusive. Vanilla VBO/EBO state remains populated so any mismatch immediately falls back without hiding builder geometry. Final VRAM reduction therefore waits until runtime correctness and compatibility proof justify dropping duplicate vanilla backing for proven-safe residents.
+Sequential-index physical residents now have a guarded promotion path from mirrored ownership to exclusive shared-arena ownership. Each resident must accumulate 600 successful physical draws without re-upload, relocation, invalidation, or multi-draw submission failure before its duplicate vanilla GPU backing can be retired. Custom/sorted-index residents remain mirrored and are excluded from promotion.
+
+Retirement preserves the existing VertexBuffer identity while releasing its duplicate per-section GPU storage. The physical arena remains authoritative for exclusive residents. Before a vanilla fallback, arena relocation, region ownership move, or rendering-optimization disable can become authoritative again, LazyBuilder reconstructs the vanilla vertex backing by GPU-to-GPU copy from the shared arena and reattaches it to the existing VAO. Multi-draw failure first falls back to physical single-draw; vanilla fallback is used only after backing recovery succeeds. A failed recovery blocks the unsafe vanilla draw instead of submitting against retired storage.
+
+This promotion remains intentionally limited to sequential-index terrain. Runtime diagnostics expose current exclusive resident count, retired bytes, promotions, recoveries, and recovery failures so live validation can prove that VRAM reduction remains reversible before the scope is expanded.
 
 ## Guarded multi-draw contract
 
