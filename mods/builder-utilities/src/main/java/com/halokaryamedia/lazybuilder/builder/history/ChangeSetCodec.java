@@ -85,7 +85,29 @@ public final class ChangeSetCodec {
         Objects.requireNonNull(direction, "direction");
         Objects.requireNonNull(consumer, "consumer");
         ScanContext context = openInput(input);
-        Counts counts = scan(context, direction, consumer, ReplayPhase.EXTENSIONS);
+        if (direction == ReplayDirection.REDO) {
+            Counts counts = scan(context, direction, consumer, ReplayPhase.EXTENSIONS);
+            return new Header(context.header.operationId, counts.changes, counts.extensions);
+        }
+
+        // Extension frames may depend on block/entity state established by earlier
+        // extension frames. Undo therefore replays them in global reverse order.
+        // Only extension payloads are buffered; block frames remain streaming.
+        List<HistoryExtensionFrame> frames = new ArrayList<>();
+        Counts counts = scan(context, direction, new HistoryReplayConsumer() {
+            @Override
+            public void acceptBlock(int chunkX, int chunkZ, int localX, int y, int localZ, String state) {
+            }
+
+            @Override
+            public void acceptExtension(HistoryExtensionFrame frame, byte[] payload) {
+                frames.add(frame);
+            }
+        }, ReplayPhase.EXTENSIONS);
+        for (int i = frames.size() - 1; i >= 0; i--) {
+            HistoryExtensionFrame frame = frames.get(i);
+            consumer.acceptExtension(frame, frame.beforePayload());
+        }
         return new Header(context.header.operationId, counts.changes, counts.extensions);
     }
 

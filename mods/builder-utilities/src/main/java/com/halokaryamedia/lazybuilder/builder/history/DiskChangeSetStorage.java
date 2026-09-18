@@ -205,9 +205,22 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
 
         @Override
         public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
+            if (direction == ReplayDirection.UNDO) {
+                replayExtensions(direction, consumer);
+                replayBlocks(direction, consumer);
+            } else {
+                replayBlocks(direction, consumer);
+                replayExtensions(direction, consumer);
+            }
+        }
+
+        private void replayBlocks(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (InputStream blocks = Files.newInputStream(path)) {
                 validate(ChangeSetCodec.replayBlocks(blocks, direction, consumer));
             }
+        }
+
+        private void replayExtensions(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
             try (InputStream extensions = Files.newInputStream(path)) {
                 validate(ChangeSetCodec.replayExtensions(extensions, direction, consumer));
             }
