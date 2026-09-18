@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.client;
 
 import com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol;
 import com.halokaryamedia.lazybuilder.client.MapAreaSelectionState.DragMode;
+import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.Handle;
+import com.halokaryamedia.lazybuilder.client.MapAreaSelectionGeometry.SelectionRect;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -487,8 +489,8 @@ public final class WorldMapScreen extends Screen {
             Rect rect = new Rect(8, rowY, sidebar - 8, rowY + SIDEBAR_ROW_HEIGHT - 2);
             boolean selected = world.worldId().equals(selectedWorldId);
             boolean hover = rect.contains(mouseX, mouseY);
-            if (selected) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.ACCENT_FILL);
-            else if (hover) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.SURFACE_2);
+            if (selected) context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), LbUi.ACCENT_FILL);
+            else if (hover) context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), LbUi.SURFACE_2);
 
             boolean pinned = NAVIGATION.isPinned(world.worldId());
             context.drawTextWithShadow(textRenderer, Text.literal(pinned ? "★" : "☆"), 12, rowY + 8,
@@ -578,18 +580,18 @@ public final class WorldMapScreen extends Screen {
 
     private void renderScopeTab(DrawContext context, Rect rect, String label, boolean selected, int mouseX, int mouseY) {
         int color = selected ? LbUi.ACCENT_FILL : rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2;
-        context.fill(rect.left, rect.top, rect.right, rect.bottom, color);
+        context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), color);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
-                rect.left + rect.width() / 2, rect.top + 6, selected ? LbUi.TEXT_PRIMARY : LbUi.TEXT_SECONDARY);
+                rect.left() + rect.width() / 2, rect.top() + 6, selected ? LbUi.TEXT_PRIMARY : LbUi.TEXT_SECONDARY);
     }
 
     private void renderSettingRow(DrawContext context, Rect rect, String label, String value, int mouseX, int mouseY) {
-        context.fill(rect.left, rect.top, rect.right, rect.bottom,
+        context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(),
                 rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
-        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 5, LbUi.TEXT_SECONDARY);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left() + 7, rect.top() + 5, LbUi.TEXT_SECONDARY);
         String shown = trim(value, Math.max(20, rect.width() / 2));
         context.drawTextWithShadow(textRenderer, Text.literal(shown),
-                rect.right - 7 - textRenderer.getWidth(shown), rect.top + 5, LbUi.TEXT_PRIMARY);
+                rect.right() - 7 - textRenderer.getWidth(shown), rect.top() + 5, LbUi.TEXT_PRIMARY);
     }
 
     private void renderExportAdvanced(DrawContext context, int mouseX, int mouseY) {
@@ -610,10 +612,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderAccordionRow(DrawContext context, Rect rect, String label, boolean expanded, int mouseX, int mouseY) {
-        context.fill(rect.left, rect.top, rect.right, rect.bottom,
+        context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(),
                 rect.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_1);
-        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 6, LbUi.TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal(expanded ? "⌄" : "›"), rect.right - 14, rect.top + 6, LbUi.TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left() + 7, rect.top() + 6, LbUi.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal(expanded ? "⌄" : "›"), rect.right() - 14, rect.top() + 6, LbUi.TEXT_MUTED);
     }
 
     private void renderBottomStatus(DrawContext context, int mouseX, int mouseY) {
@@ -676,9 +678,9 @@ public final class WorldMapScreen extends Screen {
     private void renderCompactAction(DrawContext context, Rect rect, String label, boolean primary, int mouseX, int mouseY) {
         int base = primary ? LbUi.ACCENT_FILL : LbUi.SURFACE_2;
         int hover = primary ? LbUi.ACCENT_HOVER : LbUi.SURFACE_3;
-        context.fill(rect.left, rect.top, rect.right, rect.bottom, rect.contains(mouseX, mouseY) ? hover : base);
+        context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), rect.contains(mouseX, mouseY) ? hover : base);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal(label),
-                (rect.left + rect.right) / 2, rect.top + 6, LbUi.TEXT_PRIMARY);
+                (rect.left() + rect.right()) / 2, rect.top() + 6, LbUi.TEXT_PRIMARY);
     }
 
     private void renderContextMenu(DrawContext context, int mouseX, int mouseY) {
@@ -699,8 +701,8 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderMenuRow(DrawContext context, Rect rect, String label, boolean active, int mouseX, int mouseY) {
-        if (active && rect.contains(mouseX, mouseY)) context.fill(rect.left, rect.top, rect.right, rect.bottom, LbUi.SURFACE_3);
-        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left + 7, rect.top + 6,
+        if (active && rect.contains(mouseX, mouseY)) context.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), LbUi.SURFACE_3);
+        context.drawTextWithShadow(textRenderer, Text.literal(label), rect.left() + 7, rect.top() + 6,
                 active ? LbUi.TEXT_PRIMARY : LbUi.TEXT_DISABLED);
     }
 
@@ -1161,10 +1163,10 @@ public final class WorldMapScreen extends Screen {
         SelectionRect rect = selectionRect();
         if (rect == null) return;
         Bounds bounds = mapBounds();
-        int left = Math.max(bounds.left, rect.left);
-        int right = Math.min(bounds.right, rect.right);
-        int top = Math.max(bounds.top, rect.top);
-        int bottom = Math.min(bounds.bottom, rect.bottom);
+        int left = Math.max(bounds.left, rect.left());
+        int right = Math.min(bounds.right, rect.right());
+        int top = Math.max(bounds.top, rect.top());
+        int bottom = Math.min(bounds.bottom, rect.bottom());
         if (right <= left || bottom <= top) return;
 
         if (top > bounds.top) context.fill(bounds.left, bounds.top, bounds.right, top, OUTSIDE_SELECTION_DIM);
@@ -1178,12 +1180,12 @@ public final class WorldMapScreen extends Screen {
         context.fill(right - 2, top, right, bottom, LbUi.ACCENT_BRIGHT);
 
         DragMode hover = hitSelection(mouseX, mouseY);
-        for (Handle handle : handles(rect)) {
-            int radius = handle.mode == hover || handle.mode == areaSelection.dragMode() ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
-            int color = handle.mode == hover || handle.mode == areaSelection.dragMode() ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
-            context.fill(handle.x - radius, handle.y - radius, handle.x + radius + 1, handle.y + radius + 1, 0xAA10151C);
-            context.fill(handle.x - radius + 2, handle.y - radius + 2,
-                    handle.x + radius - 1, handle.y + radius - 1, color);
+        for (Handle handle : MapAreaSelectionGeometry.handles(rect)) {
+            int radius = handle.mode() == hover || handle.mode() == areaSelection.dragMode() ? HANDLE_RADIUS + 1 : HANDLE_RADIUS;
+            int color = handle.mode() == hover || handle.mode() == areaSelection.dragMode() ? LbUi.TEXT_PRIMARY : LbUi.ACCENT_BRIGHT;
+            context.fill(handle.x() - radius, handle.y() - radius, handle.x() + radius + 1, handle.y() + radius + 1, 0xAA10151C);
+            context.fill(handle.x() - radius + 2, handle.y() - radius + 2,
+                    handle.x() + radius - 1, handle.y() + radius - 1, color);
         }
     }
 
@@ -1205,25 +1207,9 @@ public final class WorldMapScreen extends Screen {
     private DragMode hitSelection(double mouseX, double mouseY) {
         if (!areaSelection.active) return DragMode.NONE;
         SelectionRect rect = selectionRect();
-        if (rect == null) return DragMode.NONE;
-        for (Handle handle : handles(rect)) {
-            if (Math.abs(mouseX - handle.x) <= HANDLE_RADIUS + 3
-                    && Math.abs(mouseY - handle.y) <= HANDLE_RADIUS + 3) return handle.mode;
-        }
-        if (mouseX > rect.left + HANDLE_RADIUS && mouseX < rect.right - HANDLE_RADIUS
-                && mouseY > rect.top + HANDLE_RADIUS && mouseY < rect.bottom - HANDLE_RADIUS) return DragMode.MOVE;
-        return DragMode.NONE;
-    }
-
-    private Handle[] handles(SelectionRect rect) {
-        int midX = rect.left + (rect.right - rect.left) / 2;
-        int midY = rect.top + (rect.bottom - rect.top) / 2;
-        return new Handle[]{
-                new Handle(rect.left, rect.top, DragMode.NW), new Handle(midX, rect.top, DragMode.N),
-                new Handle(rect.right, rect.top, DragMode.NE), new Handle(rect.right, midY, DragMode.E),
-                new Handle(rect.right, rect.bottom, DragMode.SE), new Handle(midX, rect.bottom, DragMode.S),
-                new Handle(rect.left, rect.bottom, DragMode.SW), new Handle(rect.left, midY, DragMode.W)
-        };
+        return rect == null
+                ? DragMode.NONE
+                : MapAreaSelectionGeometry.hit(rect, mouseX, mouseY, HANDLE_RADIUS);
     }
 
     private SelectionRect selectionRect() {
@@ -1233,7 +1219,7 @@ public final class WorldMapScreen extends Screen {
         int right = worldToScreenX((areaSelection.maxChunkX + 1) * CHUNK_BLOCKS, bounds);
         int top = worldToScreenZ(minBlockZ(), bounds);
         int bottom = worldToScreenZ((areaSelection.maxChunkZ + 1) * CHUNK_BLOCKS, bounds);
-        return new SelectionRect(Math.min(left, right), Math.min(top, bottom), Math.max(left, right), Math.max(top, bottom));
+        return MapAreaSelectionGeometry.rect(left, top, right, bottom);
     }
 
     private int minBlockX() { return areaSelection.minBlockX(CHUNK_BLOCKS); }
@@ -1520,8 +1506,6 @@ public final class WorldMapScreen extends Screen {
         if (client != null) client.setScreen(null);
     }
 
-    private record Handle(int x, int y, DragMode mode) {}
-    private record SelectionRect(int left, int top, int right, int bottom) {}
     private record Rect(int left, int top, int right, int bottom) {
         boolean contains(double x, double y) { return x >= left && x < right && y >= top && y < bottom; }
         int width() { return right - left; }
