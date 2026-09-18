@@ -69,9 +69,6 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private final float[] normalOffset = {0.0f};
     private final float[] binormalOffset = {0.0f};
     private final float[] jitter = {0.0f};
-    private final float[] taperEndScale = {1.0f};
-    private final float[] twistDegrees = {0.0f};
-    private final float[] jitter = {0.0f};
 
     private List<SchematicCatalog.Entry> entries = List.of();
     private int selectedIndex;
@@ -158,9 +155,6 @@ public final class AxiomSplineSchematicTool implements CustomTool {
         changed |= ImGui.sliderInt("Curve Mode (0 Uniform / 1 Centripetal)", parameterization, 0, 1);
         changed |= ImGui.sliderFloat("Normal Offset", normalOffset, -16.0f, 16.0f);
         changed |= ImGui.sliderFloat("Binormal Offset", binormalOffset, -16.0f, 16.0f);
-        changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
-        changed |= ImGui.sliderFloat("End Radius Scale", taperEndScale, 0.0f, 4.0f);
-        changed |= ImGui.sliderFloat("Twist Degrees", twistDegrees, -720.0f, 720.0f);
         changed |= ImGui.sliderFloat("Jitter", jitter, 0.0f, 4.0f);
 
         if (ImGui.button("Clear Spline")) {
@@ -253,8 +247,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
             samples = SplineModifierPipeline.apply(
                     samples,
                     SplineModifiers.compose(
-                            SplineModifiers.taper(1.0, taperEndScale[0]),
-                            SplineModifiers.twist(0.0, twistDegrees[0]),
+                            SplineModifiers.offset(normalOffset[0], binormalOffset[0]),
                             SplineModifiers.jitter(
                                     jitter[0], jitter[0], jitter[0] * 0.25,
                                     0x5343484a49545452L)
