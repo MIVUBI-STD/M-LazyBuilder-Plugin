@@ -5,10 +5,10 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Pure aligned first-fit allocator model for one future shared terrain GPU arena.
+ * Pure aligned first-fit allocator for one shared terrain GPU arena.
  *
- * It owns no GPU resource. Free spans are coalesced so the physical arena implementation can reuse
- * the exact same allocation semantics without coupling tests to OpenGL/render-thread state.
+ * It owns no GPU resource. Free spans are coalesced so the physical arena implementation and pure
+ * tests share the same allocation semantics without coupling this owner to OpenGL/render-thread state.
  */
 public final class TerrainRegionSuballocator<K> {
     private final long capacityBytes;
