@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.builder.history;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class HistoryExtensionFrameTest {

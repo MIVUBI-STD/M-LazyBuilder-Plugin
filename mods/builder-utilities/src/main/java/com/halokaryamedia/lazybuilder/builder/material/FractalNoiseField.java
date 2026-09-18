@@ -1,6 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.material;
 
-/** Deterministic multi-octave value noise normalized to the [0,1] range. */
+/** Deterministic multi-octave value noise normalized to [0,1]. */
 public final class FractalNoiseField implements ScalarField {
     private final ValueNoiseField[] octaves;
     private final double[] amplitudes;
@@ -30,18 +30,15 @@ public final class FractalNoiseField implements ScalarField {
         this.amplitudes = new double[octaveCount];
         double frequency = baseFrequency;
         double amplitude = 1.0;
-        double total = 0.0;
+        double sum = 0.0;
         for (int i = 0; i < octaveCount; i++) {
-            octaves[i] = new ValueNoiseField(frequency, channel + i * 0x9E3779B97F4A7C15L);
+            octaves[i] = new ValueNoiseField(frequency, channel + 0x9E3779B97F4A7C15L * i);
             amplitudes[i] = amplitude;
-            total += amplitude;
+            sum += amplitude;
             frequency *= lacunarity;
             amplitude *= persistence;
-            if (!Double.isFinite(frequency)) {
-                throw new IllegalArgumentException("fractal frequency overflow");
-            }
         }
-        this.amplitudeSum = total;
+        this.amplitudeSum = sum;
     }
 
     @Override
