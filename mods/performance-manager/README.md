@@ -16,7 +16,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, a guarded true multi-draw submission backend, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
-Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Normal render passes process at most 48 queued upload tasks; shutdown drains fully.
+Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Foreground upload work is now paced by the existing frame-pressure signal: normal frames allow up to 48 queued tasks per pass, elevated pressure reduces that to 24, and heavy pressure reduces it to 8; shutdown still drains fully. Terrain submission also reuses per-layer transform builders and grow-only native packing buffers to reduce per-frame allocation and direct-buffer churn.
 
 ## Terrain GPU residency, reclamation, and arena ownership model
 
