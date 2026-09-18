@@ -10,7 +10,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,7 +77,41 @@ public final class SpongeSchematicV3Exporter {
 
         NbtCompound root = new NbtCompound();
         root.put("Schematic", schematic);
-        NbtIo.writeCompressed(root, path);
+
+        Path absolute = path.toAbsolutePath().normalize();
+        Path parent = absolute.getParent();
+        if (parent == null) {
+            throw new IOException("Schematic export path has no parent directory");
+        }
+        Files.createDirectories(parent);
+        Path staging = Files.createTempFile(
+                parent,
+                absolute.getFileName().toString() + ".",
+                ".tmp"
+        );
+        boolean published = false;
+        try {
+            NbtIo.writeCompressed(root, staging);
+            try {
+                Files.move(
+                        staging,
+                        absolute,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(
+                        staging,
+                        absolute,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+            published = true;
+        } finally {
+            if (!published) {
+                Files.deleteIfExists(staging);
+            }
+        }
     }
 
     private static NbtCompound writeBlocks(
