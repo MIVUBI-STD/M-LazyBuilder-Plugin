@@ -234,6 +234,8 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             selected = supportedCatalog.get(name);
             if (selected == null) {
                 SpongeSchematicImport imported = catalog.load(entries.get(selectedIndex));
+                com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
+                        .requireNotFuture(imported.dataVersion());
                 AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
                 selected = imported;
             }
@@ -361,6 +363,10 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
+        for (PlacementPlanEntry entry : placements) {
+            AxiomSchematicCompatibility.validateForApply(
+                    requireSource(entry.sourceId()), world);
+        }
         AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(placements);
@@ -481,6 +487,8 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             SpongeSchematicImport imported;
             try {
                 imported = catalog.load(entry);
+                com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
+                        .requireNotFuture(imported.dataVersion());
                 AxiomStructureAuxiliary.requireApplySupported(imported.snapshot());
             } catch (IllegalArgumentException unsupported) {
                 continue;

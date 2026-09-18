@@ -133,7 +133,9 @@ public final class AxiomStructureStampTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Select two source corners, then click a destination anchor. Blocks use Axiom; captured biomes use negotiated server BIOME authority. Block entities/entities remain export-only until their authoritative capability is available.");
+        ImGui.textWrapped("Select two source corners, then click a destination anchor. "
+                + "Blocks use Axiom; BIOME/ENTITY payloads use negotiated server authority. "
+                + "Block entities remain export-only until a generic authoritative capability exists.");
         ImGui.separator();
 
         if (mutation.isActive()) {

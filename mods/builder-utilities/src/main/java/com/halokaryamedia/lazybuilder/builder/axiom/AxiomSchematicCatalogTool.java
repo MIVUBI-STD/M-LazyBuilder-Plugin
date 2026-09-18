@@ -97,7 +97,8 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     @Override
     public void displayImguiOptions() {
         ImGui.textWrapped("Reads Sponge v3 .schem files from " + catalog.directory()
-                + ". Blocks use Axiom and biomes use negotiated server BIOME authority. Block entities/entities stay preserved but cannot be applied yet.");
+                + ". Blocks use Axiom; BIOME/ENTITY payloads use negotiated server authority. "
+                + "Block entities remain preserved/export-only until a generic authority exists.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -181,12 +182,16 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
     private void loadSelected() {
         try {
             selected = catalog.load(entries.get(selectedIndex));
+            com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
+                    .requireNotFuture(selected.dataVersion());
             AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             destination = null;
             previewPoints = List.of();
             if (preview != null) preview.clear();
             idleStatus = "Loaded " + selectedName() + " ("
-                    + selected.snapshot().blockCount() + " blocks)";
+                    + selected.snapshot().blockCount() + " blocks, DataVersion "
+                    + selected.dataVersion() + " / "
+                    + AxiomSchematicCompatibility.status(selected) + ")";
         } catch (Exception e) {
             selected = null;
             destination = null;
@@ -213,6 +218,7 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
         ClientWorld world = Objects.requireNonNull(
                 MinecraftClient.getInstance().world,
                 "Minecraft client world is unavailable");
+        AxiomSchematicCompatibility.validateForApply(selected, world);
         AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
 
         StructurePastePlan plan = AxiomStructureAuxiliary.planSingle(

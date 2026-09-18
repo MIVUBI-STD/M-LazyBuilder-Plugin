@@ -219,6 +219,8 @@ public final class AxiomSplineSchematicTool implements CustomTool {
     private void loadSelected() {
         try {
             selected = catalog.load(entries.get(selectedIndex));
+            com.halokaryamedia.lazybuilder.builder.structure.SchematicDataVersionPolicy
+                    .requireNotFuture(selected.dataVersion());
             AxiomStructureAuxiliary.requireApplySupported(selected.snapshot());
             if (controlPoints.size() >= 2) rebuildPreview();
             else idleStatus = "Loaded " + selectedName();
@@ -353,6 +355,7 @@ public final class AxiomSplineSchematicTool implements CustomTool {
 
     private void startMutation() throws IOException {
         ClientWorld world = requireWorld();
+        AxiomSchematicCompatibility.validateForApply(selected, world);
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes();
 
