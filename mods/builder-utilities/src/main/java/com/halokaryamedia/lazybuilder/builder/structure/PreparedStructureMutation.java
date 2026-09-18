@@ -22,8 +22,9 @@ public record PreparedStructureMutation(
         Objects.requireNonNull(changeSet, "changeSet");
         if (plannedChanges < 0) throw new IllegalArgumentException("plannedChanges must be >= 0");
         if (extensionChanges < 0) throw new IllegalArgumentException("extensionChanges must be >= 0");
-        if (changeSet.changeCount() != plannedChanges) {
-            throw new IllegalArgumentException("Stored changeset count does not match plannedChanges");
+        if (plannedChanges > changeSet.changeCount()) {
+            throw new IllegalArgumentException(
+                    "plannedChanges cannot exceed stored block history entries");
         }
         if (changeSet.extensionCount() != extensionChanges) {
             throw new IllegalArgumentException("Stored extension count does not match extensionChanges");
