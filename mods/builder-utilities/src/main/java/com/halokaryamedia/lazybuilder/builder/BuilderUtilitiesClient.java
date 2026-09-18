@@ -11,6 +11,7 @@ import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSchematicDistributionTo
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplinePreviewTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomSplineSchematicTool;
 import com.halokaryamedia.lazybuilder.builder.axiom.AxiomStructureStampTool;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -23,6 +24,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        BuilderExtensionClientNetworking.register();
         AxiomClientServices services = AxiomClientServices.load();
         runtime = BuilderRuntime.createDefault();
         services.toolRegistry().register(new AxiomSplinePreviewTool(services, runtime));

@@ -25,6 +25,11 @@ sourceSets {
     }
     main {
         compileClasspath += axiomCompileStubs.output
+        java {
+            srcDirs = ['src/main/java', '../../shared/protocol/src/main/java']
+            include 'com/halokaryamedia/lazybuilder/builder/**'
+            include 'com/halokaryamedia/lazybuilder/builder/wire/BuilderExtensionWireProtocol.java'
+        }
     }
     test {
         compileClasspath += axiomCompileStubs.output

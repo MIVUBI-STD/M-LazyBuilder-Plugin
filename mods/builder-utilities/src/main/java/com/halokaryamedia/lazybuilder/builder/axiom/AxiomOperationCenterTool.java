@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryRecoveryManager;
 import com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
 import net.minecraft.client.MinecraftClient;
@@ -63,6 +64,13 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " maxObservedSliceMs="
                 + String.format("%.3f", proof.maxSliceNanos() / 1_000_000.0)
                 + " lastOutcome=" + proof.lastOutcome());
+
+        var extension = BuilderExtensionClientNetworking.capabilities();
+        ImGui.textWrapped("Server extension authority: " + extension.status()
+                + " | BIOME=" + extension.supportsBiome()
+                + " BLOCK_ENTITY=" + extension.supportsBlockEntity()
+                + " ENTITY=" + extension.supportsEntity()
+                + " maxBatch=" + extension.maxBatchEntries());
 
         var budget = runtime.dispatchBudget();
         ImGui.textWrapped("Dispatch budget: "
