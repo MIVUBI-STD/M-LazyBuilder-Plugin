@@ -21,6 +21,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private final ExecutionBudget dispatchBudget;
     private final Path schematicDirectory;
     private final DiskChangeSetStorage diskHistory;
+    private boolean closed;
 
     private BuilderRuntime(
             HistoryTimeline timeline,
@@ -61,5 +62,10 @@ public final class BuilderRuntime implements AutoCloseable {
     public Path schematicDirectory() { return schematicDirectory; }
     public DiskChangeSetStorage diskHistory() { return diskHistory; }
 
-    @Override public void close() throws IOException { timeline.close(); }
+    @Override
+    public synchronized void close() throws IOException {
+        if (closed) return;
+        closed = true;
+        timeline.close();
+    }
 }
