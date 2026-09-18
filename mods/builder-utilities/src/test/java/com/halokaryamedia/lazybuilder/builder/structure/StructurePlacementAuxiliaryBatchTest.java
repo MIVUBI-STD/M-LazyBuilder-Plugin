@@ -59,6 +59,36 @@ class StructurePlacementAuxiliaryBatchTest {
         assertArrayEquals(new byte[]{6}, firstAfter.templateNbt());
     }
 
+    @Test
+    void batchNbtOnlyBlockEntityChangeCarriesStateGuard() throws Exception {
+        StructureSnapshot snapshot = new StructureSnapshot(
+                List.of(new StructureBlock(0, 0, 0, "minecraft:chest")),
+                List.of(new StructureBlockEntity(0, 0, 0, new byte[]{2}))
+        );
+
+        StructureAuxiliaryContext auxiliary = new StructureAuxiliaryContext(
+                (x, y, z) -> new byte[]{1},
+                BlockEntityPayloadTransform.identity(),
+                null,
+                BiomePayloadTransform.identity(),
+                null,
+                EntityPayloadTransform.identity()
+        );
+
+        StructurePastePlan plan = StructurePlacementBatchPlanner.planAll(
+                List.of(entry(0, 64, 0, 0)),
+                id -> snapshot,
+                BlockStateTransform.identity(),
+                (x, y, z) -> "minecraft:chest",
+                auxiliary
+        );
+
+        assertEquals(1, plan.blockChanges());
+        assertEquals("minecraft:chest", plan.chunks().get(0).beforeState(0));
+        assertEquals("minecraft:chest", plan.chunks().get(0).afterState(0));
+        assertEquals(1, plan.extensionChanges());
+    }
+
     private static PlacementPlanEntry entry(int x, int y, int z, int ordinal) {
         return new PlacementPlanEntry(
                 new PlacementPoint(x, y, z, ordinal),
