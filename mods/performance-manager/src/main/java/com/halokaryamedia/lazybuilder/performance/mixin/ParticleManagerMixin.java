@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
+import com.halokaryamedia.lazybuilder.performance.FramePressure;
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ParticlePressurePolicy;
@@ -33,6 +34,9 @@ abstract class ParticleManagerMixin {
     ) {
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
 
+        FramePressure pressure = PerformanceManagerClient.pressure();
+        if (pressure == FramePressure.NORMAL) return;
+
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.world == null || client.gameRenderer == null) return;
 
@@ -42,7 +46,7 @@ abstract class ParticleManagerMixin {
         double dz = z - camera.z;
         double distanceSquared = dx * dx + dy * dy + dz * dz;
 
-        if (ParticlePressurePolicy.shouldSuppress(PerformanceManagerClient.pressure(), distanceSquared)) {
+        if (ParticlePressurePolicy.shouldSuppress(pressure, distanceSquared)) {
             ChunkPipelineMetrics.recordParticleSuppressed();
             cir.setReturnValue(null);
         }
