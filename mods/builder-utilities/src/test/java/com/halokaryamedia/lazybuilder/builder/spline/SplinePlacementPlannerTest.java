@@ -24,7 +24,7 @@ class SplinePlacementPlannerTest {
                 new SplineSample(1.0, new BuilderVec3(10, 64, 0), FRAME, 4.0, 0.0)
         );
         PlacementSource source = (point, seed) -> "bridge";
-        PlacementVariation variation = new PlacementVariation(0, 0, 1, 1, 0, 10);
+        PlacementVariation variation = new PlacementVariation(0, 0, 1, 1, 0, 0, 10);
 
         List<SplinePlacementPlanEntry> plan = SplinePlacementPlanner.plan(
                 samples, 2.5, source, variation, new OperationSeed(42)
@@ -49,7 +49,7 @@ class SplinePlacementPlannerTest {
                 new WeightedPlacementSource.Entry("segment-a", 3),
                 new WeightedPlacementSource.Entry("segment-b", 1)
         ), 100);
-        PlacementVariation variation = new PlacementVariation(-5, 5, 0.9, 1.1, 0.25, 200);
+        PlacementVariation variation = new PlacementVariation(-5, 5, 0.9, 1.1, 0.25, 0.0, 200);
         StructureChainSplinePayload payload = new StructureChainSplinePayload(4.0, source, variation);
 
         List<SplinePlacementPlanEntry> first = payload.plan(samples, new OperationSeed(99));
@@ -65,7 +65,7 @@ class SplinePlacementPlannerTest {
                 new SplineSample(0.0, new BuilderVec3(1, 2, 3), FRAME, 1.0, 0.0),
                 new SplineSample(1.0, new BuilderVec3(1, 2, 3), FRAME, 1.0, 0.0)
         );
-        PlacementVariation variation = new PlacementVariation(0, 0, 1, 1, 0, 0);
+        PlacementVariation variation = new PlacementVariation(0, 0, 1, 1, 0, 0, 0);
 
         assertThrows(IllegalArgumentException.class, () -> SplinePlacementPlanner.plan(
                 samples, 1.0, (point, seed) -> "segment", variation, new OperationSeed(1)
