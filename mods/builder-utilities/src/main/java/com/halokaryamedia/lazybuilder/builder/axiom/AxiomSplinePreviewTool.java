@@ -27,6 +27,7 @@ import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
 import com.halokaryamedia.lazybuilder.builder.spline.CatmullRomSpline;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineControlPoint;
 import com.halokaryamedia.lazybuilder.builder.spline.SplinePlacementPlanEntry;
+import com.halokaryamedia.lazybuilder.builder.spline.SplineParameterization;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineModifierPipeline;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineModifiers;
 import com.halokaryamedia.lazybuilder.builder.spline.SplineSample;
