@@ -469,9 +469,22 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         for (PlacementPlanEntry entry : entries) {
             StructureSnapshot snapshot = applyImport(requireSource(entry.sourceId())).snapshot();
             total = Math.addExact(total, Math.multiplyExact(snapshot.blockCount(), 96L));
-            total = Math.addExact(total, Math.multiplyExact((long) snapshot.blockEntityCount(), 512L));
-            total = Math.addExact(total, Math.multiplyExact((long) snapshot.biomeCount(), 192L));
-            total = Math.addExact(total, Math.multiplyExact((long) snapshot.entityCount(), 256L));
+
+            for (var blockEntity : snapshot.blockEntities()) {
+                total = Math.addExact(
+                        total,
+                        Math.addExact(128L, Math.multiplyExact(blockEntity.payload().length, 2L)));
+            }
+            for (var biome : snapshot.biomes()) {
+                total = Math.addExact(
+                        total,
+                        Math.addExact(96L, Math.multiplyExact(biome.payload().length, 2L)));
+            }
+            for (var entity : snapshot.entities()) {
+                total = Math.addExact(
+                        total,
+                        Math.addExact(160L, Math.multiplyExact(entity.payload().length, 2L)));
+            }
         }
         return Math.max(1L, total);
     }
