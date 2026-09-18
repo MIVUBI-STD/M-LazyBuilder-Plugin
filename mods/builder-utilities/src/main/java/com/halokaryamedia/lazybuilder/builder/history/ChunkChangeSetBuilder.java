@@ -63,6 +63,28 @@ public final class ChunkChangeSetBuilder {
         }
     }
 
+    /**
+     * Adds a no-op state guard used by extension CAS paths that must preserve
+     * the exact block-state precondition even when the block itself does not change.
+     */
+    public void addWorldGuard(
+            int worldX,
+            int y,
+            int worldZ,
+            String state
+    ) {
+        requireState(state, "state");
+        if (Math.floorDiv(worldX, 16) != chunkX || Math.floorDiv(worldZ, 16) != chunkZ) {
+            throw new IllegalArgumentException("world position does not belong to builder chunk");
+        }
+        long packed = LocalBlockPosition.pack(
+                Math.floorMod(worldX, 16),
+                y,
+                Math.floorMod(worldZ, 16)
+        );
+        changes.putIfAbsent(packed, new Change(state, state));
+    }
+
     public ChunkChangeSet build() {
         LinkedHashMap<String, Integer> palette = new LinkedHashMap<>();
         long[] positions = new long[changes.size()];
