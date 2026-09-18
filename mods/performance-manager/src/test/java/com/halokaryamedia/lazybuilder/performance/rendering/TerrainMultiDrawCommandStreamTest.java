@@ -60,6 +60,68 @@ final class TerrainMultiDrawCommandStreamTest {
     }
 
     @Test
+    void reusablePackingBuffersResetLimitAndContentsBetweenPackets() {
+        VertexFormat format = VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL;
+        int vertexCount = 16;
+        int vertexBytes = format.getVertexSizeByte() * vertexCount;
+        var state = new TerrainArenaDrawStateRegistry.DrawState(
+                format,
+                vertexCount,
+                24,
+                VertexFormat.DrawMode.QUADS,
+                VertexFormat.IndexType.SHORT,
+                vertexBytes,
+                0
+        );
+        long required = state.requiredAllocationBytes();
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+
+        var largeLayer = TerrainDrawTransformStream.build(
+                0,
+                List.of(
+                        new TerrainDrawTransformStream.Input(
+                                new TerrainArenaDrawPlanner.Command(
+                                        new TerrainRegionAllocationRegistry.Handle(arena, 0L, required, required, 1L),
+                                        state
+                                ),
+                                16, 0, 0
+                        ),
+                        new TerrainDrawTransformStream.Input(
+                                new TerrainArenaDrawPlanner.Command(
+                                        new TerrainRegionAllocationRegistry.Handle(arena, 256L, required, required, 2L),
+                                        state
+                                ),
+                                32, 0, 0
+                        )
+                ),
+                0.0D, 0.0D, 0.0D, false
+        );
+        TerrainMultiDrawCommandStream.packTransforms(TerrainMultiDrawCommandStream.build(largeLayer));
+
+        var smallLayer = TerrainDrawTransformStream.build(
+                0,
+                List.of(new TerrainDrawTransformStream.Input(
+                        new TerrainArenaDrawPlanner.Command(
+                                new TerrainRegionAllocationRegistry.Handle(arena, 0L, required, required, 3L),
+                                state
+                        ),
+                        48, 16, 8
+                )),
+                0.0D, 0.0D, 0.0D, false
+        );
+
+        ByteBuffer transforms = TerrainMultiDrawCommandStream
+                .packTransforms(TerrainMultiDrawCommandStream.build(smallLayer))
+                .order(ByteOrder.nativeOrder());
+
+        assertEquals(16, transforms.remaining());
+        assertEquals(48.0F, transforms.getFloat());
+        assertEquals(16.0F, transforms.getFloat());
+        assertEquals(8.0F, transforms.getFloat());
+        assertEquals(0.0F, transforms.getFloat());
+    }
+
+    @Test
     void publishingAndClearingTracksLayerPackets() {
         TerrainMultiDrawCommandStream.clear();
         TerrainDrawTransformStream.LayerSnapshot empty = TerrainDrawTransformStream.build(

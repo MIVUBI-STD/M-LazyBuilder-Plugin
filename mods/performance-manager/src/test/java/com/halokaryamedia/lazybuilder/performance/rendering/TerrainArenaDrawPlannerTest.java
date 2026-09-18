@@ -154,6 +154,25 @@ final class TerrainArenaDrawPlannerTest {
     }
 
     @Test
+    void streamingAccumulatorMatchesListPlanner() {
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+        var state = sequentialState();
+        List<TerrainArenaDrawPlanner.Command> commands = Arrays.asList(
+                command(arena, 0L, state, 1L),
+                command(arena, 256L, state, 2L),
+                null,
+                command(arena, 512L, state, 3L)
+        );
+
+        TerrainArenaDrawPlanner.Plan listPlan = TerrainArenaDrawPlanner.plan(commands, 0);
+        TerrainArenaDrawPlanner.Accumulator accumulator = TerrainArenaDrawPlanner.accumulator(0);
+        for (TerrainArenaDrawPlanner.Command command : commands) accumulator.accept(command);
+        TerrainArenaDrawPlanner.Plan streamingPlan = accumulator.finish();
+
+        assertEquals(listPlan, streamingPlan);
+    }
+
+    @Test
     void combinesLayerPlansWithoutInventingCrossLayerBatches() {
         TerrainArenaDrawPlanner.Plan combined = TerrainArenaDrawPlanner.combine(
                 new TerrainArenaDrawPlanner.Plan(8, 1, 3, 5L, 6, 2, 4L),
