@@ -60,7 +60,7 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
         BudgetedDispatchSlice result = budgetedDispatcher.dispatchSlice(budget);
         core.noteProcessedWork(Math.min(
                 core.lifecycle().totalWork(),
-                budgetedDispatcher.totalProcessedBlocks()));
+                budgetedDispatcher.totalProcessedMutations()));
         switch (result.state()) {
             case YIELDED, EXHAUSTED -> { }
             case CANCELLED -> core.noteCancellationRequested();
