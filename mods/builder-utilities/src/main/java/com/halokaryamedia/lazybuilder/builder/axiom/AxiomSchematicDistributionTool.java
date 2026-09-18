@@ -425,10 +425,12 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
         CancellationSource cancellation = new CancellationSource();
         long estimateBytes = estimatedHistoryBytes(placements);
 
+        String durableOperationId = AxiomDurableOperationIds.random(world);
+
         Optional<PreparedStructureMutation> prepared;
         if (!requiresAuxiliary(placements)) {
             prepared = PlacementStructureMutationPreparer.prepareBlocks(
-                    UUID.randomUUID().toString(),
+                    durableOperationId,
                     placements,
                     id -> applyImport(requireSource(id)).snapshot(),
                     new MinecraftStructureBlockStateTransform(world),
@@ -439,7 +441,7 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             );
         } else {
             prepared = PlacementStructureMutationPreparer.prepareAll(
-                    UUID.randomUUID().toString(),
+                    durableOperationId,
                     placements,
                     id -> applyImport(requireSource(id)).snapshot(),
                     new MinecraftStructureBlockStateTransform(world),
