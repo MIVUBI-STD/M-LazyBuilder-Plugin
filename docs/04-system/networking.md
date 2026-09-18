@@ -75,7 +75,7 @@ Paper remains final authorization/domain authority even though capability flags 
 
 Spatial map intents plus current managed-world presentation state.
 
-Current shared contract is **Map Action V2**.
+Current shared contract is **Map Action V5**.
 
 Includes:
 
@@ -83,9 +83,15 @@ Includes:
 TeleportLocation
 ExportArea
 CurrentWorldRequest
+TeleportOk
+ExportAccepted
+ExportComplete
 CurrentWorldResult
 CurrentWorldCleared
+ErrorResponse
 ```
+
+V5 correlates request-bound responses with request IDs so stale completions/errors cannot resolve a newer map operation.
 
 Paper may push current-world changes from actual `PlayerChangedWorldEvent` transitions. Entering an unmanaged world explicitly clears prior managed-world state on the client.
 
@@ -244,7 +250,7 @@ World Control V5 Paper/Fabric interoperability
 Import upload → inspection → review → explicit import
 Import review close / tab switch / choose-different cleanup
 Upload complete → disconnect before inspection cleanup
-Map Action V2 current-world push
+Map Action V5 current-world push
 permission behavior
 large upload/download throughput
 native save/picker flow
