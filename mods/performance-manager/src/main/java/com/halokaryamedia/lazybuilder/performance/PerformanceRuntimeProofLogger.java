@@ -43,7 +43,7 @@ final class PerformanceRuntimeProofLogger {
                         + "upload_budget_stops={} vanilla_gpu_bytes={} physical_arena_bytes={} "
                         + "physical_draws={} exclusive_buffers={} retired_bytes={} promotions={} "
                         + "recoveries={} recovery_failures={} relocations={} relocation_fallbacks={} "
-                        + "rebuild_deferrals={} rebuild_releases={} particles_suppressed={} "
+                        + "rebuild_deferrals={} rebuild_releases={} particles_suppressed={} terrain_buffer_cache_hits={} "
                         + "multidraw_batches={} multidraw_commands={} multidraw_failures={} renderer={}",
                 sample,
                 snapshot.fps(),
@@ -65,6 +65,7 @@ final class PerformanceRuntimeProofLogger {
                 ChunkPipelineMetrics.rebuildBackpressureDeferrals(),
                 ChunkPipelineMetrics.rebuildBackpressureReleases(),
                 ChunkPipelineMetrics.particlesSuppressed(),
+                ChunkPipelineMetrics.terrainBufferLookupHits(),
                 snapshot.terrainMultiDrawSubmittedBatches(),
                 snapshot.terrainMultiDrawSubmittedCommands(),
                 snapshot.terrainMultiDrawSubmissionFailures(),

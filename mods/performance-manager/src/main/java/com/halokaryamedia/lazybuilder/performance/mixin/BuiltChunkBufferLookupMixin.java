@@ -42,7 +42,7 @@ abstract class BuiltChunkBufferLookupMixin {
 
         VertexBuffer cached = this.lazybuilder$getCachedBuffer(layer);
         if (cached != null) {
-            TerrainGpuResidencyTracker.associate(cached, this.getSectionPos(), lazybuilder$layerSlot(layer));
+            ChunkPipelineMetrics.recordTerrainBufferLookupHit();
             cir.setReturnValue(cached);
         }
     }

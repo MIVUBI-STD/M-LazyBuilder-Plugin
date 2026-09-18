@@ -12,6 +12,7 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder AVOIDED_TRANSLUCENT_SORT_TASKS = new LongAdder();
     private static final LongAdder AVOIDED_TERRAIN_SECTION_VISITS = new LongAdder();
     private static final LongAdder SECTION_BUILDER_BUFFER_LOOKUP_HITS = new LongAdder();
+    private static final LongAdder TERRAIN_BUFFER_LOOKUP_HITS = new LongAdder();
     private static final LongAdder UPLOAD_BUDGET_STOPS = new LongAdder();
     private static final LongAdder REBUILD_BACKPRESSURE_DEFERRALS = new LongAdder();
     private static final LongAdder REBUILD_BACKPRESSURE_RELEASES = new LongAdder();
@@ -38,6 +39,8 @@ public final class ChunkPipelineMetrics {
     public static long avoidedTerrainSectionVisits() { return AVOIDED_TERRAIN_SECTION_VISITS.sum(); }
     public static void recordSectionBuilderBufferLookupHit() { SECTION_BUILDER_BUFFER_LOOKUP_HITS.increment(); }
     public static long sectionBuilderBufferLookupHits() { return SECTION_BUILDER_BUFFER_LOOKUP_HITS.sum(); }
+    public static void recordTerrainBufferLookupHit() { TERRAIN_BUFFER_LOOKUP_HITS.increment(); }
+    public static long terrainBufferLookupHits() { return TERRAIN_BUFFER_LOOKUP_HITS.sum(); }
     public static void recordUploadBudgetStop() { UPLOAD_BUDGET_STOPS.increment(); }
     public static long uploadBudgetStops() { return UPLOAD_BUDGET_STOPS.sum(); }
     public static void recordRebuildBackpressureDeferral() { REBUILD_BACKPRESSURE_DEFERRALS.increment(); }
@@ -63,6 +66,7 @@ public final class ChunkPipelineMetrics {
         AVOIDED_TRANSLUCENT_SORT_TASKS.reset();
         AVOIDED_TERRAIN_SECTION_VISITS.reset();
         SECTION_BUILDER_BUFFER_LOOKUP_HITS.reset();
+        TERRAIN_BUFFER_LOOKUP_HITS.reset();
         UPLOAD_BUDGET_STOPS.reset();
         REBUILD_BACKPRESSURE_DEFERRALS.reset();
         REBUILD_BACKPRESSURE_RELEASES.reset();
