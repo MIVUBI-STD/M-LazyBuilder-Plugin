@@ -1,0 +1,160 @@
+package com.halokaryamedia.lazybuilder.builder.axiom;
+
+import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionFrame;
+import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionTypes;
+import com.halokaryamedia.lazybuilder.builder.history.LocalBlockPosition;
+import com.halokaryamedia.lazybuilder.builder.history.StoredChangeSet;
+import com.halokaryamedia.lazybuilder.builder.history.StoredExtensionCursor;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
+import com.halokaryamedia.lazybuilder.builder.operation.CancellationToken;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
+import net.minecraft.client.world.ClientWorld;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * One-request-at-a-time async BIOME extension dispatcher.
+ * The client thread never blocks waiting for Paper responses.
+ */
+public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
+    private final StoredExtensionCursor cursor;
+    private final CancellationToken cancellation;
+    private final String dimensionId;
+    private final int maxBatchEntries;
+    private final boolean undo;
+    private final AtomicReference<BuilderExtensionWireProtocol.Response> response =
+            new AtomicReference<>();
+
+    private boolean requestPending;
+    private boolean terminal;
+    private BiomeBatchDispatchState terminalState;
+    private String terminalDetail;
+    private long processedExtensions;
+    private int batchOrdinal;
+
+    public AxiomBiomeBatchDispatcher(
+            StoredChangeSet stored,
+            ClientWorld world,
+            CancellationToken cancellation,
+            boolean undo
+    ) {
+        Objects.requireNonNull(stored, "stored");
+        this.cursor = StoredExtensionCursor.open(stored);
+        this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
+        this.dimensionId = Objects.requireNonNull(world, "world")
+                .getRegistryKey().getValue().toString();
+        var capabilities = BuilderExtensionClientNetworking.capabilities();
+        if (!capabilities.supportsBiome()) {
+            cursor.close();
+            throw new IllegalStateException(
+                    "Server does not advertise Builder BIOME authority");
+        }
+        this.maxBatchEntries = capabilities.maxBatchEntries();
+        this.undo = undo;
+    }
+
+    public synchronized BiomeBatchDispatchProgress pump() throws IOException {
+        if (terminal) {
+            return new BiomeBatchDispatchProgress(
+                    terminalState, processedExtensions, terminalDetail);
+        }
+        if (cancellation.isCancellationRequested() && !undo) {
+            return terminal(BiomeBatchDispatchState.CANCELLED, "cancellation requested");
+        }
+
+        if (requestPending) {
+            BuilderExtensionWireProtocol.Response received = response.getAndSet(null);
+            if (received == null) {
+                return new BiomeBatchDispatchProgress(
+                        BiomeBatchDispatchState.WAITING, processedExtensions, null);
+            }
+            requestPending = false;
+            if (received instanceof BuilderExtensionWireProtocol.Error error) {
+                return terminal(BiomeBatchDispatchState.FAILED, error.message());
+            }
+            BuilderExtensionWireProtocol.BatchResult result =
+                    (BuilderExtensionWireProtocol.BatchResult) received;
+            processedExtensions = Math.addExact(
+                    processedExtensions, result.processedEntries());
+            if (result.state() == BuilderExtensionWireProtocol.BatchState.CONFLICT) {
+                return terminal(
+                        BiomeBatchDispatchState.CONFLICT,
+                        "biome conflict at batch index " + result.conflictIndex()
+                                + " actual=" + result.actualBiome());
+            }
+        }
+
+        List<BuilderExtensionWireProtocol.BiomeMutation> entries =
+                new ArrayList<>(maxBatchEntries);
+        while (entries.size() < maxBatchEntries) {
+            HistoryExtensionFrame frame = cursor.nextExtension();
+            if (frame == null) {
+                if (entries.isEmpty()) {
+                    return terminal(BiomeBatchDispatchState.EXHAUSTED, null);
+                }
+                break;
+            }
+            if (!HistoryExtensionTypes.BIOME.equals(frame.typeId())) {
+                return terminal(
+                        BiomeBatchDispatchState.FAILED,
+                        "unsupported mixed extension type " + frame.typeId());
+            }
+            entries.add(toMutation(frame, undo));
+        }
+
+        String operationId = "lb-biome-" + UUID.randomUUID() + "-" + batchOrdinal++;
+        BuilderExtensionWireProtocol.ApplyBiomeBatch batch =
+                new BuilderExtensionWireProtocol.ApplyBiomeBatch(
+                        operationId, dimensionId, entries);
+        response.set(null);
+        requestPending = true;
+        BuilderExtensionClientNetworking.sendBiomeBatch(batch, response::set);
+        return new BiomeBatchDispatchProgress(
+                BiomeBatchDispatchState.YIELDED, processedExtensions, null);
+    }
+
+    @Override
+    public synchronized void close() {
+        terminal = true;
+        cursor.close();
+        response.set(null);
+    }
+
+    private BiomeBatchDispatchProgress terminal(
+            BiomeBatchDispatchState state,
+            String detail
+    ) {
+        terminal = true;
+        terminalState = state;
+        terminalDetail = detail;
+        return new BiomeBatchDispatchProgress(state, processedExtensions, detail);
+    }
+
+    private static BuilderExtensionWireProtocol.BiomeMutation toMutation(
+            HistoryExtensionFrame frame,
+            boolean undo
+    ) {
+        int x = Math.addExact(
+                Math.multiplyExact(frame.chunkX(), 16),
+                LocalBlockPosition.localX(frame.localKey()));
+        int z = Math.addExact(
+                Math.multiplyExact(frame.chunkZ(), 16),
+                LocalBlockPosition.localZ(frame.localKey()));
+        int y = LocalBlockPosition.y(frame.localKey());
+        String before = text(undo ? frame.afterPayload() : frame.beforePayload());
+        String after = text(undo ? frame.beforePayload() : frame.afterPayload());
+        return new BuilderExtensionWireProtocol.BiomeMutation(x, y, z, before, after);
+    }
+
+    private static String text(byte[] payload) {
+        String value = new String(payload, StandardCharsets.UTF_8);
+        if (value.isBlank()) throw new IllegalArgumentException("Biome payload is blank");
+        return value;
+    }
+}
