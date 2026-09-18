@@ -88,12 +88,22 @@ public final class SpongeSchematicV3Importer {
                 schematic, width, height, length, Math.toIntExact(volume));
         List<StructureEntity> entities = parseEntities(schematic);
 
+        byte[] metadata = new byte[0];
+        NbtElement metadataElement = schematic.get("Metadata");
+        if (metadataElement != null) {
+            if (!(metadataElement instanceof NbtCompound metadataCompound)) {
+                throw new IOException("Schematic Metadata must be an NBT compound");
+            }
+            metadata = serialize(metadataCompound);
+        }
+
         return new SpongeSchematicImport(
                 new StructureSnapshot(structureBlocks, blockEntities, biomes, entities),
                 offset.length == 3 ? offset[0] : 0,
                 offset.length == 3 ? offset[1] : 0,
                 offset.length == 3 ? offset[2] : 0,
-                schematic.getInt("DataVersion")
+                schematic.getInt("DataVersion"),
+                metadata
         );
     }
 
@@ -103,6 +113,10 @@ public final class SpongeSchematicV3Importer {
         List<StructureBlockEntity> result = new ArrayList<>(list.size());
         for (int i = 0; i < list.size(); i++) {
             NbtCompound entry = list.getCompound(i);
+            String id = entry.getString("Id");
+            if (id.isBlank()) {
+                throw new IOException("BlockEntity Id must be a non-blank resource location");
+            }
             int[] pos = entry.getIntArray("Pos");
             if (pos.length != 3) {
                 throw new IOException("BlockEntity Pos must contain exactly three integers");
@@ -148,6 +162,10 @@ public final class SpongeSchematicV3Importer {
 
         for (int i = 0; i < list.size(); i++) {
             NbtCompound entry = list.getCompound(i);
+            String id = entry.getString("Id");
+            if (id.isBlank()) {
+                throw new IOException("Entity Id must be a non-blank resource location");
+            }
             NbtList position = entry.getList("Pos", NbtElement.DOUBLE_TYPE);
             if (position.size() != 3) {
                 throw new IOException("Entity Pos must contain exactly three doubles");

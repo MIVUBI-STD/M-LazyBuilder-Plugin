@@ -56,6 +56,9 @@ public final class SpongeSchematicV3Exporter {
                 Math.addExact(schematicImport.offsetY(), bounds.minY()),
                 Math.addExact(schematicImport.offsetZ(), bounds.minZ())
         });
+        if (schematicImport.hasMetadata()) {
+            schematic.put("Metadata", deserialize(schematicImport.metadataPayload()));
+        }
 
         schematic.put("Blocks", writeBlocks(snapshot, bounds.minX(), bounds.minY(), bounds.minZ(),
                 width, height, length, count));
