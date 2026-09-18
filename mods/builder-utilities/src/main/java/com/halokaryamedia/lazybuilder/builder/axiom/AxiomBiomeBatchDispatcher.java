@@ -71,7 +71,6 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
         }
 
         if (requestPending) {
-            BuilderExtensionClientNetworking.expireTimedOutRequests();
             BuilderExtensionWireProtocol.Response received = response.getAndSet(null);
             if (received == null) {
                 if (BuilderExtensionRequestTimeout.expired(
