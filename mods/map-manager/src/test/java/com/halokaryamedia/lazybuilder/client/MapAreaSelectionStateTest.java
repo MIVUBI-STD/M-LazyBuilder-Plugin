@@ -16,7 +16,9 @@ final class MapAreaSelectionStateTest {
 
         state.activate(worldId, 4, -2, 7, 3);
 
-        assertTrue(state.belongsTo(worldId));
+        assertTrue(state.ownsWorld(worldId));
+        state.active = false;
+        assertTrue(state.ownsWorld(worldId));
         assertEquals(-2, state.minChunkX);
         assertEquals(4, state.maxChunkX);
         assertEquals(3, state.minChunkZ);
@@ -34,6 +36,6 @@ final class MapAreaSelectionStateTest {
         state.clear();
 
         assertFalse(state.active);
-        assertFalse(state.belongsTo(worldId));
+        assertFalse(state.ownsWorld(worldId));
     }
 }
