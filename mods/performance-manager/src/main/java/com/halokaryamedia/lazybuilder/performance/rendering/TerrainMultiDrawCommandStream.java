@@ -25,7 +25,7 @@ public final class TerrainMultiDrawCommandStream {
             return LayerPacket.empty(layer == null ? -1 : layer.layerSlot());
         }
 
-        List<PackedCommand> commands = new ArrayList<>();
+        List<PackedCommand> commands = new ArrayList<>(Math.max(0, layer.physicalReadyCommands()));
         for (int orderIndex = 0; orderIndex < layer.commands().size(); orderIndex++) {
             TerrainDrawTransformStream.Command transform = layer.commands().get(orderIndex);
             if (transform == null || !transform.physicalReady()) continue;

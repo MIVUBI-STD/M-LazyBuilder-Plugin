@@ -14,11 +14,15 @@ import java.util.List;
  */
 public final class RendererCompatibility {
     public static final String CUSTOM_RENDERER_MARKER = "fabric-renderer-api-v1:contains_renderer";
+    private static volatile Snapshot cached;
 
     private RendererCompatibility() {
     }
 
     public static Snapshot detect() {
+        Snapshot snapshot = cached;
+        if (snapshot != null) return snapshot;
+
         FabricLoader loader = FabricLoader.getInstance();
         boolean irisPresent = loader.isModLoaded("iris");
 
@@ -27,10 +31,12 @@ public final class RendererCompatibility {
                     .filter(RendererCompatibility::declaresCustomRenderer)
                     .map(mod -> mod.getMetadata().getId())
                     .toList();
-            return new Snapshot(irisPresent, false, rendererOwners);
+            snapshot = new Snapshot(irisPresent, false, rendererOwners);
         } catch (RuntimeException ignored) {
-            return new Snapshot(irisPresent, true, List.of());
+            snapshot = new Snapshot(irisPresent, true, List.of());
         }
+        cached = snapshot;
+        return snapshot;
     }
 
     private static boolean declaresCustomRenderer(ModContainer mod) {
