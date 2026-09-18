@@ -106,6 +106,7 @@ impl OperationRegistry {
         }
     }
 
+    #[cfg(test)]
     pub fn begin(&self, kind: &str, resource: &str, can_cancel: bool) -> Result<OperationSnapshot, String> { self.begin_internal(kind, resource, can_cancel, false) }
     pub fn begin_exclusive(&self, kind: &str, resource: &str, can_cancel: bool) -> Result<OperationSnapshot, String> { self.begin_internal(kind, resource, can_cancel, true) }
 
@@ -187,6 +188,7 @@ impl OperationRegistry {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn set_cancelable(&self, id: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
         self.mutate(id, |entry| {
             ensure_active(entry)?;
@@ -220,6 +222,7 @@ impl OperationRegistry {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn cancellation_requested(&self, id: &str) -> Result<bool, String> { Ok(self.get(id)?.cancel_requested) }
     pub fn succeed(&self, id: &str, status: &str) -> Result<OperationSnapshot, String> { self.finish(id, OperationState::Succeeded, status, None) }
     pub fn fail(&self, id: &str, error: OperationError) -> Result<OperationSnapshot, String> { let status = error.message.clone(); self.finish(id, OperationState::Failed, &status, Some(error)) }

@@ -72,7 +72,7 @@ class ChunkMutationExecutorTest {
         world.put(0, 64, 0, "minecraft:stone");
         world.put(1, 64, 0, "minecraft:stone");
         CancellationSource source = new CancellationSource();
-        world.afterWrite = source::cancel;
+        world.afterWrite = source::requestCancellation;
 
         ChunkMutationExecution result = ChunkMutationExecutor.apply(changes(), world, source.token());
         assertEquals(MutationExecutionState.CANCELLED, result.state());

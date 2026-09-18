@@ -175,8 +175,6 @@ pub fn create(parent: &Path, name: &str) -> Result<WorkspaceEntry, String> {
     register_and_activate(&canonical, &safe_name)
 }
 
-pub fn open(root: &Path) -> Result<WorkspaceEntry, String> { open_with_display_name(root, None) }
-
 pub fn open_with_display_name(root: &Path, requested_name: Option<&str>) -> Result<WorkspaceEntry, String> {
     let root = root.canonicalize().map_err(|error| format!("Could not resolve server workspace: {error}"))?;
     if !root.is_dir() { return Err("Selected workspace is not a directory".into()); }
