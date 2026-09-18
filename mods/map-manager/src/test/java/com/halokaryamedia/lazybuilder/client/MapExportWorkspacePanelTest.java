@@ -1,11 +1,15 @@
 package com.halokaryamedia.lazybuilder.client;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class MapExportWorkspacePanelTest {
+    @TempDir Path tempDir;
     private final MapExportWorkspacePanel panel = new MapExportWorkspacePanel();
 
     @Test
@@ -18,7 +22,7 @@ final class MapExportWorkspacePanelTest {
 
     @Test
     void coreActionsResolveFromPanelGeometry() {
-        MapExportWorkspaceState state = new MapExportWorkspaceState();
+        MapExportWorkspaceState state = state();
         int width = 1440;
         int height = 900;
         int left = panel.panelRect(width, height).left();
@@ -42,7 +46,7 @@ final class MapExportWorkspacePanelTest {
 
     @Test
     void advancedActionsFollowWorkspaceExpansion() {
-        MapExportWorkspaceState state = new MapExportWorkspaceState();
+        MapExportWorkspaceState state = state();
         int width = 1440;
         int height = 900;
         int left = panel.panelRect(width, height).left();
@@ -60,7 +64,7 @@ final class MapExportWorkspacePanelTest {
 
     @Test
     void narrowViewportProducesBoundedAdvancedScroll() {
-        MapExportWorkspaceState state = new MapExportWorkspaceState();
+        MapExportWorkspaceState state = state();
         state.toggleWorldSettings();
 
         int maxScroll = panel.maxScroll(state, 520, 220);
@@ -68,5 +72,12 @@ final class MapExportWorkspacePanelTest {
         assertTrue(maxScroll >= 0);
         state.scrollBy(10_000, maxScroll);
         assertEquals(maxScroll, state.scroll());
+    }
+    private MapExportWorkspaceState state() {
+        WorldTransferPreferences preferences = new WorldTransferPreferences(
+                tempDir.resolve("panel-transfer-preferences.properties"),
+                () -> ClientServerIdentity.encode("panel-test.example:25565")
+        );
+        return new MapExportWorkspaceState(preferences);
     }
 }
