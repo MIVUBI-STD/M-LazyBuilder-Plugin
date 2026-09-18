@@ -24,6 +24,8 @@ import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
 import com.halokaryamedia.lazybuilder.builder.region.DeterministicRegionPlanner;
 import com.halokaryamedia.lazybuilder.builder.region.PointSetRegion;
+import com.halokaryamedia.lazybuilder.builder.spline.BuilderVec3;
+import com.halokaryamedia.lazybuilder.builder.symmetry.PointSymmetryPlanner;
 import com.moulberry.axiomclientapi.CustomTool;
 import imgui.moulberry92.ImGui;
 import net.minecraft.client.MinecraftClient;
@@ -54,6 +56,7 @@ public final class AxiomScatterTool implements CustomTool {
     private final int[] requestedCount = {128};
     private final float[] minimumSpacing = {3.0f};
     private final int[] seedValue = {424242};
+    private final int[] rotationalCopies = {1};
 
     private BlockPos center;
     private List<PlacementPoint> points = List.of();
@@ -122,6 +125,7 @@ public final class AxiomScatterTool implements CustomTool {
         changed |= ImGui.sliderInt("Count", requestedCount, 1, 5000);
         changed |= ImGui.sliderFloat("Minimum Spacing", minimumSpacing, 0.0f, 32.0f);
         changed |= ImGui.sliderInt("Seed", seedValue, 0, 999_999);
+        changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
         if (ImGui.button("Clear Scatter")) {
             clearGeometry();
             return;
@@ -174,10 +178,16 @@ public final class AxiomScatterTool implements CustomTool {
                             SCATTER_CHANNEL
                     );
 
-            points = distribution.generate(
+            List<PlacementPoint> basePoints = distribution.generate(
                     bounds,
                     (x, z) -> center.getY(),
                     new OperationSeed(seedValue[0])
+            );
+            points = PointSymmetryPlanner.rotational(
+                    basePoints,
+                    new BuilderVec3(center.getX(), center.getY(), center.getZ()),
+                    rotationalCopies[0],
+                    MAX_POINTS
             );
 
             if (points.size() > MAX_POINTS) {
