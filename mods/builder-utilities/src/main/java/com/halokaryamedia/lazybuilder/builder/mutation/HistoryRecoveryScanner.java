@@ -114,7 +114,7 @@ public final class HistoryRecoveryScanner {
         }
     }
 
-    static ReconciliationState combine(ReconciliationState blocks, ReconciliationState extensions) {
+    public static ReconciliationState combine(ReconciliationState blocks, ReconciliationState extensions) {
         if (blocks == ReconciliationState.CONFLICT || extensions == ReconciliationState.CONFLICT) {
             return ReconciliationState.CONFLICT;
         }
