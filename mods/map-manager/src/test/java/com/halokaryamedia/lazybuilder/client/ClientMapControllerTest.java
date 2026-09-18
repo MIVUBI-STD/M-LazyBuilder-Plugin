@@ -187,6 +187,54 @@ class ClientMapControllerTest {
     }
 
     @Test
+    void disconnectResetStillAllowsPendingExportCompletionAfterReconnect() {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+
+        harness.controller.exportArea(
+                worldId,
+                "minecraft:overworld",
+                0, 0, 15, 15,
+                "JAVA_1_21_4",
+                "pending",
+                ExportSettingsWire.Settings.inherit());
+        long originalRequestId = harness.controller.activeExportRequestId();
+        assertTrue(originalRequestId > 0L);
+
+        harness.controller.reset();
+
+        assertFalse(harness.controller.exportBusy());
+        harness.controller.accept(new MapActionWireProtocol.ExportComplete(
+                originalRequestId, worldId, "pending.zip", "JAVA_1_21_4"));
+
+        assertEquals(List.of("pending.zip"), harness.completed);
+        assertEquals(List.of("Export ready: pending.zip"), harness.notifications);
+    }
+
+    @Test
+    void disconnectResetRejectsOldRequestError() {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+
+        harness.controller.exportArea(
+                worldId,
+                "minecraft:overworld",
+                0, 0, 15, 15,
+                "JAVA_1_21_4",
+                "pending",
+                ExportSettingsWire.Settings.inherit());
+        long oldRequestId = harness.controller.activeExportRequestId();
+
+        harness.controller.reset();
+        harness.controller.accept(new MapActionWireProtocol.ErrorResponse(
+                oldRequestId, "old connection failed"));
+
+        assertNull(harness.controller.lastError());
+        assertTrue(harness.notifications.isEmpty());
+        assertTrue(harness.completed.isEmpty());
+    }
+
+    @Test
     void reconnectCompletionStillDeliversWhenNoExportIsActive() {
         Harness harness = new Harness();
         WorldId worldId = WorldId.create();
