@@ -29,6 +29,9 @@ REQUIRED_FILES = [
     "docs/04-system/development-operations.md",
     "docs/05-operations/current-verification.md",
     ".github/workflows/verify.yml",
+    ".github/workflows/builder-verify.yml",
+    "mods/builder-utilities/build.gradle",
+    "mods/builder-utilities/src/main/resources/fabric.mod.json",
 ]
 
 FORBIDDEN_RETIRED_PATHS = [
@@ -257,6 +260,12 @@ def main() -> int:
     docs_entry = read_text("docs/README.md", errors)
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
+    product_doc = read_text("docs/01-product/README.md", errors)
+    module_boundaries = read_text("docs/04-system/module-boundaries.md", errors)
+    client_architecture = read_text("docs/04-system/client-manager-architecture-lock.md", errors)
+    stable_context = read_text("CONTEXT.md", errors)
+    builder_manifest = read_text("mods/builder-utilities/src/main/resources/fabric.mod.json", errors)
+    builder_workflow = read_text(".github/workflows/builder-verify.yml", errors)
     discipline = read_text("docs/04-system/development-discipline.md", errors)
     routing = read_text("docs/04-system/skill-routing.md", errors)
     operations = read_text("docs/04-system/development-operations.md", errors)
@@ -303,9 +312,34 @@ def main() -> int:
         if marker in dev_orchestrator.lower():
             fail(errors, f"developer orchestrator must not add an overlapping integrated verify command: {marker}")
 
-    for manager in ("mods/map-manager", "mods/utility-manager", "mods/performance-manager"):
+    core_managers = ("mods/map-manager", "mods/utility-manager", "mods/performance-manager")
+    for manager in core_managers:
         if manager not in fabric_verifier or "--no-daemon build" not in fabric_verifier:
             fail(errors, f"canonical Fabric verification lane missing manager: {manager}")
+
+    architecture_contracts = {
+        "docs/01-product/README.md": product_doc,
+        "docs/04-system/module-boundaries.md": module_boundaries,
+        "docs/04-system/client-manager-architecture-lock.md": client_architecture,
+        "docs/05-operations/current-verification.md": verification_doc,
+        "CONTEXT.md": stable_context,
+    }
+    for relative, content in architecture_contracts.items():
+        if "Builder Utilities" not in content:
+            fail(errors, f"canonical architecture doc missing Builder Utilities lane: {relative}")
+        if "Axiom" not in content:
+            fail(errors, f"canonical architecture doc missing Axiom ownership boundary: {relative}")
+
+    if "Builder Utilities is intentionally separate from Client Setup" not in stable_context:
+        fail(errors, "CONTEXT.md must keep Builder Utilities outside the required Client Setup bundle")
+    if "not a fourth core Manager" not in product_doc:
+        fail(errors, "product authority must distinguish Builder Utilities from the three core Managers")
+    if "legacy/prototype" not in module_boundaries.lower():
+        fail(errors, "module boundaries must classify Terraform as legacy/prototype rather than a parallel production owner")
+    if '"axiom": "5.3.0"' not in builder_manifest:
+        fail(errors, "Builder Utilities must preserve its explicit Axiom runtime compatibility boundary")
+    if "mods/builder-utilities" not in builder_workflow:
+        fail(errors, "Builder verification workflow must target the Builder Utilities source owner")
 
     if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
         fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")

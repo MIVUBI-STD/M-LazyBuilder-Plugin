@@ -66,16 +66,24 @@ A later Local PC candidate must use an artifact produced from a successful manua
 
 ## Client-suite state
 
-Canonical V1 Fabric client suite:
+Canonical V1 Fabric core suite:
 
 ```text
-Required Fabric
+Required Fabric / Client Setup
 ├── Map Manager
 ├── Utility Manager
 └── Performance Manager
+
+Separate development extension
+└── Builder Utilities (Axiom-first)
+
+Legacy/prototype only
+└── Terraform Manager
 ```
 
-All three are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager owns client performance behavior, including compatibility-gated rendering/chunk/GPU optimizations and diagnostics; it does not become a cross-manager scheduler or workload authority.
+The three core Managers are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager owns client performance behavior, including compatibility-gated rendering/chunk/GPU optimizations and diagnostics; it does not become a cross-manager scheduler or workload authority.
+
+Builder Utilities is a separate Axiom-first extension artifact with its own source/verification boundary. It is not a fourth core Manager and is not currently provisioned by Client Setup. Terraform Manager is not part of the current target product and must not be treated as a parallel production builder owner.
 
 ## Dedicated workflows
 
@@ -167,10 +175,13 @@ Paper
 ├── World Manager
 └── Utilities Manager
 
-Fabric
+Fabric core
 ├── Map Manager
 ├── Utility Manager
 └── Performance Manager
+
+Builder extension
+└── Builder Utilities (Axiom-first; separate provisioning)
 
 Shared
 └── Protocol

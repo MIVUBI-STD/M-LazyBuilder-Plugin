@@ -11,13 +11,17 @@ LazyBuilder
 │   ├── world-manager/
 │   └── utilities-manager/
 ├── mods/                          Fabric client mods
-│   ├── map-manager/
-│   ├── utility-manager/
-│   └── performance-manager/
-└── shared/protocol/               Neutral Paper/Fabric contracts
+│   ├── map-manager/               core Client Setup
+│   ├── utility-manager/           core Client Setup
+│   ├── performance-manager/       core Client Setup
+│   ├── builder-utilities/         separate Axiom-first extension
+│   └── terraform-manager/         legacy/prototype lane
+└── shared/
+    ├── protocol/                   neutral Paper/Fabric contracts
+    └── terraform-core/             legacy/prototype terrain kernel
 ```
 
-External build/edit tools such as Vanilla Minecraft, Axiom, WorldEdit/FAWE, FastAsyncVoxelSniper, ezEdits, and MetaBrushes remain external specialist owners.
+Axiom remains the primary builder editor/interaction owner. Builder Utilities is the LazyBuilder-owned extension lane for proven missing builder capabilities; it is not a fourth core Manager. WorldEdit/FAWE, FastAsyncVoxelSniper, ezEdits and MetaBrushes remain external specialist/reference tools. Terraform remains a legacy/prototype lane pending retirement or a proven distinct responsibility.
 
 ## Repository authority
 
@@ -151,6 +155,8 @@ verify Minecraft 1.21.4 + Fabric compatibility
 status/install/update/repair LazyBuilder-owned client components
 preserve all unrelated files in the selected profile mods directory
 ```
+
+Builder Utilities is intentionally separate from Client Setup and the required three-manager V1 bundle. It requires Axiom and has its own verification/provisioning decision boundary.
 
 Canonical V1 required Fabric set:
 

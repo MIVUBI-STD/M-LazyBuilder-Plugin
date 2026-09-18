@@ -11,15 +11,20 @@ Build-specific helper systems remain outside this lock and are reviewed separate
 ## Client-side manager model
 
 ```text
-LazyBuilder Client Suite
+LazyBuilder Core Client Suite
 ├── Map Manager          -> 1 Fabric mod / 1 JAR
 ├── Utility Manager      -> 1 Fabric mod / 1 JAR
 └── Performance Manager  -> 1 Fabric mod / 1 JAR
+
+Separate builder extension lane
+└── Builder Utilities    -> Axiom-first / independent artifact
 ```
 
-All three Managers are active client components. The launcher, verification workflow, and client artifact must package the same three-manager set.
+The three Managers are the required V1 client components. The launcher, integrated Fabric verification lane, Client Setup and bundled client artifact must package the same three-manager core set.
 
-Each Manager owns one responsibility. Features must have exactly one owner.
+Builder Utilities is intentionally outside that core Manager count. It extends Axiom for builder capabilities that survive overlap/value review; it does not become a generic fourth Manager and is not installed by the current V1 Client Setup transaction.
+
+Each component owns one responsibility. Features must have exactly one owner.
 
 ## Map Manager
 
@@ -138,8 +143,9 @@ Artifact: `lazybuilder-performance-manager.jar`
 8. Do not create duplicate renderer/culling systems without profiling evidence.
 9. Shared services require a second real consumer and a stable contract before extraction.
 10. No Manager imports another Manager's implementation packages.
-11. Build-specific utilities stay outside this architecture lock.
-12. New Utility/Performance features must pass an ownership, overlap, and runtime-cost review.
+11. Builder Utilities stays outside the three-Manager core suite and owns only Axiom-first build extensions.
+12. Terraform remains a legacy/prototype terrain lane; do not expand it in parallel with Builder Utilities for the same outcome.
+13. New Utility/Performance/Builder features must pass an ownership, overlap, and runtime-cost review.
 
 ## Repository and release shape
 
@@ -147,10 +153,13 @@ Artifact: `lazybuilder-performance-manager.jar`
 mods/
 ├── map-manager/          -> lazybuilder-map-manager.jar
 ├── utility-manager/      -> lazybuilder-utility-manager.jar
-└── performance-manager/  -> lazybuilder-performance-manager.jar
+├── performance-manager/  -> lazybuilder-performance-manager.jar
+└── builder-utilities/    -> independent Axiom-first extension artifact
 ```
 
-The Fabric CI job must build all three JARs, the client artifact must stage all three, and Launcher Client Setup must install/repair all three as one coherent suite.
+The integrated core Fabric lane must build all three Manager JARs, the client artifact must stage all three, and Launcher Client Setup must install/repair all three as one coherent suite.
+
+Builder Utilities has its own verification/artifact lane. It must not be silently added to Client Setup or the required client bundle until an explicit product/provisioning decision is made.
 
 Shared protocol types genuinely consumed by Paper and Fabric remain under the existing shared protocol ownership. Do not create a generic shared client implementation tree merely for convenience.
 
@@ -159,7 +168,9 @@ Shared protocol types genuinely consumed by Paper and Fabric remain under the ex
 ```text
 Map Manager          implemented / correctness hardening active
 Utility Manager      implemented / architecture locked
-Performance Manager  implemented / active client component
+Performance Manager  implemented / active core client component
+Builder Utilities    implemented / independent Axiom-first development lane
+Terraform Manager    legacy/prototype / retirement evaluation only
 Cross-manager audit  architecture locked
 ```
 

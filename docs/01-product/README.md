@@ -59,9 +59,9 @@ Build Helpers
 
 Creation Tools and duplicate custom Spectator controls are not part of the current product scope. Utilities details are owned by `../../plugins/utilities-manager/README.md` and the architecture lock under `../04-system/`.
 
-### Client Managers
+### Core Client Managers
 
-The Fabric client architecture is exactly three Managers:
+The bundled V1 Fabric client suite remains exactly three Managers:
 
 ```text
 Map Manager          world / map / transfer workflow
@@ -69,7 +69,24 @@ Utility Manager      passive non-build client convenience
 Performance Manager  performance/resource coordination baseline
 ```
 
-All three are source-implemented. Their ownership remains independent and building/editing workflows stay external to Vanilla, Axiom, WorldEdit/WorldEditCUI, MetaBrushes, and other specialist tools.
+These three Managers are installed and repaired together by Client Setup. Their ownership remains independent.
+
+### Builder Utilities extension
+
+`mods/builder-utilities/` is a separate Axiom-first builder extension lane. It is not a fourth core Manager and is not part of the V1 Client Setup transaction.
+
+```text
+Axiom
+→ familiar primary editor / interaction owner
+→ Builder Utilities
+→ only capabilities that materially extend the Axiom workflow
+```
+
+Builder Utilities owns its own bounded operation lifecycle, deterministic planning, cancellation, history/recovery, runtime metrics and extension-specific mutation logic. It must not duplicate Axiom's primary editor UX or create a second generic build platform.
+
+FAWE, ezEdits and other established tools may be studied as implementation/problem references, but they are not permanent Builder Utilities runtime authorities.
+
+`mods/terraform-manager/` and `plugins/terraform-manager/` are legacy/prototype terrain lanes under retirement evaluation. They are not current V1 product components and must not be expanded in parallel with Builder Utilities unless a distinct non-overlapping ownership requirement is proven.
 
 ### Desktop
 
