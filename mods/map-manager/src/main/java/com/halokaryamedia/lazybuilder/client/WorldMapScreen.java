@@ -87,23 +87,7 @@ public final class WorldMapScreen extends Screen {
     private int contextScreenX;
     private int contextScreenY;
 
-    private int[] rasterColors = new int[0];
-    private int rasterColumns;
-    private int rasterRows;
-    private int rasterHalfCellsX;
-    private int rasterHalfCellsZ;
-    private int rasterPixel = -1;
-    private int rasterLeft;
-    private int rasterTop;
-    private int rasterRight;
-    private int rasterBottom;
-    private double rasterCenterX = Double.NaN;
-    private double rasterCenterZ = Double.NaN;
-    private double rasterZoom = Double.NaN;
-    private String rasterScope = "";
-    private boolean rasterContentDirty = true;
-    private long rasterWorldTime = Long.MIN_VALUE;
-    private ClientMapRasterTexture rasterTexture;
+    private final MapRasterPresentationState rasterState = new MapRasterPresentationState();
 
     private boolean requestedCurrentWorld;
     private long observedWorldRevision;
@@ -171,10 +155,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void ensureRasterTexture() {
-        if (rasterTexture != null || client == null) return;
-        rasterTexture = new ClientMapRasterTexture(client);
-        if (rasterColumns > 0 && rasterRows > 0 && rasterColors.length == rasterColumns * rasterRows) {
-            rasterTexture.upload(rasterColors, rasterColumns, rasterRows);
+        if (rasterState.texture != null || client == null) return;
+        rasterState.texture = new ClientMapRasterTexture(client);
+        if (rasterState.hasImage()) {
+            rasterState.texture.upload(rasterState.colors, rasterState.columns, rasterState.rows);
         }
     }
 
@@ -312,15 +296,11 @@ public final class WorldMapScreen extends Screen {
         String scope = current.worldId() + "|" + dimension;
         Path storage = client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
 
-        if (!scope.equals(rasterScope) && !rasterScope.isBlank()) {
-            rasterColors = new int[0];
-            rasterColumns = 0;
-            rasterRows = 0;
-            rasterContentDirty = true;
-            rasterWorldTime = Long.MIN_VALUE;
+        if (!scope.equals(rasterState.scope) && !rasterState.scope.isBlank()) {
+            rasterState.resetContent();
         }
         SURFACE.useScope(scope, storage);
-        if (SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK) > 0) rasterContentDirty = true;
+        if (SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK) > 0) rasterState.contentDirty = true;
 
         int pixel = mapPixelSize();
         WorldMapRasterViewport.State viewport = WorldMapRasterViewport.resolve(
@@ -340,21 +320,21 @@ public final class WorldMapScreen extends Screen {
             long worldTime,
             WorldMapRasterViewport.State viewport
     ) {
-        boolean viewportChanged = rasterColors.length == 0
-                || rasterPixel != pixel
-                || rasterLeft != bounds.left
-                || rasterTop != bounds.top
-                || rasterRight != bounds.right
-                || rasterBottom != bounds.bottom
-                || Double.compare(rasterCenterX, viewport.sampleCenterX()) != 0
-                || Double.compare(rasterCenterZ, viewport.sampleCenterZ()) != 0
-                || Double.compare(rasterZoom, camera.zoom) != 0
-                || !rasterScope.equals(scope);
+        boolean viewportChanged = rasterState.colors.length == 0
+                || rasterState.pixel != pixel
+                || rasterState.left != bounds.left
+                || rasterState.top != bounds.top
+                || rasterState.right != bounds.right
+                || rasterState.bottom != bounds.bottom
+                || Double.compare(rasterState.centerX, viewport.sampleCenterX()) != 0
+                || Double.compare(rasterState.centerZ, viewport.sampleCenterZ()) != 0
+                || Double.compare(rasterState.zoom, camera.zoom) != 0
+                || !rasterState.scope.equals(scope);
         if (viewportChanged) return true;
-        if (!rasterContentDirty) return false;
-        return rasterWorldTime == Long.MIN_VALUE
-                || worldTime < rasterWorldTime
-                || worldTime - rasterWorldTime >= RASTER_CONTENT_REFRESH_TICKS;
+        if (!rasterState.contentDirty) return false;
+        return rasterState.worldTime == Long.MIN_VALUE
+                || worldTime < rasterState.worldTime
+                || worldTime - rasterState.worldTime >= RASTER_CONTENT_REFRESH_TICKS;
     }
 
     private void rebuildRaster(
@@ -391,26 +371,26 @@ public final class WorldMapScreen extends Screen {
             }
         }
 
-        rasterColors = nextColors;
-        rasterColumns = columns;
-        rasterRows = rows;
-        rasterHalfCellsX = halfCellsX;
-        rasterHalfCellsZ = halfCellsZ;
-        rasterPixel = pixel;
-        rasterLeft = bounds.left;
-        rasterTop = bounds.top;
-        rasterRight = bounds.right;
-        rasterBottom = bounds.bottom;
-        rasterCenterX = viewport.sampleCenterX();
-        rasterCenterZ = viewport.sampleCenterZ();
-        rasterZoom = camera.zoom;
-        rasterScope = scope;
-        rasterContentDirty = false;
-        rasterWorldTime = worldTime;
+        rasterState.colors = nextColors;
+        rasterState.columns = columns;
+        rasterState.rows = rows;
+        rasterState.halfCellsX = halfCellsX;
+        rasterState.halfCellsZ = halfCellsZ;
+        rasterState.pixel = pixel;
+        rasterState.left = bounds.left;
+        rasterState.top = bounds.top;
+        rasterState.right = bounds.right;
+        rasterState.bottom = bounds.bottom;
+        rasterState.centerX = viewport.sampleCenterX();
+        rasterState.centerZ = viewport.sampleCenterZ();
+        rasterState.zoom = camera.zoom;
+        rasterState.scope = scope;
+        rasterState.contentDirty = false;
+        rasterState.worldTime = worldTime;
 
         ensureRasterTexture();
-        if (rasterTexture != null) {
-            rasterTexture.upload(rasterColors, rasterColumns, rasterRows);
+        if (rasterState.texture != null) {
+            rasterState.texture.upload(rasterState.colors, rasterState.columns, rasterState.rows);
         }
     }
 
@@ -420,17 +400,17 @@ public final class WorldMapScreen extends Screen {
             int pixel,
             WorldMapRasterViewport.State viewport
     ) {
-        if (rasterColumns <= 0 || rasterRows <= 0 || rasterColors.length == 0) return;
+        if (rasterState.columns <= 0 || rasterState.rows <= 0 || rasterState.colors.length == 0) return;
         ensureRasterTexture();
-        if (rasterTexture == null || !rasterTexture.ready()) return;
+        if (rasterState.texture == null || !rasterState.texture.ready()) return;
 
-        int rasterX = bounds.centerX() + (-rasterHalfCellsX - 2) * pixel + viewport.drawOffsetX();
-        int rasterY = bounds.centerY() + (-rasterHalfCellsZ - 2) * pixel + viewport.drawOffsetZ();
-        int drawWidth = rasterColumns * pixel;
-        int drawHeight = rasterRows * pixel;
+        int rasterX = bounds.centerX() + (-rasterState.halfCellsX - 2) * pixel + viewport.drawOffsetX();
+        int rasterY = bounds.centerY() + (-rasterState.halfCellsZ - 2) * pixel + viewport.drawOffsetZ();
+        int drawWidth = rasterState.columns * pixel;
+        int drawHeight = rasterState.rows * pixel;
 
         context.enableScissor(bounds.left, bounds.top, bounds.right, bounds.bottom);
-        rasterTexture.draw(context, rasterX, rasterY, drawWidth, drawHeight);
+        rasterState.texture.draw(context, rasterX, rasterY, drawWidth, drawHeight);
         context.disableScissor();
     }
 
@@ -1557,10 +1537,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void invalidateRasterViewport() {
-        rasterLeft = Integer.MIN_VALUE;
-        rasterRight = Integer.MIN_VALUE;
-        rasterTop = Integer.MIN_VALUE;
-        rasterBottom = Integer.MIN_VALUE;
+        rasterState.invalidateLayout();
     }
 
     @Override public boolean shouldPause() { return false; }
@@ -1568,10 +1545,7 @@ public final class WorldMapScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
-        if (rasterTexture != null) {
-            rasterTexture.close();
-            rasterTexture = null;
-        }
+        rasterState.closeTexture();
     }
 
     @Override
