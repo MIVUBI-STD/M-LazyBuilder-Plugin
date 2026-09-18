@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.culling.CullingRuntime;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressure;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
@@ -85,6 +86,9 @@ public final class PerformanceRuntime {
             if (client != null && client.worldRenderer != null) {
                 ChunkRebuildBackpressure.releaseAll(client.worldRenderer.getChunkBuilder());
             }
+            // Exclusive residents were recovered above; mirrored arena/residency state
+            // is now redundant and must not retain GPU/cache resources while disabled.
+            TerrainGpuResidencyTracker.clear();
         }
 
         preferences = updated;
