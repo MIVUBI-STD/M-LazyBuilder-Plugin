@@ -22,7 +22,7 @@ public final class HistoryRecoveryManager {
     }
 
     public List<Path> incompleteFiles() throws IOException {
-        return storage.listIncomplete();
+        return storage.listRecoverableIncomplete();
     }
 
     /**
@@ -32,7 +32,7 @@ public final class HistoryRecoveryManager {
     public int discardIncompleteFiles() throws IOException {
         storage.promoteRecoverableIncomplete();
         int deleted = 0;
-        for (Path path : storage.listIncomplete()) {
+        for (Path path : storage.listRecoverableIncomplete()) {
             if (java.nio.file.Files.deleteIfExists(path)) deleted++;
         }
         return deleted;

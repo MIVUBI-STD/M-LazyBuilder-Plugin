@@ -28,6 +28,8 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
     private final Path directory;
     private final java.util.Set<Path> ownedCommittedPaths =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Set<Path> ownedStagingPaths =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public DiskChangeSetStorage(Path directory) {
         this.directory = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
@@ -52,6 +54,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         Path staging = directory.resolve(id + INCOMPLETE_SUFFIX);
         Path committed = directory.resolve(id + COMMITTED_SUFFIX);
         FileChannel channel = FileChannel.open(staging, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        ownedStagingPaths.add(staging);
         ChangeSetCodec.StreamWriter codec;
         try {
             codec = ChangeSetCodec.openWriter(Channels.newOutputStream(channel), operationId);
@@ -59,11 +62,14 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             try {
                 channel.close();
             } finally {
+                ownedStagingPaths.remove(staging);
                 Files.deleteIfExists(staging);
             }
             throw failure;
         }
-        return new Writer(operationId, staging, committed, channel, codec, ownedCommittedPaths);
+        return new Writer(
+                operationId, staging, committed, channel, codec,
+                ownedCommittedPaths, ownedStagingPaths);
     }
 
     public List<Path> listIncomplete() throws IOException {
@@ -74,6 +80,13 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         return listPathsWithSuffix(COMMITTED_SUFFIX);
     }
 
+    /** Incomplete journals not owned by an active writer in this runtime. */
+    public List<Path> listRecoverableIncomplete() throws IOException {
+        return listIncomplete().stream()
+                .filter(path -> !ownedStagingPaths.contains(path))
+                .toList();
+    }
+
     /**
      * Promotes staging files that already contain a valid committed footer/checksum.
      * This closes the crash window between fsync/validation and the final atomic rename.
@@ -81,7 +94,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
      */
     public List<Path> promoteRecoverableIncomplete() throws IOException {
         List<Path> promoted = new java.util.ArrayList<>();
-        for (Path staging : listIncomplete()) {
+        for (Path staging : listRecoverableIncomplete()) {
             try (InputStream input = Files.newInputStream(staging)) {
                 ChangeSetCodec.inspect(input);
             } catch (IOException invalidOrIncomplete) {
@@ -158,6 +171,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
         private final FileChannel channel;
         private final ChangeSetCodec.StreamWriter codec;
         private final java.util.Set<Path> ownedCommittedPaths;
+        private final java.util.Set<Path> ownedStagingPaths;
         private boolean finished;
 
         private Writer(
@@ -166,7 +180,8 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
                 Path committed,
                 FileChannel channel,
                 ChangeSetCodec.StreamWriter codec,
-                java.util.Set<Path> ownedCommittedPaths
+                java.util.Set<Path> ownedCommittedPaths,
+                java.util.Set<Path> ownedStagingPaths
         ) {
             this.operationId = operationId;
             this.staging = staging;
@@ -174,6 +189,7 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             this.channel = channel;
             this.codec = codec;
             this.ownedCommittedPaths = ownedCommittedPaths;
+            this.ownedStagingPaths = ownedStagingPaths;
         }
 
         @Override
@@ -210,6 +226,8 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
                 Files.move(staging, committed, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException e) {
                 throw new IOException("History directory does not support atomic commit", e);
+            } finally {
+                ownedStagingPaths.remove(staging);
             }
             ownedCommittedPaths.add(committed);
             return new DiskStoredChangeSet(
@@ -224,7 +242,11 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
             codec.abort();
             channel.close();
             finished = true;
-            Files.deleteIfExists(staging);
+            try {
+                Files.deleteIfExists(staging);
+            } finally {
+                ownedStagingPaths.remove(staging);
+            }
         }
 
         private void ensureOpen() {
