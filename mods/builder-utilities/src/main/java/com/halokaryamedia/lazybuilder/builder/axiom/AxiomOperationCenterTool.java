@@ -25,7 +25,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
     private int scopedCommitted;
     private int scopedIncomplete;
     private int legacyUnscoped;
-    private long scopedBlocks;
+    private long scopedBlockHistoryEntries;
     private long scopedExtensions;
     private String scopePreview = "<none>";
 
@@ -84,7 +84,7 @@ public final class AxiomOperationCenterTool implements CustomTool {
         ImGui.textWrapped("Internal durable timeline: undo=" + runtime.timeline().undoSize()
                 + " redo=" + runtime.timeline().redoSize());
         ImGui.textWrapped("Recoverable journals for this world: " + scopedCommitted
-                + " | blocks=" + scopedBlocks
+                + " | blockHistoryEntries=" + scopedBlockHistoryEntries
                 + " | extensions=" + scopedExtensions);
         ImGui.textWrapped("Incomplete journals for this world: " + scopedIncomplete);
         if (legacyUnscoped > 0) {
@@ -269,7 +269,8 @@ public final class AxiomOperationCenterTool implements CustomTool {
             var scoped = recovery.committedSummaries(
                     operationId -> ScopedOperationIds.belongsTo(operationId, scope));
             scopedCommitted = scoped.size();
-            scopedBlocks = scoped.stream().mapToLong(s -> s.changeCount()).sum();
+            scopedBlockHistoryEntries =
+                    scoped.stream().mapToLong(s -> s.changeCount()).sum();
             scopedExtensions = scoped.stream().mapToLong(s -> s.extensionCount()).sum();
             scopedIncomplete = recovery.incompleteFiles(
                     operationId -> ScopedOperationIds.belongsTo(operationId, scope)).size();
