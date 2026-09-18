@@ -103,9 +103,7 @@ public final class AxiomBiomeBatchDispatcher implements AutoCloseable {
                 break;
             }
             if (!HistoryExtensionTypes.BIOME.equals(frame.typeId())) {
-                return terminal(
-                        BiomeBatchDispatchState.FAILED,
-                        "unsupported mixed extension type " + frame.typeId());
+                continue;
             }
             entries.add(toMutation(frame, undo));
         }
