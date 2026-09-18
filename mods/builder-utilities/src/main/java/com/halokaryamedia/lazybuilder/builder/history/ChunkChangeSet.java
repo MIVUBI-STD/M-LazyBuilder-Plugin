@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.builder.history;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -31,32 +32,16 @@ public record ChunkChangeSet(
                 throw new IllegalArgumentException("Palette states must be non-blank");
             }
         }
-        for (int index : beforeStates) {
-            validatePaletteIndex(index, palette.size());
-        }
-        for (int index : afterStates) {
-            validatePaletteIndex(index, palette.size());
-        }
+        for (int index : beforeStates) validatePaletteIndex(index, palette.size());
+        for (int index : afterStates) validatePaletteIndex(index, palette.size());
+        validateUniquePositions(positions);
     }
 
-    @Override
-    public long[] positions() {
-        return positions.clone();
-    }
+    @Override public long[] positions() { return positions.clone(); }
+    @Override public int[] beforeStates() { return beforeStates.clone(); }
+    @Override public int[] afterStates() { return afterStates.clone(); }
 
-    @Override
-    public int[] beforeStates() {
-        return beforeStates.clone();
-    }
-
-    @Override
-    public int[] afterStates() {
-        return afterStates.clone();
-    }
-
-    public int size() {
-        return positions.length;
-    }
+    public int size() { return positions.length; }
 
     public String beforeState(int changeIndex) {
         return palette.get(beforeStates[changeIndex]);
@@ -69,6 +54,17 @@ public record ChunkChangeSet(
     private static void validatePaletteIndex(int index, int paletteSize) {
         if (index < 0 || index >= paletteSize) {
             throw new IllegalArgumentException("Palette index out of range: " + index);
+        }
+    }
+
+    private static void validateUniquePositions(long[] positions) {
+        if (positions.length < 2) return;
+        long[] sorted = positions.clone();
+        Arrays.sort(sorted);
+        for (int i = 1; i < sorted.length; i++) {
+            if (sorted[i] == sorted[i - 1]) {
+                throw new IllegalArgumentException("Duplicate block position in History chunk frame");
+            }
         }
     }
 }

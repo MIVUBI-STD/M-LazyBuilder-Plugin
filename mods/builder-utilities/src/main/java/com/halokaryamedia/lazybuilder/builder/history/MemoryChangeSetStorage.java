@@ -124,9 +124,13 @@ public class MemoryChangeSetStorage implements ChangeSetStorage {
 
         @Override
         public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
-            try (java.io.InputStream input = inputFactory.apply(bytes)) {
-                ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                validate(header);
+            try (java.io.InputStream blocks = inputFactory.apply(bytes)) {
+                validate(ChangeSetCodec.replayBlocks(blocks, direction, consumer));
+            } catch (HistoryReadException e) {
+                throw e.ioCause();
+            }
+            try (java.io.InputStream extensions = inputFactory.apply(bytes)) {
+                validate(ChangeSetCodec.replayExtensions(extensions, direction, consumer));
             } catch (HistoryReadException e) {
                 throw e.ioCause();
             }

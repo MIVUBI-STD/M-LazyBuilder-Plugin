@@ -164,9 +164,11 @@ public final class DiskChangeSetStorage implements ChangeSetStorage {
 
         @Override
         public void replayAll(ReplayDirection direction, HistoryReplayConsumer consumer) throws IOException {
-            try (InputStream input = Files.newInputStream(path)) {
-                ChangeSetCodec.Header header = ChangeSetCodec.replay(input, direction, consumer);
-                validate(header);
+            try (InputStream blocks = Files.newInputStream(path)) {
+                validate(ChangeSetCodec.replayBlocks(blocks, direction, consumer));
+            }
+            try (InputStream extensions = Files.newInputStream(path)) {
+                validate(ChangeSetCodec.replayExtensions(extensions, direction, consumer));
             }
         }
 
