@@ -97,11 +97,6 @@ public final class ClientWorldController {
         send(new WorldControlWireProtocol.DeleteWorld(worldId, typedWorldName));
     }
 
-    /** Legacy export path retained for the existing transfer screen. */
-    public void exportWorld(UUID worldId, String targetFormat, String artifactName) {
-        exportWorld(worldId, targetFormat, artifactName, ExportSettingsWire.Settings.inherit());
-    }
-
     /** Export-workspace path. Settings are applied to the export artifact only. */
     public void exportWorld(
             UUID worldId,
