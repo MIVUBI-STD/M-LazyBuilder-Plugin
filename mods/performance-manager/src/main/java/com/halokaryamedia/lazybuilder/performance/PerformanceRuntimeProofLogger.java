@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +43,7 @@ final class PerformanceRuntimeProofLogger {
                         + "upload_budget_stops={} vanilla_gpu_bytes={} physical_arena_bytes={} "
                         + "physical_draws={} exclusive_buffers={} retired_bytes={} promotions={} "
                         + "recoveries={} recovery_failures={} relocations={} relocation_fallbacks={} "
+                        + "rebuild_deferrals={} rebuild_releases={} particles_suppressed={} "
                         + "multidraw_batches={} multidraw_commands={} multidraw_failures={} renderer={}",
                 sample,
                 snapshot.fps(),
@@ -60,6 +62,9 @@ final class PerformanceRuntimeProofLogger {
                 snapshot.terrainExclusiveRecoveryFailures(),
                 snapshot.terrainPhysicalRelocations(),
                 snapshot.terrainPhysicalRelocationFallbacks(),
+                ChunkPipelineMetrics.rebuildBackpressureDeferrals(),
+                ChunkPipelineMetrics.rebuildBackpressureReleases(),
+                ChunkPipelineMetrics.particlesSuppressed(),
                 snapshot.terrainMultiDrawSubmittedBatches(),
                 snapshot.terrainMultiDrawSubmittedCommands(),
                 snapshot.terrainMultiDrawSubmissionFailures(),
