@@ -1,4 +1,4 @@
-use crate::engine::paths;
+use crate::engine::{paths, persistence};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
@@ -269,6 +269,7 @@ impl PluginManagerState {
         }
 
         let source = &existing[0];
+        persistence::safe_path::ensure_regular_file(source, "problem plugin JAR")?;
         if read_metadata(source).is_ok() {
             return Err("Selected JAR now contains valid plugin metadata and is no longer eligible for problem cleanup.".into());
         }
@@ -467,10 +468,9 @@ fn validated_metadata(path: &Path) -> Result<PluginMetadata, String> {
 }
 
 fn read_metadata(path: &Path) -> Result<PluginMetadata, String> {
-    if !path.is_file() {
-        return Err(format!("Plugin JAR was not found: {}", path.display()));
-    }
     if !is_jar(path) { return Err("Selected file is not a JAR.".into()); }
+    persistence::safe_path::ensure_regular_file(path, "plugin JAR")
+        .map_err(|error| format!("Unsafe plugin JAR {}: {error}", path.display()))?;
 
     let file = File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("Invalid plugin JAR: {error}"))?;
@@ -842,13 +842,34 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_paper_dependencies, MAX_PLUGIN_METADATA_BYTES};
+    use super::{parse_paper_dependencies, read_metadata, MAX_PLUGIN_METADATA_BYTES};
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
     use serde_yaml::Value;
 
     #[test]
     fn plugin_metadata_limit_is_bounded() {
         assert!(MAX_PLUGIN_METADATA_BYTES >= 64 * 1024);
         assert!(MAX_PLUGIN_METADATA_BYTES <= 1024 * 1024);
+    }
+
+    #[test]
+    fn non_regular_plugin_path_is_rejected_before_zip_parsing() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-path-test-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let fake_jar_directory = directory.join("fake.jar");
+        fs::create_dir_all(&fake_jar_directory).unwrap();
+
+        let error = read_metadata(&fake_jar_directory).unwrap_err();
+        assert!(error.contains("Unsafe plugin JAR"));
+
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
