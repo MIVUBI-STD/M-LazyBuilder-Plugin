@@ -26,8 +26,6 @@ import java.util.UUID;
 /** Thin Paper transport for map intents; domain authority stays in application services. */
 public final class PaperMapActionPayloadAdapter implements PluginMessageListener, Listener {
     public static final String CHANNEL = "lazybuilder:map";
-    public static final String TELEPORT_PERMISSION = "lazybuilder.world.teleport";
-    public static final String MANAGE_PERMISSION = "lazybuilder.world.manage";
     private static final String PAPER_NETHER_SUFFIX = "_nether";
     private static final String PAPER_END_SUFFIX = "_the_end";
 
@@ -135,7 +133,7 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
     }
 
     private boolean hasAnyWorldPermission(Player player) {
-        return player.hasPermission(TELEPORT_PERMISSION) || player.hasPermission(MANAGE_PERMISSION);
+        return player.hasPermission(WorldPermissionNodes.TELEPORT) || player.hasPermission(WorldPermissionNodes.MANAGE);
     }
 
     private void handleTeleport(Player player, MapActionWireProtocol.TeleportLocation request) {
