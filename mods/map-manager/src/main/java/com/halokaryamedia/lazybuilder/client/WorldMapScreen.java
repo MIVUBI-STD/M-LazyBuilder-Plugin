@@ -56,7 +56,7 @@ public final class WorldMapScreen extends Screen {
     private final ClientMapController maps;
     private final MapExportWorkspaceState exportWorkspace = new MapExportWorkspaceState();
 
-    private final MapViewportState viewport = new MapViewportState();
+    private final MapViewportState camera = new MapViewportState();
     private boolean centeredOnce;
     private boolean initialLayoutApplied;
     private boolean sidebarCollapsed;
@@ -324,7 +324,7 @@ public final class WorldMapScreen extends Screen {
 
         int pixel = mapPixelSize();
         WorldMapRasterViewport.State viewport = WorldMapRasterViewport.resolve(
-                scope, bounds.left, bounds.top, bounds.right, bounds.bottom, pixel, viewport.zoom, viewport.centerX, viewport.centerZ);
+                scope, bounds.left, bounds.top, bounds.right, bounds.bottom, pixel, camera.zoom, camera.centerX, camera.centerZ);
         long worldTime = world.getTime();
         if (rasterNeedsRefresh(scope, bounds, pixel, worldTime, viewport)) {
             rebuildRaster(world, scope, bounds, pixel, worldTime, viewport);
@@ -348,7 +348,7 @@ public final class WorldMapScreen extends Screen {
                 || rasterBottom != bounds.bottom
                 || Double.compare(rasterCenterX, viewport.sampleCenterX()) != 0
                 || Double.compare(rasterCenterZ, viewport.sampleCenterZ()) != 0
-                || Double.compare(rasterZoom, viewport.zoom) != 0
+                || Double.compare(rasterZoom, camera.zoom) != 0
                 || !rasterScope.equals(scope);
         if (viewportChanged) return true;
         if (!rasterContentDirty) return false;
@@ -403,7 +403,7 @@ public final class WorldMapScreen extends Screen {
         rasterBottom = bounds.bottom;
         rasterCenterX = viewport.sampleCenterX();
         rasterCenterZ = viewport.sampleCenterZ();
-        rasterZoom = viewport.zoom;
+        rasterZoom = camera.zoom;
         rasterScope = scope;
         rasterContentDirty = false;
         rasterWorldTime = worldTime;
@@ -437,8 +437,8 @@ public final class WorldMapScreen extends Screen {
     private void renderPlayerMarker(DrawContext context, Bounds bounds) {
         if (client == null || client.player == null) return;
         double scale = 1.0 / blocksPerPixel();
-        int px = bounds.centerX() + (int) Math.round((client.player.getX() - viewport.centerX) * scale);
-        int pz = bounds.centerY() + (int) Math.round((client.player.getZ() - viewport.centerZ) * scale);
+        int px = bounds.centerX() + (int) Math.round((client.player.getX() - camera.centerX) * scale);
+        int pz = bounds.centerY() + (int) Math.round((client.player.getZ() - camera.centerZ) * scale);
         if (!bounds.contains(px, pz)) return;
 
         context.getMatrices().push();
@@ -681,7 +681,7 @@ public final class WorldMapScreen extends Screen {
 
         if (!status.isBlank()) {
             int statusWidth = textRenderer.getWidth(status);
-            int statusRight = viewport.zoomLabelRect().left - 10;
+            int statusRight = camera.zoomLabelRect().left - 10;
             int statusX = statusRight - statusWidth;
             if (statusX > recenterMapRect().right + 10) {
                 context.drawTextWithShadow(textRenderer, Text.literal(status), statusX, height - 16, LbUi.TEXT_MUTED);
@@ -690,10 +690,10 @@ public final class WorldMapScreen extends Screen {
     }
 
     private void renderZoomControl(DrawContext context, int mouseX, int mouseY) {
-        Rect label = viewport.zoomLabelRect();
-        Rect minus = viewport.zoomMinusRect();
-        Rect plus = viewport.zoomPlusRect();
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(viewport.zoomLabel()),
+        Rect label = camera.zoomLabelRect();
+        Rect minus = camera.zoomMinusRect();
+        Rect plus = camera.zoomPlusRect();
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(camera.zoomLabel()),
                 (label.left + label.right) / 2, label.top + 5, LbUi.TEXT_MUTED);
         context.fill(minus.left, minus.top, minus.right, minus.bottom,
                 minus.contains(mouseX, mouseY) ? LbUi.SURFACE_3 : LbUi.SURFACE_2);
@@ -841,11 +841,11 @@ public final class WorldMapScreen extends Screen {
             centerOnPlayer();
             return true;
         }
-        if (viewport.zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
+        if (camera.zoomMinusRect().contains(mouseX, mouseY) && button == 0) {
             discreteZoom(1, mapBounds().centerX(), mapBounds().centerY());
             return true;
         }
-        if (viewport.zoomPlusRect().contains(mouseX, mouseY) && button == 0) {
+        if (camera.zoomPlusRect().contains(mouseX, mouseY) && button == 0) {
             discreteZoom(-1, mapBounds().centerX(), mapBounds().centerY());
             return true;
         }
@@ -862,7 +862,7 @@ public final class WorldMapScreen extends Screen {
                 int[] chunk = screenToChunk(mouseX, mouseY);
                 if (chunk == null) return true;
                 if (hit != DragMode.NONE) beginSelectionDrag(hit, chunk[0], chunk[1]);
-                else viewport.dragging = true;
+                else camera.dragging = true;
                 return true;
             }
             return true;
@@ -878,7 +878,7 @@ public final class WorldMapScreen extends Screen {
             return true;
         }
         if (button == 0) {
-            viewport.dragging = true;
+            camera.dragging = true;
             contextOpen = false;
             return true;
         }
@@ -938,8 +938,8 @@ public final class WorldMapScreen extends Screen {
             if (chunk != null) updateSelectionDrag(chunk[0], chunk[1]);
             return true;
         }
-        if (viewport.dragging) {
-            viewport.panByPixels(deltaX, deltaY);
+        if (camera.dragging) {
+            camera.panByPixels(deltaX, deltaY);
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -948,8 +948,8 @@ public final class WorldMapScreen extends Screen {
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            boolean handled = viewport.dragging || selectionDrag != DragMode.NONE;
-            viewport.dragging = false;
+            boolean handled = camera.dragging || selectionDrag != DragMode.NONE;
+            camera.dragging = false;
             selectionDrag = DragMode.NONE;
             if (handled) return true;
         }
@@ -1055,7 +1055,7 @@ public final class WorldMapScreen extends Screen {
         if (scope == MapExportWorkspaceState.Scope.FULL_WORLD) {
             areaSelection.active = false;
             selectionDrag = DragMode.NONE;
-            viewport.dragging = false;
+            camera.dragging = false;
             invalidateRasterViewport();
             return;
         }
@@ -1065,8 +1065,8 @@ public final class WorldMapScreen extends Screen {
             invalidateRasterViewport();
             return;
         }
-        int blockX = client != null && client.player != null ? client.player.getBlockX() : (int) Math.floor(viewport.centerX);
-        int blockZ = client != null && client.player != null ? client.player.getBlockZ() : (int) Math.floor(viewport.centerZ);
+        int blockX = client != null && client.player != null ? client.player.getBlockX() : (int) Math.floor(camera.centerX);
+        int blockZ = client != null && client.player != null ? client.player.getBlockZ() : (int) Math.floor(camera.centerZ);
         initializeAreaSelection(blockX, blockZ);
     }
 
@@ -1084,7 +1084,7 @@ public final class WorldMapScreen extends Screen {
         areaSelection.worldId = current.worldId().value();
         areaSelection.active = true;
         selectionDrag = DragMode.NONE;
-        viewport.dragging = false;
+        camera.dragging = false;
         contextOpen = false;
         invalidateRasterViewport();
     }
@@ -1126,7 +1126,7 @@ public final class WorldMapScreen extends Screen {
         areaSelection.active = false;
         areaSelection.worldId = null;
         selectionDrag = DragMode.NONE;
-        viewport.dragging = false;
+        camera.dragging = false;
         contextOpen = false;
         invalidateRasterViewport();
     }
@@ -1153,10 +1153,10 @@ public final class WorldMapScreen extends Screen {
         double bpp = blocksPerPixel();
         double chunkPixels = CHUNK_BLOCKS / bpp;
         double regionPixels = REGION_BLOCKS / bpp;
-        double worldLeft = viewport.centerX + (bounds.left - bounds.centerX()) * bpp;
-        double worldRight = viewport.centerX + (bounds.right - bounds.centerX()) * bpp;
-        double worldTop = viewport.centerZ + (bounds.top - bounds.centerY()) * bpp;
-        double worldBottom = viewport.centerZ + (bounds.bottom - bounds.centerY()) * bpp;
+        double worldLeft = camera.centerX + (bounds.left - bounds.centerX()) * bpp;
+        double worldRight = camera.centerX + (bounds.right - bounds.centerX()) * bpp;
+        double worldTop = camera.centerZ + (bounds.top - bounds.centerY()) * bpp;
+        double worldBottom = camera.centerZ + (bounds.bottom - bounds.centerY()) * bpp;
 
         if (chunkPixels >= 6.0) {
             int firstChunkX = Math.floorDiv((int) Math.floor(worldLeft), CHUNK_BLOCKS) - 1;
@@ -1306,25 +1306,25 @@ public final class WorldMapScreen extends Screen {
     private int maxBlockZ() { return areaSelection.maxBlockZ(CHUNK_BLOCKS); }
 
     private void discreteZoom(int direction, double screenX, double screenY) {
-        int current = nearestZoomIndex(viewport.zoom);
+        int current = nearestZoomIndex(camera.zoom);
         int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, current + direction));
         setZoom(ZOOM_STEPS[next], screenX, screenY);
     }
 
     private void preciseZoom(int direction, double screenX, double screenY) {
-        double next = direction > 0 ? viewport.zoom * PRECISE_ZOOM_FACTOR : viewport.zoom / PRECISE_ZOOM_FACTOR;
+        double next = direction > 0 ? camera.zoom * PRECISE_ZOOM_FACTOR : camera.zoom / PRECISE_ZOOM_FACTOR;
         setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next)), screenX, screenY);
     }
 
     private void setZoom(double next, double screenX, double screenY) {
-        if (Math.abs(next - viewport.zoom) < 0.0001) return;
+        if (Math.abs(next - camera.zoom) < 0.0001) return;
         double[] anchor = screenToWorldExact(screenX, screenY);
-        viewport.zoom = next;
+        camera.zoom = next;
         if (anchor != null) {
             Bounds bounds = mapBounds();
             double bpp = blocksPerPixel();
-            viewport.centerX = anchor[0] - (screenX - bounds.centerX()) * bpp;
-            viewport.centerZ = anchor[1] - (screenY - bounds.centerY()) * bpp;
+            camera.centerX = anchor[0] - (screenX - bounds.centerX()) * bpp;
+            camera.centerZ = anchor[1] - (screenY - bounds.centerY()) * bpp;
         }
     }
 
@@ -1343,26 +1343,22 @@ public final class WorldMapScreen extends Screen {
 
     private void centerOnPlayer() {
         if (client != null && client.player != null) {
-            viewport.centerOn(client.player.getX(), client.player.getZ());
+            camera.centerOn(client.player.getX(), client.player.getZ());
         }
     }
 
     private int mapPixelSize() {
-        if (viewport.zoom <= 2.0) return 1;
-        if (viewport.zoom <= 8.0) return 2;
+        if (camera.zoom <= 2.0) return 1;
+        if (camera.zoom <= 8.0) return 2;
         return 3;
     }
 
-    private double blocksPerPixel() { return viewport.blocksPerPixel(); }
+    private double blocksPerPixel() { return camera.blocksPerPixel(); }
 
     private double[] screenToWorldExact(double mouseX, double mouseY) {
         Bounds bounds = mapBounds();
         if (!bounds.contains(mouseX, mouseY)) return null;
-        double bpp = blocksPerPixel();
-        return new double[]{
-                viewport.centerX + (mouseX - bounds.centerX()) * bpp,
-                viewport.centerZ + (mouseY - bounds.centerY()) * bpp
-        };
+        return camera.worldAtScreen(mouseX, mouseY, bounds.centerX(), bounds.centerY());
     }
 
     private int[] screenToWorld(double mouseX, double mouseY) {
@@ -1378,16 +1374,16 @@ public final class WorldMapScreen extends Screen {
     }
 
     private int worldToScreenX(int blockX, Bounds bounds) {
-        return bounds.centerX() + (int) Math.round((blockX - viewport.centerX) / blocksPerPixel());
+        return bounds.centerX() + (int) Math.round((blockX - camera.centerX) / blocksPerPixel());
     }
 
     private int worldToScreenZ(int blockZ, Bounds bounds) {
-        return bounds.centerY() + (int) Math.round((blockZ - viewport.centerZ) / blocksPerPixel());
+        return bounds.centerY() + (int) Math.round((blockZ - camera.centerZ) / blocksPerPixel());
     }
 
-    private String viewport.zoomLabel() {
-        if (Math.abs(viewport.zoom - Math.rint(viewport.zoom)) < 0.01) return "Zoom " + (int) Math.rint(viewport.zoom) + "×";
-        return String.format(Locale.ROOT, "Zoom %.1f×", viewport.zoom);
+    private String camera.zoomLabel() {
+        if (Math.abs(camera.zoom - Math.rint(camera.zoom)) < 0.01) return "Zoom " + (int) Math.rint(camera.zoom) + "×";
+        return String.format(Locale.ROOT, "Zoom %.1f×", camera.zoom);
     }
 
     private boolean shouldAutoCollapseSidebar() { return width < 520 || height < 260; }
@@ -1427,17 +1423,17 @@ public final class WorldMapScreen extends Screen {
         int bottom = map.bottom - 20;
         return new Rect(center - buttonWidth / 2, bottom - 22, center + buttonWidth / 2, bottom);
     }
-    private Rect viewport.zoomPlusRect() {
+    private Rect camera.zoomPlusRect() {
         int right = mapBounds().right - 8;
         return new Rect(right - 20, height - 22, right, height - 3);
     }
-    private Rect viewport.zoomMinusRect() {
-        int right = viewport.zoomPlusRect().left - 3;
+    private Rect camera.zoomMinusRect() {
+        int right = camera.zoomPlusRect().left - 3;
         return new Rect(right - 20, height - 22, right, height - 3);
     }
-    private Rect viewport.zoomLabelRect() {
+    private Rect camera.zoomLabelRect() {
         int labelWidth = 58;
-        int right = viewport.zoomMinusRect().left - 6;
+        int right = camera.zoomMinusRect().left - 6;
         return new Rect(right - labelWidth, height - 22, right, height - 3);
     }
 
