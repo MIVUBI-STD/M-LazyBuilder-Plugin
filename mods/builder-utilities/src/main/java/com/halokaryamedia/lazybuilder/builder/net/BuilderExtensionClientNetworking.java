@@ -57,6 +57,10 @@ public final class BuilderExtensionClientNetworking {
         return capabilities().supportsBiome();
     }
 
+    public static boolean canApplyBlockEntities() {
+        return capabilities().supportsBlockEntity();
+    }
+
     public static void requestRenegotiation() {
         negotiate();
     }
@@ -65,6 +69,25 @@ public final class BuilderExtensionClientNetworking {
     public static void cancelPending(String operationId) {
         if (operationId == null || operationId.isBlank()) return;
         PENDING.remove(operationId);
+    }
+
+    public static void sendBlockEntityBatch(
+            BuilderExtensionWireProtocol.ApplyBlockEntityBatch batch,
+            Consumer<BuilderExtensionWireProtocol.Response> callback
+    ) throws IOException {
+        Objects.requireNonNull(batch, "batch");
+        Objects.requireNonNull(callback, "callback");
+        BuilderExtensionCapabilities capabilities = CAPABILITIES.get();
+        if (!capabilities.supportsBlockEntity()) {
+            throw new IllegalStateException(
+                    "Server does not advertise Builder BLOCK_ENTITY authority");
+        }
+        if (batch.entries().size() > capabilities.maxBatchEntries()) {
+            throw new IllegalArgumentException(
+                    "Block entity batch exceeds negotiated server limit "
+                            + capabilities.maxBatchEntries());
+        }
+        sendOperationRequest(batch.operationId(), batch, callback);
     }
 
     public static void sendEntityBatch(
@@ -173,6 +196,8 @@ public final class BuilderExtensionClientNetworking {
             if (response instanceof BuilderExtensionWireProtocol.BatchResult result) {
                 operationId = result.operationId();
             } else if (response instanceof BuilderExtensionWireProtocol.EntityBatchResult result) {
+                operationId = result.operationId();
+            } else if (response instanceof BuilderExtensionWireProtocol.BlockEntityBatchResult result) {
                 operationId = result.operationId();
             } else {
                 operationId =
