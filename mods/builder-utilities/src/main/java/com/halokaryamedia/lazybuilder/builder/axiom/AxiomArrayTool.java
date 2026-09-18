@@ -19,7 +19,7 @@ import com.halokaryamedia.lazybuilder.builder.operation.OperationPlan;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationPreflight;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationSeed;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
-import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution;
+import com.halokaryamedia.lazybuilder.builder.placement.ArrayDistribution3d;
 import com.halokaryamedia.lazybuilder.builder.placement.PlacementPoint;
 import com.halokaryamedia.lazybuilder.builder.region.BlockBounds;
 import com.halokaryamedia.lazybuilder.builder.region.BuilderRegion;
@@ -54,10 +54,8 @@ public final class AxiomArrayTool implements CustomTool {
     private final AxiomMutationController mutation;
     private final int[] count = {16};
     private final int[] stepX = {2};
+    private final int[] stepY = {0};
     private final int[] stepZ = {0};
-    private final int[] rotationalCopies = {1};
-    private final int[] mirrorX = {0};
-    private final int[] mirrorZ = {0};
     private final int[] rotationalCopies = {1};
     private final int[] mirrorX = {0};
     private final int[] mirrorZ = {0};
@@ -107,7 +105,7 @@ public final class AxiomArrayTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Set an origin, then configure Count and X/Z step. Confirm applies Axiom's active block using durable History v2.");
+        ImGui.textWrapped("Set an origin, then configure Count and X/Y/Z step. Confirm applies Axiom's active block using durable History v2.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -124,10 +122,8 @@ public final class AxiomArrayTool implements CustomTool {
         boolean changed = false;
         changed |= ImGui.sliderInt("Count", count, 1, MAX_COUNT);
         changed |= ImGui.sliderInt("Step X", stepX, -64, 64);
+        changed |= ImGui.sliderInt("Step Y", stepY, -64, 64);
         changed |= ImGui.sliderInt("Step Z", stepZ, -64, 64);
-        changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
-        changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
-        changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
         changed |= ImGui.sliderInt("Rotational Copies", rotationalCopies, 1, 16);
         changed |= ImGui.sliderInt("Mirror X", mirrorX, 0, 1);
         changed |= ImGui.sliderInt("Mirror Z", mirrorZ, 0, 1);
@@ -159,9 +155,13 @@ public final class AxiomArrayTool implements CustomTool {
     private void rebuildPreview() {
         if (origin == null) return;
         try {
-            BlockBounds bounds = bounds();
-            ArrayDistribution distribution = new ArrayDistribution(
-                    origin.getX(), origin.getZ(), count[0], stepX[0], stepZ[0]);
+            ClientWorld world = Objects.requireNonNull(
+                    MinecraftClient.getInstance().world,
+                    "Minecraft client world is unavailable");
+            BlockBounds bounds = bounds(world);
+            ArrayDistribution3d distribution = new ArrayDistribution3d(
+                    origin.getX(), origin.getY(), origin.getZ(),
+                    count[0], stepX[0], stepY[0], stepZ[0]);
             List<PlacementPoint> basePoints = distribution.generate(
                     bounds,
                     (x, z) -> origin.getY(),
@@ -221,18 +221,28 @@ public final class AxiomArrayTool implements CustomTool {
         idleStatus = "Mutation started";
     }
 
-    private BlockBounds bounds() {
+    private BlockBounds bounds(ClientWorld world) {
         if (origin == null) throw new IllegalStateException("Array origin is required");
+        Objects.requireNonNull(world, "world");
         long lastX = (long) origin.getX() + (long) stepX[0] * (count[0] - 1L);
+        long lastY = (long) origin.getY() + (long) stepY[0] * (count[0] - 1L);
         long lastZ = (long) origin.getZ() + (long) stepZ[0] * (count[0] - 1L);
         if (lastX < Integer.MIN_VALUE || lastX > Integer.MAX_VALUE
+                || lastY < Integer.MIN_VALUE || lastY > Integer.MAX_VALUE
                 || lastZ < Integer.MIN_VALUE || lastZ > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("array endpoint exceeds integer world range");
         }
+        if (Math.min(origin.getY(), (int) lastY) < world.getBottomY()
+                || Math.max(origin.getY(), (int) lastY) > world.getTopYInclusive()) {
+            throw new IllegalArgumentException(
+                    "array Y range exceeds current world build height");
+        }
         return new BlockBounds(
-                Math.min(origin.getX(), (int) lastX), origin.getY(),
+                Math.min(origin.getX(), (int) lastX),
+                Math.min(origin.getY(), (int) lastY),
                 Math.min(origin.getZ(), (int) lastZ),
-                Math.max(origin.getX(), (int) lastX), origin.getY(),
+                Math.max(origin.getX(), (int) lastX),
+                Math.max(origin.getY(), (int) lastY),
                 Math.max(origin.getZ(), (int) lastZ)
         );
     }
