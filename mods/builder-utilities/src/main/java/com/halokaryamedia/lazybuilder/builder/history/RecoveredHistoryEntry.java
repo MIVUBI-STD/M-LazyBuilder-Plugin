@@ -53,7 +53,7 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
     public Optional<String> unsupportedReason() {
         return Optional.ofNullable(unsupportedReason);
     }
-    public RecoveredPreparedMutation transferForResume() {
+    public RecoveredPreparedMutation transferForResume() throws IOException {
         ensureOwned();
         if (overallState == null) {
             throw new IllegalStateException(
@@ -62,8 +62,11 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
         if (overallState == ReconciliationState.CONFLICT) {
             throw new IllegalStateException("Conflicted recovery entry cannot resume automatically");
         }
+        long plannedChanges = actualBlockMutationCount();
+        RecoveredPreparedMutation prepared =
+                new RecoveredPreparedMutation(stored, plannedChanges);
         transferred = true;
-        return new RecoveredPreparedMutation(stored, actualBlockMutationCount());
+        return prepared;
     }
 
     /**
@@ -90,8 +93,11 @@ public final class RecoveredHistoryEntry implements AutoCloseable {
             throw new IllegalStateException(
                     "Missing authoritative recovery support for extension types " + missing);
         }
+        long plannedChanges = actualBlockMutationCount();
+        RecoveredPreparedMutation prepared =
+                new RecoveredPreparedMutation(stored, plannedChanges);
         transferred = true;
-        return new RecoveredPreparedMutation(stored, actualBlockMutationCount());
+        return prepared;
     }
 
     /**
