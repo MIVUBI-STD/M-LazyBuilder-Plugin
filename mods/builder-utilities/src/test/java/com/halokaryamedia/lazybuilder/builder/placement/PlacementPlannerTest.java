@@ -31,7 +31,7 @@ class PlacementPlannerTest {
                 new WeightedPlacementSource.Entry("tree-a", 3),
                 new WeightedPlacementSource.Entry("tree-b", 1)
         ), 20L);
-        PlacementVariation variation = new PlacementVariation(0, 360, 0.8, 1.2, 0.25, 30L);
+        PlacementVariation variation = new PlacementVariation(0, 360, 0.8, 1.2, 0.25, 0.0, 30L);
         var distribution = new ArrayDistribution(0, 0, 4, 8, 8);
         OperationSeed seed = new OperationSeed(42);
         var first = PlacementPlanner.plan(bounds, (x,z) -> 5, seed, distribution, source, variation);
