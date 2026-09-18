@@ -84,6 +84,12 @@ public final class AxiomOperationCenterTool implements CustomTool {
                 + " blocks=" + proof.forwardBlocksDispatched()
                 + " | rollback chunks=" + proof.rollbackChunksVisited()
                 + " blocks=" + proof.rollbackBlocksDispatched());
+        ImGui.textWrapped("Extensions forward: BIOME=" + proof.forwardBiomeExtensions()
+                + " ENTITY=" + proof.forwardEntityExtensions()
+                + " | rollback: BIOME=" + proof.rollbackBiomeExtensions()
+                + " ENTITY=" + proof.rollbackEntityExtensions());
+        ImGui.textWrapped("Extension conflicts=" + proof.extensionConflicts()
+                + " failures=" + proof.extensionFailures());
         ImGui.textWrapped("Conflicts=" + proof.conflicts()
                 + " budgetExceeded=" + proof.budgetExceeded()
                 + " maxObservedSliceMs="

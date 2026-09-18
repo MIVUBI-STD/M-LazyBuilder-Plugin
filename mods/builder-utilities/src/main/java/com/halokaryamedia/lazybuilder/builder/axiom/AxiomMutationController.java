@@ -81,7 +81,8 @@ public final class AxiomMutationController implements AutoCloseable {
                         runtime.timeline(),
                         runtime.history(),
                         estimatedHistoryBytes,
-                        cancellation.token()
+                        cancellation.token(),
+                        runtime.metrics()
                 );
             }
         } catch (RuntimeException | IOException failure) {

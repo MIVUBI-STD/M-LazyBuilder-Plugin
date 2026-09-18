@@ -83,7 +83,7 @@ public final class BuilderRuntimeProofStore {
             String label
     ) {
         return "{\n"
-                + "  \"schema\": 1,\n"
+                + "  \"schema\": 2,\n"
                 + "  \"sessionId\": \"" + escape(sessionId) + "\",\n"
                 + "  \"label\": \"" + escape(label == null ? "snapshot" : label) + "\",\n"
                 + "  \"startedEpochMillis\": " + sessionStartedEpochMillis + ",\n"
@@ -96,6 +96,12 @@ public final class BuilderRuntimeProofStore {
                 + "  \"forwardBlocksDispatched\": " + s.forwardBlocksDispatched() + ",\n"
                 + "  \"rollbackChunksVisited\": " + s.rollbackChunksVisited() + ",\n"
                 + "  \"rollbackBlocksDispatched\": " + s.rollbackBlocksDispatched() + ",\n"
+                + "  \"forwardBiomeExtensions\": " + s.forwardBiomeExtensions() + ",\n"
+                + "  \"forwardEntityExtensions\": " + s.forwardEntityExtensions() + ",\n"
+                + "  \"rollbackBiomeExtensions\": " + s.rollbackBiomeExtensions() + ",\n"
+                + "  \"rollbackEntityExtensions\": " + s.rollbackEntityExtensions() + ",\n"
+                + "  \"extensionConflicts\": " + s.extensionConflicts() + ",\n"
+                + "  \"extensionFailures\": " + s.extensionFailures() + ",\n"
                 + "  \"conflicts\": " + s.conflicts() + ",\n"
                 + "  \"budgetExceeded\": " + s.budgetExceeded() + ",\n"
                 + "  \"maxSliceNanos\": " + s.maxSliceNanos() + ",\n"

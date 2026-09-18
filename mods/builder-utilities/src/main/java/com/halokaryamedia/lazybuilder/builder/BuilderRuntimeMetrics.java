@@ -15,6 +15,12 @@ public final class BuilderRuntimeMetrics {
     private final AtomicLong forwardBlocksDispatched = new AtomicLong();
     private final AtomicLong rollbackChunksVisited = new AtomicLong();
     private final AtomicLong rollbackBlocksDispatched = new AtomicLong();
+    private final AtomicLong forwardBiomeExtensions = new AtomicLong();
+    private final AtomicLong forwardEntityExtensions = new AtomicLong();
+    private final AtomicLong rollbackBiomeExtensions = new AtomicLong();
+    private final AtomicLong rollbackEntityExtensions = new AtomicLong();
+    private final AtomicLong extensionConflicts = new AtomicLong();
+    private final AtomicLong extensionFailures = new AtomicLong();
     private final AtomicLong conflicts = new AtomicLong();
     private final AtomicLong budgetExceeded = new AtomicLong();
     private final AtomicLong maxSliceNanos = new AtomicLong();
@@ -40,6 +46,31 @@ public final class BuilderRuntimeMetrics {
         rollbackChunksVisited.addAndGet(chunks);
         rollbackBlocksDispatched.addAndGet(blocks);
         maxSliceNanos.accumulateAndGet(elapsedNanos, Math::max);
+    }
+
+    public void recordForwardBiomeExtensions(long count) {
+        addNonNegative(forwardBiomeExtensions, count, "forwardBiomeExtensions");
+    }
+
+    public void recordForwardEntityExtensions(long count) {
+        addNonNegative(forwardEntityExtensions, count, "forwardEntityExtensions");
+    }
+
+    public void recordRollbackBiomeExtensions(long count) {
+        addNonNegative(rollbackBiomeExtensions, count, "rollbackBiomeExtensions");
+    }
+
+    public void recordRollbackEntityExtensions(long count) {
+        addNonNegative(rollbackEntityExtensions, count, "rollbackEntityExtensions");
+    }
+
+    public void extensionConflict() {
+        extensionConflicts.incrementAndGet();
+        conflicts.incrementAndGet();
+    }
+
+    public void extensionFailure() {
+        extensionFailures.incrementAndGet();
     }
 
     public void conflict() {
@@ -73,6 +104,12 @@ public final class BuilderRuntimeMetrics {
                 forwardBlocksDispatched.get(),
                 rollbackChunksVisited.get(),
                 rollbackBlocksDispatched.get(),
+                forwardBiomeExtensions.get(),
+                forwardEntityExtensions.get(),
+                rollbackBiomeExtensions.get(),
+                rollbackEntityExtensions.get(),
+                extensionConflicts.get(),
+                extensionFailures.get(),
                 conflicts.get(),
                 budgetExceeded.get(),
                 maxSliceNanos.get(),
@@ -84,6 +121,11 @@ public final class BuilderRuntimeMetrics {
         if (value < 0) throw new IllegalArgumentException(label + " must be >= 0");
     }
 
+    private static void addNonNegative(AtomicLong target, long value, String label) {
+        requireNonNegative(value, label);
+        target.addAndGet(value);
+    }
+
     public record Snapshot(
             long operationsStarted,
             long operationsCompleted,
@@ -93,6 +135,12 @@ public final class BuilderRuntimeMetrics {
             long forwardBlocksDispatched,
             long rollbackChunksVisited,
             long rollbackBlocksDispatched,
+            long forwardBiomeExtensions,
+            long forwardEntityExtensions,
+            long rollbackBiomeExtensions,
+            long rollbackEntityExtensions,
+            long extensionConflicts,
+            long extensionFailures,
             long conflicts,
             long budgetExceeded,
             long maxSliceNanos,
