@@ -20,6 +20,10 @@ public final class HistoryExtensionTargetRegistry {
         return new HistoryExtensionTargetRegistry(Map.of());
     }
 
+    public boolean supports(String typeId) {
+        return targets.containsKey(typeId);
+    }
+
     public HistoryExtensionMutationTarget require(String typeId) {
         HistoryExtensionMutationTarget target = targets.get(typeId);
         if (target == null) {

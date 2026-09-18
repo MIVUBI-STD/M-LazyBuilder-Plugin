@@ -61,6 +61,11 @@ public final class ChangeSetCodec {
         return new Header(context.header.operationId, counts.changes, counts.extensions);
     }
 
+    /** Reads only the History header operation id; no commit footer is required. */
+    public static String readOperationId(InputStream input) throws IOException {
+        return openInput(input).header.operationId;
+    }
+
     public static Header replay(InputStream input, ReplayDirection direction, HistoryReplayConsumer consumer)
             throws IOException {
         Objects.requireNonNull(direction, "direction");

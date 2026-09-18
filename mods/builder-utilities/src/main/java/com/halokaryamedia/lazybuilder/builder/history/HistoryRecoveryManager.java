@@ -1,20 +1,24 @@
 package com.halokaryamedia.lazybuilder.builder.history;
 
+import com.halokaryamedia.lazybuilder.builder.mutation.ExtensionReconciliationReport;
+import com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionTargetRegistry;
+import com.halokaryamedia.lazybuilder.builder.mutation.HistoryRecoveryScanner;
+import com.halokaryamedia.lazybuilder.builder.mutation.PreparedExtensionMutationReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedMutationReconciler;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedReconciliationReport;
+import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
 import com.halokaryamedia.lazybuilder.builder.mutation.WorldBlockStateSource;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-/**
- * Discovers durable History left by a previous process and classifies block-only
- * operations against the current world before any resume/discard decision.
- */
+/** World-scoped durable History discovery and reconciliation. */
 public final class HistoryRecoveryManager {
     private final DiskChangeSetStorage storage;
 
@@ -23,52 +27,145 @@ public final class HistoryRecoveryManager {
     }
 
     public List<Path> incompleteFiles() throws IOException {
-        return storage.listRecoverableIncomplete();
+        return incompleteFiles(operationId -> true);
     }
 
-    /**
-     * Promotes any staging journal that already has a valid committed footer/checksum,
-     * then deletes only the remaining invalid/truncated staging files.
-     */
+    public List<Path> incompleteFiles(Predicate<String> operationFilter) throws IOException {
+        Objects.requireNonNull(operationFilter, "operationFilter");
+        List<Path> result = new ArrayList<>();
+        for (Path path : storage.listRecoverableIncomplete()) {
+            String operationId = readHeaderOperationId(path);
+            if (operationId != null && operationFilter.test(operationId)) {
+                result.add(path);
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public int discardIncompleteFiles() throws IOException {
+        return discardIncompleteFiles(operationId -> true);
+    }
+
+    public int discardIncompleteFiles(Predicate<String> operationFilter) throws IOException {
+        Objects.requireNonNull(operationFilter, "operationFilter");
         storage.promoteRecoverableIncomplete();
         int deleted = 0;
         for (Path path : storage.listRecoverableIncomplete()) {
-            if (java.nio.file.Files.deleteIfExists(path)) deleted++;
+            String operationId = readHeaderOperationId(path);
+            if (operationId != null
+                    && operationFilter.test(operationId)
+                    && Files.deleteIfExists(path)) {
+                deleted++;
+            }
         }
         return deleted;
     }
 
+    public List<HistoryJournalSummary> committedSummaries(
+            Predicate<String> operationFilter
+    ) throws IOException {
+        return storage.inspectRecoverableCommitted(
+                Objects.requireNonNull(operationFilter, "operationFilter"));
+    }
+
     public List<RecoveredHistoryEntry> discover(WorldBlockStateSource world) throws IOException {
-        return discover(world, operationId -> true);
+        return discover(
+                world,
+                HistoryExtensionTargetRegistry.empty(),
+                operationId -> true);
     }
 
     public List<RecoveredHistoryEntry> discover(
             WorldBlockStateSource world,
             Predicate<String> operationFilter
     ) throws IOException {
+        return discover(world, HistoryExtensionTargetRegistry.empty(), operationFilter);
+    }
+
+    public List<RecoveredHistoryEntry> discover(
+            WorldBlockStateSource world,
+            HistoryExtensionTargetRegistry extensions,
+            Predicate<String> operationFilter
+    ) throws IOException {
         Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(extensions, "extensions");
         Objects.requireNonNull(operationFilter, "operationFilter");
         storage.promoteRecoverableIncomplete();
+
         List<RecoveredHistoryEntry> result = new ArrayList<>();
+        List<StoredChangeSet> recovered = storage.recoverCommitted(operationFilter);
         try {
-            for (StoredChangeSet stored : storage.recoverCommitted(operationFilter)) {
-                PreparedReconciliationReport report = null;
+            for (StoredChangeSet stored : recovered) {
+                PreparedReconciliationReport blockReport =
+                        PreparedMutationReconciler.reconcile(stored, world);
                 if (stored.extensionCount() == 0) {
-                    report = PreparedMutationReconciler.reconcile(stored, world);
+                    result.add(new RecoveredHistoryEntry(
+                            stored,
+                            blockReport,
+                            new ExtensionReconciliationReport(
+                                    0, 0, 0, 0, ReconciliationState.EMPTY),
+                            blockReport.state(),
+                            null));
+                    continue;
                 }
-                result.add(new RecoveredHistoryEntry(stored, report));
+
+                String unsupported = firstUnsupportedType(stored, extensions);
+                if (unsupported != null) {
+                    result.add(new RecoveredHistoryEntry(
+                            stored,
+                            blockReport,
+                            null,
+                            null,
+                            "no recovery authority for extension type " + unsupported));
+                    continue;
+                }
+
+                ExtensionReconciliationReport extensionReport =
+                        PreparedExtensionMutationReconciler.reconcile(stored, extensions);
+                result.add(new RecoveredHistoryEntry(
+                        stored,
+                        blockReport,
+                        extensionReport,
+                        HistoryRecoveryScanner.combine(
+                                blockReport.state(), extensionReport.state()),
+                        null));
             }
             return List.copyOf(result);
         } catch (IOException | RuntimeException failure) {
             for (RecoveredHistoryEntry entry : result) {
-                try {
-                    entry.close();
-                } catch (IOException suppressed) {
-                    failure.addSuppressed(suppressed);
+                try { entry.close(); }
+                catch (IOException suppressed) { failure.addSuppressed(suppressed); }
+            }
+            for (StoredChangeSet stored : recovered) {
+                if (result.stream().noneMatch(e -> e.operationId().equals(stored.operationId()))) {
+                    try { stored.close(); }
+                    catch (IOException suppressed) { failure.addSuppressed(suppressed); }
                 }
             }
             throw failure;
+        }
+    }
+
+    private static String firstUnsupportedType(
+            StoredChangeSet stored,
+            HistoryExtensionTargetRegistry registry
+    ) throws IOException {
+        String[] unsupported = {null};
+        stored.visitExtensions(frame -> {
+            if (!registry.supports(frame.typeId())) {
+                unsupported[0] = frame.typeId();
+                return false;
+            }
+            return true;
+        });
+        return unsupported[0];
+    }
+
+    private static String readHeaderOperationId(Path path) {
+        try (InputStream input = Files.newInputStream(path)) {
+            return ChangeSetCodec.readOperationId(input);
+        } catch (IOException malformed) {
+            return null;
         }
     }
 }

@@ -1,50 +1,78 @@
 package com.halokaryamedia.lazybuilder.builder.history;
 
+import com.halokaryamedia.lazybuilder.builder.mutation.ExtensionReconciliationReport;
 import com.halokaryamedia.lazybuilder.builder.mutation.PreparedReconciliationReport;
 import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
-import com.halokaryamedia.lazybuilder.builder.mutation.RecoveredBlockMutation;
+import com.halokaryamedia.lazybuilder.builder.mutation.RecoveredPreparedMutation;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Optional;
 
-/**
- * Ownership wrapper for one committed History file discovered after restart.
- * An entry must be transferred to a session/timeline or explicitly closed.
- */
+/** Ownership wrapper for one durable recovery journal and its world-aware classification. */
 public final class RecoveredHistoryEntry implements AutoCloseable {
     private final StoredChangeSet stored;
-    private final PreparedReconciliationReport reconciliation;
+    private final PreparedReconciliationReport blocks;
+    private final ExtensionReconciliationReport extensions;
+    private final ReconciliationState overallState;
+    private final String unsupportedReason;
     private boolean transferred;
     private boolean closed;
 
     RecoveredHistoryEntry(
             StoredChangeSet stored,
-            PreparedReconciliationReport reconciliation
+            PreparedReconciliationReport blocks,
+            ExtensionReconciliationReport extensions,
+            ReconciliationState overallState,
+            String unsupportedReason
     ) {
         this.stored = Objects.requireNonNull(stored, "stored");
-        this.reconciliation = reconciliation;
+        this.blocks = Objects.requireNonNull(blocks, "blocks");
+        this.extensions = extensions;
+        this.overallState = overallState;
+        this.unsupportedReason = unsupportedReason;
+        if ((overallState == null) == (unsupportedReason == null)) {
+            throw new IllegalArgumentException(
+                    "entry must be either classified or explicitly unsupported");
+        }
     }
 
     public String operationId() { return stored.operationId(); }
     public long changeCount() { return stored.changeCount(); }
     public long extensionCount() { return stored.extensionCount(); }
     public boolean blockOnly() { return stored.extensionCount() == 0; }
-    public PreparedReconciliationReport reconciliation() { return reconciliation; }
+    public PreparedReconciliationReport blockReconciliation() { return blocks; }
+    public Optional<ExtensionReconciliationReport> extensionReconciliation() {
+        return Optional.ofNullable(extensions);
+    }
+    public Optional<ReconciliationState> state() {
+        return Optional.ofNullable(overallState);
+    }
+    public Optional<String> unsupportedReason() {
+        return Optional.ofNullable(unsupportedReason);
+    }
+    /** Backward-compatible block report accessor. */
+    public PreparedReconciliationReport reconciliation() { return blocks; }
 
-    public RecoveredBlockMutation transferForResume() {
+    public RecoveredPreparedMutation transferForResume() {
         ensureOwned();
-        if (!blockOnly()) {
-            throw new IllegalStateException("Extension-aware history cannot use block-only resume");
+        if (overallState == null) {
+            throw new IllegalStateException(
+                    "Recovery entry cannot resume: " + unsupportedReason);
+        }
+        if (overallState == ReconciliationState.CONFLICT) {
+            throw new IllegalStateException("Conflicted recovery entry cannot resume automatically");
         }
         transferred = true;
-        return new RecoveredBlockMutation(stored);
+        return new RecoveredPreparedMutation(stored);
     }
 
     public void transferFullyAppliedTo(HistoryTimeline timeline) throws IOException {
         Objects.requireNonNull(timeline, "timeline");
         ensureOwned();
-        if (reconciliation == null || reconciliation.state() != ReconciliationState.FULLY_APPLIED) {
-            throw new IllegalStateException("Only FULLY_APPLIED recovered history can be published to undo");
+        if (overallState != ReconciliationState.FULLY_APPLIED) {
+            throw new IllegalStateException(
+                    "Only FULLY_APPLIED recovered history can be published to undo");
         }
         timeline.record(stored);
         transferred = true;

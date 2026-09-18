@@ -3,6 +3,8 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryRecoveryManager;
 import com.halokaryamedia.lazybuilder.builder.history.RecoveredHistoryEntry;
+import com.halokaryamedia.lazybuilder.builder.history.HistoryExtensionTypes;
+import com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionTargetRegistry;
 import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
 import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
 import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
@@ -41,7 +43,7 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     @Override
     public void displayImguiOptions() {
-        ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. Block-only plans can resume safely from NOT_APPLIED or PARTIALLY_APPLIED state.");
+        ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. Block-only and negotiated BIOME plans can resume safely after world-aware classification.");
         ImGui.separator();
 
         if (mutation.isActive()) {
@@ -67,23 +69,22 @@ public final class AxiomRecoveryTool implements CustomTool {
                 ImGui.sliderInt("Recovery Entry", selectedIndex, 0, max);
             }
             RecoveredHistoryEntry entry = entries.get(selectedIndex[0]);
-            String state = entry.reconciliation() == null
-                    ? "EXTENSION_AWARE_UNSUPPORTED"
-                    : entry.reconciliation().state().name();
+            String state = entry.state()
+                    .map(Enum::name)
+                    .orElseGet(() -> "UNSUPPORTED: "
+                            + entry.unsupportedReason().orElse("unknown extension"));
             ImGui.textWrapped("Operation: " + entry.operationId()
                     + " | blocks=" + entry.changeCount()
                     + " | extensions=" + entry.extensionCount()
                     + " | state=" + state);
 
-            if (entry.blockOnly()
-                    && entry.reconciliation() != null
-                    && entry.reconciliation().state() != ReconciliationState.CONFLICT
+            if (entry.state().isPresent()
+                    && entry.state().get() != ReconciliationState.CONFLICT
                     && ImGui.button("Resume Selected")) {
                 resumeSelected(entry);
             }
 
-            if (entry.reconciliation() != null
-                    && entry.reconciliation().state() == ReconciliationState.FULLY_APPLIED
+            if (entry.state().orElse(null) == ReconciliationState.FULLY_APPLIED
                     && ImGui.button("Publish Selected as Undo")) {
                 publishSelected(entry);
             }
@@ -140,9 +141,17 @@ public final class AxiomRecoveryTool implements CustomTool {
             releaseWrappersWithoutDeleting();
             ClientWorld world = requireWorld();
             String scope = AxiomWorldScope.currentScopeId(world);
+            HistoryExtensionTargetRegistry extensions =
+                    com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
+                                    .capabilities().supportsBiome()
+                            ? new HistoryExtensionTargetRegistry(java.util.Map.of(
+                                    HistoryExtensionTypes.BIOME,
+                                    new AxiomBiomeExtensionReadTarget(world)))
+                            : HistoryExtensionTargetRegistry.empty();
             entries = new HistoryRecoveryManager(runtime.diskHistory())
                     .discover(
                             new AxiomClientWorldStateSource(world),
+                            extensions,
                             operationId -> com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds
                                     .belongsTo(operationId, scope));
             selectedIndex[0] = 0;
@@ -160,7 +169,11 @@ public final class AxiomRecoveryTool implements CustomTool {
             ClientWorld world = requireWorld();
             var prepared = entry.transferForResume();
             CancellationSource cancellation = new CancellationSource();
-            long estimate = Math.max(1L, Math.multiplyExact(prepared.plannedChanges(), 96L));
+            long estimate = Math.max(
+                    1L,
+                    Math.addExact(
+                            Math.multiplyExact(prepared.plannedChanges(), 96L),
+                            Math.multiplyExact(entry.extensionCount(), 192L)));
             mutation.start(world, prepared, cancellation, estimate);
             removeEntry(entry);
             status = "Recovery resume started";
