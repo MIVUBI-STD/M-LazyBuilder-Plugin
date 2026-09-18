@@ -33,24 +33,85 @@ public final class TerrainDrawTransformStream {
             return LayerSnapshot.empty(layerSlot, reverseOrder);
         }
 
-        List<Command> commands = new ArrayList<>(inputs.size());
-        int physicalReady = 0;
-        int candidateRuns = 0;
-        long potentialDrawReduction = 0L;
-        int currentRunSize = 0;
-        Command previousReady = null;
+        Builder builder = new Builder();
+        builder.reset(layerSlot, cameraX, cameraY, cameraZ, reverseOrder, inputs.size());
+        if (reverseOrder) {
+            for (int index = inputs.size() - 1; index >= 0; index--) {
+                Input input = inputs.get(index);
+                if (input != null) {
+                    builder.accept(
+                            input.source(),
+                            input.arenaCommand(),
+                            input.originX(),
+                            input.originY(),
+                            input.originZ()
+                    );
+                }
+            }
+        } else {
+            for (Input input : inputs) {
+                if (input != null) {
+                    builder.accept(
+                            input.source(),
+                            input.arenaCommand(),
+                            input.originX(),
+                            input.originY(),
+                            input.originZ()
+                    );
+                }
+            }
+        }
+        return builder.finish();
+    }
 
-        for (int n = 0; n < inputs.size(); n++) {
-            int index = reverseOrder ? inputs.size() - 1 - n : n;
-            Input input = inputs.get(index);
-            if (input == null) continue;
+    public static final class Builder {
+        private final ArrayList<Command> commands = new ArrayList<>();
+        private int layerSlot = -1;
+        private boolean reverseOrder;
+        private double cameraX;
+        private double cameraY;
+        private double cameraZ;
+        private int physicalReady;
+        private int candidateRuns;
+        private long potentialDrawReduction;
+        private int currentRunSize;
+        private Command previousReady;
 
+        public void reset(
+                int layerSlot,
+                double cameraX,
+                double cameraY,
+                double cameraZ,
+                boolean reverseOrder,
+                int expectedCommands
+        ) {
+            this.layerSlot = layerSlot;
+            this.cameraX = cameraX;
+            this.cameraY = cameraY;
+            this.cameraZ = cameraZ;
+            this.reverseOrder = reverseOrder;
+            this.physicalReady = 0;
+            this.candidateRuns = 0;
+            this.potentialDrawReduction = 0L;
+            this.currentRunSize = 0;
+            this.previousReady = null;
+            this.commands.clear();
+            if (expectedCommands > 0) this.commands.ensureCapacity(expectedCommands);
+        }
+
+        public void accept(
+                VertexBuffer source,
+                TerrainArenaDrawPlanner.Command arenaCommand,
+                int originX,
+                int originY,
+                int originZ
+        ) {
             Command command = new Command(
-                    input.source(),
-                    input.arenaCommand(),
-                    (float) ((double) input.originX() - cameraX),
-                    (float) ((double) input.originY() - cameraY),
-                    (float) ((double) input.originZ() - cameraZ)
+                    source,
+                    arenaCommand,
+                    (float) ((double) originX - cameraX),
+                    (float) ((double) originY - cameraY),
+                    (float) ((double) originZ - cameraZ)
             );
             commands.add(command);
 
@@ -58,7 +119,7 @@ public final class TerrainDrawTransformStream {
                 potentialDrawReduction += completedRunReduction(currentRunSize);
                 currentRunSize = 0;
                 previousReady = null;
-                continue;
+                return;
             }
 
             physicalReady++;
@@ -72,18 +133,25 @@ public final class TerrainDrawTransformStream {
             previousReady = command;
         }
 
-        potentialDrawReduction += completedRunReduction(currentRunSize);
-        List<Command> immutable = List.copyOf(commands);
-        return new LayerSnapshot(
-                layerSlot,
-                reverseOrder,
-                immutable,
-                physicalReady,
-                physicalReady,
-                candidateRuns,
-                potentialDrawReduction,
-                (long) immutable.size() * TRANSFORM_BYTES
-        );
+        public LayerSnapshot finish() {
+            if (layerSlot < 0 || layerSlot >= LAYER_COUNT || commands.isEmpty()) {
+                return LayerSnapshot.empty(layerSlot, reverseOrder);
+            }
+            potentialDrawReduction += completedRunReduction(currentRunSize);
+            currentRunSize = 0;
+            previousReady = null;
+            List<Command> immutable = List.copyOf(commands);
+            return new LayerSnapshot(
+                    layerSlot,
+                    reverseOrder,
+                    immutable,
+                    physicalReady,
+                    immutable.size() - physicalReady,
+                    candidateRuns,
+                    potentialDrawReduction,
+                    (long) immutable.size() * TRANSFORM_BYTES
+            );
+        }
     }
 
     public static synchronized void publish(LayerSnapshot snapshot) {

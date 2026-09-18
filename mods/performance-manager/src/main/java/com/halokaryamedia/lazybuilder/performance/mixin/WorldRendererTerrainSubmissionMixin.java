@@ -51,8 +51,8 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private RenderLayer lazybuilder$currentLayer;
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
-    @Unique private final ArrayList<TerrainDrawTransformStream.Input>[] lazybuilder$transformInputs =
-            lazybuilder$newTransformInputWorkspaces();
+    @Unique private final TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders =
+            lazybuilder$newTransformBuilders();
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -313,29 +313,38 @@ abstract class WorldRendererTerrainSubmissionMixin {
         int layerSlot = lazybuilder$layerSlot(layer);
         if (chunks == null || layerSlot < 0) return;
 
-        ArrayList<TerrainDrawTransformStream.Input> inputs = this.lazybuilder$transformInputs[layerSlot];
-        inputs.clear();
-        inputs.ensureCapacity(chunks.size());
-        for (ChunkBuilder.BuiltChunk chunk : chunks) {
-            VertexBuffer buffer = chunk.getBuffer(layer);
-            BlockPos origin = chunk.getOrigin();
-            inputs.add(new TerrainDrawTransformStream.Input(
-                    buffer,
-                    TerrainGpuResidencyTracker.drawCommand(buffer),
-                    origin.getX(),
-                    origin.getY(),
-                    origin.getZ()
-            ));
+        TerrainDrawTransformStream.Builder builder = this.lazybuilder$transformBuilders[layerSlot];
+        boolean reverse = layer == RenderLayer.getTranslucent();
+        builder.reset(layerSlot, x, y, z, reverse, chunks.size());
+
+        if (reverse) {
+            for (int index = chunks.size() - 1; index >= 0; index--) {
+                ChunkBuilder.BuiltChunk chunk = chunks.get(index);
+                VertexBuffer buffer = chunk.getBuffer(layer);
+                BlockPos origin = chunk.getOrigin();
+                builder.accept(
+                        buffer,
+                        TerrainGpuResidencyTracker.drawCommand(buffer),
+                        origin.getX(),
+                        origin.getY(),
+                        origin.getZ()
+                );
+            }
+        } else {
+            for (ChunkBuilder.BuiltChunk chunk : chunks) {
+                VertexBuffer buffer = chunk.getBuffer(layer);
+                BlockPos origin = chunk.getOrigin();
+                builder.accept(
+                        buffer,
+                        TerrainGpuResidencyTracker.drawCommand(buffer),
+                        origin.getX(),
+                        origin.getY(),
+                        origin.getZ()
+                );
+            }
         }
 
-        TerrainDrawTransformStream.publish(TerrainDrawTransformStream.build(
-                layerSlot,
-                inputs,
-                x,
-                y,
-                z,
-                layer == RenderLayer.getTranslucent()
-        ));
+        TerrainDrawTransformStream.publish(builder.finish());
     }
 
     @Unique
@@ -364,10 +373,9 @@ abstract class WorldRendererTerrainSubmissionMixin {
     }
 
     @Unique
-    @SuppressWarnings("unchecked")
-    private static ArrayList<TerrainDrawTransformStream.Input>[] lazybuilder$newTransformInputWorkspaces() {
-        ArrayList<TerrainDrawTransformStream.Input>[] workspaces = new ArrayList[5];
-        for (int i = 0; i < workspaces.length; i++) workspaces[i] = new ArrayList<>();
-        return workspaces;
+    private static TerrainDrawTransformStream.Builder[] lazybuilder$newTransformBuilders() {
+        TerrainDrawTransformStream.Builder[] builders = new TerrainDrawTransformStream.Builder[5];
+        for (int i = 0; i < builders.length; i++) builders[i] = new TerrainDrawTransformStream.Builder();
+        return builders;
     }
 }
