@@ -16,7 +16,7 @@ import java.util.List;
 
 /** Deterministic preview sampler shared with the procedural texture tool's material field. */
 public final class ProceduralTexturePreview {
-    public static final int MAX_CANDIDATE_VOXELS = 1_000_000;
+    public static final int MAX_PREVIEW_CANDIDATES = 250_000;
     public static final int MAX_PREVIEW_VOXELS = 250_000;
     private static final long NOISE_CHANNEL = 0x544558545552454cL;
 
@@ -29,10 +29,6 @@ public final class ProceduralTexturePreview {
             int octaves,
             double threshold
     ) {
-        if (bounds.blockCount() > MAX_CANDIDATE_VOXELS) {
-            throw new IllegalArgumentException(
-                    "texture region exceeds " + MAX_CANDIDATE_VOXELS + " candidate blocks");
-        }
         if (!Double.isFinite(threshold) || threshold < 0.0 || threshold > 1.0) {
             throw new IllegalArgumentException("threshold must be in [0,1]");
         }
@@ -64,10 +60,6 @@ public final class ProceduralTexturePreview {
             BlockStateSource source,
             MaterialMask mask
     ) {
-        if (bounds.blockCount() > MAX_CANDIDATE_VOXELS) {
-            throw new IllegalArgumentException(
-                    "texture region exceeds " + MAX_CANDIDATE_VOXELS + " candidate blocks");
-        }
         if (!Double.isFinite(threshold) || threshold < 0.0 || threshold > 1.0) {
             throw new IllegalArgumentException("threshold must be in [0,1]");
         }
@@ -75,12 +67,13 @@ public final class ProceduralTexturePreview {
         if (source == null) throw new NullPointerException("source");
         if (mask == null) throw new NullPointerException("mask");
 
+        Sampling sampling = Sampling.forBounds(bounds, MAX_PREVIEW_CANDIDATES);
         List<PlacementPoint> selected = new ArrayList<>();
         int ordinal = 0;
 
-        for (long y = bounds.minY(); y <= (long) bounds.maxY(); y++) {
-            for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z++) {
-                for (long x = bounds.minX(); x <= (long) bounds.maxX(); x++) {
+        for (long y = bounds.minY(); y <= (long) bounds.maxY(); y += sampling.stepY()) {
+            for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z += sampling.stepZ()) {
+                for (long x = bounds.minX(); x <= (long) bounds.maxX(); x += sampling.stepX()) {
                     int worldX = (int) x;
                     int worldY = (int) y;
                     int worldZ = (int) z;
@@ -110,19 +103,16 @@ public final class ProceduralTexturePreview {
             BlockStateSource source,
             MaterialMask mask
     ) {
-        if (bounds.blockCount() > MAX_CANDIDATE_VOXELS) {
-            throw new IllegalArgumentException(
-                    "texture region exceeds " + MAX_CANDIDATE_VOXELS + " candidate blocks");
-        }
         if (material == null) throw new NullPointerException("material");
         if (source == null) throw new NullPointerException("source");
         if (mask == null) throw new NullPointerException("mask");
 
+        Sampling sampling = Sampling.forBounds(bounds, MAX_PREVIEW_CANDIDATES);
         List<PlacementPoint> selected = new ArrayList<>();
         int ordinal = 0;
-        for (long y = bounds.minY(); y <= (long) bounds.maxY(); y++) {
-            for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z++) {
-                for (long x = bounds.minX(); x <= (long) bounds.maxX(); x++) {
+        for (long y = bounds.minY(); y <= (long) bounds.maxY(); y += sampling.stepY()) {
+            for (long z = bounds.minZ(); z <= (long) bounds.maxZ(); z += sampling.stepZ()) {
+                for (long x = bounds.minX(); x <= (long) bounds.maxX(); x += sampling.stepX()) {
                     int worldX = (int) x;
                     int worldY = (int) y;
                     int worldZ = (int) z;
@@ -148,5 +138,52 @@ public final class ProceduralTexturePreview {
 
     public static FractalNoiseField field(double frequency, int octaves) {
         return new FractalNoiseField(frequency, octaves, 2.0, 0.5, NOISE_CHANNEL);
+    }
+
+    public static boolean isDecimated(BlockBounds bounds) {
+        if (bounds == null) throw new NullPointerException("bounds");
+        Sampling sampling = Sampling.forBounds(bounds, MAX_PREVIEW_CANDIDATES);
+        return sampling.stepX() != 1 || sampling.stepY() != 1 || sampling.stepZ() != 1;
+    }
+
+    private record Sampling(long stepX, long stepY, long stepZ) {
+        private static Sampling forBounds(BlockBounds bounds, long maxSamples) {
+            if (maxSamples <= 0) throw new IllegalArgumentException("maxSamples must be > 0");
+            long width = (long) bounds.maxX() - bounds.minX() + 1L;
+            long height = (long) bounds.maxY() - bounds.minY() + 1L;
+            long depth = (long) bounds.maxZ() - bounds.minZ() + 1L;
+
+            double total = (double) width * (double) height * (double) depth;
+            if (total <= maxSamples) return new Sampling(1, 1, 1);
+
+            long base = Math.max(1L, (long) Math.ceil(Math.cbrt(total / maxSamples)));
+            long sx = base, sy = base, sz = base;
+            while (sampleCount(width, height, depth, sx, sy, sz) > maxSamples) {
+                long nx = ceilDiv(width, sx);
+                long ny = ceilDiv(height, sy);
+                long nz = ceilDiv(depth, sz);
+                if (nx >= ny && nx >= nz) sx++;
+                else if (ny >= nz) sy++;
+                else sz++;
+            }
+            return new Sampling(sx, sy, sz);
+        }
+
+        private static long sampleCount(
+                long width, long height, long depth,
+                long sx, long sy, long sz
+        ) {
+            long x = ceilDiv(width, sx);
+            long y = ceilDiv(height, sy);
+            long z = ceilDiv(depth, sz);
+            if (x > Long.MAX_VALUE / y) return Long.MAX_VALUE;
+            long xy = x * y;
+            if (xy > Long.MAX_VALUE / z) return Long.MAX_VALUE;
+            return xy * z;
+        }
+
+        private static long ceilDiv(long value, long divisor) {
+            return 1L + (value - 1L) / divisor;
+        }
     }
 }

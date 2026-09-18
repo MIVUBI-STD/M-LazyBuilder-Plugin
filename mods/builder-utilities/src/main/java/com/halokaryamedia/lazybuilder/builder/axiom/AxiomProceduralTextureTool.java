@@ -227,7 +227,9 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                     targetMask()
             );
             ensurePreview().update(previewPoints);
-            idleStatus = "Preview ready";
+            idleStatus = ProceduralTexturePreview.isDecimated(bounds)
+                    ? "Preview sampled for large region; Confirm applies the full deterministic region"
+                    : "Preview ready";
         } catch (RuntimeException e) {
             previewPoints = List.of();
             if (preview != null) preview.clear();
