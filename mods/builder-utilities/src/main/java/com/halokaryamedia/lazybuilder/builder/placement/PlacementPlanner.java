@@ -18,7 +18,7 @@ public final class PlacementPlanner {
             PlacementVariation variation
     ) {
         return plan(bounds, surface, seed, distribution, source, variation,
-                PlacementConstraint.all(), PlacementFootprint.point(), false);
+                PlacementConstraints.all(), PlacementFootprint.point(), false);
     }
 
     public static List<PlacementPlanEntry> plan(
