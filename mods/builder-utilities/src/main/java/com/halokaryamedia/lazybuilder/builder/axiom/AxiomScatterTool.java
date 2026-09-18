@@ -272,7 +272,9 @@ public final class AxiomScatterTool implements CustomTool {
                 plan,
                 new AxiomClientWorldStateSource(world),
                 runtime.history(),
-                estimateBytes
+                estimateBytes,
+                AxiomDurableOperationIds.scope(
+                        world, operation.id().toString())
         );
 
         if (prepared.isEmpty()) {
