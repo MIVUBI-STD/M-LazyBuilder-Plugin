@@ -1,0 +1,206 @@
+package com.halokaryamedia.lazybuilder.builder.axiom;
+
+import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
+import com.halokaryamedia.lazybuilder.builder.history.HistoryRecoveryManager;
+import com.halokaryamedia.lazybuilder.builder.history.RecoveredHistoryEntry;
+import com.halokaryamedia.lazybuilder.builder.mutation.ReconciliationState;
+import com.halokaryamedia.lazybuilder.builder.operation.CancellationSource;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationLifecycle;
+import com.halokaryamedia.lazybuilder.builder.operation.OperationState;
+import com.moulberry.axiomclientapi.CustomTool;
+import imgui.moulberry92.ImGui;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.Camera;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.world.ClientWorld;
+import org.joml.Matrix4f;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/** User-facing recovery surface for durable block-only operations left after restart. */
+public final class AxiomRecoveryTool implements CustomTool {
+    private static final String TOOL_NAME = "LazyBuilder Recovery";
+
+    private final BuilderRuntime runtime;
+    private final AxiomMutationController mutation;
+    private final int[] selectedIndex = {0};
+
+    private List<RecoveredHistoryEntry> entries = List.of();
+    private String status = "Scan for durable Builder recovery plans";
+
+    public AxiomRecoveryTool(AxiomClientServices services, BuilderRuntime runtime) {
+        this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.mutation = new AxiomMutationController(
+                Objects.requireNonNull(services, "services"), runtime);
+    }
+
+    @Override public String name() { return TOOL_NAME; }
+
+    @Override
+    public void displayImguiOptions() {
+        ImGui.textWrapped("Recovers committed History v2 plans left by an interrupted Builder session. Block-only plans can resume safely from NOT_APPLIED or PARTIALLY_APPLIED state.");
+        ImGui.separator();
+
+        if (mutation.isActive()) {
+            OperationLifecycle lifecycle = mutation.lifecycle();
+            ImGui.textWrapped("Recovery operation: " + lifecycle.state() + " | "
+                    + mutation.status() + " | "
+                    + String.format("%.1f%%", lifecycle.progressFraction() * 100.0));
+            if (!lifecycle.state().isTerminal() && ImGui.button("Cancel Recovery and Roll Back")) {
+                mutation.requestRollbackCancellation();
+            }
+            return;
+        }
+
+        ImGui.textWrapped(status);
+        if (ImGui.button("Scan Recovery Plans")) {
+            scan();
+        }
+
+        if (!entries.isEmpty()) {
+            int max = entries.size() - 1;
+            if (selectedIndex[0] > max) selectedIndex[0] = max;
+            if (entries.size() > 1) {
+                ImGui.sliderInt("Recovery Entry", selectedIndex, 0, max);
+            }
+            RecoveredHistoryEntry entry = entries.get(selectedIndex[0]);
+            String state = entry.reconciliation() == null
+                    ? "EXTENSION_AWARE_UNSUPPORTED"
+                    : entry.reconciliation().state().name();
+            ImGui.textWrapped("Operation: " + entry.operationId()
+                    + " | blocks=" + entry.changeCount()
+                    + " | extensions=" + entry.extensionCount()
+                    + " | state=" + state);
+
+            if (entry.blockOnly()
+                    && entry.reconciliation() != null
+                    && entry.reconciliation().state() != ReconciliationState.CONFLICT
+                    && ImGui.button("Resume Selected")) {
+                resumeSelected(entry);
+            }
+
+            if (entry.reconciliation() != null
+                    && entry.reconciliation().state() == ReconciliationState.FULLY_APPLIED
+                    && ImGui.button("Publish Selected as Undo")) {
+                publishSelected(entry);
+            }
+
+            if (ImGui.button("Discard Selected Recovery")) {
+                discardSelected(entry);
+            }
+        }
+
+        try {
+            int incomplete = new HistoryRecoveryManager(runtime.diskHistory()).incompleteFiles().size();
+            if (incomplete > 0) {
+                ImGui.textWrapped("Incomplete uncommitted journals: " + incomplete);
+                if (ImGui.button("Discard Incomplete Journals")) {
+                    int deleted = new HistoryRecoveryManager(runtime.diskHistory()).discardIncompleteFiles();
+                    status = "Discarded " + deleted + " incomplete journals";
+                }
+            }
+        } catch (IOException e) {
+            status = "Recovery scan failed: " + safeMessage(e);
+        }
+    }
+
+    @Override
+    public void render(Camera camera, float tickDelta, long time, MatrixStack poseStack, Matrix4f projection) {
+        mutation.pump();
+        OperationState outcome = mutation.pollOutcome();
+        if (outcome != null) {
+            status = "Recovery operation finished: " + outcome;
+            scan();
+        }
+    }
+
+    @Override
+    public void reset() {
+        // Recovery entries intentionally survive tool deselection. Closing them means
+        // deleting the durable file, which must happen only through an explicit action.
+    }
+
+    private void scan() {
+        if (mutation.isActive()) return;
+        try {
+            releaseWrappersWithoutDeleting();
+            ClientWorld world = requireWorld();
+            entries = new HistoryRecoveryManager(runtime.diskHistory())
+                    .discover(new AxiomClientWorldStateSource(world));
+            selectedIndex[0] = 0;
+            status = entries.isEmpty()
+                    ? "No committed recovery plans found"
+                    : "Found " + entries.size() + " committed recovery plans";
+        } catch (Exception e) {
+            entries = List.of();
+            status = "Recovery scan failed: " + safeMessage(e);
+        }
+    }
+
+    private void resumeSelected(RecoveredHistoryEntry entry) {
+        try {
+            ClientWorld world = requireWorld();
+            var prepared = entry.transferForResume();
+            CancellationSource cancellation = new CancellationSource();
+            long estimate = Math.max(1L, Math.multiplyExact(prepared.plannedChanges(), 96L));
+            mutation.start(world, prepared, cancellation, estimate);
+            removeEntry(entry);
+            status = "Recovery resume started";
+        } catch (Exception e) {
+            status = "Recovery resume failed: " + safeMessage(e);
+        }
+    }
+
+    private void publishSelected(RecoveredHistoryEntry entry) {
+        try {
+            entry.transferFullyAppliedTo(runtime.timeline());
+            removeEntry(entry);
+            status = "Recovered operation published to undo timeline";
+        } catch (Exception e) {
+            status = "Publish recovery failed: " + safeMessage(e);
+        }
+    }
+
+    private void discardSelected(RecoveredHistoryEntry entry) {
+        try {
+            entry.close();
+            removeEntry(entry);
+            status = "Recovery plan discarded";
+        } catch (IOException e) {
+            status = "Discard recovery failed: " + safeMessage(e);
+        }
+    }
+
+    private void removeEntry(RecoveredHistoryEntry entry) {
+        ArrayList<RecoveredHistoryEntry> mutable = new ArrayList<>(entries);
+        mutable.remove(entry);
+        entries = List.copyOf(mutable);
+        if (selectedIndex[0] >= entries.size()) {
+            selectedIndex[0] = Math.max(0, entries.size() - 1);
+        }
+    }
+
+    private void releaseWrappersWithoutDeleting() {
+        // A scan owns wrappers around the same durable files. We must not call close()
+        // here because close() intentionally means discard/delete. A subsequent scan is
+        // only allowed after actions have removed all existing wrappers.
+        if (!entries.isEmpty()) {
+            throw new IllegalStateException(
+                    "Resolve or discard current recovery entries before rescanning");
+        }
+    }
+
+    private static ClientWorld requireWorld() {
+        return Objects.requireNonNull(
+                MinecraftClient.getInstance().world,
+                "Minecraft client world is unavailable");
+    }
+
+    private static String safeMessage(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
+    }
+}

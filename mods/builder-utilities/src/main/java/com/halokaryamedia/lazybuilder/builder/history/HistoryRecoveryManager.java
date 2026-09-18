@@ -25,6 +25,15 @@ public final class HistoryRecoveryManager {
         return storage.listIncomplete();
     }
 
+    /** Deletes only staging journals that never reached a valid committed footer. */
+    public int discardIncompleteFiles() throws IOException {
+        int deleted = 0;
+        for (Path path : storage.listIncomplete()) {
+            if (java.nio.file.Files.deleteIfExists(path)) deleted++;
+        }
+        return deleted;
+    }
+
     public List<RecoveredHistoryEntry> discover(WorldBlockStateSource world) throws IOException {
         Objects.requireNonNull(world, "world");
         List<RecoveredHistoryEntry> result = new ArrayList<>();
