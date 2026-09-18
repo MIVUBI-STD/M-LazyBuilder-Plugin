@@ -88,12 +88,21 @@ public final class BuilderRuntime implements AutoCloseable {
         return activeOperations.size();
     }
 
+    /**
+     * Persists active world-bound operations before the current world is detached.
+     *
+     * <p>Successfully preserved operations are removed from the active registry so a
+     * later world exit or client shutdown cannot preserve the same detached session
+     * twice. Failed operations remain registered, allowing the caller to retry or
+     * surface the unresolved preservation failure.</p>
+     */
     public synchronized void preserveActiveOperations() throws IOException {
         IOException failure = null;
         var snapshot = java.util.List.copyOf(activeOperations);
         for (RecoverableActiveOperation operation : snapshot) {
             try {
                 operation.preserveForWorldExit();
+                activeOperations.remove(operation);
             } catch (IOException e) {
                 if (failure == null) failure = e;
                 else failure.addSuppressed(e);
