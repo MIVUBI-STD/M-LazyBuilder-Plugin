@@ -111,7 +111,7 @@ DiscardImport
 
 Import inspection is read-only review after upload completion; final Import is a separate explicit mutation and revalidates. `DiscardImport` cleans only the requesting player's owned reviewed artifact.
 
-### Map Action V2
+### Map Action V5
 
 ```text
 TeleportLocation
