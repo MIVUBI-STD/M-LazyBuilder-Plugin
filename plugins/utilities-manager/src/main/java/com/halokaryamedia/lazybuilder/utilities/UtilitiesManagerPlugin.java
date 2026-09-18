@@ -48,6 +48,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     private BuildHelpersSettings buildHelpersSettings;
     private WorldSafetySettings worldSafetySettings;
     private PaperUtilityTelemetryAdapter telemetryAdapter;
+    private PaperBuilderExtensionPayloadAdapter builderExtensionPayloads;
 
     @Override
     public void onEnable() {
@@ -58,6 +59,9 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             bindHubCommand();
             telemetryAdapter = new PaperUtilityTelemetryAdapter(this);
             telemetryAdapter.start();
+            builderExtensionPayloads =
+                    new PaperBuilderExtensionPayloadAdapter(this);
+            builderExtensionPayloads.start();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Utilities-Manager could not start safely.", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -75,6 +79,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (builderExtensionPayloads != null) builderExtensionPayloads.stop();
         if (telemetryAdapter != null) telemetryAdapter.stop();
         disableCurrentRegistry("One or more Utilities-Manager features did not disable cleanly.");
         getLogger().info("Utilities-Manager disabled.");

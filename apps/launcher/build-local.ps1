@@ -30,11 +30,13 @@ $UtilitiesJar = Join-Path $CoreDir 'Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapJar = Join-Path $ClientModsDir 'lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientJar = Join-Path $ClientModsDir 'lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
 $PerformanceClientJar = Join-Path $ClientModsDir 'lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
+$BuilderClientJar = Join-Path $ClientModsDir 'lazybuilder-builder-utilities-0.1.0-SNAPSHOT.jar'
 $WorldTargetJar = Join-Path $RepoRoot 'plugins\world-manager\target\World-Manager-0.1.0-SNAPSHOT.jar'
 $UtilitiesTargetJar = Join-Path $RepoRoot 'plugins\utilities-manager\target\Utilities-Manager-0.1.0-SNAPSHOT.jar'
 $MapTargetJar = Join-Path $RepoRoot 'mods\map-manager\build\libs\lazybuilder-map-manager-0.1.0-SNAPSHOT.jar'
 $UtilityClientTargetJar = Join-Path $RepoRoot 'mods\utility-manager\build\libs\lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar'
 $PerformanceClientTargetJar = Join-Path $RepoRoot 'mods\performance-manager\build\libs\lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar'
+$BuilderClientTargetJar = Join-Path $RepoRoot 'mods\builder-utilities\build\libs\lazybuilder-builder-utilities-0.1.0-SNAPSHOT.jar'
 $LocalPublishDir = Join-Path $RepoRoot 'dist\Local'
 $CompileOnlyDir = Join-Path $RepoRoot 'dist\CompileOnly'
 $NsisDir = Join-Path $AppRoot 'src-tauri\target\release\bundle\nsis'
@@ -67,7 +69,8 @@ if (-not $AllowMissingRuntime) {
         $UtilitiesTargetJar,
         $MapTargetJar,
         $UtilityClientTargetJar,
-        $PerformanceClientTargetJar
+        $PerformanceClientTargetJar,
+        $BuilderClientTargetJar
     )
     foreach ($Output in $RequiredBuildOutputs) {
         if (-not (Test-Path $Output)) { throw "Runtime verification completed but required artifact was not found: $Output" }
@@ -79,7 +82,8 @@ if (-not $AllowMissingRuntime) {
     foreach ($Prefix in @(
         'lazybuilder-map-manager-',
         'lazybuilder-utility-manager-',
-        'lazybuilder-performance-manager-'
+        'lazybuilder-performance-manager-',
+        'lazybuilder-builder-utilities-'
     )) {
         Get-ChildItem $ClientModsDir -Filter "$Prefix*.jar" -File -ErrorAction SilentlyContinue | Remove-Item -Force
     }
@@ -89,16 +93,17 @@ if (-not $AllowMissingRuntime) {
     Copy-Item $MapTargetJar $MapJar -Force
     Copy-Item $UtilityClientTargetJar $UtilityClientJar -Force
     Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force
+    Copy-Item $BuilderClientTargetJar $BuilderClientJar -Force
 
     Write-Host '[runtime] Verifying packaged Fabric client suite...' -ForegroundColor Cyan
     & $ClientVerifier -ClientModsDir $ClientModsDir -RepoRoot $RepoRoot
 
-    Write-Host 'Matching tested server plugins and all three required client mods staged for the desktop package.' -ForegroundColor Green
+    Write-Host 'Matching tested server plugins and all four required client mods staged for the desktop package.' -ForegroundColor Green
     Write-Host ''
 }
 
 $MissingRuntime = @()
-foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceClientJar)) {
+foreach ($Path in @($WorldJar, $UtilitiesJar, $MapJar, $UtilityClientJar, $PerformanceClientJar, $BuilderClientJar)) {
     if (-not (Test-Path $Path)) { $MissingRuntime += (Split-Path $Path -Leaf) }
 }
 if ($MissingRuntime.Count -gt 0) {

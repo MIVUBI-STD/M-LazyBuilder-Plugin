@@ -25,6 +25,8 @@ errors: list[str] = []
 for marker in (
     "$PerformanceClientJar",
     "$PerformanceClientTargetJar",
+    "$BuilderClientJar",
+    "$BuilderClientTargetJar",
     "$MavenWrapper",
     "$FabricVerifier",
     "$ClientVerifier",
@@ -34,13 +36,14 @@ for marker in (
     "& $MavenWrapper --batch-mode --no-transfer-progress verify",
     "& $FabricVerifier -RepoRoot $RepoRoot",
     "Copy-Item $PerformanceClientTargetJar $PerformanceClientJar -Force",
+    "Copy-Item $BuilderClientTargetJar $BuilderClientJar -Force",
     "& $ClientVerifier -ClientModsDir $ClientModsDir -RepoRoot $RepoRoot",
     "& $PackageLocal -RepoRoot $RepoRoot -InstallerPath $FreshInstaller",
 ):
     if marker not in text:
         errors.append(f"local Launcher build is missing canonical marker: {marker}")
 
-for manager in ("mods/map-manager", "mods/utility-manager", "mods/performance-manager"):
+for manager in ("mods/map-manager", "mods/utility-manager", "mods/performance-manager", "mods/builder-utilities"):
     if manager not in fabric_verifier or "--no-daemon build" not in fabric_verifier:
         errors.append(f"canonical Fabric verifier is missing required manager lane: {manager}")
 

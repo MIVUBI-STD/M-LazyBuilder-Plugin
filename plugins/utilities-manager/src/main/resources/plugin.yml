@@ -52,6 +52,7 @@ permissions:
       lazybuilder.utilities.noclip: true
       lazybuilder.utilities.nightvision: true
       lazybuilder.utilities.build: true
+      lazybuilder.utilities.builder-extension: true
   lazybuilder.admin:
     description: LazyBuilder administration and diagnostics.
     default: op
@@ -77,6 +78,9 @@ permissions:
     default: false
   lazybuilder.utilities.build:
     description: Use passive LazyBuilder build helpers.
+    default: false
+  lazybuilder.utilities.builder-extension:
+    description: Use authoritative Builder biome extension mutations.
     default: false
   lazybuilder.utilities.status:
     description: View Utilities runtime diagnostics.

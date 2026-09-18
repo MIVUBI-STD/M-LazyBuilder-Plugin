@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder_builder_utilities",
+  "version": "${version}",
+  "name": "LazyBuilder Builder Utilities",
+  "description": "Axiom-first building extensions for the LazyBuilder workspace.",
+  "authors": ["halokaryamedia-source"],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.halokaryamedia.lazybuilder.builder.BuilderUtilitiesClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "1.21.4",
+    "java": ">=21",
+    "fabric-api": "*",
+    "axiom": "5.3.0"
+  }
+}

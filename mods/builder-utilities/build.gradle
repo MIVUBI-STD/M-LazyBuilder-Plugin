@@ -1,0 +1,99 @@
+plugins {
+    id 'fabric-loom' version '1.9.2'
+    id 'maven-publish'
+}
+
+if (gradle.gradleVersion != '8.12') {
+    throw new GradleException("LazyBuilder Builder Utilities requires Gradle 8.12; found ${gradle.gradleVersion}")
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    axiomCompileStubs {
+        java.srcDir 'src/axiomCompileStubs/java'
+        compileClasspath = configurations.compileClasspath
+    }
+    main {
+        compileClasspath += axiomCompileStubs.output
+        java {
+            srcDirs = ['src/main/java', '../../shared/protocol/src/main/java']
+            include 'com/halokaryamedia/lazybuilder/builder/**'
+            include 'com/halokaryamedia/lazybuilder/builder/wire/BuilderExtensionWireProtocol.java'
+        }
+    }
+    test {
+        compileClasspath += axiomCompileStubs.output
+        runtimeClasspath += axiomCompileStubs.output
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Axiom itself is a required runtime mod (see fabric.mod.json), but is intentionally
+    // not a Gradle mod dependency here. Axiom 5.3.0 was produced with Loom 1.14.x,
+    // while this repository is pinned to Gradle 8.12 / Loom 1.9.2.
+    //
+    // Main compilation uses a tiny, non-packaged source set containing only the
+    // public AxiomClientAPI surface Builder Utilities calls. At runtime those symbols
+    // resolve to the real API classes supplied by Axiom 5.3.0.
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('compileAxiomCompileStubsJava')
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+tasks.named('test') {
+    useJUnitPlatform {
+        excludeTags 'benchmark'
+    }
+}
+
+tasks.register('benchmarkHistory', Test) {
+    group = 'verification'
+    description = 'Runs opt-in Builder History scalability benchmarks.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    maxHeapSize = '2g'
+    useJUnitPlatform {
+        includeTags 'benchmark'
+    }
+    systemProperty 'lazybuilder.benchmark.changes',
+            providers.gradleProperty('builderBenchmarkChanges').getOrElse('1000000')
+    systemProperty 'lazybuilder.benchmark.storage',
+            providers.gradleProperty('builderBenchmarkStorage').getOrElse('compressed')
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}

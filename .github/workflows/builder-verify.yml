@@ -1,0 +1,51 @@
+name: Builder Verify
+
+on:
+  pull_request:
+    branches: [Local, main]
+    paths:
+      - 'mods/builder-utilities/**'
+      - 'gradlew.bat'
+      - 'tooling/windows-toolchain/scripts/wrappers/**'
+      - 'tooling/windows-toolchain/scripts/verify/verify-client-artifacts.ps1'
+      - '.github/workflows/builder-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: builder-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  builder:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Build and test Builder Utilities
+        shell: pwsh
+        run: .\gradlew.bat -p mods/builder-utilities --no-daemon build
+      - name: Stage canonical Builder artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".artifacts/builder" -Force | Out-Null
+          Copy-Item "mods/builder-utilities/build/libs/lazybuilder-builder-utilities-0.1.0-SNAPSHOT.jar" ".artifacts/builder/"
+      - name: Verify packaged Builder artifact
+        shell: pwsh
+        run: .\tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1 -ClientModsDir ".artifacts\builder" -RepoRoot "." -OnlyBuilder
+      - name: Upload Builder Utilities artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
+        with:
+          name: builder-utilities
+          path: .artifacts/builder/*.jar
+          if-no-files-found: error
+          retention-days: 7

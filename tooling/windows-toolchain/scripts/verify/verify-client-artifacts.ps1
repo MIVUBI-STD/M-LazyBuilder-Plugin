@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$ClientModsDir,
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [switch]$OnlyBuilder
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,11 +14,17 @@ $ClientModsDir = Resolve-Path $ClientModsDir
 $ProductVersion = (Get-Content (Join-Path $RepoRoot 'VERSION') -Raw).Trim()
 $SnapshotVersion = "$ProductVersion-SNAPSHOT"
 
-$Expected = @(
+$AllExpected = @(
     [pscustomobject]@{ File="lazybuilder-map-manager-$SnapshotVersion.jar"; Id='lazybuilder_map_manager'; Name='LazyBuilder Map Manager' },
     [pscustomobject]@{ File="lazybuilder-utility-manager-$SnapshotVersion.jar"; Id='lazybuilder_utility_manager'; Name='LazyBuilder Utility Manager' },
-    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' }
+    [pscustomobject]@{ File="lazybuilder-performance-manager-$SnapshotVersion.jar"; Id='lazybuilder_performance_manager'; Name='LazyBuilder Performance Manager' },
+    [pscustomobject]@{ File="lazybuilder-builder-utilities-$SnapshotVersion.jar"; Id='lazybuilder_builder_utilities'; Name='LazyBuilder Builder Utilities' }
 )
+$Expected = if ($OnlyBuilder) {
+    @($AllExpected | Where-Object { $_.Id -eq 'lazybuilder_builder_utilities' })
+} else {
+    @($AllExpected)
+}
 $Terraform = [pscustomobject]@{ File="lazybuilder-terraform-manager-$SnapshotVersion.jar"; Id='lazybuilder-terraform-manager'; Name='LazyBuilder Terraform Manager' }
 
 function Fail([string]$Message) { throw "Client artifact verification failed: $Message" }
@@ -83,10 +90,25 @@ function Verify-Jar($Spec) {
             if (-not $zip.GetEntry([string]$config)) { Fail "$($Spec.File) mixin config is missing: $config" }
         }
 
-        if ($Spec.Id -eq 'lazybuilder-terraform-manager') {
+        if ($Spec.Id -eq 'lazybuilder-terraform-manager' -or $Spec.Id -eq 'lazybuilder_builder_utilities') {
             if ([string]$metadata.depends.fabricloader -ne '>=0.16.10') { Fail "$($Spec.File) Fabric Loader contract drifted" }
             if ([string]$metadata.depends.minecraft -ne '1.21.4') { Fail "$($Spec.File) Minecraft contract drifted" }
             if ([string]$metadata.depends.java -ne '>=21') { Fail "$($Spec.File) Java contract drifted" }
+        }
+        if ($Spec.Id -eq 'lazybuilder_builder_utilities') {
+            if ([string]$metadata.depends.axiom -ne '5.3.0') {
+                Fail "$($Spec.File) Axiom runtime contract drifted"
+            }
+
+            $shadowedAxiom = @($zip.Entries | Where-Object {
+                $_.FullName.StartsWith('com/moulberry/axiomclientapi/')
+            })
+            if ($shadowedAxiom.Count -gt 0) {
+                Fail "$($Spec.File) packaged compile-only AxiomClientAPI stubs"
+            }
+            if ($zip.GetEntry('imgui/moulberry92/ImGui.class')) {
+                Fail "$($Spec.File) packaged compile-only ImGui stub"
+            }
         }
     }
     catch [System.IO.InvalidDataException] {
@@ -100,12 +122,15 @@ function Verify-Jar($Spec) {
 $actual = @(Get-ChildItem $ClientModsDir -Filter '*.jar' -File | ForEach-Object Name | Sort-Object)
 $expectedNames = @($Expected | ForEach-Object File | Sort-Object)
 $missing = @($expectedNames | Where-Object { $_ -notin $actual })
-$allowed = @($expectedNames + $Terraform.File)
+$allowed = if ($OnlyBuilder) { @($expectedNames) } else { @($expectedNames + $Terraform.File) }
 $unexpected = @($actual | Where-Object { $_ -notin $allowed })
 if ($missing.Count -gt 0) { Fail "missing required JARs: $($missing -join ', ')" }
 if ($unexpected.Count -gt 0) { Fail "unexpected client JARs: $($unexpected -join ', ')" }
 
 foreach ($spec in $Expected) { Verify-Jar $spec }
-$terraformPath = Join-Path $ClientModsDir $Terraform.File
-if (Test-Path $terraformPath) { Verify-Jar $Terraform }
-Write-Host "Client artifacts OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
+if (-not $OnlyBuilder) {
+    $terraformPath = Join-Path $ClientModsDir $Terraform.File
+    if (Test-Path $terraformPath) { Verify-Jar $Terraform }
+}
+$scope = if ($OnlyBuilder) { 'Builder artifact' } else { 'Client artifacts' }
+Write-Host "$scope OK: required suite verified for LazyBuilder $ProductVersion" -ForegroundColor Green
