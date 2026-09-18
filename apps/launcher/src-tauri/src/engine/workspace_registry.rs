@@ -1083,4 +1083,16 @@ mod tests {
         assert!(incoming.exists());
         let _ = fs::remove_dir_all(root);
     }
+    #[test]
+    fn oversized_workspace_metadata_is_rejected_before_parse() {
+        let path = temp_metadata_path("oversized");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(MAX_WORKSPACE_METADATA_BYTES + 1).unwrap();
+
+        let error = read_metadata_text(&path, "test workspace metadata").unwrap_err();
+        assert!(error.contains("metadata limit"));
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
 }

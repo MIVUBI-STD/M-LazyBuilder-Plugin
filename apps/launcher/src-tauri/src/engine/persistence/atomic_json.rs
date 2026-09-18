@@ -98,3 +98,31 @@ fn temporary_path(path: &Path) -> std::path::PathBuf {
 fn previous_path(path: &Path) -> std::path::PathBuf {
     path.with_extension("json.previous")
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::{read, MAX_ATOMIC_JSON_BYTES};
+    use std::fs::{self, File};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn oversized_atomic_json_is_rejected_before_parse() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-atomic-json-limit-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("oversized.json");
+        let file = File::create(&path).unwrap();
+        file.set_len(MAX_ATOMIC_JSON_BYTES + 1).unwrap();
+
+        let error = read::<serde_json::Value>(&path, "test metadata").unwrap_err();
+        assert!(error.contains("metadata limit"));
+
+        let _ = fs::remove_dir_all(directory);
+    }
+}
