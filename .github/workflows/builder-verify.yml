@@ -34,13 +34,18 @@ jobs:
       - name: Build and test Builder Utilities
         shell: pwsh
         run: .\gradlew.bat -p mods/builder-utilities --no-daemon build
+      - name: Stage canonical Builder artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".artifacts/builder" -Force | Out-Null
+          Copy-Item "mods/builder-utilities/build/libs/lazybuilder-builder-utilities-0.1.0-SNAPSHOT.jar" ".artifacts/builder/"
       - name: Verify packaged Builder artifact
         shell: pwsh
-        run: .\tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1 -ClientModsDir "mods\builder-utilities\build\libs" -RepoRoot "." -OnlyBuilder
+        run: .\tooling\windows-toolchain\scripts\verify\verify-client-artifacts.ps1 -ClientModsDir ".artifacts\builder" -RepoRoot "." -OnlyBuilder
       - name: Upload Builder Utilities artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v4
         with:
           name: builder-utilities
-          path: mods/builder-utilities/build/libs/*.jar
+          path: .artifacts/builder/*.jar
           if-no-files-found: error
           retention-days: 7
