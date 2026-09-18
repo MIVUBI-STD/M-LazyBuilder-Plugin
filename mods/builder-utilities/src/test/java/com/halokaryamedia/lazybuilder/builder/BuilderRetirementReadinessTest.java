@@ -36,6 +36,22 @@ class BuilderRetirementReadinessTest {
         }
     }
 
+    @Test
+    void activeMutationBlocksRetirementReadiness() throws Exception {
+        BuilderRuntime runtime = runtime();
+        try {
+            runtime.registerActiveOperation(() -> { });
+            var report = BuilderRetirementReadiness.evaluate(
+                    runtime, true, true, true, 0, 0);
+            assertEquals(BuilderRetirementReadiness.Status.BLOCKED, report.status());
+            assertTrue(report.blockers().stream()
+                    .anyMatch(value -> value.contains("active Builder operations=1")));
+        } finally {
+            runtime.preserveActiveOperations();
+            runtime.close();
+        }
+    }
+
     private BuilderRuntime runtime() throws Exception {
         Constructor<BuilderRuntime> constructor = BuilderRuntime.class.getDeclaredConstructor(
                 HistoryTimeline.class,
