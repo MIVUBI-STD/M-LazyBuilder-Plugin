@@ -278,6 +278,10 @@ def main() -> int:
     operations = read_text("docs/04-system/development-operations.md", errors)
     dev_orchestrator = read_text("tooling/windows-toolchain/dev.ps1", errors)
     fabric_verifier = read_text("tooling/windows-toolchain/scripts/verify/verify-fabric.ps1", errors)
+    client_artifact_verifier = read_text(
+        "tooling/windows-toolchain/scripts/verify/verify-client-artifacts.ps1",
+        errors,
+    )
     verify_workflow = read_text(".github/workflows/verify.yml", errors)
     build_local = read_text("apps/launcher/build-local.ps1", errors)
     test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
@@ -354,6 +358,10 @@ def main() -> int:
             fail(errors, "Axiom runtime diagnostics must match the canonical supported range")
         if axiom_range not in stable_context:
             fail(errors, "CONTEXT.md must state the canonical Axiom compatibility range")
+        if "axiom_supported_range" not in client_artifact_verifier:
+            fail(errors, "client artifact verifier must read the canonical Axiom range")
+        if "$AxiomSupportedRange" not in client_artifact_verifier:
+            fail(errors, "client artifact verifier must compare packaged metadata to the canonical Axiom range")
     if "mods/builder-utilities" not in builder_workflow:
         fail(errors, "Builder verification workflow must target the Builder Utilities source owner")
     if "benchmarkGolden" not in builder_benchmark_workflow:
