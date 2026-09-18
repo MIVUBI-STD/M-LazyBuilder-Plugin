@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gl.GpuBuffer;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL31C;
 
@@ -69,6 +70,21 @@ final class TerrainPhysicalBuffer implements AutoCloseable {
         }
         if (bytes == 0) return;
 
+        GlStateManager._glBindBuffer(COPY_READ, this.handle);
+        GlStateManager._glBindBuffer(COPY_WRITE, destination.handle);
+        GL31C.glCopyBufferSubData(COPY_READ, COPY_WRITE, sourceOffset, destinationOffset, bytes);
+    }
+
+    void copyTo(GpuBuffer destination, int sourceOffset, int destinationOffset, int bytes) {
+        RenderSystem.assertOnRenderThread();
+        ensureOpen();
+        if (destination == null) throw new IllegalArgumentException("Missing GPU copy destination");
+        if (sourceOffset < 0 || destinationOffset < 0 || bytes < 0
+                || sourceOffset > this.size - bytes
+                || destinationOffset > destination.size - bytes) {
+            throw new IllegalArgumentException("Copy exceeds terrain or vanilla GPU buffer");
+        }
+        if (bytes == 0) return;
         GlStateManager._glBindBuffer(COPY_READ, this.handle);
         GlStateManager._glBindBuffer(COPY_WRITE, destination.handle);
         GL31C.glCopyBufferSubData(COPY_READ, COPY_WRITE, sourceOffset, destinationOffset, bytes);

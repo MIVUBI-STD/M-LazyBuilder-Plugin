@@ -58,6 +58,7 @@ public final class ChunkUploadTask implements Runnable {
 
         try {
             if (vertexData != null) {
+                TerrainPhysicalArenaManager.prepareForVanillaUpload(buffer);
                 TerrainGpuResidencyTracker.recordDrawState(
                         buffer,
                         vertexData.getDrawParameters(),
