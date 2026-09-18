@@ -152,26 +152,21 @@ public final class AxiomRecoveryTool implements CustomTool {
             releaseWrappersWithoutDeleting();
             ClientWorld world = requireWorld();
             String scope = AxiomWorldScope.currentScopeId(world);
-            var capabilities =
-                    com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking
-                            .capabilities();
             java.util.LinkedHashMap<String,
                     com.halokaryamedia.lazybuilder.builder.mutation.HistoryExtensionMutationTarget>
                     readable = new java.util.LinkedHashMap<>();
-            if (capabilities.supportsBlockEntity()) {
-                readable.put(
-                        HistoryExtensionTypes.BLOCK_ENTITY,
-                        new AxiomBlockEntityExtensionReadTarget(world));
-            }
-            if (capabilities.supportsBiome()) {
-                readable.put(
-                        HistoryExtensionTypes.BIOME,
-                        new AxiomBiomeExtensionReadTarget(world));
-            }
+            // Classification is read-only. BIOME and BLOCK_ENTITY state can be
+            // inspected from the client world even when the current server does
+            // not advertise write authority. Resume/rollback authority is checked
+            // separately before ownership transfer.
+            readable.put(
+                    HistoryExtensionTypes.BLOCK_ENTITY,
+                    new AxiomBlockEntityExtensionReadTarget(world));
+            readable.put(
+                    HistoryExtensionTypes.BIOME,
+                    new AxiomBiomeExtensionReadTarget(world));
             HistoryExtensionTargetRegistry extensions =
-                    readable.isEmpty()
-                            ? HistoryExtensionTargetRegistry.empty()
-                            : new HistoryExtensionTargetRegistry(readable);
+                    new HistoryExtensionTargetRegistry(readable);
             entries = new HistoryRecoveryManager(runtime.diskHistory())
                     .discover(
                             new AxiomClientWorldStateSource(world),
