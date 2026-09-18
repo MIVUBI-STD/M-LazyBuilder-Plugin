@@ -81,22 +81,6 @@ public final class AxiomPreparedMutationSession implements AutoCloseable {
         return report;
     }
 
-    public synchronized CancellationFinalizationResult finalizeKeepChanges(
-            HistoryStorageRouter history,
-            long estimatedHistoryBytes
-    ) throws IOException {
-        Objects.requireNonNull(history, "history");
-        if (rollback != null) throw new IllegalStateException("Rollback cancellation is already prepared");
-        ensureNotTerminal();
-        core.noteCancellationRequested();
-        String partialId = core.prepared().changeSet().operationId() + "-partial";
-        AppliedMutationCompaction compaction = AppliedMutationCompactor.compact(
-                core.prepared().changeSet(), worldSource, history, estimatedHistoryBytes, partialId);
-        core.finalizeKeepChanges(compaction);
-        if (core.lifecycle().state().isTerminal()) budgetedDispatcher.close();
-        return CancellationFinalizationResult.from(compaction);
-    }
-
     /** Prepares a durable reverse plan for the subset already applied. */
     public synchronized RollbackPreparationResult prepareRollback(
             HistoryStorageRouter history,
