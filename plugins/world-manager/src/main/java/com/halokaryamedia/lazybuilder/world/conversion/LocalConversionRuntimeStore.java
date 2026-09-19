@@ -6,9 +6,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -24,6 +27,7 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     private static final String MANIFEST = "runtime.properties";
     private static final String LAST_CHECK = "last-update-check.txt";
     private static final long MAX_LAST_CHECK_BYTES = 128L;
+    private static final long MAX_RUNTIME_MANIFEST_BYTES = 64L * 1024L;
 
     private final Path root;
 
@@ -186,12 +190,30 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     }
 
     private static boolean complete(Path slot) {
-        return Files.isDirectory(slot)
-                && !Files.isSymbolicLink(slot)
-                && Files.isRegularFile(slot.resolve(ARTIFACT))
-                && !Files.isSymbolicLink(slot.resolve(ARTIFACT))
-                && Files.isRegularFile(slot.resolve(MANIFEST))
-                && !Files.isSymbolicLink(slot.resolve(MANIFEST));
+        if (!Files.isDirectory(slot) || Files.isSymbolicLink(slot)) return false;
+        Path artifact = slot.resolve(ARTIFACT);
+        Path manifest = slot.resolve(MANIFEST);
+        if (!Files.isRegularFile(artifact)
+                || Files.isSymbolicLink(artifact)
+                || !Files.isRegularFile(manifest)
+                || Files.isSymbolicLink(manifest)) {
+            return false;
+        }
+
+        try (var entries = Files.list(slot)) {
+            var iterator = entries.iterator();
+            int count = 0;
+            while (iterator.hasNext()) {
+                Path entry = iterator.next();
+                count++;
+                if (count > 2) return false;
+                String name = entry.getFileName().toString();
+                if (!name.equals(ARTIFACT) && !name.equals(MANIFEST)) return false;
+            }
+            return count == 2;
+        } catch (IOException failure) {
+            return false;
+        }
     }
 
     private static void requireComplete(Path slot) throws IOException {
@@ -254,6 +276,10 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     }
 
     private static ConversionRuntimeManifest readManifest(Path path) throws IOException {
+        long size = Files.size(path);
+        if (size < 1L || size > MAX_RUNTIME_MANIFEST_BYTES) {
+            throw new IOException("Conversion runtime manifest violates size limit");
+        }
         Properties p = new Properties();
         try (var in = Files.newInputStream(path)) { p.load(in); }
         List<String> formats = new ArrayList<>();
@@ -293,8 +319,23 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
             Files.delete(root);
             return;
         }
-        try (var paths = Files.walk(root)) {
-            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
-        }
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (Files.isSymbolicLink(file)) {
+                    Files.delete(file);
+                } else {
+                    Files.deleteIfExists(file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException failure) throws IOException {
+                if (failure != null) throw failure;
+                Files.deleteIfExists(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }

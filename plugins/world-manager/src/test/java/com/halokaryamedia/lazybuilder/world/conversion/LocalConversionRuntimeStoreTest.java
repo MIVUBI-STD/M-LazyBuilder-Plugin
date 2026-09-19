@@ -129,6 +129,24 @@ class LocalConversionRuntimeStoreTest {
     }
 
     @Test
+    void runtimeSlotRejectsUnexpectedExtraEntries() throws Exception {
+        Path root = tempDir.resolve("runtime-extra-entry");
+        LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(root);
+        Path artifact = tempDir.resolve("extra-entry.jar");
+        Files.writeString(artifact, "one");
+        store.stageCandidate(
+                artifact,
+                manifest("1.0.0", "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"));
+        store.promoteCandidate();
+
+        Files.writeString(root.resolve("current/unexpected.txt"), "unexpected");
+
+        assertThrows(java.io.IOException.class, store::current);
+        assertThrows(IllegalStateException.class,
+                () -> new LocalConversionRuntimeStore(root));
+    }
+
+    @Test
     void persistsLastUpdateCheck() throws Exception {
         LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(tempDir.resolve("runtime"));
         Instant now = Instant.parse("2026-09-12T00:00:00Z");
