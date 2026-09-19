@@ -7,6 +7,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -73,6 +74,91 @@ class PaperMainThreadDispatcherTest {
         );
         assertTrue(failure.getMessage().contains("timed out"));
         assertTrue(submitted.get().isCancelled());
+    }
+
+    @Test
+    void timeoutWaitsForAlreadyRunningPaperMutationInsteadOfReportingFalseFailure() throws Exception {
+        CountDownLatch actionStarted = new CountDownLatch(1);
+        CountDownLatch releaseAction = new CountDownLatch(1);
+        PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
+                new PaperMainThreadDispatcher.SchedulerBridge() {
+                    @Override public boolean isPrimaryThread() { return false; }
+                    @Override public <T> Future<T> submit(Callable<T> action) {
+                        FutureTask<T> future = new FutureTask<>(action);
+                        Thread.ofPlatform().start(future);
+                        return future;
+                    }
+                },
+                Duration.ofMillis(20)
+        );
+
+        AtomicReference<String> result = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread worker = Thread.ofPlatform().start(() -> {
+            try {
+                result.set(dispatcher.call(() -> {
+                    actionStarted.countDown();
+                    releaseAction.await();
+                    return "committed";
+                }));
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        });
+
+        assertTrue(actionStarted.await(1, TimeUnit.SECONDS));
+        Thread.sleep(40);
+        assertTrue(worker.isAlive(),
+                "ownership must be retained while the already-running Paper action is unresolved");
+
+        releaseAction.countDown();
+        worker.join(1_000);
+
+        assertFalse(worker.isAlive());
+        assertEquals("committed", result.get());
+        assertEquals(null, failure.get());
+    }
+
+    @Test
+    void interruptedAlreadyRunningDispatchWaitsForRealOutcomeAndRestoresInterrupt() throws Exception {
+        CountDownLatch actionStarted = new CountDownLatch(1);
+        CountDownLatch releaseAction = new CountDownLatch(1);
+        PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
+                new PaperMainThreadDispatcher.SchedulerBridge() {
+                    @Override public boolean isPrimaryThread() { return false; }
+                    @Override public <T> Future<T> submit(Callable<T> action) {
+                        FutureTask<T> future = new FutureTask<>(action);
+                        Thread.ofPlatform().start(future);
+                        return future;
+                    }
+                },
+                Duration.ofSeconds(5)
+        );
+
+        AtomicReference<String> result = new AtomicReference<>();
+        AtomicReference<Boolean> interrupted = new AtomicReference<>(false);
+        Thread worker = Thread.ofPlatform().start(() -> {
+            try {
+                result.set(dispatcher.call(() -> {
+                    actionStarted.countDown();
+                    releaseAction.await();
+                    return "committed";
+                }));
+                interrupted.set(Thread.currentThread().isInterrupted());
+            } catch (Throwable ignored) {
+            }
+        });
+
+        assertTrue(actionStarted.await(1, TimeUnit.SECONDS));
+        worker.interrupt();
+        Thread.sleep(20);
+        assertTrue(worker.isAlive());
+
+        releaseAction.countDown();
+        worker.join(1_000);
+
+        assertEquals("committed", result.get());
+        assertTrue(interrupted.get());
     }
 
     @Test

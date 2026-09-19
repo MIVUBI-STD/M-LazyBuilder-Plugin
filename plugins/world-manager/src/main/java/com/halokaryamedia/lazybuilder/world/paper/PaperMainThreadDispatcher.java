@@ -45,14 +45,21 @@ public final class PaperMainThreadDispatcher {
         try {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
-            future.cancel(false);
-            throw timeoutFailure(exception);
+            if (future.cancel(false)) {
+                throw timeoutFailure(exception);
+            }
+            return awaitAlreadyStarted(future, false);
         } catch (InterruptedException exception) {
-            // The caller no longer owns this operation. Prevent a queued callable from
-            // mutating Paper later after task failure/lease release.
-            future.cancel(false);
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while waiting for Paper main-thread dispatch", exception);
+            if (future.cancel(false)) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while waiting for Paper main-thread dispatch",
+                        exception);
+            }
+            // Cancellation lost because Paper already started (or just completed) the
+            // callable. Keep ownership until the real outcome is known instead of
+            // reporting failure while a mutation can still complete later.
+            return awaitAlreadyStarted(future, true);
         } catch (ExecutionException exception) {
             return rethrowExecution(exception);
         }
@@ -75,16 +82,42 @@ public final class PaperMainThreadDispatcher {
             while (true) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0L) {
-                    future.cancel(false);
-                    throw timeoutFailure(new TimeoutException("cleanup deadline reached"));
+                    TimeoutException timeoutException =
+                            new TimeoutException("cleanup deadline reached");
+                    if (future.cancel(false)) {
+                        throw timeoutFailure(timeoutException);
+                    }
+                    return awaitAlreadyStarted(future, interrupted);
                 }
                 try {
                     return future.get(remaining, TimeUnit.NANOSECONDS);
                 } catch (InterruptedException ignored) {
                     interrupted = true;
                 } catch (TimeoutException exception) {
-                    future.cancel(false);
-                    throw timeoutFailure(exception);
+                    if (future.cancel(false)) {
+                        throw timeoutFailure(exception);
+                    }
+                    return awaitAlreadyStarted(future, interrupted);
+                } catch (ExecutionException exception) {
+                    return rethrowExecution(exception);
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    private static <T> T awaitAlreadyStarted(
+            Future<T> future,
+            boolean interruptedBeforeWait
+    ) throws Exception {
+        boolean interrupted = interruptedBeforeWait;
+        try {
+            while (true) {
+                try {
+                    return future.get();
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
                 } catch (ExecutionException exception) {
                     return rethrowExecution(exception);
                 }
