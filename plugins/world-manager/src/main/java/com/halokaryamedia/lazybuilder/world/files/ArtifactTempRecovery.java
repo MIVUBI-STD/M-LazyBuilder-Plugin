@@ -23,7 +23,9 @@ public final class ArtifactTempRecovery {
                 throw new IOException("Artifact root is unsafe: " + root);
             }
             try (var children = Files.list(root)) {
-                for (Path child : children.toList()) {
+                var iterator = children.iterator();
+                while (iterator.hasNext()) {
+                    Path child = iterator.next();
                     if (!isOwnedTemporaryName(child.getFileName().toString())) continue;
                     Path direct = child.toAbsolutePath().normalize();
                     if (!root.equals(direct.getParent())) continue;

@@ -259,7 +259,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         int rolledBack = 0;
         int preserved = 0;
         try (var children = Files.list(workspaceRoot)) {
-            for (Path child : children.toList()) {
+            var iterator = children.iterator();
+            while (iterator.hasNext()) {
+                Path child = iterator.next();
                 String name = child.getFileName().toString();
                 if (!name.endsWith(CREATE_SUFFIX)) continue;
                 Optional<CreateTransactionIdentity> identity = parseCreateTransactionName(name);
@@ -302,7 +304,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         requireSafeWorkspaceRoot();
         int recovered = 0;
         try (var children = Files.list(workspaceRoot)) {
-            for (Path child : children.toList()) {
+            var iterator = children.iterator();
+            while (iterator.hasNext()) {
+                Path child = iterator.next();
                 if (!isRecoverableTransientName(child.getFileName().toString())) continue;
                 Path target = requireDirectWorkspace(child);
                 if (Files.isSymbolicLink(target)) Files.deleteIfExists(target);
@@ -326,7 +330,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         int discarded = 0;
         int preserved = 0;
         try (var children = Files.list(workspaceRoot)) {
-            for (Path child : children.toList()) {
+            var iterator = children.iterator();
+            while (iterator.hasNext()) {
+                Path child = iterator.next();
                 String name = child.getFileName().toString();
                 if (!name.endsWith(DELETE_SUFFIX)) continue;
                 Optional<DeleteWorkspaceIdentity> identity = parseDeleteWorkspaceName(name);
@@ -376,7 +382,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         int discarded = 0;
         int preserved = 0;
         try (var children = Files.list(worldRoot)) {
-            for (Path child : children.toList()) {
+            var iterator = children.iterator();
+            while (iterator.hasNext()) {
+                Path child = iterator.next();
                 if (!Files.isDirectory(child) || Files.isSymbolicLink(child)) continue;
                 Path marker = child.resolve(PENDING_PUBLISH_MARKER);
                 if (Files.notExists(marker)) continue;
