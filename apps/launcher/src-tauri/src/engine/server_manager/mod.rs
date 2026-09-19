@@ -2,7 +2,7 @@ use crate::engine::{paths, persistence, resource_settings, server_config, world_
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 #[cfg(windows)]
@@ -17,6 +17,8 @@ mod console;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const MAX_STARTUP_LOG_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_STARTUP_LINE_BYTES: usize = 16 * 1024;
 type ServerManagerOptions = server_config::ServerConfig;
 
 #[derive(Clone, Serialize)]
@@ -144,19 +146,42 @@ impl ServerManagerState {
             }
         }
 
+        let startup_logging = Arc::new(AtomicBool::new(true));
         if let Some(stderr) = child.stderr.take() {
             let log = startup_log.clone();
-            thread::spawn(move || { let reader = BufReader::new(stderr); for line in reader.lines().map_while(Result::ok) { let _ = append_startup_line(&log, "stderr", &line); } });
+            let startup_logging = Arc::clone(&startup_logging);
+            thread::spawn(move || {
+                let _ = drain_bounded_lines(stderr, |line| {
+                    if startup_logging.load(Ordering::SeqCst) {
+                        let _ = append_startup_line(&log, "stderr", line);
+                    }
+                });
+            });
         }
         if let Some(stdout) = child.stdout.take() {
-            let runtime_state = Arc::clone(&self.runtime_state); let expected_stop = Arc::clone(&self.expected_stop); let active_log_path = Arc::clone(&self.active_log_path); let startup_log_for_stdout = startup_log.clone(); let paper_log_for_stdout = paper_log.clone();
+            let runtime_state = Arc::clone(&self.runtime_state);
+            let expected_stop = Arc::clone(&self.expected_stop);
+            let active_log_path = Arc::clone(&self.active_log_path);
+            let startup_log_for_stdout = startup_log.clone();
+            let paper_log_for_stdout = paper_log.clone();
+            let startup_logging = Arc::clone(&startup_logging);
             thread::spawn(move || {
-                let reader = BufReader::new(stdout);
-                for line in reader.lines().map_while(Result::ok) {
-                    let _ = append_startup_line(&startup_log_for_stdout, "stdout", &line);
-                    if line.contains("Done (") { let _ = set_runtime_state(&runtime_state, "Online"); if let Ok(mut path) = active_log_path.lock() { *path = paper_log_for_stdout.display().to_string(); } }
+                let _ = drain_bounded_lines(stdout, |line| {
+                    let still_starting = startup_logging.load(Ordering::SeqCst);
+                    if still_starting {
+                        let _ = append_startup_line(&startup_log_for_stdout, "stdout", line);
+                    }
+                    if still_starting && line.contains("Done (") {
+                        let _ = set_runtime_state(&runtime_state, "Online");
+                        if let Ok(mut path) = active_log_path.lock() {
+                            *path = paper_log_for_stdout.display().to_string();
+                        }
+                        startup_logging.store(false, Ordering::SeqCst);
+                    }
+                });
+                if !expected_stop.load(Ordering::SeqCst) {
+                    let _ = set_runtime_state(&runtime_state, "Crashed");
                 }
-                if !expected_stop.load(Ordering::SeqCst) { let _ = set_runtime_state(&runtime_state, "Crashed"); }
             });
         }
         *guard = Some(child); Ok(())
@@ -243,11 +268,100 @@ impl ServerManagerState {
 impl Drop for ServerManagerState { fn drop(&mut self) { let _ = self.stop(); } }
 
 fn append_startup_line(path: &Path, stream: &str, line: &str) -> Result<(), String> {
-    let mut file = OpenOptions::new().create(true).append(true).open(path).map_err(|error| error.to_string())?;
-    writeln!(file, "[{stream}] {line}").map_err(|error| error.to_string())
+    let current_size = fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0);
+    if current_size >= MAX_STARTUP_LOG_BYTES {
+        return Ok(());
+    }
+
+    let available = (MAX_STARTUP_LOG_BYTES - current_size) as usize;
+    let mut entry = format!("[{stream}] {line}\n");
+    if entry.len() > available {
+        let mut boundary = available.min(entry.len());
+        while boundary > 0 && !entry.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        entry.truncate(boundary);
+    }
+    if entry.is_empty() {
+        return Ok(());
+    }
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    file.write_all(entry.as_bytes()).map_err(|error| error.to_string())
 }
-fn drain_pipe_to_log<R: std::io::Read + Send + 'static>(pipe: Option<R>, path: PathBuf) {
-    if let Some(pipe) = pipe { thread::spawn(move || { let reader = BufReader::new(pipe); for line in reader.lines().map_while(Result::ok) { let _ = append_startup_line(&path, "process", &line); } }); }
+
+fn drain_bounded_lines<R, F>(pipe: R, mut on_line: F) -> std::io::Result<()>
+where
+    R: Read,
+    F: FnMut(&str),
+{
+    let mut reader = BufReader::new(pipe);
+    let mut retained = Vec::with_capacity(1024);
+    let mut line_truncated = false;
+
+    loop {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
+            if !retained.is_empty() || line_truncated {
+                emit_bounded_line(&retained, line_truncated, &mut on_line);
+            }
+            return Ok(());
+        }
+
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(buffer.len(), |index| index + 1);
+        let payload_end = newline.unwrap_or(buffer.len());
+
+        if retained.len() < MAX_STARTUP_LINE_BYTES {
+            let remaining = MAX_STARTUP_LINE_BYTES - retained.len();
+            let copy = payload_end.min(remaining);
+            retained.extend_from_slice(&buffer[..copy]);
+            if copy < payload_end {
+                line_truncated = true;
+            }
+        } else if payload_end > 0 {
+            line_truncated = true;
+        }
+
+        reader.consume(consumed);
+
+        if newline.is_some() {
+            if retained.last() == Some(&b'\r') {
+                retained.pop();
+            }
+            emit_bounded_line(&retained, line_truncated, &mut on_line);
+            retained.clear();
+            line_truncated = false;
+        }
+    }
+}
+
+fn emit_bounded_line<F>(bytes: &[u8], truncated: bool, on_line: &mut F)
+where
+    F: FnMut(&str),
+{
+    let text = String::from_utf8_lossy(bytes);
+    if truncated {
+        let mut bounded = text.into_owned();
+        bounded.push_str("… [line truncated]");
+        on_line(&bounded);
+    } else {
+        on_line(text.as_ref());
+    }
+}
+
+fn drain_pipe_to_log<R: Read + Send + 'static>(pipe: Option<R>, path: PathBuf) {
+    if let Some(pipe) = pipe {
+        thread::spawn(move || {
+            let _ = drain_bounded_lines(pipe, |line| {
+                let _ = append_startup_line(&path, "process", line);
+            });
+        });
+    }
 }
 fn set_runtime_state(state: &Arc<Mutex<String>>, value: &str) -> Result<(), String> { *state.lock().map_err(|_| "server runtime state lock poisoned".to_string())? = value.into(); Ok(()) }
 fn offline_like_snapshot(state: String, log_path: String, max_memory_bytes: u64) -> ServerSnapshot { let health = if state == "Crashed" { "Critical" } else { "Offline" }; ServerSnapshot { state, health: health.into(), cpu_load_percent: 0.0, used_memory_bytes: 0, max_memory_bytes, pid: None, log_path } }
@@ -262,3 +376,23 @@ fn resolve_java(configured: &str) -> Result<PathBuf, String> {
 fn java_major_and_text(java: &Path) -> Result<(u32, String), String> { let mut command = Command::new(java); hide_windows_console(&mut command); let output = command.arg("--version").output().map_err(|error| error.to_string())?; let text = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)); let normalized = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("Unknown Java").trim().to_string(); let major = text.split_whitespace().find_map(|part| part.trim_matches(|ch: char| !ch.is_ascii_digit() && ch != '.').split('.').next()?.parse::<u32>().ok()).ok_or_else(|| "Could not determine Java runtime version".to_string())?; Ok((major, normalized)) }
 fn validate_java_21(java: &Path) -> Result<(), String> { let (major, _) = java_major_and_text(java)?; if major != 21 { return Err(format!("LazyBuilder Paper 1.21.4 requires Java 21. Detected Java {major}.")); } Ok(()) }
 fn hide_windows_console(command: &mut Command) { #[cfg(windows)] { command.creation_flags(CREATE_NO_WINDOW); } }
+
+#[cfg(test)]
+mod startup_log_tests {
+    use super::{drain_bounded_lines, MAX_STARTUP_LINE_BYTES};
+    use std::io::Cursor;
+
+    #[test]
+    fn bounded_pipe_reader_truncates_pathological_line_but_keeps_draining() {
+        let mut input = vec![b'x'; MAX_STARTUP_LINE_BYTES + 128];
+        input.extend_from_slice(b"\nDone (1.23s)!\n");
+        let mut lines = Vec::new();
+
+        drain_bounded_lines(Cursor::new(input), |line| lines.push(line.to_string()))
+            .expect("bounded pipe read");
+
+        assert_eq!(2, lines.len());
+        assert!(lines[0].ends_with("[line truncated]"));
+        assert_eq!("Done (1.23s)!", lines[1]);
+    }
+}
