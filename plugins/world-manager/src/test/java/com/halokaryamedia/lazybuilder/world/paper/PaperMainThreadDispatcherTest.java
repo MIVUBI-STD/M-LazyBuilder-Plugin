@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
@@ -39,7 +40,11 @@ class PaperMainThreadDispatcherTest {
                     @Override public boolean isPrimaryThread() { return false; }
                     @Override public <T> Future<T> submit(Callable<T> action) {
                         CompletableFuture<T> future = new CompletableFuture<>();
-                        future.completeExceptionally(new IllegalArgumentException("boom"));
+                        try {
+                            future.complete(action.call());
+                        } catch (Exception exception) {
+                            future.completeExceptionally(exception);
+                        }
                         return future;
                     }
                 },
@@ -74,6 +79,34 @@ class PaperMainThreadDispatcherTest {
         );
         assertTrue(failure.getMessage().contains("timed out"));
         assertTrue(submitted.get().isCancelled());
+    }
+
+    @Test
+    void cancelledQueuedDispatchCannotExecuteIfSchedulerInvokesWrapperLater() throws Exception {
+        AtomicReference<Callable<?>> scheduledAction = new AtomicReference<>();
+        PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
+                new PaperMainThreadDispatcher.SchedulerBridge() {
+                    @Override public boolean isPrimaryThread() { return false; }
+                    @Override public <T> Future<T> submit(Callable<T> action) {
+                        scheduledAction.set(action);
+                        return new CompletableFuture<>();
+                    }
+                },
+                Duration.ofMillis(20)
+        );
+
+        AtomicReference<Boolean> businessRan = new AtomicReference<>(false);
+        assertThrows(IllegalStateException.class,
+                () -> dispatcher.call(() -> {
+                    businessRan.set(true);
+                    return "unexpected";
+                }));
+
+        assertFalse(businessRan.get());
+        assertThrows(CancellationException.class,
+                () -> scheduledAction.get().call());
+        assertFalse(businessRan.get(),
+                "cancelled queued dispatch must remain unable to mutate if invoked later");
     }
 
     @Test

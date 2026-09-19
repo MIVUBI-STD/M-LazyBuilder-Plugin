@@ -672,7 +672,10 @@ def main() -> int:
     for marker in (
         "submitTracked",
         "cancelBeforeStart",
-        "dispatch.started.get()",
+        "DispatchState.QUEUED",
+        "DispatchState.RUNNING",
+        "DispatchState.CANCELLED",
+        "compareAndSet(DispatchState.QUEUED",
         "dispatch.outcome",
         "awaitAlreadyStarted",
     ):

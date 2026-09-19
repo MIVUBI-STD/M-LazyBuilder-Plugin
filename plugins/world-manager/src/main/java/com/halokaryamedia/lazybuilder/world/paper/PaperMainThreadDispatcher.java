@@ -5,12 +5,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Single boundary for invoking Paper/Bukkit mutations from non-primary threads.
@@ -110,10 +111,16 @@ public final class PaperMainThreadDispatcher {
     }
 
     private <T> Dispatch<T> submitTracked(Callable<T> action) {
-        AtomicBoolean started = new AtomicBoolean();
+        AtomicReference<DispatchState> state =
+                new AtomicReference<>(DispatchState.QUEUED);
         CompletableFuture<T> outcome = new CompletableFuture<>();
         Future<?> ticket = scheduler.submit(() -> {
-            started.set(true);
+            if (!state.compareAndSet(DispatchState.QUEUED, DispatchState.RUNNING)) {
+                CancellationException cancelled =
+                        new CancellationException("Paper dispatch was cancelled before start");
+                outcome.completeExceptionally(cancelled);
+                throw cancelled;
+            }
             try {
                 T result = action.call();
                 outcome.complete(result);
@@ -125,13 +132,17 @@ public final class PaperMainThreadDispatcher {
                 throw new IllegalStateException(failure);
             }
         });
-        return new Dispatch<>(ticket, started, outcome);
+        return new Dispatch<>(ticket, state, outcome);
     }
 
     private static boolean cancelBeforeStart(Dispatch<?> dispatch) {
-        if (dispatch.started.get()) return false;
-        boolean cancelled = dispatch.ticket.cancel(false);
-        return cancelled && !dispatch.started.get();
+        if (!dispatch.state.compareAndSet(DispatchState.QUEUED, DispatchState.CANCELLED)) {
+            return false;
+        }
+        // Ticket cancellation is best-effort only. The state transition above is the
+        // execution authority: a wrapper that runs later cannot enter RUNNING.
+        dispatch.ticket.cancel(false);
+        return true;
     }
 
     private static <T> T awaitAlreadyStarted(
@@ -168,9 +179,11 @@ public final class PaperMainThreadDispatcher {
         throw new IllegalStateException("Paper main-thread dispatch failed", cause);
     }
 
+    private enum DispatchState { QUEUED, RUNNING, CANCELLED }
+
     private record Dispatch<T>(
             Future<?> ticket,
-            AtomicBoolean started,
+            AtomicReference<DispatchState> state,
             CompletableFuture<T> outcome
     ) { }
 
