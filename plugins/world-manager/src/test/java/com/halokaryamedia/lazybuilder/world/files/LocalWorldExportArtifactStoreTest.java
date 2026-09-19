@@ -23,7 +23,7 @@ class LocalWorldExportArtifactStoreTest {
         Path artifact = store.packageDirectory(
                 source,
                 "Build",
-                WorldExportArtifactStore.ExportArtifactType.JAVA_ZIP
+                ExportArtifactType.JAVA_ZIP
         );
 
         assertTrue(Files.isRegularFile(artifact));
@@ -34,7 +34,7 @@ class LocalWorldExportArtifactStoreTest {
                 store.packageDirectory(
                         source,
                         "Build",
-                        WorldExportArtifactStore.ExportArtifactType.JAVA_ZIP
+                        ExportArtifactType.JAVA_ZIP
                 ));
     }
 
@@ -50,7 +50,7 @@ class LocalWorldExportArtifactStoreTest {
                 store.packageDirectory(
                         source,
                         "Build",
-                        WorldExportArtifactStore.ExportArtifactType.JAVA_ZIP
+                        ExportArtifactType.JAVA_ZIP
                 ));
     }
 }
