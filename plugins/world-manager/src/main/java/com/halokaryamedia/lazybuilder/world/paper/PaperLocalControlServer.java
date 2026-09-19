@@ -33,6 +33,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Loopback-only structured bridge for the LazyBuilder desktop application. */
 public final class PaperLocalControlServer {
@@ -43,6 +45,7 @@ public final class PaperLocalControlServer {
 
     private static final Gson GSON = new Gson();
     private static final int MAX_JSON_BODY_BYTES = 256 * 1024;
+    private static final long EXECUTOR_SHUTDOWN_GRACE_MILLIS = 2_000L;
     private static final String IMPORT_FILE_HEADER = "X-LazyBuilder-File-Name";
     private static final String IMPORT_SHA_HEADER = "X-LazyBuilder-Sha256";
 
@@ -60,6 +63,7 @@ public final class PaperLocalControlServer {
 
     private HttpServer server;
     private ExecutorService executor;
+    private final AtomicBoolean stopping = new AtomicBoolean(true);
 
     public PaperLocalControlServer(
             JavaPlugin plugin,
@@ -103,6 +107,7 @@ public final class PaperLocalControlServer {
             created.createContext("/v1/worlds", exchange -> handleWorlds(exchange, token));
             created.createContext("/v1/tasks", exchange -> handleTasks(exchange, token));
             created.createContext("/v1/imports/upload", exchange -> handleImportUpload(exchange, token));
+            stopping.set(false);
             created.start();
             server = created;
             executor = createdExecutor;
@@ -113,6 +118,10 @@ public final class PaperLocalControlServer {
     }
 
     public void stop() {
+        if (!stopping.compareAndSet(false, true) && server == null && executor == null) {
+            return;
+        }
+
         HttpServer current = server;
         server = null;
         if (current != null) current.stop(0);
@@ -120,10 +129,32 @@ public final class PaperLocalControlServer {
 
         ExecutorService currentExecutor = executor;
         executor = null;
-        if (currentExecutor != null) currentExecutor.close();
+        if (currentExecutor == null) return;
+
+        currentExecutor.shutdown();
+        try {
+            if (currentExecutor.awaitTermination(
+                    EXECUTOR_SHUTDOWN_GRACE_MILLIS,
+                    TimeUnit.MILLISECONDS)) {
+                return;
+            }
+            currentExecutor.shutdownNow();
+            if (!currentExecutor.awaitTermination(
+                    EXECUTOR_SHUTDOWN_GRACE_MILLIS,
+                    TimeUnit.MILLISECONDS)) {
+                plugin.getLogger().warning(
+                        "Local World control handlers did not terminate after forced shutdown.");
+            }
+        } catch (InterruptedException interrupted) {
+            currentExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+            plugin.getLogger().warning(
+                    "Interrupted while stopping Local World control handlers.");
+        }
     }
 
     private void handleStatus(HttpExchange exchange, String token) throws IOException {
+        if (rejectDuringShutdown(exchange)) return;
         if (!authorize(exchange, token)) return;
         if (!"GET".equals(exchange.getRequestMethod())) {
             sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
@@ -133,6 +164,7 @@ public final class PaperLocalControlServer {
     }
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
+        if (rejectDuringShutdown(exchange)) return;
         if (!authorize(exchange, token)) return;
         String relative = exchange.getRequestURI().getPath().substring("/v1/worlds".length());
         try {
@@ -168,6 +200,7 @@ public final class PaperLocalControlServer {
     }
 
     private void handleImportUpload(HttpExchange exchange, String token) throws IOException {
+        if (rejectDuringShutdown(exchange)) return;
         if (!authorize(exchange, token)) return;
         if (!"POST".equals(exchange.getRequestMethod())) {
             sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
@@ -197,6 +230,7 @@ public final class PaperLocalControlServer {
     }
 
     private void handleTasks(HttpExchange exchange, String token) throws IOException {
+        if (rejectDuringShutdown(exchange)) return;
         if (!authorize(exchange, token)) return;
         String relative = exchange.getRequestURI().getPath().substring("/v1/tasks".length());
         try {
@@ -499,6 +533,12 @@ public final class PaperLocalControlServer {
         } catch (JsonParseException exception) {
             throw new IllegalArgumentException("Request body contains invalid JSON.", exception);
         }
+    }
+
+    private boolean rejectDuringShutdown(HttpExchange exchange) throws IOException {
+        if (!stopping.get()) return false;
+        sendError(exchange, 503, "world_manager_stopping", "World-Manager is stopping.");
+        return true;
     }
 
     private static boolean authorize(HttpExchange exchange, String expectedToken) throws IOException {
