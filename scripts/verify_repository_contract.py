@@ -367,6 +367,18 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/paper/PaperMainThreadDispatcher.java",
         errors,
     )
+    heavy_operation_orchestrator = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/paper/WorldHeavyOperationOrchestrator.java",
+        errors,
+    )
+    paper_local_control = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/paper/PaperLocalControlServer.java",
+        errors,
+    )
+    world_backup_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldBackupService.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -644,6 +656,37 @@ def main() -> int:
     ):
         if marker not in paper_dispatcher:
             fail(errors, f"Paper dispatch ownership contract missing marker: {marker}")
+
+    for marker in (
+        "String finalMessage = registry.find(taskId)",
+        "WorldTaskSnapshot::message",
+        "registry.succeed(taskId, result == null ? \"\" : result, finalMessage)",
+    ):
+        if marker not in world_task_runner:
+            fail(errors, f"World task committed-result messaging contract missing marker: {marker}")
+
+    for marker in (
+        "task.committed() && task.closed()",
+        "task.completed() && task.closed()",
+        "source runtime restoration failed; check the source world state",
+    ):
+        if marker not in heavy_operation_orchestrator:
+            fail(errors, f"Heavy-operation committed outcome contract missing marker: {marker}")
+
+    for marker in (
+        "backupTask.committed() && backupTask.closed()",
+        "Backup committed, but source runtime restoration failed",
+    ):
+        if marker not in paper_local_control:
+            fail(errors, f"Backup committed outcome contract missing marker: {marker}")
+
+    for marker in (
+        "task.cleanupWorkspace = staged",
+        "task.committed && task.cleanupWorkspace != null",
+        "files.deleteWorkspace(task.cleanupWorkspace)",
+    ):
+        if marker not in world_backup_service:
+            fail(errors, f"Backup post-commit cleanup retry contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
