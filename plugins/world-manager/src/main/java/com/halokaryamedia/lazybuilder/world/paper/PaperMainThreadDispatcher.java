@@ -5,10 +5,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Single boundary for invoking Paper/Bukkit mutations from non-primary threads.
@@ -41,25 +43,25 @@ public final class PaperMainThreadDispatcher {
             return action.call();
         }
 
-        Future<T> future = scheduler.submit(action);
+        Dispatch<T> dispatch = submitTracked(action);
         try {
-            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return dispatch.outcome.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
-            if (future.cancel(false)) {
+            if (cancelBeforeStart(dispatch)) {
                 throw timeoutFailure(exception);
             }
-            return awaitAlreadyStarted(future, false);
+            return awaitAlreadyStarted(dispatch.outcome, false);
         } catch (InterruptedException exception) {
-            if (future.cancel(false)) {
+            if (cancelBeforeStart(dispatch)) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException(
                         "Interrupted while waiting for Paper main-thread dispatch",
                         exception);
             }
-            // Cancellation lost because Paper already started (or just completed) the
-            // callable. Keep ownership until the real outcome is known instead of
-            // reporting failure while a mutation can still complete later.
-            return awaitAlreadyStarted(future, true);
+            // Paper already started (or completed) the callable. Keep ownership until
+            // the real outcome is known instead of reporting failure while a mutation
+            // can still complete later.
+            return awaitAlreadyStarted(dispatch.outcome, true);
         } catch (ExecutionException exception) {
             return rethrowExecution(exception);
         }
@@ -75,7 +77,7 @@ public final class PaperMainThreadDispatcher {
             return action.call();
         }
 
-        Future<T> future = scheduler.submit(action);
+        Dispatch<T> dispatch = submitTracked(action);
         long deadline = System.nanoTime() + timeout.toNanos();
         boolean interrupted = Thread.interrupted();
         try {
@@ -84,20 +86,20 @@ public final class PaperMainThreadDispatcher {
                 if (remaining <= 0L) {
                     TimeoutException timeoutException =
                             new TimeoutException("cleanup deadline reached");
-                    if (future.cancel(false)) {
+                    if (cancelBeforeStart(dispatch)) {
                         throw timeoutFailure(timeoutException);
                     }
-                    return awaitAlreadyStarted(future, interrupted);
+                    return awaitAlreadyStarted(dispatch.outcome, interrupted);
                 }
                 try {
-                    return future.get(remaining, TimeUnit.NANOSECONDS);
+                    return dispatch.outcome.get(remaining, TimeUnit.NANOSECONDS);
                 } catch (InterruptedException ignored) {
                     interrupted = true;
                 } catch (TimeoutException exception) {
-                    if (future.cancel(false)) {
+                    if (cancelBeforeStart(dispatch)) {
                         throw timeoutFailure(exception);
                     }
-                    return awaitAlreadyStarted(future, interrupted);
+                    return awaitAlreadyStarted(dispatch.outcome, interrupted);
                 } catch (ExecutionException exception) {
                     return rethrowExecution(exception);
                 }
@@ -105,6 +107,31 @@ public final class PaperMainThreadDispatcher {
         } finally {
             if (interrupted) Thread.currentThread().interrupt();
         }
+    }
+
+    private <T> Dispatch<T> submitTracked(Callable<T> action) {
+        AtomicBoolean started = new AtomicBoolean();
+        CompletableFuture<T> outcome = new CompletableFuture<>();
+        Future<?> ticket = scheduler.submit(() -> {
+            started.set(true);
+            try {
+                T result = action.call();
+                outcome.complete(result);
+                return result;
+            } catch (Throwable failure) {
+                outcome.completeExceptionally(failure);
+                if (failure instanceof Exception exception) throw exception;
+                if (failure instanceof Error error) throw error;
+                throw new IllegalStateException(failure);
+            }
+        });
+        return new Dispatch<>(ticket, started, outcome);
+    }
+
+    private static boolean cancelBeforeStart(Dispatch<?> dispatch) {
+        if (dispatch.started.get()) return false;
+        boolean cancelled = dispatch.ticket.cancel(false);
+        return cancelled && !dispatch.started.get();
     }
 
     private static <T> T awaitAlreadyStarted(
@@ -140,6 +167,12 @@ public final class PaperMainThreadDispatcher {
         if (cause instanceof Error error) throw error;
         throw new IllegalStateException("Paper main-thread dispatch failed", cause);
     }
+
+    private record Dispatch<T>(
+            Future<?> ticket,
+            AtomicBoolean started,
+            CompletableFuture<T> outcome
+    ) { }
 
     interface SchedulerBridge {
         boolean isPrimaryThread();

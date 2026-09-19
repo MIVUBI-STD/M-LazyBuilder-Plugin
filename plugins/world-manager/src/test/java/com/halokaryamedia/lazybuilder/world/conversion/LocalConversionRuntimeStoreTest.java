@@ -26,7 +26,7 @@ class LocalConversionRuntimeStoreTest {
 
         store.stageCandidate(first, manifest("1.0.0", "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"));
         store.promoteCandidate();
-        store.stageCandidate(second, manifest("1.1.0", "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0db6e25dba9"));
+        store.stageCandidate(second, manifest("1.1.0", "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3"));
         store.promoteCandidate();
 
         assertEquals("1.1.0", store.current().orElseThrow().manifest().version());
@@ -49,7 +49,7 @@ class LocalConversionRuntimeStoreTest {
 
         store.stageCandidate(first, manifest("1.0.0", "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"));
         store.promoteCandidate();
-        store.stageCandidate(second, manifest("1.1.0", "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0db6e25dba9"));
+        store.stageCandidate(second, manifest("1.1.0", "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3"));
 
         Files.move(root.resolve("current"), root.resolve("previous"));
 

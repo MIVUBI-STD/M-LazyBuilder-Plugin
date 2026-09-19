@@ -77,7 +77,7 @@ class PaperMainThreadDispatcherTest {
     }
 
     @Test
-    void timeoutWaitsForAlreadyRunningPaperMutationInsteadOfReportingFalseFailure() throws Exception {
+    void timeoutWaitsForAlreadyRunningPaperMutationEvenWhenFutureCancelWouldSucceed() throws Exception {
         CountDownLatch actionStarted = new CountDownLatch(1);
         CountDownLatch releaseAction = new CountDownLatch(1);
         PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
