@@ -38,6 +38,7 @@ public final class TransferSessionService {
     private static final String OWNERSHIP_SUFFIX = ".owner";
     private static final String OWNERSHIP_TEMP_PREFIX = "owner-";
     private static final String OWNERSHIP_TEMP_SUFFIX = ".tmp";
+    private static final long MAX_OWNERSHIP_MARKER_BYTES = 64L;
 
     private final Path importsRoot;
     private final Path exportsRoot;
@@ -345,7 +346,9 @@ public final class TransferSessionService {
         }
 
         try (var entries = Files.list(completedOwnershipRoot)) {
-            for (Path marker : entries.toList()) {
+            var iterator = entries.iterator();
+            while (iterator.hasNext()) {
+                Path marker = iterator.next();
                 String markerName = marker.getFileName().toString();
                 if (isOwnershipTempName(markerName)) {
                     if (Files.isSymbolicLink(marker)) Files.deleteIfExists(marker);
@@ -354,6 +357,8 @@ public final class TransferSessionService {
                 }
                 if (!markerName.endsWith(OWNERSHIP_SUFFIX)) continue;
                 if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) continue;
+                long markerBytes = Files.size(marker);
+                if (markerBytes < 1L || markerBytes > MAX_OWNERSHIP_MARKER_BYTES) continue;
 
                 String encoded = markerName.substring(0, markerName.length() - OWNERSHIP_SUFFIX.length());
                 String fileName;

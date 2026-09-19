@@ -43,6 +43,31 @@ class CompletedUploadOwnershipRecoveryTest {
     }
 
     @Test
+    void oversizedOwnershipMarkerIsIgnoredWithoutReadingOrDeletingArtifact() throws Exception {
+        Path imports = tempDir.resolve("imports-oversized");
+        Path exports = tempDir.resolve("exports-oversized");
+        Path transfer = tempDir.resolve("transfer-oversized");
+        Path ownership = transfer.resolve(".completed-uploads");
+        Files.createDirectories(ownership);
+        Files.createDirectories(imports);
+
+        String fileName = "oversized.zip";
+        Files.write(imports.resolve(fileName), new byte[]{1});
+        String encoded = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(fileName.getBytes(StandardCharsets.UTF_8));
+        Path marker = ownership.resolve(encoded + ".owner");
+        Files.write(marker, new byte[1024]);
+
+        UUID owner = UUID.randomUUID();
+        TransferSessionService restarted = new TransferSessionService(
+                imports, exports, transfer, new TransferPolicy(4, 1024, 1, 1));
+
+        assertFalse(restarted.ownsCompletedUpload(owner, fileName));
+        assertTrue(Files.exists(marker), "invalid ownership evidence must be preserved");
+        assertTrue(Files.exists(imports.resolve(fileName)), "artifact must not be deleted automatically");
+    }
+
+    @Test
     void orphanOwnershipMarkerIsRemovedInsteadOfRestored() throws Exception {
         Path imports = tempDir.resolve("imports");
         Path exports = tempDir.resolve("exports");
