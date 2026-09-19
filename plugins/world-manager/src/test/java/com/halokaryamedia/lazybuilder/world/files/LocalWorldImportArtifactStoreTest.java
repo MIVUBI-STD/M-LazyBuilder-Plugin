@@ -99,6 +99,44 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void rejectsCaseInsensitiveArchivePathCollisions() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports-case-collision"));
+        Path archive = imports.resolve("collision.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/region/A.mca", "one".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/region/a.mca", "two".getBytes(StandardCharsets.UTF_8));
+        }
+
+        LocalWorldImportArtifactStore store =
+                new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        assertThrows(IOException.class,
+                () -> store.stageArchive("collision.zip", tempDir.resolve("case-workspace")));
+    }
+
+    @Test
+    void rejectsAliasedAndWindowsReservedArchivePaths() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports-unsafe-paths"));
+        Path aliasArchive = imports.resolve("alias.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(aliasArchive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/foo/../region/r.0.0.mca", "region".getBytes(StandardCharsets.UTF_8));
+        }
+        LocalWorldImportArtifactStore store =
+                new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        assertThrows(IOException.class,
+                () -> store.stageArchive("alias.zip", tempDir.resolve("alias-workspace")));
+
+        Path reservedArchive = imports.resolve("reserved.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(reservedArchive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/CON.txt", "unsafe".getBytes(StandardCharsets.UTF_8));
+        }
+        assertThrows(IOException.class,
+                () -> store.stageArchive("reserved.zip", tempDir.resolve("reserved-workspace")));
+    }
+
+    @Test
     void stagesNestedJava1214WorldAndSanitizesIdentity() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Path archive = imports.resolve("world.zip");

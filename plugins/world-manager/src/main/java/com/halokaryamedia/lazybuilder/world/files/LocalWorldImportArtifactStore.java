@@ -15,8 +15,10 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.zip.ZipEntry;
@@ -53,13 +55,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         ZipEntry selectedLevelDat = null;
         String levelPath = null;
         long entries = 0;
+        ArchiveNamespace namespace = new ArchiveNamespace();
         try (ZipFile zip = new ZipFile(artifact.toFile())) {
             var enumeration = zip.entries();
             while (enumeration.hasMoreElements()) {
                 ZipEntry entry = enumeration.nextElement();
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
-                String name = normalizeEntryName(entry.getName());
+                String name = validateArchiveEntryName(entry.getName(), entry.isDirectory());
                 if (name.isBlank()) continue;
+                namespace.register(name, entry.isDirectory());
                 entryNames.add(name);
                 if (entry.isDirectory() || !isLevelDat(name)) continue;
                 if (levelPath == null || pathDepth(name) < pathDepth(levelPath)) {
@@ -238,11 +242,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private ArchiveEstimate estimateArchive(Path archive) throws IOException {
         long entries = 0;
         long totalBytes = 0;
+        ArchiveNamespace namespace = new ArchiveNamespace();
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             var enumeration = zip.entries();
             while (enumeration.hasMoreElements()) {
                 ZipEntry entry = enumeration.nextElement();
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
+                String name = validateArchiveEntryName(entry.getName(), entry.isDirectory());
+                if (name.isBlank()) continue;
+                namespace.register(name, entry.isDirectory());
                 if (entry.isDirectory()) continue;
                 long size = entry.getSize();
                 if (size < 0) throw new IOException("Import archive contains an entry with unknown uncompressed size");
@@ -272,14 +280,16 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private void extractBounded(Path archive, Path target) throws IOException {
         long entries = 0;
         long totalBytes = 0;
+        ArchiveNamespace namespace = new ArchiveNamespace();
         byte[] buffer = new byte[IO_BUFFER_BYTES];
         try (InputStream fileIn = Files.newInputStream(archive);
              BufferedInputStream bufferedIn = new BufferedInputStream(fileIn, IO_BUFFER_BYTES);
              ZipInputStream zip = new ZipInputStream(bufferedIn)) {
             for (ZipEntry entry; (entry = zip.getNextEntry()) != null;) {
                 if (++entries > maxEntries) throw new IOException("Import archive exceeds file-count limit");
-                String name = normalizeEntryName(entry.getName());
+                String name = validateArchiveEntryName(entry.getName(), entry.isDirectory());
                 if (name.isBlank()) continue;
+                namespace.register(name, entry.isDirectory());
                 Path output = target.resolve(name).normalize();
                 if (!output.startsWith(target)) throw new IOException("Import archive contains path traversal");
                 if (entry.isDirectory()) { Files.createDirectories(output); continue; }
@@ -334,7 +344,54 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Files.deleteIfExists(root.resolve(TRANSFER_MARKER));
     }
 
-    private static String normalizeEntryName(String value) { return value == null ? "" : value.replace('\\', '/'); }
+    private static String normalizeEntryName(String value) {
+        return value == null ? "" : value.replace('\\', '/');
+    }
+
+    private static String validateArchiveEntryName(String value, boolean directory) throws IOException {
+        String normalized = normalizeEntryName(value);
+        while (directory && normalized.endsWith("/") && !normalized.isEmpty()) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.isBlank()) return "";
+
+        if (normalized.startsWith("/") || normalized.matches("^[A-Za-z]:.*")) {
+            throw new IOException("Import archive contains an absolute path: " + normalized);
+        }
+
+        String[] components = normalized.split("/", -1);
+        StringBuilder canonical = new StringBuilder();
+        for (String component : components) {
+            if (component.isEmpty() || component.equals(".") || component.equals("..")) {
+                throw new IOException("Import archive contains an unsafe path component: " + normalized);
+            }
+            if (component.indexOf(':') >= 0
+                    || component.endsWith(".")
+                    || component.endsWith(" ")
+                    || component.chars().anyMatch(Character::isISOControl)
+                    || isWindowsReservedComponent(component)) {
+                throw new IOException("Import archive contains a Windows-unsafe path component: " + component);
+            }
+            if (!canonical.isEmpty()) canonical.append('/');
+            canonical.append(component);
+        }
+        return canonical.toString();
+    }
+
+    private static boolean isWindowsReservedComponent(String component) {
+        String upper = component.toUpperCase(Locale.ROOT);
+        int dot = upper.indexOf('.');
+        String base = dot < 0 ? upper : upper.substring(0, dot);
+        if (base.equals("CON") || base.equals("PRN") || base.equals("AUX") || base.equals("NUL")) {
+            return true;
+        }
+        if (base.length() == 4 && (base.startsWith("COM") || base.startsWith("LPT"))) {
+            char suffix = base.charAt(3);
+            return suffix >= '1' && suffix <= '9';
+        }
+        return false;
+    }
+
     private static boolean isLevelDat(String name) { return name.equals("level.dat") || name.endsWith("/level.dat"); }
     private static int pathDepth(String name) {
         int depth = 0;
@@ -366,6 +423,48 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         }
         return value;
     }
+
+    private static final class ArchiveNamespace {
+        private final Map<String, NamespaceEntry> entries = new HashMap<>();
+
+        void register(String path, boolean directory) throws IOException {
+            String[] components = path.split("/");
+            StringBuilder prefix = new StringBuilder();
+            for (int index = 0; index < components.length; index++) {
+                if (!prefix.isEmpty()) prefix.append('/');
+                prefix.append(components[index]);
+                boolean terminal = index == components.length - 1;
+                boolean currentDirectory = !terminal || directory;
+                registerOne(prefix.toString(), currentDirectory, terminal);
+            }
+        }
+
+        private void registerOne(String path, boolean directory, boolean terminal) throws IOException {
+            String key = path.toLowerCase(Locale.ROOT);
+            NamespaceEntry existing = entries.get(key);
+            if (existing == null) {
+                entries.put(key, new NamespaceEntry(path, directory, terminal));
+                return;
+            }
+            if (!existing.path().equals(path)) {
+                throw new IOException(
+                        "Import archive contains a case-insensitive path collision: "
+                                + existing.path() + " vs " + path);
+            }
+            if (existing.directory() != directory) {
+                throw new IOException(
+                        "Import archive contains a file/directory path collision: " + path);
+            }
+            if (!directory && terminal && existing.terminal()) {
+                throw new IOException("Import archive contains a duplicate file entry: " + path);
+            }
+            if (terminal) {
+                entries.put(key, new NamespaceEntry(path, directory, true));
+            }
+        }
+    }
+
+    private record NamespaceEntry(String path, boolean directory, boolean terminal) {}
 
     private static void deleteTree(Path root) throws IOException {
         if (Files.notExists(root)) return;
