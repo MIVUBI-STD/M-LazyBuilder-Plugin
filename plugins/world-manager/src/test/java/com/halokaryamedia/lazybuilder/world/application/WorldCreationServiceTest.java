@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.application;
 
+import com.halokaryamedia.lazybuilder.world.files.WorldCopyProfile;
+import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
@@ -7,6 +9,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +55,31 @@ class WorldCreationServiceTest {
     }
 
     @Test
+    void failedRuntimeRollbackPreservesCreateRecoveryMarker() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        persistence.failSave = true;
+        FakeRuntime runtime = new FakeRuntime();
+        runtime.failRollback = true;
+        TrackingFiles files = new TrackingFiles();
+        WorldCreationService service = new WorldCreationService(
+                registry,
+                persistence,
+                runtime,
+                files,
+                BuildReadyPolicy.defaults()
+        );
+
+        assertThrows(IllegalStateException.class,
+                () -> service.create("Build", "Build", WorldKind.FLAT));
+
+        assertEquals(1, files.markCount);
+        assertEquals(0, files.clearCount,
+                "failed runtime rollback must preserve durable create recovery authority");
+        assertTrue(registry.all().isEmpty());
+    }
+
+    @Test
     void persistenceFailureRollsBackRuntimeAndRegistry() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -76,6 +104,7 @@ class WorldCreationServiceTest {
         private final List<WorldKind> createdKinds = new ArrayList<>();
         private final List<BuildReadyPolicy> policies = new ArrayList<>();
         private int rollbackCount;
+        private boolean failRollback;
 
         @Override
         public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {
@@ -86,6 +115,7 @@ class WorldCreationServiceTest {
         @Override
         public void rollbackCreatedWorld(WorldRecord world) {
             rollbackCount++;
+            if (failRollback) throw new IllegalStateException("rollback failed");
         }
 
         @Override
@@ -96,6 +126,29 @@ class WorldCreationServiceTest {
         @Override public void loadWorld(WorldRecord world) { }
         @Override public void unloadWorld(WorldRecord world) { }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
+    }
+
+    private static final class TrackingFiles implements WorldFileRepository {
+        private int markCount;
+        private int clearCount;
+
+        @Override public void markCreatePending(UUID operationId, String folderName) { markCount++; }
+        @Override public void clearCreatePending(UUID operationId, String folderName) { clearCount++; }
+        @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public Path stageDelete(WorldRecord world, UUID operationId) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public void deleteWorld(WorldRecord world) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public void deleteWorkspace(Path workspace) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static final class MemoryPersistence implements WorldRegistryPersistence {

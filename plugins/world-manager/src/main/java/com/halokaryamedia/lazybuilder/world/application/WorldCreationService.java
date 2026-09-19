@@ -81,12 +81,24 @@ public final class WorldCreationService {
                 return record;
             } catch (IOException | RuntimeException exception) {
                 if (registered) registry.remove(record.id());
+
+                boolean rollbackCompleted = !runtimeCreated;
                 if (runtimeCreated) {
-                    try { runtime.rollbackCreatedWorld(record); }
-                    catch (RuntimeException rollbackFailure) { exception.addSuppressed(rollbackFailure); }
+                    try {
+                        runtime.rollbackCreatedWorld(record);
+                        rollbackCompleted = true;
+                    } catch (RuntimeException rollbackFailure) {
+                        exception.addSuppressed(rollbackFailure);
+                    }
                 }
-                try { files.clearCreatePending(operationId, record.folderName()); }
-                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
+
+                // The pending marker is recovery authority. If runtime rollback did not
+                // complete, preserve it so startup reconciliation can remove an
+                // unregistered world that may still exist on disk.
+                if (rollbackCompleted) {
+                    try { files.clearCreatePending(operationId, record.folderName()); }
+                    catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
+                }
                 throw new IllegalStateException("Failed to publish newly created world: " + folderName, exception);
             }
         }
