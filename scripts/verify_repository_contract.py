@@ -335,6 +335,14 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldSettingsService.java",
         errors,
     )
+    world_task_runner = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/task/WorldTaskRunner.java",
+        errors,
+    )
+    paper_dispatcher = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/paper/PaperMainThreadDispatcher.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -555,6 +563,23 @@ def main() -> int:
     ):
         if marker not in world_settings_service:
             fail(errors, f"World Settings concurrency contract missing marker: {marker}")
+
+    for marker in (
+        "queuedOrRunningWorlds",
+        "reserveWorld(worldId)",
+        "releaseWorld(worldId)",
+        "World already has a queued or running task",
+    ):
+        if marker not in world_task_runner:
+            fail(errors, f"World task queue-admission contract missing marker: {marker}")
+
+    for marker in (
+        "future.cancel(false)",
+        "awaitAlreadyStarted",
+        "Cancellation lost because Paper already started",
+    ):
+        if marker not in paper_dispatcher:
+            fail(errors, f"Paper dispatch ownership contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
