@@ -99,6 +99,26 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void rejectsMultipleWorldRootsAtSameArchiveDepth() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports-multi-root"));
+        Path archive = imports.resolve("multi-root.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "One/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Two/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+        }
+
+        LocalWorldImportArtifactStore store =
+                new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        IOException inspection = assertThrows(IOException.class,
+                () -> store.inspectArtifact("multi-root.zip"));
+        assertTrue(inspection.getMessage().contains("multiple world roots"));
+
+        IOException staging = assertThrows(IOException.class,
+                () -> store.stageArchive("multi-root.zip", tempDir.resolve("multi-root-workspace")));
+        assertTrue(staging.getMessage().contains("multiple world roots"));
+    }
+
+    @Test
     void rejectsCaseInsensitiveArchivePathCollisions() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports-case-collision"));
         Path archive = imports.resolve("collision.zip");

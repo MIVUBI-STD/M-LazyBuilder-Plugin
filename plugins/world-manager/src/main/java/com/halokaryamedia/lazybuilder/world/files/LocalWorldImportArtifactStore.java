@@ -54,6 +54,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         List<String> entryNames = new ArrayList<>();
         ZipEntry selectedLevelDat = null;
         String levelPath = null;
+        int selectedLevelDepth = Integer.MAX_VALUE;
         long entries = 0;
         ArchiveNamespace namespace = new ArchiveNamespace();
         try (ZipFile zip = new ZipFile(artifact.toFile())) {
@@ -66,9 +67,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 namespace.register(name, entry.isDirectory());
                 entryNames.add(name);
                 if (entry.isDirectory() || !isLevelDat(name)) continue;
-                if (levelPath == null || pathDepth(name) < pathDepth(levelPath)) {
+                int depth = pathDepth(name);
+                if (depth < selectedLevelDepth) {
+                    selectedLevelDepth = depth;
                     levelPath = name;
                     selectedLevelDat = entry;
+                } else if (depth == selectedLevelDepth && !name.equals(levelPath)) {
+                    throw new IOException(
+                            "Import archive contains multiple world roots at the same depth: "
+                                    + levelPath + " and " + name);
                 }
             }
             if (levelPath == null || selectedLevelDat == null) {
@@ -243,6 +250,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         long entries = 0;
         long totalBytes = 0;
         ArchiveNamespace namespace = new ArchiveNamespace();
+        String levelPath = null;
+        int levelDepth = Integer.MAX_VALUE;
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             var enumeration = zip.entries();
             while (enumeration.hasMoreElements()) {
@@ -251,6 +260,17 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 String name = validateArchiveEntryName(entry.getName(), entry.isDirectory());
                 if (name.isBlank()) continue;
                 namespace.register(name, entry.isDirectory());
+                if (!entry.isDirectory() && isLevelDat(name)) {
+                    int depth = pathDepth(name);
+                    if (depth < levelDepth) {
+                        levelDepth = depth;
+                        levelPath = name;
+                    } else if (depth == levelDepth && !name.equals(levelPath)) {
+                        throw new IOException(
+                                "Import archive contains multiple world roots at the same depth: "
+                                        + levelPath + " and " + name);
+                    }
+                }
                 if (entry.isDirectory()) continue;
                 long size = entry.getSize();
                 if (size < 0) throw new IOException("Import archive contains an entry with unknown uncompressed size");
