@@ -235,9 +235,18 @@ public final class WorldManager {
 
             WorldFileRepository.PublishRecovery publishRecovery =
                     worldFileRepository.recoverPublishedWorlds(worldRegistry.all());
-            if (publishRecovery.finalized() > 0 || publishRecovery.discarded() > 0) {
+            if (publishRecovery.finalized() > 0
+                    || publishRecovery.discarded() > 0
+                    || publishRecovery.preserved() > 0) {
                 plugin.getLogger().info("Publish recovery: finalized=" + publishRecovery.finalized()
-                        + ", discarded=" + publishRecovery.discarded() + ".");
+                        + ", discarded=" + publishRecovery.discarded()
+                        + ", preserved=" + publishRecovery.preserved() + ".");
+            }
+            if (publishRecovery.preserved() > 0) {
+                throw new IllegalStateException(
+                        "World Manager found ambiguous pending publication evidence; "
+                                + "automatic discovery is blocked until it is reconciled manually."
+                );
             }
 
             WorldFileRepository.ManagedWorldAudit audit =

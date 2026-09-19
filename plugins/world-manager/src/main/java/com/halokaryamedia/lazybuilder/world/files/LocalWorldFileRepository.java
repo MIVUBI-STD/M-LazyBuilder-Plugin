@@ -35,6 +35,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String DELETE_SUFFIX = ".delete";
     private static final String CREATE_SUFFIX = ".create";
     private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
+    private static final String PUBLISH_MARKER_VERSION = "1";
     private static final String PAPER_NETHER_SUFFIX = "_nether";
     private static final String PAPER_END_SUFFIX = "_the_end";
     private static final String JAVA_NETHER_DIRECTORY = "DIM-1";
@@ -363,7 +364,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     @Override
     public PublishRecovery recoverPublishedWorlds(Collection<WorldRecord> managedWorlds) throws IOException {
         Objects.requireNonNull(managedWorlds, "managedWorlds");
-        if (Files.notExists(worldRoot)) return new PublishRecovery(0, 0);
+        if (Files.notExists(worldRoot)) return new PublishRecovery(0, 0, 0);
         if (!Files.isDirectory(worldRoot) || Files.isSymbolicLink(worldRoot)) {
             throw new IOException("World container is unsafe");
         }
@@ -373,6 +374,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
         int finalized = 0;
         int discarded = 0;
+        int preserved = 0;
         try (var children = Files.list(worldRoot)) {
             for (Path child : children.toList()) {
                 if (!Files.isDirectory(child) || Files.isSymbolicLink(child)) continue;
@@ -382,16 +384,19 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     throw new IOException("Pending publication marker is unsafe in " + child.getFileName());
                 }
                 String folderName = child.getFileName().toString();
+                PublishMarkerIdentity markerIdentity = readPublishMarker(marker, folderName);
                 if (managedFolders.contains(folderName)) {
                     PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
                     PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
                     Files.delete(marker);
                     finalizedFolders.add(folderName);
                     finalized++;
-                } else {
+                } else if (markerIdentity.valid()) {
                     deleteTree(child);
                     PaperWorldFamilyLayout.deletePendingFamilySiblings(worldRoot, folderName);
                     discarded++;
+                } else {
+                    preserved++;
                 }
             }
         }
@@ -405,7 +410,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
             finalized++;
         }
-        return new PublishRecovery(finalized, discarded);
+        return new PublishRecovery(finalized, discarded, preserved);
     }
 
     @Override
@@ -456,7 +461,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (transactionalPublish) {
             Path marker = source.resolve(PENDING_PUBLISH_MARKER);
             if (Files.exists(marker)) throw new IOException("Staged world already contains a publication marker");
-            Files.createFile(marker);
+            writePublishMarker(marker, sourceName, destinationFolder);
         }
         moveDirectory(source, destination);
         PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, destinationFolder, transactionalPublish);
@@ -493,6 +498,79 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.isSymbolicLink(target)) Files.delete(target);
         else deleteTree(target);
     }
+
+    private static void writePublishMarker(
+            Path marker,
+            String sourceWorkspaceName,
+            String destinationFolder
+    ) throws IOException {
+        String operationId = sourceWorkspaceName;
+        if (operationId.endsWith(WORK_SUFFIX)) {
+            operationId = operationId.substring(0, operationId.length() - WORK_SUFFIX.length());
+        } else if (operationId.endsWith(COPY_SUFFIX)) {
+            operationId = operationId.substring(0, operationId.length() - COPY_SUFFIX.length());
+        } else {
+            throw new IOException("Transactional publish source has no recognized workspace identity");
+        }
+        try {
+            UUID.fromString(operationId);
+        } catch (IllegalArgumentException invalid) {
+            throw new IOException("Transactional publish source has invalid operation identity", invalid);
+        }
+
+        String safeFolder = validateSingleName(destinationFolder, "world folder");
+        Files.writeString(
+                marker,
+                "version=" + PUBLISH_MARKER_VERSION + "\n"
+                        + "operationId=" + operationId + "\n"
+                        + "destination=" + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8)) + "\n",
+                StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE
+        );
+    }
+
+    private static PublishMarkerIdentity readPublishMarker(Path marker, String actualFolder) throws IOException {
+        long size = Files.size(marker);
+        if (size <= 0L || size > 1024L) {
+            return new PublishMarkerIdentity(false);
+        }
+
+        String version = null;
+        String operationId = null;
+        String destination = null;
+        for (String line : Files.readString(marker, StandardCharsets.UTF_8).lines().toList()) {
+            int separator = line.indexOf('=');
+            if (separator <= 0) return new PublishMarkerIdentity(false);
+            String key = line.substring(0, separator);
+            String value = line.substring(separator + 1);
+            switch (key) {
+                case "version" -> version = value;
+                case "operationId" -> operationId = value;
+                case "destination" -> destination = value;
+                default -> { return new PublishMarkerIdentity(false); }
+            }
+        }
+
+        if (!PUBLISH_MARKER_VERSION.equals(version)
+                || operationId == null
+                || destination == null) {
+            return new PublishMarkerIdentity(false);
+        }
+        try {
+            UUID.fromString(operationId);
+            String decoded = new String(
+                    Base64.getUrlDecoder().decode(destination),
+                    StandardCharsets.UTF_8);
+            decoded = validateSingleName(decoded, "world folder");
+            return new PublishMarkerIdentity(decoded.equals(actualFolder));
+        } catch (IllegalArgumentException invalid) {
+            return new PublishMarkerIdentity(false);
+        }
+    }
+
+    private record PublishMarkerIdentity(boolean valid) {}
 
     private Path reserveTypedWorkspace(UUID operationId, String suffix) throws IOException {
         Objects.requireNonNull(operationId, "operationId");

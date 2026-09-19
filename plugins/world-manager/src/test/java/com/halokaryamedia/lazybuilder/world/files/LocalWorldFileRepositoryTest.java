@@ -156,6 +156,26 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void legacyEmptyPublishMarkerIsPreservedInsteadOfDeletingUnregisteredWorld() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-legacy-publish");
+        Path workRoot = tempDir.resolve("work-legacy-publish");
+        Path legacyWorld = worldRoot.resolve("LegacyUncommitted");
+        Files.createDirectories(legacyWorld);
+        Files.writeString(legacyWorld.resolve("level.dat"), "level");
+        Files.createFile(legacyWorld.resolve(".lazybuilder-publish-pending"));
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        WorldFileRepository.PublishRecovery result =
+                repository.recoverPublishedWorlds(List.of());
+
+        assertEquals(0, result.finalized());
+        assertEquals(0, result.discarded());
+        assertEquals(1, result.preserved());
+        assertTrue(Files.exists(legacyWorld.resolve("level.dat")));
+        assertTrue(Files.exists(legacyWorld.resolve(".lazybuilder-publish-pending")));
+    }
+
+    @Test
     void managedWorldAuditReportsMissingAndUnsafeRegistryRoots() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");

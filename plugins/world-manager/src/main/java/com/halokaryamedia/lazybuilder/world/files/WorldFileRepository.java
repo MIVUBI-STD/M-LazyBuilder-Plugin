@@ -84,7 +84,7 @@ public interface WorldFileRepository {
      * pending marker cleared, while explicitly marked uncommitted publications are discarded.
      */
     default PublishRecovery recoverPublishedWorlds(Collection<WorldRecord> managedWorlds) throws IOException {
-        return new PublishRecovery(0, 0);
+        return new PublishRecovery(0, 0, 0);
     }
 
     /** Clears the pending-publication marker after registry persistence has committed. */
@@ -120,9 +120,9 @@ public interface WorldFileRepository {
         }
     }
 
-    record PublishRecovery(int finalized, int discarded) {
+    record PublishRecovery(int finalized, int discarded, int preserved) {
         public PublishRecovery {
-            if (finalized < 0 || discarded < 0) {
+            if (finalized < 0 || discarded < 0 || preserved < 0) {
                 throw new IllegalArgumentException("Publish recovery counts must not be negative");
             }
         }
