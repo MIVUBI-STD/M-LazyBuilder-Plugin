@@ -47,6 +47,53 @@ class WorldTaskRegistryTest {
     }
 
     @Test
+    void boundsStoredTaskTextWithoutLosingTerminalState() {
+        WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 8);
+        WorldTaskSnapshot task = registry.create(
+                WorldTaskType.EXPORT,
+                WorldId.create(),
+                "m".repeat(WorldTaskRegistry.MAX_MESSAGE_CHARS + 500)
+        );
+        assertEquals(WorldTaskRegistry.MAX_MESSAGE_CHARS, task.message().length());
+        assertTrue(task.message().endsWith("[truncated]"));
+
+        registry.markRunning(task.taskId(), "running");
+        WorldTaskSnapshot success = registry.succeed(
+                task.taskId(),
+                "r".repeat(WorldTaskRegistry.MAX_RESULT_CHARS + 500),
+                "done"
+        );
+        assertEquals(WorldTaskRegistry.MAX_RESULT_CHARS, success.result().length());
+        assertTrue(success.result().endsWith("[truncated]"));
+
+        WorldTaskSnapshot failed = registry.create(
+                WorldTaskType.BACKUP,
+                WorldId.create(),
+                "queued"
+        );
+        registry.markRunning(failed.taskId(), "running");
+        WorldTaskSnapshot terminal = registry.fail(
+                failed.taskId(),
+                "e".repeat(WorldTaskRegistry.MAX_ERROR_CHARS + 500),
+                "failed"
+        );
+        assertEquals(WorldTaskRegistry.MAX_ERROR_CHARS, terminal.error().length());
+        assertTrue(terminal.error().endsWith("[truncated]"));
+    }
+
+    @Test
+    void rejectsBlankRequiredTaskTextAtOwnerBoundary() {
+        WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 8);
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.create(WorldTaskType.EXPORT, WorldId.create(), "   "));
+
+        WorldTaskSnapshot task = registry.create(WorldTaskType.EXPORT, WorldId.create(), "queued");
+        registry.markRunning(task.taskId(), "running");
+        assertThrows(IllegalArgumentException.class,
+                () -> registry.fail(task.taskId(), "   ", "failed"));
+    }
+
+    @Test
     void keepsActiveTasksWhenTrimmingCompletedHistory() {
         WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 2);
         WorldTaskSnapshot active = registry.create(WorldTaskType.IMPORT, null, "Waiting for import");

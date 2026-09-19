@@ -21,6 +21,10 @@ import java.util.UUID;
  */
 public final class WorldTaskRegistry {
     public static final int DEFAULT_HISTORY_LIMIT = 256;
+    static final int MAX_MESSAGE_CHARS = 1_024;
+    static final int MAX_RESULT_CHARS = 4_096;
+    static final int MAX_ERROR_CHARS = 8_192;
+    private static final String TRUNCATED_SUFFIX = "… [truncated]";
 
     private final Clock clock;
     private final int historyLimit;
@@ -43,7 +47,7 @@ public final class WorldTaskRegistry {
         Instant now = clock.instant();
         WorldTaskSnapshot snapshot = new WorldTaskSnapshot(
                 UUID.randomUUID(), type, worldId, WorldTaskState.QUEUED, 0,
-                message, "", "", now, now
+                boundedText(message, "message", MAX_MESSAGE_CHARS, false), "", "", now, now
         );
         tasks.put(snapshot.taskId(), snapshot);
         trimHistory();
@@ -53,7 +57,14 @@ public final class WorldTaskRegistry {
     public synchronized WorldTaskSnapshot markRunning(UUID taskId, String message) {
         WorldTaskSnapshot current = require(taskId);
         requireTransition(current.state(), WorldTaskState.RUNNING);
-        return replace(current, WorldTaskState.RUNNING, current.progressPercent(), message, "", "");
+        return replace(
+                current,
+                WorldTaskState.RUNNING,
+                current.progressPercent(),
+                boundedText(message, "message", MAX_MESSAGE_CHARS, false),
+                "",
+                ""
+        );
     }
 
     public synchronized WorldTaskSnapshot updateProgress(UUID taskId, int progressPercent, String message) {
@@ -64,23 +75,41 @@ public final class WorldTaskRegistry {
         if (progressPercent < current.progressPercent()) {
             throw new IllegalArgumentException("Task progress must not move backwards");
         }
-        return replace(current, current.state(), progressPercent, message, current.result(), current.error());
+        return replace(
+                current,
+                current.state(),
+                progressPercent,
+                boundedText(message, "message", MAX_MESSAGE_CHARS, false),
+                current.result(),
+                current.error()
+        );
     }
 
     public synchronized WorldTaskSnapshot succeed(UUID taskId, String result, String message) {
         WorldTaskSnapshot current = require(taskId);
         requireTransition(current.state(), WorldTaskState.SUCCEEDED);
-        return replace(current, WorldTaskState.SUCCEEDED, 100, message, result, "");
+        return replace(
+                current,
+                WorldTaskState.SUCCEEDED,
+                100,
+                boundedText(message, "message", MAX_MESSAGE_CHARS, false),
+                boundedText(result, "result", MAX_RESULT_CHARS, true),
+                ""
+        );
     }
 
     public synchronized WorldTaskSnapshot fail(UUID taskId, String error, String message) {
         WorldTaskSnapshot current = require(taskId);
         requireTransition(current.state(), WorldTaskState.FAILED);
-        String safeError = error == null ? "" : error.trim();
-        if (safeError.isEmpty()) {
-            throw new IllegalArgumentException("error must not be blank");
-        }
-        return replace(current, WorldTaskState.FAILED, current.progressPercent(), message, "", safeError);
+        String safeError = boundedText(error, "error", MAX_ERROR_CHARS, false);
+        return replace(
+                current,
+                WorldTaskState.FAILED,
+                current.progressPercent(),
+                boundedText(message, "message", MAX_MESSAGE_CHARS, false),
+                "",
+                safeError
+        );
     }
 
     public synchronized Optional<WorldTaskSnapshot> find(UUID taskId) {
@@ -115,6 +144,24 @@ public final class WorldTaskRegistry {
         );
         tasks.put(updated.taskId(), updated);
         return updated;
+    }
+
+    private static String boundedText(
+            String value,
+            String label,
+            int maxChars,
+            boolean allowBlank
+    ) {
+        if (maxChars < TRUNCATED_SUFFIX.length() + 1) {
+            throw new IllegalArgumentException("maxChars is too small");
+        }
+        String text = value == null ? "" : value.strip();
+        if (!allowBlank && text.isEmpty()) {
+            throw new IllegalArgumentException(label + " must not be blank");
+        }
+        if (text.length() <= maxChars) return text;
+        int keep = maxChars - TRUNCATED_SUFFIX.length();
+        return text.substring(0, keep) + TRUNCATED_SUFFIX;
     }
 
     private static void requireTransition(WorldTaskState current, WorldTaskState target) {
