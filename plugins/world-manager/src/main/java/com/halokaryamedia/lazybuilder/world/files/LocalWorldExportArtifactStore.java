@@ -145,13 +145,7 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
     }
 
     private static String validateArtifactName(String value) {
-        Objects.requireNonNull(value, "artifactName");
-        if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
-                || value.chars().anyMatch(Character::isISOControl)) {
-            throw new IllegalArgumentException("artifactName must be one safe file base name");
-        }
-        return value;
+        return SafeArtifactName.requirePortable(value, "artifactName");
     }
 
     private static void moveIntoPlace(Path source, Path target) throws IOException {

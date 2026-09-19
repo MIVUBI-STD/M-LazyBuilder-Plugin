@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConverterAdapter;
 import com.halokaryamedia.lazybuilder.world.files.AreaCopySelection;
 import com.halokaryamedia.lazybuilder.world.files.ExportArtifactType;
+import com.halokaryamedia.lazybuilder.world.files.SafeArtifactName;
 import com.halokaryamedia.lazybuilder.world.files.WorldCopyProfile;
 import com.halokaryamedia.lazybuilder.world.files.WorldExportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
@@ -520,13 +521,7 @@ public final class WorldExportService {
     }
 
     private static String validateArtifactName(String value) {
-        Objects.requireNonNull(value, "artifactName");
-        if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
-                || value.chars().anyMatch(Character::isISOControl)) {
-            throw new IllegalArgumentException("File name is invalid");
-        }
-        return value;
+        return SafeArtifactName.requirePortable(value, "artifactName");
     }
 
     public record ExportResult(Path artifact, String targetFormat, boolean converted, WorldAreaSelection area) {

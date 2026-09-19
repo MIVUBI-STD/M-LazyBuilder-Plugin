@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.world.transfer;
 
+import com.halokaryamedia.lazybuilder.world.files.SafeArtifactName;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -535,13 +537,7 @@ public final class TransferSessionService {
     }
 
     private static String validateTransferName(String value) {
-        Objects.requireNonNull(value, "fileName");
-        if (value.isBlank() || !value.equals(value.strip()) || value.equals(".") || value.equals("..")
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
-                || value.chars().anyMatch(Character::isISOControl)) {
-            throw new IllegalArgumentException("fileName must be one safe file name");
-        }
-        return value;
+        return SafeArtifactName.requirePortable(value, "fileName");
     }
 
     private static String validateSha256(String value) {
