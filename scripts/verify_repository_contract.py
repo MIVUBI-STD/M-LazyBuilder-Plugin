@@ -315,6 +315,10 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/conversion/LocalConversionRuntimeStore.java",
         errors,
     )
+    world_record = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldRecord.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -491,9 +495,13 @@ def main() -> int:
         'getFileName() + ".tmp"',
         "channel.force(true)",
         "recovery evidence is unresolved",
+        'SCHEMA_PATH = "schema-version"',
+        "SCHEMA_VERSION = 1",
+        "schema-version must be an integer",
+        "missing the required worlds section",
     ):
         if marker not in world_registry_persistence:
-            fail(errors, f"World registry crash-safety contract missing marker: {marker}")
+            fail(errors, f"World registry crash-safety/schema contract missing marker: {marker}")
 
     for marker in (
         "verifyArtifactDigest",
@@ -506,6 +514,16 @@ def main() -> int:
     ):
         if marker not in conversion_runtime_store:
             fail(errors, f"conversion runtime persisted-trust contract missing marker: {marker}")
+
+    for marker in (
+        "MAX_FOLDER_NAME_CHARS = 255",
+        "MAX_DISPLAY_NAME_CHARS = 256",
+        "displayName must not contain control characters",
+        "folderName exceeds the ",
+        "displayName exceeds the ",
+    ):
+        if marker not in world_record:
+            fail(errors, f"durable world-name validation contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
