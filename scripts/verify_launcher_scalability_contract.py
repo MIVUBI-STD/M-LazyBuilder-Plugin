@@ -149,7 +149,7 @@ def main() -> int:
         "running_registered_papers()",
         "ensure_concurrent_server_capacity",
         "malformed",
-        "preserved for manual recovery",
+        "preserved for recovery",
     )
     require(
         errors,
