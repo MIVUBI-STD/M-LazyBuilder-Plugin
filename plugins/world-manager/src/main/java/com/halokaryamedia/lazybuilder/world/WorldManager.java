@@ -180,7 +180,8 @@ public final class WorldManager {
         this.worldLocationTeleportService = new WorldLocationTeleportService(
                 worldRegistry, worldRuntimeService, locationGateway, worldOperationCoordinator);
         this.worldSettingsService = new WorldSettingsService(
-                worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway, buildReadyPolicy);
+                worldRegistry, registryPersistence, worldRuntimeService, runtimeGateway,
+                worldOperationCoordinator, buildReadyPolicy);
         this.worldLifecycleService = new WorldLifecycleService(
                 worldRegistry, registryPersistence, worldRuntimeService,
                 worldOperationCoordinator, worldProtectionPolicy);

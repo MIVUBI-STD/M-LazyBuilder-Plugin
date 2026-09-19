@@ -65,6 +65,31 @@ class WorldSettingsServiceTest {
     }
 
     @Test
+    void settingsMutationIsRejectedWhileHeavyOperationOwnsWorld() {
+        Fixture fixture = fixture();
+        try (WorldOperationCoordinator.Lease ignored =
+                     fixture.operations().acquire(fixture.world().id(), WorldOperationType.EXPORT)) {
+            assertThrows(IllegalStateException.class,
+                    () -> fixture.service().setDifficulty(
+                            fixture.world().id(),
+                            WorldDifficulty.HARD));
+        }
+        assertEquals(null, fixture.runtime().lastDifficulty);
+    }
+
+    @Test
+    void settingsLeaseIsReleasedAfterMutation() {
+        Fixture fixture = fixture();
+        fixture.service().setDifficulty(fixture.world().id(), WorldDifficulty.HARD);
+
+        assertFalse(fixture.operations().isBusy(fixture.world().id()));
+        try (WorldOperationCoordinator.Lease ignored =
+                     fixture.operations().acquire(fixture.world().id(), WorldOperationType.DELETE)) {
+            assertTrue(fixture.operations().isBusy(fixture.world().id()));
+        }
+    }
+
+    @Test
     void runtimeMutationsDelegateWithoutCreatingParallelState() {
         Fixture fixture = fixture();
         UUID playerId = UUID.randomUUID();
@@ -164,21 +189,24 @@ class WorldSettingsServiceTest {
         MemoryPersistence persistence = new MemoryPersistence();
         persistence.saved = registry.all();
         FakeRuntime runtime = new FakeRuntime();
-        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
         WorldSettingsService service = new WorldSettingsService(
                 registry,
                 persistence,
                 runtimeService,
                 runtime,
+                operations,
                 BuildReadyPolicy.defaults()
         );
-        return new Fixture(registry, persistence, runtime, service, world);
+        return new Fixture(registry, persistence, runtime, operations, service, world);
     }
 
     private record Fixture(
             WorldRegistry registry,
             MemoryPersistence persistence,
             FakeRuntime runtime,
+            WorldOperationCoordinator operations,
             WorldSettingsService service,
             WorldRecord world
     ) { }
