@@ -35,7 +35,7 @@ pub struct PluginInstallResult {
     pub restart_required: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PluginMetadata {
     id: String,
     name: String,
