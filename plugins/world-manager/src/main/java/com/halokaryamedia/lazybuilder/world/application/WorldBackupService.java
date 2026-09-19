@@ -84,7 +84,10 @@ public final class WorldBackupService {
                     else if (!task.committed) {
                         throw new IllegalStateException(
                                 "Failed to clean backup workspace for " + task.world.displayName(), cleanupFailure);
-                    } else task.cleanupFailure = cleanupFailure;
+                    } else {
+                        task.cleanupWorkspace = staged;
+                        task.cleanupFailure = cleanupFailure;
+                    }
                 }
             }
         }
@@ -98,6 +101,16 @@ public final class WorldBackupService {
         if (task.wasLoaded) {
             try { restoreSourceIfStillActive(task); }
             catch (RuntimeException exception) { failure = exception; }
+        }
+        if (task.committed && task.cleanupWorkspace != null) {
+            try {
+                files.deleteWorkspace(task.cleanupWorkspace);
+                task.cleanupWorkspace = null;
+                task.cleanupFailure = null;
+            } catch (IOException retryFailure) {
+                if (task.cleanupFailure != null) retryFailure.addSuppressed(task.cleanupFailure);
+                task.cleanupFailure = retryFailure;
+            }
         }
         task.close();
         if (failure != null) throw failure;
@@ -153,6 +166,7 @@ public final class WorldBackupService {
         private final WorldOperationCoordinator.Lease lease;
         private boolean committed;
         private boolean closed;
+        private Path cleanupWorkspace;
         private IOException cleanupFailure;
 
         private BackupTask(UUID operationId, String backupId, WorldRecord world, boolean wasLoaded,

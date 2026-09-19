@@ -61,6 +61,27 @@ class WorldBackupServiceTest {
     }
 
     @Test
+    void committedBackupRetriesTransientWorkspaceCleanupDuringFinish() throws Exception {
+        Fixture fixture = fixture(true);
+        fixture.files.failNextDelete = true;
+
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+        WorldBackupService.BackupResult result = fixture.service.executeFilePhase(task);
+
+        assertTrue(task.committed());
+        assertTrue(task.cleanupFailure() != null,
+                "post-commit cleanup failure must remain diagnostic rather than failing the backup");
+        assertTrue(Files.isRegularFile(tempDir.resolve(result.artifactName())));
+
+        fixture.service.finish(task);
+
+        assertEquals(2, fixture.files.deleteWorkspaceCalls,
+                "finish must retry cleanup immediately instead of deferring all debt to restart recovery");
+        assertTrue(task.cleanupFailure() == null);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void finishDoesNotReloadSourceAfterLifecycleStopsBeingActive() throws Exception {
         Fixture fixture = fixture(true);
         WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
@@ -152,6 +173,8 @@ class WorldBackupServiceTest {
     private static final class FakeFiles implements WorldFileRepository {
         private final Path root;
         private int stageCopyCount;
+        private int deleteWorkspaceCalls;
+        private boolean failNextDelete;
         private WorldCopyProfile lastProfile;
         FakeFiles(Path root) { this.root = root; }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException {
@@ -166,6 +189,11 @@ class WorldBackupServiceTest {
         @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) { throw new UnsupportedOperationException(); }
         @Override public void deleteWorld(WorldRecord world) { throw new UnsupportedOperationException(); }
         @Override public void deleteWorkspace(Path workspace) throws IOException {
+            deleteWorkspaceCalls++;
+            if (failNextDelete) {
+                failNextDelete = false;
+                throw new IOException("transient cleanup failure");
+            }
             if (Files.notExists(workspace)) return;
             try (var walk = Files.walk(workspace)) {
                 for (Path item : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(item);
