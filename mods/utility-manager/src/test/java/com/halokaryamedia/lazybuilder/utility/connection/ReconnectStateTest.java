@@ -1,7 +1,9 @@
 package com.halokaryamedia.lazybuilder.utility.connection;
 
+import net.minecraft.SharedConstants;
 import net.minecraft.client.network.ServerInfo;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -9,6 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ReconnectStateTest {
+    @BeforeAll
+    static void initializeMinecraftVersion() {
+        SharedConstants.createGameVersion();
+    }
+
     @AfterEach
     void clearState() {
         ReconnectState.clear();
