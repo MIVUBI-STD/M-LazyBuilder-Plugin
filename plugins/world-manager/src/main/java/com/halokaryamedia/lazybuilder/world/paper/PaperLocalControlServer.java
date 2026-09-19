@@ -391,6 +391,7 @@ public final class PaperLocalControlServer {
         progress.update(10, "Preparing source world on Paper.");
         WorldBackupService.BackupTask backupTask = mainThread.call(() -> backupService.prepare(worldId));
         Exception failure = null;
+        boolean postCommitWarning = false;
         WorldBackupService.BackupResult result = null;
         try {
             progress.update(30, "Creating consistent world snapshot.");
@@ -405,10 +406,16 @@ public final class PaperLocalControlServer {
                 return null;
             });
         } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
+            if (failure == null && backupTask.committed() && result != null) {
+                postCommitWarning = true;
+                progress.update(99,
+                        "Backup committed, but source runtime restoration failed; check the source world state.");
+            } else {
+                failure = combine(failure, finishFailure);
+            }
         }
         if (failure != null) throw failure;
-        progress.update(95, "Backup finalized.");
+        if (!postCommitWarning) progress.update(95, "Backup finalized.");
         return Objects.requireNonNull(result, "result").backupId();
     }
 

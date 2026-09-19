@@ -32,6 +32,26 @@ class WorldTaskRunnerTest {
     }
 
     @Test
+    void successPreservesFinalProgressMessage() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, Duration.ofSeconds(1))) {
+            WorldTaskSnapshot queued = runner.submit(
+                    WorldTaskType.BACKUP,
+                    WorldId.create(),
+                    "Queued",
+                    progress -> {
+                        progress.update(99, "Committed with a source restoration warning.");
+                        return "backup-id";
+                    });
+
+            WorldTaskSnapshot finalSnapshot = waitForTerminal(registry, queued);
+            assertEquals(WorldTaskState.SUCCEEDED, finalSnapshot.state());
+            assertEquals("Committed with a source restoration warning.", finalSnapshot.message());
+            assertEquals("backup-id", finalSnapshot.result());
+        }
+    }
+
+    @Test
     void failureIsCapturedInRegistry() throws Exception {
         WorldTaskRegistry registry = new WorldTaskRegistry();
         try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, Duration.ofSeconds(1))) {

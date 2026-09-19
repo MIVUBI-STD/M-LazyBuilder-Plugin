@@ -109,7 +109,11 @@ public final class WorldTaskRunner implements AutoCloseable {
             try {
                 String result = work.run((progress, message) ->
                         registry.updateProgress(taskId, progress, message));
-                registry.succeed(taskId, result == null ? "" : result, "Task completed.");
+                String finalMessage = registry.find(taskId)
+                        .map(WorldTaskSnapshot::message)
+                        .filter(message -> !message.isBlank())
+                        .orElse("Task completed.");
+                registry.succeed(taskId, result == null ? "" : result, finalMessage);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 registry.fail(taskId, "Task interrupted.", "Task was interrupted during shutdown.");

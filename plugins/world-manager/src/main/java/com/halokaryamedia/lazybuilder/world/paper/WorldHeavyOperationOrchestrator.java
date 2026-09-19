@@ -50,6 +50,7 @@ public final class WorldHeavyOperationOrchestrator {
         WorldDuplicateService.DuplicateTask task = mainThread.call(
                 () -> duplicateService.prepare(sourceId, destinationFolder, displayName));
         Exception failure = null;
+        boolean postCommitWarning = false;
         WorldRecord duplicated = null;
         try {
             reporter.update(30, "Copying world files.");
@@ -64,10 +65,16 @@ public final class WorldHeavyOperationOrchestrator {
                 return null;
             });
         } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
+            if (failure == null && task.committed() && duplicated != null) {
+                postCommitWarning = true;
+                reporter.update(99,
+                        "Duplicate committed, but source runtime restoration failed; check the source world state.");
+            } else {
+                failure = combine(failure, finishFailure);
+            }
         }
         if (failure != null) throw failure;
-        reporter.update(95, "Duplicate finalized.");
+        if (!postCommitWarning) reporter.update(95, "Duplicate finalized.");
         return Objects.requireNonNull(duplicated, "duplicated");
     }
 
@@ -138,6 +145,7 @@ public final class WorldHeavyOperationOrchestrator {
         WorldExportService.ExportTask task = mainThread.call(
                 () -> exportService.prepare(worldId, targetFormat, artifactName, exportOptions));
         Exception failure = null;
+        boolean postCommitWarning = false;
         WorldExportService.ExportResult result = null;
         try {
             requireExportActive(cancellation);
@@ -168,10 +176,16 @@ public final class WorldHeavyOperationOrchestrator {
                 return null;
             });
         } catch (Exception finishFailure) {
-            failure = combine(failure, finishFailure);
+            if (failure == null && task.completed() && result != null) {
+                postCommitWarning = true;
+                reporter.update(99,
+                        "Export artifact committed, but source runtime restoration failed; check the source world state.");
+            } else {
+                failure = combine(failure, finishFailure);
+            }
         }
         if (failure != null) throw failure;
-        reporter.update(95, "Export finalized.");
+        if (!postCommitWarning) reporter.update(95, "Export finalized.");
         return Objects.requireNonNull(result, "result");
     }
 
