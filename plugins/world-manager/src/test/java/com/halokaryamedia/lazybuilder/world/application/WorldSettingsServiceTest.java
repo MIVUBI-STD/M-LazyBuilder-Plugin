@@ -112,6 +112,50 @@ class WorldSettingsServiceTest {
     }
 
     @Test
+    void batchFailureRollsBackEarlierRuntimeAndMetadataChanges() {
+        Fixture fixture = fixture();
+        fixture.runtime().runtimeSettings = new WorldRuntimeSettings(
+                WorldDifficulty.NORMAL,
+                false,
+                WorldWeather.CLEAR,
+                6_000,
+                new WorldSpawnSetting(0, 65, 0, 0, 0),
+                DEFAULT_SPAWNING,
+                List.of(
+                        new GameRuleSetting(
+                                "doDaylightCycle",
+                                GameRuleValueType.BOOLEAN,
+                                "false"),
+                        new GameRuleSetting(
+                                "doWeatherCycle",
+                                GameRuleValueType.BOOLEAN,
+                                "true")
+                )
+        );
+        fixture.runtime().failGameRuleName = "doWeatherCycle";
+
+        assertThrows(IllegalStateException.class, () -> fixture.service().applyBatch(
+                fixture.world().id(),
+                WorldGameMode.ADVENTURE,
+                12_000L,
+                WorldWeather.RAIN,
+                true,
+                true,
+                false
+        ));
+
+        WorldRecord persisted = fixture.registry().find(fixture.world().id()).orElseThrow();
+        assertEquals(WorldRecord.DEFAULT_GAME_MODE, persisted.defaultGameMode());
+        assertEquals(6_000L, fixture.runtime().lastTime);
+        assertEquals(WorldWeather.CLEAR, fixture.runtime().lastWeather);
+        assertEquals(DEFAULT_SPAWNING.naturalSpawning(), fixture.runtime().lastSpawnEnabled);
+        assertTrue(fixture.runtime().restoredRules.contains("doDaylightCycle=false"));
+        assertEquals(WorldRecord.DEFAULT_GAME_MODE,
+                fixture.persistence().saved.getFirst().defaultGameMode());
+        assertFalse(fixture.operations().isBusy(fixture.world().id()));
+    }
+
+    @Test
     void runtimeMutationsDelegateWithoutCreatingParallelState() {
         Fixture fixture = fixture();
         UUID playerId = UUID.randomUUID();
@@ -264,6 +308,8 @@ class WorldSettingsServiceTest {
         private WorldOperationCoordinator assertBusyCoordinator;
         private WorldId assertBusyWorld;
         private int busyAssertions;
+        private String failGameRuleName;
+        private final java.util.List<String> restoredRules = new java.util.ArrayList<>();
 
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
@@ -276,7 +322,16 @@ class WorldSettingsServiceTest {
         @Override public void setPvp(WorldRecord world, boolean enabled) { lastPvp = enabled; }
         @Override public void setTime(WorldRecord world, long ticks) { assertBusy(); lastTime = ticks; }
         @Override public void setWeather(WorldRecord world, WorldWeather weather) { assertBusy(); lastWeather = weather; }
-        @Override public void setGameRule(WorldRecord world, String ruleName, String value) { assertBusy(); lastRule = ruleName + "=" + value; }
+        @Override
+        public void setGameRule(WorldRecord world, String ruleName, String value) {
+            assertBusy();
+            if (ruleName.equals(failGameRuleName)) {
+                failGameRuleName = null;
+                throw new IllegalStateException("runtime gamerule failure");
+            }
+            lastRule = ruleName + "=" + value;
+            restoredRules.add(lastRule);
+        }
         @Override public void setSpawnToPlayer(UUID playerId, WorldRecord world) { lastSpawnPlayer = playerId; }
         @Override public void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
             assertBusy();

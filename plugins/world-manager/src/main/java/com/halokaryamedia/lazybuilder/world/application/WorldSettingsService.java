@@ -117,37 +117,132 @@ public final class WorldSettingsService {
     ) {
         try (WorldOperationCoordinator.Lease ignored =
                      operations.acquire(worldId, WorldOperationType.SETTINGS)) {
-            WorldRecord world = requireLoadedDuringSettings(worldId);
+            WorldRecord originalWorld = requireLoadedDuringSettings(worldId);
+            WorldRuntimeSettings originalRuntime = runtime.readSettings(originalWorld);
+            WorldRecord world = originalWorld;
 
-            if (defaultGameMode != null) {
-                world = persistMetadataChange(
-                        world,
-                        world.withDefaultGameMode(defaultGameMode.name()));
-            }
-            if (timeOfDayTicks != null) {
-                if (timeOfDayTicks < 0L || timeOfDayTicks >= 24_000L) {
-                    throw new IllegalArgumentException("ticks must be in range 0..23999");
+            boolean timeChanged = false;
+            boolean weatherChanged = false;
+            boolean spawningChanged = false;
+            boolean daylightChanged = false;
+            boolean weatherCycleChanged = false;
+
+            try {
+                if (defaultGameMode != null) {
+                    world = persistMetadataChange(
+                            world,
+                            world.withDefaultGameMode(defaultGameMode.name()));
                 }
-                runtime.setTime(world, timeOfDayTicks);
-            }
-            if (weather != null) {
-                runtime.setWeather(world, weather);
-            }
-            if (naturalSpawning != null) {
-                runtime.setSpawning(world, WorldSpawnControl.NATURAL, naturalSpawning);
-            }
-            if (daylightCycle != null) {
-                runtime.setGameRule(world, "doDaylightCycle", daylightCycle.toString());
-            }
-            if (weatherCycle != null) {
-                runtime.setGameRule(world, "doWeatherCycle", weatherCycle.toString());
-            }
+                if (timeOfDayTicks != null) {
+                    if (timeOfDayTicks < 0L || timeOfDayTicks >= 24_000L) {
+                        throw new IllegalArgumentException("ticks must be in range 0..23999");
+                    }
+                    runtime.setTime(world, timeOfDayTicks);
+                    timeChanged = true;
+                }
+                if (weather != null) {
+                    runtime.setWeather(world, weather);
+                    weatherChanged = true;
+                }
+                if (naturalSpawning != null) {
+                    runtime.setSpawning(world, WorldSpawnControl.NATURAL, naturalSpawning);
+                    spawningChanged = true;
+                }
+                if (daylightCycle != null) {
+                    runtime.setGameRule(world, "doDaylightCycle", daylightCycle.toString());
+                    daylightChanged = true;
+                }
+                if (weatherCycle != null) {
+                    runtime.setGameRule(world, "doWeatherCycle", weatherCycle.toString());
+                    weatherCycleChanged = true;
+                }
 
-            return new WorldSettingsSnapshot(
-                    world,
-                    WorldGameMode.valueOf(world.defaultGameMode()),
-                    runtime.readSettings(world)
-            );
+                return new WorldSettingsSnapshot(
+                        world,
+                        WorldGameMode.valueOf(world.defaultGameMode()),
+                        runtime.readSettings(world)
+                );
+            } catch (RuntimeException failure) {
+                rollbackBatchRuntime(
+                        world,
+                        originalRuntime,
+                        timeChanged,
+                        weatherChanged,
+                        spawningChanged,
+                        daylightChanged,
+                        weatherCycleChanged,
+                        failure
+                );
+                if (!world.equals(originalWorld)) {
+                    try {
+                        persistMetadataChange(world, originalWorld);
+                    } catch (RuntimeException rollbackFailure) {
+                        failure.addSuppressed(rollbackFailure);
+                    }
+                }
+                throw failure;
+            }
+        }
+    }
+
+    private void rollbackBatchRuntime(
+            WorldRecord world,
+            WorldRuntimeSettings original,
+            boolean timeChanged,
+            boolean weatherChanged,
+            boolean spawningChanged,
+            boolean daylightChanged,
+            boolean weatherCycleChanged,
+            RuntimeException failure
+    ) {
+        if (weatherCycleChanged) {
+            restoreGameRule(world, original, "doWeatherCycle", failure);
+        }
+        if (daylightChanged) {
+            restoreGameRule(world, original, "doDaylightCycle", failure);
+        }
+        if (spawningChanged) {
+            try {
+                runtime.setSpawning(
+                        world,
+                        WorldSpawnControl.NATURAL,
+                        original.spawning().naturalSpawning());
+            } catch (RuntimeException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+        }
+        if (weatherChanged) {
+            try {
+                runtime.setWeather(world, original.weather());
+            } catch (RuntimeException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+        }
+        if (timeChanged) {
+            try {
+                runtime.setTime(world, original.timeOfDayTicks());
+            } catch (RuntimeException rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+        }
+    }
+
+    private void restoreGameRule(
+            WorldRecord world,
+            WorldRuntimeSettings original,
+            String name,
+            RuntimeException failure
+    ) {
+        String previous = original.gamerules().stream()
+                .filter(rule -> rule.name().equalsIgnoreCase(name))
+                .map(GameRuleSetting::value)
+                .findFirst()
+                .orElse(null);
+        if (previous == null) return;
+        try {
+            runtime.setGameRule(world, name, previous);
+        } catch (RuntimeException rollbackFailure) {
+            failure.addSuppressed(rollbackFailure);
         }
     }
 
