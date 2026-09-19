@@ -53,7 +53,7 @@ class GitHubChunkerReleaseSourceTest {
                         "test artifact"
                 ));
         assertTrue(error.getMessage().contains("safety limit"));
-        assertEquals(4, output.size());
+        assertEquals(0, output.size(), "oversized read must fail before writing that chunk");
     }
 
     @Test
