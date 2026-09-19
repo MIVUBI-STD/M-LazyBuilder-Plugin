@@ -63,6 +63,11 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void cleanupRecoveryBatchIsExplicitlyBounded() {
+        assertEquals(4_096, LocalWorldImportArtifactStore.MAX_RECOVERED_CLEANUP_MARKERS);
+    }
+
+    @Test
     void inspectionDoesNotInflateUnrelatedWorldPayload() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Path archive = imports.resolve("Large Build.zip");

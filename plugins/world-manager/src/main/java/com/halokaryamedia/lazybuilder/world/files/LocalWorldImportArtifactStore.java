@@ -37,6 +37,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static final int MAX_ARCHIVE_COMPONENT_CHARS = 255;
     private static final long IMPORT_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
     private static final long IMPORT_ENTRY_OVERHEAD_BYTES = 256L;
+    static final int MAX_RECOVERED_CLEANUP_MARKERS = 4_096;
 
     private final Path importsRoot;
     private final long maxEntries;
@@ -197,16 +198,26 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         requireSafeImportsRoot();
         Path directory = existingCleanupMarkerDirectory();
         if (directory == null) return List.of();
-        List<String> pending = new ArrayList<>();
+        List<String> pending = new ArrayList<>(
+                Math.min(64, MAX_RECOVERED_CLEANUP_MARKERS));
         try (var stream = Files.list(directory)) {
-            for (Path marker : stream.sorted().toList()) {
+            var iterator = stream.iterator();
+            while (iterator.hasNext() && pending.size() < MAX_RECOVERED_CLEANUP_MARKERS) {
+                Path marker = iterator.next();
                 if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) continue;
                 String markerName = marker.getFileName().toString();
                 if (!markerName.endsWith(CLEANUP_MARKER_SUFFIX)) continue;
-                String encoded = markerName.substring(0, markerName.length() - CLEANUP_MARKER_SUFFIX.length());
+                String encoded = markerName.substring(
+                        0,
+                        markerName.length() - CLEANUP_MARKER_SUFFIX.length());
                 try {
-                    String value = validateArtifactName(new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
-                    if (cleanupMarkerPath(directory, value).equals(marker.toAbsolutePath().normalize())) pending.add(value);
+                    String value = validateArtifactName(new String(
+                            Base64.getUrlDecoder().decode(encoded),
+                            StandardCharsets.UTF_8));
+                    if (cleanupMarkerPath(directory, value)
+                            .equals(marker.toAbsolutePath().normalize())) {
+                        pending.add(value);
+                    }
                 } catch (IllegalArgumentException ignored) { }
             }
         }
