@@ -285,12 +285,16 @@ public final class WorldManager {
 
     private void discoverExistingWorlds() throws IOException {
         Path worldsRoot = storageLayout.worldsRoot().toAbsolutePath().normalize();
-        if (!Files.isDirectory(worldsRoot)) return;
+        if (Files.notExists(worldsRoot)) return;
+        if (!Files.isDirectory(worldsRoot) || Files.isSymbolicLink(worldsRoot)) {
+            throw new IOException("World discovery root is unsafe: " + worldsRoot);
+        }
+        Path canonicalRoot = worldsRoot.toRealPath();
 
         List<Path> candidates;
         try (var paths = Files.list(worldsRoot)) {
             candidates = paths
-                    .filter(Files::isDirectory)
+                    .filter(path -> isDirectContainedWorldDirectory(canonicalRoot, path))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
                     .toList();
         }
@@ -300,7 +304,9 @@ public final class WorldManager {
         for (Path candidate : candidates) {
             String folderName = candidate.getFileName().toString();
             if (worldRegistry.findByFolderName(folderName).isPresent()) continue;
-            if (!Files.isRegularFile(candidate.resolve("level.dat"))) continue;
+
+            Path levelDat = candidate.resolve("level.dat");
+            if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat)) continue;
 
             World loaded = plugin.getServer().getWorld(folderName);
             if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) continue;
@@ -318,10 +324,36 @@ public final class WorldManager {
         }
 
         if (discovered > 0) {
-            registryPersistence.save(worldRegistry.all());
+            try {
+                registryPersistence.save(worldRegistry.all());
+            } catch (IOException | RuntimeException failure) {
+                // Discovery is provisional until one registry commit succeeds.
+                // Revert only worlds created by this pass so the in-memory authority
+                // remains aligned with durable registry truth after a failed save.
+                worldRegistry.all().stream()
+                        .filter(world -> world.kind() == WorldKind.IMPORTED)
+                        .filter(world -> candidates.stream().anyMatch(path ->
+                                path.getFileName().toString().equalsIgnoreCase(world.folderName())))
+                        .map(WorldRecord::id)
+                        .toList()
+                        .forEach(worldRegistry::remove);
+                throw failure;
+            }
             plugin.getLogger().info("Adopted " + discovered
                     + " existing Paper world" + (discovered == 1 ? "" : "s")
                     + " into the LazyBuilder registry.");
+        }
+    }
+
+    static boolean isDirectContainedWorldDirectory(Path canonicalRoot, Path candidate) {
+        Objects.requireNonNull(canonicalRoot, "canonicalRoot");
+        Objects.requireNonNull(candidate, "candidate");
+        try {
+            if (!Files.isDirectory(candidate) || Files.isSymbolicLink(candidate)) return false;
+            Path canonicalCandidate = candidate.toRealPath();
+            return canonicalRoot.equals(canonicalCandidate.getParent());
+        } catch (IOException ignored) {
+            return false;
         }
     }
 
