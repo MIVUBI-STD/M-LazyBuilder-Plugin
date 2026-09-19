@@ -5,27 +5,41 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** YAML-backed registry persistence with atomic publication where supported. */
+/** YAML-backed registry persistence with crash-recoverable publication. */
 public final class YamlWorldRegistryPersistence implements WorldRegistryPersistence {
     private static final String WORLDS_PATH = "worlds";
+    private static final long MAX_REGISTRY_BYTES = 16L * 1024L * 1024L;
 
     private final Path registryFile;
 
     public YamlWorldRegistryPersistence(Path registryFile) {
-        this.registryFile = Objects.requireNonNull(registryFile, "registryFile").toAbsolutePath().normalize();
+        this.registryFile = Objects.requireNonNull(registryFile, "registryFile")
+                .toAbsolutePath()
+                .normalize();
     }
 
     @Override
     public List<WorldRecord> load() throws IOException {
+        recoverInterruptedPublish();
         if (Files.notExists(registryFile)) return List.of();
+        requireSafeRegularFile(registryFile, "world registry");
+
+        long size = Files.size(registryFile);
+        if (size > MAX_REGISTRY_BYTES) {
+            throw new IOException("World registry exceeds the " + MAX_REGISTRY_BYTES + " byte safety limit");
+        }
 
         YamlConfiguration yaml = new YamlConfiguration();
         try {
@@ -35,7 +49,10 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         }
 
         ConfigurationSection worlds = yaml.getConfigurationSection(WORLDS_PATH);
-        if (worlds == null) return List.of();
+        if (worlds == null) {
+            cleanupRecoveryFiles();
+            return List.of();
+        }
 
         List<WorldRecord> loaded = new ArrayList<>();
         WorldRegistry validation = new WorldRegistry();
@@ -58,6 +75,8 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
                 throw new IOException("Invalid world registry entry: " + idText, exception);
             }
         }
+
+        cleanupRecoveryFiles();
         return List.copyOf(loaded);
     }
 
@@ -67,6 +86,15 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         Path parent = registryFile.getParent();
         if (parent == null) throw new IOException("Registry path has no parent: " + registryFile);
         Files.createDirectories(parent);
+        if (!Files.isDirectory(parent) || Files.isSymbolicLink(parent)) {
+            throw new IOException("World registry directory is unsafe: " + parent);
+        }
+
+        recoverInterruptedPublish();
+        if (Files.exists(previousPath()) || Files.exists(temporaryPath())) {
+            throw new IOException(
+                    "World registry recovery evidence is unresolved; load/reconcile before saving");
+        }
 
         YamlConfiguration yaml = new YamlConfiguration();
         for (WorldRecord world : worlds) {
@@ -78,12 +106,88 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             yaml.set(base + ".default-game-mode", world.defaultGameMode());
         }
 
-        Path temporary = parent.resolve(registryFile.getFileName() + ".tmp");
+        byte[] payload = yaml.saveToString().getBytes(StandardCharsets.UTF_8);
+        if (payload.length > MAX_REGISTRY_BYTES) {
+            throw new IOException("World registry exceeds the " + MAX_REGISTRY_BYTES + " byte safety limit");
+        }
+
+        Path temporary = temporaryPath();
+        writeDurably(temporary, payload);
+
+        Path previous = previousPath();
+        boolean hadCurrent = Files.exists(registryFile);
+        if (hadCurrent) {
+            requireSafeRegularFile(registryFile, "world registry");
+            moveNoReplace(registryFile, previous);
+        }
+
         try {
-            yaml.save(temporary.toFile());
-            moveIntoPlace(temporary, registryFile);
-        } finally {
-            Files.deleteIfExists(temporary);
+            moveNoReplace(temporary, registryFile);
+        } catch (IOException publishFailure) {
+            if (hadCurrent && Files.exists(previous) && Files.notExists(registryFile)) {
+                try {
+                    moveNoReplace(previous, registryFile);
+                } catch (IOException rollbackFailure) {
+                    publishFailure.addSuppressed(rollbackFailure);
+                }
+            }
+            throw publishFailure;
+        }
+
+        Files.deleteIfExists(previous);
+        Files.deleteIfExists(temporary);
+    }
+
+    private void recoverInterruptedPublish() throws IOException {
+        Path previous = previousPath();
+        Path temporary = temporaryPath();
+
+        if (Files.exists(registryFile)) {
+            requireSafeRegularFile(registryFile, "world registry");
+            if (Files.exists(previous)) requireSafeRegularFile(previous, "previous world registry");
+            if (Files.exists(temporary)) requireSafeRegularFile(temporary, "world registry staging file");
+            return;
+        }
+
+        if (Files.exists(previous)) {
+            requireSafeRegularFile(previous, "previous world registry");
+            moveNoReplace(previous, registryFile);
+            return;
+        }
+
+        if (Files.exists(temporary)) {
+            requireSafeRegularFile(temporary, "world registry staging file");
+            moveNoReplace(temporary, registryFile);
+        }
+    }
+
+    private void cleanupRecoveryFiles() throws IOException {
+        Files.deleteIfExists(previousPath());
+        Files.deleteIfExists(temporaryPath());
+    }
+
+    private Path temporaryPath() {
+        return registryFile.resolveSibling(registryFile.getFileName() + ".tmp");
+    }
+
+    private Path previousPath() {
+        return registryFile.resolveSibling(registryFile.getFileName() + ".previous");
+    }
+
+    private static void writeDurably(Path path, byte[] payload) throws IOException {
+        try (FileChannel channel = FileChannel.open(
+                path,
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE)) {
+            ByteBuffer buffer = ByteBuffer.wrap(payload);
+            while (buffer.hasRemaining()) channel.write(buffer);
+            channel.force(true);
+        }
+    }
+
+    private static void requireSafeRegularFile(Path path, String label) throws IOException {
+        if (!Files.isRegularFile(path) || Files.isSymbolicLink(path)) {
+            throw new IOException(label + " is unsafe: " + path);
         }
     }
 
@@ -93,11 +197,11 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         return value;
     }
 
-    private static void moveIntoPlace(Path source, Path target) throws IOException {
+    private static void moveNoReplace(Path source, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(source, target);
         }
     }
 }

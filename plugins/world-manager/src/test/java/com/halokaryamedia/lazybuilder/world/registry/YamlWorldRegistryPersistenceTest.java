@@ -63,6 +63,69 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void missingMainRegistryRecoversPreviousCommittedCopyFirst() throws Exception {
+        Path path = tempDir.resolve("registry-previous.yml");
+        Path previous = path.resolveSibling(path.getFileName() + ".previous");
+        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+        WorldId id = WorldId.create();
+        Files.writeString(previous, """
+                worlds:
+                  %s:
+                    folder: BuildWorld
+                    display-name: Build World
+                    kind: FLAT
+                    lifecycle: ACTIVE
+                    default-game-mode: CREATIVE
+                """.formatted(id));
+        Files.writeString(temporary, "worlds: {}\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        List<WorldRecord> loaded = persistence.load();
+
+        assertEquals(1, loaded.size());
+        assertEquals(id, loaded.getFirst().id());
+        assertFalse(Files.exists(previous));
+        assertFalse(Files.exists(temporary));
+    }
+
+    @Test
+    void firstPublishStagingRecoversWhenMainRegistryIsMissing() throws Exception {
+        Path path = tempDir.resolve("registry-staging.yml");
+        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+        WorldId id = WorldId.create();
+        Files.writeString(temporary, """
+                worlds:
+                  %s:
+                    folder: BuildWorld
+                    display-name: Build World
+                    kind: FLAT
+                    lifecycle: ACTIVE
+                    default-game-mode: SURVIVAL
+                """.formatted(id));
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        assertEquals(id, persistence.load().getFirst().id());
+        assertTrue(Files.isRegularFile(path));
+        assertFalse(Files.exists(temporary));
+    }
+
+    @Test
+    void malformedMainRegistryPreservesRecoveryEvidence() throws Exception {
+        Path path = tempDir.resolve("registry-malformed.yml");
+        Path previous = path.resolveSibling(path.getFileName() + ".previous");
+        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+        Files.writeString(path, "worlds: [broken");
+        Files.writeString(previous, "worlds: {}\n");
+        Files.writeString(temporary, "worlds: {}\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        assertThrows(Exception.class, persistence::load);
+
+        assertTrue(Files.exists(previous));
+        assertTrue(Files.exists(temporary));
+    }
+
+    @Test
     void invalidRegistryFailsClosed() throws Exception {
         Path path = tempDir.resolve("registry.yml");
         Files.writeString(path, "worlds:\n  broken:\n    folder: ../unsafe\n");
