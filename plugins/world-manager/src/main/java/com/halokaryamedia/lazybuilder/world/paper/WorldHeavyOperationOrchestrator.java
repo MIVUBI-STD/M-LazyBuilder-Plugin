@@ -65,7 +65,7 @@ public final class WorldHeavyOperationOrchestrator {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (failure == null && task.committed() && duplicated != null) {
+            if (failure == null && task.committed() && task.closed() && duplicated != null) {
                 postCommitWarning = true;
                 reporter.update(99,
                         "Duplicate committed, but source runtime restoration failed; check the source world state.");
@@ -176,7 +176,7 @@ public final class WorldHeavyOperationOrchestrator {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (failure == null && task.completed() && result != null) {
+            if (failure == null && task.completed() && task.closed() && result != null) {
                 postCommitWarning = true;
                 reporter.update(99,
                         "Export artifact committed, but source runtime restoration failed; check the source world state.");

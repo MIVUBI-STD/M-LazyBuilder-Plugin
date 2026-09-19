@@ -149,6 +149,7 @@ public final class WorldDuplicateService {
         public WorldRecord source() { return source; }
         public WorldRecord destination() { return destination; }
         public boolean committed() { return committed; }
+        public boolean closed() { return closed; }
         public IOException publicationMarkerCleanupFailure() { return publicationMarkerCleanupFailure; }
 
         private void requireOpen() {

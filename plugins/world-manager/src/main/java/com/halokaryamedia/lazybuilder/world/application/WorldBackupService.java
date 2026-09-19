@@ -180,6 +180,7 @@ public final class WorldBackupService {
 
         public WorldRecord world() { return world; }
         public boolean committed() { return committed; }
+        public boolean closed() { return closed; }
         public IOException cleanupFailure() { return cleanupFailure; }
 
         private void requireOpen() {

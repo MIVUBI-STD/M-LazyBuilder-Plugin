@@ -406,7 +406,7 @@ public final class PaperLocalControlServer {
                 return null;
             });
         } catch (Exception finishFailure) {
-            if (failure == null && backupTask.committed() && result != null) {
+            if (failure == null && backupTask.committed() && backupTask.closed() && result != null) {
                 postCommitWarning = true;
                 progress.update(99,
                         "Backup committed, but source runtime restoration failed; check the source world state.");

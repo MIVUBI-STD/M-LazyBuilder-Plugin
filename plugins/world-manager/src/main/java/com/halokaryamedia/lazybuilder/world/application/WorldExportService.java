@@ -612,7 +612,7 @@ public final class WorldExportService {
             return captureCancellationRequested;
         }
 
-        private synchronized boolean closed() {
+        public synchronized boolean closed() {
             return phase == Phase.CLOSED;
         }
 
