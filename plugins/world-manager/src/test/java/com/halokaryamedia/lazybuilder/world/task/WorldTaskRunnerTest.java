@@ -79,6 +79,36 @@ class WorldTaskRunnerTest {
     }
 
     @Test
+    void forcedShutdownFailsClosedWhenRunningWorkIgnoresInterrupts() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 1, Duration.ofMillis(25));
+        try {
+            runner.submit(WorldTaskType.BACKUP, WorldId.create(), "stubborn", progress -> {
+                started.countDown();
+                while (release.getCount() > 0) {
+                    try {
+                        release.await(10, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException ignored) {
+                        // Deliberately simulate non-cooperative work so close() must not
+                        // silently claim that shutdown completed.
+                    }
+                }
+                return "finished-late";
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+
+            IllegalStateException error = assertThrows(IllegalStateException.class, runner::close);
+            assertTrue(error.getMessage().contains("did not terminate"));
+        } finally {
+            release.countDown();
+            // close() is intentionally retryable after a prior timeout.
+            runner.close();
+        }
+    }
+
+    @Test
     void forcedShutdownMarksNeverStartedQueuedTasksFailed() throws Exception {
         WorldTaskRegistry registry = new WorldTaskRegistry();
         CountDownLatch firstStarted = new CountDownLatch(1);

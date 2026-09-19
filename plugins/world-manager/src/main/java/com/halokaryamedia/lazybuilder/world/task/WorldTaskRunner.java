@@ -74,6 +74,14 @@ public final class WorldTaskRunner implements AutoCloseable {
             executor.execute(submitted);
             return queued;
         } catch (RejectedExecutionException exception) {
+            if (closed.get() || executor.isShutdown()) {
+                registry.fail(
+                        queued.taskId(),
+                        "Task runner is shutting down.",
+                        "Task could not be scheduled because World-Manager is stopping."
+                );
+                throw new IllegalStateException("World task runner is closed", exception);
+            }
             registry.fail(
                     queued.taskId(),
                     "Task queue is full.",
@@ -104,16 +112,28 @@ public final class WorldTaskRunner implements AutoCloseable {
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return;
-        executor.shutdown();
+        if (closed.compareAndSet(false, true)) {
+            executor.shutdown();
+        }
         try {
+            if (executor.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                return;
+            }
+
+            failDropped(executor.shutdownNow());
             if (!executor.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                failDropped(executor.shutdownNow());
-                executor.awaitTermination(shutdownTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                throw new IllegalStateException(
+                        "World task runner did not terminate after forced shutdown; "
+                                + executor.getActiveCount() + " task(s) are still active."
+                );
             }
         } catch (InterruptedException exception) {
             failDropped(executor.shutdownNow());
             Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for World task runner shutdown.",
+                    exception
+            );
         }
     }
 
