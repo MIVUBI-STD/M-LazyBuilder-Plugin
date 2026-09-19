@@ -156,6 +156,47 @@ class WorldSettingsServiceTest {
     }
 
     @Test
+    void batchFailureRollsBackMutationThatThrowsAfterChangingRuntime() {
+        Fixture fixture = fixture();
+        fixture.runtime().runtimeSettings = new WorldRuntimeSettings(
+                WorldDifficulty.NORMAL,
+                false,
+                WorldWeather.CLEAR,
+                6_000,
+                new WorldSpawnSetting(0, 65, 0, 0, 0),
+                DEFAULT_SPAWNING,
+                List.of(
+                        new GameRuleSetting(
+                                "doDaylightCycle",
+                                GameRuleValueType.BOOLEAN,
+                                "false"),
+                        new GameRuleSetting(
+                                "doWeatherCycle",
+                                GameRuleValueType.BOOLEAN,
+                                "true")
+                )
+        );
+        fixture.runtime().failWeatherAfterMutation = true;
+
+        assertThrows(IllegalStateException.class, () -> fixture.service().applyBatch(
+                fixture.world().id(),
+                WorldGameMode.ADVENTURE,
+                12_000L,
+                WorldWeather.RAIN,
+                null,
+                null,
+                null
+        ));
+
+        assertEquals(6_000L, fixture.runtime().lastTime);
+        assertEquals(WorldWeather.CLEAR, fixture.runtime().lastWeather,
+                "the failing mutation itself must be restored when it may have changed runtime state");
+        assertEquals(WorldRecord.DEFAULT_GAME_MODE,
+                fixture.registry().find(fixture.world().id()).orElseThrow().defaultGameMode());
+        assertFalse(fixture.operations().isBusy(fixture.world().id()));
+    }
+
+    @Test
     void runtimeMutationsDelegateWithoutCreatingParallelState() {
         Fixture fixture = fixture();
         UUID playerId = UUID.randomUUID();
@@ -309,6 +350,7 @@ class WorldSettingsServiceTest {
         private WorldId assertBusyWorld;
         private int busyAssertions;
         private String failGameRuleName;
+        private boolean failWeatherAfterMutation;
         private final java.util.List<String> restoredRules = new java.util.ArrayList<>();
 
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
@@ -321,7 +363,15 @@ class WorldSettingsServiceTest {
         @Override public void setDifficulty(WorldRecord world, WorldDifficulty difficulty) { lastDifficulty = difficulty; }
         @Override public void setPvp(WorldRecord world, boolean enabled) { lastPvp = enabled; }
         @Override public void setTime(WorldRecord world, long ticks) { assertBusy(); lastTime = ticks; }
-        @Override public void setWeather(WorldRecord world, WorldWeather weather) { assertBusy(); lastWeather = weather; }
+        @Override
+        public void setWeather(WorldRecord world, WorldWeather weather) {
+            assertBusy();
+            lastWeather = weather;
+            if (failWeatherAfterMutation) {
+                failWeatherAfterMutation = false;
+                throw new IllegalStateException("runtime weather failure after mutation");
+            }
+        }
         @Override
         public void setGameRule(WorldRecord world, String ruleName, String value) {
             assertBusy();
