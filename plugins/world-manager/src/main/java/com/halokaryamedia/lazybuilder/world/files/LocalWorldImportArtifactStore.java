@@ -33,6 +33,8 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     private static final String JAVA_1_21_4 = "JAVA_1_21_4";
     private static final int IO_BUFFER_BYTES = 64 * 1024;
     private static final int MAX_INSPECT_LEVEL_DAT_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_ARCHIVE_PATH_CHARS = 4_096;
+    private static final int MAX_ARCHIVE_COMPONENT_CHARS = 255;
     private static final long IMPORT_SPACE_RESERVE_BYTES = 16L * 1024L * 1024L;
     private static final long IMPORT_ENTRY_OVERHEAD_BYTES = 256L;
 
@@ -389,6 +391,10 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         if (normalized.isBlank()) return "";
+        if (normalized.length() > MAX_ARCHIVE_PATH_CHARS) {
+            throw new IOException("Import archive path exceeds the "
+                    + MAX_ARCHIVE_PATH_CHARS + " character safety limit");
+        }
 
         if (normalized.startsWith("/") || normalized.matches("^[A-Za-z]:.*")) {
             throw new IOException("Import archive contains an absolute path: " + normalized);
@@ -397,6 +403,10 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         String[] components = normalized.split("/", -1);
         StringBuilder canonical = new StringBuilder();
         for (String component : components) {
+            if (component.length() > MAX_ARCHIVE_COMPONENT_CHARS) {
+                throw new IOException("Import archive path component exceeds the "
+                        + MAX_ARCHIVE_COMPONENT_CHARS + " character safety limit");
+            }
             if (component.isEmpty() || component.equals(".") || component.equals("..")) {
                 throw new IOException("Import archive contains an unsafe path component: " + normalized);
             }

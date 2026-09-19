@@ -99,6 +99,23 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void rejectsExcessiveArchivePathMetadata() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports-long-path"));
+        Path archive = imports.resolve("long-path.zip");
+        String oversized = "x".repeat(256);
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/" + oversized + "/region.dat", "data".getBytes(StandardCharsets.UTF_8));
+        }
+
+        LocalWorldImportArtifactStore store =
+                new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        IOException error = assertThrows(IOException.class,
+                () -> store.stageArchive("long-path.zip", tempDir.resolve("long-path-workspace")));
+        assertTrue(error.getMessage().contains("path component exceeds"));
+    }
+
+    @Test
     void rejectsMultipleWorldRootsAtSameArchiveDepth() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports-multi-root"));
         Path archive = imports.resolve("multi-root.zip");
