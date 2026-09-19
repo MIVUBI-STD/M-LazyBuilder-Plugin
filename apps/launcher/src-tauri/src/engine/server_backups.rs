@@ -13,6 +13,10 @@ const BACKUP_SCHEMA_VERSION: u32 = 2;
 const MIN_SUPPORTED_BACKUP_SCHEMA_VERSION: u32 = 1;
 const MIN_BACKUP_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
+const MAX_BACKUP_FILES: usize = 500_000;
+const MAX_BACKUP_MANIFEST_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_INTEGRITY_PATH_CHARS: usize = 4_096;
+const MAX_INTEGRITY_COMPONENT_CHARS: usize = 255;
 static NEXT_BACKUP_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -345,8 +349,14 @@ fn write_backup_manifest(root: &Path, manifest: &BackupManifest) -> Result<(), S
     let path = root.join("backup.json");
     let temp = root.join("backup.json.tmp");
     let text = serde_json::to_string_pretty(manifest).map_err(|error| error.to_string())?;
+    if text.len() as u64 > MAX_BACKUP_MANIFEST_BYTES {
+        return Err(format!(
+            "Backup manifest exceeds the {} byte safety limit",
+            MAX_BACKUP_MANIFEST_BYTES
+        ));
+    }
     {
-        let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(&temp)
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&temp)
             .map_err(|error| format!("Could not write backup metadata staging file: {error}"))?;
         file.write_all(text.as_bytes()).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| format!("Could not flush backup metadata: {error}"))?;
@@ -355,8 +365,29 @@ fn write_backup_manifest(root: &Path, manifest: &BackupManifest) -> Result<(), S
 }
 
 fn read_backup_manifest(root: &Path) -> Result<BackupManifest, String> {
-    let text = fs::read_to_string(root.join("backup.json")).map_err(|error| format!("Could not read backup metadata: {error}"))?;
-    serde_json::from_str(&text).map_err(|error| format!("Could not parse backup metadata: {error}"))
+    let path = root.join("backup.json");
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("Could not inspect backup metadata: {error}"))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+        return Err("Backup metadata is not a safe regular file".into());
+    }
+    if metadata.len() > MAX_BACKUP_MANIFEST_BYTES {
+        return Err(format!(
+            "Backup manifest exceeds the {} byte safety limit",
+            MAX_BACKUP_MANIFEST_BYTES
+        ));
+    }
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("Could not read backup metadata: {error}"))?;
+    let manifest: BackupManifest = serde_json::from_str(&text)
+        .map_err(|error| format!("Could not parse backup metadata: {error}"))?;
+    if manifest.integrity_files.len() > MAX_BACKUP_FILES {
+        return Err(format!(
+            "Backup manifest exceeds the {} file safety limit",
+            MAX_BACKUP_FILES
+        ));
+    }
+    Ok(manifest)
 }
 
 fn summary_from_manifest(root: &Path, manifest: BackupManifest) -> ServerBackupSummary {
@@ -409,6 +440,12 @@ where
             fs::create_dir(&target).map_err(|error| format!("Could not create {}: {error}", target.display()))?;
             copied = copy_directory_filtered_inner(&item.path(), &target, &rel, total, copied, integrity_files, progress)?;
         } else if metadata.file_type().is_file() {
+            if integrity_files.len() >= MAX_BACKUP_FILES {
+                return Err(format!(
+                    "Backup exceeds the {} file safety limit",
+                    MAX_BACKUP_FILES
+                ));
+            }
             let (bytes, sha256) = copy_file_with_hash(&item.path(), &target, &rel, total, &mut copied, progress)?;
             fs::set_permissions(&target, metadata.permissions()).map_err(|error| format!("Could not preserve file permissions for {}: {error}", rel.display()))?;
             integrity_files.push(BackupIntegrityEntry {
@@ -504,6 +541,12 @@ fn verify_snapshot_integrity(snapshot: &Path, manifest: &BackupManifest) -> Resu
 }
 
 fn validate_integrity_manifest_shape(manifest: &BackupManifest) -> Result<(), String> {
+    if manifest.integrity_files.len() > MAX_BACKUP_FILES {
+        return Err(format!(
+            "Backup integrity metadata exceeds the {} file safety limit",
+            MAX_BACKUP_FILES
+        ));
+    }
     if manifest.schema_version == 1 { return Ok(()); }
     if manifest.schema_version != BACKUP_SCHEMA_VERSION {
         return Err(format!("Backup schema {} is unsupported", manifest.schema_version));
@@ -531,11 +574,17 @@ fn validate_integrity_manifest_shape(manifest: &BackupManifest) -> Result<(), St
 
 fn validate_integrity_path(value: &str) -> Result<(), String> {
     if value.is_empty() { return Err("Backup integrity path may not be empty".into()); }
+    if value.len() > MAX_INTEGRITY_PATH_CHARS {
+        return Err("Backup integrity path exceeds the portability safety limit".into());
+    }
     let path = Path::new(value);
     if path.is_absolute() { return Err(format!("Backup integrity path must be relative: {value}")); }
     for component in path.components() {
-        if !matches!(component, Component::Normal(_)) {
+        let Component::Normal(name) = component else {
             return Err(format!("Backup integrity path is unsafe: {value}"));
+        };
+        if name.to_string_lossy().len() > MAX_INTEGRITY_COMPONENT_CHARS {
+            return Err("Backup integrity path component exceeds the portability safety limit".into());
         }
     }
     Ok(())
@@ -678,6 +727,17 @@ mod tests {
         assert!(validate_integrity_path("server/paper.jar").is_ok());
         assert!(validate_integrity_path("../server/paper.jar").is_err());
         assert!(validate_integrity_path("/server/paper.jar").is_err());
+    }
+
+    #[test]
+    fn backup_manifest_resource_limits_are_explicit() {
+        assert_eq!(MAX_BACKUP_FILES, 500_000);
+        assert_eq!(MAX_BACKUP_MANIFEST_BYTES, 128 * 1024 * 1024);
+        assert!(validate_integrity_path(&"x".repeat(MAX_INTEGRITY_PATH_CHARS + 1)).is_err());
+        assert!(validate_integrity_path(&format!(
+            "root/{}/file.dat",
+            "x".repeat(MAX_INTEGRITY_COMPONENT_CHARS + 1)
+        )).is_err());
     }
 
     #[test]
