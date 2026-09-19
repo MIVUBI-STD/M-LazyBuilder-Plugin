@@ -53,6 +53,38 @@ class WorldTaskRunnerTest {
     }
 
     @Test
+    void rejectsDuplicateQueuedOrRunningTaskForSameWorld() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        WorldId worldId = WorldId.create();
+
+        try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 2, Duration.ofSeconds(1))) {
+            runner.submit(WorldTaskType.BACKUP, worldId, "first", progress -> {
+                started.countDown();
+                release.await(2, TimeUnit.SECONDS);
+                return "done";
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+
+            IllegalStateException duplicate = assertThrows(IllegalStateException.class, () ->
+                    runner.submit(WorldTaskType.EXPORT, worldId, "duplicate", progress -> "unused"));
+            assertTrue(duplicate.getMessage().contains("queued or running task"));
+            assertEquals(1, registry.recent().size(),
+                    "replayed submission must not create a ghost task entry");
+
+            release.countDown();
+            waitForTerminal(registry, registry.recent().getFirst());
+
+            WorldTaskSnapshot next = runner.submit(
+                    WorldTaskType.EXPORT, worldId, "next", progress -> "next");
+            assertEquals(WorldTaskState.QUEUED, next.state());
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
     void rejectsWhenBoundedQueueIsFull() throws Exception {
         WorldTaskRegistry registry = new WorldTaskRegistry();
         CountDownLatch firstStarted = new CountDownLatch(1);
