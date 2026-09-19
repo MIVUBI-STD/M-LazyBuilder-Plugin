@@ -50,6 +50,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public ImportInspection inspectArtifact(String artifactName) throws IOException {
+        requireSafeImportsRoot();
         Path artifact = resolveArtifact(artifactName);
         List<String> entryNames = new ArrayList<>();
         ZipEntry selectedLevelDat = null;
@@ -115,6 +116,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public StagedImport stageArchive(String artifactName, Path workspace) throws IOException {
+        requireSafeImportsRoot();
         Path artifact = resolveArtifact(artifactName);
         Path target = Objects.requireNonNull(workspace, "workspace").toAbsolutePath().normalize();
         if (Files.exists(target)) throw new IOException("Import workspace already exists: " + target.getFileName());
@@ -161,6 +163,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public void deleteArtifact(String artifactName) throws IOException {
+        requireSafeImportsRoot();
         Path artifact = resolveArtifactPath(artifactName);
         if (Files.exists(artifact) && (!Files.isRegularFile(artifact) || Files.isSymbolicLink(artifact))) {
             throw new IOException("Import artifact is unsafe: " + artifact.getFileName());
@@ -170,6 +173,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public void markCommittedCleanupPending(String artifactName) throws IOException {
+        requireSafeImportsRoot();
         String safe = validateArtifactName(artifactName);
         Path directory = ensureCleanupMarkerDirectory();
         Path marker = cleanupMarkerPath(directory, safe);
@@ -179,6 +183,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public void clearCommittedCleanupPending(String artifactName) throws IOException {
+        requireSafeImportsRoot();
         String safe = validateArtifactName(artifactName);
         Path directory = existingCleanupMarkerDirectory();
         if (directory == null) return;
@@ -187,6 +192,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public List<String> pendingCommittedCleanupArtifacts() throws IOException {
+        requireSafeImportsRoot();
         Path directory = existingCleanupMarkerDirectory();
         if (directory == null) return List.of();
         List<String> pending = new ArrayList<>();
@@ -203,6 +209,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             }
         }
         return List.copyOf(pending);
+    }
+
+    private void requireSafeImportsRoot() throws IOException {
+        if (Files.notExists(importsRoot)) {
+            Files.createDirectories(importsRoot);
+        }
+        if (!Files.isDirectory(importsRoot) || Files.isSymbolicLink(importsRoot)) {
+            throw new IOException("Import artifact root is unsafe: " + importsRoot);
+        }
     }
 
     private Path resolveArtifact(String artifactName) throws IOException {

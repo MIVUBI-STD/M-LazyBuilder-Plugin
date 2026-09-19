@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.world.files;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -35,7 +36,7 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
         }
 
         String safe = validateArtifactName(artifactName);
-        Files.createDirectories(exportRoot);
+        requireSafeExportRoot();
         Path target = exportRoot.resolve(safe + type.extension()).normalize();
         if (!exportRoot.equals(target.getParent())) {
             throw new IOException("Export artifact escaped export root");
@@ -54,7 +55,10 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
 
         Path temporary = exportRoot.resolve("export-" + UUID.randomUUID() + ".tmp");
         try {
-            try (var fileOut = Files.newOutputStream(temporary);
+            try (var fileOut = Files.newOutputStream(
+                         temporary,
+                         java.nio.file.StandardOpenOption.CREATE_NEW,
+                         java.nio.file.StandardOpenOption.WRITE);
                  var bufferedOut = new BufferedOutputStream(fileOut, IO_BUFFER_BYTES);
                  ZipOutputStream zip = new ZipOutputStream(bufferedOut)) {
                 Files.walkFileTree(source, new SimpleFileVisitor<>() {
@@ -81,10 +85,24 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
                     }
                 });
             }
+            try (FileChannel channel = FileChannel.open(
+                    temporary,
+                    java.nio.file.StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             moveIntoPlace(temporary, target);
             return target;
         } finally {
             Files.deleteIfExists(temporary);
+        }
+    }
+
+    private void requireSafeExportRoot() throws IOException {
+        if (Files.notExists(exportRoot)) {
+            Files.createDirectories(exportRoot);
+        }
+        if (!Files.isDirectory(exportRoot) || Files.isSymbolicLink(exportRoot)) {
+            throw new IOException("Export artifact root is unsafe: " + exportRoot);
         }
     }
 
