@@ -147,6 +147,25 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void stalePreviousCleanupDebtDoesNotBlockNextValidSave() throws Exception {
+        Path path = tempDir.resolve("registry-next-save.yml");
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        WorldRecord first = new WorldRecord(
+                WorldId.create(), "First", "First", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldRecord second = new WorldRecord(
+                WorldId.create(), "Second", "Second", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+
+        persistence.save(List.of(first));
+        Path previous = path.resolveSibling(path.getFileName() + ".previous");
+        Files.writeString(previous, "worlds: {}\n");
+
+        persistence.save(List.of(first, second));
+
+        assertEquals(List.of(first, second), persistence.load());
+        assertFalse(Files.exists(previous));
+    }
+
+    @Test
     void invalidRegistryFailsClosed() throws Exception {
         Path path = tempDir.resolve("registry.yml");
         Files.writeString(path, "worlds:\n  broken:\n    folder: ../unsafe\n");

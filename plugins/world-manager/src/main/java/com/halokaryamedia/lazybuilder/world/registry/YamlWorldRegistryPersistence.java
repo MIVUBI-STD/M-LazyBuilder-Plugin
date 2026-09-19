@@ -91,6 +91,13 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         }
 
         recoverInterruptedPublish();
+        if (Files.exists(previousPath()) && Files.notExists(temporaryPath())) {
+            // A stale previous copy after a successful commit is cleanup debt, not
+            // ambiguous transaction state. Validate the committed main registry through
+            // the normal load path, which removes the stale previous copy only after
+            // semantic validation succeeds.
+            load();
+        }
         if (Files.exists(previousPath()) || Files.exists(temporaryPath())) {
             throw new IOException(
                     "World registry recovery evidence is unresolved; load/reconcile before saving");
