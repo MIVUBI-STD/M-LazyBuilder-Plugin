@@ -162,7 +162,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($download)) {
             throw "PaperMC stable build did not expose a server download URL."
           }
-          if ([string]::IsNullOrWhiteSpace($expectedSha256) -or $expectedSha256 -notmatch '^[0-9a-fA-F]{64}      - name: Execute Paper managed-world lifecycle proof
+          if ([string]::IsNullOrWhiteSpace($expectedSha256) -or $expectedSha256 -notmatch '^[0-9a-fA-F]{64}
+      - name: Execute Paper managed-world lifecycle proof
         shell: pwsh
         run: |
           ./scripts/verify-paper-runtime.ps1 `
