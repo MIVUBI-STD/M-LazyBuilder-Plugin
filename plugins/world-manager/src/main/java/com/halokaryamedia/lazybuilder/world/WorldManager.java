@@ -311,42 +311,42 @@ public final class WorldManager {
         int discovered = 0;
         List<WorldId> discoveredIds = new java.util.ArrayList<>();
         String defaultGameMode = plugin.getServer().getDefaultGameMode().name();
-        for (Path candidate : candidates) {
-            String folderName = candidate.getFileName().toString();
-            if (worldRegistry.findByFolderName(folderName).isPresent()) continue;
+        try {
+            for (Path candidate : candidates) {
+                String folderName = candidate.getFileName().toString();
+                if (worldRegistry.findByFolderName(folderName).isPresent()) continue;
 
-            Path levelDat = candidate.resolve("level.dat");
-            if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat)) continue;
+                Path levelDat = candidate.resolve("level.dat");
+                if (!Files.isRegularFile(levelDat) || Files.isSymbolicLink(levelDat)) continue;
 
-            World loaded = plugin.getServer().getWorld(folderName);
-            if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) continue;
-            if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) continue;
+                World loaded = plugin.getServer().getWorld(folderName);
+                if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) continue;
+                if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) continue;
 
-            WorldRecord discoveredWorld = new WorldRecord(
-                    WorldId.create(),
-                    folderName,
-                    folderName,
-                    WorldKind.IMPORTED,
-                    WorldLifecycle.ACTIVE,
-                    defaultGameMode);
-            worldRegistry.register(discoveredWorld);
-            discoveredIds.add(discoveredWorld.id());
-            discovered++;
-        }
-
-        if (discovered > 0) {
-            try {
-                registryPersistence.save(worldRegistry.all());
-            } catch (IOException | RuntimeException failure) {
-                // Discovery is provisional until one registry commit succeeds.
-                // Revert only worlds created by this pass so the in-memory authority
-                // remains aligned with durable registry truth after a failed save.
-                discoveredIds.forEach(worldRegistry::remove);
-                throw failure;
+                WorldRecord discoveredWorld = new WorldRecord(
+                        WorldId.create(),
+                        folderName,
+                        folderName,
+                        WorldKind.IMPORTED,
+                        WorldLifecycle.ACTIVE,
+                        defaultGameMode);
+                worldRegistry.register(discoveredWorld);
+                discoveredIds.add(discoveredWorld.id());
+                discovered++;
             }
-            plugin.getLogger().info("Adopted " + discovered
-                    + " existing Paper world" + (discovered == 1 ? "" : "s")
-                    + " into the LazyBuilder registry.");
+
+            if (discovered > 0) {
+                registryPersistence.save(worldRegistry.all());
+                plugin.getLogger().info("Adopted " + discovered
+                        + " existing Paper world" + (discovered == 1 ? "" : "s")
+                        + " into the LazyBuilder registry.");
+            }
+        } catch (IOException | RuntimeException failure) {
+            // Discovery is one provisional batch until the registry save commits.
+            // Any validation/collision/persistence failure rolls back only records
+            // created by this pass and leaves pre-existing registry truth untouched.
+            discoveredIds.forEach(worldRegistry::remove);
+            throw failure;
         }
     }
 
@@ -372,7 +372,9 @@ public final class WorldManager {
         } else {
             return false;
         }
-        return !baseName.isBlank() && Files.isRegularFile(worldsRoot.resolve(baseName).resolve("level.dat"));
+        if (baseName.isBlank()) return false;
+        Path levelDat = worldsRoot.resolve(baseName).resolve("level.dat");
+        return Files.isRegularFile(levelDat) && !Files.isSymbolicLink(levelDat);
     }
 
     public void stop() {
