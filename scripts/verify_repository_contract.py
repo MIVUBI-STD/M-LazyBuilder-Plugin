@@ -307,6 +307,10 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldExportService.java",
         errors,
     )
+    world_registry_persistence = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/YamlWorldRegistryPersistence.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -475,6 +479,17 @@ def main() -> int:
     ):
         if "SafeArtifactName.requirePortable" not in content:
             fail(errors, f"{relative} must delegate artifact filename validation to SafeArtifactName")
+
+    for marker in (
+        "MAX_REGISTRY_BYTES",
+        "recoverInterruptedPublish()",
+        'getFileName() + ".previous"',
+        'getFileName() + ".tmp"',
+        "channel.force(true)",
+        "recovery evidence is unresolved",
+    ):
+        if marker not in world_registry_persistence:
+            fail(errors, f"World registry crash-safety contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
