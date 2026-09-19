@@ -319,6 +319,14 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldRecord.java",
         errors,
     )
+    world_registry = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldRegistry.java",
+        errors,
+    )
+    world_control_protocol = read_text(
+        "shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -524,6 +532,11 @@ def main() -> int:
     ):
         if marker not in world_record:
             fail(errors, f"durable world-name validation contract missing marker: {marker}")
+
+    if "MAX_MANAGED_WORLDS = 4_096" not in world_registry:
+        fail(errors, "WorldRegistry must preserve the managed-world capacity ceiling")
+    if "MAX_WORLDS = 4_096" not in world_control_protocol:
+        fail(errors, "World-control protocol capacity must match the managed-world ceiling")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():

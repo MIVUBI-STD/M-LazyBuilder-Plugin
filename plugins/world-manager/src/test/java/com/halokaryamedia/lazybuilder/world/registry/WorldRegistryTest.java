@@ -98,6 +98,15 @@ class WorldRegistryTest {
     }
 
     @Test
+    void managedWorldCapacityMatchesClientControlSurface() {
+        assertEquals(4_096, WorldRegistry.MAX_MANAGED_WORLDS);
+        assertEquals(
+                WorldRegistry.MAX_MANAGED_WORLDS,
+                com.halokaryamedia.lazybuilder.world.control.WorldControlWireProtocol.MAX_WORLDS
+        );
+    }
+
+    @Test
     void metadataUpdateCannotRenameFilesystemIdentity() {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = world("Build", "Build");

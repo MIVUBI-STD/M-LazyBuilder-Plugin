@@ -20,7 +20,7 @@ public final class WorldControlWireProtocol {
     public static final int VERSION = 7;
     public static final int MAX_MESSAGE_BYTES = 64 * 1024;
     private static final int MAX_STRING_BYTES = 1024;
-    private static final int MAX_WORLDS = 4096;
+    public static final int MAX_WORLDS = 4_096;
     private static final int MAX_FORMATS = 256;
     private static final int MAX_GAME_RULES = 512;
 

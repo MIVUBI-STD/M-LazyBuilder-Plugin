@@ -11,6 +11,8 @@ import java.util.Set;
 
 /** Canonical in-memory owner for LazyBuilder-managed world metadata. */
 public final class WorldRegistry {
+    public static final int MAX_MANAGED_WORLDS = 4_096;
+
     private final Map<WorldId, WorldRecord> worlds = new LinkedHashMap<>();
     private final Set<String> reservedFolders = new HashSet<>();
 
@@ -18,6 +20,10 @@ public final class WorldRegistry {
         Objects.requireNonNull(world, "world");
         if (worlds.containsKey(world.id())) {
             throw new IllegalArgumentException("World id already registered: " + world.id());
+        }
+        if (worlds.size() >= MAX_MANAGED_WORLDS) {
+            throw new IllegalStateException(
+                    "Managed world limit reached: " + MAX_MANAGED_WORLDS);
         }
         ensureFolderAvailable(world.folderName(), null);
         worlds.put(world.id(), world);
@@ -50,6 +56,10 @@ public final class WorldRegistry {
         }
         String key = folderKey(folderName);
         ensureFolderAvailable(folderName, null);
+        if ((long) worlds.size() + reservedFolders.size() >= MAX_MANAGED_WORLDS) {
+            throw new IllegalStateException(
+                    "Managed world limit reached: " + MAX_MANAGED_WORLDS);
+        }
         if (!reservedFolders.add(key)) {
             throw new IllegalStateException("World folder is already being prepared: " + folderName);
         }
