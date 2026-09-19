@@ -8,6 +8,9 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+const DEFAULT_CONTROL_READ_TIMEOUT: Duration = Duration::from_secs(8);
+const CREATE_WORLD_READ_TIMEOUT: Duration = Duration::from_secs(120);
+
 pub const TOKEN_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_TOKEN";
 pub const PORT_ENV: &str = "LAZYBUILDER_WORLD_CONTROL_PORT";
 pub const DEFAULT_PORT: u16 = 17842;
@@ -230,7 +233,13 @@ pub fn create_world(request: &CreateWorldRequest) -> Result<ManagedWorldSummary,
     if kind != "FLAT" && kind != "VOID" {
         return Err("World type must be Flat or Void.".into());
     }
-    request_mutation_json("POST", "/v1/worlds", Some(request))
+    ensure_bridge_compatible()?;
+    request_json_with_read_timeout(
+        "POST",
+        "/v1/worlds",
+        Some(request),
+        CREATE_WORLD_READ_TIMEOUT,
+    )
 }
 
 pub fn get_world_settings(world_id: &str) -> Result<WorldSettingsSnapshot, String> {
@@ -412,12 +421,25 @@ where
     T: DeserializeOwned,
     B: Serialize + ?Sized,
 {
+    request_json_with_read_timeout(method, path, body, DEFAULT_CONTROL_READ_TIMEOUT)
+}
+
+fn request_json_with_read_timeout<T, B>(
+    method: &str,
+    path: &str,
+    body: Option<&B>,
+    read_timeout: Duration,
+) -> Result<T, String>
+where
+    T: DeserializeOwned,
+    B: Serialize + ?Sized,
+{
     let options = load_or_create_control_options()?;
     let url = format!("http://127.0.0.1:{}{}", options.port, path);
     let authorization = format!("Bearer {}", options.token);
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(2))
-        .timeout_read(Duration::from_secs(8))
+        .timeout_read(read_timeout)
         .timeout_write(Duration::from_secs(8))
         .build();
     let request = agent.request(method, &url).set("Authorization", &authorization);
@@ -492,8 +514,14 @@ fn generate_token() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::loopback_port_available;
+    use super::{loopback_port_available, CREATE_WORLD_READ_TIMEOUT, DEFAULT_CONTROL_READ_TIMEOUT};
     use std::net::TcpListener;
+
+    #[test]
+    fn create_world_timeout_exceeds_normal_control_timeout() {
+        assert!(CREATE_WORLD_READ_TIMEOUT > DEFAULT_CONTROL_READ_TIMEOUT);
+        assert_eq!(CREATE_WORLD_READ_TIMEOUT, std::time::Duration::from_secs(120));
+    }
 
     #[test]
     fn occupied_loopback_port_is_not_available() {
