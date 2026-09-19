@@ -287,6 +287,26 @@ def main() -> int:
     build_local = read_text("apps/launcher/build-local.ps1", errors)
     test_local = read_text("tooling/windows-toolchain/scripts/verify/test-local.ps1", errors)
     publisher = read_text("tooling/windows-toolchain/scripts/distribution/package-local.ps1", errors)
+    safe_artifact_name = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/files/SafeArtifactName.java",
+        errors,
+    )
+    transfer_sessions = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/transfer/TransferSessionService.java",
+        errors,
+    )
+    import_artifacts = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/files/LocalWorldImportArtifactStore.java",
+        errors,
+    )
+    export_artifacts = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/files/LocalWorldExportArtifactStore.java",
+        errors,
+    )
+    export_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldExportService.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -435,6 +455,26 @@ def main() -> int:
 
     if "$PackageLocal" not in build_local or "& $PackageLocal" not in build_local:
         fail(errors, "Launcher local build must delegate runtime-ready publication to package-local.ps1")
+
+    for marker in (
+        "name.indexOf(':') >= 0",
+        'name.endsWith(".")',
+        'name.endsWith(" ")',
+        "CONIN$",
+        "CONOUT$",
+        "MAX_FILE_NAME_CHARS",
+    ):
+        if marker not in safe_artifact_name:
+            fail(errors, f"portable artifact filename policy missing safety marker: {marker}")
+
+    for relative, content in (
+        ("TransferSessionService", transfer_sessions),
+        ("LocalWorldImportArtifactStore", import_artifacts),
+        ("LocalWorldExportArtifactStore", export_artifacts),
+        ("WorldExportService", export_service),
+    ):
+        if "SafeArtifactName.requirePortable" not in content:
+            fail(errors, f"{relative} must delegate artifact filename validation to SafeArtifactName")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
