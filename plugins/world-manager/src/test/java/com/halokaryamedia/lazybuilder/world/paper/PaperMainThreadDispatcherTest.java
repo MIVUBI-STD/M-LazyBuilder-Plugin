@@ -53,7 +53,9 @@ class PaperMainThreadDispatcherTest {
 
         IllegalArgumentException failure = assertThrows(
                 IllegalArgumentException.class,
-                () -> dispatcher.call(() -> "unused")
+                () -> dispatcher.call(() -> {
+                    throw new IllegalArgumentException("boom");
+                })
         );
         assertEquals("boom", failure.getMessage());
     }
