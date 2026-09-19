@@ -64,6 +64,26 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void malformedRegistrySchemaTypeDoesNotFallBackToLegacy() throws Exception {
+        Path path = tempDir.resolve("registry-schema-string.yml");
+        Files.writeString(path, "schema-version: one\nworlds: {}\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        IOException error = assertThrows(IOException.class, persistence::load);
+        assertTrue(error.getMessage().contains("must be an integer"));
+    }
+
+    @Test
+    void explicitLegacySchemaNumberIsNotAcceptedAsMissingSchema() throws Exception {
+        Path path = tempDir.resolve("registry-schema-zero.yml");
+        Files.writeString(path, "schema-version: 0\nworlds: {}\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        IOException error = assertThrows(IOException.class, persistence::load);
+        assertTrue(error.getMessage().contains("unsupported"));
+    }
+
+    @Test
     void unsupportedRegistrySchemaFailsClosed() throws Exception {
         Path path = tempDir.resolve("registry-newer-schema.yml");
         Files.writeString(path, "schema-version: 2\nworlds: {}\n");

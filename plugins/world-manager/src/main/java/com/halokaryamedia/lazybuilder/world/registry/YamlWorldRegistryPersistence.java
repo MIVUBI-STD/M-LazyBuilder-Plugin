@@ -51,15 +51,19 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             throw new IOException("World registry is not valid YAML: " + registryFile, exception);
         }
 
-        int schema = yaml.getInt(SCHEMA_PATH, 0);
-        if (schema < 0 || schema > SCHEMA_VERSION) {
+        boolean hasSchema = yaml.contains(SCHEMA_PATH);
+        if (hasSchema && !yaml.isInt(SCHEMA_PATH)) {
+            throw new IOException("World registry schema-version must be an integer");
+        }
+        int schema = hasSchema ? yaml.getInt(SCHEMA_PATH) : 0;
+        if (hasSchema && schema != SCHEMA_VERSION) {
             throw new IOException("World registry schema " + schema + " is unsupported");
         }
 
         ConfigurationSection worlds = yaml.getConfigurationSection(WORLDS_PATH);
         if (worlds == null) {
-            boolean validEmptyLegacy = schema == 0 && raw.isBlank();
-            boolean validEmptyCurrent = schema == SCHEMA_VERSION;
+            boolean validEmptyLegacy = !hasSchema && raw.isBlank();
+            boolean validEmptyCurrent = hasSchema && schema == SCHEMA_VERSION;
             if (!validEmptyLegacy && !validEmptyCurrent) {
                 throw new IOException(
                         "World registry is non-empty but missing the required worlds section");
