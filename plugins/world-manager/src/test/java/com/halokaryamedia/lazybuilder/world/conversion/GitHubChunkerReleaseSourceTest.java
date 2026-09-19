@@ -2,9 +2,13 @@ package com.halokaryamedia.lazybuilder.world.conversion;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GitHubChunkerReleaseSourceTest {
@@ -34,6 +38,22 @@ class GitHubChunkerReleaseSourceTest {
         assertEquals("1.20.0", release.version());
         assertEquals("41efb80bba57c4eb08a810e5cc121211e2c0585aa8ff6eaf63d949782ecea502", release.sha256());
         assertEquals("https://example.invalid/chunker-cli-1.20.0.jar", release.artifactUri().toString());
+    }
+
+    @Test
+    void boundedCopyRejectsOversizedRuntimeBeforeUnboundedWrite() throws Exception {
+        byte[] payload = new byte[]{1, 2, 3, 4, 5};
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        IOException error = assertThrows(IOException.class, () ->
+                GitHubChunkerReleaseSource.copyBounded(
+                        new ByteArrayInputStream(payload),
+                        output,
+                        4,
+                        "test artifact"
+                ));
+        assertTrue(error.getMessage().contains("safety limit"));
+        assertEquals(4, output.size());
     }
 
     @Test

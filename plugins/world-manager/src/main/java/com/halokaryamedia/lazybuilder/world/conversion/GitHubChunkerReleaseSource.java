@@ -5,12 +5,15 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,6 +35,8 @@ public final class GitHubChunkerReleaseSource
     static final URI DEFAULT_LATEST_RELEASE = URI.create("https://api.github.com/repos/HiveGamesOSS/Chunker/releases/latest");
     private static final Duration METADATA_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(3);
+    private static final long MAX_RELEASE_METADATA_BYTES = 2L * 1024L * 1024L;
+    private static final long MAX_RUNTIME_ARTIFACT_BYTES = 1024L * 1024L * 1024L;
 
     private final HttpClient client;
     private final URI latestReleaseUri;
@@ -57,12 +62,22 @@ public final class GitHubChunkerReleaseSource
                 .GET()
                 .build();
         try {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() == 404) return Optional.empty();
+            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() == 404) {
+                try (InputStream ignored = response.body()) { }
+                return Optional.empty();
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                try (InputStream ignored = response.body()) { }
                 throw new IOException("Conversion runtime release metadata request failed with HTTP " + response.statusCode());
             }
-            return parseStableRelease(response.body());
+            try (InputStream body = response.body()) {
+                return parseStableRelease(readUtf8Bounded(
+                        body,
+                        MAX_RELEASE_METADATA_BYTES,
+                        "Conversion runtime release metadata"
+                ));
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while checking conversion runtime release metadata", interrupted);
@@ -95,8 +110,17 @@ public final class GitHubChunkerReleaseSource
                 }
                 throw new IOException("Conversion runtime download failed with HTTP " + response.statusCode());
             }
-            try (InputStream in = response.body()) {
-                Files.copy(in, temporary, StandardCopyOption.REPLACE_EXISTING);
+            try (InputStream in = response.body();
+                 OutputStream out = Files.newOutputStream(
+                         temporary,
+                         java.nio.file.StandardOpenOption.CREATE_NEW,
+                         java.nio.file.StandardOpenOption.WRITE)) {
+                copyBounded(
+                        in,
+                        out,
+                        MAX_RUNTIME_ARTIFACT_BYTES,
+                        "Conversion runtime artifact"
+                );
             }
             moveIntoPlace(temporary, destination);
             return destination;
@@ -106,6 +130,39 @@ public final class GitHubChunkerReleaseSource
         } finally {
             Files.deleteIfExists(temporary);
         }
+    }
+
+    static long copyBounded(
+            InputStream input,
+            OutputStream output,
+            long maxBytes,
+            String label
+    ) throws IOException {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(output, "output");
+        if (maxBytes < 1L) throw new IllegalArgumentException("maxBytes must be positive");
+        String safeLabel = Objects.requireNonNull(label, "label");
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0L;
+        for (int read; (read = input.read(buffer)) >= 0;) {
+            if (read == 0) continue;
+            total = Math.addExact(total, read);
+            if (total > maxBytes) {
+                throw new IOException(safeLabel + " exceeds the " + maxBytes + " byte safety limit");
+            }
+            output.write(buffer, 0, read);
+        }
+        return total;
+    }
+
+    private static String readUtf8Bounded(
+            InputStream input,
+            long maxBytes,
+            String label
+    ) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        copyBounded(input, output, maxBytes, label);
+        return output.toString(StandardCharsets.UTF_8);
     }
 
     static Optional<ConversionRelease> parseStableRelease(String json) throws IOException {
