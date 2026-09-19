@@ -20,6 +20,8 @@ import java.util.Objects;
 /** YAML-backed registry persistence with crash-recoverable publication. */
 public final class YamlWorldRegistryPersistence implements WorldRegistryPersistence {
     private static final String WORLDS_PATH = "worlds";
+    private static final String SCHEMA_PATH = "schema-version";
+    private static final int SCHEMA_VERSION = 1;
     private static final long MAX_REGISTRY_BYTES = 16L * 1024L * 1024L;
 
     private final Path registryFile;
@@ -41,15 +43,27 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             throw new IOException("World registry exceeds the " + MAX_REGISTRY_BYTES + " byte safety limit");
         }
 
+        String raw = Files.readString(registryFile, StandardCharsets.UTF_8);
         YamlConfiguration yaml = new YamlConfiguration();
         try {
-            yaml.load(registryFile.toFile());
+            yaml.loadFromString(raw);
         } catch (InvalidConfigurationException exception) {
             throw new IOException("World registry is not valid YAML: " + registryFile, exception);
         }
 
+        int schema = yaml.getInt(SCHEMA_PATH, 0);
+        if (schema < 0 || schema > SCHEMA_VERSION) {
+            throw new IOException("World registry schema " + schema + " is unsupported");
+        }
+
         ConfigurationSection worlds = yaml.getConfigurationSection(WORLDS_PATH);
         if (worlds == null) {
+            boolean validEmptyLegacy = schema == 0 && raw.isBlank();
+            boolean validEmptyCurrent = schema == SCHEMA_VERSION;
+            if (!validEmptyLegacy && !validEmptyCurrent) {
+                throw new IOException(
+                        "World registry is non-empty but missing the required worlds section");
+            }
             cleanupRecoveryFiles();
             return List.of();
         }
@@ -104,6 +118,8 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
         }
 
         YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set(SCHEMA_PATH, SCHEMA_VERSION);
+        yaml.createSection(WORLDS_PATH);
         for (WorldRecord world : worlds) {
             String base = WORLDS_PATH + "." + world.id();
             yaml.set(base + ".folder", world.folderName());

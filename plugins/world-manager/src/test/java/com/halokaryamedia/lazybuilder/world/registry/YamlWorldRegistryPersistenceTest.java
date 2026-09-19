@@ -42,6 +42,38 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void emptyCurrentRegistryCarriesSchemaAndRoundTripsAsEmpty() throws Exception {
+        Path path = tempDir.resolve("registry-empty-current.yml");
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+
+        persistence.save(List.of());
+
+        String raw = Files.readString(path);
+        assertTrue(raw.contains("schema-version: 1"));
+        assertTrue(persistence.load().isEmpty());
+    }
+
+    @Test
+    void nonEmptyRegistryWithoutWorldsSectionFailsClosed() throws Exception {
+        Path path = tempDir.resolve("registry-missing-worlds.yml");
+        Files.writeString(path, "other: value\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        IOException error = assertThrows(IOException.class, persistence::load);
+        assertTrue(error.getMessage().contains("missing the required worlds section"));
+    }
+
+    @Test
+    void unsupportedRegistrySchemaFailsClosed() throws Exception {
+        Path path = tempDir.resolve("registry-newer-schema.yml");
+        Files.writeString(path, "schema-version: 2\nworlds: {}\n");
+
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        IOException error = assertThrows(IOException.class, persistence::load);
+        assertTrue(error.getMessage().contains("unsupported"));
+    }
+
+    @Test
     void legacyAutoLoadKeyIsIgnoredDuringMigration() throws Exception {
         Path path = tempDir.resolve("registry.yml");
         WorldId id = WorldId.create();
