@@ -231,6 +231,8 @@ public final class WorldManager {
                         + ", preserved=" + deleteRecovery.preserved() + ".");
             }
 
+            requireResolvedTransactionRecovery(createRecovery, deleteRecovery);
+
             WorldFileRepository.PublishRecovery publishRecovery =
                     worldFileRepository.recoverPublishedWorlds(worldRegistry.all());
             if (publishRecovery.finalized() > 0 || publishRecovery.discarded() > 0) {
@@ -262,6 +264,23 @@ public final class WorldManager {
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
                 + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
                 + " storage layout.");
+    }
+
+    static void requireResolvedTransactionRecovery(
+            WorldFileRepository.CreateRecovery createRecovery,
+            WorldFileRepository.DeleteRecovery deleteRecovery
+    ) {
+        Objects.requireNonNull(createRecovery, "createRecovery");
+        Objects.requireNonNull(deleteRecovery, "deleteRecovery");
+        if (createRecovery.preserved() == 0 && deleteRecovery.preserved() == 0) return;
+
+        throw new IllegalStateException(
+                "World Manager found ambiguous preserved transaction state "
+                        + "(create=" + createRecovery.preserved()
+                        + ", delete=" + deleteRecovery.preserved()
+                        + "). Automatic world discovery is blocked until the preserved "
+                        + "recovery evidence is reconciled manually."
+        );
     }
 
     private void discoverExistingWorlds() throws IOException {
