@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Modifier;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,6 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class YamlWorldRegistryPersistenceTest {
     @TempDir
     Path tempDir;
+
+    @Test
+    void productionPersistenceSerializesLoadAndSaveAtTheFileAuthority() throws Exception {
+        assertTrue(Modifier.isSynchronized(
+                YamlWorldRegistryPersistence.class.getMethod("load").getModifiers()));
+        assertTrue(Modifier.isSynchronized(
+                YamlWorldRegistryPersistence.class.getMethod("save", List.class).getModifiers()));
+    }
 
     @Test
     void missingRegistryLoadsAsEmpty() throws Exception {

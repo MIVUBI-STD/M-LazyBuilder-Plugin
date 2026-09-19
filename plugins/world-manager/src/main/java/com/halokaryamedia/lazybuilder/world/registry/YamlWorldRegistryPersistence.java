@@ -33,7 +33,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
     }
 
     @Override
-    public List<WorldRecord> load() throws IOException {
+    public synchronized List<WorldRecord> load() throws IOException {
         recoverInterruptedPublish();
         if (Files.notExists(registryFile)) return List.of();
         requireSafeRegularFile(registryFile, "world registry");
@@ -99,7 +99,7 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
     }
 
     @Override
-    public void save(List<WorldRecord> worlds) throws IOException {
+    public synchronized void save(List<WorldRecord> worlds) throws IOException {
         Objects.requireNonNull(worlds, "worlds");
         Path parent = registryFile.getParent();
         if (parent == null) throw new IOException("Registry path has no parent: " + registryFile);
