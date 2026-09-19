@@ -670,9 +670,11 @@ def main() -> int:
             fail(errors, f"World task queue-admission contract missing marker: {marker}")
 
     for marker in (
-        "future.cancel(false)",
+        "submitTracked",
+        "cancelBeforeStart",
+        "dispatch.started.get()",
+        "dispatch.outcome",
         "awaitAlreadyStarted",
-        "Cancellation lost because Paper already started",
     ):
         if marker not in paper_dispatcher:
             fail(errors, f"Paper dispatch ownership contract missing marker: {marker}")
