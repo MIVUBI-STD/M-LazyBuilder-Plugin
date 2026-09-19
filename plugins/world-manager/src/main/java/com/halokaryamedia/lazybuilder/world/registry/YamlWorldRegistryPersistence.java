@@ -134,8 +134,11 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             throw publishFailure;
         }
 
-        Files.deleteIfExists(previous);
-        Files.deleteIfExists(temporary);
+        // Publication is the commit point. Cleanup must never turn a successful
+        // registry commit into a reported failure because callers would then roll
+        // back filesystem state against already-durable registry truth. Any stale
+        // recovery evidence is safe to preserve and will be reconciled on load.
+        cleanupAfterCommittedSave(previous, temporary);
     }
 
     private void recoverInterruptedPublish() throws IOException {
@@ -159,6 +162,13 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             requireSafeRegularFile(temporary, "world registry staging file");
             moveNoReplace(temporary, registryFile);
         }
+    }
+
+    private static void cleanupAfterCommittedSave(Path previous, Path temporary) {
+        try { Files.deleteIfExists(previous); }
+        catch (IOException ignored) { }
+        try { Files.deleteIfExists(temporary); }
+        catch (IOException ignored) { }
     }
 
     private void cleanupRecoveryFiles() throws IOException {

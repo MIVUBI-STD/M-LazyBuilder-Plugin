@@ -126,6 +126,27 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void committedRegistryRemainsAuthoritativeWhenPreviousEvidenceExists() throws Exception {
+        Path path = tempDir.resolve("registry-committed.yml");
+        YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
+        WorldRecord first = new WorldRecord(
+                WorldId.create(), "First", "First", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldRecord second = new WorldRecord(
+                WorldId.create(), "Second", "Second", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+
+        persistence.save(List.of(first));
+        persistence.save(List.of(first, second));
+
+        Path previous = path.resolveSibling(path.getFileName() + ".previous");
+        Files.writeString(previous, "worlds: {}\n");
+
+        List<WorldRecord> loaded = persistence.load();
+        assertEquals(List.of(first, second), loaded);
+        assertFalse(Files.exists(previous),
+                "valid committed main registry should win before stale cleanup evidence");
+    }
+
+    @Test
     void invalidRegistryFailsClosed() throws Exception {
         Path path = tempDir.resolve("registry.yml");
         Files.writeString(path, "worlds:\n  broken:\n    folder: ../unsafe\n");
