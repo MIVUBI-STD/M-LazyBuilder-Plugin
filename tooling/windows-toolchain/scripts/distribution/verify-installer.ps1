@@ -36,12 +36,6 @@ function Get-OptionalProperty([object]$Object, [string]$Name) {
     return $property.Value
 }
 
-Write-Host "Smoke installing: $InstallerPath" -ForegroundColor Cyan
-$process = Start-Process -FilePath $InstallerPath -ArgumentList '/S' -Wait -PassThru
-if ($process.ExitCode -ne 0) {
-    throw "LazyBuilder installer exited with code $($process.ExitCode)."
-}
-
 $preExisting = @(Find-LazyBuilderUninstallEntries)
 if ($preExisting.Count -gt 0) {
     $locations = $preExisting | ForEach-Object {
@@ -49,6 +43,12 @@ if ($preExisting.Count -gt 0) {
         if ($location) { $location } else { $_.PSPath }
     }
     throw "Pre-existing LazyBuilder installation detected. Canonical installer smoke requires a clean host so it cannot pass against stale registration: $($locations -join '; ')"
+}
+
+Write-Host "Smoke installing: $InstallerPath" -ForegroundColor Cyan
+$process = Start-Process -FilePath $InstallerPath -ArgumentList '/S' -Wait -PassThru
+if ($process.ExitCode -ne 0) {
+    throw "LazyBuilder installer exited with code $($process.ExitCode)."
 }
 
 $entry = $null
