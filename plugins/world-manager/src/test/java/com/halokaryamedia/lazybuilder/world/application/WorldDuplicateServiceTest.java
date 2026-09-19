@@ -17,9 +17,28 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldDuplicateServiceTest {
+    @Test
+    void persistenceFailureRollsBackPublishedDuplicateAndRegistryOwnership() {
+        Fixture fixture = fixture(false);
+        fixture.persistence.failNextSave = true;
+
+        WorldDuplicateService.DuplicateTask task = fixture.service.prepare(
+                fixture.source.id(), "BuildCopy", "Build Copy");
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.executeFilePhase(task));
+        fixture.service.finish(task);
+
+        assertFalse(task.committed());
+        assertFalse(fixture.files.published, "published duplicate must be retired after failed registry commit");
+        assertEquals(1, fixture.registry.all().size(), "source registry ownership must remain unchanged");
+        assertFalse(fixture.registry.findByFolderName("BuildCopy").isPresent());
+        assertFalse(fixture.operations.isBusy(fixture.source.id()));
+    }
+
     @Test
     void duplicateGetsFreshIdentityAndRestoresLoadedSource() {
         Fixture fixture = fixture(true);
@@ -54,10 +73,12 @@ class WorldDuplicateServiceTest {
         FakeFiles files = new FakeFiles();
         WorldDuplicateService service = new WorldDuplicateService(
                 registry, persistence, runtimeService, operations, files);
-        return new Fixture(runtime, operations, files, service, source);
+        return new Fixture(registry, persistence, runtime, operations, files, service, source);
     }
 
     private record Fixture(
+            WorldRegistry registry,
+            MemoryPersistence persistence,
             FakeRuntime runtime,
             WorldOperationCoordinator operations,
             FakeFiles files,
@@ -67,8 +88,15 @@ class WorldDuplicateServiceTest {
 
     private static final class MemoryPersistence implements WorldRegistryPersistence {
         private List<WorldRecord> saved = List.of();
+        private boolean failNextSave;
         @Override public List<WorldRecord> load() { return saved; }
-        @Override public void save(List<WorldRecord> worlds) { saved = List.copyOf(worlds); }
+        @Override public void save(List<WorldRecord> worlds) {
+            if (failNextSave) {
+                failNextSave = false;
+                throw new IllegalStateException("test persistence failure");
+            }
+            saved = List.copyOf(worlds);
+        }
     }
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
@@ -91,7 +119,7 @@ class WorldDuplicateServiceTest {
         }
         @Override public Path stageDelete(WorldRecord world, UUID operationId) { throw new UnsupportedOperationException(); }
         @Override public void publishStagedWorld(Path stagedWorld, String destinationFolder) { published = true; }
-        @Override public void deleteWorld(WorldRecord world) { }
+        @Override public void deleteWorld(WorldRecord world) { published = false; }
         @Override public void deleteWorkspace(Path workspace) { }
     }
 }
