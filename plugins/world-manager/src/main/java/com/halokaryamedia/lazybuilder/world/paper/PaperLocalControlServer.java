@@ -471,18 +471,21 @@ public final class PaperLocalControlServer {
     }
 
     private WorldSettingsSnapshot applySettings(WorldId worldId, UpdateWorldSettingsRequest request) {
-        if (request.defaultGameMode() != null) settings.setDefaultGameMode(
-                worldId, WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase()));
-        if (request.timeOfDayTicks() != null) settings.setTime(worldId, request.timeOfDayTicks());
-        if (request.weather() != null) settings.setWeather(
-                worldId, WorldWeather.valueOf(request.weather().trim().toUpperCase()));
-        if (request.naturalSpawning() != null) settings.setSpawning(
-                worldId, WorldSpawnControl.NATURAL, request.naturalSpawning());
-        if (request.daylightCycle() != null) settings.setGameRule(
-                worldId, "doDaylightCycle", request.daylightCycle().toString());
-        if (request.weatherCycle() != null) settings.setGameRule(
-                worldId, "doWeatherCycle", request.weatherCycle().toString());
-        return settings.snapshot(worldId);
+        WorldGameMode defaultMode = request.defaultGameMode() == null
+                ? null
+                : WorldGameMode.valueOf(request.defaultGameMode().trim().toUpperCase());
+        WorldWeather weather = request.weather() == null
+                ? null
+                : WorldWeather.valueOf(request.weather().trim().toUpperCase());
+        return settings.applyBatch(
+                worldId,
+                defaultMode,
+                request.timeOfDayTicks(),
+                weather,
+                request.naturalSpawning(),
+                request.daylightCycle(),
+                request.weatherCycle()
+        );
     }
 
     private static ManagedWorldResponse summary(WorldRecord world) {

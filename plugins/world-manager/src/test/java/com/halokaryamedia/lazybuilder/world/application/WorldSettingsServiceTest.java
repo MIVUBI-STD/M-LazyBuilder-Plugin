@@ -90,6 +90,28 @@ class WorldSettingsServiceTest {
     }
 
     @Test
+    void batchSettingsKeepsOneExclusiveLeaseAcrossAllMutations() {
+        Fixture fixture = fixture();
+        fixture.runtime().assertBusyCoordinator = fixture.operations();
+        fixture.runtime().assertBusyWorld = fixture.world().id();
+
+        WorldSettingsSnapshot snapshot = fixture.service().applyBatch(
+                fixture.world().id(),
+                WorldGameMode.ADVENTURE,
+                12_000L,
+                WorldWeather.RAIN,
+                false,
+                true,
+                false
+        );
+
+        assertEquals(WorldGameMode.ADVENTURE, snapshot.defaultGameMode());
+        assertEquals(5, fixture.runtime().busyAssertions,
+                "every runtime mutation in the PATCH must observe the same active SETTINGS lease");
+        assertFalse(fixture.operations().isBusy(fixture.world().id()));
+    }
+
+    @Test
     void runtimeMutationsDelegateWithoutCreatingParallelState() {
         Fixture fixture = fixture();
         UUID playerId = UUID.randomUUID();
@@ -239,6 +261,9 @@ class WorldSettingsServiceTest {
         private boolean lastSpawnEnabled;
         private boolean buildReadyApplied;
         private boolean failBuildReady;
+        private WorldOperationCoordinator assertBusyCoordinator;
+        private WorldId assertBusyWorld;
+        private int busyAssertions;
 
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
@@ -249,13 +274,22 @@ class WorldSettingsServiceTest {
         @Override public WorldRuntimeSettings readSettings(WorldRecord world) { return runtimeSettings; }
         @Override public void setDifficulty(WorldRecord world, WorldDifficulty difficulty) { lastDifficulty = difficulty; }
         @Override public void setPvp(WorldRecord world, boolean enabled) { lastPvp = enabled; }
-        @Override public void setTime(WorldRecord world, long ticks) { lastTime = ticks; }
-        @Override public void setWeather(WorldRecord world, WorldWeather weather) { lastWeather = weather; }
-        @Override public void setGameRule(WorldRecord world, String ruleName, String value) { lastRule = ruleName + "=" + value; }
+        @Override public void setTime(WorldRecord world, long ticks) { assertBusy(); lastTime = ticks; }
+        @Override public void setWeather(WorldRecord world, WorldWeather weather) { assertBusy(); lastWeather = weather; }
+        @Override public void setGameRule(WorldRecord world, String ruleName, String value) { assertBusy(); lastRule = ruleName + "=" + value; }
         @Override public void setSpawnToPlayer(UUID playerId, WorldRecord world) { lastSpawnPlayer = playerId; }
         @Override public void setSpawning(WorldRecord world, WorldSpawnControl control, boolean enabled) {
+            assertBusy();
             lastSpawnControl = control;
             lastSpawnEnabled = enabled;
+        }
+
+        private void assertBusy() {
+            if (assertBusyCoordinator == null) return;
+            assertTrue(assertBusyCoordinator.isBusy(assertBusyWorld));
+            assertEquals(WorldOperationType.SETTINGS,
+                    assertBusyCoordinator.activeOperation(assertBusyWorld));
+            busyAssertions++;
         }
 
         @Override

@@ -106,6 +106,51 @@ public final class WorldSettingsService {
         }
     }
 
+    public synchronized WorldSettingsSnapshot applyBatch(
+            WorldId worldId,
+            WorldGameMode defaultGameMode,
+            Long timeOfDayTicks,
+            WorldWeather weather,
+            Boolean naturalSpawning,
+            Boolean daylightCycle,
+            Boolean weatherCycle
+    ) {
+        try (WorldOperationCoordinator.Lease ignored =
+                     operations.acquire(worldId, WorldOperationType.SETTINGS)) {
+            WorldRecord world = requireLoadedDuringSettings(worldId);
+
+            if (defaultGameMode != null) {
+                world = persistMetadataChange(
+                        world,
+                        world.withDefaultGameMode(defaultGameMode.name()));
+            }
+            if (timeOfDayTicks != null) {
+                if (timeOfDayTicks < 0L || timeOfDayTicks >= 24_000L) {
+                    throw new IllegalArgumentException("ticks must be in range 0..23999");
+                }
+                runtime.setTime(world, timeOfDayTicks);
+            }
+            if (weather != null) {
+                runtime.setWeather(world, weather);
+            }
+            if (naturalSpawning != null) {
+                runtime.setSpawning(world, WorldSpawnControl.NATURAL, naturalSpawning);
+            }
+            if (daylightCycle != null) {
+                runtime.setGameRule(world, "doDaylightCycle", daylightCycle.toString());
+            }
+            if (weatherCycle != null) {
+                runtime.setGameRule(world, "doWeatherCycle", weatherCycle.toString());
+            }
+
+            return new WorldSettingsSnapshot(
+                    world,
+                    WorldGameMode.valueOf(world.defaultGameMode()),
+                    runtime.readSettings(world)
+            );
+        }
+    }
+
     public synchronized WorldSettingsSnapshot resetToBuildReady(WorldId worldId) {
         try (WorldOperationCoordinator.Lease ignored =
                      operations.acquire(worldId, WorldOperationType.SETTINGS)) {
