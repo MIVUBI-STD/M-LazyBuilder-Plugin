@@ -51,6 +51,36 @@ def main() -> int:
         if missing:
             errors.append(f"{scenario_id}: owner {owner} is missing markers {missing}")
 
+        shared_evidence = scenario.get("sharedEvidence", [])
+        if not isinstance(shared_evidence, list):
+            errors.append(f"{scenario_id}: sharedEvidence must be an array when present")
+        else:
+            for evidence in shared_evidence:
+                if not isinstance(evidence, dict):
+                    errors.append(f"{scenario_id}: sharedEvidence entries must be objects")
+                    continue
+                shared_owner = evidence.get("owner")
+                shared_markers = evidence.get("markers")
+                if not isinstance(shared_owner, str) or not shared_owner.strip():
+                    errors.append(f"{scenario_id}: sharedEvidence entry has no owner")
+                    continue
+                shared_path = ROOT / shared_owner
+                if not shared_path.is_file():
+                    errors.append(f"{scenario_id}: shared evidence owner does not exist: {shared_owner}")
+                    continue
+                if not isinstance(shared_markers, list) or not shared_markers:
+                    errors.append(f"{scenario_id}: shared evidence {shared_owner} has no markers")
+                    continue
+                shared_source = shared_path.read_text(encoding="utf-8")
+                missing_shared = [
+                    marker for marker in shared_markers
+                    if not isinstance(marker, str) or marker not in shared_source
+                ]
+                if missing_shared:
+                    errors.append(
+                        f"{scenario_id}: shared evidence owner {shared_owner} is missing markers {missing_shared}"
+                    )
+
         forbidden = scenario.get("forbidMarkers", [])
         if not isinstance(forbidden, list):
             errors.append(f"{scenario_id}: forbidMarkers must be an array when present")

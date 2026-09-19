@@ -4,187 +4,516 @@
     {
       "id": "operation-interrupted-by-launcher-exit",
       "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
-      "markers": ["reconcile_interrupted_entries", "INTERRUPTED_LAUNCHER_OPERATION", "journal_round_trip_preserves_operation_history"],
-      "testMarkers": ["interrupted_mutations_require_recovery_and_reconciliation_is_idempotent", "journal_round_trip_preserves_operation_history"]
+      "markers": [
+        "reconcile_interrupted_entries",
+        "INTERRUPTED_LAUNCHER_OPERATION",
+        "journal_round_trip_preserves_operation_history"
+      ],
+      "testMarkers": [
+        "interrupted_mutations_require_recovery_and_reconciliation_is_idempotent",
+        "journal_round_trip_preserves_operation_history"
+      ]
     },
     {
       "id": "operation-journal-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
-      "markers": ["recover_journal_file", "cleanup_journal_recovery_files", "replace_journal_file", "create_new(true)", "sync_all", "metadata_entry_exists"],
-      "testMarkers": ["operation_journal_recovery_prefers_previous_committed_copy", "operation_journal_incoming_recovers_without_committed_copy", "malformed_operation_journal_preserves_recovery_evidence"]
+      "markers": [
+        "recover_journal_file",
+        "cleanup_journal_recovery_files",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "operation_journal_recovery_prefers_previous_committed_copy",
+        "operation_journal_incoming_recovers_without_committed_copy",
+        "malformed_operation_journal_preserves_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "workspace-library-overlaps-workspace-mutation",
       "owner": "apps/launcher/src-tauri/src/engine/operations.rs",
-      "markers": ["WORKSPACE_LIBRARY_RESOURCE", "WORKSPACE_RESOURCE_PREFIX", "resources_conflict"],
-      "testMarkers": ["workspace_library_conflicts_with_workspace_resources", "library_and_workspace_exclusive_operations_are_serialized"]
+      "markers": [
+        "WORKSPACE_LIBRARY_RESOURCE",
+        "WORKSPACE_RESOURCE_PREFIX",
+        "resources_conflict"
+      ],
+      "testMarkers": [
+        "workspace_library_conflicts_with_workspace_resources",
+        "library_and_workspace_exclusive_operations_are_serialized"
+      ]
     },
     {
       "id": "workspace-metadata-crash-during-publish",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
-      "markers": ["recover_json_file", "cleanup_json_recovery_files", "write_json_file", "sync_all", "ambiguous {label} recovery staging files"],
-      "testMarkers": ["workspace_metadata_recovery_prefers_previous_committed_copy", "workspace_metadata_recovery_supports_legacy_tmp_staging", "workspace_metadata_recovery_preserves_ambiguous_staging", "workspace_metadata_preserves_recovery_evidence_until_validation"]
+      "markers": [
+        "recover_json_file",
+        "cleanup_json_recovery_files",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "workspace_metadata_recovery_prefers_previous_committed_copy",
+        "workspace_metadata_recovery_supports_legacy_tmp_staging",
+        "workspace_metadata_recovery_preserves_ambiguous_staging",
+        "workspace_metadata_preserves_recovery_evidence_until_validation"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "app-data-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/app_data_migrations.rs",
-      "markers": ["recover_manifest_file", "cleanup_manifest_recovery_files", "create_new(true)", "sync_all"],
-      "testMarkers": ["app_data_manifest_recovery_prefers_previous_committed_copy", "app_data_manifest_staging_recovers_when_no_committed_copy_exists", "existing_manifest_preserves_recovery_evidence_until_validation"]
+      "markers": [
+        "recover_manifest_file",
+        "cleanup_manifest_recovery_files",
+        "create_new(true)",
+        "sync_all"
+      ],
+      "testMarkers": [
+        "app_data_manifest_recovery_prefers_previous_committed_copy",
+        "app_data_manifest_staging_recovers_when_no_committed_copy_exists",
+        "existing_manifest_preserves_recovery_evidence_until_validation"
+      ]
     },
     {
       "id": "launcher-settings-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/launcher_settings.rs",
-      "markers": ["persistence::recover_atomic_file", "persistence::cleanup_recovery_files", "persistence::metadata_entry_exists", "persistence::write_json_atomically"],
-      "testMarkers": ["interrupted_settings_publish_prefers_previous_committed_copy", "settings_staging_recovers_when_no_committed_copy_exists", "malformed_main_settings_preserve_recovery_evidence"]
+      "markers": [
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "interrupted_settings_publish_prefers_previous_committed_copy",
+        "settings_staging_recovers_when_no_committed_copy_exists",
+        "malformed_main_settings_preserve_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "creation-intent-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
-      "markers": ["recover_pending_creation_file", "cleanup_pending_creation_recovery_files", "replace_pending_creation_file", "create_new(true)", "sync_all"],
-      "testMarkers": ["creation_intent_recovery_prefers_previous_committed_copy", "creation_intent_incoming_recovers_without_committed_copy", "malformed_creation_intent_preserves_recovery_evidence"]
+      "markers": [
+        "recover_pending_creation_file",
+        "cleanup_pending_creation_recovery_files",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "creation_intent_recovery_prefers_previous_committed_copy",
+        "creation_intent_incoming_recovers_without_committed_copy",
+        "malformed_creation_intent_preserves_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "adoption-intent-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/adoption.rs",
-      "markers": ["recover_pending_adoption_file", "cleanup_pending_adoption_recovery_files", "replace_pending_adoption_file", "create_new(true)", "sync_all"],
-      "testMarkers": ["adoption_intent_recovery_prefers_previous_committed_copy", "adoption_intent_incoming_recovers_without_committed_copy", "malformed_adoption_intent_preserves_recovery_evidence"]
+      "markers": [
+        "recover_pending_adoption_file",
+        "cleanup_pending_adoption_recovery_files",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "adoption_intent_recovery_prefers_previous_committed_copy",
+        "adoption_intent_incoming_recovers_without_committed_copy",
+        "malformed_adoption_intent_preserves_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "restore-intent-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/server_restore.rs",
-      "markers": ["recover_pending_restore_file", "cleanup_pending_restore_recovery_files", "replace_pending_restore_file", "create_new(true)", "sync_all"],
-      "testMarkers": ["restore_intent_recovery_prefers_previous_committed_copy", "restore_intent_incoming_recovers_without_committed_copy", "malformed_restore_intent_preserves_recovery_evidence"]
+      "markers": [
+        "recover_pending_restore_file",
+        "cleanup_pending_restore_recovery_files",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "restore_intent_recovery_prefers_previous_committed_copy",
+        "restore_intent_incoming_recovers_without_committed_copy",
+        "malformed_restore_intent_preserves_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "create-crash-before-intent-identity-update",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
-      "markers": ["find_registered_workspace_id", "pending-creations.json", "recover_pending_creations"],
-      "testMarkers": ["creation_paths_are_strictly_scoped"]
+      "markers": [
+        "find_registered_workspace_id",
+        "pending-creations.json",
+        "recover_pending_creations"
+      ],
+      "testMarkers": [
+        "creation_paths_are_strictly_scoped"
+      ]
     },
     {
       "id": "create-crash-after-publish-before-relocate",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_creation.rs",
-      "markers": ["finish_forward", "CREATE_RECOVERY_REQUIRED", "recover_pending_creations"]
+      "markers": [
+        "finish_forward",
+        "CREATE_RECOVERY_REQUIRED",
+        "recover_pending_creations"
+      ]
     },
     {
       "id": "adoption-crash-mid-move",
       "owner": "apps/launcher/src-tauri/src/engine/adoption.rs",
-      "markers": ["pending-adoptions.json", "rollback_intent", "recover_pending_adoptions"]
+      "markers": [
+        "pending-adoptions.json",
+        "rollback_intent",
+        "recover_pending_adoptions"
+      ]
     },
     {
       "id": "duplicate-crash-before-publish",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
-      "markers": ["pending-duplicates.json", "remove_owned_duplicate_staging", "recover_pending_duplicates"]
+      "markers": [
+        "pending-duplicates.json",
+        "remove_owned_duplicate_staging",
+        "recover_pending_duplicates"
+      ]
     },
     {
       "id": "duplicate-crash-after-publish-before-register",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
-      "markers": ["finish_recovered_duplicate", "DUPLICATE_RECOVERY_REQUIRED", "recover_pending_duplicates"]
+      "markers": [
+        "finish_recovered_duplicate",
+        "DUPLICATE_RECOVERY_REQUIRED",
+        "recover_pending_duplicates"
+      ]
     },
     {
       "id": "delete-crash-during-staging-or-cleanup",
       "owner": "apps/launcher/src-tauri/src/engine/workspace_registry.rs",
-      "markers": ["pending-deletions.json", "recover_pending_deletions", "is_safe_deletion_staging", "Recovery intent was preserved"],
-      "testMarkers": ["deletion_staging_guard_requires_same_parent_and_workspace_name"]
+      "markers": [
+        "pending-deletions.json",
+        "recover_pending_deletions",
+        "is_safe_deletion_staging",
+        "Recovery intent was preserved"
+      ],
+      "testMarkers": [
+        "deletion_staging_guard_requires_same_parent_and_workspace_name"
+      ]
     },
     {
       "id": "restore-crash-during-workspace-swap",
       "owner": "apps/launcher/src-tauri/src/engine/server_restore.rs",
-      "markers": ["pending-restores.json", "rollback_path", "recover_pending_restores"]
+      "markers": [
+        "pending-restores.json",
+        "rollback_path",
+        "recover_pending_restores"
+      ]
     },
     {
       "id": "backup-crash-during-staging-copy",
       "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
-      "markers": ["pending-backups.json", "recover_pending", "STAGING_PREFIX", "recover_workspace"],
-      "testMarkers": ["staging_prefix_is_narrowly_scoped", "pending_index_schema_is_explicit"]
+      "markers": [
+        "pending-backups.json",
+        "recover_pending",
+        "STAGING_PREFIX",
+        "recover_workspace"
+      ],
+      "testMarkers": [
+        "staging_prefix_is_narrowly_scoped",
+        "pending_index_schema_is_explicit"
+      ]
     },
     {
       "id": "backup-index-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
-      "markers": ["pending backup previous metadata", "prefer the previous committed copy", "read_pending_file", "create_new(true)"],
-      "testMarkers": ["interrupted_index_publish_prefers_previous_committed_copy", "incoming_index_is_recovered_when_no_committed_copy_exists"]
+      "markers": [
+        "load_pending_from",
+        "save_pending",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "interrupted_index_publish_prefers_previous_committed_copy",
+        "incoming_index_is_recovered_when_no_committed_copy_exists"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "legacy-backup-staging-upgrade",
       "owner": "apps/launcher/src-tauri/src/engine/startup.rs",
-      "markers": ["legacy_sweep_required", "server_backups::recover_staging()", "mark_legacy_sweep_complete"]
+      "markers": [
+        "legacy_sweep_required",
+        "server_backups::recover_staging()",
+        "mark_legacy_sweep_complete"
+      ]
     },
     {
       "id": "malformed-backup-migration-marker",
       "owner": "apps/launcher/src-tauri/src/engine/backup_recovery.rs",
-      "markers": ["legacy_marker_requires_sweep", "existing_regular_file"],
-      "testMarkers": ["legacy_sweep_marker_schema_is_explicit", "malformed_or_future_legacy_marker_requires_a_sweep"]
+      "markers": [
+        "legacy_marker_requires_sweep",
+        "persistence::metadata_entry_exists",
+        "persistence::read_json"
+      ],
+      "testMarkers": [
+        "legacy_sweep_marker_schema_is_explicit",
+        "malformed_or_future_legacy_marker_requires_a_sweep"
+      ]
     },
     {
       "id": "backup-corruption-before-restore",
       "owner": "apps/launcher/src-tauri/src/engine/server_backups.rs",
-      "markers": ["verify_snapshot_integrity", "sha256", "BackupIntegrityStatus"],
-      "testMarkers": ["integrity_paths_reject_traversal_and_absolute_paths", "legacy_backup_schema_remains_supported"]
+      "markers": [
+        "verify_snapshot_integrity",
+        "sha256",
+        "BackupIntegrityStatus"
+      ],
+      "testMarkers": [
+        "integrity_paths_reject_traversal_and_absolute_paths",
+        "legacy_backup_schema_remains_supported"
+      ]
     },
     {
       "id": "large-backup-progress-write-amplification",
       "owner": "apps/launcher/src-tauri/src/commands/server_backups.rs",
-      "markers": ["DurableProgressReporter", "MIN_PROGRESS_JOURNAL_STEP_BYTES", "progress_journal_updates_are_bounded_for_large_copies"],
-      "testMarkers": ["progress_journal_updates_are_bounded_for_large_copies", "progress_journal_uses_minimum_step_for_smaller_copies"]
+      "markers": [
+        "DurableProgressReporter",
+        "MIN_PROGRESS_JOURNAL_STEP_BYTES",
+        "progress_journal_updates_are_bounded_for_large_copies"
+      ],
+      "testMarkers": [
+        "progress_journal_updates_are_bounded_for_large_copies",
+        "progress_journal_uses_minimum_step_for_smaller_copies"
+      ]
     },
     {
       "id": "backup-delete-interrupted-mid-remove",
       "owner": "apps/launcher/src-tauri/src/commands/server_backups.rs",
-      "markers": ["begin_exclusive(\"delete-backup\"", "BACKUP_DELETE_FAILED", "Backup deletion task ended unexpectedly", "require_recovery"]
+      "markers": [
+        "begin_exclusive(\"delete-backup\"",
+        "BACKUP_DELETE_FAILED",
+        "Backup deletion task ended unexpectedly",
+        "require_recovery"
+      ]
     },
     {
       "id": "world-task-exceeds-frontend-duration",
       "owner": "apps/launcher/src/pages/Worlds.svelte",
-      "markers": ["TASK_POLL_VISIBLE_MS", "TASK_POLL_HIDDEN_MS", "while (pageActive)", "runtimeProduct.worlds.tasks()", "recoverActiveTask"],
-      "forbidMarkers": ["TASK_TIMEOUT_MS", "taking unusually long"]
+      "markers": [
+        "TASK_POLL_VISIBLE_MS",
+        "TASK_POLL_HIDDEN_MS",
+        "while (pageActive)",
+        "runtimeProduct.worlds.tasks()",
+        "recoverActiveTask"
+      ],
+      "forbidMarkers": [
+        "TASK_TIMEOUT_MS",
+        "taking unusually long"
+      ]
     },
     {
       "id": "plugin-input-changes-during-install",
       "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
-      "markers": ["PluginIngressLease", "stage_selected_jar", "validate_snapshot"],
-      "testMarkers": ["plugin_ingress_limits_are_bounded"]
+      "markers": [
+        "PluginIngressLease",
+        "stage_selected_jar",
+        "validate_snapshot"
+      ],
+      "testMarkers": [
+        "plugin_ingress_limits_are_bounded"
+      ]
     },
     {
       "id": "plugin-mutation-races-server-start",
       "owner": "apps/launcher/src-tauri/src/commands/plugin_manager.rs",
-      "markers": ["ServerStartLease::acquire()", "begin_exclusive(kind, &resource, false)", "install-plugin", "Plugin mutation task ended unexpectedly"]
+      "markers": [
+        "ServerStartLease::acquire()",
+        "begin_exclusive(kind, &resource, false)",
+        "install-plugin",
+        "Plugin mutation task ended unexpectedly"
+      ]
     },
     {
       "id": "plugin-ingress-left-after-hard-kill",
       "owner": "apps/launcher/src-tauri/src/engine/plugin_ingress.rs",
-      "markers": ["recover_stale_ingress", "INGRESS_FILE_PREFIX"]
+      "markers": [
+        "recover_stale_ingress",
+        "INGRESS_FILE_PREFIX"
+      ]
     },
     {
       "id": "server-config-crash-during-metadata-publish",
       "owner": "apps/launcher/src-tauri/src/engine/server_config.rs",
-      "markers": ["recover_atomic_file", "cleanup_recovery_files", "metadata_entry_exists", "write_staging_file", "sync_all", "json.previous"],
-      "testMarkers": ["interrupted_publish_prefers_previous_committed_config", "staging_config_recovers_when_no_committed_copy_exists", "malformed_main_config_preserves_recovery_evidence"]
+      "markers": [
+        "SERVER_CONFIG_LABEL",
+        "persistence::recover_atomic_file",
+        "persistence::cleanup_recovery_files",
+        "persistence::metadata_entry_exists",
+        "persistence::write_json_atomically"
+      ],
+      "testMarkers": [
+        "interrupted_publish_prefers_previous_committed_config",
+        "staging_config_recovers_when_no_committed_copy_exists",
+        "malformed_main_config_preserves_recovery_evidence"
+      ],
+      "sharedEvidence": [
+        {
+          "owner": "apps/launcher/src-tauri/src/engine/persistence/atomic_json.rs",
+          "markers": [
+            ".create_new(true)",
+            "file.sync_all()",
+            "previous_path(path)",
+            "temporary_path(path)",
+            "fn replace(",
+            "safe_path::ensure_regular_file"
+          ]
+        }
+      ]
     },
     {
       "id": "second-launcher-instance",
       "owner": "apps/launcher/src-tauri/src/engine/app_instance.rs",
-      "markers": ["launcher-instance.json", "process_start_time", "instance_owner_is_alive"]
+      "markers": [
+        "launcher-instance.json",
+        "process_start_time",
+        "instance_owner_is_alive"
+      ]
     },
     {
       "id": "future-app-data-schema-opened-by-old-launcher",
       "owner": "apps/launcher/src-tauri/src/engine/app_data_migrations.rs",
-      "markers": ["schema", "newer than this Launcher supports", "initialize"]
+      "markers": [
+        "schema",
+        "newer than this Launcher supports",
+        "initialize"
+      ]
     },
     {
       "id": "close-launcher-during-active-operation",
       "owner": "apps/launcher/src/app/closeGuard.ts",
-      "markers": ["runtimeProduct.operations.list()", "ACTIVE_OPERATION_STATES", "may require recovery"]
+      "markers": [
+        "runtimeProduct.operations.list()",
+        "ACTIVE_OPERATION_STATES",
+        "may require recovery"
+      ]
     },
     {
       "id": "disk-pressure-before-heavy-write",
       "owner": "apps/launcher/src-tauri/src/engine/storage_health.rs",
-      "markers": ["CRITICAL_AVAILABLE_BYTES", "WARNING_MIN_AVAILABLE_BYTES", "StoragePressure"]
+      "markers": [
+        "CRITICAL_AVAILABLE_BYTES",
+        "WARNING_MIN_AVAILABLE_BYTES",
+        "StoragePressure"
+      ]
     },
     {
       "id": "world-control-port-conflict-before-paper-start",
       "owner": "apps/launcher/src-tauri/src/engine/world_manager/mod.rs",
-      "markers": ["prepare_control_options_for_start", "loopback_port_available", "CONTROL_PORT_SCAN_LIMIT", "LazyBuilder could not find a free World Manager loopback port"],
-      "testMarkers": ["occupied_loopback_port_is_not_available"]
+      "markers": [
+        "prepare_control_options_for_start",
+        "loopback_port_available",
+        "CONTROL_PORT_SCAN_LIMIT",
+        "LazyBuilder could not find a free World Manager loopback port"
+      ],
+      "testMarkers": [
+        "occupied_loopback_port_is_not_available"
+      ]
     }
   ]
 }
