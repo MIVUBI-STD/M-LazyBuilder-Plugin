@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -71,6 +73,42 @@ class PaperMainThreadDispatcherTest {
         );
         assertTrue(failure.getMessage().contains("timed out"));
         assertTrue(submitted.get().isCancelled());
+    }
+
+    @Test
+    void interruptedNormalDispatchCancelsQueuedPaperMutation() throws Exception {
+        AtomicReference<Future<?>> submitted = new AtomicReference<>();
+        CountDownLatch scheduled = new CountDownLatch(1);
+        PaperMainThreadDispatcher dispatcher = new PaperMainThreadDispatcher(
+                new PaperMainThreadDispatcher.SchedulerBridge() {
+                    @Override public boolean isPrimaryThread() { return false; }
+                    @Override public <T> Future<T> submit(Callable<T> action) {
+                        CompletableFuture<T> future = new CompletableFuture<>();
+                        submitted.set(future);
+                        scheduled.countDown();
+                        return future;
+                    }
+                },
+                Duration.ofSeconds(5)
+        );
+
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread worker = Thread.ofPlatform().start(() -> {
+            try {
+                dispatcher.call(() -> "must-not-run");
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        });
+
+        assertTrue(scheduled.await(1, TimeUnit.SECONDS));
+        worker.interrupt();
+        worker.join(1_000);
+
+        assertFalse(worker.isAlive());
+        assertTrue(submitted.get().isCancelled(),
+                "interrupted owner must cancel the queued Paper callable");
+        assertTrue(failure.get() instanceof IllegalStateException);
     }
 
     @Test

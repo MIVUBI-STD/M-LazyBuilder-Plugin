@@ -48,6 +48,9 @@ public final class PaperMainThreadDispatcher {
             future.cancel(false);
             throw timeoutFailure(exception);
         } catch (InterruptedException exception) {
+            // The caller no longer owns this operation. Prevent a queued callable from
+            // mutating Paper later after task failure/lease release.
+            future.cancel(false);
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for Paper main-thread dispatch", exception);
         } catch (ExecutionException exception) {
