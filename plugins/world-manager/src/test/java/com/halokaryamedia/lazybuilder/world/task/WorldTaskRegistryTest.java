@@ -94,6 +94,25 @@ class WorldTaskRegistryTest {
     }
 
     @Test
+    void terminalTransitionTrimsOverflowWithoutWaitingForAnotherTask() {
+        WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 2);
+        WorldTaskSnapshot first = registry.create(WorldTaskType.BACKUP, WorldId.create(), "first");
+        WorldTaskSnapshot second = registry.create(WorldTaskType.EXPORT, WorldId.create(), "second");
+        WorldTaskSnapshot third = registry.create(WorldTaskType.DUPLICATE, WorldId.create(), "third");
+
+        assertEquals(3, registry.recent().size(), "active tasks may temporarily exceed history limit");
+
+        registry.markRunning(first.taskId(), "running");
+        registry.succeed(first.taskId(), "done", "done");
+
+        assertEquals(2, registry.recent().size(),
+                "terminal transition must immediately retire oldest terminal overflow");
+        assertTrue(registry.find(first.taskId()).isEmpty());
+        assertTrue(registry.find(second.taskId()).isPresent());
+        assertTrue(registry.find(third.taskId()).isPresent());
+    }
+
+    @Test
     void keepsActiveTasksWhenTrimmingCompletedHistory() {
         WorldTaskRegistry registry = new WorldTaskRegistry(CLOCK, 2);
         WorldTaskSnapshot active = registry.create(WorldTaskType.IMPORT, null, "Waiting for import");

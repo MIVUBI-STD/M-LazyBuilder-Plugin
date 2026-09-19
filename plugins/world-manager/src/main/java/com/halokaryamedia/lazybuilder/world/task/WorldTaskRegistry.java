@@ -143,6 +143,9 @@ public final class WorldTaskRegistry {
                 message, result, error, current.createdAt(), clock.instant()
         );
         tasks.put(updated.taskId(), updated);
+        if (state == WorldTaskState.SUCCEEDED || state == WorldTaskState.FAILED) {
+            trimHistory();
+        }
         return updated;
     }
 
