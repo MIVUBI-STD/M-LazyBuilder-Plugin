@@ -1,13 +1,17 @@
 package com.halokaryamedia.lazybuilder.world.conversion;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -35,17 +39,23 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
 
     @Override
     public void stageCandidate(Path artifact, ConversionRuntimeManifest manifest) throws IOException {
+        Objects.requireNonNull(artifact, "artifact");
+        Objects.requireNonNull(manifest, "manifest");
+        requireManifestCompatibility(manifest);
+        verifyArtifactDigest(artifact, manifest);
+
         discardCandidate();
         Path slot = slot("candidate");
         Files.createDirectories(slot);
         Files.copy(artifact, slot.resolve(ARTIFACT), StandardCopyOption.REPLACE_EXISTING);
+        verifyArtifactDigest(slot.resolve(ARTIFACT), manifest);
         writeManifest(slot.resolve(MANIFEST), manifest);
     }
 
     @Override
     public void promoteCandidate() throws IOException {
         Path candidate = slot("candidate");
-        requireComplete(candidate);
+        requireVerified(candidate);
         deleteTree(slot("previous"));
         if (Files.exists(slot("current"))) {
             move(slot("current"), slot("previous"));
@@ -56,7 +66,7 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     @Override
     public void rollbackToPrevious() throws IOException {
         Path previous = slot("previous");
-        requireComplete(previous);
+        requireVerified(previous);
         deleteTree(slot("candidate"));
         Path failed = slot("candidate");
         if (Files.exists(slot("current"))) {
@@ -92,24 +102,31 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
         Path candidate = slot("candidate");
 
         if (Files.exists(current)) {
-            if (!complete(current)) {
-                throw new IOException("Incomplete conversion runtime slot: current");
-            }
-            if (Files.exists(candidate) && !complete(candidate)) {
-                deleteTree(candidate);
+            requireVerified(current);
+            if (Files.exists(candidate)) {
+                try {
+                    requireVerified(candidate);
+                } catch (IOException invalidCandidate) {
+                    deleteTree(candidate);
+                }
             }
             return;
         }
 
         if (complete(candidate)) {
-            move(candidate, current);
-            return;
-        }
-
-        if (Files.exists(candidate)) {
+            try {
+                requireVerified(candidate);
+                move(candidate, current);
+                return;
+            } catch (IOException invalidCandidate) {
+                deleteTree(candidate);
+            }
+        } else if (Files.exists(candidate)) {
             deleteTree(candidate);
         }
+
         if (complete(previous)) {
+            requireVerified(previous);
             move(previous, current);
         }
     }
@@ -117,8 +134,7 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     private Optional<InstalledRuntime> readSlot(String name) throws IOException {
         Path slot = slot(name);
         if (Files.notExists(slot)) return Optional.empty();
-        requireComplete(slot);
-        return Optional.of(new InstalledRuntime(slot.resolve(ARTIFACT), readManifest(slot.resolve(MANIFEST))));
+        return Optional.of(requireVerified(slot));
     }
 
     private Path slot(String name) {
@@ -139,6 +155,49 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     private static void requireComplete(Path slot) throws IOException {
         if (!complete(slot)) {
             throw new IOException("Incomplete conversion runtime slot: " + slot.getFileName());
+        }
+    }
+
+    private static InstalledRuntime requireVerified(Path slot) throws IOException {
+        requireComplete(slot);
+        ConversionRuntimeManifest manifest = readManifest(slot.resolve(MANIFEST));
+        requireManifestCompatibility(manifest);
+        Path artifact = slot.resolve(ARTIFACT);
+        verifyArtifactDigest(artifact, manifest);
+        return new InstalledRuntime(artifact, manifest);
+    }
+
+    private static void requireManifestCompatibility(ConversionRuntimeManifest manifest) throws IOException {
+        if (manifest.adapterContract() != ConverterAdapter.ADAPTER_CONTRACT) {
+            throw new IOException(
+                    "Conversion runtime adapter contract " + manifest.adapterContract()
+                            + " does not match required contract " + ConverterAdapter.ADAPTER_CONTRACT);
+        }
+    }
+
+    private static void verifyArtifactDigest(
+            Path artifact,
+            ConversionRuntimeManifest manifest
+    ) throws IOException {
+        String actual = sha256(artifact);
+        if (!actual.equalsIgnoreCase(manifest.sha256())) {
+            throw new IOException(
+                    "Conversion runtime SHA-256 mismatch for " + artifact.getFileName());
+        }
+    }
+
+    private static String sha256(Path artifact) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = Files.newInputStream(artifact)) {
+                byte[] buffer = new byte[64 * 1024];
+                for (int read; (read = in.read(buffer)) >= 0;) {
+                    if (read > 0) digest.update(buffer, 0, read);
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 

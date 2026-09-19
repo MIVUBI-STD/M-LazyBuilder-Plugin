@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalConversionRuntimeStoreTest {
@@ -78,6 +79,42 @@ class LocalConversionRuntimeStoreTest {
     }
 
     @Test
+    void tamperedCurrentRuntimeIsRejectedOnReadAndRestart() throws Exception {
+        Path root = tempDir.resolve("runtime-tampered");
+        LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(root);
+        Path artifact = tempDir.resolve("verified.jar");
+        Files.writeString(artifact, "one");
+        store.stageCandidate(
+                artifact,
+                manifest("1.0.0", "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"));
+        store.promoteCandidate();
+
+        Files.writeString(root.resolve("current/converter.jar"), "tampered");
+
+        assertThrows(java.io.IOException.class, store::current);
+        assertThrows(IllegalStateException.class,
+                () -> new LocalConversionRuntimeStore(root));
+    }
+
+    @Test
+    void stageRejectsManifestWithWrongAdapterContract() throws Exception {
+        LocalConversionRuntimeStore store =
+                new LocalConversionRuntimeStore(tempDir.resolve("runtime-wrong-contract"));
+        Path artifact = tempDir.resolve("contract.jar");
+        Files.writeString(artifact, "one");
+        ConversionRuntimeManifest wrong = new ConversionRuntimeManifest(
+                "1.0.0",
+                ConverterAdapter.ADAPTER_CONTRACT - 1,
+                "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+                Instant.EPOCH,
+                List.of("JAVA_1_21_4")
+        );
+
+        assertThrows(java.io.IOException.class,
+                () -> store.stageCandidate(artifact, wrong));
+    }
+
+    @Test
     void persistsLastUpdateCheck() throws Exception {
         LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(tempDir.resolve("runtime"));
         Instant now = Instant.parse("2026-09-12T00:00:00Z");
@@ -87,6 +124,11 @@ class LocalConversionRuntimeStoreTest {
     }
 
     private static ConversionRuntimeManifest manifest(String version, String digest) {
-        return new ConversionRuntimeManifest(version, 1, digest, Instant.EPOCH, List.of("JAVA_1_21_4"));
+        return new ConversionRuntimeManifest(
+                version,
+                ConverterAdapter.ADAPTER_CONTRACT,
+                digest,
+                Instant.EPOCH,
+                List.of("JAVA_1_21_4"));
     }
 }
