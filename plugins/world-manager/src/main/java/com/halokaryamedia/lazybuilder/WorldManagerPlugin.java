@@ -156,12 +156,41 @@ public final class WorldManagerPlugin extends JavaPlugin {
     public void onDisable() {
         if (idleUnloadTask != null) idleUnloadTask.cancel();
         if (localControlServer != null) localControlServer.stop();
-        if (worldTaskRunner != null) worldTaskRunner.close();
+
+        RuntimeException taskShutdownFailure = null;
+        if (worldTaskRunner != null) {
+            try {
+                worldTaskRunner.close();
+            } catch (RuntimeException failure) {
+                taskShutdownFailure = failure;
+                getLogger().warning("World task shutdown exceeded the first drain window: "
+                        + failure.getMessage());
+            }
+        }
+
         if (worldControlPayloadAdapter != null) worldControlPayloadAdapter.stop();
         if (mapActionPayloadAdapter != null) mapActionPayloadAdapter.stop();
         if (transferPayloadAdapter != null) transferPayloadAdapter.stop();
         if (buildPerformanceController != null) buildPerformanceController.stop();
-        if (worldManager != null) worldManager.stop();
+
+        if (taskShutdownFailure != null && worldTaskRunner != null) {
+            try {
+                // Retry after every request ingress has been stopped. close() is
+                // intentionally retryable and only returns when the executor terminated.
+                worldTaskRunner.close();
+                taskShutdownFailure = null;
+            } catch (RuntimeException failure) {
+                taskShutdownFailure = failure;
+            }
+        }
+
+        if (taskShutdownFailure == null) {
+            if (worldManager != null) worldManager.stop();
+        } else {
+            getLogger().severe("World-Manager disabled with a task that ignored forced shutdown. "
+                    + "Final artifact cleanup was skipped to avoid racing the still-running worker: "
+                    + taskShutdownFailure.getMessage());
+        }
         getLogger().info("World-Manager disabled.");
     }
 }
