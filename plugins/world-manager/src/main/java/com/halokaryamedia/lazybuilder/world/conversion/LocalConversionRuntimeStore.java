@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.world.conversion;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -21,6 +23,7 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     private static final String ARTIFACT = "converter.jar";
     private static final String MANIFEST = "runtime.properties";
     private static final String LAST_CHECK = "last-update-check.txt";
+    private static final long MAX_LAST_CHECK_BYTES = 128L;
 
     private final Path root;
 
@@ -82,13 +85,52 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     public Optional<Instant> lastUpdateCheck() throws IOException {
         Path marker = root.resolve(LAST_CHECK);
         if (Files.notExists(marker)) return Optional.empty();
-        return Optional.of(Instant.parse(Files.readString(marker, StandardCharsets.UTF_8).strip()));
+        if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+            throw new IOException("Conversion runtime update-check marker is unsafe");
+        }
+        if (Files.size(marker) > MAX_LAST_CHECK_BYTES) {
+            return Optional.empty();
+        }
+        String value = Files.readString(marker, StandardCharsets.UTF_8).strip();
+        try {
+            return Optional.of(Instant.parse(value));
+        } catch (RuntimeException invalid) {
+            return Optional.empty();
+        }
     }
 
     @Override
     public void recordUpdateCheck(Instant instant) throws IOException {
+        Objects.requireNonNull(instant, "instant");
         Files.createDirectories(root);
-        Files.writeString(root.resolve(LAST_CHECK), instant.toString(), StandardCharsets.UTF_8);
+        if (!Files.isDirectory(root) || Files.isSymbolicLink(root)) {
+            throw new IOException("Conversion runtime root is unsafe");
+        }
+
+        Path marker = root.resolve(LAST_CHECK);
+        if (Files.exists(marker) && (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker))) {
+            throw new IOException("Conversion runtime update-check marker is unsafe");
+        }
+
+        byte[] payload = instant.toString().getBytes(StandardCharsets.UTF_8);
+        if (payload.length > MAX_LAST_CHECK_BYTES) {
+            throw new IOException("Conversion runtime update-check marker exceeds safety limit");
+        }
+
+        Path temporary = root.resolve(LAST_CHECK + "." + java.util.UUID.randomUUID() + ".tmp");
+        try (FileChannel channel = FileChannel.open(
+                temporary,
+                java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            ByteBuffer buffer = ByteBuffer.wrap(payload);
+            while (buffer.hasRemaining()) channel.write(buffer);
+            channel.force(true);
+        }
+        try {
+            moveReplace(temporary, marker);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
     }
 
     private void recoverInterruptedPromotion() throws IOException {
@@ -235,6 +277,14 @@ public final class LocalConversionRuntimeStore implements ConversionRuntimeStore
     private static void move(Path source, Path target) throws IOException {
         try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
         catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
+    }
+
+    private static void moveReplace(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private static void deleteTree(Path root) throws IOException {

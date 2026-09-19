@@ -115,6 +115,20 @@ class LocalConversionRuntimeStoreTest {
     }
 
     @Test
+    void malformedOrOversizedUpdateCheckMarkerDoesNotBlockFreshCheck() throws Exception {
+        Path root = tempDir.resolve("runtime-update-marker");
+        LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(root);
+        Files.createDirectories(root);
+        Path marker = root.resolve("last-update-check.txt");
+
+        Files.writeString(marker, "not-an-instant");
+        assertTrue(store.lastUpdateCheck().isEmpty());
+
+        Files.write(marker, new byte[1024]);
+        assertTrue(store.lastUpdateCheck().isEmpty());
+    }
+
+    @Test
     void persistsLastUpdateCheck() throws Exception {
         LocalConversionRuntimeStore store = new LocalConversionRuntimeStore(tempDir.resolve("runtime"));
         Instant now = Instant.parse("2026-09-12T00:00:00Z");
