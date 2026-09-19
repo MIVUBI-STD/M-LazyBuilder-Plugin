@@ -73,6 +73,7 @@ public final class WorldCreationService {
             try {
                 runtime.createNewWorld(record, buildReadyPolicy);
                 runtimeCreated = true;
+                files.markCreateRuntimeCreated(operationId, record.folderName());
                 WorldRegistryTransactions.register(registry, persistence, record);
                 try { files.clearCreatePending(operationId, record.folderName()); }
                 catch (IOException ignoredCleanup) { }

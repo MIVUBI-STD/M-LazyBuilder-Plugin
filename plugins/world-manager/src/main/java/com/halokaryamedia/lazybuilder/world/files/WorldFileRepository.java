@@ -48,6 +48,13 @@ public interface WorldFileRepository {
     /** Records a durable Create World transaction before runtime creation begins. */
     default void markCreatePending(UUID operationId, String folderName) throws IOException { }
 
+    /**
+     * Promotes a Create transaction marker only after the runtime has actually created
+     * the world. Recovery may delete an unregistered world only after this ownership
+     * transition is durably recorded.
+     */
+    default void markCreateRuntimeCreated(UUID operationId, String folderName) throws IOException { }
+
     /** Clears a durable Create World transaction marker after commit or rollback. */
     default void clearCreatePending(UUID operationId, String folderName) throws IOException { }
 

@@ -307,6 +307,10 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldExportService.java",
         errors,
     )
+    local_world_file_repository = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/files/LocalWorldFileRepository.java",
+        errors,
+    )
     world_registry_persistence = read_text(
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/YamlWorldRegistryPersistence.java",
         errors,
@@ -578,6 +582,22 @@ def main() -> int:
             fail(errors, f"{relative} must use the canonical durable registry transaction owner")
         if "persistence.save(" in content:
             fail(errors, f"{relative} must not bypass WorldRegistryTransactions with a raw persistence save")
+
+    for marker in (
+        "markCreateRuntimeCreated(operationId, record.folderName())",
+    ):
+        if marker not in world_creation_service:
+            fail(errors, f"Create runtime ownership transition missing marker: {marker}")
+
+    for marker in (
+        'CREATE_STATE_INTENT = "INTENT"',
+        'CREATE_STATE_RUNTIME_CREATED = "RUNTIME_CREATED"',
+        "readCreateMarker(marker)",
+        "markerState != CreateMarkerState.RUNTIME_CREATED",
+        "channel.force(true)",
+    ):
+        if marker not in local_world_file_repository:
+            fail(errors, f"Create recovery ownership proof missing marker: {marker}")
 
     for marker in (
         "MAX_REGISTRY_BYTES",

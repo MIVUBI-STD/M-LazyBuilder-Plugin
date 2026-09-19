@@ -74,6 +74,7 @@ class WorldCreationServiceTest {
                 () -> service.create("Build", "Build", WorldKind.FLAT));
 
         assertEquals(1, files.markCount);
+        assertEquals(1, files.runtimeCreatedCount);
         assertEquals(0, files.clearCount,
                 "failed runtime rollback must preserve durable create recovery authority");
         assertTrue(registry.all().isEmpty());
@@ -130,9 +131,11 @@ class WorldCreationServiceTest {
 
     private static final class TrackingFiles implements WorldFileRepository {
         private int markCount;
+        private int runtimeCreatedCount;
         private int clearCount;
 
         @Override public void markCreatePending(UUID operationId, String folderName) { markCount++; }
+        @Override public void markCreateRuntimeCreated(UUID operationId, String folderName) { runtimeCreatedCount++; }
         @Override public void clearCreatePending(UUID operationId, String folderName) { clearCount++; }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) {
             throw new UnsupportedOperationException();

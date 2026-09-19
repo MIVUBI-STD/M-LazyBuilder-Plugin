@@ -102,6 +102,7 @@ class LocalWorldFileRepositoryTest {
 
         UUID orphanOperation = UUID.randomUUID();
         repository.markCreatePending(orphanOperation, "OrphanCreate");
+        repository.markCreateRuntimeCreated(orphanOperation, "OrphanCreate");
         Files.createDirectories(worldRoot.resolve("OrphanCreate"));
         Files.writeString(worldRoot.resolve("OrphanCreate/level.dat"), "level");
 
@@ -110,6 +111,26 @@ class LocalWorldFileRepositoryTest {
         assertEquals(1, rolledBack.rolledBack());
         assertEquals(0, rolledBack.preserved());
         assertFalse(Files.exists(worldRoot.resolve("OrphanCreate")));
+    }
+
+    @Test
+    void createIntentWithExistingUnmanagedFolderIsPreservedInsteadOfDeleted() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-create-intent");
+        Path workRoot = tempDir.resolve("work-create-intent");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        UUID operation = UUID.randomUUID();
+        repository.markCreatePending(operation, "ExistingWorld");
+        Files.createDirectories(worldRoot.resolve("ExistingWorld"));
+        Files.writeString(worldRoot.resolve("ExistingWorld/level.dat"), "pre-existing");
+
+        WorldFileRepository.CreateRecovery result =
+                repository.recoverCreateTransactions(List.of());
+
+        assertEquals(0, result.committed());
+        assertEquals(0, result.rolledBack());
+        assertEquals(1, result.preserved());
+        assertEquals("pre-existing", Files.readString(worldRoot.resolve("ExistingWorld/level.dat")));
     }
 
     @Test

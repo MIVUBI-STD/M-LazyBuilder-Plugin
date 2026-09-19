@@ -34,6 +34,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String COPY_SUFFIX = ".copy";
     private static final String DELETE_SUFFIX = ".delete";
     private static final String CREATE_SUFFIX = ".create";
+    private static final String CREATE_MARKER_VERSION = "1";
+    private static final String CREATE_STATE_INTENT = "INTENT";
+    private static final String CREATE_STATE_RUNTIME_CREATED = "RUNTIME_CREATED";
     private static final String PENDING_PUBLISH_MARKER = ".lazybuilder-publish-pending";
     private static final String PUBLISH_MARKER_VERSION = "1";
     private static final String PAPER_NETHER_SUFFIX = "_nether";
@@ -230,7 +233,23 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         requireSafeWorkspaceRoot();
         Path marker = createTransactionPath(operationId, safeFolder);
         if (Files.exists(marker)) throw new IOException("Create transaction already exists: " + marker.getFileName());
-        Files.createFile(marker);
+        writeCreateMarker(marker, CREATE_STATE_INTENT);
+    }
+
+    @Override
+    public void markCreateRuntimeCreated(UUID operationId, String folderName) throws IOException {
+        Objects.requireNonNull(operationId, "operationId");
+        String safeFolder = validateSingleName(folderName, "world folder");
+        requireSafeWorkspaceRoot();
+        Path marker = createTransactionPath(operationId, safeFolder);
+        if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) {
+            throw new IOException("Create transaction marker is missing or unsafe: " + marker.getFileName());
+        }
+        CreateMarkerState state = readCreateMarker(marker);
+        if (state != CreateMarkerState.INTENT) {
+            throw new IOException("Create transaction marker is not in INTENT state: " + marker.getFileName());
+        }
+        writeCreateMarker(marker, CREATE_STATE_RUNTIME_CREATED);
     }
 
     @Override
@@ -273,6 +292,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
                 String folderName = identity.get().folderName();
                 Path world = worldPath(folderName);
+                CreateMarkerState markerState = readCreateMarker(marker);
                 if (managedFolders.contains(folderName)) {
                     Files.delete(marker);
                     committed++;
@@ -285,6 +305,13 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     continue;
                 }
                 if (!Files.isDirectory(world) || Files.isSymbolicLink(world)) {
+                    preserved++;
+                    continue;
+                }
+                if (markerState != CreateMarkerState.RUNTIME_CREATED) {
+                    // INTENT or legacy/unparseable evidence does not prove LazyBuilder
+                    // created this folder. Preserve it rather than risk deleting an
+                    // unrelated unmanaged Paper world.
                     preserved++;
                     continue;
                 }
@@ -600,6 +627,45 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         return destination;
     }
 
+    private void writeCreateMarker(Path marker, String state) throws IOException {
+        String payload = "version=" + CREATE_MARKER_VERSION + "\nstate=" + state + "\n";
+        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+        try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(
+                marker,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) channel.write(buffer);
+            channel.force(true);
+        }
+    }
+
+    private CreateMarkerState readCreateMarker(Path marker) {
+        try {
+            List<String> lines = Files.readAllLines(marker, StandardCharsets.UTF_8);
+            String version = null;
+            String state = null;
+            for (String line : lines) {
+                int separator = line.indexOf('=');
+                if (separator <= 0) return CreateMarkerState.UNKNOWN;
+                String key = line.substring(0, separator);
+                String value = line.substring(separator + 1);
+                switch (key) {
+                    case "version" -> version = value;
+                    case "state" -> state = value;
+                    default -> { return CreateMarkerState.UNKNOWN; }
+                }
+            }
+            if (!CREATE_MARKER_VERSION.equals(version)) return CreateMarkerState.UNKNOWN;
+            if (CREATE_STATE_INTENT.equals(state)) return CreateMarkerState.INTENT;
+            if (CREATE_STATE_RUNTIME_CREATED.equals(state)) return CreateMarkerState.RUNTIME_CREATED;
+            return CreateMarkerState.UNKNOWN;
+        } catch (IOException | RuntimeException ignored) {
+            return CreateMarkerState.UNKNOWN;
+        }
+    }
+
     private Path createTransactionPath(UUID operationId, String folderName) {
         return workspacePath(operationId + "." + encodeFolderName(folderName) + CREATE_SUFFIX);
     }
@@ -839,6 +905,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     private record EncodedTransactionIdentity(UUID operationId, String folderName) { }
+    private enum CreateMarkerState { INTENT, RUNTIME_CREATED, UNKNOWN }
     private record CreateTransactionIdentity(UUID operationId, String folderName) { }
     private record DeleteWorkspaceIdentity(UUID operationId, String folderName) { }
 }
