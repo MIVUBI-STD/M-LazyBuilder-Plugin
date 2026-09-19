@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -71,16 +72,13 @@ public final class WorldDuplicateService {
         task.requireOpen();
         Path staged = null;
         boolean published = false;
-        boolean registered = false;
         try {
             staged = files.stageCopy(task.source, task.operationId, WorldCopyProfile.DUPLICATE);
             files.publishStagedWorld(staged, task.destination.folderName());
             staged = null;
             published = true;
 
-            registry.register(task.destination);
-            registered = true;
-            persistence.save(registry.all());
+            WorldRegistryTransactions.register(registry, persistence, task.destination);
             task.committed = true;
             try {
                 files.markPublishedWorldCommitted(task.destination.folderName());
@@ -89,7 +87,6 @@ public final class WorldDuplicateService {
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (registered) registry.remove(task.destination.id());
             if (published) {
                 try { files.deleteWorld(task.destination); }
                 catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }

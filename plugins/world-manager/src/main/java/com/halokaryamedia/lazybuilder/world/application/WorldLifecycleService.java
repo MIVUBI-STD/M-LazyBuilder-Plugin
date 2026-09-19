@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -83,17 +84,9 @@ public final class WorldLifecycleService {
             runtimeService.unloadDuringOperation(worldId);
 
             WorldRecord archived = current.withLifecycle(WorldLifecycle.ARCHIVED);
-            registry.updateMetadata(archived);
             try {
-                persistence.save(registry.all());
-                return archived;
+                return WorldRegistryTransactions.updateMetadata(registry, persistence, archived);
             } catch (IOException | RuntimeException exception) {
-                registry.updateMetadata(current);
-                try {
-                    persistence.save(registry.all());
-                } catch (IOException | RuntimeException rollbackFailure) {
-                    exception.addSuppressed(rollbackFailure);
-                }
                 if (wasLoaded) {
                     try {
                         runtimeService.loadDuringOperation(worldId);
@@ -112,17 +105,9 @@ public final class WorldLifecycleService {
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.RESTORE)) {
             WorldRecord restored = current.withLifecycle(WorldLifecycle.ACTIVE);
-            registry.updateMetadata(restored);
             try {
-                persistence.save(registry.all());
-                return restored;
+                return WorldRegistryTransactions.updateMetadata(registry, persistence, restored);
             } catch (IOException | RuntimeException exception) {
-                registry.updateMetadata(current);
-                try {
-                    persistence.save(registry.all());
-                } catch (IOException | RuntimeException rollbackFailure) {
-                    exception.addSuppressed(rollbackFailure);
-                }
                 throw new IllegalStateException("Failed to restore archived world: " + current.displayName(), exception);
             }
         }

@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -301,18 +302,12 @@ public final class WorldSettingsService {
 
     private WorldRecord persistMetadataChange(WorldRecord previous, WorldRecord updated) {
         if (previous.equals(updated)) return previous;
-        registry.updateMetadata(updated);
         try {
-            persistence.save(registry.all());
-            return updated;
+            return WorldRegistryTransactions.updateMetadata(registry, persistence, updated);
         } catch (IOException | RuntimeException exception) {
-            registry.updateMetadata(previous);
-            try {
-                persistence.save(registry.all());
-            } catch (IOException | RuntimeException rollbackFailure) {
-                exception.addSuppressed(rollbackFailure);
-            }
-            throw new IllegalStateException("Failed to persist world settings metadata: " + previous.folderName(), exception);
+            throw new IllegalStateException(
+                    "Failed to persist world settings metadata: " + previous.folderName(),
+                    exception);
         }
     }
 }

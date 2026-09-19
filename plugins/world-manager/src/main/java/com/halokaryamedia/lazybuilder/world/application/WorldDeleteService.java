@@ -5,11 +5,10 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -83,11 +82,7 @@ public final class WorldDeleteService {
         try {
             staged = files.stageDelete(task.world, task.operationId);
 
-            List<WorldRecord> remaining = new ArrayList<>(registry.all());
-            remaining.removeIf(world -> world.id().equals(task.world.id()));
-            persistence.save(List.copyOf(remaining));
-
-            registry.remove(task.world.id());
+            WorldRegistryTransactions.remove(registry, persistence, task.world.id());
             task.committed = true;
 
             try {

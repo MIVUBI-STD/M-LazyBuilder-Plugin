@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldLifecycle;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryPersistence;
+import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -69,20 +70,15 @@ public final class WorldCreationService {
             }
 
             boolean runtimeCreated = false;
-            boolean registered = false;
             try {
                 runtime.createNewWorld(record, buildReadyPolicy);
                 runtimeCreated = true;
-                registry.register(record);
-                registered = true;
-                persistence.save(registry.all());
+                WorldRegistryTransactions.register(registry, persistence, record);
                 try { files.clearCreatePending(operationId, record.folderName()); }
                 catch (IOException ignoredCleanup) { }
                 return record;
             } catch (IOException | RuntimeException exception) {
-                if (registered) registry.remove(record.id());
-
-                boolean rollbackCompleted = !runtimeCreated;
+                 boolean rollbackCompleted = !runtimeCreated;
                 if (runtimeCreated) {
                     try {
                         runtime.rollbackCreatedWorld(record);
