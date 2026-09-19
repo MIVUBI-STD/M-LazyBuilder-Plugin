@@ -565,6 +565,15 @@ def main() -> int:
             fail(errors, f"World Settings concurrency contract missing marker: {marker}")
 
     for marker in (
+        "applyBatch(",
+        "rollbackBatchRuntime",
+        "restoreGameRule",
+        "originalRuntime = runtime.readSettings",
+    ):
+        if marker not in world_settings_service:
+            fail(errors, f"World Settings batch rollback contract missing marker: {marker}")
+
+    for marker in (
         "queuedOrRunningWorlds",
         "reserveWorld(worldId)",
         "releaseWorld(worldId)",
