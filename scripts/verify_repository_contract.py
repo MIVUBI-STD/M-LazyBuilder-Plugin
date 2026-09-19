@@ -327,6 +327,14 @@ def main() -> int:
         "shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/WorldControlWireProtocol.java",
         errors,
     )
+    world_operation_type = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldOperationType.java",
+        errors,
+    )
+    world_settings_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldSettingsService.java",
+        errors,
+    )
 
     for phrase in REQUIRED_AGENT_PHRASES:
         if phrase not in agents:
@@ -537,6 +545,16 @@ def main() -> int:
         fail(errors, "WorldRegistry must preserve the managed-world capacity ceiling")
     if "MAX_WORLDS = 4_096" not in world_control_protocol:
         fail(errors, "World-control protocol capacity must match the managed-world ceiling")
+
+    if "SETTINGS" not in world_operation_type:
+        fail(errors, "World operation coordinator must preserve SETTINGS exclusivity")
+    for marker in (
+        "operations.acquire(worldId, WorldOperationType.SETTINGS)",
+        "runtimeService.loadDuringOperation(worldId)",
+        "withSettingsLease",
+    ):
+        if marker not in world_settings_service:
+            fail(errors, f"World Settings concurrency contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():
