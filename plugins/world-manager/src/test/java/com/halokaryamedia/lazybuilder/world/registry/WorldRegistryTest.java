@@ -73,6 +73,31 @@ class WorldRegistryTest {
     }
 
     @Test
+    void rejectsUnboundedOrControlCharacterNames() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new WorldRecord(
+                        WorldId.create(),
+                        "x".repeat(256),
+                        "World",
+                        WorldKind.IMPORTED,
+                        WorldLifecycle.ACTIVE));
+        assertThrows(IllegalArgumentException.class,
+                () -> new WorldRecord(
+                        WorldId.create(),
+                        "Build",
+                        "World\nName",
+                        WorldKind.IMPORTED,
+                        WorldLifecycle.ACTIVE));
+        assertThrows(IllegalArgumentException.class,
+                () -> new WorldRecord(
+                        WorldId.create(),
+                        "Build",
+                        "x".repeat(257),
+                        WorldKind.IMPORTED,
+                        WorldLifecycle.ACTIVE));
+    }
+
+    @Test
     void metadataUpdateCannotRenameFilesystemIdentity() {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = world("Build", "Build");

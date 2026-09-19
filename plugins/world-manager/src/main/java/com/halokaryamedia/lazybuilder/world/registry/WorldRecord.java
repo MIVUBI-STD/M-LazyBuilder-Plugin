@@ -19,6 +19,8 @@ public record WorldRecord(
         String defaultGameMode
 ) {
     public static final String DEFAULT_GAME_MODE = "CREATIVE";
+    private static final int MAX_FOLDER_NAME_CHARS = 255;
+    private static final int MAX_DISPLAY_NAME_CHARS = 256;
     private static final Set<String> WINDOWS_RESERVED_DEVICE_NAMES = Set.of(
             "CON", "PRN", "AUX", "NUL",
             "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -61,6 +63,10 @@ public record WorldRecord(
         if (value.isBlank() || !value.equals(value.strip())) {
             throw new IllegalArgumentException("folderName must be non-blank and have no leading/trailing whitespace");
         }
+        if (value.length() > MAX_FOLDER_NAME_CHARS) {
+            throw new IllegalArgumentException(
+                    "folderName exceeds the " + MAX_FOLDER_NAME_CHARS + " character portability limit");
+        }
         if (value.equals(".") || value.equals("..") || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
                 || value.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("folderName must be a single safe world-directory name");
@@ -86,8 +92,16 @@ public record WorldRecord(
 
     private static String validateDisplayName(String value) {
         Objects.requireNonNull(value, "displayName");
-        if (value.isBlank()) {
-            throw new IllegalArgumentException("displayName must be non-blank");
+        if (value.isBlank() || !value.equals(value.strip())) {
+            throw new IllegalArgumentException(
+                    "displayName must be non-blank and have no leading/trailing whitespace");
+        }
+        if (value.length() > MAX_DISPLAY_NAME_CHARS) {
+            throw new IllegalArgumentException(
+                    "displayName exceeds the " + MAX_DISPLAY_NAME_CHARS + " character limit");
+        }
+        if (value.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("displayName must not contain control characters");
         }
         return value;
     }
