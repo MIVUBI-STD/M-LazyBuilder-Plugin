@@ -149,6 +149,24 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void transactionalPublishMarkerContainsAttributableRecoveryIdentity() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-publish-marker");
+        Path workRoot = tempDir.resolve("work-publish-marker");
+        Files.createDirectories(worldRoot.resolve("Build"));
+        Files.writeString(worldRoot.resolve("Build/level.dat"), "level");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+
+        Path staged = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
+        repository.publishStagedWorld(staged, "Published");
+
+        Path marker = worldRoot.resolve("Published/.lazybuilder-publish-pending");
+        String payload = Files.readString(marker);
+        assertTrue(payload.contains("version=1"));
+        assertTrue(payload.contains("operationId="));
+        assertTrue(payload.contains("destination="));
+    }
+
+    @Test
     void transactionalPublishRecoveryUsesPersistedRegistryAsCommitAuthority() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");

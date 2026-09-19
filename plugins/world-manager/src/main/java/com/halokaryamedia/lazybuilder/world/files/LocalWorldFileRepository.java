@@ -554,16 +554,20 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
 
         String safeFolder = validateSingleName(destinationFolder, "world folder");
-        Files.writeString(
-                marker,
+        byte[] payload = (
                 "version=" + PUBLISH_MARKER_VERSION + "\n"
                         + "operationId=" + operationId + "\n"
                         + "destination=" + Base64.getUrlEncoder().withoutPadding()
-                        .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8)) + "\n",
-                StandardCharsets.UTF_8,
+                        .encodeToString(safeFolder.getBytes(StandardCharsets.UTF_8)) + "\n"
+        ).getBytes(StandardCharsets.UTF_8);
+        try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(
+                marker,
                 java.nio.file.StandardOpenOption.CREATE_NEW,
-                java.nio.file.StandardOpenOption.WRITE
-        );
+                java.nio.file.StandardOpenOption.WRITE)) {
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(payload);
+            while (buffer.hasRemaining()) channel.write(buffer);
+            channel.force(true);
+        }
     }
 
     private static PublishMarkerIdentity readPublishMarker(Path marker, String actualFolder) throws IOException {
