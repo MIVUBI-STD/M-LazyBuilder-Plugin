@@ -335,6 +335,30 @@ def main() -> int:
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldSettingsService.java",
         errors,
     )
+    world_registry_transactions = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/registry/WorldRegistryTransactions.java",
+        errors,
+    )
+    world_creation_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldCreationService.java",
+        errors,
+    )
+    world_delete_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldDeleteService.java",
+        errors,
+    )
+    world_duplicate_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldDuplicateService.java",
+        errors,
+    )
+    world_import_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldImportService.java",
+        errors,
+    )
+    world_lifecycle_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldLifecycleService.java",
+        errors,
+    )
     world_task_runner = read_text(
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/task/WorldTaskRunner.java",
         errors,
@@ -511,6 +535,37 @@ def main() -> int:
     ):
         if "SafeArtifactName.requirePortable" not in content:
             fail(errors, f"{relative} must delegate artifact filename validation to SafeArtifactName")
+
+    for marker in (
+        "public synchronized List<WorldRecord> load()",
+        "public synchronized void save(List<WorldRecord> worlds)",
+    ):
+        if marker not in world_registry_persistence:
+            fail(errors, f"World registry persistence serialization contract missing marker: {marker}")
+
+    for marker in (
+        "synchronized (persistence)",
+        "synchronized (registry)",
+        "registry.register(world)",
+        "registry.updateMetadata(updated)",
+        "registry.remove(worldId)",
+        "persistence.save(registry.all())",
+    ):
+        if marker not in world_registry_transactions:
+            fail(errors, f"World registry atomic transaction contract missing marker: {marker}")
+
+    for relative, content in (
+        ("WorldCreationService", world_creation_service),
+        ("WorldDeleteService", world_delete_service),
+        ("WorldDuplicateService", world_duplicate_service),
+        ("WorldImportService", world_import_service),
+        ("WorldLifecycleService", world_lifecycle_service),
+        ("WorldSettingsService", world_settings_service),
+    ):
+        if "WorldRegistryTransactions." not in content:
+            fail(errors, f"{relative} must use the canonical durable registry transaction owner")
+        if "persistence.save(" in content:
+            fail(errors, f"{relative} must not bypass WorldRegistryTransactions with a raw persistence save")
 
     for marker in (
         "MAX_REGISTRY_BYTES",
