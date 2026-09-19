@@ -300,6 +300,7 @@ public final class WorldManager {
         }
 
         int discovered = 0;
+        List<WorldId> discoveredIds = new java.util.ArrayList<>();
         String defaultGameMode = plugin.getServer().getDefaultGameMode().name();
         for (Path candidate : candidates) {
             String folderName = candidate.getFileName().toString();
@@ -320,6 +321,7 @@ public final class WorldManager {
                     WorldLifecycle.ACTIVE,
                     defaultGameMode);
             worldRegistry.register(discoveredWorld);
+            discoveredIds.add(discoveredWorld.id());
             discovered++;
         }
 
@@ -330,13 +332,7 @@ public final class WorldManager {
                 // Discovery is provisional until one registry commit succeeds.
                 // Revert only worlds created by this pass so the in-memory authority
                 // remains aligned with durable registry truth after a failed save.
-                worldRegistry.all().stream()
-                        .filter(world -> world.kind() == WorldKind.IMPORTED)
-                        .filter(world -> candidates.stream().anyMatch(path ->
-                                path.getFileName().toString().equalsIgnoreCase(world.folderName())))
-                        .map(WorldRecord::id)
-                        .toList()
-                        .forEach(worldRegistry::remove);
+                discoveredIds.forEach(worldRegistry::remove);
                 throw failure;
             }
             plugin.getLogger().info("Adopted " + discovered
