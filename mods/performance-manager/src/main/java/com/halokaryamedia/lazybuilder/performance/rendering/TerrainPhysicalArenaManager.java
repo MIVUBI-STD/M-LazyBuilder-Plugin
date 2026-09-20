@@ -81,6 +81,7 @@ public final class TerrainPhysicalArenaManager {
                 ARENAS.put(key, arena);
             } catch (RuntimeException ex) {
                 arenaCreationFailures++;
+                PHYSICAL_PATH_BREAKER.recordFailure();
                 invalidate(source);
                 return false;
             }
@@ -104,6 +105,7 @@ public final class TerrainPhysicalArenaManager {
                 ensureIndexBuffer(arena, indexCapacity);
             } catch (RuntimeException ex) {
                 bufferProvisionFailures++;
+                PHYSICAL_PATH_BREAKER.recordFailure();
                 invalidate(source);
                 return false;
             }
@@ -265,6 +267,7 @@ public final class TerrainPhysicalArenaManager {
             }
         } catch (RuntimeException ex) {
             vaoCreationFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             noteExternalBind();
             invalidate(source);
             return false;
@@ -299,6 +302,7 @@ public final class TerrainPhysicalArenaManager {
             }
         } catch (RuntimeException ex) {
             bufferProvisionFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             noteExternalBind();
             invalidate(source);
             return false;
@@ -338,6 +342,7 @@ public final class TerrainPhysicalArenaManager {
             );
         } catch (RuntimeException ex) {
             drawFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             prepared = null;
             noteExternalBind();
             invalidate(source);
