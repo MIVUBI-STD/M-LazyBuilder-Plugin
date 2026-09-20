@@ -1,5 +1,6 @@
 import { invokeRuntime } from './invokeRuntime';
 import type {
+  ActiveServerRuntimeStatus,
   DetachedRecoveryResult,
   ResourceUpdateRequest,
   ServerLogTail,
@@ -16,6 +17,7 @@ function workspaceArgs(workspaceId?: string) {
 export const serverApi = {
   server: {
     preflight: () => invokeRuntime<ServerPreflight>('server_preflight'),
+    status: () => invokeRuntime<ActiveServerRuntimeStatus>('server_runtime_status'),
     snapshot: (workspaceId?: string) => invokeRuntime<ServerSnapshot>('server_snapshot', workspaceArgs(workspaceId)),
     runtimes: () => invokeRuntime<ServerRuntimeSummary[]>('server_runtime_list'),
     connectionPort: () => invokeRuntime<number | null>('server_connection_port'),

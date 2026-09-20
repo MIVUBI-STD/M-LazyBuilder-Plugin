@@ -63,6 +63,7 @@ const previewRuntimeProduct = {
   },
   server: {
     ...runtimePreviewProduct.server,
+    status: async () => runtimePreviewProduct.server.status(),
     snapshot: async (_workspaceId?: string) => runtimePreviewProduct.server.snapshot(),
     command: async (_command: string, _workspaceId?: string) => undefined,
     stop: async (_workspaceId?: string) => runtimePreviewProduct.server.stop(),

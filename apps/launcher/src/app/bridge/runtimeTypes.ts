@@ -62,6 +62,7 @@ export type ServerRuntimeCondition = 'Offline' | 'Good' | 'Warning' | 'Critical'
 /** Compatibility alias for the older runtime-condition type name. */
 export type ServerHealth = ServerRuntimeCondition;
 export type ServerSnapshot = { state: ServerState; health: ServerRuntimeCondition; cpuLoadPercent: number; usedMemoryBytes: number; maxMemoryBytes: number; pid?: number | null; logPath: string };
+export type ActiveServerRuntimeStatus = { snapshot: ServerSnapshot; connectionPort?: number | null };
 export type ServerRuntimeSummary = { workspaceId: string; workspaceName: string; state: ServerState; pid?: number | null; paperPort?: number | null; usedMemoryBytes: number; maxMemoryBytes: number };
 export type ServerPreflight = { ready: boolean; workspace: string; serverDirectory: string; paperJar: string; worldsDirectory: string; javaPath: string; javaVersion: string; logDirectory: string; issues: string[] };
 export type DetachedRecoveryResult = { pid: number; stopped: boolean; message: string };

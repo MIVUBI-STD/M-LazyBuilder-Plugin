@@ -72,22 +72,19 @@
       window.setTimeout(() => (addressCopied = false), 1600);
     }
   }
-  async function refreshRuntime() {
-    const [nextSnapshot, nextPort, nextRuntimes] = await Promise.all([
-      runtimeProduct.server.snapshot(),
-      runtimeProduct.server.connectionPort(),
-      runtimeProduct.server.runtimes()
-    ]);
-    snapshot = nextSnapshot;
-    connectionPort = nextPort;
-    runtimes = nextRuntimes;
+  async function refreshRuntimeStatus() {
+    const status = await runtimeProduct.server.status();
+    snapshot = status.snapshot;
+    connectionPort = status.connectionPort ?? null;
   }
+  async function refreshFleet() { runtimes = await runtimeProduct.server.runtimes(); }
+  async function refreshRuntime() { await Promise.all([refreshRuntimeStatus(), refreshFleet()]); }
   async function refreshPreflight() { preflight = await runtimeProduct.server.preflight(); }
   async function refreshAll() { try { await Promise.all([refreshRuntime(), refreshPreflight()]); error = null; } catch (value) { error = presentRuntimeError(value, 'Could not refresh server status.'); } }
   async function pollRuntime() {
     if (runtimePollInFlight) return;
     runtimePollInFlight = true;
-    try { await refreshRuntime(); } catch (value) { if (!error) error = presentRuntimeError(value, 'Could not refresh server status.'); }
+    try { await refreshRuntimeStatus(); } catch (value) { if (!error) error = presentRuntimeError(value, 'Could not refresh server status.'); }
     finally { runtimePollInFlight = false; }
   }
   async function action(run: () => Promise<void>) {
@@ -125,6 +122,16 @@
   onMount(() => {
     let disposed = false;
     let timer: number | null = null;
+    let fleetTimer: number | null = null;
+    const scheduleFleet = () => {
+      if (disposed || document.hidden) return;
+      fleetTimer = window.setTimeout(async () => {
+        fleetTimer = null;
+        if (disposed || document.hidden) return;
+        try { await refreshFleet(); } catch {}
+        scheduleFleet();
+      }, IDLE_RUNTIME_POLL_MS);
+    };
     const schedule = () => {
       if (disposed || document.hidden) return;
       const delay = ACTIVE_RUNTIME_STATES.has(snapshot.state) ? ACTIVE_RUNTIME_POLL_MS : IDLE_RUNTIME_POLL_MS;
@@ -133,18 +140,24 @@
     const refreshNow = () => {
       if (disposed || document.hidden) return;
       if (timer !== null) { window.clearTimeout(timer); timer = null; }
-      void pollRuntime().finally(schedule);
+      if (fleetTimer !== null) { window.clearTimeout(fleetTimer); fleetTimer = null; }
+      void Promise.all([pollRuntime(), refreshFleet().catch(() => undefined)]).finally(() => { schedule(); scheduleFleet(); });
     };
     const handleVisibility = () => {
-      if (document.hidden) { if (timer !== null) { window.clearTimeout(timer); timer = null; } return; }
+      if (document.hidden) {
+        if (timer !== null) { window.clearTimeout(timer); timer = null; }
+        if (fleetTimer !== null) { window.clearTimeout(fleetTimer); fleetTimer = null; }
+        return;
+      }
       refreshNow();
     };
-    void refreshAll().finally(schedule);
+    void refreshAll().finally(() => { schedule(); scheduleFleet(); });
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', refreshNow);
     return () => {
       disposed = true;
       if (timer !== null) window.clearTimeout(timer);
+      if (fleetTimer !== null) window.clearTimeout(fleetTimer);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', refreshNow);
     };

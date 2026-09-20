@@ -23,6 +23,24 @@ pub async fn server_preflight(app: AppHandle) -> Result<ServerPreflight, String>
     .map_err(|error| format!("Server preflight task failed: {error}"))?
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveServerRuntimeStatus {
+    pub snapshot: ServerSnapshot,
+    pub connection_port: Option<u16>,
+}
+
+#[tauri::command]
+pub fn server_runtime_status(
+    registry: State<'_, ServerRuntimeRegistry>,
+) -> Result<ActiveServerRuntimeStatus, String> {
+    let (_, state) = registry.active_runtime()?;
+    Ok(ActiveServerRuntimeStatus {
+        snapshot: state.snapshot()?,
+        connection_port: registry.active_paper_port()?,
+    })
+}
+
 #[tauri::command]
 pub fn server_snapshot(
     registry: State<'_, ServerRuntimeRegistry>,
