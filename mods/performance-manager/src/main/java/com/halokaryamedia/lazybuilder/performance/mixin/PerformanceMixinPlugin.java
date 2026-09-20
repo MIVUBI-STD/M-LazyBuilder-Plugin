@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
+import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility;
+import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain;
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import net.fabricmc.loader.api.FabricLoader;
 import org.objectweb.asm.tree.ClassNode;
@@ -7,38 +9,47 @@ import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Prevents overlapping first-party and migration-source performance hooks from applying together. */
 public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String MIXIN_PACKAGE = "com.halokaryamedia.lazybuilder.performance.mixin.";
-    private static final String TEXT_RENDERER_MIXIN = MIXIN_PACKAGE + "TextRendererDrawerMixin";
-    private static final String VERTEX_BUFFER_MIXIN = MIXIN_PACKAGE + "VertexBufferMixin";
-    private static final String CHUNK_REBUILD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBuiltChunkMixin";
-    private static final String CHUNK_BACKPRESSURE_MIXIN = MIXIN_PACKAGE + "ChunkBuilderBackpressureMixin";
-    private static final String CHUNK_UPLOAD_MIXIN = MIXIN_PACKAGE + "ChunkBuilderUploadMixin";
-    private static final String PARTICLE_MANAGER_MIXIN = MIXIN_PACKAGE + "ParticleManagerMixin";
-    private static final String BUILT_CHUNK_STORAGE_MIXIN = MIXIN_PACKAGE + "BuiltChunkStorageMixin";
-    private static final String CHUNK_DATA_VISIBILITY_MIXIN = MIXIN_PACKAGE + "ChunkDataVisibilityMixin";
-    private static final String BUILT_CHUNK_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "BuiltChunkBufferLookupMixin";
-    private static final String CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN = MIXIN_PACKAGE + "ChunkDataLayerMembershipMixin";
-    private static final String BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN = MIXIN_PACKAGE + "BuiltChunkTranslucentSortMixin";
-    private static final String WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN = MIXIN_PACKAGE + "WorldRendererTerrainSubmissionMixin";
-    private static final String SHADER_LOADER_SOURCE_MIXIN = MIXIN_PACKAGE + "ShaderLoaderSourceMixin";
-    private static final String COMPILED_SHADER_MIXIN = MIXIN_PACKAGE + "CompiledShaderMixin";
-    private static final String BLOCK_BUFFER_ALLOCATOR_STORAGE_MIXIN = MIXIN_PACKAGE + "BlockBufferAllocatorStorageMixin";
-    private static final String SECTION_BUILDER_BUFFER_LOOKUP_MIXIN = MIXIN_PACKAGE + "SectionBuilderBufferLookupMixin";
-    private static final String BLOCK_BUFFER_POOL_MIXIN = MIXIN_PACKAGE + "BlockBufferBuilderPoolMixin";
-    private static final String BLOCK_COLORS_MIXIN = MIXIN_PACKAGE + "BlockColorsMixin";
-    private static final String BLOCK_SIDE_VISIBILITY_MIXIN = MIXIN_PACKAGE + "BlockSideVisibilityMixin";
-    private static final String BAKED_QUAD_ACCESSOR = MIXIN_PACKAGE + "BakedQuadAccessor";
-    private static final String BAKED_MODEL_BUILDER_MIXIN = MIXIN_PACKAGE + "BasicBakedModelBuilderMixin";
 
-    private RendererCompatibility.Snapshot rendererCompatibility;
+    private static final Map<String, OptimizationDomain> DOMAIN_BY_MIXIN = Map.ofEntries(
+            Map.entry("TextRendererDrawerMixin", OptimizationDomain.IMMEDIATE_RENDERING),
+            Map.entry("VertexBufferMixin", OptimizationDomain.IMMEDIATE_RENDERING),
+            Map.entry("ParticleManagerMixin", OptimizationDomain.PARTICLES),
+            Map.entry("ChunkBuilderUploadMixin", OptimizationDomain.TERRAIN_UPLOAD),
+            Map.entry("WorldRendererTerrainSubmissionMixin", OptimizationDomain.TERRAIN_SUBMISSION),
+            Map.entry("ShaderLoaderSourceMixin", OptimizationDomain.TERRAIN_SUBMISSION),
+            Map.entry("CompiledShaderMixin", OptimizationDomain.TERRAIN_SUBMISSION),
+            Map.entry("ChunkBuilderBuiltChunkMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("ChunkBuilderBackpressureMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BuiltChunkStorageMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("ChunkDataVisibilityMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BuiltChunkBufferLookupMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("ChunkDataLayerMembershipMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BuiltChunkTranslucentSortMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BlockBufferAllocatorStorageMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("SectionBuilderBufferLookupMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BlockBufferBuilderPoolMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BlockColorsMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BlockSideVisibilityMixin", OptimizationDomain.TERRAIN_BUILD),
+            Map.entry("BakedQuadAccessor", OptimizationDomain.MODEL_MEMORY),
+            Map.entry("BasicBakedModelBuilderMixin", OptimizationDomain.MODEL_MEMORY)
+    );
+
+    private OptimizationCompatibility.Policy policy;
 
     @Override
     public void onLoad(String mixinPackage) {
-        this.rendererCompatibility = RendererCompatibility.detect();
+        FabricLoader loader = FabricLoader.getInstance();
+        this.policy = OptimizationCompatibility.evaluate(
+                RendererCompatibility.detect(),
+                loader.isModLoaded("immediatelyfast"),
+                loader.isModLoaded("ferritecore")
+        );
     }
 
     @Override
@@ -48,47 +59,25 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        boolean immediatelyFast = FabricLoader.getInstance().isModLoaded("immediatelyfast");
-        RendererCompatibility.Snapshot renderer = this.rendererCompatibility == null
-                ? RendererCompatibility.detect()
-                : this.rendererCompatibility;
+        OptimizationDomain domain = domainFor(mixinClassName);
+        return domain == null || effectivePolicy().owns(domain);
+    }
 
-        if ((TEXT_RENDERER_MIXIN.equals(mixinClassName)
-                || VERTEX_BUFFER_MIXIN.equals(mixinClassName)
-                || PARTICLE_MANAGER_MIXIN.equals(mixinClassName))
-                && immediatelyFast) {
-            return false;
-        }
-        if (CHUNK_UPLOAD_MIXIN.equals(mixinClassName)
-                && (immediatelyFast || !renderer.firstPartyChunkPipelineSafe())) {
-            return false;
-        }
-        if ((WORLD_RENDERER_TERRAIN_SUBMISSION_MIXIN.equals(mixinClassName)
-                || SHADER_LOADER_SOURCE_MIXIN.equals(mixinClassName)
-                || COMPILED_SHADER_MIXIN.equals(mixinClassName))
-                && !renderer.terrainSubmissionSafe()) {
-            return false;
-        }
-        if ((CHUNK_REBUILD_MIXIN.equals(mixinClassName)
-                || CHUNK_BACKPRESSURE_MIXIN.equals(mixinClassName)
-                || BUILT_CHUNK_STORAGE_MIXIN.equals(mixinClassName)
-                || CHUNK_DATA_VISIBILITY_MIXIN.equals(mixinClassName)
-                || BUILT_CHUNK_BUFFER_LOOKUP_MIXIN.equals(mixinClassName)
-                || CHUNK_DATA_LAYER_MEMBERSHIP_MIXIN.equals(mixinClassName)
-                || BUILT_CHUNK_TRANSLUCENT_SORT_MIXIN.equals(mixinClassName)
-                || BLOCK_BUFFER_ALLOCATOR_STORAGE_MIXIN.equals(mixinClassName)
-                || SECTION_BUILDER_BUFFER_LOOKUP_MIXIN.equals(mixinClassName)
-                || BLOCK_BUFFER_POOL_MIXIN.equals(mixinClassName)
-                || BLOCK_COLORS_MIXIN.equals(mixinClassName)
-                || BLOCK_SIDE_VISIBILITY_MIXIN.equals(mixinClassName))
-                && !renderer.firstPartyChunkPipelineSafe()) {
-            return false;
-        }
-        if ((BAKED_QUAD_ACCESSOR.equals(mixinClassName) || BAKED_MODEL_BUILDER_MIXIN.equals(mixinClassName))
-                && FabricLoader.getInstance().isModLoaded("ferritecore")) {
-            return false;
-        }
-        return true;
+    private OptimizationCompatibility.Policy effectivePolicy() {
+        OptimizationCompatibility.Policy current = policy;
+        if (current != null) return current;
+
+        FabricLoader loader = FabricLoader.getInstance();
+        return OptimizationCompatibility.evaluate(
+                RendererCompatibility.detect(),
+                loader.isModLoaded("immediatelyfast"),
+                loader.isModLoaded("ferritecore")
+        );
+    }
+
+    private static OptimizationDomain domainFor(String mixinClassName) {
+        if (mixinClassName == null || !mixinClassName.startsWith(MIXIN_PACKAGE)) return null;
+        return DOMAIN_BY_MIXIN.get(mixinClassName.substring(MIXIN_PACKAGE.length()));
     }
 
     @Override
