@@ -22,7 +22,6 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
             Map.entry("BlockEntityRenderDispatcherMixin", OptimizationDomain.ENTITY_CULLING),
             Map.entry("VertexBufferMixin", OptimizationDomain.TERRAIN_BUILD),
             Map.entry("VertexBufferGrowthMixin", OptimizationDomain.IMMEDIATE_RENDERING),
-            Map.entry("ParticleManagerMixin", OptimizationDomain.PARTICLES),
             Map.entry("ChunkBuilderUploadMixin", OptimizationDomain.TERRAIN_UPLOAD),
             Map.entry("WorldRendererTerrainSubmissionMixin", OptimizationDomain.TERRAIN_SUBMISSION),
             Map.entry("ShaderLoaderSourceMixin", OptimizationDomain.TERRAIN_SUBMISSION),
