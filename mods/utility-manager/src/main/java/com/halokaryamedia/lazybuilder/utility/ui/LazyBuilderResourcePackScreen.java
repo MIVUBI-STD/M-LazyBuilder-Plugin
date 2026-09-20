@@ -37,7 +37,7 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
             Consumer<ResourcePackManager> applier,
             Path packDirectory
     ) {
-        super(resourcePackManager, applier, packDirectory, Text.literal("Resource Packs"));
+        super(resourcePackManager, applier, packDirectory, Text.empty());
         this.parent = parent;
         this.packDirectory = packDirectory;
     }
@@ -80,7 +80,7 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
                 footerY,
                 92,
                 22,
-                Text.literal("Done"),
+                Text.literal("Apply & Back"),
                 true,
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close
@@ -118,6 +118,13 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
                 18,
                 15,
                 LazyBuilderSettingsScreen.TEXT_PRIMARY
+        );
+        context.drawTextWithShadow(
+                textRenderer,
+                Text.literal("Choose available packs on the left. Active packs are applied from top to bottom."),
+                132,
+                15,
+                LazyBuilderSettingsScreen.TEXT_MUTED
         );
 
         PackScreenAccessor access = (PackScreenAccessor) this;
