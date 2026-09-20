@@ -61,13 +61,17 @@ public final class ChunkUploadTask implements Runnable {
         return buffer;
     }
 
+    public boolean isCurrentSession() {
+        return TerrainGpuResidencyTracker.ownsSession(sessionOwner, sessionGeneration);
+    }
+
     public CompletableFuture<Void> future() {
         return future;
     }
 
     public void executeBound() {
         if (future.isDone()) return;
-        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner)) {
+        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner, sessionGeneration)) {
             discard();
             return;
         }
@@ -142,7 +146,7 @@ public final class ChunkUploadTask implements Runnable {
 
     @Override
     public void run() {
-        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner)) {
+        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner, sessionGeneration)) {
             discard();
             return;
         }
