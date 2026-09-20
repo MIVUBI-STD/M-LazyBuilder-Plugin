@@ -36,30 +36,14 @@ processResources {
 }
 
 sourceSets {
-    gametest {
-        compileClasspath += main.output
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.output
-        runtimeClasspath += main.runtimeClasspath
-    }
-}
-
-loom.mods.register('lazybuilder-performance-manager-visual-proof') {
-    sourceSet sourceSets.gametest
-}
-
-loom {
-    runs {
-        clientGameTest {
-            client()
-            name = 'LazyBuilder Performance Manager Visual Proof'
-            source sourceSets.gametest
-            vmArg '-Dfabric.client.gametest'
-            vmArg '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
-            vmArg "-Dfabric.client.gametest.testModResourcesPath=${file('src/gametest/resources').absolutePath}"
-            runDir 'build/run/clientGameTest'
-            programArg '--username'
-            programArg 'LBPerfPreview'
+    main {
+        java {
+            srcDirs = [
+                'src/main/java',
+                '../../shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/performance/settings'
+            ]
+            include 'com/halokaryamedia/lazybuilder/performance/**'
+            include 'PerformanceSettingsBridge.java'
         }
     }
 }

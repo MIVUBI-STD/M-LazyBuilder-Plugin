@@ -11,6 +11,7 @@ on:
       - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/**'
       - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/control/**'
       - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/registry/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/performance/settings/**'
       - '.github/workflows/minecraft-ui-preview.yml'
   workflow_dispatch:
 
@@ -185,11 +186,11 @@ jobs:
 
           manifest = {
               'proofLevel': 'L4_REAL_MINECRAFT_RENDERER',
-              'surface': 'Fabric Utility Manager / vanilla screen injections',
+              'surface': 'Unified LazyBuilder Settings shell and Utility Manager client surfaces',
               'renderer': 'Minecraft 1.21.4 Fabric client under XVFB',
               'branch': os.environ.get('GITHUB_REF_NAME'),
               'commit': os.environ.get('GITHUB_SHA'),
-              'fixtureBoundary': 'Reconnect target and disconnect copy are deterministic fixtures; DisconnectedScreen and Utility Manager mixins are production paths.',
+              'fixtureBoundary': 'Performance settings use a deterministic bridge fixture for UI rendering; reconnect/disconnect fixtures are deterministic. The Settings shell and Minecraft rendering are production paths.',
               'captureOverrides': ['menuBackgroundBlurriness=0 for pixel-clear visual inspection; restored after capture'],
               'nativeBoundary': 'Local PC remains required for real connection failures, clipboard OS integration, keyboard feel, installed modpack interactions, and OS-specific window behavior.',
               'screenshots': shots,
@@ -219,98 +220,3 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-
-  performance-manager-visual-proof:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
-        with:
-          gradle-version: '8.12'
-          cache-read-only: true
-
-      - name: Ensure XVFB is available
-        shell: bash
-        run: |
-          if ! command -v xvfb-run >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb
-          fi
-
-      - name: Run Performance Manager in real Minecraft client
-        shell: bash
-        env:
-          CI: 'true'
-        run: xvfb-run -a gradle -p mods/performance-manager --no-daemon runClientGameTest
-
-      - name: Stage Performance Manager visual proof
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          source_dir="mods/performance-manager/build/run/clientGameTest/screenshots"
-          target_dir=".artifacts/minecraft-ui-preview/performance-manager"
-          mkdir -p "$target_dir"
-          if [ ! -d "$source_dir" ]; then
-            echo "Expected screenshot directory not found: $source_dir" >&2
-            exit 1
-          fi
-          find "$source_dir" -maxdepth 1 -type f -name '*.png' -print -exec cp {} "$target_dir/" \;
-          if ! find "$target_dir" -maxdepth 1 -type f -name '*.png' -print -quit | grep -q .; then
-            echo "Minecraft client test completed without producing Performance Manager screenshots." >&2
-            exit 1
-          fi
-          python3 - <<'PY'
-          import json, os, struct
-          from pathlib import Path
-
-          target = Path('.artifacts/minecraft-ui-preview/performance-manager')
-          shots = []
-          for image in sorted(target.glob('*.png')):
-              with image.open('rb') as fh:
-                  sig = fh.read(24)
-              width, height = struct.unpack('>II', sig[16:24])
-              shots.append({'file': image.name, 'width': width, 'height': height})
-
-          manifest = {
-              'proofLevel': 'L4_REAL_MINECRAFT_RENDERER',
-              'surface': 'Fabric Performance Manager / Video Settings integration',
-              'renderer': 'Minecraft 1.21.4 Fabric client under XVFB',
-              'branch': os.environ.get('GITHUB_REF_NAME'),
-              'commit': os.environ.get('GITHUB_SHA'),
-              'nativeBoundary': 'Local PC remains required for GPU/driver frame pacing and installed modpack interactions.',
-              'screenshots': shots,
-          }
-          (target / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-          PY
-
-      - name: Upload Performance Manager visual proof
-        if: success()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: LazyBuilder-Performance-UI-Preview-${{ github.sha }}
-          path: .artifacts/minecraft-ui-preview/performance-manager/**
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload Performance Manager diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: LazyBuilder-Performance-UI-Preview-Diagnostics-${{ github.sha }}
-          path: |
-            mods/performance-manager/build/run/clientGameTest/logs/**
-            mods/performance-manager/build/run/clientGameTest/crash-reports/**
-            mods/performance-manager/build/run/clientGameTest/screenshots/**
-            mods/performance-manager/build/reports/**
-          if-no-files-found: warn
-          retention-days: 7

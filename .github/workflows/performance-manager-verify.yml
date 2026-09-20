@@ -5,6 +5,7 @@ on:
     branches: [Local, main]
     paths:
       - 'mods/performance-manager/**'
+      - 'shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/performance/settings/**'
       - '.github/workflows/performance-manager-verify.yml'
   workflow_dispatch:
 

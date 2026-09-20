@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
+import com.halokaryamedia.lazybuilder.performance.settings.PerformanceSettingsBridge;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -11,9 +12,7 @@ import net.minecraft.resource.ResourceType;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
-import net.minecraft.client.gui.screen.Screen;
 
-import java.util.function.Function;
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
@@ -23,8 +22,37 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         runtime = new PerformanceRuntime(FabricLoader.getInstance().getConfigDir());
         FabricLoader.getInstance().getObjectShare().put(
-                "lazybuilder-performance-manager:settings-screen",
-                (Function<Screen, Screen>) com.halokaryamedia.lazybuilder.performance.ui.PerformanceVideoSettingsScreen::new
+                PerformanceSettingsBridge.OBJECT_SHARE_KEY,
+                new PerformanceSettingsBridge() {
+                    @Override
+                    public Snapshot snapshot() {
+                        return toSnapshot(preferences());
+                    }
+
+                    @Override
+                    public Snapshot defaults() {
+                        return toSnapshot(PerformancePreferences.defaults());
+                    }
+
+                    @Override
+                    public void update(Snapshot updated) {
+                        if (updated == null) return;
+                        updatePreferences(new PerformancePreferences(
+                                updated.backgroundFpsPolicy(),
+                                updated.unfocusedFpsLimit(),
+                                updated.minimizedFpsLimit(),
+                                updated.hiddenObjectSkipping(),
+                                updated.hiddenObjectSkipping(),
+                                updated.renderingOptimizations(),
+                                updated.memoryOptimizations()
+                        ));
+                    }
+
+                    @Override
+                    public String lastStatus() {
+                        return lastPreferenceUpdateStatus();
+                    }
+                }
         );
         MemoryDeduplicator.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
@@ -35,6 +63,17 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(runtime::tick);
+    }
+
+    private static PerformanceSettingsBridge.Snapshot toSnapshot(PerformancePreferences preferences) {
+        return new PerformanceSettingsBridge.Snapshot(
+                preferences.backgroundFpsPolicy(),
+                preferences.unfocusedFpsLimit(),
+                preferences.minimizedFpsLimit(),
+                preferences.hiddenObjectSkipping(),
+                preferences.renderingOptimizations(),
+                preferences.memoryOptimizations()
+        );
     }
 
     public static FramePressure pressure() {

@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.ui;
 
+import com.halokaryamedia.lazybuilder.performance.settings.PerformanceSettingsBridge;
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.fabricmc.loader.api.FabricLoader;
@@ -68,9 +69,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private static final int CONTROL_WIDTH = 138;
     private static final int CONTROL_HEIGHT = 20;
     private static final int FOOTER_HEIGHT = 40;
-
-    private static final String PERFORMANCE_SCREEN_SHARE =
-            "lazybuilder-performance-manager:settings-screen";
 
     private final Screen parent;
     private final Category category;
@@ -268,14 +266,70 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(quality);
 
-        Section performance = new Section("PERFORMANCE");
-        performance.rows.add(Row.action(
-                "Performance Tuning",
-                "Background FPS, rendering, visibility and memory controls.",
-                performanceProviderAvailable() ? "Open" : "Unavailable",
-                this::openPerformanceSettings
-        ));
-        sections.add(performance);
+        PerformanceSettingsBridge performanceBridge = performanceBridge();
+        if (performanceBridge != null) {
+            PerformanceSettingsBridge.Snapshot performanceState = performanceBridge.snapshot();
+
+            Section performance = new Section("PERFORMANCE");
+            performance.rows.add(Row.toggle(
+                    "Reduce FPS in Background",
+                    "Use less GPU power when Minecraft is not the active window.",
+                    performanceState.backgroundFpsPolicy(),
+                    enabled -> updatePerformance(state -> state.withBackgroundFpsPolicy(enabled))
+            ));
+            performance.rows.add(Row.value(
+                    "Background FPS",
+                    "Frame-rate limit while Minecraft is running in the background.",
+                    performanceState.unfocusedFpsLimit() + " FPS",
+                    () -> openPerformanceIntegerChoice(
+                            "Background FPS",
+                            performanceState.unfocusedFpsLimit(),
+                            new int[]{15, 30, 45, 60, 90, 120},
+                            value -> updatePerformance(state -> state.withUnfocusedFpsLimit(value))
+                    )
+            ));
+            performance.rows.add(Row.value(
+                    "Minimized FPS",
+                    "Frame-rate limit while the game window is minimized.",
+                    performanceState.minimizedFpsLimit() + " FPS",
+                    () -> openPerformanceIntegerChoice(
+                            "Minimized FPS",
+                            performanceState.minimizedFpsLimit(),
+                            new int[]{5, 10, 15, 30},
+                            value -> updatePerformance(state -> state.withMinimizedFpsLimit(value))
+                    )
+            ));
+            sections.add(performance);
+
+            Section advanced = new Section("ADVANCED");
+            advanced.rows.add(Row.toggle(
+                    "Skip Unseen Objects",
+                    "Stop drawing entities and special blocks when they are fully hidden.",
+                    performanceState.hiddenObjectSkipping(),
+                    enabled -> updatePerformance(state -> state.withHiddenObjectSkipping(enabled))
+            ));
+            advanced.rows.add(Row.toggle(
+                    "Faster World Rendering",
+                    "Use the optimized world rendering path.",
+                    performanceState.renderingOptimizations(),
+                    enabled -> updatePerformance(state -> state.withRenderingOptimizations(enabled))
+            ));
+            advanced.rows.add(Row.toggle(
+                    "Lower Memory Usage",
+                    "Reuse compatible rendering data to reduce memory pressure.",
+                    performanceState.memoryOptimizations(),
+                    enabled -> updatePerformance(state -> state.withMemoryOptimizations(enabled))
+            ));
+            sections.add(advanced);
+        } else {
+            Section performance = new Section("PERFORMANCE");
+            performance.rows.add(Row.status(
+                    "Performance",
+                    "Performance Manager is not available in the current client package.",
+                    "Unavailable"
+            ));
+            sections.add(performance);
+        }
     }
 
     private void buildControlsSections() {
@@ -614,25 +668,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
         openDropdown(title, choices);
     }
 
-    private void openDoubleChoice(
-            String title,
-            SimpleOption<Double> option,
-            double[] values,
-            Function<Double, String> label
-    ) {
-        if (client == null) return;
-        List<DropdownChoice> choices = new ArrayList<>();
-        double current = option.getValue();
-        for (double value : values) {
-            choices.add(new DropdownChoice(
-                    label.apply(value),
-                    Math.abs(value - current) < 0.0001,
-                    () -> setOption(option, value)
-            ));
-        }
-        openDropdown(title, choices);
-    }
-
     private <E extends Enum<E>> void openEnumChoice(
             String title,
             SimpleOption<E> option,
@@ -656,18 +691,37 @@ public final class LazyBuilderSettingsScreen extends Screen {
         clearAndInit();
     }
 
-    private boolean performanceProviderAvailable() {
-        return FabricLoader.getInstance().getObjectShare().get(PERFORMANCE_SCREEN_SHARE) instanceof Function<?, ?>;
+    private PerformanceSettingsBridge performanceBridge() {
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get(PerformanceSettingsBridge.OBJECT_SHARE_KEY);
+        return shared instanceof PerformanceSettingsBridge bridge ? bridge : null;
     }
 
-    @SuppressWarnings("unchecked")
-    private void openPerformanceSettings() {
-        if (client == null) return;
-        Object shared = FabricLoader.getInstance().getObjectShare().get(PERFORMANCE_SCREEN_SHARE);
-        if (shared instanceof Function<?, ?> raw) {
-            Function<Screen, Screen> provider = (Function<Screen, Screen>) raw;
-            client.setScreen(provider.apply(this));
+    private void updatePerformance(
+            Function<PerformanceSettingsBridge.Snapshot, PerformanceSettingsBridge.Snapshot> update
+    ) {
+        PerformanceSettingsBridge bridge = performanceBridge();
+        if (bridge == null) return;
+        PerformanceSettingsBridge.Snapshot current = bridge.snapshot();
+        bridge.update(update.apply(current));
+        refreshCategory();
+    }
+
+    private void openPerformanceIntegerChoice(
+            String title,
+            int current,
+            int[] values,
+            java.util.function.IntConsumer setter
+    ) {
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (int value : values) {
+            choices.add(new DropdownChoice(
+                    value + " FPS",
+                    value == current,
+                    () -> setter.accept(value)
+            ));
         }
+        openDropdown(title, choices);
     }
 
     @Override

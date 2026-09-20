@@ -14,10 +14,22 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 - passive client utility features must not be split into separate LazyBuilder mods when they fit the Utility Manager boundary;
 - third-party utility JARs are migration references only and must not be shaded, nested, unpacked, or copied into the Utility Manager artifact;
 - no mandatory default keybinds;
-- vanilla controls remain authoritative where they already provide a familiar workflow;
+- Minecraft `GameOptions` and `KeyBinding` objects remain the authoritative backend and persistence owners; LazyBuilder owns the unified user-facing settings presentation;
 - no dependency on Map Manager implementation packages;
 - no pollers/watchers/background workers unless an active feature proves they are required;
 - preferences exist only for implemented behavior, not for speculative future features.
+
+## Unified settings shell
+
+Utility Manager owns the permanent LazyBuilder user-facing Settings shell. Video and
+Controls bind directly to Minecraft's existing `GameOptions` / `KeyBinding` state instead
+of opening separate vanilla settings screens. Interface preferences remain Utility-owned,
+while Performance preferences are exposed through a small shared bridge so Performance
+Manager keeps runtime/config ownership without a presentation dependency.
+
+The shell uses one visual language across Video, Controls, Interface, and Tools: sectioned
+single-column rows, contextual help, switches, sliders, dropdowns, key capture, responsive
+scrolling, reset confirmation, and a fixed footer.
 
 ## Product direction
 

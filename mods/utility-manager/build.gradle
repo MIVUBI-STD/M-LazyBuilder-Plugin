@@ -33,10 +33,12 @@ sourceSets {
         java {
             srcDirs = [
                 'src/main/java',
-                '../../shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/utility/telemetry'
+                '../../shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/utility/telemetry',
+                '../../shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/performance/settings'
             ]
             include 'com/halokaryamedia/lazybuilder/utility/**'
             include 'UtilityTelemetryWireProtocol.java'
+            include 'PerformanceSettingsBridge.java'
         }
     }
     gametest {

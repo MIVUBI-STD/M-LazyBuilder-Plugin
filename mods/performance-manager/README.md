@@ -138,6 +138,11 @@ External performance mods remain migration references until matching first-party
 
 ## Configuration
 
+Performance Manager does not own a separate settings screen. User-facing performance
+controls are integrated into the permanent LazyBuilder `Settings -> Video` shell through
+the shared `PerformanceSettingsBridge`. Performance Manager remains the runtime and
+persistence owner; the Settings shell only presents and edits the stable preference snapshot.
+
 ```properties
 background.enabled=true
 background.unfocused_fps=30

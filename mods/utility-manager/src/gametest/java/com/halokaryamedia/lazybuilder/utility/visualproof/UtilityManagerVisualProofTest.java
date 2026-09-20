@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.visualproof;
 
+import com.halokaryamedia.lazybuilder.performance.settings.PerformanceSettingsBridge;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
@@ -9,6 +10,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.itemgroup.v1.FabricCreativeInventoryScreen;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -39,6 +41,7 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
     public void runTest(ClientGameTestContext context) {
         try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             context.waitTicks(40);
+            installPerformanceSettingsBridge(context);
             verifyNarratorSuppression(context);
             captureCompactDebug(context, 1440, 900, 2,
                     "utility-compact-debug-1440x900-gui2");
@@ -51,6 +54,9 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.VIDEO,
                     "utility-settings-video-620x480-gui2");
+            captureScrolledSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.VIDEO,
+                    "utility-settings-video-performance-scrolled-620x480-gui2");
             captureVideoDropdown(context, 1440, 900, 2,
                     "utility-settings-video-dropdown-1440x900-gui2");
             captureVideoDropdown(context, 620, 480, 2,
@@ -113,6 +119,35 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
 
             context.setScreen(() -> null);
         }
+    }
+
+    private static void installPerformanceSettingsBridge(ClientGameTestContext context) {
+        context.runOnClient(client -> FabricLoader.getInstance().getObjectShare().put(
+                PerformanceSettingsBridge.OBJECT_SHARE_KEY,
+                new PerformanceSettingsBridge() {
+                    private Snapshot state = new Snapshot(true, 30, 10, false, true, true);
+
+                    @Override
+                    public Snapshot snapshot() {
+                        return state;
+                    }
+
+                    @Override
+                    public Snapshot defaults() {
+                        return new Snapshot(true, 30, 10, false, true, true);
+                    }
+
+                    @Override
+                    public void update(Snapshot updated) {
+                        if (updated != null) state = updated;
+                    }
+
+                    @Override
+                    public String lastStatus() {
+                        return "applied";
+                    }
+                }
+        ));
     }
 
     private static void verifyNarratorSuppression(ClientGameTestContext context) {
