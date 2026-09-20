@@ -13,6 +13,8 @@
     "DisconnectedScreenMixin",
     "KeyboardMixin",
     "MultiplayerScreenMixin",
+    "PackListWidgetAccessor",
+    "PackScreenAccessor",
     "ScreenshotRecorderMixin",
     "SocialInteractionsPlayerListEntryMixin"
   ],
