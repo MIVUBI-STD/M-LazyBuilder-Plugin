@@ -64,15 +64,12 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private enum GraphicsPreset {
-        LOW("Low", 8, 5, 0.75, GraphicsMode.FAST, CloudRenderMode.OFF, ParticlesMode.MINIMAL, 1),
-        MEDIUM("Medium", 16, 8, 1.00, GraphicsMode.FANCY, CloudRenderMode.FAST, ParticlesMode.DECREASED, 3),
-        HIGH("High", 24, 12, 1.25, GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, 4),
-        CUSTOM("Custom", -1, -1, -1.0, GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, -1);
+        LOW("Low", GraphicsMode.FAST, CloudRenderMode.OFF, ParticlesMode.MINIMAL, 1),
+        MEDIUM("Medium", GraphicsMode.FANCY, CloudRenderMode.FAST, ParticlesMode.DECREASED, 3),
+        HIGH("High", GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, 4),
+        CUSTOM("Custom", GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, -1);
 
         private final String label;
-        private final int renderDistance;
-        private final int simulationDistance;
-        private final double entityDistance;
         private final GraphicsMode graphicsMode;
         private final CloudRenderMode cloudMode;
         private final ParticlesMode particlesMode;
@@ -80,18 +77,12 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         GraphicsPreset(
                 String label,
-                int renderDistance,
-                int simulationDistance,
-                double entityDistance,
                 GraphicsMode graphicsMode,
                 CloudRenderMode cloudMode,
                 ParticlesMode particlesMode,
                 int mipmapLevels
         ) {
             this.label = label;
-            this.renderDistance = renderDistance;
-            this.simulationDistance = simulationDistance;
-            this.entityDistance = entityDistance;
             this.graphicsMode = graphicsMode;
             this.cloudMode = cloudMode;
             this.particlesMode = particlesMode;
@@ -270,7 +261,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         Section overall = new Section("OVERALL QUALITY");
         overall.rows.add(Row.value(
                 "Quality Preset",
-                "Apply a coordinated starting point for visual detail and view distance. Changing any controlled option makes the preset Custom.",
+                "Apply a coordinated visual-detail profile. Changing any controlled visual option makes the preset Custom.",
                 preset.label,
                 this::openGraphicsPresetChoice
         ));
@@ -769,10 +760,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private boolean matchesGraphicsPreset(GraphicsPreset preset) {
         if (client == null || preset == GraphicsPreset.CUSTOM) return false;
-        return client.options.getViewDistance().getValue() == preset.renderDistance
-                && client.options.getSimulationDistance().getValue() == preset.simulationDistance
-                && Math.abs(client.options.getEntityDistanceScaling().getValue() - preset.entityDistance) < 0.001
-                && client.options.getGraphicsMode().getValue() == preset.graphicsMode
+        return client.options.getGraphicsMode().getValue() == preset.graphicsMode
                 && client.options.getCloudRenderMode().getValue() == preset.cloudMode
                 && client.options.getParticles().getValue() == preset.particlesMode
                 && client.options.getMipmapLevels().getValue() == preset.mipmapLevels;
@@ -789,9 +777,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void applyGraphicsPreset(GraphicsPreset preset) {
         if (client == null || preset == GraphicsPreset.CUSTOM) return;
-        client.options.getViewDistance().setValue(preset.renderDistance);
-        client.options.getSimulationDistance().setValue(preset.simulationDistance);
-        client.options.getEntityDistanceScaling().setValue(preset.entityDistance);
         client.options.getGraphicsMode().setValue(preset.graphicsMode);
         client.options.getCloudRenderMode().setValue(preset.cloudMode);
         client.options.getParticles().setValue(preset.particlesMode);
