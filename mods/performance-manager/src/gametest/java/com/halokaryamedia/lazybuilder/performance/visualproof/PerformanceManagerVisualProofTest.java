@@ -41,7 +41,7 @@ public final class PerformanceManagerVisualProofTest implements FabricClientGame
         configureViewport(context, width, height, guiScale);
         context.setScreen(() -> {
             MinecraftClient client = MinecraftClient.getInstance();
-            return new VideoOptionsScreen(null, client.options);
+            return new VideoOptionsScreen(null, client, client.options);
         });
         context.waitForScreen(VideoOptionsScreen.class);
         context.waitTicks(8);

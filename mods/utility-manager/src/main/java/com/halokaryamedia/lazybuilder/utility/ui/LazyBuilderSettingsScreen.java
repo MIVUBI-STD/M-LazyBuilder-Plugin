@@ -92,7 +92,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         switch (this.category) {
             case VIDEO -> this.addNavigationRow(rowY, "Open", () -> {
                 if (this.client != null) {
-                    this.client.setScreen(new VideoOptionsScreen(this, this.client.options));
+                    this.client.setScreen(new VideoOptionsScreen(this, this.client, this.client.options));
                 }
             });
             case CONTROLS -> this.addNavigationRow(rowY, "Open", () -> {
