@@ -46,6 +46,59 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
+    public enum VideoPage {
+        DISPLAY("Display"),
+        QUALITY("Quality"),
+        VIEW("View"),
+        PERFORMANCE("Performance");
+
+        private final String label;
+
+        VideoPage(String label) {
+            this.label = label;
+        }
+
+        Text text() {
+            return Text.literal(label);
+        }
+    }
+
+    private enum GraphicsPreset {
+        LOW("Low", 8, 5, 0.75, GraphicsMode.FAST, CloudRenderMode.OFF, ParticlesMode.MINIMAL, 1),
+        MEDIUM("Medium", 16, 8, 1.00, GraphicsMode.FANCY, CloudRenderMode.FAST, ParticlesMode.DECREASED, 3),
+        HIGH("High", 24, 12, 1.25, GraphicsMode.FABULOUS, CloudRenderMode.FANCY, ParticlesMode.ALL, 4),
+        CUSTOM("Custom", -1, -1, -1.0, GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, -1);
+
+        private final String label;
+        private final int renderDistance;
+        private final int simulationDistance;
+        private final double entityDistance;
+        private final GraphicsMode graphicsMode;
+        private final CloudRenderMode cloudMode;
+        private final ParticlesMode particlesMode;
+        private final int mipmapLevels;
+
+        GraphicsPreset(
+                String label,
+                int renderDistance,
+                int simulationDistance,
+                double entityDistance,
+                GraphicsMode graphicsMode,
+                CloudRenderMode cloudMode,
+                ParticlesMode particlesMode,
+                int mipmapLevels
+        ) {
+            this.label = label;
+            this.renderDistance = renderDistance;
+            this.simulationDistance = simulationDistance;
+            this.entityDistance = entityDistance;
+            this.graphicsMode = graphicsMode;
+            this.cloudMode = cloudMode;
+            this.particlesMode = particlesMode;
+            this.mipmapLevels = mipmapLevels;
+        }
+    }
+
     static final int TEXT_PRIMARY = 0xFFF2F4F6;
     static final int TEXT_SECONDARY = 0xFFB8BEC6;
     static final int TEXT_MUTED = 0xFF858D97;
@@ -62,8 +115,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private static final int HEADER_HEIGHT = 34;
     private static final int TAB_HEIGHT = 24;
     private static final int TAB_TOP = 42;
-    private static final int CONTENT_TOP = 82;
-    private static final int VIEWPORT_TOP = 74;
+    private static final int VIDEO_TAB_TOP = 72;
+    private static final int DEFAULT_CONTENT_TOP = 82;
+    private static final int VIDEO_CONTENT_TOP = 112;
+    private static final int DEFAULT_VIEWPORT_TOP = 74;
+    private static final int VIDEO_VIEWPORT_TOP = 104;
     private static final int SECTION_HEIGHT = 16;
     private static final int SECTION_GAP = 8;
     private static final int ROW_HEIGHT = 32;
@@ -74,25 +130,32 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private final Screen parent;
     private final Category category;
+    private final VideoPage videoPage;
     private final List<Section> sections = new ArrayList<>();
     private int scrollOffset;
     private int maxScroll;
     private DropdownState dropdown;
 
     public LazyBuilderSettingsScreen(Screen parent) {
-        this(parent, Category.VIDEO);
+        this(parent, Category.VIDEO, VideoPage.QUALITY);
     }
 
     public LazyBuilderSettingsScreen(Screen parent, Category category) {
+        this(parent, category, VideoPage.QUALITY);
+    }
+
+    private LazyBuilderSettingsScreen(Screen parent, Category category, VideoPage videoPage) {
         super(Text.literal("Settings"));
         this.parent = parent;
         this.category = category;
+        this.videoPage = videoPage;
     }
 
     @Override
     protected void init() {
         sections.clear();
         addTabs();
+        if (category == Category.VIDEO) addVideoTabs();
 
         switch (category) {
             case VIDEO -> buildVideoSections();
@@ -129,9 +192,41 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
+    private void addVideoTabs() {
+        int left = panelLeft();
+        int width = panelWidth();
+        VideoPage[] values = VideoPage.values();
+        int gap = 2;
+        int tabWidth = Math.max(58, (width - gap * (values.length - 1)) / values.length);
+        int x = left;
+
+        for (int i = 0; i < values.length; i++) {
+            VideoPage value = values[i];
+            int actual = i == values.length - 1 ? left + width - x : tabWidth;
+            this.addDrawableChild(new LazyBuilderSettingsTabWidget(
+                    x,
+                    VIDEO_TAB_TOP,
+                    actual,
+                    TAB_HEIGHT,
+                    value.text(),
+                    value == videoPage,
+                    () -> openVideoPage(value)
+            ));
+            x += actual + gap;
+        }
+    }
+
     private void buildVideoSections() {
         if (client == null) return;
+        switch (videoPage) {
+            case DISPLAY -> buildVideoDisplaySections();
+            case QUALITY -> buildVideoQualitySections();
+            case VIEW -> buildVideoViewSections();
+            case PERFORMANCE -> buildVideoPerformanceSections();
+        }
+    }
 
+    private void buildVideoDisplaySections() {
         Section display = new Section("DISPLAY");
         display.rows.add(Row.toggle(
                 "Fullscreen",
@@ -146,32 +241,19 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 value -> setOption(client.options.getEnableVsync(), value)
         ));
         display.rows.add(Row.value(
-                "Max Frame Rate",
-                "Upper frame-rate limit while Minecraft is active.",
+                "Frame Rate Limit",
+                "Set the maximum frame rate while Minecraft is active.",
                 client.options.getMaxFps().getValue() + " FPS",
                 () -> openIntegerChoice(
-                        "Max Frame Rate",
+                        "Frame Rate Limit",
                         client.options.getMaxFps(),
                         new int[]{30, 60, 90, 120, 144, 165, 240, 260},
                         value -> value + " FPS"
                 )
         ));
-        display.rows.add(Row.value(
-                "GUI Scale",
-                "Scale Minecraft interface elements.",
-                client.options.getGuiScale().getValue() == 0
-                        ? "Auto"
-                        : Integer.toString(client.options.getGuiScale().getValue()),
-                () -> openIntegerChoice(
-                        "GUI Scale",
-                        client.options.getGuiScale(),
-                        new int[]{0, 1, 2, 3, 4},
-                        value -> value == 0 ? "Auto" : Integer.toString(value)
-                )
-        ));
         display.rows.add(Row.slider(
                 "Brightness",
-                "Adjust visibility in dark areas.",
+                "Adjust visibility in darker areas without changing world lighting.",
                 client.options.getGamma().getValue(),
                 0.0,
                 1.0,
@@ -179,85 +261,43 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 LazyBuilderSettingsScreen::percentage,
                 value -> setOptionLive(client.options.getGamma(), value)
         ));
-        display.rows.add(Row.slider(
-                "Field of View",
-                "Adjust the horizontal view angle.",
-                client.options.getFov().getValue(),
-                30.0,
-                110.0,
-                1.0,
-                value -> Math.round(value) + "°",
-                value -> setOptionLive(client.options.getFov(), (int) Math.round(value))
-        ));
         sections.add(display);
+    }
 
-        Section world = new Section("WORLD");
-        world.rows.add(Row.slider(
-                "Render Distance",
-                "How far terrain is rendered around the player.",
-                client.options.getViewDistance().getValue(),
-                2.0,
-                32.0,
-                1.0,
-                value -> Math.round(value) + " Chunks",
-                value -> setOptionLive(client.options.getViewDistance(), (int) Math.round(value))
-        ));
-        world.rows.add(Row.slider(
-                "Simulation Distance",
-                "How far world simulation remains active.",
-                client.options.getSimulationDistance().getValue(),
-                5.0,
-                32.0,
-                1.0,
-                value -> Math.round(value) + " Chunks",
-                value -> setOptionLive(client.options.getSimulationDistance(), (int) Math.round(value))
-        ));
-        world.rows.add(Row.slider(
-                "Entity Distance",
-                "Scale the distance at which entities are rendered.",
-                client.options.getEntityDistanceScaling().getValue(),
-                0.5,
-                2.0,
-                0.05,
-                LazyBuilderSettingsScreen::percentage,
-                value -> setOptionLive(client.options.getEntityDistanceScaling(), value)
-        ));
-        sections.add(world);
+    private void buildVideoQualitySections() {
+        GraphicsPreset preset = detectGraphicsPreset();
 
-        Section quality = new Section("QUALITY");
-        quality.rows.add(Row.value(
-                "Graphics",
-                "Choose the overall Minecraft graphics mode.",
+        Section overall = new Section("OVERALL QUALITY");
+        overall.rows.add(Row.value(
+                "Quality Preset",
+                "Apply a coordinated starting point for visual detail and view distance. Changing any controlled option makes the preset Custom.",
+                preset.label,
+                this::openGraphicsPresetChoice
+        ));
+        sections.add(overall);
+
+        Section detail = new Section("VISUAL DETAIL");
+        detail.rows.add(Row.value(
+                "Graphics Mode",
+                "Minecraft's base rendering style: Fast, Fancy, or Fabulous.",
                 humanize(client.options.getGraphicsMode().getValue()),
-                () -> openEnumChoice(
-                        "Graphics",
-                        client.options.getGraphicsMode(),
-                        GraphicsMode.values()
-                )
+                () -> openEnumChoice("Graphics Mode", client.options.getGraphicsMode(), GraphicsMode.values())
         ));
-        quality.rows.add(Row.value(
-                "Clouds",
-                "Choose how clouds are rendered.",
+        detail.rows.add(Row.value(
+                "Cloud Quality",
+                "Choose whether clouds are disabled, simplified, or fully rendered.",
                 humanize(client.options.getCloudRenderMode().getValue()),
-                () -> openEnumChoice(
-                        "Clouds",
-                        client.options.getCloudRenderMode(),
-                        CloudRenderMode.values()
-                )
+                () -> openEnumChoice("Cloud Quality", client.options.getCloudRenderMode(), CloudRenderMode.values())
         ));
-        quality.rows.add(Row.value(
+        detail.rows.add(Row.value(
                 "Particles",
-                "Control particle density.",
+                "Control the amount of visual particle effects.",
                 humanize(client.options.getParticles().getValue()),
-                () -> openEnumChoice(
-                        "Particles",
-                        client.options.getParticles(),
-                        ParticlesMode.values()
-                )
+                () -> openEnumChoice("Particles", client.options.getParticles(), ParticlesMode.values())
         ));
-        quality.rows.add(Row.value(
+        detail.rows.add(Row.value(
                 "Mipmap Levels",
-                "Texture filtering detail for distant blocks.",
+                "Control texture filtering detail for blocks viewed at a distance.",
                 Integer.toString(client.options.getMipmapLevels().getValue()),
                 () -> openIntegerChoice(
                         "Mipmap Levels",
@@ -266,71 +306,113 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         Object::toString
                 )
         ));
-        sections.add(quality);
+        sections.add(detail);
+    }
 
-        PerformanceState performanceState = performanceState();
-        if (performanceState != null) {
+    private void buildVideoViewSections() {
+        Section distance = new Section("VIEW DISTANCE");
+        distance.rows.add(Row.slider(
+                "Render Distance",
+                "Set how far terrain is drawn around the player.",
+                client.options.getViewDistance().getValue(),
+                2.0, 32.0, 1.0,
+                value -> Math.round(value) + " Chunks",
+                value -> setOptionLive(client.options.getViewDistance(), (int) Math.round(value))
+        ));
+        distance.rows.add(Row.slider(
+                "Simulation Distance",
+                "Set how far world simulation remains active around the player.",
+                client.options.getSimulationDistance().getValue(),
+                5.0, 32.0, 1.0,
+                value -> Math.round(value) + " Chunks",
+                value -> setOptionLive(client.options.getSimulationDistance(), (int) Math.round(value))
+        ));
+        distance.rows.add(Row.slider(
+                "Entity Distance",
+                "Scale the distance at which entities remain visible.",
+                client.options.getEntityDistanceScaling().getValue(),
+                0.5, 2.0, 0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getEntityDistanceScaling(), value)
+        ));
+        sections.add(distance);
 
-            Section performance = new Section("PERFORMANCE");
-            performance.rows.add(Row.toggle(
-                    "Reduce FPS in Background",
-                    "Use less GPU power when Minecraft is not the active window.",
-                    performanceState.backgroundFpsPolicy(),
-                    enabled -> updatePerformance(state -> state.withBackgroundFpsPolicy(enabled))
-            ));
-            performance.rows.add(Row.value(
-                    "Background FPS",
-                    "Frame-rate limit while Minecraft is running in the background.",
-                    performanceState.unfocusedFpsLimit() + " FPS",
-                    () -> openPerformanceIntegerChoice(
-                            "Background FPS",
-                            performanceState.unfocusedFpsLimit(),
-                            new int[]{15, 30, 45, 60, 90, 120},
-                            value -> updatePerformance(state -> state.withUnfocusedFpsLimit(value))
-                    )
-            ));
-            performance.rows.add(Row.value(
-                    "Minimized FPS",
-                    "Frame-rate limit while the game window is minimized.",
-                    performanceState.minimizedFpsLimit() + " FPS",
-                    () -> openPerformanceIntegerChoice(
-                            "Minimized FPS",
-                            performanceState.minimizedFpsLimit(),
-                            new int[]{5, 10, 15, 30},
-                            value -> updatePerformance(state -> state.withMinimizedFpsLimit(value))
-                    )
-            ));
-            sections.add(performance);
+        Section camera = new Section("CAMERA");
+        camera.rows.add(Row.slider(
+                "Field of View",
+                "Adjust the camera viewing angle.",
+                client.options.getFov().getValue(),
+                30.0, 110.0, 1.0,
+                value -> Math.round(value) + "°",
+                value -> setOptionLive(client.options.getFov(), (int) Math.round(value))
+        ));
+        sections.add(camera);
+    }
 
-            Section advanced = new Section("ADVANCED");
-            advanced.rows.add(Row.toggle(
-                    "Skip Unseen Objects",
-                    "Stop drawing entities and special blocks when they are fully hidden.",
-                    performanceState.hiddenObjectSkipping(),
-                    enabled -> updatePerformance(state -> state.withHiddenObjectSkipping(enabled))
-            ));
-            advanced.rows.add(Row.toggle(
-                    "Faster World Rendering",
-                    "Use the optimized world rendering path.",
-                    performanceState.renderingOptimizations(),
-                    enabled -> updatePerformance(state -> state.withRenderingOptimizations(enabled))
-            ));
-            advanced.rows.add(Row.toggle(
-                    "Lower Memory Usage",
-                    "Reuse compatible rendering data to reduce memory pressure.",
-                    performanceState.memoryOptimizations(),
-                    enabled -> updatePerformance(state -> state.withMemoryOptimizations(enabled))
-            ));
-            sections.add(advanced);
-        } else {
-            Section performance = new Section("PERFORMANCE");
-            performance.rows.add(Row.status(
-                    "Performance",
-                    "Performance Manager is not available in the current client package.",
+    private void buildVideoPerformanceSections() {
+        PerformanceState state = performanceState();
+        if (state == null) {
+            Section unavailable = new Section("PERFORMANCE");
+            unavailable.rows.add(Row.status(
+                    "Performance Manager",
+                    "The optional LazyBuilder performance component is not available in this client package.",
                     "Unavailable"
             ));
-            sections.add(performance);
+            sections.add(unavailable);
+            return;
         }
+
+        Section background = new Section("BACKGROUND LIMITS");
+        background.rows.add(Row.toggle(
+                "Reduce FPS in Background",
+                "Use less GPU power when Minecraft is not the active window.",
+                state.backgroundFpsPolicy(),
+                enabled -> updatePerformance(value -> value.withBackgroundFpsPolicy(enabled))
+        ));
+        background.rows.add(Row.value(
+                "Background FPS",
+                "Frame-rate limit while Minecraft is running in the background.",
+                state.unfocusedFpsLimit() + " FPS",
+                () -> openPerformanceIntegerChoice(
+                        "Background FPS",
+                        state.unfocusedFpsLimit(),
+                        new int[]{15, 30, 45, 60, 90, 120},
+                        value -> updatePerformance(current -> current.withUnfocusedFpsLimit(value))
+                )
+        ));
+        background.rows.add(Row.value(
+                "Minimized FPS",
+                "Frame-rate limit while the Minecraft window is minimized.",
+                state.minimizedFpsLimit() + " FPS",
+                () -> openPerformanceIntegerChoice(
+                        "Minimized FPS",
+                        state.minimizedFpsLimit(),
+                        new int[]{5, 10, 15, 30},
+                        value -> updatePerformance(current -> current.withMinimizedFpsLimit(value))
+                )
+        ));
+        sections.add(background);
+
+        Section optimization = new Section("OPTIMIZATION");
+        optimization.rows.add(Row.toggle(
+                "Skip Hidden Objects",
+                "Avoid drawing supported entities and special blocks when they are fully hidden.",
+                state.hiddenObjectSkipping(),
+                enabled -> updatePerformance(value -> value.withHiddenObjectSkipping(enabled))
+        ));
+        optimization.rows.add(Row.toggle(
+                "Optimized World Rendering",
+                "Use LazyBuilder's optimized world-rendering path when compatible.",
+                state.renderingOptimizations(),
+                enabled -> updatePerformance(value -> value.withRenderingOptimizations(enabled))
+        ));
+        optimization.rows.add(Row.toggle(
+                "Memory Optimization",
+                "Reuse compatible rendering data to reduce memory pressure.",
+                state.memoryOptimizations(),
+                enabled -> updatePerformance(value -> value.withMemoryOptimizations(enabled))
+        ));
+        sections.add(optimization);
     }
 
     private void buildControlsSections() {
@@ -415,6 +497,22 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void buildInterfaceSections() {
         UtilityPreferences prefs = UtilityManagerClient.preferences();
 
+        if (client != null) {
+            Section interfaceScale = new Section("INTERFACE");
+            interfaceScale.rows.add(Row.value(
+                    "GUI Scale",
+                    "Adjust the size of Minecraft menus, HUD elements, and text.",
+                    client.options.getGuiScale().getValue() == 0 ? "Auto" : Integer.toString(client.options.getGuiScale().getValue()),
+                    () -> openIntegerChoice(
+                            "GUI Scale",
+                            client.options.getGuiScale(),
+                            new int[]{0, 1, 2, 3, 4},
+                            value -> value == 0 ? "Auto" : Integer.toString(value)
+                    )
+            ));
+            sections.add(interfaceScale);
+        }
+
         Section hud = new Section("HUD");
         hud.rows.add(Row.toggle(
                 "Compact Debug HUD",
@@ -466,10 +564,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int width = panelWidth();
         int viewportBottom = viewportBottom();
         int contentHeight = totalContentHeight();
-        int viewportHeight = Math.max(1, viewportBottom - CONTENT_TOP);
+        int viewportHeight = Math.max(1, viewportBottom - contentTop());
         maxScroll = Math.max(0, contentHeight - viewportHeight);
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
-        int baseY = CONTENT_TOP;
+        int baseY = contentTop();
 
         for (Section section : sections) {
             section.y = baseY - scrollOffset;
@@ -484,7 +582,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 int controlX = x + width - controlWidth - 8;
                 int controlY = row.y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
 
-                if (row.y + ROW_HEIGHT > VIEWPORT_TOP && row.y < viewportBottom) {
+                if (row.y + ROW_HEIGHT > viewportTop() && row.y < viewportBottom) {
                     if (row.slider != null) {
                         LazyBuilderSettingsSliderWidget sliderWidget = new LazyBuilderSettingsSliderWidget(
                                 controlX,
@@ -520,7 +618,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                                 controlX,
                                 controlY,
                                 controlWidth,
-                                VIEWPORT_TOP,
+                                viewportTop(),
                                 viewportBottom
                         );
                     }
@@ -645,14 +743,62 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void openCategory(Category next) {
         if (client != null && next != category) {
-            client.setScreen(new LazyBuilderSettingsScreen(parent, next));
+            client.setScreen(new LazyBuilderSettingsScreen(parent, next, VideoPage.QUALITY));
+        }
+    }
+
+    private void openVideoPage(VideoPage next) {
+        if (client != null && category == Category.VIDEO && next != videoPage) {
+            client.setScreen(new LazyBuilderSettingsScreen(parent, Category.VIDEO, next));
         }
     }
 
     private void refreshCategory() {
         if (client != null) {
-            client.setScreen(new LazyBuilderSettingsScreen(parent, category));
+            client.setScreen(new LazyBuilderSettingsScreen(parent, category, videoPage));
         }
+    }
+
+    private GraphicsPreset detectGraphicsPreset() {
+        if (client == null) return GraphicsPreset.CUSTOM;
+        for (GraphicsPreset preset : List.of(GraphicsPreset.LOW, GraphicsPreset.MEDIUM, GraphicsPreset.HIGH)) {
+            if (matchesGraphicsPreset(preset)) return preset;
+        }
+        return GraphicsPreset.CUSTOM;
+    }
+
+    private boolean matchesGraphicsPreset(GraphicsPreset preset) {
+        if (client == null || preset == GraphicsPreset.CUSTOM) return false;
+        return client.options.getViewDistance().getValue() == preset.renderDistance
+                && client.options.getSimulationDistance().getValue() == preset.simulationDistance
+                && Math.abs(client.options.getEntityDistanceScaling().getValue() - preset.entityDistance) < 0.001
+                && client.options.getGraphicsMode().getValue() == preset.graphicsMode
+                && client.options.getCloudRenderMode().getValue() == preset.cloudMode
+                && client.options.getParticles().getValue() == preset.particlesMode
+                && client.options.getMipmapLevels().getValue() == preset.mipmapLevels;
+    }
+
+    private void openGraphicsPresetChoice() {
+        GraphicsPreset current = detectGraphicsPreset();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (GraphicsPreset preset : List.of(GraphicsPreset.LOW, GraphicsPreset.MEDIUM, GraphicsPreset.HIGH)) {
+            choices.add(new DropdownChoice(preset.label, preset == current, () -> applyGraphicsPreset(preset)));
+        }
+        openDropdown("Quality Preset", choices);
+    }
+
+    private void applyGraphicsPreset(GraphicsPreset preset) {
+        if (client == null || preset == GraphicsPreset.CUSTOM) return;
+        client.options.getViewDistance().setValue(preset.renderDistance);
+        client.options.getSimulationDistance().setValue(preset.simulationDistance);
+        client.options.getEntityDistanceScaling().setValue(preset.entityDistance);
+        client.options.getGraphicsMode().setValue(preset.graphicsMode);
+        client.options.getCloudRenderMode().setValue(preset.cloudMode);
+        client.options.getParticles().setValue(preset.particlesMode);
+        client.options.getMipmapLevels().setValue(preset.mipmapLevels);
+        client.options.write();
+        client.options.sendClientSettings();
+        refreshCategory();
     }
 
     private void openIntegerChoice(
@@ -776,15 +922,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int panelLeft = panelLeft();
         int panelRight = panelLeft + panelWidth();
 
-        context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
+        String heading = category == Category.VIDEO
+                ? "SETTINGS  /  VIDEO  /  " + videoPage.label.toUpperCase(Locale.ROOT)
+                : "SETTINGS  /  " + category.label.toUpperCase(Locale.ROOT);
+        context.drawTextWithShadow(textRenderer, Text.literal(heading), shellLeft() + 8, 15, TEXT_PRIMARY);
         if (hasContextPane()) {
-            context.fill(panelRight + 14, VIEWPORT_TOP, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+            context.fill(panelRight + 14, viewportTop(), panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
         }
 
         Row highlightedRow = null;
-        context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
+        context.enableScissor(panelLeft, viewportTop(), panelRight, viewportBottom());
         for (Section section : sections) {
-            if (section.y + SECTION_HEIGHT > VIEWPORT_TOP && section.y < viewportBottom()) {
+            if (section.y + SECTION_HEIGHT > viewportTop() && section.y < viewportBottom()) {
                 context.drawTextWithShadow(
                         textRenderer,
                         Text.literal(section.title),
@@ -795,7 +944,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             }
 
             for (Row row : section.rows) {
-                if (row.y + ROW_HEIGHT <= VIEWPORT_TOP || row.y >= viewportBottom()) continue;
+                if (row.y + ROW_HEIGHT <= viewportTop() || row.y >= viewportBottom()) continue;
 
                 boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
                         && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
@@ -840,15 +989,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
         } else {
             title = category.label.toUpperCase(Locale.ROOT);
             description = switch (category) {
-                case VIDEO -> "Display, world rendering, quality and performance controls.";
+                case VIDEO -> switch (videoPage) {
+                    case DISPLAY -> "Window, frame pacing, and screen visibility settings.";
+                    case QUALITY -> "Visual detail settings. Start with a preset, then fine-tune only when needed.";
+                    case VIEW -> "World distance and camera settings.";
+                    case PERFORMANCE -> "Efficiency controls that stay separate from visual-quality presets.";
+                };
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
                 case TOOLS -> "Tool-specific setup stays close to the workflow that owns it.";
             };
         }
 
-        context.drawTextWithShadow(textRenderer, Text.literal(title), x, 84, TEXT_PRIMARY);
-        int y = 102;
+        int contextY = category == Category.VIDEO ? 114 : 84;
+        context.drawTextWithShadow(textRenderer, Text.literal(title), x, contextY, TEXT_PRIMARY);
+        int y = contextY + 18;
         for (var line : textRenderer.wrapLines(Text.literal(description), available)) {
             context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
             y += 11;
@@ -947,7 +1102,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void renderScrollBar(DrawContext context, int x) {
         if (maxScroll <= 0) return;
-        int top = VIEWPORT_TOP;
+        int top = viewportTop();
         int bottom = viewportBottom();
         int trackHeight = Math.max(1, bottom - top);
         int contentHeight = trackHeight + maxScroll;
@@ -971,7 +1126,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (maxScroll > 0
                 && mouseX >= panelLeft()
                 && mouseX <= panelLeft() + panelWidth()
-                && mouseY >= VIEWPORT_TOP
+                && mouseY >= viewportTop()
                 && mouseY <= viewportBottom()) {
             int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.round(verticalAmount * 24.0)));
             if (next != scrollOffset) {
@@ -983,8 +1138,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
+    private int contentTop() {
+        return category == Category.VIDEO ? VIDEO_CONTENT_TOP : DEFAULT_CONTENT_TOP;
+    }
+
+    private int viewportTop() {
+        return category == Category.VIDEO ? VIDEO_VIEWPORT_TOP : DEFAULT_VIEWPORT_TOP;
+    }
+
     private int viewportBottom() {
-        return Math.max(VIEWPORT_TOP + 1, height - FOOTER_HEIGHT - 6);
+        return Math.max(viewportTop() + 1, height - FOOTER_HEIGHT - 6);
     }
 
     private int shellWidth() {
