@@ -2,7 +2,6 @@ package com.halokaryamedia.lazybuilder.performance.culling;
 
 import com.halokaryamedia.lazybuilder.performance.FramePressure;
 import com.halokaryamedia.lazybuilder.performance.PerformancePreferences;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
@@ -48,8 +47,6 @@ public final class CullingRuntime {
     private static final double MAX_TARGET_MOVE_SQ = 0.5D * 0.5D;
     private static final double ALWAYS_VISIBLE_DISTANCE_SQ = 4.0D * 4.0D;
     private static final double RAY_ADVANCE = 0.05D;
-    private static final boolean EXTERNAL_ENTITY_CULLING_PRESENT =
-            FabricLoader.getInstance().isModLoaded("entityculling");
     private static final Map<EntityType<?>, Boolean> VANILLA_ENTITY_TYPES = new IdentityHashMap<>();
     private static final Map<BlockEntityType<?>, Boolean> VANILLA_BLOCK_ENTITY_TYPES = new IdentityHashMap<>();
 
@@ -67,7 +64,7 @@ public final class CullingRuntime {
             PerformancePreferences preferences,
             long frameNowNanos
     ) {
-        if (EXTERNAL_ENTITY_CULLING_PRESENT || !preferences.entityCulling()) return true;
+        if (!preferences.entityCulling()) return true;
         MinecraftClient client = MinecraftClient.getInstance();
         if (!eligibleWithoutDistance(client, entity)) return true;
 
@@ -93,8 +90,7 @@ public final class CullingRuntime {
             PerformancePreferences preferences,
             long frameNowNanos
     ) {
-        if (EXTERNAL_ENTITY_CULLING_PRESENT
-                || !preferences.blockEntityCulling()
+        if (!preferences.blockEntityCulling()
                 || renderer == null
                 || !isVanillaBlockEntity(blockEntity)
                 || renderer.rendersOutsideBoundingBox(blockEntity)) {
@@ -130,11 +126,6 @@ public final class CullingRuntime {
         if (lastWorld != client.world) {
             clear();
             lastWorld = client.world;
-        }
-        if (EXTERNAL_ENTITY_CULLING_PRESENT) {
-            clear();
-            lastWorld = client.world;
-            return;
         }
         if (!preferences.entityCulling() && !preferences.blockEntityCulling()) return;
 
