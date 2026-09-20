@@ -112,6 +112,25 @@ These paths remain acceptance-gated:
 
 The implementation may evolve, but a second renderer, scheduler, residency registry, or generic performance framework is not justified while these owners remain sufficient.
 
+## Capability ownership and remote verification
+
+Compatibility decisions are now made per optimization domain instead of through a growing list of
+mixin-specific mod checks. Current domains are terrain build, terrain upload, terrain submission,
+immediate rendering, particles, and model-memory ownership.
+
+This preserves conservative fail-closed behavior for uncertain renderer ownership while keeping
+unrelated first-party optimizations active. For example, Iris blocks shader-sensitive terrain
+submission without disabling first-party chunk build policy, while ImmediatelyFast only owns the
+overlapping immediate/particle/upload domains and FerriteCore only owns model-memory deduplication.
+
+Direct development on `Local` is now covered by the dedicated Performance Manager workflow. Changes
+under `mods/performance-manager/**` or the workflow itself trigger the same build-and-test lane that
+previously required a pull request or manual dispatch.
+
+Diagnostic consumers should prefer the stable grouped views exposed by `PerformanceSnapshot`
+(`frameStats`, `resourceStats`, `chunkStats`, and `compatibilityStats`) instead of coupling new
+code to the complete flat diagnostic schema.
+
 ## Rejected by default
 
 Do not add merely to make Performance Manager appear feature-rich:
