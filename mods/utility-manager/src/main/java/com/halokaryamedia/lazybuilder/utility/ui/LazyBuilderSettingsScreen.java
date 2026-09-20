@@ -695,6 +695,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         renderScrollBar(context, panelRight + 6);
         renderContextPane(context, panelRight + 30, hoveredRow);
         super.render(context, mouseX, mouseY, delta);
+        // Flush widget/text render layers before painting the popup so values from
+        // rows behind the dropdown cannot bleed through due to batched GUI layers.
+        context.draw();
         renderDropdown(context, mouseX, mouseY);
     }
 
