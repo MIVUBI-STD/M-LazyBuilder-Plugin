@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.pack.PackScreen;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.CloudRenderMode;
@@ -12,7 +13,9 @@ import net.minecraft.client.option.GraphicsMode;
 import net.minecraft.particle.ParticlesMode;
 import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
+import net.minecraft.resource.ResourcePackProfile;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -50,7 +53,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         DISPLAY("Display"),
         QUALITY("Quality"),
         VIEW("View"),
-        PERFORMANCE("Performance");
+        PERFORMANCE("Performance"),
+        VISUAL("Visual");
 
         private final String label;
 
@@ -214,6 +218,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case QUALITY -> buildVideoQualitySections();
             case VIEW -> buildVideoViewSections();
             case PERFORMANCE -> buildVideoPerformanceSections();
+            case VISUAL -> buildVideoVisualSections();
         }
     }
 
@@ -404,6 +409,113 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 enabled -> updatePerformance(value -> value.withMemoryOptimizations(enabled))
         ));
         sections.add(optimization);
+    }
+
+    private void buildVideoVisualSections() {
+        Section resourcePacks = new Section("RESOURCE PACK");
+        resourcePacks.rows.add(Row.value(
+                "Resource Pack",
+                "Choose the textures, models, sounds, and other visual assets used by Minecraft. Multiple packs can be active in priority order.",
+                activeResourcePackLabel(),
+                this::openResourcePackManager
+        ));
+        sections.add(resourcePacks);
+
+        Section shaders = new Section("SHADER");
+        if (shaderSupportAvailable()) {
+            shaders.rows.add(Row.value(
+                    "Shader",
+                    "Choose a shader for lighting, shadows, reflections, and atmosphere. Shader-specific options remain managed by the shader screen.",
+                    activeShaderLabel(),
+                    this::openShaderManager
+            ));
+        } else {
+            shaders.rows.add(Row.status(
+                    "Shader",
+                    "Shader support is not available in the current client. Install a compatible shader renderer to manage shaders here.",
+                    "Unavailable"
+            ));
+        }
+        sections.add(shaders);
+    }
+
+    private String activeResourcePackLabel() {
+        if (client == null) return "Default";
+        List<String> selected = client.options.resourcePacks;
+        if (selected == null || selected.isEmpty()) return "Default";
+
+        if (selected.size() == 1) {
+            ResourcePackProfile profile = client.getResourcePackManager().getProfile(selected.getFirst());
+            if (profile != null) {
+                String name = profile.getDisplayName().getString().trim();
+                if (!name.isEmpty()) return name;
+            }
+            return "1 Active";
+        }
+
+        return selected.size() + " Active";
+    }
+
+    private void openResourcePackManager() {
+        if (client == null) return;
+        client.setScreen(new PackScreen(
+                client.getResourcePackManager(),
+                manager -> {
+                    client.options.refreshResourcePacks(manager);
+                    client.reloadResources();
+                },
+                client.getResourcePackDir(),
+                Text.literal("Resource Packs")
+        ));
+    }
+
+    private static boolean shaderSupportAvailable() {
+        return FabricLoader.getInstance().isModLoaded("iris");
+    }
+
+    private String activeShaderLabel() {
+        if (!shaderSupportAvailable()) return "Unavailable";
+
+        try {
+            Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
+            Object api = apiClass.getMethod("getInstance").invoke(null);
+            boolean enabled = (boolean) apiClass.getMethod("isShaderPackInUse").invoke(api);
+            if (!enabled) return "Off";
+
+            // The public Iris API intentionally does not require consumers to know
+            // the selected pack name. Use a best-effort label only when Iris exposes
+            // its current pack name, otherwise report the truthful active state.
+            try {
+                Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
+                Method currentName = irisClass.getMethod("getCurrentPackName");
+                Object name = currentName.invoke(null);
+                if (name instanceof String shaderName && !shaderName.isBlank()) {
+                    return shaderName;
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // Keep the stable public API path authoritative.
+            }
+
+            return "On";
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return "Available";
+        }
+    }
+
+    private void openShaderManager() {
+        if (client == null || !shaderSupportAvailable()) return;
+
+        try {
+            Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
+            Object api = apiClass.getMethod("getInstance").invoke(null);
+            Object screen = apiClass.getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
+            if (screen instanceof Screen shaderScreen) {
+                client.setScreen(shaderScreen);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Fail open: the Settings screen remains usable if the optional shader
+            // integration changes or is unavailable at runtime.
+        }
     }
 
     private void buildControlsSections() {
@@ -1009,6 +1121,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     case QUALITY -> "Choose one Graphics Preset for visual detail and matching performance behavior. Fine-tune only when needed.";
                     case VIEW -> "World distance and camera settings.";
                     case PERFORMANCE -> "Advanced performance overrides. Most players can leave these managed by the Graphics Preset.";
+                    case VISUAL -> "Choose Resource Packs and Shaders without mixing them into graphics-quality settings.";
                 };
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
