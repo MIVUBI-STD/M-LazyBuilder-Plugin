@@ -281,6 +281,11 @@ abstract class WorldRendererTerrainSubmissionMixin {
 
     @Unique
     private void lazybuilder$publishArenaDrawPlan() {
+        if (!ChunkPipelineMetrics.detailedMetricsEnabled()) {
+            TerrainArenaDrawDiagnostics.clear();
+            return;
+        }
+
         TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.Plan.EMPTY;
         plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$solid, RenderLayer.getSolid(), 0));
         plan = TerrainArenaDrawPlanner.combine(plan, this.lazybuilder$planLayer(this.lazybuilder$cutoutMipped, RenderLayer.getCutoutMipped(), 1));
