@@ -14,11 +14,15 @@ final class PerformanceReloadRegistrationTest {
         String resource = "com/halokaryamedia/lazybuilder/performance/PerformanceManagerClient.class";
         try (var stream = PerformanceReloadRegistrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             assertNotNull(stream, "PerformanceManagerClient must be packaged");
+            String classBytes = new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1);
+            assertTrue(
+                    classBytes.contains("PerformanceShaderReloadInvalidator"),
+                    "client entrypoint must reference the shader reload invalidator"
+            );
+            assertTrue(
+                    classBytes.contains("CLIENT_RESOURCES"),
+                    "shader reload invalidator must be registered for client resources"
+            );
         }
-
-        assertTrue(
-                PerformanceShaderReloadRegistrationContract.sourceContractPresent(),
-                "client resource reload must invalidate shader-sensitive performance state"
-        );
     }
 }
