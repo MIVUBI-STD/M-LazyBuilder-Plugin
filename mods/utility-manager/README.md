@@ -31,6 +31,20 @@ The shell uses one visual language across Video, Controls, Interface, and Tools:
 single-column rows, contextual help, switches, sliders, dropdowns, key capture, responsive
 scrolling, reset confirmation, and a fixed footer.
 
+### Video settings information architecture
+
+The Video surface follows a game-style hierarchy without duplicating concepts:
+
+- **Display** owns window/frame-pacing and visibility controls such as fullscreen, V-Sync, frame-rate limit, and brightness.
+- **Quality** owns the visual-quality preset plus individual visual-detail controls. Quality Preset is the coordinated profile; Graphics Mode is only Minecraft's Fast/Fancy/Fabulous rendering mode and is not a second preset system.
+- **View** owns render distance, simulation distance, entity distance, and field of view.
+- **Performance** owns LazyBuilder efficiency controls and background FPS limits. These controls stay independent from the visual-quality preset so choosing Low/Medium/High never silently changes optimization policy.
+- **Interface** owns GUI Scale because interface sizing is not a video-quality decision.
+
+Quality presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled Minecraft option no longer matches a known profile, the UI reports Custom. Presets write through Minecraft GameOptions; no second graphics configuration file is introduced.
+
+The stable preset policy is conservative: High targets high detail with Minecraft's Fancy renderer, while Fabulous remains an explicit manual Graphics Mode choice. This avoids making a convenience preset opt the user into the most compatibility-sensitive renderer path.
+
 ## Product direction
 
 Utility Manager is the single client-side owner for passive LazyBuilder utilities. Features that previously required separate small client mods should be consolidated here only when they fit this boundary and can be maintained as independent internal modules.
