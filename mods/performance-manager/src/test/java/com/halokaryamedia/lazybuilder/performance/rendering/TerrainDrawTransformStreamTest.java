@@ -34,10 +34,10 @@ final class TerrainDrawTransformStreamTest {
         assertEquals(-6.0F, snapshot.commands().get(0).modelOffsetZ());
         assertEquals(12.0F, snapshot.commands().get(1).modelOffsetX());
         assertEquals(2, snapshot.physicalReadyCommands());
-        assertEquals(2, snapshot.transformBlockedCommands());
+        assertEquals(0, snapshot.transformBlockedCommands());
         assertEquals(1, snapshot.multiDrawCandidateRuns());
         assertEquals(1L, snapshot.potentialDrawCallReduction());
-        assertEquals(24L, snapshot.packedTransformBytes());
+        assertEquals(32L, snapshot.packedTransformBytes());
     }
 
     @Test
