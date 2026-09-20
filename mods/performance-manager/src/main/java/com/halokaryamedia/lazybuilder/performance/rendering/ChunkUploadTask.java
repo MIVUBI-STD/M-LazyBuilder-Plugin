@@ -80,7 +80,6 @@ public final class ChunkUploadTask implements Runnable {
             }
             future.complete(null);
         } catch (Throwable throwable) {
-            TerrainPhysicalArenaManager.release(buffer);
             TerrainGpuResidencyTracker.release(buffer);
             future.completeExceptionally(throwable);
         }
