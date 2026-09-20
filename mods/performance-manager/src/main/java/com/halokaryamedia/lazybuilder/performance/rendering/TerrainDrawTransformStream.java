@@ -15,7 +15,7 @@ import java.util.List;
  */
 public final class TerrainDrawTransformStream {
     private static final int LAYER_COUNT = 5;
-    private static final int TRANSFORM_BYTES = Float.BYTES * 3;
+    private static final int TRANSFORM_BYTES = Float.BYTES * 4;
     private static volatile LayerSnapshot[] current = emptyLayers();
 
     private TerrainDrawTransformStream() {
