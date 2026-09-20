@@ -188,12 +188,6 @@ switch ($Command) {
         }
         Invoke-TargetedVerification -Scope $CommandArgs[0]
     }
-    'terraform-local' {
-        if ($CommandArgs.Count -gt 0) {
-            throw 'terraform-local does not accept passthrough arguments.'
-        }
-        Invoke-Operation -Name 'terraform-local'
-    }
     'build' {
         Invoke-Operation -Name 'build' -Arguments $CommandArgs
     }
