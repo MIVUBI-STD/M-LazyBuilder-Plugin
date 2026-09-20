@@ -106,10 +106,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         preferences().compactDebugHud(),
                         value -> update(preferences().withCompactDebugHud(value))
                 );
-                this.addToggleRow(
+                next = this.addToggleRow(
                         next,
                         preferences().contextualScreenshotNames(),
                         value -> update(preferences().withContextualScreenshotNames(value))
+                );
+                this.addToggleRow(
+                        next,
+                        preferences().instantCreativeSearch(),
+                        value -> update(preferences().withInstantCreativeSearch(value))
                 );
             }
             case TOOLS -> this.addNavigationRow(rowY, "Open", () -> {
@@ -216,6 +221,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 drawRow(context, left, right, firstY, "Compact Debug HUD", "Keep useful build information visible without the full F3 wall");
                 drawRow(context, left, right, firstY + ROW_HEIGHT + ROW_GAP,
                         "Contextual Screenshot Names", "Add world or server context to automatic screenshot names");
+                drawRow(context, left, right, firstY + (ROW_HEIGHT + ROW_GAP) * 2,
+                        "Quick Creative Search", "Start typing in Creative inventory to search immediately");
             }
             case TOOLS -> {
                 drawRow(context, left, right, firstY, "Tools", "Configure LazyBuilder client modules");

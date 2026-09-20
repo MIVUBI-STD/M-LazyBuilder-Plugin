@@ -6,27 +6,22 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 /**
- * LazyBuilder's replacement for a generic Mods screen.
- *
- * It reports the four client tool suites that are present in the workspace and exposes
- * only configuration that is meaningful in-game. A loaded Fabric JAR is reported as ON;
- * this screen does not pretend it can unload a mod at runtime.
+ * Tool-specific setup lives here. Settings that naturally extend Minecraft (video,
+ * controls, interface and performance) stay in their normal Settings categories.
  */
 public final class LazyBuilderToolsScreen extends Screen {
     private static final int MAX_CONTENT_WIDTH = 520;
     private static final int SCREEN_MARGIN = 18;
     private static final int TITLE_Y = 18;
-    private static final int CONTENT_TOP = 48;
-    private static final int ROW_HEIGHT = 34;
+    private static final int CONTENT_TOP = 52;
+    private static final int ROW_HEIGHT = 36;
     private static final int ROW_GAP = 4;
-    private static final int STATUS_WIDTH = 78;
     private static final int DONE_WIDTH = 120;
-
-    private static final int ROW_FILL = 0x88000000;
-    private static final int ROW_BORDER = 0x447F8A98;
     private static final int TEXT_PRIMARY = 0xFFF3F6FA;
     private static final int TEXT_SECONDARY = 0xFFB0BAC7;
     private static final int TEXT_MUTED = 0xFF8B949E;
+    private static final int ROW_FILL = 0x88000000;
+    private static final int ROW_BORDER = 0x447F8A98;
 
     private final Screen parent;
 
@@ -37,39 +32,14 @@ public final class LazyBuilderToolsScreen extends Screen {
 
     @Override
     protected void init() {
-        int right = contentLeft() + contentWidth();
-        int y = CONTENT_TOP;
-
-        addActiveStatus(right, y);
-        y += ROW_HEIGHT + ROW_GAP;
-        addActiveStatus(right, y);
-        y += ROW_HEIGHT + ROW_GAP;
-        addActiveStatus(right, y);
-        y += ROW_HEIGHT + ROW_GAP;
-
-        this.addDrawableChild(
-                ButtonWidget.builder(Text.literal("Configure >"), button -> {
-                            if (this.client != null) {
-                                this.client.setScreen(new LazyBuilderUtilityToolsScreen(this));
-                            }
-                        })
-                        .dimensions(right - 96, y + 7, 92, 20)
-                        .build()
-        );
-
+        // Editing Tools and Map & Worlds currently own their configuration in their
+        // actual workflows. Do not duplicate those settings here until a global setup
+        // decision genuinely exists.
         this.addDrawableChild(
                 ButtonWidget.builder(Text.literal("Done"), button -> this.close())
                         .dimensions(this.width / 2 - DONE_WIDTH / 2, this.height - 32, DONE_WIDTH, 20)
                         .build()
         );
-    }
-
-    private void addActiveStatus(int right, int y) {
-        ButtonWidget status = ButtonWidget.builder(Text.literal("ON"), button -> {})
-                .dimensions(right - STATUS_WIDTH - 4, y + 7, STATUS_WIDTH, 20)
-                .build();
-        status.active = false;
-        this.addDrawableChild(status);
     }
 
     @Override
@@ -82,45 +52,46 @@ public final class LazyBuilderToolsScreen extends Screen {
         context.drawTextWithShadow(this.textRenderer, Text.literal("TOOLS"), left, TITLE_Y, TEXT_PRIMARY);
         context.drawTextWithShadow(
                 this.textRenderer,
-                Text.literal("LazyBuilder client modules"),
+                Text.literal("Tool-specific setup and configuration"),
                 left,
                 TITLE_Y + 14,
                 TEXT_SECONDARY
         );
 
         int y = CONTENT_TOP;
-        drawModuleRow(context, left, right, y, "Editing Tools", "Axiom-first building extensions");
+        drawRow(context, left, right, y,
+                "Editing Tools",
+                "Axiom and LazyBuilder building extensions",
+                "Configured in editor");
         y += ROW_HEIGHT + ROW_GAP;
-        drawModuleRow(context, left, right, y, "Map", "World map and world-management client tools");
-        y += ROW_HEIGHT + ROW_GAP;
-        drawModuleRow(context, left, right, y, "Performance", "Automatic rendering and memory optimizations");
-        y += ROW_HEIGHT + ROW_GAP;
-        drawModuleRow(context, left, right, y, "Utilities", "Client convenience and interface helpers");
+
+        drawRow(context, left, right, y,
+                "Map & Worlds",
+                "World map, world management and transfers",
+                "Configured per world");
 
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void drawModuleRow(
+    private void drawRow(
             DrawContext context,
             int left,
             int right,
             int y,
             String label,
-            String description
+            String description,
+            String state
     ) {
         context.fill(left, y, right, y + ROW_HEIGHT, ROW_BORDER);
         context.fill(left + 1, y + 1, right - 1, y + ROW_HEIGHT - 1, ROW_FILL);
 
         context.drawTextWithShadow(this.textRenderer, Text.literal(label), left + 8, y + 7, TEXT_PRIMARY);
-        int maxDescriptionWidth = Math.max(0, contentWidth() - 120);
+        int stateWidth = this.textRenderer.getWidth(state);
+        context.drawTextWithShadow(this.textRenderer, Text.literal(state), right - stateWidth - 8, y + 7, TEXT_SECONDARY);
+
+        int maxDescriptionWidth = Math.max(0, contentWidth() - 32);
         String clipped = this.textRenderer.trimToWidth(description, maxDescriptionWidth);
-        context.drawTextWithShadow(
-                this.textRenderer,
-                Text.literal(clipped),
-                left + 8,
-                y + 19,
-                TEXT_MUTED
-        );
+        context.drawTextWithShadow(this.textRenderer, Text.literal(clipped), left + 8, y + 21, TEXT_MUTED);
     }
 
     private int contentWidth() {

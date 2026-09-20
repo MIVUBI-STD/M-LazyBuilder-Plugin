@@ -27,6 +27,25 @@ final class PerformancePreferencesTest {
     }
 
     @Test
+    void userFacingHiddenObjectSettingKeepsInternalCullingPathsTogether() {
+        PerformancePreferences defaults = PerformancePreferences.defaults();
+
+        PerformancePreferences enabled = defaults.withHiddenObjectSkipping(true);
+        assertTrue(enabled.hiddenObjectSkipping());
+        assertTrue(enabled.entityCulling());
+        assertTrue(enabled.blockEntityCulling());
+        assertEquals(defaults.unfocusedFpsLimit(), enabled.unfocusedFpsLimit());
+        assertEquals(defaults.minimizedFpsLimit(), enabled.minimizedFpsLimit());
+        assertEquals(defaults.renderingOptimizations(), enabled.renderingOptimizations());
+        assertEquals(defaults.memoryOptimizations(), enabled.memoryOptimizations());
+
+        PerformancePreferences disabled = enabled.withHiddenObjectSkipping(false);
+        assertFalse(disabled.hiddenObjectSkipping());
+        assertFalse(disabled.entityCulling());
+        assertFalse(disabled.blockEntityCulling());
+    }
+
+    @Test
     void performancePoliciesPersistWithoutCrossChangingCapabilities() {
         PerformanceConfigStore store = new PerformanceConfigStore(tempDir);
         PerformancePreferences expected = new PerformancePreferences(
