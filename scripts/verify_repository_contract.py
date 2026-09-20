@@ -428,9 +428,16 @@ def main() -> int:
     if "mods/builder-utilities" in fabric_verifier:
         fail(errors, "default Fabric verification must not treat Builder Utilities as a core manager")
 
-    for retired_path in ("mods/terraform-manager", "plugins/terraform-manager", "shared/terraform-core"):
+    for retired_path in (
+        "mods/terraform-manager",
+        "plugins/terraform-manager",
+        "shared/terraform-core",
+        "shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/terraform",
+        "tooling/windows-toolchain/scripts/verify/prepare-terraform-local.ps1",
+        "docs/04-system/terraform-manager-architecture-lock.md",
+    ):
         if (repo / retired_path).exists():
-            fail(errors, f"retired Terraform source must not return to active repository ownership: {retired_path}")
+            fail(errors, f"retired Terraform source/tooling must not return to active repository ownership: {retired_path}")
     if "legacy-terraform" in root_pom or "terraform-core" in root_pom or "plugins/terraform-manager" in root_pom:
         fail(errors, "root Maven reactor must not retain the retired Terraform build profile")
 

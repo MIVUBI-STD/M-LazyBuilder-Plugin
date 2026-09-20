@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help','setup','check','verify','build','test','update','terraform-local','finalize-local')]
+    [ValidateSet('help','setup','check','verify','build','test','update','finalize-local')]
     [string]$Command = 'help',
 
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -25,7 +25,6 @@ $Operations = @{
     check = Join-Path $PSScriptRoot 'scripts\bootstrap\check-tools.ps1'
     build = Join-Path $RepoRoot 'apps\launcher\build-local.ps1'
     test  = Join-Path $PSScriptRoot 'scripts\verify\test-local.ps1'
-    'terraform-local' = Join-Path $PSScriptRoot 'scripts\verify\prepare-terraform-local.ps1'
 }
 
 $OperationHints = @{
@@ -56,10 +55,6 @@ $OperationHints = @{
     test = @{
         Evidence = '.runtime-proof/ for Paper proof state/logs; dist/Local/ for installer/package inputs'
         Recovery = 'Fix the first failing proof lane, then run DEV.cmd test again (use DEV.cmd test -Build if build outputs are stale/missing)'
-    }
-    'terraform-local' = @{
-        Evidence = 'first failing Terraform Maven/Gradle build step or missing packaged descriptor'
-        Recovery = 'Fix the first Terraform build failure, then run DEV.cmd terraform-local again'
     }
 }
 
@@ -166,7 +161,6 @@ function Show-Help {
     Write-Host '  check                   Validate toolchain and repository build prerequisites'
     Write-Host '  verify <scope>          Run the smallest stable source verification boundary'
     Write-Host '                           scopes: paper | fabric | launcher'
-    Write-Host '  terraform-local         Build, verify, and stage Terraform Paper + Fabric artifacts for first local runtime testing'
     Write-Host '  build                   Build/test/package the runtime-ready Launcher and managed components'
     Write-Host '  test                    Run local runtime/installer acceptance using current build outputs'
     Write-Host '  update                  Build and update the installed Local Launcher'
@@ -174,7 +168,6 @@ function Show-Help {
     Write-Host '  help                    Show this command reference'
     Write-Host ''
     Write-Host 'Arguments after setup/check/build/test/update are forwarded to that operation.'
-    Write-Host 'terraform-local is the focused first-runtime gate for the standalone Terraform milestone.'
     Write-Host 'verify accepts exactly one bounded scope; it does not replace build, test, or final CI.'
     Write-Host 'Failures stop at the first failed operation and print evidence/recovery guidance.'
 }
