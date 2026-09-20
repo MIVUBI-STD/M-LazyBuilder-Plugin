@@ -70,6 +70,21 @@ public final class FrameMonitor {
         currentFrameNanos = 0L;
     }
 
+    /** Resets rolling pressure history when the active world/session changes. */
+    public void resetSession() {
+        java.util.Arrays.fill(frameTimes, 0.0D);
+        sampleCount = 0;
+        cursor = 0;
+        rollingTotalMs = 0.0D;
+        currentFrameMs = 0.0D;
+        worstRecentMs = 0.0D;
+        badSamples = 0;
+        severeSamples = 0;
+        stableFrames = 0;
+        pressure = FramePressure.NORMAL;
+        pauseFrameClock();
+    }
+
     void recordFrameTimeMs(double frameTimeMs) {
         recordFrameTimeMs(frameTimeMs, DEFAULT_TARGET_FRAME_MS);
     }
