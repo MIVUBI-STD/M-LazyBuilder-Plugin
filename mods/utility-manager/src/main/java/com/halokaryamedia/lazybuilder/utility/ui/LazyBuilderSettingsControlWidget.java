@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /** Right-side control for the modern game-style settings shell. */
 final class LazyBuilderSettingsControlWidget extends PressableWidget {
-    enum Kind { TOGGLE, ACTION, VALUE, STATUS, FOOTER }
+    enum Kind { TOGGLE, ACTION, VALUE, KEY, STATUS, FOOTER }
 
     private final Runnable action;
     private final boolean interactive;
@@ -48,6 +48,7 @@ final class LazyBuilderSettingsControlWidget extends PressableWidget {
             case STATUS -> renderStatus(context, renderer);
             case ACTION -> renderAction(context, renderer, hot);
             case VALUE -> renderValue(context, renderer, hot);
+            case KEY -> renderKey(context, renderer, hot);
             case FOOTER -> renderFooter(context, renderer, hot);
         }
     }
@@ -153,6 +154,24 @@ final class LazyBuilderSettingsControlWidget extends PressableWidget {
                 getX() + getWidth() - 11,
                 getY() + (getHeight() - 8) / 2,
                 hot ? LazyBuilderSettingsScreen.ACCENT : LazyBuilderSettingsScreen.TEXT_MUTED
+        );
+    }
+
+    private void renderKey(
+            DrawContext context,
+            net.minecraft.client.font.TextRenderer renderer,
+            boolean hot
+    ) {
+        int border = hot ? LazyBuilderSettingsScreen.ACCENT : 0x66545C66;
+        int fill = hot ? 0xE02A3038 : 0xD31A1F25;
+        context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), border);
+        context.fill(getX() + 1, getY() + 1, getX() + getWidth() - 1, getY() + getHeight() - 1, fill);
+        context.drawCenteredTextWithShadow(
+                renderer,
+                fitted(renderer, getWidth() - 12),
+                getX() + getWidth() / 2,
+                getY() + (getHeight() - 8) / 2,
+                hot ? LazyBuilderSettingsScreen.TEXT_PRIMARY : LazyBuilderSettingsScreen.TEXT_SECONDARY
         );
     }
 

@@ -486,7 +486,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
                 if (row.y + ROW_HEIGHT > VIEWPORT_TOP && row.y < viewportBottom) {
                     if (row.slider != null) {
-                        this.addDrawableChild(new LazyBuilderSettingsSliderWidget(
+                        LazyBuilderSettingsSliderWidget sliderWidget = new LazyBuilderSettingsSliderWidget(
                                 controlX,
                                 controlY,
                                 controlWidth,
@@ -497,9 +497,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
                                 row.slider.step(),
                                 row.slider.formatter(),
                                 row.slider.onChange()
-                        ));
+                        );
+                        row.controlWidget = sliderWidget;
+                        this.addDrawableChild(sliderWidget);
                     } else {
-                        this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                        LazyBuilderSettingsControlWidget controlWidget = new LazyBuilderSettingsControlWidget(
                                 controlX,
                                 controlY,
                                 controlWidth,
@@ -508,7 +510,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
                                 row.interactive(),
                                 row.kind,
                                 row.action()
-                        ));
+                        );
+                        row.controlWidget = controlWidget;
+                        this.addDrawableChild(controlWidget);
                     }
 
                     if (dropdown != null && dropdown.anchor.equals(row.title)) {
@@ -572,17 +576,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int left = shellLeft();
         int shellRight = left + shellWidth();
 
-        boolean canReset = category == Category.INTERFACE;
-        this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                left + 8,
-                y,
-                92,
-                22,
-                Text.literal("Reset"),
-                canReset,
-                LazyBuilderSettingsControlWidget.Kind.FOOTER,
-                this::confirmResetCurrentCategory
-        ));
+        if (category == Category.INTERFACE) {
+            this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                    left + 8,
+                    y,
+                    92,
+                    22,
+                    Text.literal("Reset"),
+                    true,
+                    LazyBuilderSettingsControlWidget.Kind.FOOTER,
+                    this::confirmResetCurrentCategory
+            ));
+        }
 
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                 shellRight - 100,
@@ -776,7 +781,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             context.fill(panelRight + 14, VIEWPORT_TOP, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
         }
 
-        Row hoveredRow = null;
+        Row highlightedRow = null;
         context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
         for (Section section : sections) {
             if (section.y + SECTION_HEIGHT > VIEWPORT_TOP && section.y < viewportBottom()) {
@@ -794,7 +799,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
                 boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
                         && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
-                if (hovered) hoveredRow = row;
+                if (hovered || (row.controlWidget != null && row.controlWidget.isFocused())) {
+                    highlightedRow = row;
+                }
 
                 context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, hovered ? ROW_HOVER : ROW_FILL);
                 context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
@@ -812,7 +819,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         context.disableScissor();
 
         renderScrollBar(context, panelRight + 6);
-        renderContextPane(context, panelRight + 30, hoveredRow);
+        renderContextPane(context, panelRight + 30, highlightedRow);
         super.render(context, mouseX, mouseY, delta);
         // Flush widget/text render layers before painting the popup so values from
         // rows behind the dropdown cannot bleed through due to batched GUI layers.
@@ -820,16 +827,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
         renderDropdown(context, mouseX, mouseY);
     }
 
-    private void renderContextPane(DrawContext context, int x, Row hoveredRow) {
+    private void renderContextPane(DrawContext context, int x, Row highlightedRow) {
         if (!hasContextPane()) return;
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
 
         String title;
         String description;
-        if (hoveredRow != null) {
-            title = hoveredRow.title.toUpperCase(Locale.ROOT);
-            description = hoveredRow.description;
+        if (highlightedRow != null) {
+            title = highlightedRow.title.toUpperCase(Locale.ROOT);
+            description = highlightedRow.description;
         } else {
             title = category.label.toUpperCase(Locale.ROOT);
             description = switch (category) {
@@ -989,7 +996,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private boolean hasContextPane() {
-        return shellWidth() >= 760;
+        return shellWidth() >= 640;
     }
 
     private int panelWidth() {
@@ -1060,6 +1067,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         private int x;
         private int y;
         private int width;
+        private ClickableWidget controlWidget;
 
         private Row(
                 String title,

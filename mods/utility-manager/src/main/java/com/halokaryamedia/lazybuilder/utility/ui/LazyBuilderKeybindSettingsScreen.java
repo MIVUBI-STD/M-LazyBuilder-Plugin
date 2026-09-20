@@ -113,7 +113,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
                             22,
                             Text.literal(label),
                             true,
-                            LazyBuilderSettingsControlWidget.Kind.VALUE,
+                            LazyBuilderSettingsControlWidget.Kind.KEY,
                             () -> {
                                 capturing = binding;
                                 clearAndInit();
@@ -327,7 +327,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
     }
 
     private boolean hasContextPane() {
-        return shellWidth() >= 760;
+        return shellWidth() >= 640;
     }
 
     private int panelWidth() {
