@@ -4,11 +4,41 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ChunkPipelineMetricsTest {
     @BeforeEach
     void reset() {
         ChunkPipelineMetrics.resetForTest();
+    }
+
+
+    @Test
+    void detailedCountersStayQuietUntilDiagnosticsAreEnabled() {
+        ChunkPipelineMetrics.setDetailedMetricsEnabledForTest(false);
+        assertFalse(ChunkPipelineMetrics.detailedMetricsEnabled());
+
+        ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
+        ChunkPipelineMetrics.recordTerrainBufferLookupHit();
+        ChunkPipelineMetrics.recordUploadBatch(4);
+
+        assertEquals(0L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
+        assertEquals(0L, ChunkPipelineMetrics.terrainBufferLookupHits());
+        assertEquals(0L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
+
+        ChunkPipelineMetrics.recordUploadBudgetStop();
+        assertEquals(1L, ChunkPipelineMetrics.uploadBudgetStops());
+
+        ChunkPipelineMetrics.enableDetailedMetrics();
+        assertTrue(ChunkPipelineMetrics.detailedMetricsEnabled());
+        ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
+        ChunkPipelineMetrics.recordTerrainBufferLookupHit();
+        ChunkPipelineMetrics.recordUploadBatch(4);
+
+        assertEquals(1L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
+        assertEquals(1L, ChunkPipelineMetrics.terrainBufferLookupHits());
+        assertEquals(3L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
     }
 
     @Test
