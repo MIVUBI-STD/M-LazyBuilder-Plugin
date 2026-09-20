@@ -28,6 +28,11 @@ abstract class ChunkBuilderUploadMixin {
         TerrainGpuResidencyTracker.claimSession((ChunkBuilder) (Object) this);
     }
 
+    @Inject(method = "reset", at = @At("TAIL"))
+    private void lazybuilder$restartTerrainSessionAfterReset(CallbackInfo ci) {
+        TerrainGpuResidencyTracker.restartSession((ChunkBuilder) (Object) this);
+    }
+
     @Shadow
     @Final
     private Queue<Runnable> uploadQueue;
