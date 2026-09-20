@@ -116,12 +116,12 @@ The implementation may evolve, but a second renderer, scheduler, residency regis
 
 Compatibility decisions are now made per optimization domain instead of through a growing list of
 mixin-specific mod checks. Current domains are terrain build, terrain upload, terrain submission, immediate rendering, text
-rendering, particles, entity culling, and model-memory ownership.
+rendering, entity culling, and model-memory ownership.
 
 This preserves conservative fail-closed behavior for uncertain renderer ownership while keeping
 unrelated first-party optimizations active. For example, Iris blocks shader-sensitive terrain
 submission without disabling first-party chunk build policy, ImmediatelyFast owns only overlapping
-immediate/text/particle/upload work, EntityCulling owns only entity/block-entity culling, and
+immediate/text/upload work, EntityCulling owns only entity/block-entity culling, and
 FerriteCore owns only model-memory deduplication.
 
 Vertex-buffer responsibilities are split deliberately. Terrain residency accounting and reversible
