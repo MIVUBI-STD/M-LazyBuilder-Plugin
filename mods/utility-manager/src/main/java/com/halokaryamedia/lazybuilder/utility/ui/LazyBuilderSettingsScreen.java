@@ -258,10 +258,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void buildVideoQualitySections() {
         GraphicsPreset preset = detectGraphicsPreset();
 
-        Section overall = new Section("OVERALL QUALITY");
+        Section overall = new Section("PRESET");
         overall.rows.add(Row.value(
-                "Quality Preset",
-                "Apply a coordinated visual-detail profile. Changing any controlled visual option makes the preset Custom.",
+                "Graphics Preset",
+                "Set visual detail and the matching LazyBuilder optimization level together. Manual overrides change the preset to Custom.",
                 preset.label,
                 this::openGraphicsPresetChoice
         ));
@@ -345,7 +345,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (state == null) {
             Section unavailable = new Section("PERFORMANCE");
             unavailable.rows.add(Row.status(
-                    "Performance Manager",
+                    "Performance Features",
                     "The optional LazyBuilder performance component is not available in this client package.",
                     "Unavailable"
             ));
@@ -384,22 +384,22 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(background);
 
-        Section optimization = new Section("OPTIMIZATION");
+        Section optimization = new Section("ADVANCED PERFORMANCE");
         optimization.rows.add(Row.toggle(
                 "Skip Hidden Objects",
-                "Avoid drawing supported entities and special blocks when they are fully hidden.",
+                "Skip supported objects only when LazyBuilder can confirm they are fully hidden. Low enables this automatically.",
                 state.hiddenObjectSkipping(),
                 enabled -> updatePerformance(value -> value.withHiddenObjectSkipping(enabled))
         ));
         optimization.rows.add(Row.toggle(
                 "Optimized World Rendering",
-                "Use LazyBuilder's optimized world-rendering path when compatible.",
+                "Keep LazyBuilder rendering optimizations enabled when the active renderer is compatible. Managed automatically by presets.",
                 state.renderingOptimizations(),
                 enabled -> updatePerformance(value -> value.withRenderingOptimizations(enabled))
         ));
         optimization.rows.add(Row.toggle(
                 "Memory Optimization",
-                "Reuse compatible rendering data to reduce memory pressure.",
+                "Reduce avoidable rendering-memory use without lowering visual detail. Managed automatically by presets.",
                 state.memoryOptimizations(),
                 enabled -> updatePerformance(value -> value.withMemoryOptimizations(enabled))
         ));
@@ -760,10 +760,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private boolean matchesGraphicsPreset(GraphicsPreset preset) {
         if (client == null || preset == GraphicsPreset.CUSTOM) return false;
-        return client.options.getGraphicsMode().getValue() == preset.graphicsMode
+        boolean visualMatch = client.options.getGraphicsMode().getValue() == preset.graphicsMode
                 && client.options.getCloudRenderMode().getValue() == preset.cloudMode
                 && client.options.getParticles().getValue() == preset.particlesMode
                 && client.options.getMipmapLevels().getValue() == preset.mipmapLevels;
+        if (!visualMatch) return false;
+
+        PerformanceState performance = performanceState();
+        if (performance == null) return true;
+        return performance.hiddenObjectSkipping() == presetHiddenObjectSkipping(preset)
+                && performance.renderingOptimizations()
+                && performance.memoryOptimizations();
+    }
+
+    private static boolean presetHiddenObjectSkipping(GraphicsPreset preset) {
+        return preset == GraphicsPreset.LOW;
     }
 
     private void openGraphicsPresetChoice() {
@@ -772,15 +783,29 @@ public final class LazyBuilderSettingsScreen extends Screen {
         for (GraphicsPreset preset : List.of(GraphicsPreset.LOW, GraphicsPreset.MEDIUM, GraphicsPreset.HIGH)) {
             choices.add(new DropdownChoice(preset.label, preset == current, () -> applyGraphicsPreset(preset)));
         }
-        openDropdown("Quality Preset", choices);
+        openDropdown("Graphics Preset", choices);
     }
 
     private void applyGraphicsPreset(GraphicsPreset preset) {
         if (client == null || preset == GraphicsPreset.CUSTOM) return;
+
         client.options.getGraphicsMode().setValue(preset.graphicsMode);
         client.options.getCloudRenderMode().setValue(preset.cloudMode);
         client.options.getParticles().setValue(preset.particlesMode);
         client.options.getMipmapLevels().setValue(preset.mipmapLevels);
+
+        PerformanceState current = performanceState();
+        if (current != null) {
+            writePerformanceState(new PerformanceState(
+                    current.backgroundFpsPolicy(),
+                    current.unfocusedFpsLimit(),
+                    current.minimizedFpsLimit(),
+                    presetHiddenObjectSkipping(preset),
+                    true,
+                    true
+            ));
+        }
+
         client.options.write();
         client.options.sendClientSettings();
         refreshCategory();
@@ -846,17 +871,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
         );
     }
 
-    @SuppressWarnings("unchecked")
     private void updatePerformance(Function<PerformanceState, PerformanceState> update) {
         PerformanceState current = performanceState();
         if (current == null) return;
+        writePerformanceState(update.apply(current));
+        refreshCategory();
+    }
 
+    @SuppressWarnings("unchecked")
+    private void writePerformanceState(PerformanceState updated) {
+        if (updated == null) return;
         Object shared = FabricLoader.getInstance().getObjectShare()
                 .get("lazybuilder-performance-manager:settings-update");
         if (!(shared instanceof Consumer<?> rawConsumer)) return;
 
         Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) rawConsumer;
-        PerformanceState updated = update.apply(current);
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("backgroundFpsPolicy", updated.backgroundFpsPolicy());
         values.put("unfocusedFpsLimit", updated.unfocusedFpsLimit());
@@ -865,7 +894,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
         values.put("renderingOptimizations", updated.renderingOptimizations());
         values.put("memoryOptimizations", updated.memoryOptimizations());
         consumer.accept(Map.copyOf(values));
-        refreshCategory();
     }
 
     private static boolean booleanValue(Map<?, ?> values, String key, boolean fallback) {
@@ -978,9 +1006,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
             description = switch (category) {
                 case VIDEO -> switch (videoPage) {
                     case DISPLAY -> "Window, frame pacing, and screen visibility settings.";
-                    case QUALITY -> "Visual detail settings. Start with a preset, then fine-tune only when needed.";
+                    case QUALITY -> "Choose one Graphics Preset for visual detail and matching performance behavior. Fine-tune only when needed.";
                     case VIEW -> "World distance and camera settings.";
-                    case PERFORMANCE -> "Efficiency controls that stay separate from visual-quality presets.";
+                    case PERFORMANCE -> "Advanced performance overrides. Most players can leave these managed by the Graphics Preset.";
                 };
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
