@@ -37,7 +37,92 @@ public record UtilityPreferences(
         );
     }
 
+    public UtilityPreferences withBorderlessWindow(boolean enabled) {
+        return copy(enabled, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withExtendedChatHistory(boolean enabled) {
+        return copy(borderlessWindow, enabled, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withKeepChatDraft(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, enabled, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withChatSearch(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, enabled, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withChatTimestamps(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, enabled,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withHideChatSigningIndicators(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                enabled, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withHideChatReportButton(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, enabled, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withSuppressNarrator(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, enabled, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withReconnectButton(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, enabled,
+                contextualScreenshotNames, instantCreativeSearch, compactDebugHud);
+    }
+
     public UtilityPreferences withContextualScreenshotNames(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                enabled, instantCreativeSearch, compactDebugHud);
+    }
+
+    public UtilityPreferences withInstantCreativeSearch(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, enabled, compactDebugHud);
+    }
+
+    public UtilityPreferences withCompactDebugHud(boolean enabled) {
+        return copy(borderlessWindow, extendedChatHistory, keepChatDraft, chatSearch, chatTimestamps,
+                hideChatSigningIndicators, hideChatReportButton, suppressNarrator, reconnectButton,
+                contextualScreenshotNames, instantCreativeSearch, enabled);
+    }
+
+    private static UtilityPreferences copy(
+            boolean borderlessWindow,
+            boolean extendedChatHistory,
+            boolean keepChatDraft,
+            boolean chatSearch,
+            boolean chatTimestamps,
+            boolean hideChatSigningIndicators,
+            boolean hideChatReportButton,
+            boolean suppressNarrator,
+            boolean reconnectButton,
+            boolean contextualScreenshotNames,
+            boolean instantCreativeSearch,
+            boolean compactDebugHud
+    ) {
         return new UtilityPreferences(
                 borderlessWindow,
                 extendedChatHistory,
@@ -48,7 +133,7 @@ public record UtilityPreferences(
                 hideChatReportButton,
                 suppressNarrator,
                 reconnectButton,
-                enabled,
+                contextualScreenshotNames,
                 instantCreativeSearch,
                 compactDebugHud
         );

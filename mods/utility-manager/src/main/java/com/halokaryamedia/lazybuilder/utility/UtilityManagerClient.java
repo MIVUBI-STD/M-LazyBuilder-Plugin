@@ -13,6 +13,7 @@ import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugInteraction;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
 import com.halokaryamedia.lazybuilder.utility.reload.ResourceReloadNotifier;
+import com.halokaryamedia.lazybuilder.utility.ui.PauseMenuController;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -55,6 +56,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
         );
 
         ResourceReloadNotifier.register();
+        PauseMenuController.register();
         CompactDebugNetworking.register();
         MinecraftMessageBridge.register();
 
