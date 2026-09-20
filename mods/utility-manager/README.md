@@ -49,10 +49,19 @@ The stable preset policy is conservative: High targets high detail with Minecraf
 
 ### Visual management
 
-Visual is intentionally a small management surface rather than another graphics-tuning page.
+Visual follows the same game-settings hierarchy as the rest of LazyBuilder: concise rows in the main Settings screen, then a focused manager for larger selection workflows.
+
+The Resource Pack manager deliberately keeps Minecraft's familiar two-column model while improving terminology and presentation:
+- **Available** stays on the left.
+- **Active** replaces the less explicit Selected label on the right.
+- Native add/remove, drag/reorder, compatibility checks, folder watching, and pack icons remain Minecraft-owned.
+- The Active column is visually emphasized and explains that higher packs take priority.
+- Footer actions use the same LazyBuilder control styling and say **Open Pack Folder** and **Apply & Back**.
+- LazyBuilder does not replace Minecraft's ResourcePackOrganizer or maintain a second pack list.
+
 
 - Resource Pack shows Default, the active pack name, or the count of active packs. Opening it delegates to Minecraft's native Resource Pack screen so ordering, compatibility, file watching, and resource reload remain Minecraft-owned.
-- Shader shows Off, the active shader name when available, or Unavailable when no compatible shader renderer is installed. Opening it delegates to Iris through its public GUI API when Iris is present.
+- Shader shows Off, the active shader name when available, or Unavailable when no compatible shader renderer is installed. Opening it delegates to Iris through its public GUI API when Iris is present; shader-specific configuration remains Iris-owned.
 - Shader-specific profiles and individual shader options stay inside the shader manager. LazyBuilder does not clone or persist those settings.
 - Resource Packs and Shaders do not change Graphics Preset, View settings, or Performance preferences automatically.
 - Technical renderer/compatibility state remains internal unless the user needs an actionable explanation.
