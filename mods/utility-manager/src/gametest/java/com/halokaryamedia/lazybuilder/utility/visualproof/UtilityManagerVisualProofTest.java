@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionC
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderResourcePackScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -64,6 +65,16 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-settings-video-dropdown-1440x900-gui2");
             captureVideoDropdown(context, 620, 480, 2,
                     "utility-settings-video-dropdown-620x480-gui2");
+            captureVideoPage(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.VideoPage.VISUAL,
+                    "utility-settings-video-visual-1440x900-gui2");
+            captureVideoPage(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.VideoPage.VISUAL,
+                    "utility-settings-video-visual-620x480-gui2");
+            captureResourcePackManager(context, 1440, 900, 2,
+                    "utility-resource-packs-1440x900-gui2");
+            captureResourcePackManager(context, 620, 480, 2,
+                    "utility-resource-packs-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.CONTROLS,
                     "utility-settings-controls-1440x900-gui2");
@@ -285,6 +296,53 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             });
             context.waitTicks(4);
         }
+    }
+
+    private static void captureVideoPage(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            LazyBuilderSettingsScreen.VideoPage page,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(
+                null,
+                LazyBuilderSettingsScreen.Category.VIDEO,
+                page
+        ));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureResourcePackManager(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            return new LazyBuilderResourcePackScreen(
+                    null,
+                    client.getResourcePackManager(),
+                    manager -> {},
+                    client.getResourcePackDir()
+            );
+        });
+        context.waitForScreen(LazyBuilderResourcePackScreen.class);
+        context.waitTicks(12);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static void captureVideoDropdown(
