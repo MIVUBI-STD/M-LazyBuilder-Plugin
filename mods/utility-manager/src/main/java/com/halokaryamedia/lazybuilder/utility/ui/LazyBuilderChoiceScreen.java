@@ -140,13 +140,11 @@ final class LazyBuilderChoiceScreen extends Screen {
     }
 
     private int panelWidth() {
-        int shell = shellWidth();
-        if (shell < 560) return shell - 16;
-        return Math.min(520, Math.max(390, (int) (shell * 0.68)));
+        return Math.min(520, Math.max(264, shellWidth() - 16));
     }
 
     private int panelLeft() {
-        return shellLeft() + 8;
+        return (width - panelWidth()) / 2;
     }
 
     @Override

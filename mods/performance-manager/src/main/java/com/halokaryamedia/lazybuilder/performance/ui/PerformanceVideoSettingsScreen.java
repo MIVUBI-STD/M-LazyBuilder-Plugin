@@ -207,7 +207,9 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("VIDEO"), panelLeft, 49, TEXT_MUTED);
         context.drawTextWithShadow(textRenderer, Text.literal("PERFORMANCE"), panelLeft + 58, 49, TEXT_PRIMARY);
         context.fill(panelLeft + 58, 63, panelLeft + 126, 65, ACCENT);
-        context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        if (hasContextPane()) {
+            context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        }
 
         context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
         for (Section section : sections) {
@@ -256,6 +258,7 @@ public final class PerformanceVideoSettingsScreen extends Screen {
     }
 
     private void renderContextPane(DrawContext context, int x) {
+        if (!hasContextPane()) return;
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
 
@@ -345,9 +348,13 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         return (width - shellWidth()) / 2;
     }
 
+    private boolean hasContextPane() {
+        return shellWidth() >= 760;
+    }
+
     private int panelWidth() {
         int shell = shellWidth();
-        if (shell < 560) return shell - 16;
+        if (!hasContextPane()) return shell - 16;
         return Math.min(520, Math.max(390, (int) (shell * 0.68)));
     }
 

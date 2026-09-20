@@ -12,7 +12,6 @@ import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
@@ -612,7 +611,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int panelRight = panelLeft + panelWidth();
 
         context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
-        context.fill(panelRight + 14, VIEWPORT_TOP, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        if (hasContextPane()) {
+            context.fill(panelRight + 14, VIEWPORT_TOP, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        }
 
         Row hoveredRow = null;
         context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
@@ -655,6 +656,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private void renderContextPane(DrawContext context, int x, Row hoveredRow) {
+        if (!hasContextPane()) return;
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
 
@@ -723,9 +725,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
         return (width - shellWidth()) / 2;
     }
 
+    private boolean hasContextPane() {
+        return shellWidth() >= 760;
+    }
+
     private int panelWidth() {
         int shell = shellWidth();
-        if (shell < 560) return shell - 16;
+        if (!hasContextPane()) return shell - 16;
         return Math.min(540, Math.max(410, (int) (shell * 0.64)));
     }
 

@@ -12,7 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /** Custom key-binding editor using Minecraft's existing KeyBinding authority and persistence. */
-final class LazyBuilderKeybindSettingsScreen extends Screen {
+public final class LazyBuilderKeybindSettingsScreen extends Screen {
     private static final int BACKGROUND = 0xF20B0E12;
     private static final int TOP_BAR = 0xE813171C;
     private static final int ROW_FILL = 0xA81A1F25;
@@ -31,7 +31,7 @@ final class LazyBuilderKeybindSettingsScreen extends Screen {
     private int scrollOffset;
     private int maxScroll;
 
-    LazyBuilderKeybindSettingsScreen(Screen parent) {
+    public LazyBuilderKeybindSettingsScreen(Screen parent) {
         super(Text.literal("Key Bindings"));
         this.parent = parent;
     }
@@ -231,11 +231,15 @@ final class LazyBuilderKeybindSettingsScreen extends Screen {
         context.disableScissor();
 
         renderScrollBar(context, right + 6);
+        if (hasContextPane()) {
+            context.fill(right + 14, 76, right + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        }
         renderHelp(context, right + 30);
         super.render(context, mouseX, mouseY, delta);
     }
 
     private void renderHelp(DrawContext context, int x) {
+        if (!hasContextPane()) return;
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
         context.drawTextWithShadow(textRenderer, Text.literal("KEY BINDINGS"), x, 88, LazyBuilderSettingsScreen.TEXT_PRIMARY);
@@ -287,9 +291,13 @@ final class LazyBuilderKeybindSettingsScreen extends Screen {
         return (width - shellWidth()) / 2;
     }
 
+    private boolean hasContextPane() {
+        return shellWidth() >= 760;
+    }
+
     private int panelWidth() {
         int shell = shellWidth();
-        if (shell < 560) return shell - 16;
+        if (!hasContextPane()) return shell - 16;
         return Math.min(520, Math.max(390, (int) (shell * 0.68)));
     }
 

@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.visualproof;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -41,6 +42,21 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.VIDEO,
                     "utility-settings-video-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.CONTROLS,
+                    "utility-settings-controls-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.CONTROLS,
+                    "utility-settings-controls-620x480-gui2");
+            captureScrolledSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.CONTROLS,
+                    "utility-settings-controls-scrolled-620x480-gui2");
+            captureKeybindSettings(context, 1440, 900, 2,
+                    "utility-keybinds-1440x900-gui2");
+            captureKeybindSettings(context, 620, 480, 2,
+                    "utility-keybinds-620x480-gui2");
+            captureScrolledKeybindSettings(context, 620, 480, 2,
+                    "utility-keybinds-scrolled-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-1440x900-gui2");
@@ -258,6 +274,52 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     client.getWindow().getScaledHeight() / 2.0,
                     0.0,
                     -6.0
+            );
+        });
+        context.waitTicks(4);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureKeybindSettings(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderKeybindSettingsScreen(null));
+        context.waitForScreen(LazyBuilderKeybindSettingsScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureScrolledKeybindSettings(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderKeybindSettingsScreen(null));
+        context.waitForScreen(LazyBuilderKeybindSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderKeybindSettingsScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderKeybindSettingsScreen");
+            }
+            screen.mouseScrolled(
+                    client.getWindow().getScaledWidth() / 2.0,
+                    client.getWindow().getScaledHeight() / 2.0,
+                    0.0,
+                    -8.0
             );
         });
         context.waitTicks(4);
