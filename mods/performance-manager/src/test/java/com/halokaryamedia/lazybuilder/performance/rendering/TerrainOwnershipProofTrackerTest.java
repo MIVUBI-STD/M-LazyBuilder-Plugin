@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -7,6 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class TerrainOwnershipProofTrackerTest {
+    @BeforeEach
+    void enableDetailedMetrics() {
+        ChunkPipelineMetrics.resetForTest();
+    }
+
     @Test
     void promotesOnlyStableSequentialResidents() {
         Object key = new Object();
