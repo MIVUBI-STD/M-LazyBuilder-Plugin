@@ -17,7 +17,8 @@ public final class OptimizationCompatibility {
     public static Policy evaluate(
             RendererCompatibility.Snapshot renderer,
             boolean immediatelyFastPresent,
-            boolean ferriteCorePresent
+            boolean ferriteCorePresent,
+            boolean entityCullingPresent
     ) {
         RendererCompatibility.Snapshot safeRenderer = renderer == null
                 ? new RendererCompatibility.Snapshot(false, true, java.util.List.of())
@@ -30,8 +31,13 @@ public final class OptimizationCompatibility {
 
         if (immediatelyFastPresent) {
             decisions.put(OptimizationDomain.IMMEDIATE_RENDERING, Decision.external("immediatelyfast"));
+            decisions.put(OptimizationDomain.TEXT_RENDERING, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.PARTICLES, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.TERRAIN_UPLOAD, Decision.external("immediatelyfast"));
+        }
+
+        if (entityCullingPresent) {
+            decisions.put(OptimizationDomain.ENTITY_CULLING, Decision.external("entityculling"));
         }
 
         if (!safeRenderer.firstPartyChunkPipelineSafe()) {
@@ -57,6 +63,8 @@ public final class OptimizationCompatibility {
         TERRAIN_SUBMISSION,
         IMMEDIATE_RENDERING,
         PARTICLES,
+        TEXT_RENDERING,
+        ENTITY_CULLING,
         MODEL_MEMORY
     }
 
