@@ -28,17 +28,19 @@ final class ChunkPipelineMetricsTest {
         assertEquals(0L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
 
         ChunkPipelineMetrics.recordUploadBudgetStop();
-        assertEquals(1L, ChunkPipelineMetrics.uploadBudgetStops());
+        assertEquals(0L, ChunkPipelineMetrics.uploadBudgetStops());
 
         ChunkPipelineMetrics.enableDetailedMetrics();
         assertTrue(ChunkPipelineMetrics.detailedMetricsEnabled());
         ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
         ChunkPipelineMetrics.recordTerrainBufferLookupHit();
         ChunkPipelineMetrics.recordUploadBatch(4);
+        ChunkPipelineMetrics.recordUploadBudgetStop();
 
         assertEquals(1L, ChunkPipelineMetrics.sectionVisibilityCacheHits());
         assertEquals(1L, ChunkPipelineMetrics.terrainBufferLookupHits());
         assertEquals(3L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
+        assertEquals(1L, ChunkPipelineMetrics.uploadBudgetStops());
     }
 
     @Test
