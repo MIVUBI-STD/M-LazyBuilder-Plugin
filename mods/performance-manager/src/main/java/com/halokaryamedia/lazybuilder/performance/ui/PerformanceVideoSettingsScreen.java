@@ -10,8 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Modern game-style performance settings surface.
- * Common controls are first; Advanced remains a simple bottom section.
+ * Modern game-style performance settings.
+ * Common controls stay visible first; only engine-level tuning lives in Advanced.
  */
 public final class PerformanceVideoSettingsScreen extends Screen {
     private static final int TEXT_PRIMARY = 0xFFF2F4F6;
@@ -19,29 +19,28 @@ public final class PerformanceVideoSettingsScreen extends Screen {
     private static final int TEXT_MUTED = 0xFF858D97;
     private static final int ACCENT = 0xFFF1D21A;
 
-    private static final int BACKGROUND = 0xEE0B0E12;
-    private static final int TOP_BAR = 0xF013171C;
-    private static final int ROW_FILL = 0xC91A1F25;
-    private static final int ROW_HOVER = 0xDD21272E;
-    private static final int ROW_BORDER = 0x334E5660;
+    private static final int BACKGROUND = 0xD90B0E12;
+    private static final int TOP_BAR = 0xE813171C;
+    private static final int ROW_FILL = 0xA81A1F25;
+    private static final int ROW_HOVER = 0xC521272E;
+    private static final int DIVIDER = 0x44545C66;
 
-    private static final int MAX_WIDTH = 760;
-    private static final int SIDE_MARGIN = 18;
-    private static final int ROW_HEIGHT = 46;
-    private static final int ROW_GAP = 6;
-    private static final int COLUMN_GAP = 12;
-    private static final int CONTROL_WIDTH = 108;
+    private static final int MAX_SHELL_WIDTH = 920;
+    private static final int MIN_SIDE_MARGIN = 12;
+    private static final int CONTENT_TOP = 88;
+    private static final int SECTION_HEIGHT = 18;
+    private static final int SECTION_GAP = 12;
+    private static final int ROW_HEIGHT = 40;
+    private static final int ROW_GAP = 2;
+    private static final int CONTROL_WIDTH = 132;
     private static final int CONTROL_HEIGHT = 22;
-    private static final int CONTENT_TOP = 76;
-    private static final int ADVANCED_GAP = 28;
     private static final int FOOTER_HEIGHT = 40;
 
     private static final int[] BACKGROUND_LIMITS = {15, 30, 45, 60, 90, 120};
     private static final int[] MINIMIZED_LIMITS = {5, 10, 15, 30};
 
     private final Screen parent;
-    private final List<Row> generalRows = new ArrayList<>();
-    private final List<Row> advancedRows = new ArrayList<>();
+    private final List<Section> sections = new ArrayList<>();
 
     public PerformanceVideoSettingsScreen(Screen parent) {
         super(Text.literal("Performance"));
@@ -50,18 +49,17 @@ public final class PerformanceVideoSettingsScreen extends Screen {
 
     @Override
     protected void init() {
-        generalRows.clear();
-        advancedRows.clear();
-
+        sections.clear();
         PerformancePreferences prefs = PerformanceManagerClient.preferences();
 
-        generalRows.add(Row.toggle(
+        Section general = new Section("GENERAL");
+        general.rows.add(Row.toggle(
                 "Reduce FPS in Background",
                 "Use less GPU power when Minecraft is not the active window.",
                 prefs.backgroundFpsPolicy(),
                 value -> update(prefs.withBackgroundFpsPolicy(value))
         ));
-        generalRows.add(Row.value(
+        general.rows.add(Row.value(
                 "Background FPS",
                 "Frame-rate limit while Minecraft is running in the background.",
                 prefs.unfocusedFpsLimit() + " FPS",
@@ -69,7 +67,7 @@ public final class PerformanceVideoSettingsScreen extends Screen {
                         nextValue(BACKGROUND_LIMITS, prefs.unfocusedFpsLimit())
                 ))
         ));
-        generalRows.add(Row.value(
+        general.rows.add(Row.value(
                 "Minimized FPS",
                 "Frame-rate limit while the game window is minimized.",
                 prefs.minimizedFpsLimit() + " FPS",
@@ -77,111 +75,92 @@ public final class PerformanceVideoSettingsScreen extends Screen {
                         nextValue(MINIMIZED_LIMITS, prefs.minimizedFpsLimit())
                 ))
         ));
+        sections.add(general);
 
-        advancedRows.add(Row.toggle(
+        Section advanced = new Section("ADVANCED");
+        advanced.rows.add(Row.toggle(
                 "Skip Unseen Objects",
                 "Stop drawing entities and special blocks when they are fully hidden.",
                 prefs.hiddenObjectSkipping(),
                 value -> update(prefs.withHiddenObjectSkipping(value))
         ));
-        advancedRows.add(Row.toggle(
+        advanced.rows.add(Row.toggle(
                 "Faster World Rendering",
                 "Use the optimized world rendering path.",
                 prefs.renderingOptimizations(),
                 value -> update(prefs.withRenderingOptimizations(value))
         ));
-        advancedRows.add(Row.toggle(
+        advanced.rows.add(Row.toggle(
                 "Lower Memory Usage",
                 "Reuse compatible rendering data to reduce memory pressure.",
                 prefs.memoryOptimizations(),
                 value -> update(prefs.withMemoryOptimizations(value))
         ));
+        sections.add(advanced);
 
-        layoutRows();
+        layoutSections();
         addFooter();
     }
 
-    private void layoutRows() {
-        int width = contentWidth();
-        int left = contentLeft();
-        int columns = width >= 560 ? 2 : 1;
-        int columnWidth = columns == 2 ? (width - COLUMN_GAP) / 2 : width;
+    private void layoutSections() {
+        int x = panelLeft();
+        int width = panelWidth();
+        int y = CONTENT_TOP;
 
-        int generalRowsTall = (generalRows.size() + columns - 1) / columns;
-        int advancedTop = CONTENT_TOP + generalRowsTall * (ROW_HEIGHT + ROW_GAP) + ADVANCED_GAP;
+        for (Section section : sections) {
+            section.y = y;
+            y += SECTION_HEIGHT;
 
-        layoutGroup(generalRows, left, CONTENT_TOP, columns, columnWidth);
-        layoutGroup(advancedRows, left, advancedTop, columns, columnWidth);
-    }
+            for (Row row : section.rows) {
+                row.x = x;
+                row.y = y;
+                row.width = width;
 
-    private void layoutGroup(List<Row> rows, int left, int top, int columns, int columnWidth) {
-        for (int i = 0; i < rows.size(); i++) {
-            int column = columns == 2 ? i % 2 : 0;
-            int rowIndex = columns == 2 ? i / 2 : i;
-            int x = left + column * (columnWidth + COLUMN_GAP);
-            int y = top + rowIndex * (ROW_HEIGHT + ROW_GAP);
-            Row row = rows.get(i);
-            row.x = x;
-            row.y = y;
-            row.width = columnWidth;
+                int controlWidth = Math.min(CONTROL_WIDTH, Math.max(96, width / 3));
+                this.addDrawableChild(new PerformanceSettingsControlWidget(
+                        x + width - controlWidth - 8,
+                        y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2,
+                        controlWidth,
+                        CONTROL_HEIGHT,
+                        Text.literal(row.controlLabel),
+                        row.kind,
+                        row.action
+                ));
 
-            int controlWidth = Math.min(CONTROL_WIDTH, Math.max(82, columnWidth / 3));
-            this.addDrawableChild(new PerformanceSettingsControlWidget(
-                    x + columnWidth - controlWidth - 8,
-                    y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2,
-                    controlWidth,
-                    CONTROL_HEIGHT,
-                    Text.literal(row.controlLabel),
-                    true,
-                    row.action
-            ));
+                y += ROW_HEIGHT + ROW_GAP;
+            }
+
+            y += SECTION_GAP;
         }
     }
 
     private void addFooter() {
         int y = height - 30;
-        int left = contentLeft();
+        int right = shellLeft() + shellWidth();
 
         this.addDrawableChild(new PerformanceSettingsControlWidget(
-                left,
-                y,
-                92,
-                22,
-                Text.literal("Reset"),
-                true,
-                this::resetDefaults
-        ));
-        this.addDrawableChild(new PerformanceSettingsControlWidget(
-                width / 2 - 46,
+                right - 196,
                 y,
                 92,
                 22,
                 Text.literal("Back"),
-                true,
+                PerformanceSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
+
         this.addDrawableChild(new PerformanceSettingsControlWidget(
-                left + contentWidth() - 92,
+                right - 96,
                 y,
                 92,
                 22,
                 Text.literal("Done"),
-                true,
+                PerformanceSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
     }
 
-    private void resetDefaults() {
-        PerformanceManagerClient.updatePreferences(PerformancePreferences.defaults());
-        refresh();
-    }
-
     private void update(PerformancePreferences updated) {
         PerformanceManagerClient.updatePreferences(updated);
-        refresh();
-    }
-
-    private void refresh() {
         if (client != null) {
             client.setScreen(new PerformanceVideoSettingsScreen(parent));
         }
@@ -193,59 +172,79 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         context.fill(0, 0, width, 34, TOP_BAR);
         context.fill(0, height - FOOTER_HEIGHT, width, height, TOP_BAR);
 
-        int left = contentLeft();
-        context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), left, 15, TEXT_PRIMARY);
-        context.drawTextWithShadow(textRenderer, Text.literal("VIDEO"), left, 46, TEXT_MUTED);
-        context.drawTextWithShadow(textRenderer, Text.literal("PERFORMANCE"), left + 42, 46, TEXT_PRIMARY);
-        context.fill(left + 42, 60, left + 118, 62, ACCENT);
+        int panelLeft = panelLeft();
+        int panelRight = panelLeft + panelWidth();
 
-        drawGroup(context, generalRows, mouseX, mouseY);
+        context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("VIDEO"), panelLeft, 49, TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, Text.literal("PERFORMANCE"), panelLeft + 58, 49, TEXT_PRIMARY);
+        context.fill(panelLeft + 58, 63, panelLeft + 126, 65, ACCENT);
+        context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
 
-        int advancedY = advancedRows.isEmpty() ? CONTENT_TOP : advancedRows.get(0).y - 15;
-        context.drawTextWithShadow(textRenderer, Text.literal("ADVANCED"), left, advancedY, TEXT_SECONDARY);
-        drawGroup(context, advancedRows, mouseX, mouseY);
+        for (Section section : sections) {
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal(section.title),
+                    panelLeft,
+                    section.y + 4,
+                    TEXT_SECONDARY
+            );
 
+            for (Row row : section.rows) {
+                boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
+                        && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
+                int fill = hovered ? ROW_HOVER : ROW_FILL;
+                context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
+                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, fill);
+
+                int textMax = Math.max(70, row.width - CONTROL_WIDTH - 34);
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal(textRenderer.trimToWidth(row.title, textMax)),
+                        row.x + 8,
+                        row.y + 8,
+                        TEXT_PRIMARY
+                );
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal(textRenderer.trimToWidth(row.description, textMax)),
+                        row.x + 8,
+                        row.y + 23,
+                        TEXT_MUTED
+                );
+            }
+        }
+
+        renderContextPane(context, panelRight + 30);
+        renderStatus(context, panelLeft);
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    private void renderContextPane(DrawContext context, int x) {
+        int available = shellLeft() + shellWidth() - x - 8;
+        if (available < 120) return;
+
+        context.drawTextWithShadow(textRenderer, Text.literal("PERFORMANCE"), x, 88, TEXT_PRIMARY);
+        List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(
+                Text.literal("Performance controls use safe defaults. Advanced options are intended for troubleshooting or tuning."),
+                available
+        );
+        int y = 106;
+        for (net.minecraft.text.OrderedText line : lines) {
+            context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
+            y += 11;
+        }
+    }
+
+    private void renderStatus(DrawContext context, int x) {
         String status = userFacingStatus();
         if (!status.isBlank()) {
             context.drawTextWithShadow(
                     textRenderer,
                     Text.literal(status),
-                    left,
-                    Math.min(height - 48, advancedRows.get(advancedRows.size() - 1).y + ROW_HEIGHT + 10),
+                    x,
+                    height - FOOTER_HEIGHT - 18,
                     0xFFFF9A9A
-            );
-        }
-
-        super.render(context, mouseX, mouseY, delta);
-    }
-
-    private void drawGroup(DrawContext context, List<Row> rows, int mouseX, int mouseY) {
-        for (Row row : rows) {
-            boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
-                    && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
-            context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT, ROW_BORDER);
-            context.fill(
-                    row.x + 1,
-                    row.y + 1,
-                    row.x + row.width - 1,
-                    row.y + ROW_HEIGHT - 1,
-                    hovered ? ROW_HOVER : ROW_FILL
-            );
-
-            int textMax = Math.max(60, row.width - CONTROL_WIDTH - 28);
-            context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(textRenderer.trimToWidth(row.title, textMax)),
-                    row.x + 10,
-                    row.y + 9,
-                    TEXT_PRIMARY
-            );
-            context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(textRenderer.trimToWidth(row.description, textMax)),
-                    row.x + 10,
-                    row.y + 25,
-                    TEXT_MUTED
             );
         }
     }
@@ -268,12 +267,22 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         return values[0];
     }
 
-    private int contentWidth() {
-        return Math.min(MAX_WIDTH, Math.max(280, width - SIDE_MARGIN * 2));
+    private int shellWidth() {
+        return Math.min(MAX_SHELL_WIDTH, Math.max(280, width - MIN_SIDE_MARGIN * 2));
     }
 
-    private int contentLeft() {
-        return (width - contentWidth()) / 2;
+    private int shellLeft() {
+        return (width - shellWidth()) / 2;
+    }
+
+    private int panelWidth() {
+        int shell = shellWidth();
+        if (shell < 560) return shell - 16;
+        return Math.min(520, Math.max(390, (int) (shell * 0.68)));
+    }
+
+    private int panelLeft() {
+        return shellLeft() + 8;
     }
 
     @Override
@@ -286,20 +295,42 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         return true;
     }
 
+    private static final class Section {
+        private final String title;
+        private final List<Row> rows = new ArrayList<>();
+        private int y;
+
+        private Section(String title) {
+            this.title = title;
+        }
+    }
+
     private static final class Row {
         private final String title;
         private final String description;
         private final String controlLabel;
+        private final PerformanceSettingsControlWidget.Kind kind;
         private final Runnable action;
         private int x;
         private int y;
         private int width;
 
-        private Row(String title, String description, String controlLabel, Runnable action) {
+        private Row(
+                String title,
+                String description,
+                String controlLabel,
+                PerformanceSettingsControlWidget.Kind kind,
+                Runnable action
+        ) {
             this.title = title;
             this.description = description;
             this.controlLabel = controlLabel;
+            this.kind = kind;
             this.action = action;
+        }
+
+        static Row value(String title, String description, String value, Runnable action) {
+            return new Row(title, description, value, PerformanceSettingsControlWidget.Kind.VALUE, action);
         }
 
         static Row toggle(
@@ -308,11 +339,13 @@ public final class PerformanceVideoSettingsScreen extends Screen {
                 boolean enabled,
                 java.util.function.Consumer<Boolean> setter
         ) {
-            return new Row(title, description, enabled ? "ON" : "OFF", () -> setter.accept(!enabled));
-        }
-
-        static Row value(String title, String description, String value, Runnable action) {
-            return new Row(title, description, value, action);
+            return new Row(
+                    title,
+                    description,
+                    enabled ? "ON" : "OFF",
+                    PerformanceSettingsControlWidget.Kind.TOGGLE,
+                    () -> setter.accept(!enabled)
+            );
         }
     }
 }

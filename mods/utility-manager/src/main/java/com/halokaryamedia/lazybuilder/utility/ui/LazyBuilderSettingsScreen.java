@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Full game-style LazyBuilder settings surface inspired by modern PC game settings:
- * horizontal tabs, dense two-column rows, clear active state and a persistent footer.
+ * Full game-style LazyBuilder settings surface.
+ *
+ * Presentation follows modern PC game settings: horizontal category tabs, sectioned
+ * single-column rows, right-aligned controls, a restrained context pane and a fixed footer.
  */
 public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
@@ -38,28 +40,29 @@ public final class LazyBuilderSettingsScreen extends Screen {
     static final int TEXT_MUTED = 0xFF858D97;
     static final int ACCENT = 0xFFF1D21A;
 
-    private static final int BACKGROUND = 0xEE0B0E12;
-    private static final int TOP_BAR = 0xF013171C;
-    private static final int ROW_FILL = 0xC91A1F25;
-    private static final int ROW_HOVER = 0xDD21272E;
-    private static final int ROW_BORDER = 0x334E5660;
+    private static final int BACKGROUND = 0xD90B0E12;
+    private static final int TOP_BAR = 0xE813171C;
+    private static final int ROW_FILL = 0xA81A1F25;
+    private static final int ROW_HOVER = 0xC521272E;
+    private static final int DIVIDER = 0x44545C66;
 
-    private static final int MAX_WIDTH = 760;
-    private static final int SIDE_MARGIN = 18;
+    private static final int MAX_SHELL_WIDTH = 920;
+    private static final int MIN_SIDE_MARGIN = 12;
     private static final int HEADER_HEIGHT = 34;
     private static final int TAB_HEIGHT = 24;
     private static final int TAB_TOP = 42;
-    private static final int CONTENT_TOP = 82;
-    private static final int ROW_HEIGHT = 46;
-    private static final int ROW_GAP = 6;
-    private static final int COLUMN_GAP = 12;
-    private static final int CONTROL_WIDTH = 108;
+    private static final int CONTENT_TOP = 88;
+    private static final int SECTION_HEIGHT = 18;
+    private static final int SECTION_GAP = 12;
+    private static final int ROW_HEIGHT = 40;
+    private static final int ROW_GAP = 2;
+    private static final int CONTROL_WIDTH = 132;
     private static final int CONTROL_HEIGHT = 22;
     private static final int FOOTER_HEIGHT = 40;
 
     private final Screen parent;
     private final Category category;
-    private final List<Row> rows = new ArrayList<>();
+    private final List<Section> sections = new ArrayList<>();
 
     public LazyBuilderSettingsScreen(Screen parent) {
         this(parent, Category.VIDEO);
@@ -73,23 +76,23 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     @Override
     protected void init() {
-        rows.clear();
+        sections.clear();
         addTabs();
 
         switch (category) {
-            case VIDEO -> buildVideoRows();
-            case CONTROLS -> buildControlsRows();
-            case INTERFACE -> buildInterfaceRows();
-            case TOOLS -> buildToolsRows();
+            case VIDEO -> buildVideoSections();
+            case CONTROLS -> buildControlsSections();
+            case INTERFACE -> buildInterfaceSections();
+            case TOOLS -> buildToolsSections();
         }
 
-        layoutRows();
+        layoutSections();
         addFooter();
     }
 
     private void addTabs() {
-        int left = contentLeft();
-        int width = contentWidth();
+        int left = panelLeft();
+        int width = panelWidth();
         Category[] values = Category.values();
         int gap = 2;
         int tabWidth = Math.max(58, (width - gap * (values.length - 1)) / values.length);
@@ -111,8 +114,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
-    private void buildVideoRows() {
-        rows.add(Row.action(
+    private void buildVideoSections() {
+        Section display = new Section("DISPLAY");
+        display.rows.add(Row.action(
                 "Video Settings",
                 "Display, graphics, render distance and Minecraft video options.",
                 "Open",
@@ -122,15 +126,20 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     }
                 }
         ));
-        rows.add(Row.status(
-                "Performance",
-                "Extra rendering and efficiency controls live inside Video Settings.",
+        sections.add(display);
+
+        Section performance = new Section("PERFORMANCE");
+        performance.rows.add(Row.status(
+                "Performance Settings",
+                "Extra frame-rate, rendering and memory controls are integrated into Video Settings.",
                 "In Video"
         ));
+        sections.add(performance);
     }
 
-    private void buildControlsRows() {
-        rows.add(Row.action(
+    private void buildControlsSections() {
+        Section input = new Section("INPUT");
+        input.rows.add(Row.action(
                 "Controls & Keybinds",
                 "Keyboard, mouse and all registered Minecraft/Fabric key bindings.",
                 "Open",
@@ -140,108 +149,130 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     }
                 }
         ));
+        sections.add(input);
     }
 
-    private void buildInterfaceRows() {
+    private void buildInterfaceSections() {
         UtilityPreferences prefs = UtilityManagerClient.preferences();
 
-        rows.add(Row.toggle(
+        Section hud = new Section("HUD");
+        hud.rows.add(Row.toggle(
                 "Compact Debug HUD",
                 "Keep builder-relevant debug information without the full F3 wall.",
                 prefs.compactDebugHud(),
                 enabled -> updateInterface(prefs.withCompactDebugHud(enabled))
         ));
-        rows.add(Row.toggle(
+        sections.add(hud);
+
+        Section capture = new Section("CAPTURE");
+        capture.rows.add(Row.toggle(
                 "Contextual Screenshot Names",
                 "Add world or server context to automatic screenshot names.",
                 prefs.contextualScreenshotNames(),
                 enabled -> updateInterface(prefs.withContextualScreenshotNames(enabled))
         ));
-        rows.add(Row.toggle(
+        sections.add(capture);
+
+        Section creative = new Section("CREATIVE");
+        creative.rows.add(Row.toggle(
                 "Quick Creative Search",
                 "Start typing in Creative inventory to search immediately.",
                 prefs.instantCreativeSearch(),
                 enabled -> updateInterface(prefs.withInstantCreativeSearch(enabled))
         ));
+        sections.add(creative);
     }
 
-    private void buildToolsRows() {
-        rows.add(Row.status(
+    private void buildToolsSections() {
+        Section building = new Section("BUILDING");
+        building.rows.add(Row.status(
                 "Editing Tools",
                 "Axiom and LazyBuilder building extensions.",
                 "In Editor"
         ));
-        rows.add(Row.status(
+        sections.add(building);
+
+        Section worlds = new Section("WORLD MANAGEMENT");
+        worlds.rows.add(Row.status(
                 "Map & Worlds",
                 "World map, world management and transfer workflows.",
                 "Per World"
         ));
+        sections.add(worlds);
     }
 
-    private void layoutRows() {
-        int width = contentWidth();
-        int left = contentLeft();
-        int columns = width >= 560 ? 2 : 1;
-        int columnWidth = columns == 2 ? (width - COLUMN_GAP) / 2 : width;
+    private void layoutSections() {
+        int x = panelLeft();
+        int width = panelWidth();
+        int y = CONTENT_TOP;
 
-        for (int i = 0; i < rows.size(); i++) {
-            int column = columns == 2 ? i % 2 : 0;
-            int rowIndex = columns == 2 ? i / 2 : i;
-            int x = left + column * (columnWidth + COLUMN_GAP);
-            int y = CONTENT_TOP + rowIndex * (ROW_HEIGHT + ROW_GAP);
-            Row row = rows.get(i);
-            row.x = x;
-            row.y = y;
-            row.width = columnWidth;
+        for (Section section : sections) {
+            section.y = y;
+            y += SECTION_HEIGHT;
 
-            int controlWidth = Math.min(CONTROL_WIDTH, Math.max(82, columnWidth / 3));
-            int controlX = x + columnWidth - controlWidth - 8;
-            int controlY = y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
+            for (Row row : section.rows) {
+                row.x = x;
+                row.y = y;
+                row.width = width;
 
-            this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    controlX,
-                    controlY,
-                    controlWidth,
-                    CONTROL_HEIGHT,
-                    Text.literal(row.controlLabel()),
-                    row.interactive(),
-                    row.action()
-            ));
+                int controlWidth = Math.min(CONTROL_WIDTH, Math.max(96, width / 3));
+                int controlX = x + width - controlWidth - 8;
+                int controlY = y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
+
+                this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                        controlX,
+                        controlY,
+                        controlWidth,
+                        CONTROL_HEIGHT,
+                        Text.literal(row.controlLabel()),
+                        row.interactive(),
+                        row.kind,
+                        row.action()
+                ));
+
+                y += ROW_HEIGHT + ROW_GAP;
+            }
+
+            y += SECTION_GAP;
         }
     }
 
     private void addFooter() {
-        int y = this.height - 30;
-        int left = contentLeft();
+        int y = height - 30;
+        int left = shellLeft();
+        int shellRight = left + shellWidth();
 
         boolean canReset = category == Category.INTERFACE;
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                left,
+                left + 8,
                 y,
                 92,
                 22,
                 Text.literal("Reset"),
                 canReset,
+                LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::resetCurrentCategory
         ));
 
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                this.width / 2 - 46,
+                shellRight - 196,
                 y,
                 92,
                 22,
                 Text.literal("Back"),
                 true,
+                LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
 
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                left + contentWidth() - 92,
+                shellRight - 96,
                 y,
                 92,
                 22,
                 Text.literal("Done"),
                 true,
+                LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
     }
@@ -280,44 +311,94 @@ public final class LazyBuilderSettingsScreen extends Screen {
         context.fill(0, 0, width, HEADER_HEIGHT, TOP_BAR);
         context.fill(0, height - FOOTER_HEIGHT, width, height, TOP_BAR);
 
-        int left = contentLeft();
-        context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), left, 15, TEXT_PRIMARY);
-        String categoryLabel = category.label.toUpperCase(java.util.Locale.ROOT);
-        context.drawTextWithShadow(textRenderer, Text.literal(categoryLabel), left, 70, TEXT_SECONDARY);
+        int panelLeft = panelLeft();
+        int panelRight = panelLeft + panelWidth();
 
-        for (Row row : rows) {
-            boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
-                    && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
-            int fill = hovered ? ROW_HOVER : ROW_FILL;
-            context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT, ROW_BORDER);
-            context.fill(row.x + 1, row.y + 1, row.x + row.width - 1, row.y + ROW_HEIGHT - 1, fill);
+        context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
+        context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
 
-            int textMax = Math.max(60, row.width - CONTROL_WIDTH - 28);
+        for (Section section : sections) {
             context.drawTextWithShadow(
                     textRenderer,
-                    Text.literal(textRenderer.trimToWidth(row.title, textMax)),
-                    row.x + 10,
-                    row.y + 9,
-                    TEXT_PRIMARY
+                    Text.literal(section.title),
+                    panelLeft,
+                    section.y + 4,
+                    TEXT_SECONDARY
             );
-            context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(textRenderer.trimToWidth(row.description, textMax)),
-                    row.x + 10,
-                    row.y + 25,
-                    TEXT_MUTED
-            );
+
+            for (Row row : section.rows) {
+                boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
+                        && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
+                int fill = hovered ? ROW_HOVER : ROW_FILL;
+
+                context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
+                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, fill);
+
+                int textMax = Math.max(70, row.width - CONTROL_WIDTH - 34);
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal(textRenderer.trimToWidth(row.title, textMax)),
+                        row.x + 8,
+                        row.y + 8,
+                        TEXT_PRIMARY
+                );
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal(textRenderer.trimToWidth(row.description, textMax)),
+                        row.x + 8,
+                        row.y + 23,
+                        TEXT_MUTED
+                );
+            }
         }
 
+        renderContextPane(context, panelRight + 30);
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private int contentWidth() {
-        return Math.min(MAX_WIDTH, Math.max(280, width - SIDE_MARGIN * 2));
+    private void renderContextPane(DrawContext context, int x) {
+        int available = shellLeft() + shellWidth() - x - 8;
+        if (available < 120) return;
+
+        context.drawTextWithShadow(
+                textRenderer,
+                Text.literal(category.label.toUpperCase(java.util.Locale.ROOT)),
+                x,
+                88,
+                TEXT_PRIMARY
+        );
+
+        String description = switch (category) {
+            case VIDEO -> "Display and rendering options stay integrated with Minecraft.";
+            case CONTROLS -> "All key bindings remain in the standard Minecraft controls screen.";
+            case INTERFACE -> "Only builder-facing interface preferences are exposed here.";
+            case TOOLS -> "Tool-specific configuration stays close to the workflow that owns it.";
+        };
+
+        List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(description), available);
+        int y = 106;
+        for (net.minecraft.text.OrderedText line : lines) {
+            context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
+            y += 11;
+        }
     }
 
-    private int contentLeft() {
-        return (width - contentWidth()) / 2;
+    private int shellWidth() {
+        return Math.min(MAX_SHELL_WIDTH, Math.max(280, width - MIN_SIDE_MARGIN * 2));
+    }
+
+    private int shellLeft() {
+        return (width - shellWidth()) / 2;
+    }
+
+    private int panelWidth() {
+        int shell = shellWidth();
+        if (shell < 560) return shell - 16;
+        return Math.min(520, Math.max(390, (int) (shell * 0.68)));
+    }
+
+    private int panelLeft() {
+        return shellLeft() + 8;
     }
 
     @Override
@@ -330,11 +411,22 @@ public final class LazyBuilderSettingsScreen extends Screen {
         return true;
     }
 
+    private static final class Section {
+        private final String title;
+        private final List<Row> rows = new ArrayList<>();
+        private int y;
+
+        private Section(String title) {
+            this.title = title;
+        }
+    }
+
     private static final class Row {
         private final String title;
         private final String description;
         private final java.util.function.Supplier<String> controlText;
         private final boolean interactive;
+        private final LazyBuilderSettingsControlWidget.Kind kind;
         private final Runnable action;
         private int x;
         private int y;
@@ -345,21 +437,37 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 String description,
                 java.util.function.Supplier<String> controlText,
                 boolean interactive,
+                LazyBuilderSettingsControlWidget.Kind kind,
                 Runnable action
         ) {
             this.title = title;
             this.description = description;
             this.controlText = controlText;
             this.interactive = interactive;
+            this.kind = kind;
             this.action = action;
         }
 
         static Row action(String title, String description, String control, Runnable action) {
-            return new Row(title, description, () -> control, true, action);
+            return new Row(
+                    title,
+                    description,
+                    () -> control,
+                    true,
+                    LazyBuilderSettingsControlWidget.Kind.ACTION,
+                    action
+            );
         }
 
         static Row status(String title, String description, String status) {
-            return new Row(title, description, () -> status, false, () -> {});
+            return new Row(
+                    title,
+                    description,
+                    () -> status,
+                    false,
+                    LazyBuilderSettingsControlWidget.Kind.STATUS,
+                    () -> {}
+            );
         }
 
         static Row toggle(
@@ -373,6 +481,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     description,
                     () -> enabled ? "ON" : "OFF",
                     true,
+                    LazyBuilderSettingsControlWidget.Kind.TOGGLE,
                     () -> setter.accept(!enabled)
             );
         }
