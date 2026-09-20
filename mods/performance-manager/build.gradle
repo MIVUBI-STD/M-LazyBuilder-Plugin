@@ -59,7 +59,7 @@ loom {
             vmArg "-Dfabric.client.gametest.testModResourcesPath=${file('src/gametest/resources').absolutePath}"
             runDir 'build/run/clientGameTest'
             programArg '--username'
-            programArg 'LBPerformancePreview'
+            programArg 'LBPerfPreview'
         }
     }
 }
