@@ -235,7 +235,10 @@ export const runtimePreviewProduct = {
   },
   server: {
     preflight: async (): Promise<ServerPreflight> => ({ ready: previewKind() !== 'repair', workspace: activeWorkspace.path, serverDirectory: `${activeWorkspace.path}\\server`, paperJar: `${activeWorkspace.path}\\server\\paper.jar`, worldsDirectory: `${activeWorkspace.path}\\server\\worlds`, javaPath: 'C:\\LazyBuilder\\runtime\\java.exe', javaVersion: '21.0.8', logDirectory: `${activeWorkspace.path}\\logs`, issues: previewKind() === 'repair' ? ['Paper runtime is missing'] : [] }),
-    status: async () => ({ snapshot: serverSnapshot(), connectionPort: previewKind() === 'running' ? 25565 : null }),
+    status: async () => {
+      const snapshot = serverSnapshot();
+      return { snapshot, connectionPort: snapshot.state === 'Online' ? 25565 : null };
+    },
     snapshot: async () => serverSnapshot(), start: async () => undefined, stop: async () => undefined, restart: async () => undefined,
     recoverDetached: async () => ({ pid: 14872, stopped: true, message: 'External server stopped.' }),
     logTail: async (_path: string): Promise<ServerLogTail> => ({ path: `${activeWorkspace.path}\\logs\\latest.log`, content: '[16:00:00 INFO]: Done (3.42s)! For help, type "help"', truncated: false }),

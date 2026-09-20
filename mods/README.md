@@ -7,7 +7,6 @@ mods/
 ├── map-manager/          world / map / transfer workflow
 ├── utility-manager/      passive non-building convenience
 ├── performance-manager/  performance/resource policy
-├── terraform-manager/    legacy/prototype terrain lane under evaluation
 └── builder-utilities/    Axiom-first building extension layer
 ```
 
@@ -16,8 +15,9 @@ mods/
 - **Map Manager** — world/map workflow, navigation, transfer UI, world settings UI, current managed-world state, Map Export Area, and Fabric-to-Paper World-Manager transport.
 - **Utility Manager** — passive non-building client convenience.
 - **Performance Manager** — performance/resource observation and the narrow background-FPS fallback that yields to Dynamic FPS.
-- **Terraform Manager** — existing LazyBuilder terrain prototype; its long-term ownership is evaluated against the Axiom-first builder architecture rather than expanded independently.
 - **Builder Utilities** — Axiom-first extension point for building capabilities that are missing from Axiom. Axiom remains the primary editor and UX. FAWE and ezEdits are reference/donor implementations only; Builder Utilities must not introduce them as permanent runtime authorities.
+
+The former Terraform prototype is retired from active source; its historical implementation remains available through Git history.
 
 Each Manager/feature module is one Fabric mod and one output JAR. Modules do not import another LazyBuilder Manager's implementation packages.
 

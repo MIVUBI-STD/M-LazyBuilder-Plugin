@@ -14,7 +14,6 @@ LazyBuilder Client Suite
 │   └── passive generic client convenience
 ├── Performance Manager
 │   └── first-party performance policy / diagnostics
-├── Terraform Manager
 │   └── existing terrain prototype under evaluation
 └── Builder Utilities
     └── Axiom-first builder extension layer
@@ -94,7 +93,6 @@ FAWE and ezEdits are migration references, not final authorities. Capability ado
 | Chat/window/screenshot convenience | Utility Manager | Builder Utilities does not absorb generic convenience |
 | Frame pressure/resource policy | Performance Manager | Builder Utilities may consume a budget contract later but does not import Performance internals |
 | Building/editor extension | Builder Utilities + Axiom public API | Existing Managers do not implement generic building tools |
-| Existing Terraform prototype | Terraform Manager pending migration decision | Do not expand duplicate terrain ownership while Builder Utilities foundation is being established |
 
 ## Shared-service rule
 
@@ -141,6 +139,5 @@ Axiom                     primary building/editor architecture
 Builder Utilities         active extension scope
 FAWE                       donor/reference; planned retirement after capability parity
  ezEdits                    donor/reference; planned retirement after capability parity
-Terraform Manager          freeze expansion pending capability migration decision
 Existing client Managers   ownership remains independent
 ```

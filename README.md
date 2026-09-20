@@ -17,10 +17,6 @@ LazyBuilder
 │   └── Performance Manager
 ├── Builder Extension
 │   └── Builder Utilities (Axiom-first; separate provisioning)
-├── Legacy / Prototype
-│   ├── Terraform Manager (Paper)
-│   ├── Terraform Manager (Fabric)
-│   └── Terraform Core
 └── Shared
     └── Protocol
 ```
@@ -81,19 +77,16 @@ apps/
 
 plugins/
 ├── world-manager/              Paper world lifecycle/import-export authority
-├── utilities-manager/          Paper builder/server conveniences
-└── terraform-manager/          legacy/prototype terrain server lane
+└── utilities-manager/          Paper builder/server conveniences
 
 mods/
 ├── map-manager/                Fabric world/map/transfer client
 ├── utility-manager/            Fabric passive client convenience
 ├── performance-manager/        bounded Fabric client performance policy/diagnostics
-├── builder-utilities/          Axiom-first builder extension; separate provisioning
-└── terraform-manager/          legacy/prototype terrain client lane
+└── builder-utilities/          Axiom-first builder extension; separate provisioning
 
 shared/
-├── protocol/                   neutral Paper/Fabric wire contracts
-└── terraform-core/             legacy/prototype deterministic terrain kernel
+└── protocol/                   neutral Paper/Fabric wire contracts
 
 docs/                           canonical product/system/operations docs
 scripts/                        repository/runtime verification utilities
@@ -115,13 +108,12 @@ dist/Local/       canonical Local-channel distributables
 - `apps/launcher/` owns desktop presentation and desktop-native Server/Plugin/Client Setup management.
 - `plugins/` contains server-side Paper plugins only.
 - `mods/` contains Minecraft Fabric client mods only.
-- `plugins/terraform-manager/`, `mods/terraform-manager/`, and `shared/terraform-core/` are legacy/prototype terrain lanes. They remain buildable for explicit evaluation but are not default V1 runtime/package authorities.
 - `mods/builder-utilities/` is the current LazyBuilder-owned Axiom-first builder extension lane and remains outside Client Setup until provisioning is explicitly approved.
 - `shared/protocol/` contains neutral Paper/Fabric wire contracts only.
-- `shared/terraform-core/` contains deterministic terrain geometry only and must not depend on Paper, Fabric, Minecraft rendering, protocol transport, materials, or world mutation.
-- External build/edit tools such as Vanilla, Axiom, ezEdits, and WorldEdit remain external references/specialist owners and are not Terraform runtime dependencies.
+- External build/edit tools such as Vanilla, Axiom, ezEdits, and WorldEdit remain external references/specialist owners.
+- The former Terraform prototype has been retired from active source; Git history is its archive.
 - One Manager produces one deployable artifact and does not import another Manager's implementation packages.
-- V1 Client Setup owns exactly Map Manager, Utility Manager, and Performance Manager. Builder Utilities and Terraform are separate development artifacts and must not enter the core bundle implicitly.
+- V1 Client Setup owns exactly Map Manager, Utility Manager, and Performance Manager. Builder Utilities is a separate development artifact and must not enter the core bundle implicitly.
 - `toolchain.json` owns supported developer toolchain policy; Maven/Gradle remain repository-wrapper owned.
 
 ## Branch authority

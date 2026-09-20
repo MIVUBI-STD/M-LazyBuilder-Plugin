@@ -14,14 +14,12 @@ LazyBuilder
 │   ├── map-manager/               core Client Setup
 │   ├── utility-manager/           core Client Setup
 │   ├── performance-manager/       core Client Setup
-│   ├── builder-utilities/         separate Axiom-first extension
-│   └── terraform-manager/         legacy/prototype lane
+│   └── builder-utilities/         separate Axiom-first extension
 └── shared/
-    ├── protocol/                   neutral Paper/Fabric contracts
-    └── terraform-core/             legacy/prototype terrain kernel
+    └── protocol/                   neutral Paper/Fabric contracts
 ```
 
-Axiom remains the primary builder editor/interaction owner. Builder Utilities is the LazyBuilder-owned extension lane for proven missing builder capabilities; it is not a fourth core Manager. WorldEdit/FAWE, FastAsyncVoxelSniper, ezEdits and MetaBrushes remain external specialist/reference tools. Terraform remains a legacy/prototype lane pending retirement or a proven distinct responsibility.
+Axiom remains the primary builder editor/interaction owner. Builder Utilities is the LazyBuilder-owned extension lane for proven missing builder capabilities; it is not a fourth core Manager. WorldEdit/FAWE, FastAsyncVoxelSniper, ezEdits and MetaBrushes remain external specialist/reference tools. The former Terraform prototype was retired from active source after its responsibilities converged on the Axiom-first Builder Utilities direction; Git history remains the archive.
 
 ## Repository authority
 

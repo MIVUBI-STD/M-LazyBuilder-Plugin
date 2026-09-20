@@ -1,7 +1,0 @@
-{
-  "required": true,
-  "package": "com.halokaryamedia.lazybuilder.terraformclient.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "client": ["TerraformMouseMixin"],
-  "injectors": {"defaultRequire": 1}
-}

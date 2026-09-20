@@ -77,13 +77,4 @@
         <module>plugins/utilities-manager</module>
     </modules>
 
-    <profiles>
-        <profile>
-            <id>legacy-terraform</id>
-            <modules>
-                <module>shared/terraform-core</module>
-                <module>plugins/terraform-manager</module>
-            </modules>
-        </profile>
-    </profiles>
 </project>
