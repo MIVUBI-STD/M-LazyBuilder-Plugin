@@ -202,5 +202,9 @@ final class PerformanceSnapshotTest {
         assertEquals(1L, snapshot.terrainMultiDrawSubmissionFailures());
         assertEquals("active", snapshot.terrainMultiDrawSubmissionStatus());
         assertEquals("iris+sodium", snapshot.rendererPipelineOwner());
+        assertEquals(120, snapshot.frameStats().fps());
+        assertEquals(0.5D, snapshot.resourceStats().usedMemoryRatio());
+        assertEquals(4, snapshot.chunkStats().tasksToBatch());
+        assertEquals("iris+sodium", snapshot.compatibilityStats().rendererPipelineOwner());
     }
 }
