@@ -153,6 +153,13 @@ owner is present, LazyBuilder's corresponding render mixins do not apply, so the
 not retain a redundant per-entity mod-presence branch. Culling ray evaluation also constructs sample
 vectors lazily and uses primitive direction math to reduce short-lived allocation churn.
 
+Terrain runtime state is scoped to the active `ChunkBuilder` session. A new renderer claims a new
+session generation; reset rotates that generation, stop clears only if the caller still owns the
+active session, and queued upload work carries the owner+generation token it was created under.
+Stale upload work is discarded before any GL bind or residency mutation. World identity changes also
+reset frame-pressure history and culling state so one world cannot bias scheduling decisions in the
+next.
+
 ## Rejected by default
 
 Do not add merely to make Performance Manager appear feature-rich:
