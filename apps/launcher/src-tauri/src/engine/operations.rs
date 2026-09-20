@@ -194,7 +194,7 @@ impl OperationRegistry {
     }
 
     pub fn add_warning(&self, id: &str, warning: &str) -> Result<OperationSnapshot, String> {
-        self.mutate_ephemeral(id, |entry| {
+        self.mutate(id, |entry| {
             ensure_active(entry)?;
             let warning = warning.trim();
             if !warning.is_empty() && !entry.warnings.iter().any(|existing| existing == warning) {
