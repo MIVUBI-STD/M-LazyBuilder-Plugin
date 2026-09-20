@@ -2,20 +2,27 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.option.ControlsOptionsScreen;
-import net.minecraft.client.gui.screen.option.VideoOptionsScreen;
+import net.minecraft.client.option.CloudRenderMode;
+import net.minecraft.client.option.GraphicsMode;
+import net.minecraft.client.option.ParticlesMode;
+import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
- * Full game-style LazyBuilder settings surface.
+ * Permanent LazyBuilder settings shell.
  *
- * Presentation follows modern PC game settings: horizontal category tabs, sectioned
- * single-column rows, right-aligned controls, a restrained context pane and a fixed footer.
+ * Minecraft's GameOptions / KeyBinding objects remain the authority and persistence owner;
+ * this class replaces only the user-facing settings presentation.
  */
 public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
@@ -51,15 +58,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private static final int HEADER_HEIGHT = 34;
     private static final int TAB_HEIGHT = 24;
     private static final int TAB_TOP = 42;
-    private static final int CONTENT_TOP = 88;
-    private static final int VIEWPORT_TOP = 78;
-    private static final int SECTION_HEIGHT = 18;
-    private static final int SECTION_GAP = 12;
-    private static final int ROW_HEIGHT = 40;
+    private static final int CONTENT_TOP = 82;
+    private static final int VIEWPORT_TOP = 74;
+    private static final int SECTION_HEIGHT = 16;
+    private static final int SECTION_GAP = 8;
+    private static final int ROW_HEIGHT = 32;
     private static final int ROW_GAP = 2;
-    private static final int CONTROL_WIDTH = 132;
-    private static final int CONTROL_HEIGHT = 22;
+    private static final int CONTROL_WIDTH = 138;
+    private static final int CONTROL_HEIGHT = 20;
     private static final int FOOTER_HEIGHT = 40;
+
+    private static final String PERFORMANCE_SCREEN_SHARE =
+            "lazybuilder-performance-manager:settings-screen";
 
     private final Screen parent;
     private final Category category;
@@ -118,41 +128,238 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private void buildVideoSections() {
+        if (client == null) return;
+
         Section display = new Section("DISPLAY");
-        display.rows.add(Row.action(
-                "Video Settings",
-                "Display, graphics, render distance and Minecraft video options.",
-                "Open",
-                () -> {
-                    if (client != null) {
-                        client.setScreen(new VideoOptionsScreen(this, client, client.options));
-                    }
-                }
+        display.rows.add(Row.toggle(
+                "Fullscreen",
+                "Use Minecraft in fullscreen mode.",
+                client.options.getFullscreen().getValue(),
+                value -> setOption(client.options.getFullscreen(), value)
+        ));
+        display.rows.add(Row.toggle(
+                "V-Sync",
+                "Synchronize frame output with the display refresh cycle.",
+                client.options.getEnableVsync().getValue(),
+                value -> setOption(client.options.getEnableVsync(), value)
+        ));
+        display.rows.add(Row.value(
+                "Max Frame Rate",
+                "Upper frame-rate limit while Minecraft is active.",
+                client.options.getMaxFps().getValue() + " FPS",
+                () -> openIntegerChoice(
+                        "Max Frame Rate",
+                        client.options.getMaxFps(),
+                        new int[]{30, 60, 90, 120, 144, 165, 240, 260},
+                        value -> value + " FPS"
+                )
+        ));
+        display.rows.add(Row.value(
+                "GUI Scale",
+                "Scale Minecraft interface elements.",
+                client.options.getGuiScale().getValue() == 0
+                        ? "Auto"
+                        : Integer.toString(client.options.getGuiScale().getValue()),
+                () -> openIntegerChoice(
+                        "GUI Scale",
+                        client.options.getGuiScale(),
+                        new int[]{0, 1, 2, 3, 4},
+                        value -> value == 0 ? "Auto" : Integer.toString(value)
+                )
+        ));
+        display.rows.add(Row.value(
+                "Brightness",
+                "Adjust visibility in dark areas.",
+                percentage(client.options.getGamma().getValue()),
+                () -> openDoubleChoice(
+                        "Brightness",
+                        client.options.getGamma(),
+                        new double[]{0.0, 0.25, 0.5, 0.75, 1.0},
+                        LazyBuilderSettingsScreen::percentage
+                )
+        ));
+        display.rows.add(Row.value(
+                "Field of View",
+                "Adjust the horizontal view angle.",
+                client.options.getFov().getValue() + "°",
+                () -> openIntegerChoice(
+                        "Field of View",
+                        client.options.getFov(),
+                        new int[]{30, 50, 60, 70, 80, 90, 100, 110},
+                        value -> value + "°"
+                )
         ));
         sections.add(display);
 
+        Section world = new Section("WORLD");
+        world.rows.add(Row.value(
+                "Render Distance",
+                "How far terrain is rendered around the player.",
+                client.options.getViewDistance().getValue() + " Chunks",
+                () -> openIntegerChoice(
+                        "Render Distance",
+                        client.options.getViewDistance(),
+                        range(2, 32, 2),
+                        value -> value + " Chunks"
+                )
+        ));
+        world.rows.add(Row.value(
+                "Simulation Distance",
+                "How far world simulation remains active.",
+                client.options.getSimulationDistance().getValue() + " Chunks",
+                () -> openIntegerChoice(
+                        "Simulation Distance",
+                        client.options.getSimulationDistance(),
+                        range(5, 32, 1),
+                        value -> value + " Chunks"
+                )
+        ));
+        world.rows.add(Row.value(
+                "Entity Distance",
+                "Scale the distance at which entities are rendered.",
+                percentage(client.options.getEntityDistanceScaling().getValue()),
+                () -> openDoubleChoice(
+                        "Entity Distance",
+                        client.options.getEntityDistanceScaling(),
+                        new double[]{0.5, 0.75, 1.0, 1.25, 1.5, 2.0},
+                        LazyBuilderSettingsScreen::percentage
+                )
+        ));
+        sections.add(world);
+
+        Section quality = new Section("QUALITY");
+        quality.rows.add(Row.value(
+                "Graphics",
+                "Choose the overall Minecraft graphics mode.",
+                humanize(client.options.getGraphicsMode().getValue()),
+                () -> openEnumChoice(
+                        "Graphics",
+                        client.options.getGraphicsMode(),
+                        GraphicsMode.values()
+                )
+        ));
+        quality.rows.add(Row.value(
+                "Clouds",
+                "Choose how clouds are rendered.",
+                humanize(client.options.getCloudRenderMode().getValue()),
+                () -> openEnumChoice(
+                        "Clouds",
+                        client.options.getCloudRenderMode(),
+                        CloudRenderMode.values()
+                )
+        ));
+        quality.rows.add(Row.value(
+                "Particles",
+                "Control particle density.",
+                humanize(client.options.getParticles().getValue()),
+                () -> openEnumChoice(
+                        "Particles",
+                        client.options.getParticles(),
+                        ParticlesMode.values()
+                )
+        ));
+        quality.rows.add(Row.value(
+                "Mipmap Levels",
+                "Texture filtering detail for distant blocks.",
+                Integer.toString(client.options.getMipmapLevels().getValue()),
+                () -> openIntegerChoice(
+                        "Mipmap Levels",
+                        client.options.getMipmapLevels(),
+                        new int[]{0, 1, 2, 3, 4},
+                        Object::toString
+                )
+        ));
+        sections.add(quality);
+
         Section performance = new Section("PERFORMANCE");
-        performance.rows.add(Row.status(
-                "Performance Settings",
-                "Extra frame-rate, rendering and memory controls are integrated into Video Settings.",
-                "In Video"
+        performance.rows.add(Row.action(
+                "Performance Tuning",
+                "Background FPS, rendering, visibility and memory controls.",
+                performanceProviderAvailable() ? "Open" : "Unavailable",
+                this::openPerformanceSettings
         ));
         sections.add(performance);
     }
 
     private void buildControlsSections() {
-        Section input = new Section("INPUT");
-        input.rows.add(Row.action(
-                "Controls & Keybinds",
-                "Keyboard, mouse and all registered Minecraft/Fabric key bindings.",
+        if (client == null) return;
+
+        Section mouse = new Section("MOUSE");
+        mouse.rows.add(Row.value(
+                "Sensitivity",
+                "Mouse look sensitivity.",
+                percentage(client.options.getMouseSensitivity().getValue()),
+                () -> openDoubleChoice(
+                        "Mouse Sensitivity",
+                        client.options.getMouseSensitivity(),
+                        new double[]{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0},
+                        LazyBuilderSettingsScreen::percentage
+                )
+        ));
+        mouse.rows.add(Row.toggle(
+                "Invert Mouse",
+                "Invert vertical mouse movement.",
+                client.options.getInvertYMouse().getValue(),
+                value -> setOption(client.options.getInvertYMouse(), value)
+        ));
+        mouse.rows.add(Row.toggle(
+                "Raw Input",
+                "Read mouse movement directly from the operating system.",
+                client.options.getRawMouseInput().getValue(),
+                value -> setOption(client.options.getRawMouseInput(), value)
+        ));
+        mouse.rows.add(Row.toggle(
+                "Discrete Mouse Scroll",
+                "Use discrete steps for mouse-wheel scrolling.",
+                client.options.getDiscreteMouseScroll().getValue(),
+                value -> setOption(client.options.getDiscreteMouseScroll(), value)
+        ));
+        mouse.rows.add(Row.value(
+                "Mouse Wheel Sensitivity",
+                "Adjust scroll-wheel input sensitivity.",
+                String.format(Locale.ROOT, "%.2f", client.options.getMouseWheelSensitivity().getValue()),
+                () -> openDoubleChoice(
+                        "Mouse Wheel Sensitivity",
+                        client.options.getMouseWheelSensitivity(),
+                        new double[]{0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0},
+                        value -> String.format(Locale.ROOT, "%.2f", value)
+                )
+        ));
+        sections.add(mouse);
+
+        Section movement = new Section("MOVEMENT");
+        movement.rows.add(Row.toggle(
+                "Auto Jump",
+                "Automatically jump when moving into a one-block obstacle.",
+                client.options.getAutoJump().getValue(),
+                value -> setOption(client.options.getAutoJump(), value)
+        ));
+        movement.rows.add(Row.toggle(
+                "Toggle Sneak",
+                "Press once to remain sneaking until toggled again.",
+                client.options.getSneakToggled().getValue(),
+                value -> setOption(client.options.getSneakToggled(), value)
+        ));
+        movement.rows.add(Row.toggle(
+                "Toggle Sprint",
+                "Press once to remain sprinting until toggled again.",
+                client.options.getSprintToggled().getValue(),
+                value -> setOption(client.options.getSprintToggled(), value)
+        ));
+        sections.add(movement);
+
+        Section bindings = new Section("KEY BINDINGS");
+        bindings.rows.add(Row.action(
+                "Key Bindings",
+                "Configure every vanilla and Fabric-registered key binding.",
                 "Open",
                 () -> {
                     if (client != null) {
-                        client.setScreen(new ControlsOptionsScreen(this, client.options));
+                        client.setScreen(new LazyBuilderKeybindSettingsScreen(this));
                     }
                 }
         ));
-        sections.add(input);
+        sections.add(bindings);
     }
 
     private void buildInterfaceSections() {
@@ -167,7 +374,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(hud);
 
-        Section capture = new Section("CAPTURE");
+        Section capture = new Section("SCREENSHOTS");
         capture.rows.add(Row.toggle(
                 "Contextual Screenshot Names",
                 "Add world or server context to automatic screenshot names.",
@@ -176,7 +383,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(capture);
 
-        Section creative = new Section("CREATIVE");
+        Section creative = new Section("CREATIVE MODE");
         creative.rows.add(Row.toggle(
                 "Quick Creative Search",
                 "Start typing in Creative inventory to search immediately.",
@@ -191,15 +398,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
         building.rows.add(Row.status(
                 "Editing Tools",
                 "Axiom and LazyBuilder building extensions.",
-                "In Editor"
+                "Managed in Editor"
         ));
         sections.add(building);
 
-        Section worlds = new Section("WORLD MANAGEMENT");
+        Section worlds = new Section("WORLD & MAP");
         worlds.rows.add(Row.status(
                 "Map & Worlds",
                 "World map, world management and transfer workflows.",
-                "Per World"
+                "Managed per World"
         ));
         sections.add(worlds);
     }
@@ -223,7 +430,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 row.y = baseY - scrollOffset;
                 row.width = width;
 
-                int controlWidth = Math.min(CONTROL_WIDTH, Math.max(96, width / 3));
+                int controlWidth = Math.min(CONTROL_WIDTH, Math.max(100, width / 3));
                 int controlX = x + width - controlWidth - 8;
                 int controlY = row.y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
 
@@ -245,7 +452,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
             baseY += SECTION_GAP;
         }
-
     }
 
     private int totalContentHeight() {
@@ -298,6 +504,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
         refreshCategory();
     }
 
+    private <T> void setOption(SimpleOption<T> option, T value) {
+        if (client == null) return;
+        option.setValue(value);
+        client.options.write();
+        client.options.sendClientSettings();
+        refreshCategory();
+    }
+
     private void updateInterface(UtilityPreferences updated) {
         UtilityManagerClient.updatePreferences(updated);
         refreshCategory();
@@ -315,11 +529,78 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
-    @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Custom shell owns its background. Prevent Screen.render() from applying
-        // Minecraft's blur/darkening a second time over our labels and section text.
+    private void openIntegerChoice(
+            String title,
+            SimpleOption<Integer> option,
+            int[] values,
+            Function<Integer, String> label
+    ) {
+        if (client == null) return;
+        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        int current = option.getValue();
+        for (int value : values) {
+            choices.add(new LazyBuilderChoiceScreen.Choice(
+                    label.apply(value),
+                    value == current,
+                    () -> setOption(option, value)
+            ));
+        }
+        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
     }
+
+    private void openDoubleChoice(
+            String title,
+            SimpleOption<Double> option,
+            double[] values,
+            Function<Double, String> label
+    ) {
+        if (client == null) return;
+        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        double current = option.getValue();
+        for (double value : values) {
+            choices.add(new LazyBuilderChoiceScreen.Choice(
+                    label.apply(value),
+                    Math.abs(value - current) < 0.0001,
+                    () -> setOption(option, value)
+            ));
+        }
+        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
+    }
+
+    private <E extends Enum<E>> void openEnumChoice(
+            String title,
+            SimpleOption<E> option,
+            E[] values
+    ) {
+        if (client == null) return;
+        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        E current = option.getValue();
+        for (E value : values) {
+            choices.add(new LazyBuilderChoiceScreen.Choice(
+                    humanize(value),
+                    value == current,
+                    () -> setOption(option, value)
+            ));
+        }
+        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
+    }
+
+    private boolean performanceProviderAvailable() {
+        return FabricLoader.getInstance().getObjectShare().get(PERFORMANCE_SCREEN_SHARE) instanceof Function<?, ?>;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void openPerformanceSettings() {
+        if (client == null) return;
+        Object shared = FabricLoader.getInstance().getObjectShare().get(PERFORMANCE_SCREEN_SHARE);
+        if (shared instanceof Function<?, ?> raw) {
+            Function<Screen, Screen> provider = (Function<Screen, Screen>) raw;
+            client.setScreen(provider.apply(this));
+        }
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -331,8 +612,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int panelRight = panelLeft + panelWidth();
 
         context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
-        context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+        context.fill(panelRight + 14, VIEWPORT_TOP, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
 
+        Row hoveredRow = null;
         context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
         for (Section section : sections) {
             if (section.y + SECTION_HEIGHT > VIEWPORT_TOP && section.y < viewportBottom()) {
@@ -340,7 +622,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         textRenderer,
                         Text.literal(section.title),
                         panelLeft,
-                        section.y + 4,
+                        section.y + 3,
                         TEXT_SECONDARY
                 );
             }
@@ -350,57 +632,50 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
                 boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
                         && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
-                int fill = hovered ? ROW_HOVER : ROW_FILL;
+                if (hovered) hoveredRow = row;
 
+                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, hovered ? ROW_HOVER : ROW_FILL);
                 context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
-                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, fill);
 
                 int textMax = Math.max(70, row.width - CONTROL_WIDTH - 34);
                 context.drawTextWithShadow(
                         textRenderer,
                         Text.literal(textRenderer.trimToWidth(row.title, textMax)),
                         row.x + 8,
-                        row.y + 8,
+                        row.y + 12,
                         TEXT_PRIMARY
-                );
-                context.drawTextWithShadow(
-                        textRenderer,
-                        Text.literal(textRenderer.trimToWidth(row.description, textMax)),
-                        row.x + 8,
-                        row.y + 23,
-                        TEXT_MUTED
                 );
             }
         }
         context.disableScissor();
 
         renderScrollBar(context, panelRight + 6);
-        renderContextPane(context, panelRight + 30);
+        renderContextPane(context, panelRight + 30, hoveredRow);
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderContextPane(DrawContext context, int x) {
+    private void renderContextPane(DrawContext context, int x, Row hoveredRow) {
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
 
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal(category.label.toUpperCase(java.util.Locale.ROOT)),
-                x,
-                88,
-                TEXT_PRIMARY
-        );
+        String title;
+        String description;
+        if (hoveredRow != null) {
+            title = hoveredRow.title.toUpperCase(Locale.ROOT);
+            description = hoveredRow.description;
+        } else {
+            title = category.label.toUpperCase(Locale.ROOT);
+            description = switch (category) {
+                case VIDEO -> "Display, world rendering, quality and performance controls.";
+                case CONTROLS -> "Mouse, movement and all registered key bindings.";
+                case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
+                case TOOLS -> "Tool-specific setup stays close to the workflow that owns it.";
+            };
+        }
 
-        String description = switch (category) {
-            case VIDEO -> "Display and rendering options stay integrated with Minecraft.";
-            case CONTROLS -> "All key bindings remain in the standard Minecraft controls screen.";
-            case INTERFACE -> "Only builder-facing interface preferences are exposed here.";
-            case TOOLS -> "Tool-specific configuration stays close to the workflow that owns it.";
-        };
-
-        List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(Text.literal(description), available);
-        int y = 106;
-        for (net.minecraft.text.OrderedText line : lines) {
+        context.drawTextWithShadow(textRenderer, Text.literal(title), x, 84, TEXT_PRIMARY);
+        int y = 102;
+        for (var line : textRenderer.wrapLines(Text.literal(description), available)) {
             context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
             y += 11;
         }
@@ -415,7 +690,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
         int travel = Math.max(1, trackHeight - thumbHeight);
         int thumbY = top + (int) Math.round((scrollOffset / (double) maxScroll) * travel);
-
         context.fill(x, top, x + 2, bottom, 0x334A525C);
         context.fill(x, thumbY, x + 2, thumbY + thumbHeight, ACCENT);
     }
@@ -452,11 +726,38 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private int panelWidth() {
         int shell = shellWidth();
         if (shell < 560) return shell - 16;
-        return Math.min(520, Math.max(390, (int) (shell * 0.68)));
+        return Math.min(540, Math.max(410, (int) (shell * 0.64)));
     }
 
     private int panelLeft() {
         return shellLeft() + 8;
+    }
+
+    private static String percentage(double value) {
+        return Math.round(value * 100.0) + "%";
+    }
+
+    private static String humanize(Object value) {
+        String raw = String.valueOf(value).replace('_', ' ').toLowerCase(Locale.ROOT);
+        StringBuilder result = new StringBuilder(raw.length());
+        boolean capitalize = true;
+        for (char c : raw.toCharArray()) {
+            if (capitalize && Character.isLetter(c)) {
+                result.append(Character.toUpperCase(c));
+                capitalize = false;
+            } else {
+                result.append(c);
+            }
+            if (c == ' ') capitalize = true;
+        }
+        return result.toString();
+    }
+
+    private static int[] range(int start, int end, int step) {
+        int size = ((end - start) / step) + 1;
+        int[] values = new int[size];
+        for (int i = 0; i < size; i++) values[i] = start + i * step;
+        return values;
     }
 
     @Override
@@ -507,32 +808,22 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
 
         static Row action(String title, String description, String control, Runnable action) {
-            return new Row(
-                    title,
-                    description,
-                    () -> control,
-                    true,
-                    LazyBuilderSettingsControlWidget.Kind.ACTION,
-                    action
-            );
+            return new Row(title, description, () -> control, true, LazyBuilderSettingsControlWidget.Kind.ACTION, action);
+        }
+
+        static Row value(String title, String description, String value, Runnable action) {
+            return new Row(title, description, () -> value, true, LazyBuilderSettingsControlWidget.Kind.VALUE, action);
         }
 
         static Row status(String title, String description, String status) {
-            return new Row(
-                    title,
-                    description,
-                    () -> status,
-                    false,
-                    LazyBuilderSettingsControlWidget.Kind.STATUS,
-                    () -> {}
-            );
+            return new Row(title, description, () -> status, false, LazyBuilderSettingsControlWidget.Kind.STATUS, () -> {});
         }
 
         static Row toggle(
                 String title,
                 String description,
                 boolean enabled,
-                java.util.function.Consumer<Boolean> setter
+                Consumer<Boolean> setter
         ) {
             return new Row(
                     title,

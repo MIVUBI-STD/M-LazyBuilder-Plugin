@@ -1,12 +1,13 @@
 package com.halokaryamedia.lazybuilder.performance.visualproof;
 
 import com.halokaryamedia.lazybuilder.performance.ui.PerformanceVideoSettingsScreen;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.screen.Screen;
+
+import java.util.function.Function;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
-import net.fabricmc.fabric.api.client.screen.v1.Screens;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.option.VideoOptionsScreen;
 
 /** Real Minecraft renderer proof for LazyBuilder performance settings. */
 @SuppressWarnings("UnstableApiUsage")
@@ -16,10 +17,7 @@ public final class PerformanceManagerVisualProofTest implements FabricClientGame
         try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             context.waitTicks(30);
 
-            captureVideoIntegration(context, 1440, 900, 2,
-                    "performance-video-integration-1440x900-gui2");
-            captureVideoIntegration(context, 620, 480, 2,
-                    "performance-video-integration-620x480-gui2");
+            verifySettingsBridge(context);
 
             capturePerformanceSettings(context, 1440, 900, 2,
                     "performance-settings-1440x900-gui2");
@@ -32,36 +30,19 @@ public final class PerformanceManagerVisualProofTest implements FabricClientGame
         }
     }
 
-    private static void captureVideoIntegration(
-            ClientGameTestContext context,
-            int width,
-            int height,
-            int guiScale,
-            String screenshotName
-    ) {
-        context.setScreen(() -> null);
-        configureViewport(context, width, height, guiScale);
-        context.setScreen(() -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            return new VideoOptionsScreen(null, client, client.options);
-        });
-        context.waitForScreen(VideoOptionsScreen.class);
-        context.waitTicks(8);
-
+    @SuppressWarnings("unchecked")
+    private static void verifySettingsBridge(ClientGameTestContext context) {
         context.runOnClient(client -> {
-            if (!(client.currentScreen instanceof VideoOptionsScreen screen)) {
-                throw new AssertionError("Expected VideoOptionsScreen");
+            Object shared = FabricLoader.getInstance().getObjectShare()
+                    .get("lazybuilder-performance-manager:settings-screen");
+            if (!(shared instanceof Function<?, ?> raw)) {
+                throw new AssertionError("Performance settings screen provider was not published");
             }
-            boolean found = Screens.getButtons(screen).stream()
-                    .anyMatch(button -> "Performance...".equals(button.getMessage().getString()));
-            if (!found) {
-                throw new AssertionError("Video Settings did not expose the Performance entry");
+            Screen screen = ((Function<Screen, Screen>) raw).apply(null);
+            if (!(screen instanceof PerformanceVideoSettingsScreen)) {
+                throw new AssertionError("Performance settings provider returned the wrong screen");
             }
         });
-
-        context.takeScreenshot(screenshotName);
-        context.setScreen(() -> null);
-        context.waitTicks(4);
     }
 
     private static void capturePerformanceSettings(
