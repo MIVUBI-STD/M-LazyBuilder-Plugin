@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -112,6 +113,11 @@ public final class TerrainGpuResidencyTracker {
      * If exclusive vanilla-backing recovery fails, logical state is retained for retry/fallback.
      */
     public static boolean clearSafely() {
+        if (!RenderSystem.isOnRenderThread()) {
+            RenderSystem.recordRenderCall(TerrainGpuResidencyTracker::clearSafely);
+            return false;
+        }
+
         TerrainMultiDrawSubmissionBackend.clear();
         TerrainPerDrawShaderBackend.clear();
         if (!TerrainPhysicalArenaManager.clearSafely()) {
