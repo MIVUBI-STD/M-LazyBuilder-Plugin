@@ -1,4 +1,4 @@
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,7 +8,39 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 const LOG_HISTORY_COUNT: usize = 4;
 static NEXT_CORRELATION_ID: AtomicU64 = AtomicU64::new(1);
-static LOG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static LOG_WRITER: OnceLock<Mutex<Option<LogWriter>>> = OnceLock::new();
+
+struct LogWriter {
+    path: PathBuf,
+    file: Option<File>,
+    bytes_written: u64,
+}
+
+impl LogWriter {
+    fn open() -> Result<Self, String> {
+        let path = launcher_log_path()?;
+        let parent = path.parent().ok_or_else(|| "Launcher log directory is unavailable".to_string())?;
+        fs::create_dir_all(parent).map_err(|error| format!("Could not create Launcher log directory: {error}"))?;
+        rotate_if_needed(&path);
+        let bytes_written = fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0);
+        let file = OpenOptions::new().create(true).append(true).open(&path)
+            .map_err(|error| format!("Could not open Launcher log: {error}"))?;
+        Ok(Self { path, file: Some(file), bytes_written })
+    }
+
+    fn write_line(&mut self, line: &str) {
+        if self.bytes_written >= MAX_LOG_BYTES {
+            self.file.take();
+            rotate_if_needed(&self.path);
+            self.file = OpenOptions::new().create(true).append(true).open(&self.path).ok();
+            self.bytes_written = 0;
+        }
+        let Some(file) = self.file.as_mut() else { return; };
+        if writeln!(file, "{line}").is_ok() {
+            self.bytes_written = self.bytes_written.saturating_add(line.len() as u64 + 1);
+        }
+    }
+}
 
 pub fn launcher_log_path() -> Result<PathBuf, String> {
     let base = std::env::var_os("LOCALAPPDATA")
@@ -41,16 +73,17 @@ pub fn new_correlation_id(scope: &str) -> String {
 pub fn log(level: &str, message: &str) { log_with_context(level, "-", message); }
 
 pub fn log_with_context(level: &str, correlation_id: &str, message: &str) {
-    let Ok(_guard) = LOG_WRITE_LOCK.get_or_init(|| Mutex::new(())).lock() else { return; };
-    let Ok(path) = launcher_log_path() else { return; };
-    let Some(parent) = path.parent() else { return; };
-    if fs::create_dir_all(parent).is_err() { return; }
-    rotate_if_needed(&path);
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else { return; };
+    let writer = LOG_WRITER.get_or_init(|| Mutex::new(None));
+    let Ok(mut guard) = writer.lock() else { return; };
+    if guard.is_none() {
+        *guard = LogWriter::open().ok();
+    }
+    let Some(writer) = guard.as_mut() else { return; };
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_secs()).unwrap_or_default();
     let sanitized = message.replace('\r', " ").replace('\n', " ");
     let correlation = correlation_id.replace('\r', "").replace('\n', "").replace(' ', "");
-    let _ = writeln!(file, "[{timestamp}] {} [{}] {sanitized}", level.to_ascii_uppercase(), if correlation.is_empty() { "-" } else { &correlation });
+    let line = format!("[{timestamp}] {} [{}] {sanitized}", level.to_ascii_uppercase(), if correlation.is_empty() { "-" } else { &correlation });
+    writer.write_line(&line);
 }
 
 fn rotate_if_needed(path: &Path) {

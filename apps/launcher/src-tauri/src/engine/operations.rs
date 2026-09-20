@@ -171,7 +171,7 @@ impl OperationRegistry {
     }
 
     pub fn set_phase(&self, id: &str, phase: &str, status: &str, details: &str, progress: Option<OperationProgress>) -> Result<OperationSnapshot, String> {
-        let result = self.mutate(id, |entry| {
+        let result = self.mutate_ephemeral(id, |entry| {
             ensure_active(entry)?;
             entry.phase = phase.trim().to_string();
             entry.status = status.trim().to_string();
@@ -185,7 +185,7 @@ impl OperationRegistry {
 
     #[cfg(test)]
     pub fn set_cancelable(&self, id: &str, can_cancel: bool) -> Result<OperationSnapshot, String> {
-        self.mutate(id, |entry| {
+        self.mutate_ephemeral(id, |entry| {
             ensure_active(entry)?;
             if entry.cancel_requested && can_cancel { return Err("Cancellation is already pending for this launcher operation".into()); }
             entry.can_cancel = can_cancel;
@@ -194,7 +194,7 @@ impl OperationRegistry {
     }
 
     pub fn add_warning(&self, id: &str, warning: &str) -> Result<OperationSnapshot, String> {
-        self.mutate(id, |entry| {
+        self.mutate_ephemeral(id, |entry| {
             ensure_active(entry)?;
             let warning = warning.trim();
             if !warning.is_empty() && !entry.warnings.iter().any(|existing| existing == warning) {
@@ -261,6 +261,19 @@ impl OperationRegistry {
         trim_history(&mut next);
         self.persist_entries(&next)?;
         *guard = next;
+        Ok(result)
+    }
+
+    fn mutate_ephemeral<F>(&self, id: &str, mutation: F) -> Result<OperationSnapshot, String>
+    where F: FnOnce(&mut OperationSnapshot) -> Result<(), String>,
+    {
+        self.ensure_available()?;
+        let mut guard = self.entries.write().map_err(|_| "operation registry lock poisoned".to_string())?;
+        let entry = guard.iter_mut().find(|entry| entry.id == id).ok_or_else(|| "Launcher operation was not found".to_string())?;
+        mutation(entry)?;
+        entry.updated_at_unix_seconds = now_unix_seconds();
+        let result = entry.clone();
+        trim_history(&mut guard);
         Ok(result)
     }
 
@@ -523,6 +536,33 @@ mod tests {
         let second = reconcile_interrupted_entries(&mut entries, 60);
         assert_eq!(second.interrupted, 0);
         assert_eq!(entries[0].completed_at_unix_seconds, Some(50));
+    }
+
+    #[test]
+    fn ephemeral_progress_is_persisted_only_at_the_next_durable_boundary() {
+        let path = temp_journal_path("ephemeral-progress");
+        let registry = OperationRegistry {
+            entries: RwLock::new(VecDeque::new()),
+            journal_path: Some(path.clone()),
+            disabled_reason: None,
+        };
+        let started = registry.begin("backup-server", "workspace:test", true).unwrap();
+        registry.set_phase(
+            &started.id,
+            "copying",
+            "Copying",
+            "Transient progress",
+            Some(OperationProgress { current: 5, total: Some(10), unit: "files".into() }),
+        ).unwrap();
+
+        let durable_before_finish = read_journal_file(&path).unwrap();
+        assert_eq!(durable_before_finish[0].phase, "starting");
+
+        registry.succeed(&started.id, "Done").unwrap();
+        let durable_after_finish = read_journal_file(&path).unwrap();
+        assert_eq!(durable_after_finish[0].phase, "copying");
+        assert_eq!(durable_after_finish[0].state, OperationState::Succeeded);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

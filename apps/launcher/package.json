@@ -8,14 +8,15 @@
   },
   "scripts": {
     "dev:frontend": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "prepare:icons": "tauri icon src-tauri/app-icon.svg",
+    "prepare:icons": "node scripts/prepare-icons.mjs",
     "dev:app": "npm run prepare:icons && tauri dev",
     "build:frontend": "vite build",
     "build:app": "npm run prepare:icons && tauri build",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
     "check:rust": "npm run prepare:icons && cargo check --locked --manifest-path src-tauri/Cargo.toml",
     "validate:quick": "npm run typecheck && npm run build:frontend && npm run check:rust",
-    "verify:source": "npm run typecheck && npm run build:frontend && npm run prepare:icons && cargo check --locked --manifest-path src-tauri/Cargo.toml && cargo test --locked --manifest-path src-tauri/Cargo.toml"
+    "verify:source": "npm run typecheck && npm run build:frontend && npm run prepare:icons && cargo check --locked --manifest-path src-tauri/Cargo.toml && cargo test --locked --manifest-path src-tauri/Cargo.toml",
+    "prepare:icons:force": "tauri icon src-tauri/app-icon.svg"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"

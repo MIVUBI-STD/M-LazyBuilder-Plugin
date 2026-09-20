@@ -16,6 +16,13 @@ const MIN_DUPLICATE_HEADROOM_BYTES: u64 = 512 * 1024 * 1024;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
 static ACTIVE_WORKSPACE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+static REGISTRY_CACHE: OnceLock<RwLock<Option<RegistryCacheEntry>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct RegistryCacheEntry {
+    path: PathBuf,
+    registry: WorkspaceRegistryFile,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -584,19 +591,47 @@ fn pending_duplicates_path() -> Result<PathBuf, String> { Ok(app_data_root()?.jo
 
 fn load_registry() -> Result<WorkspaceRegistryFile, String> {
     let path = registry_path()?;
+    if let Some(cached) = REGISTRY_CACHE
+        .get_or_init(|| RwLock::new(None))
+        .read()
+        .map_err(|_| "workspace registry cache lock poisoned".to_string())?
+        .as_ref()
+        .filter(|cached| cached.path == path)
+    {
+        return Ok(cached.registry.clone());
+    }
+
     recover_json_file(&path, "workspace registry")?;
-    if !metadata_entry_exists(&path, "workspace registry")? { return Ok(WorkspaceRegistryFile::default()); }
-    let mut registry: WorkspaceRegistryFile =
-        persistence::read_json(&path, "workspace registry")?;
-    if registry.schema_version != REGISTRY_SCHEMA_VERSION { return Err("Workspace registry schema is newer or unsupported".into()); }
-    registry.servers.retain(|entry| !entry.path.trim().is_empty());
-    cleanup_json_recovery_files(&path, "workspace registry")?;
+    let mut registry = if metadata_entry_exists(&path, "workspace registry")? {
+        let mut registry: WorkspaceRegistryFile = persistence::read_json(&path, "workspace registry")?;
+        if registry.schema_version != REGISTRY_SCHEMA_VERSION {
+            return Err("Workspace registry schema is newer or unsupported".into());
+        }
+        registry.servers.retain(|entry| !entry.path.trim().is_empty());
+        cleanup_json_recovery_files(&path, "workspace registry")?;
+        registry
+    } else {
+        WorkspaceRegistryFile::default()
+    };
+
+    registry.servers.shrink_to_fit();
+    *REGISTRY_CACHE
+        .get_or_init(|| RwLock::new(None))
+        .write()
+        .map_err(|_| "workspace registry cache lock poisoned".to_string())? =
+        Some(RegistryCacheEntry { path, registry: registry.clone() });
     Ok(registry)
 }
 
 fn save_registry(registry: &WorkspaceRegistryFile) -> Result<(), String> {
     let path = registry_path()?;
-    persistence::write_json_atomically(&path, registry, "workspace registry")
+    persistence::write_json_atomically(&path, registry, "workspace registry")?;
+    *REGISTRY_CACHE
+        .get_or_init(|| RwLock::new(None))
+        .write()
+        .map_err(|_| "workspace registry cache lock poisoned".to_string())? =
+        Some(RegistryCacheEntry { path, registry: registry.clone() });
+    Ok(())
 }
 
 fn load_pending_deletions() -> Result<Vec<PendingDeletion>, String> {

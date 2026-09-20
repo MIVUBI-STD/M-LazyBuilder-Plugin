@@ -1,13 +1,23 @@
 use crate::engine::{paths, persistence};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 use zip::ZipArchive;
 
 const MAX_PLUGIN_METADATA_BYTES: u64 = 256 * 1024;
+const MAX_PLUGIN_METADATA_CACHE_ENTRIES: usize = 256;
+static PLUGIN_METADATA_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedPluginMetadata>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct CachedPluginMetadata {
+    size: u64,
+    modified: Option<SystemTime>,
+    result: Result<PluginMetadata, String>,
+}
 
 #[derive(Default)]
 pub struct PluginManagerState {
@@ -472,6 +482,28 @@ fn read_metadata(path: &Path) -> Result<PluginMetadata, String> {
     persistence::safe_path::ensure_regular_file(path, "plugin JAR")
         .map_err(|error| format!("Unsafe plugin JAR {}: {error}", path.display()))?;
 
+    let fingerprint = fs::metadata(path).map_err(|error| error.to_string())?;
+    let size = fingerprint.len();
+    let modified = fingerprint.modified().ok();
+    if let Ok(cache) = PLUGIN_METADATA_CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        if let Some(cached) = cache.get(path) {
+            if cached.size == size && cached.modified == modified {
+                return cached.result.clone();
+            }
+        }
+    }
+
+    let result = read_metadata_uncached(path);
+    if let Ok(mut cache) = PLUGIN_METADATA_CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        if cache.len() >= MAX_PLUGIN_METADATA_CACHE_ENTRIES && !cache.contains_key(path) {
+            cache.clear();
+        }
+        cache.insert(path.to_path_buf(), CachedPluginMetadata { size, modified, result: result.clone() });
+    }
+    result
+}
+
+fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("Invalid plugin JAR: {error}"))?;
     let metadata_entry_name = if archive.file_names().any(|name| name == "plugin.yml") {
