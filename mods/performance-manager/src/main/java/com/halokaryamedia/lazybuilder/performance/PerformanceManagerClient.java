@@ -37,6 +37,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         if (runtime != null) runtime.updatePreferences(updated);
     }
 
+    public static String lastPreferenceUpdateStatus() {
+        return runtime == null ? "runtime-unavailable" : runtime.lastPreferenceUpdateStatus();
+    }
+
     public static boolean shouldRenderEntity(Entity entity) {
         return runtime == null || runtime.shouldRender(entity);
     }
