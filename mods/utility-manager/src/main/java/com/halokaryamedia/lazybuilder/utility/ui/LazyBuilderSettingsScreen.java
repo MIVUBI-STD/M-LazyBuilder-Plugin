@@ -207,8 +207,12 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void layoutSections() {
         int x = panelLeft();
         int width = panelWidth();
-        int baseY = CONTENT_TOP;
         int viewportBottom = viewportBottom();
+        int contentHeight = totalContentHeight();
+        int viewportHeight = Math.max(1, viewportBottom - CONTENT_TOP);
+        maxScroll = Math.max(0, contentHeight - viewportHeight);
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
+        int baseY = CONTENT_TOP;
 
         for (Section section : sections) {
             section.y = baseY - scrollOffset;
@@ -242,12 +246,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
             baseY += SECTION_GAP;
         }
 
-        int contentHeight = Math.max(0, baseY - CONTENT_TOP);
-        int viewportHeight = Math.max(1, viewportBottom - CONTENT_TOP);
-        maxScroll = Math.max(0, contentHeight - viewportHeight);
-        if (scrollOffset > maxScroll) {
-            scrollOffset = maxScroll;
+    }
+
+    private int totalContentHeight() {
+        int total = 0;
+        for (Section section : sections) {
+            total += SECTION_HEIGHT;
+            total += section.rows.size() * (ROW_HEIGHT + ROW_GAP);
+            total += SECTION_GAP;
         }
+        return Math.max(0, total);
     }
 
     private void addFooter() {

@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableTextContent;
 
@@ -27,10 +28,10 @@ public final class PauseMenuController {
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
             if (!(screen instanceof GameMenuScreen)) return;
 
-            List<ButtonWidget> buttons = Screens.getButtons(screen);
+            List<ClickableWidget> buttons = Screens.getButtons(screen);
             if (buttons.isEmpty()) return;
 
-            List<ButtonWidget> vanillaButtons = new ArrayList<>(buttons);
+            List<ClickableWidget> vanillaButtons = new ArrayList<>(buttons);
             ButtonWidget resume = find(vanillaButtons, "menu.returnToGame");
             ButtonWidget quit = findQuit(vanillaButtons);
 
@@ -56,14 +57,16 @@ public final class PauseMenuController {
         });
     }
 
-    private static ButtonWidget find(List<ButtonWidget> buttons, String key) {
-        for (ButtonWidget button : buttons) {
-            if (key.equals(translationKey(button))) return button;
+    private static ButtonWidget find(List<ClickableWidget> buttons, String key) {
+        for (ClickableWidget widget : buttons) {
+            if (widget instanceof ButtonWidget button && key.equals(translationKey(button))) {
+                return button;
+            }
         }
         return null;
     }
 
-    private static ButtonWidget findQuit(List<ButtonWidget> buttons) {
+    private static ButtonWidget findQuit(List<ClickableWidget> buttons) {
         for (String key : List.of("menu.disconnect", "menu.returnToMenu", "menu.saveAndQuit")) {
             ButtonWidget button = find(buttons, key);
             if (button != null) return button;
