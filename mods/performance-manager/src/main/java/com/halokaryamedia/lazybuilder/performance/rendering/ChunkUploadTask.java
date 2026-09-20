@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 /** Queue task that can upload vertex or index data while reusing an already-bound VertexBuffer. */
 public final class ChunkUploadTask implements Runnable {
     private final Object sessionOwner;
+    private final long sessionGeneration;
     private final VertexBuffer buffer;
     private final BuiltBuffer vertexData;
     private final BufferAllocator.CloseableBuffer indexData;
@@ -19,6 +20,7 @@ public final class ChunkUploadTask implements Runnable {
 
     private ChunkUploadTask(
             Object sessionOwner,
+            long sessionGeneration,
             VertexBuffer buffer,
             BuiltBuffer vertexData,
             BufferAllocator.CloseableBuffer indexData,
@@ -26,6 +28,7 @@ public final class ChunkUploadTask implements Runnable {
             int indexPayloadBytes
     ) {
         this.sessionOwner = sessionOwner;
+        this.sessionGeneration = sessionGeneration;
         this.buffer = buffer;
         this.vertexData = vertexData;
         this.indexData = indexData;
@@ -36,12 +39,22 @@ public final class ChunkUploadTask implements Runnable {
     public static ChunkUploadTask vertex(Object sessionOwner, BuiltBuffer data, VertexBuffer buffer) {
         ByteBuffer vertices = data == null ? null : data.getBuffer();
         ByteBuffer sortedIndices = data == null ? null : data.getSortedBuffer();
-        return new ChunkUploadTask(sessionOwner, buffer, data, null, remaining(vertices), remaining(sortedIndices));
+        long generation = TerrainGpuResidencyTracker.sessionGeneration(sessionOwner);
+        return new ChunkUploadTask(
+                sessionOwner,
+                generation,
+                buffer,
+                data,
+                null,
+                remaining(vertices),
+                remaining(sortedIndices)
+        );
     }
 
     public static ChunkUploadTask index(Object sessionOwner, BufferAllocator.CloseableBuffer data, VertexBuffer buffer) {
         ByteBuffer indices = data == null ? null : data.getBuffer();
-        return new ChunkUploadTask(sessionOwner, buffer, null, data, 0, remaining(indices));
+        long generation = TerrainGpuResidencyTracker.sessionGeneration(sessionOwner);
+        return new ChunkUploadTask(sessionOwner, generation, buffer, null, data, 0, remaining(indices));
     }
 
     public VertexBuffer buffer() {
