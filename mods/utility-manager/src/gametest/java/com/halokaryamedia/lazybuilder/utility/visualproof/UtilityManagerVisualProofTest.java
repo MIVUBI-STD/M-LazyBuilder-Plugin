@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionC
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderToolsScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -41,9 +42,10 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-620x480-gui2");
-            captureSettings(context, 620, 480, 2,
-                    LazyBuilderSettingsScreen.Category.TOOLS,
-                    "utility-settings-tools-620x480-gui2");
+            captureTools(context, 1440, 900, 2,
+                    "utility-tools-1440x900-gui2");
+            captureTools(context, 620, 480, 2,
+                    "utility-tools-620x480-gui2");
 
             context.runOnClient(client -> ReconnectState.capture(new ServerInfo(
                     "LazyBuilder Preview",
@@ -218,6 +220,23 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         configureViewport(context, width, height, guiScale);
         context.setScreen(() -> new LazyBuilderSettingsScreen(null, category));
         context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureTools(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderToolsScreen(null));
+        context.waitForScreen(LazyBuilderToolsScreen.class);
         context.waitTicks(8);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);

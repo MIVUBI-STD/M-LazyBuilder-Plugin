@@ -47,9 +47,7 @@ public final class PauseMenuController {
 
             buttons.add(ButtonWidget.builder(
                             Text.literal("Tools"),
-                            button -> client.setScreen(
-                                    new LazyBuilderSettingsScreen(screen, LazyBuilderSettingsScreen.Category.TOOLS)
-                            ))
+                            button -> client.setScreen(new LazyBuilderToolsScreen(screen)))
                     .dimensions(x, firstY + (BUTTON_HEIGHT + GAP), BUTTON_WIDTH, BUTTON_HEIGHT)
                     .build());
 

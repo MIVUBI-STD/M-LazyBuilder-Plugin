@@ -22,8 +22,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
         VIDEO("Video"),
         CONTROLS("Controls"),
-        INTERFACE("Interface"),
-        TOOLS("Tools");
+        INTERFACE("Interface");
 
         private final String label;
 
@@ -112,11 +111,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         value -> update(preferences().withContextualScreenshotNames(value))
                 );
             }
-            case TOOLS -> this.addToggleRow(
-                    rowY,
-                    preferences().instantCreativeSearch(),
-                    value -> update(preferences().withInstantCreativeSearch(value))
-            );
         }
 
         this.addDrawableChild(
@@ -217,10 +211,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 drawRow(context, left, right, firstY + ROW_HEIGHT + ROW_GAP,
                         "Contextual Screenshot Names", "Add world or server context to automatic screenshot names");
             }
-            case TOOLS -> {
-                drawRow(context, left, right, firstY, "Instant Creative Search",
-                        "Start typing in Creative inventory to enter Search Items immediately");
-            }
         }
     }
 
@@ -256,7 +246,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case VIDEO -> Text.literal("VIDEO");
             case CONTROLS -> Text.literal("CONTROLS");
             case INTERFACE -> Text.literal("INTERFACE");
-            case TOOLS -> Text.literal("TOOLS");
         };
     }
 
