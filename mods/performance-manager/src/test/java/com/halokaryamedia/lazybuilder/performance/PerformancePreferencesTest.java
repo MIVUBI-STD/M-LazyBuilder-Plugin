@@ -18,8 +18,8 @@ final class PerformancePreferencesTest {
         PerformancePreferences defaults = PerformancePreferences.defaults();
 
         assertTrue(defaults.backgroundFpsPolicy());
-        assertTrue(defaults.entityCulling());
-        assertTrue(defaults.blockEntityCulling());
+        assertFalse(defaults.entityCulling());
+        assertFalse(defaults.blockEntityCulling());
         assertTrue(defaults.renderingOptimizations());
         assertTrue(defaults.memoryOptimizations());
         assertEquals(30, defaults.unfocusedFpsLimit());
