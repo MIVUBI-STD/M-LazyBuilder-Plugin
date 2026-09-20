@@ -1,7 +1,5 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
-import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
-import com.halokaryamedia.lazybuilder.performance.rendering.GpuBufferGrowthPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainVanillaBackingAccess;
 import com.mojang.blaze3d.platform.GlStateManager;
@@ -21,10 +19,9 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Reuses writable GPU allocations and records actual terrain buffer capacity after uploads. */
+/** Owns terrain buffer residency accounting and reversible vanilla-backing retirement/recovery. */
 @Mixin(VertexBuffer.class)
 abstract class VertexBufferMixin implements TerrainVanillaBackingAccess {
     @Shadow @Final private GlUsage usage;
@@ -37,25 +34,6 @@ abstract class VertexBufferMixin implements TerrainVanillaBackingAccess {
     @Shadow private int indexCount;
     @Shadow private VertexFormat.DrawMode drawMode;
     @Unique private boolean lazybuilder$vanillaBackingRetired;
-
-    @Redirect(
-            method = "uploadVertexBuffer",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/gl/GpuBuffer;resize(I)V"
-            )
-    )
-    private void lazybuilder$resizeOnlyWhenNeeded(GpuBuffer buffer, int newSize) {
-        if (!PerformanceManagerClient.preferences().renderingOptimizations()
-                || this.usage == GlUsage.STATIC_WRITE) {
-            buffer.resize(newSize);
-            return;
-        }
-
-        if (newSize > buffer.size) {
-            buffer.resize(GpuBufferGrowthPolicy.capacityFor(buffer.size, newSize));
-        }
-    }
 
     @Inject(method = "upload", at = @At("HEAD"))
     private void lazybuilder$prepareRetiredBackingForUpload(BuiltBuffer data, CallbackInfo ci) {
