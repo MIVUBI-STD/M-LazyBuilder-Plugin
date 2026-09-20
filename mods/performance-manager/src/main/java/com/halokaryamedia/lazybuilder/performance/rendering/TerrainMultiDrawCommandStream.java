@@ -14,7 +14,8 @@ public final class TerrainMultiDrawCommandStream {
     private static final int TRANSFORM_BYTES = 16;
     private static final ByteBuffer EMPTY = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
     private static ByteBuffer transformScratch = ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
-    private static volatile LayerPacket[] current = emptyLayers();
+    private static final LayerPacket[] EMPTY_LAYERS = emptyLayers();
+    private static volatile LayerPacket[] current = EMPTY_LAYERS.clone();
 
     private TerrainMultiDrawCommandStream() {
     }
@@ -78,6 +79,15 @@ public final class TerrainMultiDrawCommandStream {
         return snapshot[layerSlot];
     }
 
+    public static synchronized void clearLayer(int layerSlot) {
+        if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return;
+        LayerPacket existing = current[layerSlot];
+        if (existing != null && existing.commands().isEmpty()) return;
+        LayerPacket[] next = current.clone();
+        next[layerSlot] = EMPTY_LAYERS[layerSlot];
+        current = next;
+    }
+
     public static Snapshot snapshot() {
         int commands = 0;
         int runs = 0;
@@ -110,7 +120,7 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static synchronized void clear() {
-        current = emptyLayers();
+        current = EMPTY_LAYERS.clone();
     }
 
     private static ByteBuffer emptyBuffer() {
