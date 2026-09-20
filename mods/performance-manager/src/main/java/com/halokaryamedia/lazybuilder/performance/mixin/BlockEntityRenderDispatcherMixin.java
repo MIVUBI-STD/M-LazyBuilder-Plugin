@@ -26,6 +26,7 @@ abstract class BlockEntityRenderDispatcherMixin {
             VertexConsumerProvider vertexConsumers,
             CallbackInfo ci
     ) {
+        if (!PerformanceManagerClient.preferences().blockEntityCulling()) return;
         BlockEntityRenderer<E> renderer = this.get(blockEntity);
         if (!PerformanceManagerClient.shouldRenderBlockEntity(blockEntity, renderer)) ci.cancel();
     }
