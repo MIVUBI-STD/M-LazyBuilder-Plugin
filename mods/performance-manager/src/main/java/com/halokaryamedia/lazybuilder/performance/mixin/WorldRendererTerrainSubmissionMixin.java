@@ -37,11 +37,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class WorldRendererTerrainSubmissionMixin {
     @Shadow @Final private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
 
-    @Unique private final ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$solid = new ObjectArrayList<>();
-    @Unique private final ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$cutoutMipped = new ObjectArrayList<>();
-    @Unique private final ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$cutout = new ObjectArrayList<>();
-    @Unique private final ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$translucent = new ObjectArrayList<>();
-    @Unique private final ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$tripwire = new ObjectArrayList<>();
+    @Unique private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$solid;
+    @Unique private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$cutoutMipped;
+    @Unique private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$cutout;
+    @Unique private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$translucent;
+    @Unique private ObjectArrayList<ChunkBuilder.BuiltChunk> lazybuilder$tripwire;
 
     @Unique private boolean lazybuilder$submissionIndexDirty = true;
     @Unique private boolean lazybuilder$submissionIndexActive;
@@ -49,8 +49,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private RenderLayer lazybuilder$currentLayer;
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
-    @Unique private final TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders =
-            lazybuilder$newTransformBuilders();
+    @Unique private TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -72,6 +71,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             Matrix4f positionMatrix,
             CallbackInfo ci
     ) {
+        this.lazybuilder$ensureSubmissionState();
         this.lazybuilder$currentLayer = layer;
         this.lazybuilder$physicalPreparedBuffer = null;
         this.lazybuilder$blockedVanillaFallbackBuffer = null;
@@ -242,7 +242,22 @@ abstract class WorldRendererTerrainSubmissionMixin {
     }
 
     @Unique
+    private void lazybuilder$ensureSubmissionState() {
+        if (this.lazybuilder$solid == null) {
+            this.lazybuilder$solid = new ObjectArrayList<>();
+            this.lazybuilder$cutoutMipped = new ObjectArrayList<>();
+            this.lazybuilder$cutout = new ObjectArrayList<>();
+            this.lazybuilder$translucent = new ObjectArrayList<>();
+            this.lazybuilder$tripwire = new ObjectArrayList<>();
+        }
+        if (this.lazybuilder$transformBuilders == null) {
+            this.lazybuilder$transformBuilders = lazybuilder$newTransformBuilders();
+        }
+    }
+
+    @Unique
     private void lazybuilder$rebuildSubmissionIndex() {
+        this.lazybuilder$ensureSubmissionState();
         this.lazybuilder$solid.clear();
         this.lazybuilder$cutoutMipped.clear();
         this.lazybuilder$cutout.clear();
