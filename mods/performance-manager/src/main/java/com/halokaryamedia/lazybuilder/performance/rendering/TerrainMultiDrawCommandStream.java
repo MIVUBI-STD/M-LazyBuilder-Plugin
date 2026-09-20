@@ -13,7 +13,6 @@ public final class TerrainMultiDrawCommandStream {
     private static final int COMMAND_BYTES = 24;
     private static final int TRANSFORM_BYTES = 16;
     private static final ByteBuffer EMPTY = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
-    private static ByteBuffer commandScratch = ByteBuffer.allocateDirect(COMMAND_BYTES).order(ByteOrder.nativeOrder());
     private static ByteBuffer transformScratch = ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
     private static volatile LayerPacket[] current = emptyLayers();
 
@@ -93,22 +92,6 @@ public final class TerrainMultiDrawCommandStream {
             transformBytes += layer.packedTransformBytes();
         }
         return new Snapshot(commands, runs, reductions, commandBytes, transformBytes);
-    }
-
-    public static synchronized ByteBuffer packCommands(LayerPacket packet) {
-        if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
-        int required = Math.multiplyExact(packet.commands().size(), COMMAND_BYTES);
-        commandScratch = ensureCapacity(commandScratch, required);
-        commandScratch.clear();
-        for (PackedCommand command : packet.commands()) {
-            commandScratch.putInt(command.indexCount());
-            commandScratch.putInt(command.baseVertex());
-            commandScratch.putLong(command.indexByteOffset());
-            commandScratch.putInt(command.transformIndex());
-            commandScratch.putInt(0);
-        }
-        commandScratch.flip();
-        return commandScratch.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
     }
 
     public static synchronized ByteBuffer packTransforms(LayerPacket packet) {
