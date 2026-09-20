@@ -17,10 +17,11 @@ if (fresh) {
   process.exit(0);
 }
 
-const executable = process.platform === "win32" ? "npx.cmd" : "npx";
+const executable = "npx";
 const result = spawnSync(executable, ["tauri", "icon", source], {
   cwd: root,
   stdio: "inherit",
+  shell: process.platform === "win32",
 });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);
