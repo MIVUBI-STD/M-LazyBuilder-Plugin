@@ -109,6 +109,11 @@ abstract class ChunkBuilderUploadMixin {
     private int lazybuilder$runUploadBatch(ChunkUploadTask first, int remainingBudget) {
         if (remainingBudget <= 0) return 0;
 
+        if (!first.isCurrentSession()) {
+            first.discard();
+            return 1;
+        }
+
         VertexBuffer buffer = first.buffer();
         if (buffer.isClosed()) {
             first.discard();
