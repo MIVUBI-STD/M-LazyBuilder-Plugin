@@ -12,6 +12,7 @@
     "BlockEntityRenderDispatcherMixin",
     "TextRendererDrawerMixin",
     "VertexBufferMixin",
+    "VertexBufferGrowthMixin",
     "ChunkBuilderBuiltChunkMixin",
     "ChunkBuilderBackpressureMixin",
     "ChunkBuilderUploadMixin",
