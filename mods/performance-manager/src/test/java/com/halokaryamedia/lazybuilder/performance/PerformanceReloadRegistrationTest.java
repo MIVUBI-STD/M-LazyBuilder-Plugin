@@ -1,0 +1,24 @@
+package com.halokaryamedia.lazybuilder.performance;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+final class PerformanceReloadRegistrationTest {
+    @Test
+    void clientEntrypointRegistersShaderReloadInvalidation() throws IOException {
+        String resource = "com/halokaryamedia/lazybuilder/performance/PerformanceManagerClient.class";
+        try (var stream = PerformanceReloadRegistrationTest.class.getClassLoader().getResourceAsStream(resource)) {
+            assertNotNull(stream, "PerformanceManagerClient must be packaged");
+        }
+
+        assertTrue(
+                PerformanceShaderReloadRegistrationContract.sourceContractPresent(),
+                "client resource reload must invalidate shader-sensitive performance state"
+        );
+    }
+}
