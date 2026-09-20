@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "lazybuilder_performance_manager_visual_proof",
+  "version": "1.0.0",
+  "name": "LazyBuilder Performance Manager Visual Proof",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "com.halokaryamedia.lazybuilder.performance.visualproof.PerformanceManagerVisualProofTest"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "1.21.4",
+    "java": ">=21",
+    "fabric-api": "*",
+    "lazybuilder_performance_manager": "*"
+  }
+}
