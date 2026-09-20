@@ -1,24 +1,26 @@
 package com.halokaryamedia.lazybuilder.utility.ui;
 
+import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
+import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.option.ControlsOptionsScreen;
-import net.minecraft.client.gui.screen.option.VideoOptionsScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.GridWidget;
 import net.minecraft.client.gui.widget.ThreePartsLayoutWidget;
 import net.minecraft.text.Text;
 
-/** LazyBuilder settings shell using Minecraft's own options layout primitives. */
-public final class LazyBuilderSettingsScreen extends Screen {
+import java.util.function.Consumer;
+
+/** Vanilla-style LazyBuilder interface options. */
+public final class LazyBuilderInterfaceSettingsScreen extends Screen {
     private static final int OPTION_WIDTH = 150;
     private static final int COLUMNS = 2;
 
     private final Screen parent;
     private final ThreePartsLayoutWidget layout = new ThreePartsLayoutWidget(this);
 
-    public LazyBuilderSettingsScreen(Screen parent) {
-        super(Text.literal("Settings"));
+    public LazyBuilderInterfaceSettingsScreen(Screen parent) {
+        super(Text.literal("Interface Settings"));
         this.parent = parent;
     }
 
@@ -26,29 +28,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
     protected void init() {
         this.layout.addHeader(this.title, this.textRenderer);
 
+        UtilityPreferences prefs = UtilityManagerClient.preferences();
         GridWidget grid = new GridWidget().setSpacing(4);
         GridWidget.Adder adder = grid.createAdder(COLUMNS);
 
-        adder.add(optionButton("Video Settings...", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new VideoOptionsScreen(this, this.client, this.client.options));
-            }
-        }));
-        adder.add(optionButton("Controls...", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new ControlsOptionsScreen(this, this.client.options));
-            }
-        }));
-        adder.add(optionButton("Interface...", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new LazyBuilderInterfaceSettingsScreen(this));
-            }
-        }));
-        adder.add(optionButton("Tools...", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new LazyBuilderToolsScreen(this));
-            }
-        }));
+        adder.add(toggleButton("Compact Debug HUD", prefs.compactDebugHud(),
+                value -> UtilityManagerClient.updatePreferences(prefs.withCompactDebugHud(value))));
+        adder.add(toggleButton("Screenshot Names", prefs.contextualScreenshotNames(),
+                value -> UtilityManagerClient.updatePreferences(prefs.withContextualScreenshotNames(value))));
+        adder.add(toggleButton("Quick Creative Search", prefs.instantCreativeSearch(),
+                value -> UtilityManagerClient.updatePreferences(prefs.withInstantCreativeSearch(value))));
 
         this.layout.addBody(grid);
         this.layout.addFooter(
@@ -61,8 +50,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
         this.refreshWidgetPositions();
     }
 
-    private ButtonWidget optionButton(String label, Runnable action) {
-        return ButtonWidget.builder(Text.literal(label), button -> action.run())
+    private ButtonWidget toggleButton(String label, boolean enabled, Consumer<Boolean> setter) {
+        return ButtonWidget.builder(
+                        Text.literal(label + ": " + (enabled ? "ON" : "OFF")),
+                        button -> {
+                            setter.accept(!enabled);
+                            if (this.client != null) {
+                                this.client.setScreen(new LazyBuilderInterfaceSettingsScreen(this.parent));
+                            }
+                        })
                 .width(OPTION_WIDTH)
                 .build();
     }
