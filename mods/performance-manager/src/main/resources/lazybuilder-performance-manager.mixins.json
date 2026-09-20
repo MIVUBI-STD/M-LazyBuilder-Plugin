@@ -16,7 +16,6 @@
     "ChunkBuilderBuiltChunkMixin",
     "ChunkBuilderBackpressureMixin",
     "ChunkBuilderUploadMixin",
-    "ParticleManagerMixin",
     "BuiltChunkStorageMixin",
     "ChunkDataVisibilityMixin",
     "BuiltChunkBufferLookupMixin",
