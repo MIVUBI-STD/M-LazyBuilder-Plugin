@@ -385,6 +385,10 @@ public final class TerrainPhysicalArenaManager {
         return source != null && EXCLUSIVE_RESIDENTS.containsKey(source);
     }
 
+    public static boolean hasActivePhysicalResidents() {
+        return PHYSICAL_PATH_BREAKER.allow() && !RESIDENTS.isEmpty();
+    }
+
     public static boolean recoverVanillaBacking(VertexBuffer source) {
         if (source == null || !isExclusive(source)) return true;
         if (!RenderSystem.isOnRenderThread()) return false;
