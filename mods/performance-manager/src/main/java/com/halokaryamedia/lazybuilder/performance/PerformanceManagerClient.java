@@ -1,10 +1,13 @@
 package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
+import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.resource.ResourceType;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
@@ -17,6 +20,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         runtime = new PerformanceRuntime(FabricLoader.getInstance().getConfigDir());
         MemoryDeduplicator.register();
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
+                .registerReloadListener(new PerformanceShaderReloadInvalidator());
 
         WorldRenderEvents.END.register(context ->
                 runtime.recordFrame(System.nanoTime())
