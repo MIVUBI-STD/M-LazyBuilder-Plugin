@@ -36,14 +36,22 @@ scrolling, reset confirmation, and a fixed footer.
 The Video surface follows a game-style hierarchy without duplicating concepts:
 
 - **Display** owns window/frame-pacing and visibility controls such as fullscreen, V-Sync, frame-rate limit, and brightness.
-- **Quality** owns the visual-quality preset plus individual visual-detail controls. Quality Preset changes visual detail only; Graphics Mode is only Minecraft's Fast/Fancy/Fabulous rendering mode and is not a second preset system.
+- **Quality** owns the Graphics Preset plus individual visual-detail controls. Graphics Preset coordinates visual detail with the matching LazyBuilder performance policy; Graphics Mode is only Minecraft's Fast/Fancy/Fabulous rendering mode and is not a second preset system.
 - **View** owns render distance, simulation distance, entity distance, and field of view.
 - **Performance** owns LazyBuilder efficiency controls and background FPS limits. These controls stay independent from the visual-quality preset so choosing Low/Medium/High never silently changes optimization policy.
 - **Interface** owns GUI Scale because interface sizing is not a video-quality decision.
 
-Quality presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled visual option no longer matches a known profile, the UI reports Custom. View distance, display preferences, camera settings, and Performance Manager policy are intentionally excluded from the preset. Presets write through Minecraft GameOptions; no second graphics configuration file is introduced.
+Graphics presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled visual or performance preference no longer matches a known profile, the UI reports Custom. View distance, display preferences, camera settings, and background FPS limits remain independent. Presets write visual settings through Minecraft GameOptions and performance policy through the existing Performance Manager ObjectShare contract; no duplicate graphics or performance configuration file is introduced.
 
 The stable preset policy is conservative: High targets high detail with Minecraft's Fancy renderer, while Fabulous remains an explicit manual Graphics Mode choice. This avoids making a convenience preset opt the user into the most compatibility-sensitive renderer path.
+
+Preset-owned performance behavior is intentionally small and understandable:
+- Low enables hidden-object skipping and keeps rendering/memory optimizations enabled.
+- Medium keeps rendering/memory optimizations enabled and leaves hidden-object skipping off.
+- High keeps rendering/memory optimizations enabled and leaves hidden-object skipping off.
+- Background/minimized FPS limits remain independent because they describe inactive-window behavior, not foreground graphics quality.
+- Internal caches, upload pacing, rebuild backpressure, allocator behavior, GPU residency, and other engine-level optimizations remain automatic and are not exposed as user-facing preset controls.
+
 
 ## Product direction
 
