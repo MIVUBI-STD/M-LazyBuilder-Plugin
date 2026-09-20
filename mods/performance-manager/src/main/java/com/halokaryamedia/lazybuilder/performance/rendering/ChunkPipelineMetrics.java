@@ -22,7 +22,6 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder UPLOAD_BUDGET_STOPS = new LongAdder();
     private static final LongAdder REBUILD_BACKPRESSURE_DEFERRALS = new LongAdder();
     private static final LongAdder REBUILD_BACKPRESSURE_RELEASES = new LongAdder();
-    private static final LongAdder PARTICLES_SUPPRESSED = new LongAdder();
     private static final LongAdder TERRAIN_GPU_RECLAIMED_BYTES = new LongAdder();
     private static final LongAdder TERRAIN_GPU_RECLAIMED_BUFFERS = new LongAdder();
 
@@ -86,8 +85,6 @@ public final class ChunkPipelineMetrics {
     public static long rebuildBackpressureDeferrals() { return REBUILD_BACKPRESSURE_DEFERRALS.sum(); }
     public static void recordRebuildBackpressureRelease() { REBUILD_BACKPRESSURE_RELEASES.increment(); }
     public static long rebuildBackpressureReleases() { return REBUILD_BACKPRESSURE_RELEASES.sum(); }
-    public static void recordParticleSuppressed() { PARTICLES_SUPPRESSED.increment(); }
-    public static long particlesSuppressed() { return PARTICLES_SUPPRESSED.sum(); }
     public static void recordTerrainGpuReclamation(long bytes) {
         if (bytes <= 0L) return;
         TERRAIN_GPU_RECLAIMED_BYTES.add(bytes);
@@ -110,7 +107,6 @@ public final class ChunkPipelineMetrics {
         UPLOAD_BUDGET_STOPS.reset();
         REBUILD_BACKPRESSURE_DEFERRALS.reset();
         REBUILD_BACKPRESSURE_RELEASES.reset();
-        PARTICLES_SUPPRESSED.reset();
         TERRAIN_GPU_RECLAIMED_BYTES.reset();
         TERRAIN_GPU_RECLAIMED_BUFFERS.reset();
     }
