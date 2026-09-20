@@ -19,7 +19,8 @@ final class PerformanceMixinRegistrationTest {
             assertTrue(json.contains("WorldRendererTerrainSubmissionMixin"), "terrain submission index mixin must stay registered");
             assertTrue(json.contains("BlockEntityRenderDispatcherMixin"), "block entity culling mixin must stay registered");
             assertTrue(json.contains("TextRendererDrawerMixin"), "text render lookup mixin must stay registered");
-            assertTrue(json.contains("VertexBufferMixin"), "GPU buffer resize mixin must stay registered");
+            assertTrue(json.contains("VertexBufferMixin"), "terrain buffer recovery mixin must stay registered");
+            assertTrue(json.contains("VertexBufferGrowthMixin"), "optional GPU growth mixin must stay registered");
             assertTrue(json.contains("ChunkBuilderBuiltChunkMixin"), "chunk rebuild coalescing mixin must stay registered");
             assertTrue(json.contains("ChunkBuilderBackpressureMixin"), "chunk rebuild backpressure mixin must stay registered");
             assertTrue(json.contains("ChunkBuilderUploadMixin"), "chunk upload batching mixin must stay registered");
