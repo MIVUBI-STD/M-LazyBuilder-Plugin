@@ -45,9 +45,9 @@ public final class ChunkPipelineMetrics {
         detailedMetricsEnabled = enabled;
     }
 
-    public static void recordCoalescedRebuild() { COALESCED_REBUILD_REQUESTS.increment(); }
+    public static void recordCoalescedRebuild() { if (detailedMetricsEnabled) COALESCED_REBUILD_REQUESTS.increment(); }
     public static long coalescedRebuildRequests() { return COALESCED_REBUILD_REQUESTS.sum(); }
-    public static void recordBufferAcquireMiss() { BUFFER_ACQUIRE_MISSES.increment(); }
+    public static void recordBufferAcquireMiss() { if (detailedMetricsEnabled) BUFFER_ACQUIRE_MISSES.increment(); }
     public static long bufferAcquireMisses() { return BUFFER_ACQUIRE_MISSES.sum(); }
     public static void recordUploadBatch(int taskCount) {
         if (detailedMetricsEnabled && taskCount > 1) AVOIDED_UPLOAD_BUFFER_BINDS.add(taskCount - 1L);
@@ -78,15 +78,15 @@ public final class ChunkPipelineMetrics {
     }
     public static long terrainBufferLookupHits() { return TERRAIN_BUFFER_LOOKUP_HITS.sum(); }
 
-    // Pressure, failure-adjacent, and reclamation counters stay always-on.
-    public static void recordUploadBudgetStop() { UPLOAD_BUDGET_STOPS.increment(); }
+    public static void recordUploadBudgetStop() { if (detailedMetricsEnabled) UPLOAD_BUDGET_STOPS.increment(); }
     public static long uploadBudgetStops() { return UPLOAD_BUDGET_STOPS.sum(); }
-    public static void recordRebuildBackpressureDeferral() { REBUILD_BACKPRESSURE_DEFERRALS.increment(); }
+    public static void recordRebuildBackpressureDeferral() { if (detailedMetricsEnabled) REBUILD_BACKPRESSURE_DEFERRALS.increment(); }
     public static long rebuildBackpressureDeferrals() { return REBUILD_BACKPRESSURE_DEFERRALS.sum(); }
-    public static void recordRebuildBackpressureRelease() { REBUILD_BACKPRESSURE_RELEASES.increment(); }
+    public static void recordRebuildBackpressureRelease() { if (detailedMetricsEnabled) REBUILD_BACKPRESSURE_RELEASES.increment(); }
     public static long rebuildBackpressureReleases() { return REBUILD_BACKPRESSURE_RELEASES.sum(); }
     public static void recordTerrainGpuReclamation(long bytes) {
         if (bytes <= 0L) return;
+        if (!detailedMetricsEnabled) return;
         TERRAIN_GPU_RECLAIMED_BYTES.add(bytes);
         TERRAIN_GPU_RECLAIMED_BUFFERS.increment();
     }
