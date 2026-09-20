@@ -373,9 +373,23 @@ public final class TerrainPhysicalArenaManager {
     }
 
     public static void clear() {
+        clearSafely();
+    }
+
+    /**
+     * Clears physical arena ownership only after all exclusive residents have recovered a vanilla
+     * backing. A failed recovery leaves the arena state intact so a later fallback/retry still has
+     * access to the authoritative GPU data.
+     */
+    public static boolean clearSafely() {
         if (!RenderSystem.isOnRenderThread()) {
-            RenderSystem.recordRenderCall(TerrainPhysicalArenaManager::clear);
-            return;
+            RenderSystem.recordRenderCall(TerrainPhysicalArenaManager::clearSafely);
+            return false;
+        }
+
+        if (!recoverAllExclusive()) {
+            noteExternalBind();
+            return false;
         }
 
         noteExternalBind();
@@ -398,6 +412,7 @@ public final class TerrainPhysicalArenaManager {
         exclusivePromotions = 0L;
         exclusiveRecoveries = 0L;
         exclusiveRecoveryFailures = 0L;
+        return true;
     }
 
     public static Snapshot snapshot() {
