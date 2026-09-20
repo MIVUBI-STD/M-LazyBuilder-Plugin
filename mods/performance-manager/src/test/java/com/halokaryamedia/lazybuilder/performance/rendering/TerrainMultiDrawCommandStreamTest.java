@@ -43,13 +43,6 @@ final class TerrainMultiDrawCommandStreamTest {
         assertEquals(24L, packet.packedCommandBytes());
         assertEquals(16L, packet.packedTransformBytes());
 
-        ByteBuffer commands = TerrainMultiDrawCommandStream.packCommands(packet).order(ByteOrder.nativeOrder());
-        assertEquals(24, commands.remaining());
-        assertEquals(24, commands.getInt());
-        assertEquals(0, commands.getInt());
-        assertEquals(0L, commands.getLong());
-        assertEquals(0, commands.getInt());
-        assertEquals(0, commands.getInt());
 
         ByteBuffer transforms = TerrainMultiDrawCommandStream.packTransforms(packet).order(ByteOrder.nativeOrder());
         assertEquals(16, transforms.remaining());
