@@ -41,6 +41,10 @@ public final class TerrainPhysicalArenaManager {
     private static long exclusiveRecoveryFailures;
     private static long clearAttempts;
     private static long clearFailures;
+    private static long arenaCreationFailures;
+    private static long vaoCreationFailures;
+    private static long drawFailures;
+    private static long bufferProvisionFailures;
     private static String clearStatus = "never-cleared";
 
     private TerrainPhysicalArenaManager() {
@@ -71,19 +75,37 @@ public final class TerrainPhysicalArenaManager {
         TerrainRegionAllocationRegistry.ArenaKey key = handle.arenaKey();
         Arena arena = ARENAS.get(key);
         if (arena == null) {
-            arena = new Arena(vertexCapacity, indexCapacity);
-            ARENAS.put(key, arena);
+            try {
+                arena = new Arena(vertexCapacity, indexCapacity);
+                ARENAS.put(key, arena);
+            } catch (RuntimeException ex) {
+                arenaCreationFailures++;
+                invalidate(source);
+                return false;
+            }
         } else if (layoutChanged(arena) || needsResize(arena, vertexCapacity, indexCapacity)) {
             int targetVertexCapacity = Math.max(arena.vertexBuffer.size(), vertexCapacity);
             int targetIndexCapacity = Math.max(arena.indexBuffer == null ? 0 : arena.indexBuffer.size(), indexCapacity);
             relocateArena(arena, targetVertexCapacity, targetIndexCapacity);
             arena = ARENAS.get(key);
             if (arena == null) {
-                arena = new Arena(vertexCapacity, indexCapacity);
-                ARENAS.put(key, arena);
+                try {
+                    arena = new Arena(vertexCapacity, indexCapacity);
+                    ARENAS.put(key, arena);
+                } catch (RuntimeException ex) {
+                    arenaCreationFailures++;
+                    invalidate(source);
+                    return false;
+                }
             }
         } else if (indexCapacity > 0) {
-            ensureIndexBuffer(arena, indexCapacity);
+            try {
+                ensureIndexBuffer(arena, indexCapacity);
+            } catch (RuntimeException ex) {
+                bufferProvisionFailures++;
+                invalidate(source);
+                return false;
+            }
         }
 
         int vertexOffset = checkedOffset(command.vertexByteOffset());
@@ -223,44 +245,58 @@ public final class TerrainPhysicalArenaManager {
 
         TerrainArenaDrawStateRegistry.DrawState state = command.state();
         VaoState vao = arena.vaos.get(state.format());
-        if (vao == null) {
-            vao = createVao(arena, state.format());
-            arena.vaos.put(state.format(), vao);
-        } else if (boundArena == arena && boundVao == vao.id) {
-            physicalBindReuses++;
-        } else {
-            BufferRenderer.resetCurrentVertexBuffer();
-            GlStateManager._glBindVertexArray(vao.id);
-            boundArena = arena;
-            boundVao = vao.id;
-            physicalBufferBinds++;
+        try {
+            if (vao == null) {
+                vao = createVao(arena, state.format());
+                arena.vaos.put(state.format(), vao);
+            } else if (boundArena == arena && boundVao == vao.id) {
+                physicalBindReuses++;
+            } else {
+                BufferRenderer.resetCurrentVertexBuffer();
+                GlStateManager._glBindVertexArray(vao.id);
+                boundArena = arena;
+                boundVao = vao.id;
+                physicalBufferBinds++;
+            }
+        } catch (RuntimeException ex) {
+            vaoCreationFailures++;
+            noteExternalBind();
+            invalidate(source);
+            return false;
         }
 
         VertexFormat.IndexType drawIndexType;
         long drawIndexOffset;
-        if (state.indexPayloadBytes() > 0) {
-            if (arena.indexBuffer == null || resident.indexBytes != state.indexPayloadBytes()) {
-                invalidate(source);
-                return false;
+        try {
+            if (state.indexPayloadBytes() > 0) {
+                if (arena.indexBuffer == null || resident.indexBytes != state.indexPayloadBytes()) {
+                    invalidate(source);
+                    return false;
+                }
+                if (!vao.customIndexBound) {
+                    arena.indexBuffer.bind();
+                    vao.customIndexBound = true;
+                    vao.sequentialMode = null;
+                }
+                drawIndexType = state.indexType();
+                drawIndexOffset = command.indexByteOffset();
+            } else {
+                RenderSystem.ShapeIndexBuffer sequential = RenderSystem.getSequentialBuffer(state.mode());
+                if (vao.customIndexBound
+                        || vao.sequentialMode != state.mode()
+                        || !sequential.isLargeEnough(state.indexCount())) {
+                    sequential.bindAndGrow(state.indexCount());
+                    vao.customIndexBound = false;
+                    vao.sequentialMode = state.mode();
+                }
+                drawIndexType = sequential.getIndexType();
+                drawIndexOffset = 0L;
             }
-            if (!vao.customIndexBound) {
-                arena.indexBuffer.bind();
-                vao.customIndexBound = true;
-                vao.sequentialMode = null;
-            }
-            drawIndexType = state.indexType();
-            drawIndexOffset = command.indexByteOffset();
-        } else {
-            RenderSystem.ShapeIndexBuffer sequential = RenderSystem.getSequentialBuffer(state.mode());
-            if (vao.customIndexBound
-                    || vao.sequentialMode != state.mode()
-                    || !sequential.isLargeEnough(state.indexCount())) {
-                sequential.bindAndGrow(state.indexCount());
-                vao.customIndexBound = false;
-                vao.sequentialMode = state.mode();
-            }
-            drawIndexType = sequential.getIndexType();
-            drawIndexOffset = 0L;
+        } catch (RuntimeException ex) {
+            bufferProvisionFailures++;
+            noteExternalBind();
+            invalidate(source);
+            return false;
         }
 
         prepared = new Prepared(source, resident, drawIndexType, drawIndexOffset);
@@ -287,13 +323,21 @@ public final class TerrainPhysicalArenaManager {
         }
 
         TerrainArenaDrawStateRegistry.DrawState state = command.state();
-        GL32C.glDrawElementsBaseVertex(
-                state.mode().glMode,
-                state.indexCount(),
-                current.indexType.glType,
-                current.indexByteOffset,
-                baseVertex
-        );
+        try {
+            GL32C.glDrawElementsBaseVertex(
+                    state.mode().glMode,
+                    state.indexCount(),
+                    current.indexType.glType,
+                    current.indexByteOffset,
+                    baseVertex
+            );
+        } catch (RuntimeException ex) {
+            drawFailures++;
+            prepared = null;
+            noteExternalBind();
+            invalidate(source);
+            return false;
+        }
         physicalDraws++;
         OWNERSHIP_PROOF.recordDraw(source);
         promoteExclusiveIfEligible(source);
@@ -419,6 +463,10 @@ public final class TerrainPhysicalArenaManager {
         exclusivePromotions = 0L;
         exclusiveRecoveries = 0L;
         exclusiveRecoveryFailures = 0L;
+        arenaCreationFailures = 0L;
+        vaoCreationFailures = 0L;
+        drawFailures = 0L;
+        bufferProvisionFailures = 0L;
         clearStatus = "cleared";
         return true;
     }
@@ -450,6 +498,10 @@ public final class TerrainPhysicalArenaManager {
                 exclusiveRecoveryFailures,
                 clearAttempts,
                 clearFailures,
+                arenaCreationFailures,
+                vaoCreationFailures,
+                drawFailures,
+                bufferProvisionFailures,
                 clearStatus
         );
     }
@@ -818,6 +870,10 @@ public final class TerrainPhysicalArenaManager {
             long exclusiveRecoveryFailures,
             long clearAttempts,
             long clearFailures,
+            long arenaCreationFailures,
+            long vaoCreationFailures,
+            long drawFailures,
+            long bufferProvisionFailures,
             String clearStatus
     ) {
         public Snapshot {
