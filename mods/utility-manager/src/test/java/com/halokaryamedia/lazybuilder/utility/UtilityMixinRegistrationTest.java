@@ -26,6 +26,8 @@ class UtilityMixinRegistrationTest {
             assertTrue(json.contains("CompactDebugMouseMixin"), "compact coordinate pointer mixin must stay registered");
             assertTrue(json.contains("DisconnectedScreenMixin"), "disconnect action mixin must stay registered");
             assertTrue(json.contains("MultiplayerScreenMixin"), "server-list reconnect fallback must stay registered");
+            assertTrue(json.contains("PackScreenAccessor"), "resource-pack screen presentation accessor must stay registered");
+            assertTrue(json.contains("PackListWidgetAccessor"), "resource-pack list title accessor must stay registered");
             assertTrue(json.contains("ScreenshotRecorderMixin"), "contextual screenshot naming mixin must stay registered");
             assertTrue(json.contains("\"required\": true"), "mixin failures must fail loudly instead of silently disabling Utility Manager behavior");
             assertTrue(json.contains("\"defaultRequire\": 1"), "mixin injections must require their target instead of silently becoming no-ops");
