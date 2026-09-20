@@ -276,22 +276,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
 
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                shellRight - 196,
+                shellRight - 100,
                 y,
                 92,
                 22,
                 Text.literal("Back"),
-                true,
-                LazyBuilderSettingsControlWidget.Kind.FOOTER,
-                this::close
-        ));
-
-        this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                shellRight - 96,
-                y,
-                92,
-                22,
-                Text.literal("Done"),
                 true,
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close

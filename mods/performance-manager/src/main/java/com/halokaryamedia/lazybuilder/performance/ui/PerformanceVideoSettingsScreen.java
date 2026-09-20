@@ -157,24 +157,25 @@ public final class PerformanceVideoSettingsScreen extends Screen {
 
     private void addFooter() {
         int y = height - 30;
-        int right = shellLeft() + shellWidth();
+        int left = shellLeft();
+        int right = left + shellWidth();
 
         this.addDrawableChild(new PerformanceSettingsControlWidget(
-                right - 196,
+                left + 8,
+                y,
+                92,
+                22,
+                Text.literal("Reset"),
+                PerformanceSettingsControlWidget.Kind.FOOTER,
+                () -> update(PerformancePreferences.defaults())
+        ));
+
+        this.addDrawableChild(new PerformanceSettingsControlWidget(
+                right - 100,
                 y,
                 92,
                 22,
                 Text.literal("Back"),
-                PerformanceSettingsControlWidget.Kind.FOOTER,
-                this::close
-        ));
-
-        this.addDrawableChild(new PerformanceSettingsControlWidget(
-                right - 96,
-                y,
-                92,
-                22,
-                Text.literal("Done"),
                 PerformanceSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
