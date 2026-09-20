@@ -142,8 +142,8 @@ External performance mods remain migration references until matching first-party
 background.enabled=true
 background.unfocused_fps=30
 background.minimized_fps=10
-culling.entities=true
-culling.block_entities=true
+culling.entities=false
+culling.block_entities=false
 rendering.optimizations=true
 memory.optimizations=true
 ```
