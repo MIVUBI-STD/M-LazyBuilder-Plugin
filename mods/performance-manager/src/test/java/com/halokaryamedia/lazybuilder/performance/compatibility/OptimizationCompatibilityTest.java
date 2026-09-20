@@ -71,6 +71,22 @@ final class OptimizationCompatibilityTest {
         assertTrue(policy.owns(MODEL_MEMORY));
     }
 
+
+    @Test
+    void immediatelyFastDoesNotTakeTerrainBuildOwnershipByItself() {
+        var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
+        var policy = OptimizationCompatibility.evaluate(renderer, true, false, false);
+
+        assertFalse(policy.owns(IMMEDIATE_RENDERING));
+        assertFalse(policy.owns(TEXT_RENDERING));
+        assertFalse(policy.owns(PARTICLES));
+        assertFalse(policy.owns(TERRAIN_UPLOAD));
+        assertTrue(policy.owns(TERRAIN_BUILD));
+        assertTrue(policy.owns(TERRAIN_SUBMISSION));
+        assertTrue(policy.owns(ENTITY_CULLING));
+        assertTrue(policy.owns(MODEL_MEMORY));
+    }
+
     @Test
     void entityCullingOnlyOwnsEntityCullingDomain() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
