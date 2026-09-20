@@ -49,7 +49,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
                 Text.literal("Reset All"),
                 true,
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
-                this::resetAll
+                this::confirmResetAll
         ));
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                 shellLeft() + shellWidth() - 100,
@@ -101,9 +101,10 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
             for (KeyBinding binding : group.bindings) {
                 int rowY = y;
                 if (rowY + ROW_HEIGHT > 76 && rowY < viewportBottom) {
+                    boolean conflict = hasConflict(binding);
                     String label = capturing == binding
                             ? "Press a key..."
-                            : binding.getBoundKeyLocalizedText().getString();
+                            : binding.getBoundKeyLocalizedText().getString() + (conflict ? "  !" : "");
 
                     this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                             left + width - CONTROL_WIDTH - 8,
@@ -133,6 +134,17 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
             total += SECTION_GAP;
         }
         return total;
+    }
+
+    private void confirmResetAll() {
+        if (client == null) return;
+        client.setScreen(new LazyBuilderConfirmScreen(
+                this,
+                "Reset Key Bindings",
+                "Restore every vanilla and Fabric key binding to its default?",
+                "Reset All",
+                this::resetAll
+        ));
     }
 
     private void resetAll() {
@@ -221,7 +233,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
                             Text.literal(textRenderer.trimToWidth(name, maxText)),
                             left + 8,
                             rowY + 12,
-                            LazyBuilderSettingsScreen.TEXT_PRIMARY
+                            hasConflict(binding) ? 0xFFFFA7A7 : LazyBuilderSettingsScreen.TEXT_PRIMARY
                     );
                 }
                 y += ROW_HEIGHT + ROW_GAP;
@@ -243,14 +255,37 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
         context.drawTextWithShadow(textRenderer, Text.literal("KEY BINDINGS"), x, 88, LazyBuilderSettingsScreen.TEXT_PRIMARY);
-        String copy = capturing == null
-                ? "Select a binding, then press a keyboard or mouse button. Backspace/Delete clears a binding."
-                : "Listening for input. Press Esc to cancel.";
+        String copy;
+        if (capturing != null) {
+            copy = "Listening for input. Press Esc to cancel. Backspace/Delete clears the binding.";
+        } else if (hasAnyConflict()) {
+            copy = "Some bindings share the same key. Conflicts are marked with ! so they can be resolved before leaving Controls.";
+        } else {
+            copy = "Select a binding, then press a keyboard or mouse button. Backspace/Delete clears a binding.";
+        }
         int y = 106;
         for (var line : textRenderer.wrapLines(Text.literal(copy), available)) {
             context.drawTextWithShadow(textRenderer, line, x, y, LazyBuilderSettingsScreen.TEXT_MUTED);
             y += 11;
         }
+    }
+
+    private boolean hasConflict(KeyBinding binding) {
+        if (client == null || binding.isUnbound()) return false;
+        String key = binding.getBoundKeyTranslationKey();
+        for (KeyBinding other : client.options.allKeys) {
+            if (other == binding || other.isUnbound()) continue;
+            if (key.equals(other.getBoundKeyTranslationKey())) return true;
+        }
+        return false;
+    }
+
+    private boolean hasAnyConflict() {
+        if (client == null) return false;
+        for (KeyBinding binding : client.options.allKeys) {
+            if (hasConflict(binding)) return true;
+        }
+        return false;
     }
 
     private void renderScrollBar(DrawContext context, int x) {

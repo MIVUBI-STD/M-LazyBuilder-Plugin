@@ -166,63 +166,58 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         value -> value == 0 ? "Auto" : Integer.toString(value)
                 )
         ));
-        display.rows.add(Row.value(
+        display.rows.add(Row.slider(
                 "Brightness",
                 "Adjust visibility in dark areas.",
-                percentage(client.options.getGamma().getValue()),
-                () -> openDoubleChoice(
-                        "Brightness",
-                        client.options.getGamma(),
-                        new double[]{0.0, 0.25, 0.5, 0.75, 1.0},
-                        LazyBuilderSettingsScreen::percentage
-                )
+                client.options.getGamma().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getGamma(), value)
         ));
-        display.rows.add(Row.value(
+        display.rows.add(Row.slider(
                 "Field of View",
                 "Adjust the horizontal view angle.",
-                client.options.getFov().getValue() + "°",
-                () -> openIntegerChoice(
-                        "Field of View",
-                        client.options.getFov(),
-                        new int[]{30, 50, 60, 70, 80, 90, 100, 110},
-                        value -> value + "°"
-                )
+                client.options.getFov().getValue(),
+                30.0,
+                110.0,
+                1.0,
+                value -> Math.round(value) + "°",
+                value -> setOptionLive(client.options.getFov(), (int) Math.round(value))
         ));
         sections.add(display);
 
         Section world = new Section("WORLD");
-        world.rows.add(Row.value(
+        world.rows.add(Row.slider(
                 "Render Distance",
                 "How far terrain is rendered around the player.",
-                client.options.getViewDistance().getValue() + " Chunks",
-                () -> openIntegerChoice(
-                        "Render Distance",
-                        client.options.getViewDistance(),
-                        range(2, 32, 2),
-                        value -> value + " Chunks"
-                )
+                client.options.getViewDistance().getValue(),
+                2.0,
+                32.0,
+                1.0,
+                value -> Math.round(value) + " Chunks",
+                value -> setOptionLive(client.options.getViewDistance(), (int) Math.round(value))
         ));
-        world.rows.add(Row.value(
+        world.rows.add(Row.slider(
                 "Simulation Distance",
                 "How far world simulation remains active.",
-                client.options.getSimulationDistance().getValue() + " Chunks",
-                () -> openIntegerChoice(
-                        "Simulation Distance",
-                        client.options.getSimulationDistance(),
-                        range(5, 32, 1),
-                        value -> value + " Chunks"
-                )
+                client.options.getSimulationDistance().getValue(),
+                5.0,
+                32.0,
+                1.0,
+                value -> Math.round(value) + " Chunks",
+                value -> setOptionLive(client.options.getSimulationDistance(), (int) Math.round(value))
         ));
-        world.rows.add(Row.value(
+        world.rows.add(Row.slider(
                 "Entity Distance",
                 "Scale the distance at which entities are rendered.",
-                percentage(client.options.getEntityDistanceScaling().getValue()),
-                () -> openDoubleChoice(
-                        "Entity Distance",
-                        client.options.getEntityDistanceScaling(),
-                        new double[]{0.5, 0.75, 1.0, 1.25, 1.5, 2.0},
-                        LazyBuilderSettingsScreen::percentage
-                )
+                client.options.getEntityDistanceScaling().getValue(),
+                0.5,
+                2.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getEntityDistanceScaling(), value)
         ));
         sections.add(world);
 
@@ -284,16 +279,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (client == null) return;
 
         Section mouse = new Section("MOUSE");
-        mouse.rows.add(Row.value(
+        mouse.rows.add(Row.slider(
                 "Sensitivity",
                 "Mouse look sensitivity.",
-                percentage(client.options.getMouseSensitivity().getValue()),
-                () -> openDoubleChoice(
-                        "Mouse Sensitivity",
-                        client.options.getMouseSensitivity(),
-                        new double[]{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0},
-                        LazyBuilderSettingsScreen::percentage
-                )
+                client.options.getMouseSensitivity().getValue(),
+                0.0,
+                1.0,
+                0.01,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getMouseSensitivity(), value)
         ));
         mouse.rows.add(Row.toggle(
                 "Invert Mouse",
@@ -313,16 +307,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 client.options.getDiscreteMouseScroll().getValue(),
                 value -> setOption(client.options.getDiscreteMouseScroll(), value)
         ));
-        mouse.rows.add(Row.value(
+        mouse.rows.add(Row.slider(
                 "Mouse Wheel Sensitivity",
                 "Adjust scroll-wheel input sensitivity.",
-                String.format(Locale.ROOT, "%.2f", client.options.getMouseWheelSensitivity().getValue()),
-                () -> openDoubleChoice(
-                        "Mouse Wheel Sensitivity",
-                        client.options.getMouseWheelSensitivity(),
-                        new double[]{0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0},
-                        value -> String.format(Locale.ROOT, "%.2f", value)
-                )
+                client.options.getMouseWheelSensitivity().getValue(),
+                0.01,
+                3.0,
+                0.01,
+                value -> String.format(Locale.ROOT, "%.2f", value),
+                value -> setOptionLive(client.options.getMouseWheelSensitivity(), value)
         ));
         sections.add(mouse);
 
@@ -434,16 +427,31 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 int controlY = row.y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
 
                 if (row.y + ROW_HEIGHT > VIEWPORT_TOP && row.y < viewportBottom) {
-                    this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                            controlX,
-                            controlY,
-                            controlWidth,
-                            CONTROL_HEIGHT,
-                            Text.literal(row.controlLabel()),
-                            row.interactive(),
-                            row.kind,
-                            row.action()
-                    ));
+                    if (row.slider != null) {
+                        this.addDrawableChild(new LazyBuilderSettingsSliderWidget(
+                                controlX,
+                                controlY,
+                                controlWidth,
+                                CONTROL_HEIGHT,
+                                row.slider.current(),
+                                row.slider.min(),
+                                row.slider.max(),
+                                row.slider.step(),
+                                row.slider.formatter(),
+                                row.slider.onChange()
+                        ));
+                    } else {
+                        this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                                controlX,
+                                controlY,
+                                controlWidth,
+                                CONTROL_HEIGHT,
+                                Text.literal(row.controlLabel()),
+                                row.interactive(),
+                                row.kind,
+                                row.action()
+                        ));
+                    }
                 }
 
                 baseY += ROW_HEIGHT + ROW_GAP;
@@ -477,7 +485,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 Text.literal("Reset"),
                 canReset,
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
-                this::resetCurrentCategory
+                this::confirmResetCurrentCategory
         ));
 
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
@@ -489,6 +497,17 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 true,
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close
+        ));
+    }
+
+    private void confirmResetCurrentCategory() {
+        if (category != Category.INTERFACE || client == null) return;
+        client.setScreen(new LazyBuilderConfirmScreen(
+                this,
+                "Reset Interface",
+                "Restore all Interface settings to their defaults?",
+                "Reset",
+                this::resetCurrentCategory
         ));
     }
 
@@ -509,6 +528,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
         client.options.write();
         client.options.sendClientSettings();
         refreshCategory();
+    }
+
+    private <T> void setOptionLive(SimpleOption<T> option, T value) {
+        if (client == null) return;
+        option.setValue(value);
+        client.options.write();
+        client.options.sendClientSettings();
     }
 
     private void updateInterface(UtilityPreferences updated) {
@@ -793,6 +819,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         private final boolean interactive;
         private final LazyBuilderSettingsControlWidget.Kind kind;
         private final Runnable action;
+        private final SliderSpec slider;
         private int x;
         private int y;
         private int width;
@@ -803,7 +830,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 java.util.function.Supplier<String> controlText,
                 boolean interactive,
                 LazyBuilderSettingsControlWidget.Kind kind,
-                Runnable action
+                Runnable action,
+                SliderSpec slider
         ) {
             this.title = title;
             this.description = description;
@@ -811,18 +839,19 @@ public final class LazyBuilderSettingsScreen extends Screen {
             this.interactive = interactive;
             this.kind = kind;
             this.action = action;
+            this.slider = slider;
         }
 
         static Row action(String title, String description, String control, Runnable action) {
-            return new Row(title, description, () -> control, true, LazyBuilderSettingsControlWidget.Kind.ACTION, action);
+            return new Row(title, description, () -> control, true, LazyBuilderSettingsControlWidget.Kind.ACTION, action, null);
         }
 
         static Row value(String title, String description, String value, Runnable action) {
-            return new Row(title, description, () -> value, true, LazyBuilderSettingsControlWidget.Kind.VALUE, action);
+            return new Row(title, description, () -> value, true, LazyBuilderSettingsControlWidget.Kind.VALUE, action, null);
         }
 
         static Row status(String title, String description, String status) {
-            return new Row(title, description, () -> status, false, LazyBuilderSettingsControlWidget.Kind.STATUS, () -> {});
+            return new Row(title, description, () -> status, false, LazyBuilderSettingsControlWidget.Kind.STATUS, () -> {}, null);
         }
 
         static Row toggle(
@@ -837,7 +866,30 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     () -> enabled ? "ON" : "OFF",
                     true,
                     LazyBuilderSettingsControlWidget.Kind.TOGGLE,
-                    () -> setter.accept(!enabled)
+                    () -> setter.accept(!enabled),
+                    null
+            );
+        }
+
+        static Row slider(
+                String title,
+                String description,
+                double current,
+                double min,
+                double max,
+                double step,
+                java.util.function.DoubleFunction<String> formatter,
+                java.util.function.DoubleConsumer onChange
+        ) {
+            SliderSpec spec = new SliderSpec(current, min, max, step, formatter, onChange);
+            return new Row(
+                    title,
+                    description,
+                    () -> formatter.apply(current),
+                    true,
+                    LazyBuilderSettingsControlWidget.Kind.VALUE,
+                    () -> {},
+                    spec
             );
         }
 
@@ -853,4 +905,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
             return action;
         }
     }
+
+    private record SliderSpec(
+            double current,
+            double min,
+            double max,
+            double step,
+            java.util.function.DoubleFunction<String> formatter,
+            java.util.function.DoubleConsumer onChange
+    ) {}
 }
