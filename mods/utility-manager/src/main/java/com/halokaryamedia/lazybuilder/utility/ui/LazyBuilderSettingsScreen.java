@@ -5,6 +5,8 @@ import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.Element;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.option.GraphicsMode;
 import net.minecraft.particle.ParticlesMode;
@@ -469,6 +471,34 @@ public final class LazyBuilderSettingsScreen extends Screen {
             }
 
             baseY += SECTION_GAP;
+        }
+
+        suppressWidgetsBehindDropdown();
+    }
+
+    private void suppressWidgetsBehindDropdown() {
+        if (dropdown == null || !dropdown.positioned()) return;
+
+        int popupLeft = dropdown.x;
+        int popupTop = dropdown.y;
+        int popupRight = popupLeft + dropdown.width;
+        int popupBottom = dropdown.bottom();
+
+        for (Element element : children()) {
+            if (!(element instanceof ClickableWidget widget)) continue;
+
+            int left = widget.getX();
+            int top = widget.getY();
+            int right = left + widget.getWidth();
+            int bottom = top + widget.getHeight();
+
+            boolean overlaps = left < popupRight
+                    && right > popupLeft
+                    && top < popupBottom
+                    && bottom > popupTop;
+            if (overlaps) {
+                widget.visible = false;
+            }
         }
     }
 
