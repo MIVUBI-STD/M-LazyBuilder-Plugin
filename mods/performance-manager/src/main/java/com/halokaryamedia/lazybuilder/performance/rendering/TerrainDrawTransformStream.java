@@ -146,7 +146,7 @@ public final class TerrainDrawTransformStream {
                     reverseOrder,
                     immutable,
                     physicalReady,
-                    physicalReady,
+                    Math.max(0, immutable.size() - physicalReady),
                     candidateRuns,
                     potentialDrawReduction,
                     (long) immutable.size() * TRANSFORM_BYTES
