@@ -124,7 +124,7 @@ final class TerrainArenaDrawPlannerTest {
     }
 
     @Test
-    void customIndicesOrMisalignedVertexOffsetRemainOutsideBaseVertexSubset() {
+    void customIndicesRemainBaseVertexReadyWhenVertexRangeIsValid() {
         var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
         var sequential = sequentialState();
         var sorted = state(sequential.vertexPayloadBytes(), 64);
@@ -134,9 +134,9 @@ final class TerrainArenaDrawPlannerTest {
         TerrainArenaDrawPlanner.Plan plan = TerrainArenaDrawPlanner.plan(List.of(misaligned, customIndices), 0);
 
         assertEquals(2, plan.eligibleCommands());
-        assertEquals(0, plan.baseVertexReadyCommands());
+        assertEquals(1, plan.baseVertexReadyCommands());
         assertEquals(-1, misaligned.baseVertex());
-        assertEquals(-1, customIndices.baseVertex());
+        assertEquals((int) (512L / sequential.format().getVertexSizeByte()), customIndices.baseVertex());
     }
 
     @Test
