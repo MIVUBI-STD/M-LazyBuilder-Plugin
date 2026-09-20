@@ -20,8 +20,6 @@ Chunk upload batching preserves queue order and shares one bind/unbind for conse
 
 Chunk rebuild backpressure uses the same `FramePressure` signal rather than creating a second scheduler. Only non-prioritized work can be deferred, and only while pressure is heavy, at least eight vanilla tasks are already queued, and the chunk buffer pool has one or fewer free buffers. The deferred queue is capped at 128 tasks, fails open when full, and releases work at 16/4/1 tasks per tick for normal/elevated/heavy pressure respectively, so sustained heavy pressure still makes forward progress. `reset` and `stop` cancel deferred tasks instead of carrying stale work into another builder lifecycle.
 
-Distant particle creation is also pressure-aware. Normal pressure leaves particles untouched; elevated pressure suppresses only particles farther than 96 blocks from the camera, while heavy pressure lowers that distance to 64 blocks. Nearby effects remain authoritative, invalid distance state fails open, and this hook stands down when ImmediatelyFast owns the overlapping particle path.
-
 ## Terrain GPU residency, reclamation, and arena ownership model
 
 Terrain GPU residency is tracked at the existing `VertexBuffer` ownership boundary. Each buffer is associated with its section and one of the five fixed terrain layers. Successful uploads sample actual `GpuBuffer.size` capacities while upload tasks also record mesh payload bytes. Accounting regions are fixed 8x4x8 section groups.
@@ -123,7 +121,7 @@ Enable it for a benchmark run with:
 -Dlazybuilder.performance.proof=true
 ```
 
-While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, average/worst recent frame time, upload queue pressure, rebuild deferral/release totals, distant-particle suppression count, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, and active renderer ownership.
+While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, average/worst recent frame time, upload queue pressure, rebuild deferral/release totals, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, and active renderer ownership.
 
 A useful two-run comparison keeps the same world, camera route, render distance, FPS target, resource pack, resolution, and other mods:
 
