@@ -19,7 +19,7 @@ public final class PerformanceVideoSettingsScreen extends Screen {
     private static final int TEXT_MUTED = 0xFF858D97;
     private static final int ACCENT = 0xFF4FD0B0;
 
-    private static final int BACKGROUND = 0xD90B0E12;
+    private static final int BACKGROUND = 0xF20B0E12;
     private static final int TOP_BAR = 0xE813171C;
     private static final int ROW_FILL = 0xA81A1F25;
     private static final int ROW_HOVER = 0xC521272E;
@@ -186,6 +186,12 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         if (client != null) {
             client.setScreen(new PerformanceVideoSettingsScreen(parent));
         }
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Custom shell owns its background. Prevent Screen.render() from applying
+        // Minecraft's blur/darkening a second time over our labels and section text.
     }
 
     @Override
