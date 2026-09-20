@@ -6,6 +6,26 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FrameMonitorTest {
+
+    @Test
+    void worldSessionResetClearsPressureHistory() {
+        FrameMonitor monitor = new FrameMonitor();
+        monitor.recordFrameTimeMs(80.0D);
+        monitor.recordFrameTimeMs(80.0D);
+        monitor.recordFrameTimeMs(80.0D);
+
+        assertEquals(FramePressure.HEAVY, monitor.pressure());
+        assertTrue(monitor.sampleCount() > 0);
+
+        monitor.resetSession();
+
+        assertEquals(FramePressure.NORMAL, monitor.pressure());
+        assertEquals(0, monitor.sampleCount());
+        assertEquals(0.0D, monitor.averageFrameTimeMs(), 0.0001D);
+        assertEquals(0.0D, monitor.worstRecentFrameTimeMs(), 0.0001D);
+        assertEquals(0L, monitor.currentFrameNanos());
+    }
+
     @Test
     void raisesPressureAfterSustainedBadFramesAtSixtyFpsTarget() {
         FrameMonitor monitor = new FrameMonitor();
