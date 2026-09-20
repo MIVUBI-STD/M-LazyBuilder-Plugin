@@ -168,6 +168,10 @@ public final class TerrainDrawTransformStream {
         return snapshot[layerSlot];
     }
 
+    public static LayerSnapshot emptyLayer(int layerSlot, boolean reverseOrder) {
+        return LayerSnapshot.empty(layerSlot, reverseOrder);
+    }
+
     public static Snapshot snapshot() {
         int commands = 0;
         int physicalReady = 0;
