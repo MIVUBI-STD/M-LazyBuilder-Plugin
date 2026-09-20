@@ -128,6 +128,9 @@ public final class ChunkUploadTask implements Runnable {
 
     public void fail(Throwable throwable) {
         if (future.isDone()) return;
+        if (isCurrentSession()) {
+            TerrainGpuResidencyTracker.release(buffer);
+        }
         closePayload();
         future.completeExceptionally(throwable);
     }
