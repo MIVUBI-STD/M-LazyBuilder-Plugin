@@ -26,8 +26,18 @@ final class TerrainPhysicalBuffer implements AutoCloseable {
         RenderSystem.assertOnRenderThread();
         if (size < 0) throw new IllegalArgumentException("Negative buffer size");
         this.target = target;
-        this.handle = GlStateManager._glGenBuffers();
-        resizeDiscarding(size);
+
+        int generated = GlStateManager._glGenBuffers();
+        try {
+            GlStateManager._glBindBuffer(target, generated);
+            GlStateManager._glBufferData(target, (long) size, DYNAMIC_DRAW);
+        } catch (RuntimeException ex) {
+            GlStateManager._glDeleteBuffers(generated);
+            throw ex;
+        }
+
+        this.handle = generated;
+        this.size = size;
     }
 
     int size() {
