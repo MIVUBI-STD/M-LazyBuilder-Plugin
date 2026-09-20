@@ -436,7 +436,7 @@ def main() -> int:
         "tooling/windows-toolchain/scripts/verify/prepare-terraform-local.ps1",
         "docs/04-system/terraform-manager-architecture-lock.md",
     ):
-        if (repo / retired_path).exists():
+        if (ROOT / retired_path).exists():
             fail(errors, f"retired Terraform source/tooling must not return to active repository ownership: {retired_path}")
     if "legacy-terraform" in root_pom or "terraform-core" in root_pom or "plugins/terraform-manager" in root_pom:
         fail(errors, "root Maven reactor must not retain the retired Terraform build profile")
