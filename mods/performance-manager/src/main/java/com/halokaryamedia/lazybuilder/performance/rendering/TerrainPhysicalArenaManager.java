@@ -20,6 +20,7 @@ public final class TerrainPhysicalArenaManager {
     private static final IdentityHashMap<VertexBuffer, Resident> RESIDENTS = new IdentityHashMap<>();
     private static final IdentityHashMap<VertexBuffer, Long> EXCLUSIVE_RESIDENTS = new IdentityHashMap<>();
     private static final TerrainOwnershipProofTracker<VertexBuffer> OWNERSHIP_PROOF = new TerrainOwnershipProofTracker<>();
+    private static final RuntimeCircuitBreaker PHYSICAL_PATH_BREAKER = new RuntimeCircuitBreaker(3);
 
     private static Arena boundArena;
     private static int boundVao = -1;
@@ -51,7 +52,7 @@ public final class TerrainPhysicalArenaManager {
     }
 
     public static boolean upload(VertexBuffer source, ByteBuffer vertices, ByteBuffer customIndices) {
-        if (source == null || vertices == null || !RenderSystem.isOnRenderThread()) return false;
+        if (source == null || vertices == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) return false;
 
         TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
         int vertexBytes = vertices.remaining();
@@ -155,7 +156,7 @@ public final class TerrainPhysicalArenaManager {
 
     /** Update a custom/sorted index range without moving the existing vertex mirror. */
     public static boolean uploadIndex(VertexBuffer source, ByteBuffer indices) {
-        if (source == null || indices == null || !RenderSystem.isOnRenderThread()) return false;
+        if (source == null || indices == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) return false;
 
         TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
         int indexBytes = indices.remaining();
@@ -220,7 +221,7 @@ public final class TerrainPhysicalArenaManager {
     }
 
     public static boolean bind(VertexBuffer source) {
-        if (source == null || !RenderSystem.isOnRenderThread()) return false;
+        if (source == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) return false;
 
         TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
         Resident resident = RESIDENTS.get(source);
@@ -304,7 +305,7 @@ public final class TerrainPhysicalArenaManager {
     }
 
     public static boolean draw(VertexBuffer source) {
-        if (source == null || !RenderSystem.isOnRenderThread()) return false;
+        if (source == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) return false;
         Prepared current = prepared;
         if (current == null || current.source != source) return false;
 
@@ -467,6 +468,7 @@ public final class TerrainPhysicalArenaManager {
         vaoCreationFailures = 0L;
         drawFailures = 0L;
         bufferProvisionFailures = 0L;
+        PHYSICAL_PATH_BREAKER.reset();
         clearStatus = "cleared";
         return true;
     }
@@ -502,6 +504,8 @@ public final class TerrainPhysicalArenaManager {
                 vaoCreationFailures,
                 drawFailures,
                 bufferProvisionFailures,
+                PHYSICAL_PATH_BREAKER.failures(),
+                PHYSICAL_PATH_BREAKER.open(),
                 clearStatus
         );
     }
@@ -902,6 +906,8 @@ public final class TerrainPhysicalArenaManager {
             long vaoCreationFailures,
             long drawFailures,
             long bufferProvisionFailures,
+            int physicalPathFailureCount,
+            boolean physicalPathDisabled,
             String clearStatus
     ) {
         public Snapshot {
