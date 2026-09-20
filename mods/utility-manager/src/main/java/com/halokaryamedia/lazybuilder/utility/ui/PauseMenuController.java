@@ -46,18 +46,12 @@ public final class PauseMenuController {
             buttons.add(resume);
 
             buttons.add(ButtonWidget.builder(
-                            Text.literal("Tools"),
-                            button -> client.setScreen(new LazyBuilderToolsScreen(screen)))
+                            Text.literal("Settings"),
+                            button -> client.setScreen(new LazyBuilderSettingsScreen(screen)))
                     .dimensions(x, firstY + (BUTTON_HEIGHT + GAP), BUTTON_WIDTH, BUTTON_HEIGHT)
                     .build());
 
-            buttons.add(ButtonWidget.builder(
-                            Text.literal("Settings"),
-                            button -> client.setScreen(new LazyBuilderSettingsScreen(screen)))
-                    .dimensions(x, firstY + (BUTTON_HEIGHT + GAP) * 2, BUTTON_WIDTH, BUTTON_HEIGHT)
-                    .build());
-
-            position(quit, x, firstY + (BUTTON_HEIGHT + GAP) * 3);
+            position(quit, x, firstY + (BUTTON_HEIGHT + GAP) * 2);
             buttons.add(quit);
         });
     }
