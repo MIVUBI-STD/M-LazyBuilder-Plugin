@@ -225,7 +225,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         "Quick Creative Search", "Start typing in Creative inventory to search immediately");
             }
             case TOOLS -> {
-                drawRow(context, left, right, firstY, "Tools", "Configure LazyBuilder client modules");
+                drawRow(context, left, right, firstY, "Tools", "Tool-specific setup and configuration");
             }
         }
     }

@@ -53,9 +53,10 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         y = addValue(y, prefs.unfocusedFpsLimit() + " FPS",
                 () -> update(prefs.withUnfocusedFpsLimit(nextValue(BACKGROUND_LIMITS, prefs.unfocusedFpsLimit()))));
 
-        int advancedY = y + SECTION_GAP + 12;
-        advancedY = addValue(advancedY, prefs.minimizedFpsLimit() + " FPS",
+        y = addValue(y, prefs.minimizedFpsLimit() + " FPS",
                 () -> update(prefs.withMinimizedFpsLimit(nextValue(MINIMIZED_LIMITS, prefs.minimizedFpsLimit()))));
+
+        int advancedY = y + SECTION_GAP + 12;
 
         advancedY = addToggle(advancedY, prefs.hiddenObjectSkipping(),
                 enabled -> update(prefs.withHiddenObjectSkipping(enabled)));
@@ -133,28 +134,39 @@ public final class PerformanceVideoSettingsScreen extends Screen {
                         : "Used when background limiting is enabled");
         y += ROW_HEIGHT + ROW_GAP;
 
+        drawRow(context, left, right, y,
+                "Minimized FPS",
+                "Frame-rate limit while the game window is minimized");
+        y += ROW_HEIGHT + ROW_GAP;
+
         y += SECTION_GAP;
         context.drawTextWithShadow(this.textRenderer, Text.literal("ADVANCED"), left, y, TEXT_SECONDARY);
         y += 12;
 
         drawRow(context, left, right, y,
-                "Minimized FPS",
-                "Lower frame-rate limit while the game window is minimized");
+                "Skip Unseen Objects",
+                "Stop drawing entities and special blocks when they are fully hidden");
         y += ROW_HEIGHT + ROW_GAP;
 
         drawRow(context, left, right, y,
-                "Skip Hidden Objects",
-                "Avoid drawing entities and special blocks that cannot be seen");
+                "Faster World Rendering",
+                "Use the optimized world rendering path");
         y += ROW_HEIGHT + ROW_GAP;
 
         drawRow(context, left, right, y,
-                "Optimize World Rendering",
-                "Use LazyBuilder's faster world rendering path");
-        y += ROW_HEIGHT + ROW_GAP;
+                "Lower Memory Usage",
+                "Reuse compatible rendering data to reduce memory pressure");
 
-        drawRow(context, left, right, y,
-                "Reduce Memory Usage",
-                "Reuse compatible rendering data to lower memory pressure");
+        String status = userFacingStatus();
+        if (!status.isBlank()) {
+            context.drawTextWithShadow(
+                    this.textRenderer,
+                    Text.literal(status),
+                    left,
+                    Math.min(this.height - 48, y + ROW_HEIGHT + 10),
+                    0xFFFF9A9A
+            );
+        }
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -167,6 +179,14 @@ public final class PerformanceVideoSettingsScreen extends Screen {
         int maxWidth = Math.max(0, contentWidth() - CONTROL_WIDTH - 24);
         String clipped = this.textRenderer.trimToWidth(description, maxWidth);
         context.drawTextWithShadow(this.textRenderer, Text.literal(clipped), left + 8, y + 16, TEXT_MUTED);
+    }
+
+    private static String userFacingStatus() {
+        String status = PerformanceManagerClient.lastPreferenceUpdateStatus();
+        if ("rendering-disable-blocked:terrain-recovery-failed".equals(status)) {
+            return "Faster World Rendering could not be disabled safely.";
+        }
+        return "";
     }
 
     private static int nextValue(int[] values, int current) {
