@@ -588,14 +588,16 @@ public final class TerrainPhysicalArenaManager {
             return;
         }
 
-        TerrainPhysicalBuffer newVertex;
-        TerrainPhysicalBuffer newIndex;
+        TerrainPhysicalBuffer newVertex = null;
+        TerrainPhysicalBuffer newIndex = null;
         try {
             newVertex = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.VERTICES, vertexCapacity);
-            newIndex = indexCapacity > 0
-                    ? new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity)
-                    : null;
+            if (indexCapacity > 0) {
+                newIndex = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity);
+            }
         } catch (RuntimeException ex) {
+            if (newVertex != null) newVertex.close();
+            if (newIndex != null) newIndex.close();
             bufferProvisionFailures++;
             relocationFallbacks++;
             return;
@@ -603,75 +605,62 @@ public final class TerrainPhysicalArenaManager {
 
         long nextEpoch = arena.epoch + 1L;
         IdentityHashMap<VertexBuffer, Boolean> preserved = new IdentityHashMap<>();
-        try {
-            VertexBuffer[] sources = arena.sources.keySet().toArray(VertexBuffer[]::new);
-            for (VertexBuffer source : sources) {
-                Resident resident = RESIDENTS.get(source);
-                TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
-                if (resident == null || command == null || command.handle() == null
-                        || !command.handle().arenaKey().equals(resident.arenaKey)
-                        || !TerrainPhysicalArenaPolicy.isDrawReady(command)) {
-                    if (resident != null) {
-                        RESIDENTS.remove(source);
-                        invalidations++;
-                    }
-                    continue;
-                }
+        IdentityHashMap<VertexBuffer, Resident> stagedResidents = new IdentityHashMap<>();
+        IdentityHashMap<VertexBuffer, Boolean> stagedInvalidations = new IdentityHashMap<>();
 
-                int newVertexOffset = checkedOffset(command.vertexByteOffset());
-                int newIndexOffset = resident.indexBytes > 0 ? checkedOffset(command.indexByteOffset()) : 0;
-                if (newVertexOffset < 0 || (resident.indexBytes > 0 && (newIndexOffset < 0 || newIndex == null))) {
-                    RESIDENTS.remove(source);
-                    OWNERSHIP_PROOF.invalidate(source);
-                    invalidations++;
-                    continue;
-                }
-
-                try {
-                    oldVertex.copyTo(newVertex, resident.vertexOffset, newVertexOffset, resident.vertexBytes);
-                    long copied = resident.vertexBytes;
-                    if (resident.indexBytes > 0) {
-                        if (oldIndex == null) throw new IllegalStateException("Missing old terrain EBO");
-                        oldIndex.copyTo(newIndex, resident.indexOffset, newIndexOffset, resident.indexBytes);
-                        copied += resident.indexBytes;
-                    }
-                    relocatedBytes += copied;
-                    relocations++;
-                    preserved.put(source, Boolean.TRUE);
-                    RESIDENTS.put(source, new Resident(
-                            resident.arenaKey,
-                            command.handle().generation(),
-                            nextEpoch,
-                            newVertexOffset,
-                            newIndexOffset,
-                            resident.vertexBytes,
-                            resident.indexBytes
-                    ));
-                    OWNERSHIP_PROOF.reset(source);
-                } catch (RuntimeException ex) {
-                    RESIDENTS.remove(source);
-                    OWNERSHIP_PROOF.invalidate(source);
-                    invalidations++;
-                    relocationFallbacks++;
-                }
+        VertexBuffer[] sources = arena.sources.keySet().toArray(VertexBuffer[]::new);
+        for (VertexBuffer source : sources) {
+            Resident resident = RESIDENTS.get(source);
+            TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
+            if (resident == null || command == null || command.handle() == null
+                    || !command.handle().arenaKey().equals(resident.arenaKey)
+                    || !TerrainPhysicalArenaPolicy.isDrawReady(command)) {
+                if (resident != null) stagedInvalidations.put(source, Boolean.TRUE);
+                continue;
             }
-        } catch (RuntimeException ex) {
-            relocationFallbacks++;
-            newVertex.close();
-            if (newIndex != null) newIndex.close();
-            return;
-        } finally {
-            noteExternalBind();
+
+            int newVertexOffset = checkedOffset(command.vertexByteOffset());
+            int newIndexOffset = resident.indexBytes > 0 ? checkedOffset(command.indexByteOffset()) : 0;
+            if (newVertexOffset < 0 || (resident.indexBytes > 0 && (newIndexOffset < 0 || newIndex == null))) {
+                stagedInvalidations.put(source, Boolean.TRUE);
+                continue;
+            }
+
+            try {
+                oldVertex.copyTo(newVertex, resident.vertexOffset, newVertexOffset, resident.vertexBytes);
+                long copied = resident.vertexBytes;
+                if (resident.indexBytes > 0) {
+                    if (oldIndex == null) throw new IllegalStateException("Missing old terrain EBO");
+                    oldIndex.copyTo(newIndex, resident.indexOffset, newIndexOffset, resident.indexBytes);
+                    copied += resident.indexBytes;
+                }
+
+                preserved.put(source, Boolean.TRUE);
+                stagedResidents.put(source, new Resident(
+                        resident.arenaKey,
+                        command.handle().generation(),
+                        nextEpoch,
+                        newVertexOffset,
+                        newIndexOffset,
+                        resident.vertexBytes,
+                        resident.indexBytes
+                ));
+                relocatedBytes += copied;
+                relocations++;
+            } catch (RuntimeException ex) {
+                stagedInvalidations.put(source, Boolean.TRUE);
+                relocationFallbacks++;
+            }
         }
 
+        // Publish the new arena only after all copy decisions are complete.
+        noteExternalBind();
         try {
             invalidateVaos(arena);
-            oldVertex.close();
-            if (oldIndex != null) oldIndex.close();
         } catch (RuntimeException ex) {
-            relocationFallbacks++;
             newVertex.close();
             if (newIndex != null) newIndex.close();
+            relocationFallbacks++;
             return;
         }
 
@@ -680,6 +669,24 @@ public final class TerrainPhysicalArenaManager {
         arena.sources.clear();
         arena.sources.putAll(preserved);
         arena.epoch = nextEpoch;
+
+        for (Map.Entry<VertexBuffer, Resident> entry : stagedResidents.entrySet()) {
+            RESIDENTS.put(entry.getKey(), entry.getValue());
+            OWNERSHIP_PROOF.reset(entry.getKey());
+        }
+        for (VertexBuffer source : stagedInvalidations.keySet()) {
+            if (RESIDENTS.remove(source) != null) invalidations++;
+            OWNERSHIP_PROOF.invalidate(source);
+        }
+
+        try {
+            oldVertex.close();
+            if (oldIndex != null) oldIndex.close();
+        } catch (RuntimeException ex) {
+            // New arena ownership is already coherent; old-resource cleanup failure must not roll it back.
+            relocationFallbacks++;
+        }
+
         arenaResizes++;
     }
 
