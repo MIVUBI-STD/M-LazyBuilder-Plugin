@@ -87,10 +87,6 @@ public final class PerformanceConfigStore {
         }
     }
 
-    public Path configFile() {
-        return configFile;
-    }
-
     private static boolean readBoolean(Properties properties, String key, boolean fallback) {
         String value = properties.getProperty(key);
         if (value == null) return fallback;
