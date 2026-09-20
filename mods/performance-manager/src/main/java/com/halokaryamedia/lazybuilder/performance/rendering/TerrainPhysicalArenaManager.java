@@ -96,6 +96,7 @@ public final class TerrainPhysicalArenaManager {
                     ARENAS.put(key, arena);
                 } catch (RuntimeException ex) {
                     arenaCreationFailures++;
+                    PHYSICAL_PATH_BREAKER.recordFailure();
                     invalidate(source);
                     return false;
                 }
