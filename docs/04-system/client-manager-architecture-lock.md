@@ -144,7 +144,7 @@ Artifact: `lazybuilder-performance-manager.jar`
 9. Shared services require a second real consumer and a stable contract before extraction.
 10. No Manager imports another Manager's implementation packages.
 11. Builder Utilities stays outside the three-Manager core suite and owns only Axiom-first build extensions.
-12. Terraform remains a legacy/prototype terrain lane; do not expand it in parallel with Builder Utilities for the same outcome.
+12. The retired Terraform prototype must not be reintroduced as a parallel builder owner; Git history is its archive.
 13. New Utility/Performance/Builder features must pass an ownership, overlap, and runtime-cost review.
 
 ## Repository and release shape
@@ -170,7 +170,6 @@ Map Manager          implemented / correctness hardening active
 Utility Manager      implemented / architecture locked
 Performance Manager  implemented / active core client component
 Builder Utilities    implemented / independent Axiom-first development lane
-Terraform Manager    legacy/prototype / retirement evaluation only
 Cross-manager audit  architecture locked
 ```
 

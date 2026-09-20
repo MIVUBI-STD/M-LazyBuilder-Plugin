@@ -425,16 +425,14 @@ def main() -> int:
         if manager not in fabric_verifier or "--no-daemon build" not in fabric_verifier:
             fail(errors, f"canonical Fabric verification lane missing manager: {manager}")
 
-    for development_lane in ("mods/builder-utilities", "mods/terraform-manager"):
-        if development_lane in fabric_verifier:
-            fail(errors, f"default Fabric verification must not treat development lane as core: {development_lane}")
+    if "mods/builder-utilities" in fabric_verifier:
+        fail(errors, "default Fabric verification must not treat Builder Utilities as a core manager")
 
-    default_modules = root_pom.split("<profiles>", 1)[0]
-    for legacy_module in ("shared/terraform-core", "plugins/terraform-manager"):
-        if f"<module>{legacy_module}</module>" in default_modules:
-            fail(errors, f"default Maven reactor must not include legacy Terraform module: {legacy_module}")
-    if "<id>legacy-terraform</id>" not in root_pom:
-        fail(errors, "root Maven reactor must preserve an explicit legacy-terraform profile")
+    for retired_path in ("mods/terraform-manager", "plugins/terraform-manager", "shared/terraform-core"):
+        if (repo / retired_path).exists():
+            fail(errors, f"retired Terraform source must not return to active repository ownership: {retired_path}")
+    if "legacy-terraform" in root_pom or "terraform-core" in root_pom or "plugins/terraform-manager" in root_pom:
+        fail(errors, "root Maven reactor must not retain the retired Terraform build profile")
 
     if "lazybuilder-builder-utilities-" not in build_local or "lazybuilder-terraform-manager-" not in build_local:
         fail(errors, "Launcher build staging must explicitly purge non-core LazyBuilder client JARs before packaging")
@@ -464,8 +462,8 @@ def main() -> int:
         fail(errors, "CONTEXT.md must keep Builder Utilities outside the required Client Setup bundle")
     if "not a fourth core Manager" not in product_doc:
         fail(errors, "product authority must distinguish Builder Utilities from the three core Managers")
-    if "legacy/prototype" not in module_boundaries.lower():
-        fail(errors, "module boundaries must classify Terraform as legacy/prototype rather than a parallel production owner")
+    if "retired" not in module_boundaries.lower() or "git history" not in module_boundaries.lower():
+        fail(errors, "module boundaries must record Terraform retirement and Git-history archival")
     axiom_range_match = re.search(r"(?m)^axiom_supported_range=(.+)$", builder_properties)
     if not axiom_range_match:
         fail(errors, "Builder Utilities must define axiom_supported_range in gradle.properties")

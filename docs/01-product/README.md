@@ -86,7 +86,7 @@ Builder Utilities owns its own bounded operation lifecycle, deterministic planni
 
 FAWE, ezEdits and other established tools may be studied as implementation/problem references, but they are not permanent Builder Utilities runtime authorities.
 
-`mods/terraform-manager/` and `plugins/terraform-manager/` are legacy/prototype terrain lanes under retirement evaluation. They are not current V1 product components and must not be expanded in parallel with Builder Utilities unless a distinct non-overlapping ownership requirement is proven.
+The former Terraform prototype has been retired from active source. Its historical implementation remains available through Git history; Builder Utilities is the only LazyBuilder-owned builder extension lane.
 
 ### Desktop
 

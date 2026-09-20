@@ -78,12 +78,11 @@ Separate development extension
 └── Builder Utilities (Axiom-first)
 
 Legacy/prototype only
-└── Terraform Manager
 ```
 
 The three core Managers are active source/runtime components and are built, verified, bundled, installed and repaired by the same Client Setup transaction. Performance Manager owns client performance behavior, including compatibility-gated rendering/chunk/GPU optimizations and diagnostics; it does not become a cross-manager scheduler or workload authority.
 
-Builder Utilities is a separate Axiom-first extension artifact with its own source/verification boundary. It is not a fourth core Manager and is not currently provisioned by Client Setup. Terraform Manager is not part of the current target product and must not be treated as a parallel production builder owner.
+Builder Utilities is a separate Axiom-first extension artifact with its own source/verification boundary. It is not a fourth core Manager and is not currently provisioned by Client Setup. The former Terraform prototype is retired from active source and is not part of the current target product.
 
 ## Dedicated workflows
 

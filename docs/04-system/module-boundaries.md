@@ -31,12 +31,9 @@ Builder development extension
     └── requires Axiom >=5.3.0 <5.5.0
 
 Legacy/prototype terrain lane
-├── mods/terraform-manager/
-├── plugins/terraform-manager/
-└── shared/terraform-core/
 ```
 
-Builder Utilities is not installed by the current V1 Client Setup transaction. Terraform is not a parallel production editor; it remains a legacy/prototype lane pending explicit retirement or a proven distinct responsibility.
+Builder Utilities is not installed by the current V1 Client Setup transaction. The former Terraform prototype is retired from active source; Git history is its archive.
 
 Axiom remains the primary builder editor/interaction owner. FAWE, FastAsyncVoxelSniper, ezEdits and MetaBrushes remain external specialist/reference tools unless an explicit product decision assigns a narrow non-overlapping capability to LazyBuilder.
 
@@ -53,7 +50,7 @@ Axiom remains the primary builder editor/interaction owner. FAWE, FastAsyncVoxel
 9. Shared protocol evolution is explicit and versioned.
 10. No idle poller/watcher/worker without a concrete active requirement.
 11. One runtime path owner per persisted/runtime concern.
-12. Do not expand Terraform and Builder Utilities as competing owners for the same terrain/build operation.
+12. Do not reintroduce a second LazyBuilder terrain/build owner beside Builder Utilities without a proven distinct responsibility.
 13. Shared execution abstractions require a real repeated responsibility; Builder Utilities keeps its operation lifecycle inside its own module.
 
 ## Dependency direction
@@ -103,4 +100,4 @@ When a future feature is proposed, first answer: **which component owns this out
 - Builder Utilities adds a narrow missing capability without replacing Axiom → implement in Builder Utilities;
 - no current owner → add a new runtime/module only when the responsibility is substantial and durable;
 - multiple apparent owners → repair the boundary before implementation;
-- Terraform and Builder Utilities appear to own the same outcome → do not expand either until one authority is selected.
+- A proposed builder subsystem overlaps Builder Utilities → keep Builder Utilities authoritative unless a distinct non-overlapping responsibility is proven.
