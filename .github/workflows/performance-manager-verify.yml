@@ -1,11 +1,6 @@
 name: Performance Manager Verify
 
 on:
-  push:
-    branches: [Local]
-    paths:
-      - 'mods/performance-manager/**'
-      - '.github/workflows/performance-manager-verify.yml'
   pull_request:
     branches: [Local, main]
     paths:
