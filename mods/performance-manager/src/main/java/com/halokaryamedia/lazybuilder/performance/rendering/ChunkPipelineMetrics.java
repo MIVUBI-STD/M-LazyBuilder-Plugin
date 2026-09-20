@@ -5,9 +5,8 @@ import java.util.concurrent.atomic.LongAdder;
 /**
  * Low-overhead counters for first-party chunk-pipeline decisions and pressure signals.
  *
- * Safety/pressure counters remain always-on. High-frequency observational counters are disabled
- * until diagnostics or proof mode explicitly requests them, avoiding permanent observer cost on
- * chunk-meshing hot paths.
+ * Counters are disabled until diagnostics or proof mode explicitly requests them, avoiding
+ * permanent observer cost on chunk-meshing and render hot paths.
  */
 public final class ChunkPipelineMetrics {
     private static final LongAdder COALESCED_REBUILD_REQUESTS = new LongAdder();
