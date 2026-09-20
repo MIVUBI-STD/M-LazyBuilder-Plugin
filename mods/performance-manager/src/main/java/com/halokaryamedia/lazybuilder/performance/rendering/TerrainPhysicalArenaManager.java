@@ -588,10 +588,18 @@ public final class TerrainPhysicalArenaManager {
             return;
         }
 
-        TerrainPhysicalBuffer newVertex = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.VERTICES, vertexCapacity);
-        TerrainPhysicalBuffer newIndex = indexCapacity > 0
-                ? new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity)
-                : null;
+        TerrainPhysicalBuffer newVertex;
+        TerrainPhysicalBuffer newIndex;
+        try {
+            newVertex = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.VERTICES, vertexCapacity);
+            newIndex = indexCapacity > 0
+                    ? new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity)
+                    : null;
+        } catch (RuntimeException ex) {
+            bufferProvisionFailures++;
+            relocationFallbacks++;
+            return;
+        }
 
         long nextEpoch = arena.epoch + 1L;
         IdentityHashMap<VertexBuffer, Boolean> preserved = new IdentityHashMap<>();
@@ -647,11 +655,24 @@ public final class TerrainPhysicalArenaManager {
                     relocationFallbacks++;
                 }
             }
+        } catch (RuntimeException ex) {
+            relocationFallbacks++;
+            newVertex.close();
+            if (newIndex != null) newIndex.close();
+            return;
         } finally {
             noteExternalBind();
+        }
+
+        try {
             invalidateVaos(arena);
             oldVertex.close();
             if (oldIndex != null) oldIndex.close();
+        } catch (RuntimeException ex) {
+            relocationFallbacks++;
+            newVertex.close();
+            if (newIndex != null) newIndex.close();
+            return;
         }
 
         arena.vertexBuffer = newVertex;
