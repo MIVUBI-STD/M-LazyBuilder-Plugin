@@ -115,13 +115,19 @@ The implementation may evolve, but a second renderer, scheduler, residency regis
 ## Capability ownership and remote verification
 
 Compatibility decisions are now made per optimization domain instead of through a growing list of
-mixin-specific mod checks. Current domains are terrain build, terrain upload, terrain submission,
-immediate rendering, particles, and model-memory ownership.
+mixin-specific mod checks. Current domains are terrain build, terrain upload, terrain submission, immediate rendering, text
+rendering, particles, entity culling, and model-memory ownership.
 
 This preserves conservative fail-closed behavior for uncertain renderer ownership while keeping
 unrelated first-party optimizations active. For example, Iris blocks shader-sensitive terrain
-submission without disabling first-party chunk build policy, while ImmediatelyFast only owns the
-overlapping immediate/particle/upload domains and FerriteCore only owns model-memory deduplication.
+submission without disabling first-party chunk build policy, ImmediatelyFast owns only overlapping
+immediate/text/particle/upload work, EntityCulling owns only entity/block-entity culling, and
+FerriteCore owns only model-memory deduplication.
+
+Vertex-buffer responsibilities are split deliberately. Terrain residency accounting and reversible
+vanilla-backing recovery remain part of first-party terrain ownership, while writable GPU growth is
+an optional overlapping optimization that may stand down independently. External immediate-render
+ownership must never disable terrain recovery safety.
 
 Direct development on `Local` is now covered by the dedicated Performance Manager workflow. Changes
 under `mods/performance-manager/**` or the workflow itself trigger the same build-and-test lane that
