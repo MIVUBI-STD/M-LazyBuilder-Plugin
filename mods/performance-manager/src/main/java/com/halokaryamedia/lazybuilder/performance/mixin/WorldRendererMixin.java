@@ -24,6 +24,7 @@ abstract class WorldRendererMixin {
             VertexConsumerProvider vertexConsumers,
             CallbackInfo ci
     ) {
+        if (!PerformanceManagerClient.preferences().entityCulling()) return;
         if (!PerformanceManagerClient.shouldRenderEntity(entity)) ci.cancel();
     }
 }
