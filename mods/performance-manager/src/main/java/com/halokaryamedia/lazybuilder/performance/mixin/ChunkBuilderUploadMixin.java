@@ -23,6 +23,11 @@ import java.util.concurrent.CompletableFuture;
 /** Batches and paces render-thread chunk uploads without changing queue order. */
 @Mixin(ChunkBuilder.class)
 abstract class ChunkBuilderUploadMixin {
+    @Inject(method = "<init>", at = @At("TAIL"))
+    private void lazybuilder$claimTerrainSession(CallbackInfo ci) {
+        TerrainGpuResidencyTracker.claimSession((ChunkBuilder) (Object) this);
+    }
+
     @Shadow
     @Final
     private Queue<Runnable> uploadQueue;
@@ -93,7 +98,7 @@ abstract class ChunkBuilderUploadMixin {
 
     @Inject(method = "stop", at = @At("TAIL"))
     private void lazybuilder$clearTerrainResidencyAfterStop(CallbackInfo ci) {
-        TerrainGpuResidencyTracker.clear();
+        TerrainGpuResidencyTracker.clearSession((ChunkBuilder) (Object) this);
     }
 
     private int lazybuilder$runUploadBatch(ChunkUploadTask first, int remainingBudget) {
