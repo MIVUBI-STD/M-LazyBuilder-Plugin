@@ -138,7 +138,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         this(parent, category, VideoPage.QUALITY);
     }
 
-    private LazyBuilderSettingsScreen(Screen parent, Category category, VideoPage videoPage) {
+    public LazyBuilderSettingsScreen(Screen parent, Category category, VideoPage videoPage) {
         super(Text.literal("Settings"));
         this.parent = parent;
         this.category = category;
