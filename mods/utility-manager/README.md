@@ -40,10 +40,22 @@ The Video surface follows a game-style hierarchy without duplicating concepts:
 - **View** owns render distance, simulation distance, entity distance, and field of view.
 - **Performance** owns LazyBuilder efficiency controls and background FPS limits. These controls stay independent from the visual-quality preset so choosing Low/Medium/High never silently changes optimization policy.
 - **Interface** owns GUI Scale because interface sizing is not a video-quality decision.
+- **Visual** owns Resource Pack and Shader selection. The row shows the current selection and opens the authoritative manager when activated. Resource Packs use Minecraft's own pack manager; Shaders use Iris when available. Visual choices never become part of the Graphics Preset.
+
 
 Graphics presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled visual or performance preference no longer matches a known profile, the UI reports Custom. View distance, display preferences, camera settings, and background FPS limits remain independent. Presets write visual settings through Minecraft GameOptions and performance policy through the existing Performance Manager ObjectShare contract; no duplicate graphics or performance configuration file is introduced.
 
 The stable preset policy is conservative: High targets high detail with Minecraft's Fancy renderer, while Fabulous remains an explicit manual Graphics Mode choice. This avoids making a convenience preset opt the user into the most compatibility-sensitive renderer path.
+
+### Visual management
+
+Visual is intentionally a small management surface rather than another graphics-tuning page.
+
+- Resource Pack shows Default, the active pack name, or the count of active packs. Opening it delegates to Minecraft's native Resource Pack screen so ordering, compatibility, file watching, and resource reload remain Minecraft-owned.
+- Shader shows Off, the active shader name when available, or Unavailable when no compatible shader renderer is installed. Opening it delegates to Iris through its public GUI API when Iris is present.
+- Shader-specific profiles and individual shader options stay inside the shader manager. LazyBuilder does not clone or persist those settings.
+- Resource Packs and Shaders do not change Graphics Preset, View settings, or Performance preferences automatically.
+- Technical renderer/compatibility state remains internal unless the user needs an actionable explanation.
 
 Preset-owned performance behavior is intentionally small and understandable:
 - Low enables hidden-object skipping and keeps rendering/memory optimizations enabled.
