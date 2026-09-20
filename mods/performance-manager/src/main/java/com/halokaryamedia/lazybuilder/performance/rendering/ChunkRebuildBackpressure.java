@@ -12,16 +12,18 @@ import java.util.Map;
  *
  * Tasks are never discarded. The queue is bounded and fails open when full, prioritized tasks always
  * bypass it, and at least one deferred task is released per tick even under sustained heavy pressure.
+ *
+ * Registry locking is intentionally narrow: each builder owns its own queue state, so queue operations
+ * do not serialize unrelated ChunkBuilder instances.
  */
 public final class ChunkRebuildBackpressure {
-    private static final Map<ChunkBuilder, ArrayDeque<ChunkBuilder.BuiltChunk.Task>> DEFERRED =
-            new IdentityHashMap<>();
+    private static final Map<ChunkBuilder, DeferredState> STATES = new IdentityHashMap<>();
     private static final ThreadLocal<Boolean> RELEASING = ThreadLocal.withInitial(() -> false);
 
     private ChunkRebuildBackpressure() {
     }
 
-    public static synchronized boolean deferIfNeeded(
+    public static boolean deferIfNeeded(
             ChunkBuilder builder,
             ChunkBuilder.BuiltChunk.Task task,
             FramePressure pressure
@@ -34,8 +36,8 @@ public final class ChunkRebuildBackpressure {
             return false;
         }
 
-        ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
-        int deferredTasks = queue == null ? 0 : queue.size();
+        DeferredState state = stateIfPresent(builder);
+        int deferredTasks = state == null ? 0 : state.size();
         if (!ChunkRebuildBackpressurePolicy.shouldDefer(
                 pressure,
                 false,
@@ -46,11 +48,8 @@ public final class ChunkRebuildBackpressure {
             return false;
         }
 
-        if (queue == null) {
-            queue = new ArrayDeque<>();
-            DEFERRED.put(builder, queue);
-        }
-        queue.addLast(task);
+        state = stateFor(builder);
+        state.add(task);
         ChunkPipelineMetrics.recordRebuildBackpressureDeferral();
         return true;
     }
@@ -60,14 +59,15 @@ public final class ChunkRebuildBackpressure {
 
         int budget = ChunkRebuildBackpressurePolicy.releaseBudget(pressure);
         for (int released = 0; released < budget; released++) {
-            ChunkBuilder.BuiltChunk.Task task;
-            synchronized (ChunkRebuildBackpressure.class) {
-                ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
-                if (queue == null) return;
-                task = queue.pollFirst();
-                if (queue.isEmpty()) DEFERRED.remove(builder);
+            DeferredState state = stateIfPresent(builder);
+            if (state == null) return;
+
+            ChunkBuilder.BuiltChunk.Task task = state.poll();
+            if (task == null) {
+                removeIfEmpty(builder, state);
+                return;
             }
-            if (task == null) return;
+            removeIfEmpty(builder, state);
 
             RELEASING.set(true);
             try {
@@ -81,15 +81,16 @@ public final class ChunkRebuildBackpressure {
 
     public static void releaseAll(ChunkBuilder builder) {
         if (builder == null) return;
+
+        DeferredState state = stateIfPresent(builder);
+        if (state == null) return;
+
         while (true) {
-            ChunkBuilder.BuiltChunk.Task task;
-            synchronized (ChunkRebuildBackpressure.class) {
-                ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
-                if (queue == null) return;
-                task = queue.pollFirst();
-                if (queue.isEmpty()) DEFERRED.remove(builder);
+            ChunkBuilder.BuiltChunk.Task task = state.poll();
+            if (task == null) {
+                removeIfEmpty(builder, state);
+                return;
             }
-            if (task == null) return;
 
             RELEASING.set(true);
             try {
@@ -101,18 +102,64 @@ public final class ChunkRebuildBackpressure {
         }
     }
 
-    public static synchronized void cancel(ChunkBuilder builder) {
+    public static void cancel(ChunkBuilder builder) {
         if (builder == null) return;
-        ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.remove(builder);
-        if (queue == null) return;
+
+        DeferredState state;
+        synchronized (STATES) {
+            state = STATES.remove(builder);
+        }
+        if (state == null) return;
+
         ChunkBuilder.BuiltChunk.Task task;
-        while ((task = queue.pollFirst()) != null) {
+        while ((task = state.poll()) != null) {
             task.cancel();
         }
     }
 
-    static synchronized int deferredCount(ChunkBuilder builder) {
-        ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = DEFERRED.get(builder);
-        return queue == null ? 0 : queue.size();
+    static int deferredCount(ChunkBuilder builder) {
+        DeferredState state = stateIfPresent(builder);
+        return state == null ? 0 : state.size();
+    }
+
+    private static DeferredState stateFor(ChunkBuilder builder) {
+        synchronized (STATES) {
+            return STATES.computeIfAbsent(builder, ignored -> new DeferredState());
+        }
+    }
+
+    private static DeferredState stateIfPresent(ChunkBuilder builder) {
+        synchronized (STATES) {
+            return STATES.get(builder);
+        }
+    }
+
+    private static void removeIfEmpty(ChunkBuilder builder, DeferredState state) {
+        if (!state.isEmpty()) return;
+        synchronized (STATES) {
+            if (STATES.get(builder) == state && state.isEmpty()) {
+                STATES.remove(builder);
+            }
+        }
+    }
+
+    private static final class DeferredState {
+        private final ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = new ArrayDeque<>();
+
+        synchronized void add(ChunkBuilder.BuiltChunk.Task task) {
+            queue.addLast(task);
+        }
+
+        synchronized ChunkBuilder.BuiltChunk.Task poll() {
+            return queue.pollFirst();
+        }
+
+        synchronized int size() {
+            return queue.size();
+        }
+
+        synchronized boolean isEmpty() {
+            return queue.isEmpty();
+        }
     }
 }
