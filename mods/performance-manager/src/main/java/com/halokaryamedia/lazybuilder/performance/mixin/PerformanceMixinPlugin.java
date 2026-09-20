@@ -17,7 +17,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     private static final String MIXIN_PACKAGE = "com.halokaryamedia.lazybuilder.performance.mixin.";
 
     private static final Map<String, OptimizationDomain> DOMAIN_BY_MIXIN = Map.ofEntries(
-            Map.entry("TextRendererDrawerMixin", OptimizationDomain.IMMEDIATE_RENDERING),
+            Map.entry("TextRendererDrawerMixin", OptimizationDomain.TEXT_RENDERING),
+            Map.entry("WorldRendererMixin", OptimizationDomain.ENTITY_CULLING),
+            Map.entry("BlockEntityRenderDispatcherMixin", OptimizationDomain.ENTITY_CULLING),
             Map.entry("VertexBufferMixin", OptimizationDomain.IMMEDIATE_RENDERING),
             Map.entry("ParticleManagerMixin", OptimizationDomain.PARTICLES),
             Map.entry("ChunkBuilderUploadMixin", OptimizationDomain.TERRAIN_UPLOAD),
@@ -48,7 +50,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
         this.policy = OptimizationCompatibility.evaluate(
                 RendererCompatibility.detect(),
                 loader.isModLoaded("immediatelyfast"),
-                loader.isModLoaded("ferritecore")
+                loader.isModLoaded("ferritecore"),
+                loader.isModLoaded("entityculling")
         );
     }
 
@@ -71,7 +74,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
         return OptimizationCompatibility.evaluate(
                 RendererCompatibility.detect(),
                 loader.isModLoaded("immediatelyfast"),
-                loader.isModLoaded("ferritecore")
+                loader.isModLoaded("ferritecore"),
+                loader.isModLoaded("entityculling")
         );
     }
 
