@@ -42,6 +42,10 @@ public final class ChunkPipelineMetrics {
         return detailedMetricsEnabled;
     }
 
+    static void setDetailedMetricsEnabledForTest(boolean enabled) {
+        detailedMetricsEnabled = enabled;
+    }
+
     public static void recordCoalescedRebuild() { COALESCED_REBUILD_REQUESTS.increment(); }
     public static long coalescedRebuildRequests() { return COALESCED_REBUILD_REQUESTS.sum(); }
     public static void recordBufferAcquireMiss() { BUFFER_ACQUIRE_MISSES.increment(); }
