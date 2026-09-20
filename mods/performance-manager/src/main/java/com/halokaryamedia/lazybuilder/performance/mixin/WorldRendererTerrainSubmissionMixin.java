@@ -317,7 +317,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
         int layerSlot = lazybuilder$layerSlot(layer);
         if (chunks == null || layerSlot < 0) return;
         if (!TerrainPhysicalArenaManager.hasActivePhysicalResidents()) {
-            TerrainDrawTransformStream.publish(TerrainDrawTransformStream.emptyLayer(layerSlot, layer == RenderLayer.getTranslucent()));
+            TerrainDrawTransformStream.clearLayer(layerSlot);
             return;
         }
 
