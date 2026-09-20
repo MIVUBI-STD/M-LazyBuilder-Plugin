@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.visualproof;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -34,6 +35,15 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureCompactDebug(context, 620, 480, 2,
                     "utility-compact-debug-620x480-gui2");
             verifyInstantCreativeSearch(context);
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
+                    "utility-settings-interface-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
+                    "utility-settings-interface-620x480-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.TOOLS,
+                    "utility-settings-tools-620x480-gui2");
 
             context.runOnClient(client -> ReconnectState.capture(new ServerInfo(
                     "LazyBuilder Preview",
@@ -194,6 +204,24 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             });
             context.waitTicks(4);
         }
+    }
+
+    private static void captureSettings(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            LazyBuilderSettingsScreen.Category category,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, category));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static void captureDisconnected(

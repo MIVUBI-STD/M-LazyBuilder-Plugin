@@ -12,10 +12,11 @@ import net.minecraft.text.Text;
 import java.util.function.Consumer;
 
 /**
- * Builder-facing settings shell.
+ * Familiar game-style settings surface for LazyBuilder.
  *
- * Internal mod names and automatic engine policy stay out of the user surface. Global
- * settings only appear here when the player has a real, useful choice to make.
+ * The screen exposes user concepts only: horizontal categories, full-width option rows,
+ * labels on the left and controls on the right. Internal mod ownership and automatic
+ * engine policy intentionally stay out of this surface.
  */
 public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
@@ -35,14 +36,25 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
-    private static final int PANEL_MAX_WIDTH = 460;
-    private static final int PANEL_MARGIN = 18;
-    private static final int SIDEBAR_WIDTH = 104;
+    private static final int MAX_CONTENT_WIDTH = 520;
+    private static final int SCREEN_MARGIN = 18;
+    private static final int TITLE_Y = 18;
+    private static final int TAB_Y = 38;
     private static final int TAB_HEIGHT = 20;
     private static final int TAB_GAP = 4;
-    private static final int ROW_HEIGHT = 20;
-    private static final int ROW_GAP = 4;
-    private static final int CONTROL_WIDTH = 112;
+    private static final int CONTENT_TOP = 76;
+    private static final int SECTION_GAP = 18;
+    private static final int ROW_HEIGHT = 24;
+    private static final int ROW_GAP = 2;
+    private static final int CONTROL_WIDTH = 92;
+    private static final int DONE_WIDTH = 120;
+
+    private static final int ROW_FILL = 0x88000000;
+    private static final int ROW_BORDER = 0x447F8A98;
+    private static final int DIVIDER = 0x66FFFFFF;
+    private static final int TEXT_PRIMARY = 0xFFF3F6FA;
+    private static final int TEXT_SECONDARY = 0xFFB0BAC7;
+    private static final int TEXT_MUTED = 0xFF8B949E;
 
     private final Screen parent;
     private final Category category;
@@ -59,111 +71,86 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     @Override
     protected void init() {
-        int panelWidth = Math.min(PANEL_MAX_WIDTH, Math.max(280, this.width - PANEL_MARGIN * 2));
-        int panelLeft = (this.width - panelWidth) / 2;
-        int top = 48;
+        int left = contentLeft();
+        int width = contentWidth();
+        int tabWidth = Math.max(62, (width - TAB_GAP * (Category.values().length - 1)) / Category.values().length);
 
-        int tabY = top;
+        int tabX = left;
         for (Category value : Category.values()) {
+            int actualWidth = value == Category.values()[Category.values().length - 1]
+                    ? left + width - tabX
+                    : tabWidth;
             ButtonWidget tab = ButtonWidget.builder(value.text(), button -> this.openCategory(value))
-                    .dimensions(panelLeft, tabY, SIDEBAR_WIDTH, TAB_HEIGHT)
+                    .dimensions(tabX, TAB_Y, actualWidth, TAB_HEIGHT)
                     .build();
             tab.active = value != this.category;
             this.addDrawableChild(tab);
-            tabY += TAB_HEIGHT + TAB_GAP;
+            tabX += actualWidth + TAB_GAP;
         }
 
-        int contentLeft = panelLeft + SIDEBAR_WIDTH + 16;
-        int contentRight = panelLeft + panelWidth;
-        int contentWidth = Math.max(140, contentRight - contentLeft);
-        int rowY = top;
-
+        int rowY = CONTENT_TOP + SECTION_GAP;
         switch (this.category) {
-            case VIDEO -> this.addVideoRows(contentLeft, contentWidth, rowY);
-            case CONTROLS -> this.addControlsRows(contentLeft, contentWidth, rowY);
-            case INTERFACE -> this.addInterfaceRows(contentLeft, contentWidth, rowY);
-            case TOOLS -> this.addToolsRows(contentLeft, contentWidth, rowY);
+            case VIDEO -> this.addNavigationRow(rowY, "Open", () -> {
+                if (this.client != null) {
+                    this.client.setScreen(new VideoOptionsScreen(this, this.client.options));
+                }
+            });
+            case CONTROLS -> this.addNavigationRow(rowY, "Open", () -> {
+                if (this.client != null) {
+                    this.client.setScreen(new ControlsOptionsScreen(this, this.client.options));
+                }
+            });
+            case INTERFACE -> {
+                int next = this.addToggleRow(
+                        rowY,
+                        preferences().compactDebugHud(),
+                        value -> update(preferences().withCompactDebugHud(value))
+                );
+                this.addToggleRow(
+                        next,
+                        preferences().contextualScreenshotNames(),
+                        value -> update(preferences().withContextualScreenshotNames(value))
+                );
+            }
+            case TOOLS -> this.addToggleRow(
+                    rowY,
+                    preferences().instantCreativeSearch(),
+                    value -> update(preferences().withInstantCreativeSearch(value))
+            );
         }
 
         this.addDrawableChild(
                 ButtonWidget.builder(Text.literal("Done"), button -> this.close())
-                        .dimensions(contentLeft, this.height - 32, Math.min(200, contentWidth), ROW_HEIGHT)
+                        .dimensions(
+                                this.width / 2 - DONE_WIDTH / 2,
+                                this.height - 32,
+                                DONE_WIDTH,
+                                20
+                        )
                         .build()
         );
     }
 
-    private void addVideoRows(int x, int width, int y) {
-        this.addWideButton(x, width, y, "Video Settings", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new VideoOptionsScreen(this, this.client.options));
-            }
-        });
-    }
-
-    private void addControlsRows(int x, int width, int y) {
-        this.addWideButton(x, width, y, "Controls", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new ControlsOptionsScreen(this, this.client.options));
-            }
-        });
-    }
-
-    private void addInterfaceRows(int x, int width, int y) {
-        int next = y;
-        next = this.addToggleRow(
-                x,
-                width,
-                next,
-                preferences().compactDebugHud(),
-                value -> update(preferences().withCompactDebugHud(value))
-        );
-        this.addToggleRow(
-                x,
-                width,
-                next,
-                preferences().contextualScreenshotNames(),
-                value -> update(preferences().withContextualScreenshotNames(value))
-        );
-    }
-
-    private void addToolsRows(int x, int width, int y) {
-        this.addToggleRow(
-                x,
-                width,
-                y,
-                preferences().instantCreativeSearch(),
-                value -> update(preferences().withInstantCreativeSearch(value))
-        );
-    }
-
-    private int addToggleRow(
-            int x,
-            int width,
-            int y,
-            boolean enabled,
-            Consumer<Boolean> setter
-    ) {
-        int buttonWidth = Math.min(CONTROL_WIDTH, Math.max(72, width / 3));
-        int buttonX = x + width - buttonWidth;
-
+    private int addToggleRow(int y, boolean enabled, Consumer<Boolean> setter) {
+        int right = contentLeft() + contentWidth();
         this.addDrawableChild(
                 ButtonWidget.builder(
-                                Text.literal(enabled ? "On" : "Off"),
+                                Text.literal(enabled ? "ON" : "OFF"),
                                 button -> {
                                     setter.accept(!enabled);
                                     this.refreshCategory();
                                 })
-                        .dimensions(buttonX, y, buttonWidth, ROW_HEIGHT)
+                        .dimensions(right - CONTROL_WIDTH - 4, y + 2, CONTROL_WIDTH, ROW_HEIGHT - 4)
                         .build()
         );
-
         return y + ROW_HEIGHT + ROW_GAP;
     }
 
-    private void addWideButton(int x, int width, int y, String label, Runnable action) {
+    private void addNavigationRow(int y, String label, Runnable action) {
+        int right = contentLeft() + contentWidth();
         this.addDrawableChild(
-                ButtonWidget.builder(Text.literal(label), button -> action.run())
-                        .dimensions(x, y, Math.min(width, 220), ROW_HEIGHT)
+                ButtonWidget.builder(Text.literal(label + " >"), button -> action.run())
+                        .dimensions(right - CONTROL_WIDTH - 4, y + 2, CONTROL_WIDTH, ROW_HEIGHT - 4)
                         .build()
         );
     }
@@ -192,45 +179,93 @@ public final class LazyBuilderSettingsScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context, mouseX, mouseY, delta);
 
-        int panelWidth = Math.min(PANEL_MAX_WIDTH, Math.max(280, this.width - PANEL_MARGIN * 2));
-        int panelLeft = (this.width - panelWidth) / 2;
-        int contentLeft = panelLeft + SIDEBAR_WIDTH + 16;
-        int contentRight = panelLeft + panelWidth;
+        int left = contentLeft();
+        int right = left + contentWidth();
 
-        context.drawTextWithShadow(this.textRenderer, this.title, panelLeft, 24, 0xFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, this.category.text(), contentLeft, 34, 0xFFFFFF);
-        context.fill(contentLeft, 44, contentRight, 45, 0x55FFFFFF);
+        context.drawTextWithShadow(
+                this.textRenderer,
+                Text.literal("SETTINGS"),
+                left,
+                TITLE_Y,
+                TEXT_PRIMARY
+        );
 
-        this.renderLabels(context, contentLeft, 48);
+        context.fill(left, TAB_Y + TAB_HEIGHT + 8, right, TAB_Y + TAB_HEIGHT + 9, DIVIDER);
+
+        context.drawTextWithShadow(
+                this.textRenderer,
+                sectionTitle(),
+                left,
+                CONTENT_TOP,
+                TEXT_SECONDARY
+        );
+
+        renderRows(context, left, right, CONTENT_TOP + SECTION_GAP);
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderLabels(DrawContext context, int x, int y) {
+    private void renderRows(DrawContext context, int left, int right, int firstY) {
         switch (this.category) {
-            case VIDEO -> context.drawTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Minecraft display and rendering options"),
-                    x,
-                    y + 30,
-                    0xA0A0A0
-            );
-            case CONTROLS -> context.drawTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Keyboard and mouse controls"),
-                    x,
-                    y + 30,
-                    0xA0A0A0
-            );
-            case INTERFACE -> {
-                drawRowLabel(context, x, y, "Compact Debug HUD");
-                drawRowLabel(context, x, y + 24, "Contextual Screenshot Names");
+            case VIDEO -> {
+                drawRow(context, left, right, firstY, "Video Settings", "Display, graphics and render distance");
             }
-            case TOOLS -> drawRowLabel(context, x, y, "Instant Creative Search");
+            case CONTROLS -> {
+                drawRow(context, left, right, firstY, "Controls", "Keyboard, mouse and key bindings");
+            }
+            case INTERFACE -> {
+                drawRow(context, left, right, firstY, "Compact Debug HUD", "Keep useful build information visible without the full F3 wall");
+                drawRow(context, left, right, firstY + ROW_HEIGHT + ROW_GAP,
+                        "Contextual Screenshot Names", "Add world or server context to automatic screenshot names");
+            }
+            case TOOLS -> {
+                drawRow(context, left, right, firstY, "Instant Creative Search",
+                        "Start typing in Creative inventory to enter Search Items immediately");
+            }
         }
     }
 
-    private void drawRowLabel(DrawContext context, int x, int y, String label) {
-        context.drawTextWithShadow(this.textRenderer, Text.literal(label), x, y + 6, 0xE0E0E0);
+    private void drawRow(
+            DrawContext context,
+            int left,
+            int right,
+            int y,
+            String label,
+            String description
+    ) {
+        context.fill(left, y, right, y + ROW_HEIGHT, ROW_BORDER);
+        context.fill(left + 1, y + 1, right - 1, y + ROW_HEIGHT - 1, ROW_FILL);
+
+        int textY = y + 4;
+        context.drawTextWithShadow(this.textRenderer, Text.literal(label), left + 8, textY, TEXT_PRIMARY);
+
+        int descriptionX = left + 8;
+        int descriptionY = textY + 10;
+        int maxDescriptionWidth = Math.max(0, contentWidth() - CONTROL_WIDTH - 24);
+        String clipped = this.textRenderer.trimToWidth(description, maxDescriptionWidth);
+        context.drawTextWithShadow(
+                this.textRenderer,
+                Text.literal(clipped),
+                descriptionX,
+                descriptionY,
+                TEXT_MUTED
+        );
+    }
+
+    private Text sectionTitle() {
+        return switch (this.category) {
+            case VIDEO -> Text.literal("VIDEO");
+            case CONTROLS -> Text.literal("CONTROLS");
+            case INTERFACE -> Text.literal("INTERFACE");
+            case TOOLS -> Text.literal("TOOLS");
+        };
+    }
+
+    private int contentWidth() {
+        return Math.min(MAX_CONTENT_WIDTH, Math.max(280, this.width - SCREEN_MARGIN * 2));
+    }
+
+    private int contentLeft() {
+        return (this.width - contentWidth()) / 2;
     }
 
     @Override
