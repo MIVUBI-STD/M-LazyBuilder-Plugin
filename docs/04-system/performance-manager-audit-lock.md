@@ -129,6 +129,12 @@ vanilla-backing recovery remain part of first-party terrain ownership, while wri
 an optional overlapping optimization that may stand down independently. External immediate-render
 ownership must never disable terrain recovery safety.
 
+Terrain clear and disable lifecycle is recovery-first. Exclusive arena residents must recover their
+vanilla backing before physical arenas and logical residency state are destroyed. If any recovery
+fails, clear is aborted, authoritative arena state is retained for retry/fallback, and the failure is
+surfaced through lifecycle diagnostics instead of being silently discarded. Off-render-thread clear
+requests reschedule the complete transaction onto the render thread.
+
 Direct development on `Local` is now covered by the dedicated Performance Manager workflow. Changes
 under `mods/performance-manager/**` or the workflow itself trigger the same build-and-test lane that
 previously required a pull request or manual dispatch.
