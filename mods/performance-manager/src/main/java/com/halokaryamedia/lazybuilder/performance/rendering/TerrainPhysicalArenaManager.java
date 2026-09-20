@@ -134,6 +134,8 @@ public final class TerrainPhysicalArenaManager {
                 uploadedBytes += indexBytes;
             }
         } catch (RuntimeException ex) {
+            bufferProvisionFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             invalidate(source);
             discardArenaIfUnused(key, arena);
             return false;
@@ -202,6 +204,8 @@ public final class TerrainPhysicalArenaManager {
         try {
             arena.indexBuffer.upload(indices.duplicate(), indexOffset);
         } catch (RuntimeException ex) {
+            bufferProvisionFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             invalidate(source);
             return false;
         }
@@ -513,9 +517,15 @@ public final class TerrainPhysicalArenaManager {
     private static VaoState createVao(Arena arena, VertexFormat format) {
         BufferRenderer.resetCurrentVertexBuffer();
         int id = GlStateManager._glGenVertexArrays();
-        GlStateManager._glBindVertexArray(id);
-        arena.vertexBuffer.bind();
-        format.setupState();
+        try {
+            GlStateManager._glBindVertexArray(id);
+            arena.vertexBuffer.bind();
+            format.setupState();
+        } catch (RuntimeException ex) {
+            RenderSystem.glDeleteVertexArrays(id);
+            noteExternalBind();
+            throw ex;
+        }
         boundArena = arena;
         boundVao = id;
         physicalBufferBinds++;
@@ -556,8 +566,15 @@ public final class TerrainPhysicalArenaManager {
 
     private static void ensureIndexBuffer(Arena arena, int capacity) {
         if (capacity <= 0 || arena.indexBuffer != null) return;
-        arena.indexBuffer = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, capacity);
-        invalidateVaos(arena);
+
+        TerrainPhysicalBuffer candidate = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, capacity);
+        try {
+            invalidateVaos(arena);
+        } catch (RuntimeException ex) {
+            candidate.close();
+            throw ex;
+        }
+        arena.indexBuffer = candidate;
     }
 
     /** Rebuild a physical arena, preserving mirrored data whose current logical handles are valid. */
@@ -603,6 +620,7 @@ public final class TerrainPhysicalArenaManager {
             if (newVertex != null) newVertex.close();
             if (newIndex != null) newIndex.close();
             bufferProvisionFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
             relocationFallbacks++;
             return;
         }
@@ -847,7 +865,12 @@ public final class TerrainPhysicalArenaManager {
         private Arena(int vertexCapacity, int indexCapacity) {
             this.vertexBuffer = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.VERTICES, vertexCapacity);
             if (indexCapacity > 0) {
-                this.indexBuffer = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity);
+                try {
+                    this.indexBuffer = new TerrainPhysicalBuffer(TerrainPhysicalBuffer.INDICES, indexCapacity);
+                } catch (RuntimeException ex) {
+                    this.vertexBuffer.close();
+                    throw ex;
+                }
             }
         }
     }
