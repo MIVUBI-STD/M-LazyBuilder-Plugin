@@ -52,7 +52,9 @@ public final class PerformanceRuntime {
         }
 
         backgroundPolicy.update(client, preferences);
-        cullingRuntime.tick(client, preferences, frameMonitor.pressure());
+        if (preferences.entityCulling() || preferences.blockEntityCulling()) {
+            cullingRuntime.tick(client, preferences, frameMonitor.pressure());
+        }
         if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
             ChunkRebuildBackpressure.drain(
                     client.worldRenderer.getChunkBuilder(),
