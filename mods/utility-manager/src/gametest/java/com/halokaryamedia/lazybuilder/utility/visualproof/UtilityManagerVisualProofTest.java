@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.itemgroup.v1.FabricCreativeInventoryScreen;
+import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.Element;
@@ -16,12 +17,20 @@ import net.minecraft.client.gui.screen.DisconnectedScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
+import net.minecraft.client.gui.widget.PressableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.network.ServerInfo;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.option.NarratorMode;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.ItemGroups;
 import net.minecraft.text.Text;
 import net.minecraft.world.GameMode;
+import org.lwjgl.glfw.GLFW;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /** L4 visual/runtime proof for Utility Manager actions injected into vanilla client screens. */
 @SuppressWarnings("UnstableApiUsage")
@@ -42,6 +51,10 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.VIDEO,
                     "utility-settings-video-620x480-gui2");
+            captureVideoDropdown(context, 1440, 900, 2,
+                    "utility-settings-video-dropdown-1440x900-gui2");
+            captureVideoDropdown(context, 620, 480, 2,
+                    "utility-settings-video-dropdown-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.CONTROLS,
                     "utility-settings-controls-1440x900-gui2");
@@ -57,6 +70,8 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-keybinds-620x480-gui2");
             captureScrolledKeybindSettings(context, 620, 480, 2,
                     "utility-keybinds-scrolled-620x480-gui2");
+            captureKeybindConflict(context, 1440, 900, 2,
+                    "utility-keybinds-conflict-1440x900-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-1440x900-gui2");
@@ -66,6 +81,8 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureScrolledSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-scrolled-620x480-gui2");
+            captureInterfaceResetConfirmation(context, 1440, 900, 2,
+                    "utility-settings-interface-reset-confirmation-1440x900-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.TOOLS,
                     "utility-settings-tools-1440x900-gui2");
@@ -228,6 +245,112 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                 if (client.player != null && client.interactionManager != null) {
                     client.interactionManager.setGameModes(previousGameMode, GameMode.CREATIVE);
                     client.interactionManager.copyAbilities(client.player);
+                }
+            });
+            context.waitTicks(4);
+        }
+    }
+
+    private static void captureVideoDropdown(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, LazyBuilderSettingsScreen.Category.VIDEO));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderSettingsScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderSettingsScreen");
+            }
+            PressableWidget selector = Screens.getButtons(screen).stream()
+                    .filter(widget -> widget.getMessage().getString().endsWith(" FPS"))
+                    .filter(PressableWidget.class::isInstance)
+                    .map(PressableWidget.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("Expected an FPS selector in Video settings"));
+            selector.onPress();
+        });
+        context.waitTicks(4);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureInterfaceResetConfirmation(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, LazyBuilderSettingsScreen.Category.INTERFACE));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderSettingsScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderSettingsScreen");
+            }
+            PressableWidget reset = Screens.getButtons(screen).stream()
+                    .filter(widget -> "Reset".equals(widget.getMessage().getString()))
+                    .filter(PressableWidget.class::isInstance)
+                    .map(PressableWidget.class::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("Expected Interface Reset control"));
+            reset.onPress();
+        });
+        context.waitTicks(4);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureKeybindConflict(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+
+        context.runOnClient(client -> {
+            List<KeyBinding> bindings = new ArrayList<>(List.of(client.options.allKeys));
+            bindings.sort(Comparator
+                    .comparing(KeyBinding::getCategory)
+                    .thenComparing(KeyBinding::getTranslationKey));
+            if (bindings.size() < 2) {
+                throw new AssertionError("Expected at least two key bindings");
+            }
+            InputUtil.Key conflict = InputUtil.Type.KEYSYM.createFromCode(GLFW.GLFW_KEY_F6);
+            bindings.get(0).setBoundKey(conflict);
+            bindings.get(1).setBoundKey(conflict);
+            KeyBinding.updateKeysByCode();
+        });
+
+        try {
+            context.setScreen(() -> new LazyBuilderKeybindSettingsScreen(null));
+            context.waitForScreen(LazyBuilderKeybindSettingsScreen.class);
+            context.waitTicks(8);
+            context.takeScreenshot(screenshotName);
+        } finally {
+            context.setScreen(() -> null);
+            context.runOnClient(client -> {
+                List<KeyBinding> bindings = new ArrayList<>(List.of(client.options.allKeys));
+                bindings.sort(Comparator
+                        .comparing(KeyBinding::getCategory)
+                        .thenComparing(KeyBinding::getTranslationKey));
+                if (bindings.size() >= 2) {
+                    bindings.get(0).setBoundKey(bindings.get(0).getDefaultKey());
+                    bindings.get(1).setBoundKey(bindings.get(1).getDefaultKey());
+                    KeyBinding.updateKeysByCode();
                 }
             });
             context.waitTicks(4);

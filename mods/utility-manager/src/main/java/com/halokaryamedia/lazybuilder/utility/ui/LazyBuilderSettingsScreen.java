@@ -75,6 +75,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private final List<Section> sections = new ArrayList<>();
     private int scrollOffset;
     private int maxScroll;
+    private DropdownState dropdown;
 
     public LazyBuilderSettingsScreen(Screen parent) {
         this(parent, Category.VIDEO);
@@ -452,6 +453,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                                 row.action()
                         ));
                     }
+
+                    if (dropdown != null && dropdown.anchor.equals(row.title)) {
+                        int popupHeight = dropdown.choices.size() * DropdownState.ITEM_HEIGHT;
+                        int below = controlY + CONTROL_HEIGHT + 2;
+                        int popupY = below + popupHeight <= viewportBottom
+                                ? below
+                                : Math.max(VIEWPORT_TOP, controlY - popupHeight - 2);
+                        dropdown.position(controlX, popupY, controlWidth);
+                    }
                 }
 
                 baseY += ROW_HEIGHT + ROW_GAP;
@@ -561,16 +571,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
             Function<Integer, String> label
     ) {
         if (client == null) return;
-        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        List<DropdownChoice> choices = new ArrayList<>();
         int current = option.getValue();
         for (int value : values) {
-            choices.add(new LazyBuilderChoiceScreen.Choice(
+            choices.add(new DropdownChoice(
                     label.apply(value),
                     value == current,
                     () -> setOption(option, value)
             ));
         }
-        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
+        openDropdown(title, choices);
     }
 
     private void openDoubleChoice(
@@ -580,16 +590,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
             Function<Double, String> label
     ) {
         if (client == null) return;
-        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        List<DropdownChoice> choices = new ArrayList<>();
         double current = option.getValue();
         for (double value : values) {
-            choices.add(new LazyBuilderChoiceScreen.Choice(
+            choices.add(new DropdownChoice(
                     label.apply(value),
                     Math.abs(value - current) < 0.0001,
                     () -> setOption(option, value)
             ));
         }
-        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
+        openDropdown(title, choices);
     }
 
     private <E extends Enum<E>> void openEnumChoice(
@@ -598,16 +608,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
             E[] values
     ) {
         if (client == null) return;
-        List<LazyBuilderChoiceScreen.Choice> choices = new ArrayList<>();
+        List<DropdownChoice> choices = new ArrayList<>();
         E current = option.getValue();
         for (E value : values) {
-            choices.add(new LazyBuilderChoiceScreen.Choice(
+            choices.add(new DropdownChoice(
                     humanize(value),
                     value == current,
                     () -> setOption(option, value)
             ));
         }
-        client.setScreen(new LazyBuilderChoiceScreen(this, title, choices));
+        openDropdown(title, choices);
+    }
+
+    private void openDropdown(String anchor, List<DropdownChoice> choices) {
+        dropdown = new DropdownState(anchor, choices);
+        clearAndInit();
     }
 
     private boolean performanceProviderAvailable() {
@@ -679,6 +694,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         renderScrollBar(context, panelRight + 6);
         renderContextPane(context, panelRight + 30, hoveredRow);
         super.render(context, mouseX, mouseY, delta);
+        renderDropdown(context, mouseX, mouseY);
     }
 
     private void renderContextPane(DrawContext context, int x, Row hoveredRow) {
@@ -709,6 +725,81 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
+    private void renderDropdown(DrawContext context, int mouseX, int mouseY) {
+        if (dropdown == null || !dropdown.positioned()) return;
+
+        int left = dropdown.x;
+        int top = dropdown.y;
+        int right = left + dropdown.width;
+        int bottom = top + dropdown.choices.size() * DropdownState.ITEM_HEIGHT;
+
+        context.fill(left - 1, top - 1, right + 1, bottom + 1, 0xAA4F5964);
+        context.fill(left, top, right, bottom, 0xFF151A20);
+
+        for (int i = 0; i < dropdown.choices.size(); i++) {
+            DropdownChoice choice = dropdown.choices.get(i);
+            int itemY = top + i * DropdownState.ITEM_HEIGHT;
+            boolean hovered = mouseX >= left && mouseX < right
+                    && mouseY >= itemY && mouseY < itemY + DropdownState.ITEM_HEIGHT;
+
+            int fill = choice.selected
+                    ? 0xCC1F6558
+                    : hovered ? 0xFF252C34 : 0xFF1A1F25;
+            context.fill(left, itemY, right, itemY + DropdownState.ITEM_HEIGHT - 1, fill);
+            context.fill(left, itemY + DropdownState.ITEM_HEIGHT - 1, right, itemY + DropdownState.ITEM_HEIGHT, DIVIDER);
+
+            int textColor = choice.selected || hovered ? TEXT_PRIMARY : TEXT_SECONDARY;
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal(textRenderer.trimToWidth(choice.label, dropdown.width - 28)),
+                    left + 7,
+                    itemY + 6,
+                    textColor
+            );
+
+            if (choice.selected) {
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal("✓"),
+                        right - 14,
+                        itemY + 6,
+                        ACCENT
+                );
+            }
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (dropdown != null && dropdown.positioned()) {
+            if (mouseX >= dropdown.x && mouseX < dropdown.x + dropdown.width
+                    && mouseY >= dropdown.y && mouseY < dropdown.bottom()) {
+                int index = (int) ((mouseY - dropdown.y) / DropdownState.ITEM_HEIGHT);
+                if (index >= 0 && index < dropdown.choices.size()) {
+                    DropdownChoice choice = dropdown.choices.get(index);
+                    dropdown = null;
+                    choice.action.run();
+                    return true;
+                }
+            }
+
+            dropdown = null;
+            clearAndInit();
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (dropdown != null && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+            dropdown = null;
+            clearAndInit();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     private void renderScrollBar(DrawContext context, int x) {
         if (maxScroll <= 0) return;
         int top = VIEWPORT_TOP;
@@ -724,6 +815,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (dropdown != null) return true;
         if (maxScroll > 0
                 && mouseX >= panelLeft()
                 && mouseX <= panelLeft() + panelWidth()
@@ -903,6 +995,37 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         Runnable action() {
             return action;
+        }
+    }
+
+    private record DropdownChoice(String label, boolean selected, Runnable action) {}
+
+    private static final class DropdownState {
+        private static final int ITEM_HEIGHT = 20;
+
+        private final String anchor;
+        private final List<DropdownChoice> choices;
+        private int x;
+        private int y;
+        private int width;
+
+        private DropdownState(String anchor, List<DropdownChoice> choices) {
+            this.anchor = anchor;
+            this.choices = List.copyOf(choices);
+        }
+
+        private void position(int x, int y, int width) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+        }
+
+        private boolean positioned() {
+            return width > 0;
+        }
+
+        private int bottom() {
+            return y + choices.size() * ITEM_HEIGHT;
         }
     }
 
