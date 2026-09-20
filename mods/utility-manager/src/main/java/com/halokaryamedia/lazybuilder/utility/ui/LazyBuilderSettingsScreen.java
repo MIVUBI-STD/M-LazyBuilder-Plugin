@@ -455,12 +455,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     }
 
                     if (dropdown != null && dropdown.anchor.equals(row.title)) {
-                        int popupHeight = dropdown.choices.size() * DropdownState.ITEM_HEIGHT;
-                        int below = controlY + CONTROL_HEIGHT + 2;
-                        int popupY = below + popupHeight <= viewportBottom
-                                ? below
-                                : Math.max(VIEWPORT_TOP, controlY - popupHeight - 2);
-                        dropdown.position(controlX, popupY, controlWidth);
+                        dropdown.position(
+                                controlX,
+                                controlY,
+                                controlWidth,
+                                VIEWPORT_TOP,
+                                viewportBottom
+                        );
                     }
                 }
 
@@ -731,33 +732,34 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int left = dropdown.x;
         int top = dropdown.y;
         int right = left + dropdown.width;
-        int bottom = top + dropdown.choices.size() * DropdownState.ITEM_HEIGHT;
+        int bottom = dropdown.bottom();
 
         context.fill(left - 1, top - 1, right + 1, bottom + 1, 0xAA4F5964);
         context.fill(left, top, right, bottom, 0xFF151A20);
 
-        for (int i = 0; i < dropdown.choices.size(); i++) {
-            DropdownChoice choice = dropdown.choices.get(i);
-            int itemY = top + i * DropdownState.ITEM_HEIGHT;
+        for (int visibleIndex = 0; visibleIndex < dropdown.visibleCount; visibleIndex++) {
+            int choiceIndex = dropdown.firstVisible + visibleIndex;
+            DropdownChoice choice = dropdown.choices.get(choiceIndex);
+            int itemY = top + visibleIndex * DropdownState.ITEM_HEIGHT;
             boolean hovered = mouseX >= left && mouseX < right
                     && mouseY >= itemY && mouseY < itemY + DropdownState.ITEM_HEIGHT;
 
-            int fill = choice.selected
+            int fill = choice.selected()
                     ? 0xCC1F6558
                     : hovered ? 0xFF252C34 : 0xFF1A1F25;
             context.fill(left, itemY, right, itemY + DropdownState.ITEM_HEIGHT - 1, fill);
             context.fill(left, itemY + DropdownState.ITEM_HEIGHT - 1, right, itemY + DropdownState.ITEM_HEIGHT, DIVIDER);
 
-            int textColor = choice.selected || hovered ? TEXT_PRIMARY : TEXT_SECONDARY;
+            int textColor = choice.selected() || hovered ? TEXT_PRIMARY : TEXT_SECONDARY;
             context.drawTextWithShadow(
                     textRenderer,
-                    Text.literal(textRenderer.trimToWidth(choice.label, dropdown.width - 28)),
+                    Text.literal(textRenderer.trimToWidth(choice.label(), dropdown.width - 30)),
                     left + 7,
                     itemY + 6,
                     textColor
             );
 
-            if (choice.selected) {
+            if (choice.selected()) {
                 context.drawTextWithShadow(
                         textRenderer,
                         Text.literal("✓"),
@@ -767,6 +769,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 );
             }
         }
+
+        if (dropdown.visibleCount < dropdown.choices.size()) {
+            int trackTop = top + 3;
+            int trackBottom = bottom - 3;
+            int trackHeight = Math.max(1, trackBottom - trackTop);
+            int thumbHeight = Math.max(10, trackHeight * dropdown.visibleCount / dropdown.choices.size());
+            int maxFirst = Math.max(1, dropdown.choices.size() - dropdown.visibleCount);
+            int travel = Math.max(1, trackHeight - thumbHeight);
+            int thumbY = trackTop + (int) Math.round((dropdown.firstVisible / (double) maxFirst) * travel);
+            context.fill(right - 3, trackTop, right - 1, trackBottom, 0x334A525C);
+            context.fill(right - 3, thumbY, right - 1, thumbY + thumbHeight, ACCENT);
+        }
     }
 
     @Override
@@ -774,11 +788,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (dropdown != null && dropdown.positioned()) {
             if (mouseX >= dropdown.x && mouseX < dropdown.x + dropdown.width
                     && mouseY >= dropdown.y && mouseY < dropdown.bottom()) {
-                int index = (int) ((mouseY - dropdown.y) / DropdownState.ITEM_HEIGHT);
-                if (index >= 0 && index < dropdown.choices.size()) {
+                int visibleIndex = (int) ((mouseY - dropdown.y) / DropdownState.ITEM_HEIGHT);
+                int index = dropdown.firstVisible + visibleIndex;
+                if (visibleIndex >= 0 && visibleIndex < dropdown.visibleCount
+                        && index >= 0 && index < dropdown.choices.size()) {
                     DropdownChoice choice = dropdown.choices.get(index);
                     dropdown = null;
-                    choice.action.run();
+                    choice.action().run();
                     return true;
                 }
             }
@@ -815,7 +831,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (dropdown != null) return true;
+        if (dropdown != null) {
+            if (dropdown.positioned()
+                    && mouseX >= dropdown.x && mouseX < dropdown.x + dropdown.width
+                    && mouseY >= dropdown.y && mouseY < dropdown.bottom()) {
+                dropdown.scroll(verticalAmount);
+            }
+            return true;
+        }
         if (maxScroll > 0
                 && mouseX >= panelLeft()
                 && mouseX <= panelLeft() + panelWidth()
@@ -1008,24 +1031,68 @@ public final class LazyBuilderSettingsScreen extends Screen {
         private int x;
         private int y;
         private int width;
+        private int firstVisible;
+        private int visibleCount;
 
         private DropdownState(String anchor, List<DropdownChoice> choices) {
             this.anchor = anchor;
             this.choices = List.copyOf(choices);
         }
 
-        private void position(int x, int y, int width) {
+        private void position(
+                int x,
+                int controlY,
+                int width,
+                int viewportTop,
+                int viewportBottom
+        ) {
             this.x = x;
-            this.y = y;
             this.width = width;
+
+            int viewportHeight = Math.max(ITEM_HEIGHT * 2, viewportBottom - viewportTop);
+            int maxVisible = Math.max(2, viewportHeight / ITEM_HEIGHT);
+            this.visibleCount = Math.min(choices.size(), maxVisible);
+
+            int selected = selectedIndex();
+            int maxFirst = Math.max(0, choices.size() - visibleCount);
+            if (selected >= 0 && (selected < firstVisible || selected >= firstVisible + visibleCount)) {
+                firstVisible = Math.max(0, Math.min(maxFirst, selected - visibleCount / 2));
+            } else {
+                firstVisible = Math.max(0, Math.min(maxFirst, firstVisible));
+            }
+
+            int popupHeight = visibleCount * ITEM_HEIGHT;
+            int below = controlY + CONTROL_HEIGHT + 2;
+            int above = controlY - popupHeight - 2;
+            if (below + popupHeight <= viewportBottom) {
+                this.y = below;
+            } else if (above >= viewportTop) {
+                this.y = above;
+            } else {
+                this.y = Math.max(viewportTop, Math.min(viewportBottom - popupHeight, below));
+            }
+        }
+
+        private int selectedIndex() {
+            for (int i = 0; i < choices.size(); i++) {
+                if (choices.get(i).selected()) return i;
+            }
+            return -1;
+        }
+
+        private void scroll(double verticalAmount) {
+            if (visibleCount >= choices.size()) return;
+            int maxFirst = choices.size() - visibleCount;
+            int delta = verticalAmount > 0 ? -1 : verticalAmount < 0 ? 1 : 0;
+            firstVisible = Math.max(0, Math.min(maxFirst, firstVisible + delta));
         }
 
         private boolean positioned() {
-            return width > 0;
+            return width > 0 && visibleCount > 0;
         }
 
         private int bottom() {
-            return y + choices.size() * ITEM_HEIGHT;
+            return y + visibleCount * ITEM_HEIGHT;
         }
     }
 
