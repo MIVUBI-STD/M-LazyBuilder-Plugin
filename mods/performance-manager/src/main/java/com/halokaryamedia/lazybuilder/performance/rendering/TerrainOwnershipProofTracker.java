@@ -20,25 +20,25 @@ public final class TerrainOwnershipProofTracker<K> {
     public void begin(K key, boolean customIndices) {
         if (key == null) return;
         State previous = states.put(key, new State(!customIndices));
-        if (previous != null) proofResets++;
+        if (previous != null && ChunkPipelineMetrics.detailedMetricsEnabled()) proofResets++;
     }
 
     public void recordDraw(K key) {
         State state = states.get(key);
         if (state == null || !state.eligible) return;
         if (state.successfulDraws < Long.MAX_VALUE) state.successfulDraws++;
-        if (totalProofDraws < Long.MAX_VALUE) totalProofDraws++;
+        if (ChunkPipelineMetrics.detailedMetricsEnabled() && totalProofDraws < Long.MAX_VALUE) totalProofDraws++;
     }
 
     public void reset(K key) {
         State state = states.get(key);
         if (state == null) return;
         state.successfulDraws = 0L;
-        proofResets++;
+        if (ChunkPipelineMetrics.detailedMetricsEnabled()) proofResets++;
     }
 
     public void invalidate(K key) {
-        if (key != null && states.remove(key) != null) proofResets++;
+        if (key != null && states.remove(key) != null && ChunkPipelineMetrics.detailedMetricsEnabled()) proofResets++;
     }
 
     public void release(K key) {
