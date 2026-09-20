@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 
 /** Queue task that can upload vertex or index data while reusing an already-bound VertexBuffer. */
 public final class ChunkUploadTask implements Runnable {
+    private final Object sessionOwner;
     private final VertexBuffer buffer;
     private final BuiltBuffer vertexData;
     private final BufferAllocator.CloseableBuffer indexData;
@@ -17,12 +18,14 @@ public final class ChunkUploadTask implements Runnable {
     private final CompletableFuture<Void> future = new CompletableFuture<>();
 
     private ChunkUploadTask(
+            Object sessionOwner,
             VertexBuffer buffer,
             BuiltBuffer vertexData,
             BufferAllocator.CloseableBuffer indexData,
             int vertexPayloadBytes,
             int indexPayloadBytes
     ) {
+        this.sessionOwner = sessionOwner;
         this.buffer = buffer;
         this.vertexData = vertexData;
         this.indexData = indexData;
@@ -30,15 +33,15 @@ public final class ChunkUploadTask implements Runnable {
         this.indexPayloadBytes = Math.max(0, indexPayloadBytes);
     }
 
-    public static ChunkUploadTask vertex(BuiltBuffer data, VertexBuffer buffer) {
+    public static ChunkUploadTask vertex(Object sessionOwner, BuiltBuffer data, VertexBuffer buffer) {
         ByteBuffer vertices = data == null ? null : data.getBuffer();
         ByteBuffer sortedIndices = data == null ? null : data.getSortedBuffer();
-        return new ChunkUploadTask(buffer, data, null, remaining(vertices), remaining(sortedIndices));
+        return new ChunkUploadTask(sessionOwner, buffer, data, null, remaining(vertices), remaining(sortedIndices));
     }
 
-    public static ChunkUploadTask index(BufferAllocator.CloseableBuffer data, VertexBuffer buffer) {
+    public static ChunkUploadTask index(Object sessionOwner, BufferAllocator.CloseableBuffer data, VertexBuffer buffer) {
         ByteBuffer indices = data == null ? null : data.getBuffer();
-        return new ChunkUploadTask(buffer, null, data, 0, remaining(indices));
+        return new ChunkUploadTask(sessionOwner, buffer, null, data, 0, remaining(indices));
     }
 
     public VertexBuffer buffer() {
@@ -51,6 +54,10 @@ public final class ChunkUploadTask implements Runnable {
 
     public void executeBound() {
         if (future.isDone()) return;
+        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner)) {
+            discard();
+            return;
+        }
         if (buffer.isClosed()) {
             discard();
             return;
@@ -122,6 +129,10 @@ public final class ChunkUploadTask implements Runnable {
 
     @Override
     public void run() {
+        if (!TerrainGpuResidencyTracker.ownsSession(sessionOwner)) {
+            discard();
+            return;
+        }
         if (buffer.isClosed()) {
             discard();
             return;
