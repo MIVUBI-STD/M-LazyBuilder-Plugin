@@ -160,6 +160,11 @@ Stale upload work is discarded before any GL bind or residency mutation. World i
 reset frame-pressure history and culling state so one world cannot bias scheduling decisions in the
 next.
 
+Physical terrain arenas use session-scoped failure containment. Structural GL/provisioning failures
+are isolated to the affected resident whenever possible; repeated failures open a small circuit
+breaker that disables only the physical-arena fast path for that session. Vanilla terrain rendering
+remains authoritative fallback, and the breaker resets with safe terrain-session cleanup.
+
 ## Rejected by default
 
 Do not add merely to make Performance Manager appear feature-rich:
