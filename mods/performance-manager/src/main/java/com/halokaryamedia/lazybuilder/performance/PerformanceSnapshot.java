@@ -120,4 +120,85 @@ public record PerformanceSnapshot(
         if (maxMemoryBytes <= 0L) return 0.0D;
         return Math.min(1.0D, (double) usedMemoryBytes / (double) maxMemoryBytes);
     }
+
+    /** Stable grouped view for consumers that do not need the full diagnostic schema. */
+    public FrameStats frameStats() {
+        return new FrameStats(fps, currentFrameTimeMs, averageFrameTimeMs, worstRecentFrameTimeMs, pressure);
+    }
+
+    /** Stable grouped view of JVM memory and user-selected distance settings. */
+    public ResourceStats resourceStats() {
+        return new ResourceStats(
+                usedMemoryBytes,
+                maxMemoryBytes,
+                renderDistance,
+                simulationDistance,
+                windowFocused,
+                windowMinimized
+        );
+    }
+
+    /** Stable grouped view for chunk-pipeline pressure and avoided work. */
+    public ChunkStats chunkStats() {
+        return new ChunkStats(
+                completedChunkCount,
+                chunkTasksToBatch,
+                chunksToUpload,
+                freeChunkBuffers,
+                coalescedChunkRebuildRequests,
+                chunkBufferAcquireMisses,
+                avoidedChunkUploadBufferBinds,
+                avoidedTranslucentSortTasks,
+                avoidedTerrainSectionVisits,
+                chunkUploadBudgetStops
+        );
+    }
+
+    /** Compatibility can evolve independently from terrain diagnostics. */
+    public CompatibilityStats compatibilityStats() {
+        return new CompatibilityStats(rendererPipelineOwner);
+    }
+
+    public record FrameStats(
+            int fps,
+            double currentFrameTimeMs,
+            double averageFrameTimeMs,
+            double worstRecentFrameTimeMs,
+            FramePressure pressure
+    ) {
+    }
+
+    public record ResourceStats(
+            long usedMemoryBytes,
+            long maxMemoryBytes,
+            int renderDistance,
+            int simulationDistance,
+            boolean windowFocused,
+            boolean windowMinimized
+    ) {
+        public double usedMemoryRatio() {
+            if (maxMemoryBytes <= 0L) return 0.0D;
+            return Math.min(1.0D, (double) usedMemoryBytes / (double) maxMemoryBytes);
+        }
+    }
+
+    public record ChunkStats(
+            int completedChunkCount,
+            int tasksToBatch,
+            int chunksToUpload,
+            int freeBuffers,
+            long coalescedRebuildRequests,
+            long bufferAcquireMisses,
+            long avoidedUploadBufferBinds,
+            long avoidedTranslucentSortTasks,
+            long avoidedTerrainSectionVisits,
+            long uploadBudgetStops
+    ) {
+    }
+
+    public record CompatibilityStats(String rendererPipelineOwner) {
+        public CompatibilityStats {
+            rendererPipelineOwner = rendererPipelineOwner == null ? "" : rendererPipelineOwner;
+        }
+    }
 }
