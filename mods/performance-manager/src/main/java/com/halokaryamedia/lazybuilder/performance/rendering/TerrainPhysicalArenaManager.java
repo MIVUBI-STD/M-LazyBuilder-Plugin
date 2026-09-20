@@ -39,6 +39,9 @@ public final class TerrainPhysicalArenaManager {
     private static long exclusivePromotions;
     private static long exclusiveRecoveries;
     private static long exclusiveRecoveryFailures;
+    private static long clearAttempts;
+    private static long clearFailures;
+    private static String clearStatus = "never-cleared";
 
     private TerrainPhysicalArenaManager() {
     }
@@ -382,12 +385,16 @@ public final class TerrainPhysicalArenaManager {
      * access to the authoritative GPU data.
      */
     public static boolean clearSafely() {
+        clearAttempts++;
         if (!RenderSystem.isOnRenderThread()) {
+            clearStatus = "scheduled-render-thread";
             RenderSystem.recordRenderCall(TerrainPhysicalArenaManager::clearSafely);
             return false;
         }
 
         if (!recoverAllExclusive()) {
+            clearFailures++;
+            clearStatus = "recovery-failed";
             noteExternalBind();
             return false;
         }
@@ -412,6 +419,7 @@ public final class TerrainPhysicalArenaManager {
         exclusivePromotions = 0L;
         exclusiveRecoveries = 0L;
         exclusiveRecoveryFailures = 0L;
+        clearStatus = "cleared";
         return true;
     }
 
@@ -439,7 +447,10 @@ public final class TerrainPhysicalArenaManager {
                 exclusiveRetiredBytes,
                 exclusivePromotions,
                 exclusiveRecoveries,
-                exclusiveRecoveryFailures
+                exclusiveRecoveryFailures,
+                clearAttempts,
+                clearFailures,
+                clearStatus
         );
     }
 
@@ -804,7 +815,13 @@ public final class TerrainPhysicalArenaManager {
             long exclusiveRetiredBytes,
             long exclusivePromotions,
             long exclusiveRecoveries,
-            long exclusiveRecoveryFailures
+            long exclusiveRecoveryFailures,
+            long clearAttempts,
+            long clearFailures,
+            String clearStatus
     ) {
+        public Snapshot {
+            clearStatus = clearStatus == null ? "" : clearStatus;
+        }
     }
 }
