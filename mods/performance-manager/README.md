@@ -139,9 +139,9 @@ External performance mods remain migration references until matching first-party
 ## Configuration
 
 Performance Manager does not own a separate settings screen. User-facing performance
-controls are integrated into the permanent LazyBuilder `Settings -> Video` shell through
-the shared `PerformanceSettingsBridge`. Performance Manager remains the runtime and
-persistence owner; the Settings shell only presents and edits the stable preference snapshot.
+controls are integrated into the permanent LazyBuilder `Settings -> Video` shell through Fabric ObjectShare using a narrow JDK-only snapshot/update contract. Performance
+Manager remains the runtime and persistence owner; the Settings shell only presents and
+edits the stable preference snapshot without importing Performance implementation classes.
 
 ```properties
 background.enabled=true

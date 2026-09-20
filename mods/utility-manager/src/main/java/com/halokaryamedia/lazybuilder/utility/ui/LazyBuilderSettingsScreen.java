@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.utility.ui;
 
-import com.halokaryamedia.lazybuilder.performance.settings.PerformanceSettingsBridge;
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.fabricmc.loader.api.FabricLoader;
@@ -17,8 +16,11 @@ import net.minecraft.text.Text;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Permanent LazyBuilder settings shell.
@@ -266,9 +268,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(quality);
 
-        PerformanceSettingsBridge performanceBridge = performanceBridge();
-        if (performanceBridge != null) {
-            PerformanceSettingsBridge.Snapshot performanceState = performanceBridge.snapshot();
+        PerformanceState performanceState = performanceState();
+        if (performanceState != null) {
 
             Section performance = new Section("PERFORMANCE");
             performance.rows.add(Row.toggle(
@@ -691,20 +692,54 @@ public final class LazyBuilderSettingsScreen extends Screen {
         clearAndInit();
     }
 
-    private PerformanceSettingsBridge performanceBridge() {
+    private PerformanceState performanceState() {
         Object shared = FabricLoader.getInstance().getObjectShare()
-                .get(PerformanceSettingsBridge.OBJECT_SHARE_KEY);
-        return shared instanceof PerformanceSettingsBridge bridge ? bridge : null;
+                .get("lazybuilder-performance-manager:settings-snapshot");
+        if (!(shared instanceof Supplier<?> supplier)) return null;
+
+        Object value = supplier.get();
+        if (!(value instanceof Map<?, ?> values)) return null;
+
+        return new PerformanceState(
+                booleanValue(values, "backgroundFpsPolicy", true),
+                intValue(values, "unfocusedFpsLimit", 30),
+                intValue(values, "minimizedFpsLimit", 10),
+                booleanValue(values, "hiddenObjectSkipping", false),
+                booleanValue(values, "renderingOptimizations", true),
+                booleanValue(values, "memoryOptimizations", true)
+        );
     }
 
-    private void updatePerformance(
-            Function<PerformanceSettingsBridge.Snapshot, PerformanceSettingsBridge.Snapshot> update
-    ) {
-        PerformanceSettingsBridge bridge = performanceBridge();
-        if (bridge == null) return;
-        PerformanceSettingsBridge.Snapshot current = bridge.snapshot();
-        bridge.update(update.apply(current));
+    @SuppressWarnings("unchecked")
+    private void updatePerformance(Function<PerformanceState, PerformanceState> update) {
+        PerformanceState current = performanceState();
+        if (current == null) return;
+
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get("lazybuilder-performance-manager:settings-update");
+        if (!(shared instanceof Consumer<?> rawConsumer)) return;
+
+        Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) rawConsumer;
+        PerformanceState updated = update.apply(current);
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("backgroundFpsPolicy", updated.backgroundFpsPolicy());
+        values.put("unfocusedFpsLimit", updated.unfocusedFpsLimit());
+        values.put("minimizedFpsLimit", updated.minimizedFpsLimit());
+        values.put("hiddenObjectSkipping", updated.hiddenObjectSkipping());
+        values.put("renderingOptimizations", updated.renderingOptimizations());
+        values.put("memoryOptimizations", updated.memoryOptimizations());
+        consumer.accept(Map.copyOf(values));
         refreshCategory();
+    }
+
+    private static boolean booleanValue(Map<?, ?> values, String key, boolean fallback) {
+        Object value = values.get(key);
+        return value instanceof Boolean booleanValue ? booleanValue : fallback;
+    }
+
+    private static int intValue(Map<?, ?> values, String key, int fallback) {
+        Object value = values.get(key);
+        return value instanceof Number number ? number.intValue() : fallback;
     }
 
     private void openPerformanceIntegerChoice(
@@ -1105,6 +1140,81 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         Runnable action() {
             return action;
+        }
+    }
+
+    private record PerformanceState(
+            boolean backgroundFpsPolicy,
+            int unfocusedFpsLimit,
+            int minimizedFpsLimit,
+            boolean hiddenObjectSkipping,
+            boolean renderingOptimizations,
+            boolean memoryOptimizations
+    ) {
+        PerformanceState withBackgroundFpsPolicy(boolean enabled) {
+            return new PerformanceState(
+                    enabled,
+                    unfocusedFpsLimit,
+                    minimizedFpsLimit,
+                    hiddenObjectSkipping,
+                    renderingOptimizations,
+                    memoryOptimizations
+            );
+        }
+
+        PerformanceState withUnfocusedFpsLimit(int fps) {
+            return new PerformanceState(
+                    backgroundFpsPolicy,
+                    fps,
+                    minimizedFpsLimit,
+                    hiddenObjectSkipping,
+                    renderingOptimizations,
+                    memoryOptimizations
+            );
+        }
+
+        PerformanceState withMinimizedFpsLimit(int fps) {
+            return new PerformanceState(
+                    backgroundFpsPolicy,
+                    unfocusedFpsLimit,
+                    fps,
+                    hiddenObjectSkipping,
+                    renderingOptimizations,
+                    memoryOptimizations
+            );
+        }
+
+        PerformanceState withHiddenObjectSkipping(boolean enabled) {
+            return new PerformanceState(
+                    backgroundFpsPolicy,
+                    unfocusedFpsLimit,
+                    minimizedFpsLimit,
+                    enabled,
+                    renderingOptimizations,
+                    memoryOptimizations
+            );
+        }
+
+        PerformanceState withRenderingOptimizations(boolean enabled) {
+            return new PerformanceState(
+                    backgroundFpsPolicy,
+                    unfocusedFpsLimit,
+                    minimizedFpsLimit,
+                    hiddenObjectSkipping,
+                    enabled,
+                    memoryOptimizations
+            );
+        }
+
+        PerformanceState withMemoryOptimizations(boolean enabled) {
+            return new PerformanceState(
+                    backgroundFpsPolicy,
+                    unfocusedFpsLimit,
+                    minimizedFpsLimit,
+                    hiddenObjectSkipping,
+                    renderingOptimizations,
+                    enabled
+            );
         }
     }
 

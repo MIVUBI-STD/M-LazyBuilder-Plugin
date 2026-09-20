@@ -35,19 +35,6 @@ processResources {
     }
 }
 
-sourceSets {
-    main {
-        java {
-            srcDirs = [
-                'src/main/java',
-                '../../shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/performance/settings'
-            ]
-            include 'com/halokaryamedia/lazybuilder/performance/**'
-            include 'PerformanceSettingsBridge.java'
-        }
-    }
-}
-
 tasks.withType(JavaCompile).configureEach {
     options.release = 21
 }

@@ -1,6 +1,5 @@
 package com.halokaryamedia.lazybuilder.utility.visualproof;
 
-import com.halokaryamedia.lazybuilder.performance.settings.PerformanceSettingsBridge;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
@@ -33,6 +32,10 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** L4 visual/runtime proof for Utility Manager actions injected into vanilla client screens. */
 @SuppressWarnings("UnstableApiUsage")
@@ -41,7 +44,7 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
     public void runTest(ClientGameTestContext context) {
         try (TestSingleplayerContext ignored = context.worldBuilder().create()) {
             context.waitTicks(40);
-            installPerformanceSettingsBridge(context);
+            installPerformanceSettingsContract(context);
             verifyNarratorSuppression(context);
             captureCompactDebug(context, 1440, 900, 2,
                     "utility-compact-debug-1440x900-gui2");
@@ -121,33 +124,31 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         }
     }
 
-    private static void installPerformanceSettingsBridge(ClientGameTestContext context) {
-        context.runOnClient(client -> FabricLoader.getInstance().getObjectShare().put(
-                PerformanceSettingsBridge.OBJECT_SHARE_KEY,
-                new PerformanceSettingsBridge() {
-                    private Snapshot state = new Snapshot(true, 30, 10, false, true, true);
+    private static void installPerformanceSettingsContract(ClientGameTestContext context) {
+        context.runOnClient(client -> {
+            AtomicReference<Map<String, Object>> state = new AtomicReference<>(Map.of(
+                    "backgroundFpsPolicy", true,
+                    "unfocusedFpsLimit", 30,
+                    "minimizedFpsLimit", 10,
+                    "hiddenObjectSkipping", false,
+                    "renderingOptimizations", true,
+                    "memoryOptimizations", true
+            ));
 
-                    @Override
-                    public Snapshot snapshot() {
-                        return state;
-                    }
-
-                    @Override
-                    public Snapshot defaults() {
-                        return new Snapshot(true, 30, 10, false, true, true);
-                    }
-
-                    @Override
-                    public void update(Snapshot updated) {
-                        if (updated != null) state = updated;
-                    }
-
-                    @Override
-                    public String lastStatus() {
-                        return "applied";
-                    }
-                }
-        ));
+            var share = FabricLoader.getInstance().getObjectShare();
+            share.put(
+                    "lazybuilder-performance-manager:settings-snapshot",
+                    (Supplier<Map<String, Object>>) state::get
+            );
+            share.put(
+                    "lazybuilder-performance-manager:settings-update",
+                    (Consumer<Map<String, Object>>) values -> state.set(Map.copyOf(values))
+            );
+            share.put(
+                    "lazybuilder-performance-manager:settings-status",
+                    (Supplier<String>) () -> "applied"
+            );
+        });
     }
 
     private static void verifyNarratorSuppression(ClientGameTestContext context) {

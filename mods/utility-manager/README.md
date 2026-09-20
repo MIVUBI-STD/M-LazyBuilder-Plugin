@@ -24,8 +24,8 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 Utility Manager owns the permanent LazyBuilder user-facing Settings shell. Video and
 Controls bind directly to Minecraft's existing `GameOptions` / `KeyBinding` state instead
 of opening separate vanilla settings screens. Interface preferences remain Utility-owned,
-while Performance preferences are exposed through a small shared bridge so Performance
-Manager keeps runtime/config ownership without a presentation dependency.
+while Performance preferences are exposed through a narrow JDK-only Fabric ObjectShare
+contract so Performance Manager keeps runtime/config ownership without a package dependency.
 
 The shell uses one visual language across Video, Controls, Interface, and Tools: sectioned
 single-column rows, contextual help, switches, sliders, dropdowns, key capture, responsive
