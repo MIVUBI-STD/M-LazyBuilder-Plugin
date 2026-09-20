@@ -10,8 +10,50 @@ public final class TerrainGpuResidencyTracker {
     private static final TerrainGpuResidencyLedger<VertexBuffer> LEDGER = new TerrainGpuResidencyLedger<>();
     private static final TerrainRegionAllocationRegistry<VertexBuffer> ARENAS = new TerrainRegionAllocationRegistry<>();
     private static final TerrainArenaDrawStateRegistry DRAW_STATES = new TerrainArenaDrawStateRegistry();
+    private static Object sessionOwner;
+    private static long sessionGeneration;
+    private static String sessionStatus = "unowned";
 
     private TerrainGpuResidencyTracker() {
+    }
+
+    /**
+     * Transfers terrain ownership to a new ChunkBuilder/session. Existing state is cleared first so
+     * buffers from different renderer lifecycles can never share one logical/physical arena graph.
+     */
+    public static synchronized boolean claimSession(Object owner) {
+        if (owner == null) return false;
+        if (sessionOwner == owner) return true;
+
+        if (sessionOwner != null && !clearSafely()) {
+            sessionStatus = "handoff-blocked:recovery-failed";
+            return false;
+        }
+
+        sessionOwner = owner;
+        sessionGeneration++;
+        sessionStatus = "active";
+        return true;
+    }
+
+    /** Clears only if the caller still owns the active terrain session. */
+    public static synchronized boolean clearSession(Object owner) {
+        if (owner == null || sessionOwner != owner) return false;
+        if (!clearSafely()) {
+            sessionStatus = "clear-blocked:recovery-failed";
+            return false;
+        }
+        sessionOwner = null;
+        sessionStatus = "unowned";
+        return true;
+    }
+
+    public static synchronized boolean ownsSession(Object owner) {
+        return owner != null && sessionOwner == owner;
+    }
+
+    public static synchronized SessionSnapshot sessionSnapshot() {
+        return new SessionSnapshot(sessionGeneration, sessionOwner != null, sessionStatus);
     }
 
     public static void associate(VertexBuffer buffer, long sectionPos, int layerSlot) {
@@ -141,5 +183,11 @@ public final class TerrainGpuResidencyTracker {
 
     public static TerrainPhysicalArenaManager.Snapshot physicalArenaSnapshot() {
         return TerrainPhysicalArenaManager.snapshot();
+    }
+
+    public record SessionSnapshot(long generation, boolean owned, String status) {
+        public SessionSnapshot {
+            status = status == null ? "" : status;
+        }
     }
 }
