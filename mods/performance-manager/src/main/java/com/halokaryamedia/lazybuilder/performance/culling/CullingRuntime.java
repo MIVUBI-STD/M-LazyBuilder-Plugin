@@ -218,19 +218,13 @@ public final class CullingRuntime {
         double xInset = Math.min(0.2D, Math.max(0.03D, (box.maxX - box.minX) * 0.2D));
         double yInset = Math.min(0.2D, Math.max(0.05D, (box.maxY - box.minY) * 0.2D));
         double zInset = Math.min(0.2D, Math.max(0.03D, (box.maxZ - box.minZ) * 0.2D));
-        Vec3d upper = new Vec3d(center.x, box.maxY - yInset, center.z);
-        Vec3d lower = new Vec3d(center.x, box.minY + yInset, center.z);
-        Vec3d west = new Vec3d(box.minX + xInset, center.y, center.z);
-        Vec3d east = new Vec3d(box.maxX - xInset, center.y, center.z);
-        Vec3d north = new Vec3d(center.x, center.y, box.minZ + zInset);
-        Vec3d south = new Vec3d(center.x, center.y, box.maxZ - zInset);
         boolean visible = rayVisible(client, camera, center, null)
-                || rayVisible(client, camera, upper, null)
-                || rayVisible(client, camera, lower, null)
-                || rayVisible(client, camera, west, null)
-                || rayVisible(client, camera, east, null)
-                || rayVisible(client, camera, north, null)
-                || rayVisible(client, camera, south, null);
+                || rayVisible(client, camera, new Vec3d(center.x, box.maxY - yInset, center.z), null)
+                || rayVisible(client, camera, new Vec3d(center.x, box.minY + yInset, center.z), null)
+                || rayVisible(client, camera, new Vec3d(box.minX + xInset, center.y, center.z), null)
+                || rayVisible(client, camera, new Vec3d(box.maxX - xInset, center.y, center.z), null)
+                || rayVisible(client, camera, new Vec3d(center.x, center.y, box.minZ + zInset), null)
+                || rayVisible(client, camera, new Vec3d(center.x, center.y, box.maxZ - zInset), null);
         entities.put(entity, new CacheEntry(
                 visible ? VisibilityDecision.VISIBLE : VisibilityDecision.OCCLUDED,
                 System.nanoTime(),
@@ -268,10 +262,15 @@ public final class CullingRuntime {
         if (context == null) context = client.player;
         if (context == null || client.world == null) return true;
 
-        Vec3d delta = target.subtract(camera);
-        double lengthSquared = delta.lengthSquared();
+        double dx = target.x - camera.x;
+        double dy = target.y - camera.y;
+        double dz = target.z - camera.z;
+        double lengthSquared = dx * dx + dy * dy + dz * dz;
         if (lengthSquared <= 1.0E-6D) return true;
-        Vec3d direction = delta.normalize();
+        double inverseLength = 1.0D / Math.sqrt(lengthSquared);
+        double directionX = dx * inverseLength;
+        double directionY = dy * inverseLength;
+        double directionZ = dz * inverseLength;
         Vec3d start = camera;
 
         for (int pass = 0; pass < MAX_TRANSPARENT_PASSES; pass++) {
@@ -289,7 +288,12 @@ public final class CullingRuntime {
             BlockState hitState = client.world.getBlockState(hit.getBlockPos());
             if (hitState.isOpaqueFullCube()) return false;
 
-            Vec3d nextStart = hit.getPos().add(direction.multiply(RAY_ADVANCE));
+            Vec3d hitPos = hit.getPos();
+            Vec3d nextStart = new Vec3d(
+                    hitPos.x + directionX * RAY_ADVANCE,
+                    hitPos.y + directionY * RAY_ADVANCE,
+                    hitPos.z + directionZ * RAY_ADVANCE
+            );
             if (nextStart.squaredDistanceTo(target) >= start.squaredDistanceTo(target)) return true;
             start = nextStart;
         }
