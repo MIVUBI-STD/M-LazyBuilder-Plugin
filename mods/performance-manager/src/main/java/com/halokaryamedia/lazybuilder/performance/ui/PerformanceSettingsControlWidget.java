@@ -15,7 +15,7 @@ final class PerformanceSettingsControlWidget extends PressableWidget {
     private static final int TEXT_PRIMARY = 0xFFF2F4F6;
     private static final int TEXT_SECONDARY = 0xFFB8BEC6;
     private static final int TEXT_MUTED = 0xFF858D97;
-    private static final int ACCENT = 0xFFF1D21A;
+    private static final int ACCENT = 0xFF4FD0B0;
 
     private final Runnable action;
     private final Kind kind;
@@ -73,7 +73,7 @@ final class PerformanceSettingsControlWidget extends PressableWidget {
         );
 
         int border = hot ? ACCENT : 0x665D6670;
-        int fill = on ? 0xCC8A7A12 : 0xCC20252C;
+        int fill = on ? 0xCC1F6558 : 0xCC20252C;
         context.fill(switchX, switchY, switchX + switchWidth, switchY + switchHeight, border);
         context.fill(switchX + 1, switchY + 1, switchX + switchWidth - 1, switchY + switchHeight - 1, fill);
 

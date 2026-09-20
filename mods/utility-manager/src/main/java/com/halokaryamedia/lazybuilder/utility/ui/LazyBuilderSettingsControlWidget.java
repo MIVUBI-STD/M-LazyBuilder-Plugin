@@ -74,7 +74,7 @@ final class LazyBuilderSettingsControlWidget extends PressableWidget {
         );
 
         int border = hot ? LazyBuilderSettingsScreen.ACCENT : 0x665D6670;
-        int fill = on ? 0xCC8A7A12 : 0xCC20252C;
+        int fill = on ? 0xCC1F6558 : 0xCC20252C;
         context.fill(switchX, switchY, switchX + switchWidth, switchY + switchHeight, border);
         context.fill(switchX + 1, switchY + 1, switchX + switchWidth - 1, switchY + switchHeight - 1, fill);
 

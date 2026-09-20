@@ -236,6 +236,36 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.waitTicks(4);
     }
 
+    private static void captureScrolledSettings(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            LazyBuilderSettingsScreen.Category category,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, category));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderSettingsScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderSettingsScreen");
+            }
+            screen.mouseScrolled(
+                    client.getWindow().getScaledWidth() / 2.0,
+                    client.getWindow().getScaledHeight() / 2.0,
+                    0.0,
+                    -6.0
+            );
+        });
+        context.waitTicks(4);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
     private static void captureDisconnected(
             ClientGameTestContext context,
             int width,

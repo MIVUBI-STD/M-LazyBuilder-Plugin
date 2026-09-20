@@ -17,7 +17,7 @@ public final class PerformanceVideoSettingsScreen extends Screen {
     private static final int TEXT_PRIMARY = 0xFFF2F4F6;
     private static final int TEXT_SECONDARY = 0xFFB8BEC6;
     private static final int TEXT_MUTED = 0xFF858D97;
-    private static final int ACCENT = 0xFFF1D21A;
+    private static final int ACCENT = 0xFF4FD0B0;
 
     private static final int BACKGROUND = 0xD90B0E12;
     private static final int TOP_BAR = 0xE813171C;
