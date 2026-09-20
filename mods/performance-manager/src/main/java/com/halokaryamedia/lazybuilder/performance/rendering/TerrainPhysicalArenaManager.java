@@ -46,6 +46,7 @@ public final class TerrainPhysicalArenaManager {
     private static long vaoCreationFailures;
     private static long drawFailures;
     private static long bufferProvisionFailures;
+    private static long cleanupFailures;
     private static String clearStatus = "never-cleared";
 
     private TerrainPhysicalArenaManager() {
@@ -478,6 +479,7 @@ public final class TerrainPhysicalArenaManager {
         vaoCreationFailures = 0L;
         drawFailures = 0L;
         bufferProvisionFailures = 0L;
+        cleanupFailures = 0L;
         PHYSICAL_PATH_BREAKER.reset();
         clearStatus = "cleared";
         return true;
@@ -514,6 +516,7 @@ public final class TerrainPhysicalArenaManager {
                 vaoCreationFailures,
                 drawFailures,
                 bufferProvisionFailures,
+                cleanupFailures,
                 PHYSICAL_PATH_BREAKER.failures(),
                 PHYSICAL_PATH_BREAKER.open(),
                 clearStatus
@@ -851,14 +854,41 @@ public final class TerrainPhysicalArenaManager {
     }
 
     private static void invalidateVaos(Arena arena) {
-        for (VaoState vao : arena.vaos.values()) RenderSystem.glDeleteVertexArrays(vao.id);
+        RuntimeException firstFailure = null;
+        for (VaoState vao : arena.vaos.values()) {
+            try {
+                RenderSystem.glDeleteVertexArrays(vao.id);
+            } catch (RuntimeException ex) {
+                cleanupFailures++;
+                if (firstFailure == null) firstFailure = ex;
+            }
+        }
         arena.vaos.clear();
+        if (firstFailure != null) throw firstFailure;
     }
 
     private static void closeArena(Arena arena) {
-        invalidateVaos(arena);
-        arena.vertexBuffer.close();
-        if (arena.indexBuffer != null) arena.indexBuffer.close();
+        if (arena == null) return;
+        if (boundArena == arena) noteExternalBind();
+
+        try {
+            invalidateVaos(arena);
+        } catch (RuntimeException ex) {
+            // Continue closing buffers; cleanup is best-effort and must not escape into the render loop.
+        }
+
+        try {
+            arena.vertexBuffer.close();
+        } catch (RuntimeException ex) {
+            cleanupFailures++;
+        }
+        if (arena.indexBuffer != null) {
+            try {
+                arena.indexBuffer.close();
+            } catch (RuntimeException ex) {
+                cleanupFailures++;
+            }
+        }
     }
 
     private static final class Arena {
@@ -935,6 +965,7 @@ public final class TerrainPhysicalArenaManager {
             long vaoCreationFailures,
             long drawFailures,
             long bufferProvisionFailures,
+            long cleanupFailures,
             int physicalPathFailureCount,
             boolean physicalPathDisabled,
             String clearStatus
