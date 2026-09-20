@@ -52,6 +52,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private static final int TAB_HEIGHT = 24;
     private static final int TAB_TOP = 42;
     private static final int CONTENT_TOP = 88;
+    private static final int VIEWPORT_TOP = 78;
     private static final int SECTION_HEIGHT = 18;
     private static final int SECTION_GAP = 12;
     private static final int ROW_HEIGHT = 40;
@@ -63,6 +64,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private final Screen parent;
     private final Category category;
     private final List<Section> sections = new ArrayList<>();
+    private int scrollOffset;
+    private int maxScroll;
 
     public LazyBuilderSettingsScreen(Screen parent) {
         this(parent, Category.VIDEO);
@@ -204,36 +207,46 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void layoutSections() {
         int x = panelLeft();
         int width = panelWidth();
-        int y = CONTENT_TOP;
+        int baseY = CONTENT_TOP;
+        int viewportBottom = viewportBottom();
 
         for (Section section : sections) {
-            section.y = y;
-            y += SECTION_HEIGHT;
+            section.y = baseY - scrollOffset;
+            baseY += SECTION_HEIGHT;
 
             for (Row row : section.rows) {
                 row.x = x;
-                row.y = y;
+                row.y = baseY - scrollOffset;
                 row.width = width;
 
                 int controlWidth = Math.min(CONTROL_WIDTH, Math.max(96, width / 3));
                 int controlX = x + width - controlWidth - 8;
-                int controlY = y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
+                int controlY = row.y + (ROW_HEIGHT - CONTROL_HEIGHT) / 2;
 
-                this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                        controlX,
-                        controlY,
-                        controlWidth,
-                        CONTROL_HEIGHT,
-                        Text.literal(row.controlLabel()),
-                        row.interactive(),
-                        row.kind,
-                        row.action()
-                ));
+                if (row.y + ROW_HEIGHT > VIEWPORT_TOP && row.y < viewportBottom) {
+                    this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                            controlX,
+                            controlY,
+                            controlWidth,
+                            CONTROL_HEIGHT,
+                            Text.literal(row.controlLabel()),
+                            row.interactive(),
+                            row.kind,
+                            row.action()
+                    ));
+                }
 
-                y += ROW_HEIGHT + ROW_GAP;
+                baseY += ROW_HEIGHT + ROW_GAP;
             }
 
-            y += SECTION_GAP;
+            baseY += SECTION_GAP;
+        }
+
+        int contentHeight = Math.max(0, baseY - CONTENT_TOP);
+        int viewportHeight = Math.max(1, viewportBottom - CONTENT_TOP);
+        maxScroll = Math.max(0, contentHeight - viewportHeight);
+        if (scrollOffset > maxScroll) {
+            scrollOffset = maxScroll;
         }
     }
 
@@ -317,16 +330,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("SETTINGS"), shellLeft() + 8, 15, TEXT_PRIMARY);
         context.fill(panelRight + 14, 76, panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
 
+        context.enableScissor(panelLeft, VIEWPORT_TOP, panelRight, viewportBottom());
         for (Section section : sections) {
-            context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(section.title),
-                    panelLeft,
-                    section.y + 4,
-                    TEXT_SECONDARY
-            );
+            if (section.y + SECTION_HEIGHT > VIEWPORT_TOP && section.y < viewportBottom()) {
+                context.drawTextWithShadow(
+                        textRenderer,
+                        Text.literal(section.title),
+                        panelLeft,
+                        section.y + 4,
+                        TEXT_SECONDARY
+                );
+            }
 
             for (Row row : section.rows) {
+                if (row.y + ROW_HEIGHT <= VIEWPORT_TOP || row.y >= viewportBottom()) continue;
+
                 boolean hovered = mouseX >= row.x && mouseX < row.x + row.width
                         && mouseY >= row.y && mouseY < row.y + ROW_HEIGHT;
                 int fill = hovered ? ROW_HOVER : ROW_FILL;
@@ -351,7 +369,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 );
             }
         }
+        context.disableScissor();
 
+        renderScrollBar(context, panelRight + 6);
         renderContextPane(context, panelRight + 30);
         super.render(context, mouseX, mouseY, delta);
     }
@@ -381,6 +401,41 @@ public final class LazyBuilderSettingsScreen extends Screen {
             context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
             y += 11;
         }
+    }
+
+    private void renderScrollBar(DrawContext context, int x) {
+        if (maxScroll <= 0) return;
+        int top = VIEWPORT_TOP;
+        int bottom = viewportBottom();
+        int trackHeight = Math.max(1, bottom - top);
+        int contentHeight = trackHeight + maxScroll;
+        int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
+        int travel = Math.max(1, trackHeight - thumbHeight);
+        int thumbY = top + (int) Math.round((scrollOffset / (double) maxScroll) * travel);
+
+        context.fill(x, top, x + 2, bottom, 0x334A525C);
+        context.fill(x, thumbY, x + 2, thumbY + thumbHeight, ACCENT);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (maxScroll > 0
+                && mouseX >= panelLeft()
+                && mouseX <= panelLeft() + panelWidth()
+                && mouseY >= VIEWPORT_TOP
+                && mouseY <= viewportBottom()) {
+            int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.round(verticalAmount * 24.0)));
+            if (next != scrollOffset) {
+                scrollOffset = next;
+                clearAndInit();
+            }
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    private int viewportBottom() {
+        return Math.max(VIEWPORT_TOP + 1, height - FOOTER_HEIGHT - 6);
     }
 
     private int shellWidth() {
