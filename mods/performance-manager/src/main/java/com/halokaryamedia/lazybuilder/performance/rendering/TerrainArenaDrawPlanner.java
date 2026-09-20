@@ -62,7 +62,7 @@ public final class TerrainArenaDrawPlanner {
             }
             previous = command;
 
-            if (!TerrainArenaBaseVertexPolicy.isReady(command)) {
+            if (TerrainPhysicalArenaPolicy.baseVertex(command) < 0) {
                 baseVertexBindReductions += completedBatchReduction(currentBaseVertexBatchSize);
                 currentBaseVertexBatchSize = 0;
                 previousBaseVertex = null;
@@ -179,7 +179,7 @@ public final class TerrainArenaDrawPlanner {
         }
 
         public int baseVertex() {
-            return TerrainArenaBaseVertexPolicy.baseVertex(this);
+            return TerrainPhysicalArenaPolicy.baseVertex(this);
         }
     }
 
