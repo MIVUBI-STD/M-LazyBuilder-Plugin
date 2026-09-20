@@ -5,7 +5,6 @@ import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.pack.PackScreen;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.CloudRenderMode;
@@ -413,20 +412,20 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void buildVideoVisualSections() {
         Section resourcePacks = new Section("RESOURCE PACK");
-        resourcePacks.rows.add(Row.value(
-                "Resource Pack",
-                "Choose the textures, models, sounds, and other visual assets used by Minecraft. Multiple packs can be active in priority order.",
-                activeResourcePackLabel(),
+        resourcePacks.rows.add(Row.action(
+                "Resource Packs",
+                "Manage available and active Resource Packs. Higher active packs take priority over packs below them.",
+                resourcePackSummary(),
                 this::openResourcePackManager
         ));
         sections.add(resourcePacks);
 
         Section shaders = new Section("SHADER");
         if (shaderSupportAvailable()) {
-            shaders.rows.add(Row.value(
-                    "Shader",
-                    "Choose a shader for lighting, shadows, reflections, and atmosphere. Shader-specific options remain managed by the shader screen.",
-                    activeShaderLabel(),
+            shaders.rows.add(Row.action(
+                    "Shaders",
+                    "Manage the active shader and shader-specific visual options.",
+                    shaderSummary(),
                     this::openShaderManager
             ));
         } else {
@@ -439,7 +438,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         sections.add(shaders);
     }
 
-    private String activeResourcePackLabel() {
+    private String resourcePackSummary() {
         if (client == null) return "Default";
         List<String> selected = client.options.resourcePacks;
         if (selected == null || selected.isEmpty()) return "Default";
@@ -458,14 +457,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void openResourcePackManager() {
         if (client == null) return;
-        client.setScreen(new PackScreen(
+        client.setScreen(new LazyBuilderResourcePackScreen(
+                this,
                 client.getResourcePackManager(),
                 manager -> {
                     client.options.refreshResourcePacks(manager);
                     client.reloadResources();
                 },
-                client.getResourcePackDir(),
-                Text.literal("Resource Packs")
+                client.getResourcePackDir()
         ));
     }
 
@@ -473,7 +472,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         return FabricLoader.getInstance().isModLoaded("iris");
     }
 
-    private String activeShaderLabel() {
+    private String shaderSummary() {
         if (!shaderSupportAvailable()) return "Unavailable";
 
         try {
@@ -1121,7 +1120,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     case QUALITY -> "Choose one Graphics Preset for visual detail and matching performance behavior. Fine-tune only when needed.";
                     case VIEW -> "World distance and camera settings.";
                     case PERFORMANCE -> "Advanced performance overrides. Most players can leave these managed by the Graphics Preset.";
-                    case VISUAL -> "Choose Resource Packs and Shaders without mixing them into graphics-quality settings.";
+                    case VISUAL -> "Manage Resource Packs and Shaders. Visual content stays separate from graphics quality and performance tuning.";
                 };
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
