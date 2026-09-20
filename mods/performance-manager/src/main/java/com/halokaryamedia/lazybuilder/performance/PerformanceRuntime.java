@@ -20,6 +20,7 @@ public final class PerformanceRuntime {
     private final PerformanceConfigStore configStore;
     private PerformancePreferences preferences;
     private volatile String lastPreferenceUpdateStatus = "ready";
+    private Object activeWorldIdentity;
 
     public PerformanceRuntime(Path configDirectory) {
         this.configStore = new PerformanceConfigStore(configDirectory);
@@ -43,6 +44,13 @@ public final class PerformanceRuntime {
     }
 
     public void tick(MinecraftClient client) {
+        Object worldIdentity = client == null ? null : client.world;
+        if (worldIdentity != activeWorldIdentity) {
+            activeWorldIdentity = worldIdentity;
+            frameMonitor.resetSession();
+            cullingRuntime.clear();
+        }
+
         backgroundPolicy.update(client, preferences);
         cullingRuntime.tick(client, preferences, frameMonitor.pressure());
         if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
