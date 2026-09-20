@@ -12,21 +12,17 @@ import net.minecraft.text.Text;
 import java.util.function.Consumer;
 
 /**
- * Familiar, low-density settings shell for the LazyBuilder client.
+ * Builder-facing settings shell.
  *
- * This screen intentionally presents user concepts instead of internal mod/module names.
- * It only exposes choices backed by implemented behavior; deeper cross-module settings
- * are added here only after their ownership and UX have been audited.
+ * Internal mod names and automatic engine policy stay out of the user surface. Global
+ * settings only appear here when the player has a real, useful choice to make.
  */
 public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
-        GENERAL("General"),
         VIDEO("Video"),
         CONTROLS("Controls"),
         INTERFACE("Interface"),
-        TOOLS("Tools"),
-        PERFORMANCE("Performance"),
-        ADVANCED("Advanced");
+        TOOLS("Tools");
 
         private final String label;
 
@@ -52,7 +48,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private final Category category;
 
     public LazyBuilderSettingsScreen(Screen parent) {
-        this(parent, Category.GENERAL);
+        this(parent, Category.VIDEO);
     }
 
     public LazyBuilderSettingsScreen(Screen parent, Category category) {
@@ -83,13 +79,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int rowY = top;
 
         switch (this.category) {
-            case GENERAL -> this.addGeneralRows(contentLeft, contentWidth, rowY);
             case VIDEO -> this.addVideoRows(contentLeft, contentWidth, rowY);
             case CONTROLS -> this.addControlsRows(contentLeft, contentWidth, rowY);
             case INTERFACE -> this.addInterfaceRows(contentLeft, contentWidth, rowY);
             case TOOLS -> this.addToolsRows(contentLeft, contentWidth, rowY);
-            case PERFORMANCE -> this.addPerformanceRows(contentLeft, contentWidth, rowY);
-            case ADVANCED -> this.addAdvancedRows(contentLeft, contentWidth, rowY);
         }
 
         this.addDrawableChild(
@@ -99,21 +92,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         );
     }
 
-    private void addGeneralRows(int x, int width, int y) {
-        int next = y;
-        next = this.addToggleRow(x, width, next, "Borderless Window",
-                preferences().borderlessWindow(),
-                value -> update(preferences().withBorderlessWindow(value)));
-        next = this.addToggleRow(x, width, next, "Reconnect Button",
-                preferences().reconnectButton(),
-                value -> update(preferences().withReconnectButton(value)));
-        this.addToggleRow(x, width, next, "Contextual Screenshot Names",
-                preferences().contextualScreenshotNames(),
-                value -> update(preferences().withContextualScreenshotNames(value)));
-    }
-
     private void addVideoRows(int x, int width, int y) {
-        this.addWideButton(x, width, y, "Open Video Settings", () -> {
+        this.addWideButton(x, width, y, "Video Settings", () -> {
             if (this.client != null) {
                 this.client.setScreen(new VideoOptionsScreen(this, this.client.options));
             }
@@ -121,7 +101,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private void addControlsRows(int x, int width, int y) {
-        this.addWideButton(x, width, y, "Open Controls", () -> {
+        this.addWideButton(x, width, y, "Controls", () -> {
             if (this.client != null) {
                 this.client.setScreen(new ControlsOptionsScreen(this, this.client.options));
             }
@@ -130,55 +110,36 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void addInterfaceRows(int x, int width, int y) {
         int next = y;
-        next = this.addToggleRow(x, width, next, "Compact Debug HUD",
+        next = this.addToggleRow(
+                x,
+                width,
+                next,
                 preferences().compactDebugHud(),
-                value -> update(preferences().withCompactDebugHud(value)));
-        next = this.addToggleRow(x, width, next, "Chat Timestamps",
-                preferences().chatTimestamps(),
-                value -> update(preferences().withChatTimestamps(value)));
-        next = this.addToggleRow(x, width, next, "Extended Chat History",
-                preferences().extendedChatHistory(),
-                value -> update(preferences().withExtendedChatHistory(value)));
-        this.addToggleRow(x, width, next, "Keep Chat Draft",
-                preferences().keepChatDraft(),
-                value -> update(preferences().withKeepChatDraft(value)));
+                value -> update(preferences().withCompactDebugHud(value))
+        );
+        this.addToggleRow(
+                x,
+                width,
+                next,
+                preferences().contextualScreenshotNames(),
+                value -> update(preferences().withContextualScreenshotNames(value))
+        );
     }
 
     private void addToolsRows(int x, int width, int y) {
-        this.addToggleRow(x, width, y, "Instant Creative Search",
+        this.addToggleRow(
+                x,
+                width,
+                y,
                 preferences().instantCreativeSearch(),
-                value -> update(preferences().withInstantCreativeSearch(value)));
-    }
-
-    private void addPerformanceRows(int x, int width, int y) {
-        this.addWideButton(x, width, y, "Video & Frame Settings", () -> {
-            if (this.client != null) {
-                this.client.setScreen(new VideoOptionsScreen(this, this.client.options));
-            }
-        });
-    }
-
-    private void addAdvancedRows(int x, int width, int y) {
-        int next = y;
-        next = this.addToggleRow(x, width, next, "Chat Search",
-                preferences().chatSearch(),
-                value -> update(preferences().withChatSearch(value)));
-        next = this.addToggleRow(x, width, next, "Hide Signing Indicator",
-                preferences().hideChatSigningIndicators(),
-                value -> update(preferences().withHideChatSigningIndicators(value)));
-        next = this.addToggleRow(x, width, next, "Hide Report Button",
-                preferences().hideChatReportButton(),
-                value -> update(preferences().withHideChatReportButton(value)));
-        this.addToggleRow(x, width, next, "Suppress Narrator",
-                preferences().suppressNarrator(),
-                value -> update(preferences().withSuppressNarrator(value)));
+                value -> update(preferences().withInstantCreativeSearch(value))
+        );
     }
 
     private int addToggleRow(
             int x,
             int width,
             int y,
-            String label,
             boolean enabled,
             Consumer<Boolean> setter
     ) {
@@ -246,34 +207,25 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void renderLabels(DrawContext context, int x, int y) {
         switch (this.category) {
-            case GENERAL -> {
-                drawRowLabel(context, x, y, "Borderless Window");
-                drawRowLabel(context, x, y + 24, "Reconnect Button");
-                drawRowLabel(context, x, y + 48, "Contextual Screenshot Names");
-            }
-            case INTERFACE -> {
-                drawRowLabel(context, x, y, "Compact Debug HUD");
-                drawRowLabel(context, x, y + 24, "Chat Timestamps");
-                drawRowLabel(context, x, y + 48, "Extended Chat History");
-                drawRowLabel(context, x, y + 72, "Keep Chat Draft");
-            }
-            case TOOLS -> drawRowLabel(context, x, y, "Instant Creative Search");
-            case PERFORMANCE -> context.drawTextWithShadow(
+            case VIDEO -> context.drawTextWithShadow(
                     this.textRenderer,
-                    Text.literal("Core rendering optimizations stay automatic."),
+                    Text.literal("Minecraft display and rendering options"),
                     x,
                     y + 30,
                     0xA0A0A0
             );
-            case ADVANCED -> {
-                drawRowLabel(context, x, y, "Chat Search");
-                drawRowLabel(context, x, y + 24, "Hide Signing Indicator");
-                drawRowLabel(context, x, y + 48, "Hide Report Button");
-                drawRowLabel(context, x, y + 72, "Suppress Narrator");
+            case CONTROLS -> context.drawTextWithShadow(
+                    this.textRenderer,
+                    Text.literal("Keyboard and mouse controls"),
+                    x,
+                    y + 30,
+                    0xA0A0A0
+            );
+            case INTERFACE -> {
+                drawRowLabel(context, x, y, "Compact Debug HUD");
+                drawRowLabel(context, x, y + 24, "Contextual Screenshot Names");
             }
-            case VIDEO, CONTROLS -> {
-                // Vanilla sub-screens own their established option rows.
-            }
+            case TOOLS -> drawRowLabel(context, x, y, "Instant Creative Search");
         }
     }
 
