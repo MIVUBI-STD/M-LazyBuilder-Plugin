@@ -16,7 +16,8 @@ import java.util.List;
 public final class TerrainDrawTransformStream {
     private static final int LAYER_COUNT = 5;
     private static final int TRANSFORM_BYTES = Float.BYTES * 4;
-    private static volatile LayerSnapshot[] current = emptyLayers();
+    private static final LayerSnapshot[] EMPTY_LAYERS = emptyLayers();
+    private static volatile LayerSnapshot[] current = EMPTY_LAYERS.clone();
 
     private TerrainDrawTransformStream() {
     }
@@ -168,8 +169,17 @@ public final class TerrainDrawTransformStream {
         return snapshot[layerSlot];
     }
 
-    public static LayerSnapshot emptyLayer(int layerSlot, boolean reverseOrder) {
-        return LayerSnapshot.empty(layerSlot, reverseOrder);
+    public static synchronized void clearLayer(int layerSlot) {
+        if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return;
+        LayerSnapshot existing = current[layerSlot];
+        if (existing != null && existing.commands().isEmpty()) {
+            TerrainMultiDrawCommandStream.clearLayer(layerSlot);
+            return;
+        }
+        LayerSnapshot[] next = current.clone();
+        next[layerSlot] = EMPTY_LAYERS[layerSlot];
+        current = next;
+        TerrainMultiDrawCommandStream.clearLayer(layerSlot);
     }
 
     public static Snapshot snapshot() {
@@ -200,7 +210,7 @@ public final class TerrainDrawTransformStream {
     }
 
     public static synchronized void clear() {
-        current = emptyLayers();
+        current = EMPTY_LAYERS.clone();
         TerrainMultiDrawCommandStream.clear();
     }
 
