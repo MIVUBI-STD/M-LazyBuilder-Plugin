@@ -19,6 +19,7 @@ public final class PerformanceRuntime {
     private final PerformanceRuntimeProofLogger proofLogger = new PerformanceRuntimeProofLogger();
     private final PerformanceConfigStore configStore;
     private PerformancePreferences preferences;
+    private volatile String lastPreferenceUpdateStatus = "ready";
 
     public PerformanceRuntime(Path configDirectory) {
         this.configStore = new PerformanceConfigStore(configDirectory);
@@ -79,6 +80,7 @@ public final class PerformanceRuntime {
                 || (preferences.blockEntityCulling() && !updated.blockEntityCulling());
         boolean renderingDisabled = preferences.renderingOptimizations() && !updated.renderingOptimizations();
         if (renderingDisabled && !TerrainPhysicalArenaManager.recoverAllExclusive()) {
+            lastPreferenceUpdateStatus = "rendering-disable-blocked:terrain-recovery-failed";
             return;
         }
         if (renderingDisabled) {
@@ -93,7 +95,12 @@ public final class PerformanceRuntime {
 
         preferences = updated;
         configStore.save(updated);
+        lastPreferenceUpdateStatus = "applied";
         if (cullingDisabled) cullingRuntime.clear();
+    }
+
+    public String lastPreferenceUpdateStatus() {
+        return lastPreferenceUpdateStatus;
     }
 
     public PerformanceSnapshot snapshot() {
