@@ -2,7 +2,13 @@ package com.halokaryamedia.lazybuilder.performance.rendering;
 
 import java.util.concurrent.atomic.LongAdder;
 
-/** Low-overhead counters for first-party chunk-pipeline decisions and pressure signals. */
+/**
+ * Low-overhead counters for first-party chunk-pipeline decisions and pressure signals.
+ *
+ * Safety/pressure counters remain always-on. High-frequency observational counters are disabled
+ * until diagnostics or proof mode explicitly requests them, avoiding permanent observer cost on
+ * chunk-meshing hot paths.
+ */
 public final class ChunkPipelineMetrics {
     private static final LongAdder COALESCED_REBUILD_REQUESTS = new LongAdder();
     private static final LongAdder BUFFER_ACQUIRE_MISSES = new LongAdder();
@@ -20,27 +26,56 @@ public final class ChunkPipelineMetrics {
     private static final LongAdder TERRAIN_GPU_RECLAIMED_BYTES = new LongAdder();
     private static final LongAdder TERRAIN_GPU_RECLAIMED_BUFFERS = new LongAdder();
 
+    private static volatile boolean detailedMetricsEnabled =
+            Boolean.getBoolean("lazybuilder.performance.metrics")
+                    || Boolean.getBoolean("lazybuilder.performance.proof");
+
     private ChunkPipelineMetrics() {
+    }
+
+    /** Enables high-frequency diagnostics for the remainder of the session. */
+    public static void enableDetailedMetrics() {
+        detailedMetricsEnabled = true;
+    }
+
+    public static boolean detailedMetricsEnabled() {
+        return detailedMetricsEnabled;
     }
 
     public static void recordCoalescedRebuild() { COALESCED_REBUILD_REQUESTS.increment(); }
     public static long coalescedRebuildRequests() { return COALESCED_REBUILD_REQUESTS.sum(); }
     public static void recordBufferAcquireMiss() { BUFFER_ACQUIRE_MISSES.increment(); }
     public static long bufferAcquireMisses() { return BUFFER_ACQUIRE_MISSES.sum(); }
-    public static void recordUploadBatch(int taskCount) { if (taskCount > 1) AVOIDED_UPLOAD_BUFFER_BINDS.add(taskCount - 1L); }
+    public static void recordUploadBatch(int taskCount) {
+        if (detailedMetricsEnabled && taskCount > 1) AVOIDED_UPLOAD_BUFFER_BINDS.add(taskCount - 1L);
+    }
     public static long avoidedUploadBufferBinds() { return AVOIDED_UPLOAD_BUFFER_BINDS.sum(); }
-    public static void recordStorageSectionsRemapped(int count) { if (count > 0) STORAGE_SECTIONS_REMAPPED.add(count); }
+    public static void recordStorageSectionsRemapped(int count) {
+        if (detailedMetricsEnabled && count > 0) STORAGE_SECTIONS_REMAPPED.add(count);
+    }
     public static long storageSectionsRemapped() { return STORAGE_SECTIONS_REMAPPED.sum(); }
-    public static void recordSectionVisibilityCacheHit() { SECTION_VISIBILITY_CACHE_HITS.increment(); }
+    public static void recordSectionVisibilityCacheHit() {
+        if (detailedMetricsEnabled) SECTION_VISIBILITY_CACHE_HITS.increment();
+    }
     public static long sectionVisibilityCacheHits() { return SECTION_VISIBILITY_CACHE_HITS.sum(); }
-    public static void recordAvoidedTranslucentSortTask() { AVOIDED_TRANSLUCENT_SORT_TASKS.increment(); }
+    public static void recordAvoidedTranslucentSortTask() {
+        if (detailedMetricsEnabled) AVOIDED_TRANSLUCENT_SORT_TASKS.increment();
+    }
     public static long avoidedTranslucentSortTasks() { return AVOIDED_TRANSLUCENT_SORT_TASKS.sum(); }
-    public static void recordAvoidedTerrainSectionVisits(long count) { if (count > 0L) AVOIDED_TERRAIN_SECTION_VISITS.add(count); }
+    public static void recordAvoidedTerrainSectionVisits(long count) {
+        if (detailedMetricsEnabled && count > 0L) AVOIDED_TERRAIN_SECTION_VISITS.add(count);
+    }
     public static long avoidedTerrainSectionVisits() { return AVOIDED_TERRAIN_SECTION_VISITS.sum(); }
-    public static void recordSectionBuilderBufferLookupHit() { SECTION_BUILDER_BUFFER_LOOKUP_HITS.increment(); }
+    public static void recordSectionBuilderBufferLookupHit() {
+        if (detailedMetricsEnabled) SECTION_BUILDER_BUFFER_LOOKUP_HITS.increment();
+    }
     public static long sectionBuilderBufferLookupHits() { return SECTION_BUILDER_BUFFER_LOOKUP_HITS.sum(); }
-    public static void recordTerrainBufferLookupHit() { TERRAIN_BUFFER_LOOKUP_HITS.increment(); }
+    public static void recordTerrainBufferLookupHit() {
+        if (detailedMetricsEnabled) TERRAIN_BUFFER_LOOKUP_HITS.increment();
+    }
     public static long terrainBufferLookupHits() { return TERRAIN_BUFFER_LOOKUP_HITS.sum(); }
+
+    // Pressure, failure-adjacent, and reclamation counters stay always-on.
     public static void recordUploadBudgetStop() { UPLOAD_BUDGET_STOPS.increment(); }
     public static long uploadBudgetStops() { return UPLOAD_BUDGET_STOPS.sum(); }
     public static void recordRebuildBackpressureDeferral() { REBUILD_BACKPRESSURE_DEFERRALS.increment(); }
@@ -58,6 +93,7 @@ public final class ChunkPipelineMetrics {
     public static long terrainGpuReclaimedBuffers() { return TERRAIN_GPU_RECLAIMED_BUFFERS.sum(); }
 
     static void resetForTest() {
+        detailedMetricsEnabled = true;
         COALESCED_REBUILD_REQUESTS.reset();
         BUFFER_ACQUIRE_MISSES.reset();
         AVOIDED_UPLOAD_BUFFER_BINDS.reset();
