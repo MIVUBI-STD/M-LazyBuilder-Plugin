@@ -258,6 +258,16 @@ public final class TerrainMultiDrawSubmissionBackend {
         submissionFailures = 0L;
     }
 
+    /**
+     * Resource reload invalidation must not touch the previous shader program: it may already be
+     * detached or scheduled for deletion by Minecraft's shader reload lifecycle.
+     */
+    public static void invalidateForShaderReload() {
+        clearSession();
+        sessionDisabled = false;
+        status = "shader-reload";
+    }
+
     private static void clearSession() {
         STARTS.clear();
         MEMBERS.clear();
