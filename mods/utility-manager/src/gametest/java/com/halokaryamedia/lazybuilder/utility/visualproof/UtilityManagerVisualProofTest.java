@@ -3,9 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.visualproof;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
-import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderInterfaceSettingsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
-import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderToolsScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -38,17 +36,23 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-compact-debug-620x480-gui2");
             verifyInstantCreativeSearch(context);
             captureSettings(context, 1440, 900, 2,
-                    "utility-settings-main-1440x900-gui2");
+                    LazyBuilderSettingsScreen.Category.VIDEO,
+                    "utility-settings-video-1440x900-gui2");
             captureSettings(context, 620, 480, 2,
-                    "utility-settings-main-620x480-gui2");
-            captureInterfaceSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.VIDEO,
+                    "utility-settings-video-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-1440x900-gui2");
-            captureInterfaceSettings(context, 620, 480, 2,
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-620x480-gui2");
-            captureTools(context, 1440, 900, 2,
-                    "utility-tools-1440x900-gui2");
-            captureTools(context, 620, 480, 2,
-                    "utility-tools-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.TOOLS,
+                    "utility-settings-tools-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.TOOLS,
+                    "utility-settings-tools-620x480-gui2");
 
             context.runOnClient(client -> ReconnectState.capture(new ServerInfo(
                     "LazyBuilder Preview",
@@ -216,46 +220,13 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             int width,
             int height,
             int guiScale,
+            LazyBuilderSettingsScreen.Category category,
             String screenshotName
     ) {
         context.setScreen(() -> null);
         configureViewport(context, width, height, guiScale);
-        context.setScreen(() -> new LazyBuilderSettingsScreen(null));
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, category));
         context.waitForScreen(LazyBuilderSettingsScreen.class);
-        context.waitTicks(8);
-        context.takeScreenshot(screenshotName);
-        context.setScreen(() -> null);
-        context.waitTicks(4);
-    }
-
-    private static void captureInterfaceSettings(
-            ClientGameTestContext context,
-            int width,
-            int height,
-            int guiScale,
-            String screenshotName
-    ) {
-        context.setScreen(() -> null);
-        configureViewport(context, width, height, guiScale);
-        context.setScreen(() -> new LazyBuilderInterfaceSettingsScreen(null));
-        context.waitForScreen(LazyBuilderInterfaceSettingsScreen.class);
-        context.waitTicks(8);
-        context.takeScreenshot(screenshotName);
-        context.setScreen(() -> null);
-        context.waitTicks(4);
-    }
-
-    private static void captureTools(
-            ClientGameTestContext context,
-            int width,
-            int height,
-            int guiScale,
-            String screenshotName
-    ) {
-        context.setScreen(() -> null);
-        configureViewport(context, width, height, guiScale);
-        context.setScreen(() -> new LazyBuilderToolsScreen(null));
-        context.waitForScreen(LazyBuilderToolsScreen.class);
         context.waitTicks(8);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
