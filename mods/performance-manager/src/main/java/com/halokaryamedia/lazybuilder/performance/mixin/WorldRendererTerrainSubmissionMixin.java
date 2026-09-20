@@ -316,6 +316,10 @@ abstract class WorldRendererTerrainSubmissionMixin {
         ObjectArrayList<ChunkBuilder.BuiltChunk> chunks = this.lazybuilder$listFor(layer);
         int layerSlot = lazybuilder$layerSlot(layer);
         if (chunks == null || layerSlot < 0) return;
+        if (!TerrainPhysicalArenaManager.hasActivePhysicalResidents()) {
+            TerrainDrawTransformStream.publish(TerrainDrawTransformStream.LayerSnapshot.emptyForRuntime(layerSlot, layer == RenderLayer.getTranslucent()));
+            return;
+        }
 
         TerrainDrawTransformStream.Builder builder = this.lazybuilder$transformBuilders[layerSlot];
         boolean reverse = layer == RenderLayer.getTranslucent();
