@@ -47,6 +47,9 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-620x480-gui2");
+            captureScrolledSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
+                    "utility-settings-interface-scrolled-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.TOOLS,
                     "utility-settings-tools-1440x900-gui2");

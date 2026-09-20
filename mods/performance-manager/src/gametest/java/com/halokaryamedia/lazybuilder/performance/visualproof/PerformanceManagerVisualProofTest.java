@@ -25,6 +25,8 @@ public final class PerformanceManagerVisualProofTest implements FabricClientGame
                     "performance-settings-1440x900-gui2");
             capturePerformanceSettings(context, 620, 480, 2,
                     "performance-settings-620x480-gui2");
+            captureScrolledPerformanceSettings(context, 620, 480, 2,
+                    "performance-settings-scrolled-620x480-gui2");
 
             context.setScreen(() -> null);
         }
@@ -74,6 +76,35 @@ public final class PerformanceManagerVisualProofTest implements FabricClientGame
         context.setScreen(() -> new PerformanceVideoSettingsScreen(null));
         context.waitForScreen(PerformanceVideoSettingsScreen.class);
         context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureScrolledPerformanceSettings(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new PerformanceVideoSettingsScreen(null));
+        context.waitForScreen(PerformanceVideoSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof PerformanceVideoSettingsScreen screen)) {
+                throw new AssertionError("Expected PerformanceVideoSettingsScreen");
+            }
+            screen.mouseScrolled(
+                    client.getWindow().getScaledWidth() / 2.0,
+                    client.getWindow().getScaledHeight() / 2.0,
+                    0.0,
+                    -8.0
+            );
+        });
+        context.waitTicks(4);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
