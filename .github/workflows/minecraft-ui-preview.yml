@@ -1,3 +1,4 @@
+# Unified settings shell exact-head proof
 name: Minecraft UI Preview
 
 # Native visual-regression proof for Fabric client presentation using real Minecraft 1.21.4 rendering.
