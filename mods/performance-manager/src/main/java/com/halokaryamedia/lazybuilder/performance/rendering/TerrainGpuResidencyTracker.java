@@ -10,9 +10,9 @@ public final class TerrainGpuResidencyTracker {
     private static final TerrainGpuResidencyLedger<VertexBuffer> LEDGER = new TerrainGpuResidencyLedger<>();
     private static final TerrainRegionAllocationRegistry<VertexBuffer> ARENAS = new TerrainRegionAllocationRegistry<>();
     private static final TerrainArenaDrawStateRegistry DRAW_STATES = new TerrainArenaDrawStateRegistry();
-    private static Object sessionOwner;
-    private static long sessionGeneration;
-    private static String sessionStatus = "unowned";
+    private static volatile Object sessionOwner;
+    private static volatile long sessionGeneration;
+    private static volatile String sessionStatus = "unowned";
 
     private TerrainGpuResidencyTracker() {
     }
@@ -64,22 +64,22 @@ public final class TerrainGpuResidencyTracker {
         return true;
     }
 
-    public static synchronized long sessionGeneration(Object owner) {
+    public static long sessionGeneration(Object owner) {
         return owner != null && sessionOwner == owner ? sessionGeneration : -1L;
     }
 
-    public static synchronized boolean ownsSession(Object owner) {
+    public static boolean ownsSession(Object owner) {
         return owner != null && sessionOwner == owner;
     }
 
-    public static synchronized boolean ownsSession(Object owner, long generation) {
+    public static boolean ownsSession(Object owner, long generation) {
         return owner != null
                 && generation >= 0L
                 && sessionOwner == owner
                 && sessionGeneration == generation;
     }
 
-    public static synchronized SessionSnapshot sessionSnapshot() {
+    public static SessionSnapshot sessionSnapshot() {
         return new SessionSnapshot(sessionGeneration, sessionOwner != null, sessionStatus);
     }
 
