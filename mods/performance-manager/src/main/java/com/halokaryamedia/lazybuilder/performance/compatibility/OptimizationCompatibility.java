@@ -32,7 +32,6 @@ public final class OptimizationCompatibility {
         if (immediatelyFastPresent) {
             decisions.put(OptimizationDomain.IMMEDIATE_RENDERING, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.TEXT_RENDERING, Decision.external("immediatelyfast"));
-            decisions.put(OptimizationDomain.PARTICLES, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.TERRAIN_UPLOAD, Decision.external("immediatelyfast"));
         }
 
@@ -62,7 +61,6 @@ public final class OptimizationCompatibility {
         TERRAIN_UPLOAD,
         TERRAIN_SUBMISSION,
         IMMEDIATE_RENDERING,
-        PARTICLES,
         TEXT_RENDERING,
         ENTITY_CULLING,
         MODEL_MEMORY
