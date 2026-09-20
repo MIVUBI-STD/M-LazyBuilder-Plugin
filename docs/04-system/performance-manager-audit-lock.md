@@ -137,6 +137,16 @@ Diagnostic consumers should prefer the stable grouped views exposed by `Performa
 (`frameStats`, `resourceStats`, `chunkStats`, and `compatibilityStats`) instead of coupling new
 code to the complete flat diagnostic schema.
 
+High-frequency observational counters are disabled by default and become active only when proof mode
+is enabled, the explicit metrics system property is set, or an on-demand diagnostics snapshot is
+requested. Pressure/failure-adjacent and reclamation counters remain always-on. This keeps the
+observability contract useful without paying permanent LongAdder traffic on meshing hot paths.
+
+Entity/block-entity culling ownership is resolved at mixin-load time. When an external EntityCulling
+owner is present, LazyBuilder's corresponding render mixins do not apply, so the render hot path does
+not retain a redundant per-entity mod-presence branch. Culling ray evaluation also constructs sample
+vectors lazily and uses primitive direction math to reduce short-lived allocation churn.
+
 ## Rejected by default
 
 Do not add merely to make Performance Manager appear feature-rich:
