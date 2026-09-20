@@ -48,7 +48,7 @@ abstract class ChunkBuilderUploadMixin {
             return;
         }
 
-        ChunkUploadTask task = ChunkUploadTask.vertex(builtBuffer, glBuffer);
+        ChunkUploadTask task = ChunkUploadTask.vertex((ChunkBuilder) (Object) this, builtBuffer, glBuffer);
         this.uploadQueue.add(task);
         cir.setReturnValue(task.future());
     }
@@ -66,7 +66,7 @@ abstract class ChunkBuilderUploadMixin {
             return;
         }
 
-        ChunkUploadTask task = ChunkUploadTask.index(indexBuffer, vertexBuffer);
+        ChunkUploadTask task = ChunkUploadTask.index((ChunkBuilder) (Object) this, indexBuffer, vertexBuffer);
         this.uploadQueue.add(task);
         cir.setReturnValue(task.future());
     }
