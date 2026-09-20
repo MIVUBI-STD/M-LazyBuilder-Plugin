@@ -48,8 +48,35 @@ public final class TerrainGpuResidencyTracker {
         return true;
     }
 
+    /**
+     * Clears and rotates generation while retaining the same ChunkBuilder as owner.
+     * Queued work tagged with the previous generation becomes stale immediately.
+     */
+    public static synchronized boolean restartSession(Object owner) {
+        if (owner == null) return false;
+        if (sessionOwner != owner) return claimSession(owner);
+        if (!clearSafely()) {
+            sessionStatus = "restart-blocked:recovery-failed";
+            return false;
+        }
+        sessionGeneration++;
+        sessionStatus = "active";
+        return true;
+    }
+
+    public static synchronized long sessionGeneration(Object owner) {
+        return owner != null && sessionOwner == owner ? sessionGeneration : -1L;
+    }
+
     public static synchronized boolean ownsSession(Object owner) {
         return owner != null && sessionOwner == owner;
+    }
+
+    public static synchronized boolean ownsSession(Object owner, long generation) {
+        return owner != null
+                && generation >= 0L
+                && sessionOwner == owner
+                && sessionGeneration == generation;
     }
 
     public static synchronized SessionSnapshot sessionSnapshot() {
