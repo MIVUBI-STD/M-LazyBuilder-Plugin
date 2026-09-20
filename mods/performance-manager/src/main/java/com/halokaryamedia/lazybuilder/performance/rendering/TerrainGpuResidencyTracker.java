@@ -104,14 +104,25 @@ public final class TerrainGpuResidencyTracker {
     }
 
     public static void clear() {
+        clearSafely();
+    }
+
+    /**
+     * Clears logical terrain ownership only when physical arena ownership has been released safely.
+     * If exclusive vanilla-backing recovery fails, logical state is retained for retry/fallback.
+     */
+    public static boolean clearSafely() {
         TerrainMultiDrawSubmissionBackend.clear();
         TerrainPerDrawShaderBackend.clear();
-        TerrainPhysicalArenaManager.clear();
+        if (!TerrainPhysicalArenaManager.clearSafely()) {
+            return false;
+        }
         TerrainDrawTransformStream.clear();
         TerrainArenaDrawDiagnostics.clear();
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
+        return true;
     }
 
     public static TerrainGpuResidencyLedger.Snapshot snapshot() {
