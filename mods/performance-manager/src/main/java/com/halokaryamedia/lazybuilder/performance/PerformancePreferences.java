@@ -11,7 +11,7 @@ public record PerformancePreferences(
         boolean memoryOptimizations
 ) {
     public static PerformancePreferences defaults() {
-        return new PerformancePreferences(true, 30, 10, true, true, true, true);
+        return new PerformancePreferences(true, 30, 10, false, false, true, true);
     }
 
     public PerformancePreferences {
