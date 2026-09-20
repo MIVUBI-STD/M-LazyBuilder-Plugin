@@ -66,7 +66,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private enum GraphicsPreset {
         LOW("Low", 8, 5, 0.75, GraphicsMode.FAST, CloudRenderMode.OFF, ParticlesMode.MINIMAL, 1),
         MEDIUM("Medium", 16, 8, 1.00, GraphicsMode.FANCY, CloudRenderMode.FAST, ParticlesMode.DECREASED, 3),
-        HIGH("High", 24, 12, 1.25, GraphicsMode.FABULOUS, CloudRenderMode.FANCY, ParticlesMode.ALL, 4),
+        HIGH("High", 24, 12, 1.25, GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, 4),
         CUSTOM("Custom", -1, -1, -1.0, GraphicsMode.FANCY, CloudRenderMode.FANCY, ParticlesMode.ALL, -1);
 
         private final String label;
@@ -923,8 +923,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int panelRight = panelLeft + panelWidth();
 
         String heading = category == Category.VIDEO
-                ? "SETTINGS  /  VIDEO  /  " + videoPage.label.toUpperCase(Locale.ROOT)
-                : "SETTINGS  /  " + category.label.toUpperCase(Locale.ROOT);
+                ? "VIDEO SETTINGS"
+                : category.label.toUpperCase(Locale.ROOT) + " SETTINGS";
         context.drawTextWithShadow(textRenderer, Text.literal(heading), shellLeft() + 8, 15, TEXT_PRIMARY);
         if (hasContextPane()) {
             context.fill(panelRight + 14, viewportTop(), panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
@@ -987,7 +987,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
             title = highlightedRow.title.toUpperCase(Locale.ROOT);
             description = highlightedRow.description;
         } else {
-            title = category.label.toUpperCase(Locale.ROOT);
+            title = category == Category.VIDEO
+                    ? videoPage.label.toUpperCase(Locale.ROOT)
+                    : category.label.toUpperCase(Locale.ROOT);
             description = switch (category) {
                 case VIDEO -> switch (videoPage) {
                     case DISPLAY -> "Window, frame pacing, and screen visibility settings.";
