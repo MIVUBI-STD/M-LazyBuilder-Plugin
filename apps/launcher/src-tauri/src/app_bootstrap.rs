@@ -63,6 +63,7 @@ pub fn run() {
             commands::diagnostics::diagnostics_export_support_bundle,
             commands::startup::launcher_startup_status,
             commands::system::system_snapshot,
+            commands::system_activity::system_activity_snapshot,
             commands::launcher_settings::launcher_settings_get,
             commands::launcher_settings::launcher_settings_save,
             commands::server_health::launcher_server_health,
