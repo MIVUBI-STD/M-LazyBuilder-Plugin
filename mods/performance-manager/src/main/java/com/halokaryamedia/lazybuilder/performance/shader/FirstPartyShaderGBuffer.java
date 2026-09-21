@@ -124,8 +124,18 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                         previousWasOld ? 0 : previousTexture
                 );
             } else {
+                boolean previousWillBeReleased = false;
+                for (int index = Math.max(0, count); index < textures.length; index++) {
+                    if (textures[index] != 0 && textures[index] == previousTexture) {
+                        previousWillBeReleased = true;
+                        break;
+                    }
+                }
                 releaseUnusedTextures(count);
-                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
+                GL11C.glBindTexture(
+                        GL11C.GL_TEXTURE_2D,
+                        previousWillBeReleased ? 0 : previousTexture
+                );
             }
 
             clearAttachments(count);
@@ -358,7 +368,7 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
     private void deleteTextures() {
         for (int index = 0; index < textures.length; index++) {
             if (textures[index] != 0) {
-                GL11C.glDeleteTextures(textures[index]);
+                deleteTexture(textures[index]);
                 textures[index] = 0;
             }
         }
