@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderResourcePackScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsSearchScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -75,6 +76,24 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-resource-packs-1440x900-gui2");
             captureResourcePackManager(context, 620, 480, 2,
                     "utility-resource-packs-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.AUDIO,
+                    "utility-settings-audio-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.AUDIO,
+                    "utility-settings-audio-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.ACCESSIBILITY,
+                    "utility-settings-accessibility-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.ACCESSIBILITY,
+                    "utility-settings-accessibility-620x480-gui2");
+            captureSettingsSearch(context, 1440, 900, 2,
+                    "render",
+                    "utility-settings-search-render-1440x900-gui2");
+            captureSettingsSearch(context, 620, 480, 2,
+                    "shader",
+                    "utility-settings-search-shader-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.CONTROLS,
                     "utility-settings-controls-1440x900-gui2");
@@ -296,6 +315,37 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             });
             context.waitTicks(4);
         }
+    }
+
+    private static void captureSettingsSearch(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String query,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsSearchScreen(null));
+        context.waitForScreen(LazyBuilderSettingsSearchScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderSettingsSearchScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderSettingsSearchScreen");
+            }
+            for (Element element : screen.children()) {
+                if (element instanceof TextFieldWidget field) {
+                    field.setText(query);
+                    return;
+                }
+            }
+            throw new AssertionError("Expected Settings search field");
+        });
+        context.waitTicks(6);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static void captureVideoPage(
