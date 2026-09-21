@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import net.minecraft.client.gl.CompiledShader;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,7 +46,7 @@ final class TerrainShaderSourceTransformerTest {
     @Test
     void compileFallbackBecomesStickyUntilReset() {
         TerrainShaderSourceTransformer.reset();
-        TerrainShaderSourceTransformer.recordCompileFallback();
+        TerrainShaderSourceTransformer.recordCompileFallback(CompiledShader.Type.VERTEX);
 
         TerrainShaderSourceTransformer.Snapshot failed = TerrainShaderSourceTransformer.snapshot();
         assertEquals("compile-fallback", failed.status());
