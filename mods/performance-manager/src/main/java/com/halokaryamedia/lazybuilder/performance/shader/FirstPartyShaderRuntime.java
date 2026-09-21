@@ -44,7 +44,7 @@ public final class FirstPartyShaderRuntime {
         if (!selectedPackId.isBlank()
                 && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
             selectedPackId = "";
-            persisted = ShaderRuntimePreferences.defaults();
+            persisted = persisted.withSelectedPack("");
             configStore.save(persisted);
         }
     }
@@ -87,7 +87,7 @@ public final class FirstPartyShaderRuntime {
         String requested = packId == null ? "" : packId.trim();
         if (requested.isBlank()) {
             selectedPackId = "";
-            persisted = ShaderRuntimePreferences.defaults();
+            persisted = persisted.withSelectedPack("");
             configStore.save(persisted);
             lastError = "";
             stage = pipeline == null ? "source-ready" : "compiled";
@@ -153,7 +153,10 @@ public final class FirstPartyShaderRuntime {
 
         FirstPartyShaderPipeline candidate = null;
         try {
-            candidate = FirstPartyShaderPipeline.compile(ShaderPackSource.open(descriptor));
+            candidate = FirstPartyShaderPipeline.compile(
+                    ShaderPackSource.open(descriptor),
+                    optionDefines(descriptor)
+            );
 
             synchronized (this) {
                 if (!requestedPackId.equals(selectedPackId)) {
@@ -167,7 +170,7 @@ public final class FirstPartyShaderRuntime {
                 pipeline = candidate;
                 candidate = null;
                 activePackId = requestedPackId;
-                persisted = new ShaderRuntimePreferences(requestedPackId, true);
+                persisted = persisted.withSelectedPack(requestedPackId).withEnabled(true);
                 configStore.save(persisted);
                 lastFrameApplied = false;
                 terrainVertexCompiled = false;
@@ -245,7 +248,8 @@ public final class FirstPartyShaderRuntime {
         try {
             ShaderSourcePreprocessor.Result result = ShaderSourcePreprocessor.preprocess(
                     ShaderPackSource.open(active),
-                    path
+                    path,
+                    optionDefines(active)
             );
             return new TerrainSource(true, result.source(), activePackId, "");
         } catch (Exception error) {
@@ -479,6 +483,46 @@ public final class FirstPartyShaderRuntime {
         }
     }
 
+    public boolean updateOption(String optionId, String rawValue) {
+        boolean recompile;
+        synchronized (this) {
+            ShaderPackDescriptor selected = selectedPack();
+            if (selected == null) {
+                lastError = "No shader pack selected.";
+                stage = "selection-error";
+                revision++;
+                return false;
+            }
+
+            ShaderPackManifest.Option option = selected.manifest().options().stream()
+                    .filter(candidate -> candidate.id().equals(optionId))
+                    .findFirst()
+                    .orElse(null);
+            if (option == null) {
+                lastError = "Shader option is no longer available: " + optionId;
+                stage = "option-error";
+                revision++;
+                return false;
+            }
+
+            String sanitized = option.sanitize(rawValue);
+            persisted = persisted.withOption(selected.id(), option.id(), sanitized);
+            configStore.save(persisted);
+            lastError = "";
+            recompile = persisted.enabled() && selected.id().equals(activePackId);
+            stage = recompile ? "option-recompile-queued" : "selected";
+            revision++;
+        }
+
+        if (recompile) compileSelected();
+        return true;
+    }
+
+    private synchronized Map<String, String> optionDefines(ShaderPackDescriptor descriptor) {
+        if (descriptor == null) return Map.of();
+        return descriptor.manifest().defines(descriptor.id(), persisted);
+    }
+
     public synchronized SourcePreview preprocess(String relativePath) {
         ShaderPackDescriptor selected = selectedPack();
         if (selected == null) {
@@ -488,7 +532,8 @@ public final class FirstPartyShaderRuntime {
         try {
             ShaderSourcePreprocessor.Result result = ShaderSourcePreprocessor.preprocess(
                     ShaderPackSource.open(selected),
-                    relativePath
+                    relativePath,
+                    optionDefines(selected)
             );
             List<String> dependencies = new ArrayList<>(result.dependencies());
             dependencies.sort(String::compareTo);
@@ -556,6 +601,37 @@ public final class FirstPartyShaderRuntime {
         values.put("packNames", snapshot.packNames());
         values.put("shaderpacksDirectory", snapshot.shaderpacksDirectory().toString());
         values.put("lastError", snapshot.lastError());
+
+        ShaderPackDescriptor selected = selectedPack();
+        if (selected != null) {
+            values.put("selectedPackAuthor", selected.manifest().author());
+            values.put("selectedPackDescription", selected.manifest().description());
+            List<Map<String, Object>> optionRows = new ArrayList<>();
+            for (ShaderPackManifest.Option option : selected.manifest().options()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", option.id());
+                row.put("label", option.label());
+                row.put("type", option.type().name().toLowerCase(java.util.Locale.ROOT));
+                row.put(
+                        "value",
+                        option.sanitize(persisted.optionValue(
+                                selected.id(),
+                                option.id(),
+                                option.defaultValue()
+                        ))
+                );
+                row.put("default", option.defaultValue());
+                row.put("min", option.min());
+                row.put("max", option.max());
+                row.put("step", option.step());
+                optionRows.add(Map.copyOf(row));
+            }
+            values.put("options", List.copyOf(optionRows));
+        } else {
+            values.put("selectedPackAuthor", "");
+            values.put("selectedPackDescription", "");
+            values.put("options", List.of());
+        }
         return Map.copyOf(values);
     }
 
