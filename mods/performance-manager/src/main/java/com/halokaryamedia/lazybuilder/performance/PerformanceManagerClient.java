@@ -87,6 +87,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             if (shaderRuntime != null) shaderRuntime.activateConfiguredSelection();
         });
 
+        WorldRenderEvents.START.register(context -> beginFirstPartyShaderFrame());
         WorldRenderEvents.END.register(context -> {
             long now = System.nanoTime();
             runtime.recordFrame(now);
@@ -100,6 +101,30 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 client.reloadResources();
             }
         });
+    }
+
+    private static void beginFirstPartyShaderFrame() {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null) return;
+
+        FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
+        if (!snapshot.compiledReady()
+                || !snapshot.postProcessReady()
+                || snapshot.gbufferAttachments() <= 0) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getWindow().isMinimized()) return;
+
+        var framebuffer = client.getFramebuffer();
+        if (framebuffer == null || framebuffer.textureWidth <= 0 || framebuffer.textureHeight <= 0) return;
+
+        shaders.beginGBufferFrame(
+                framebuffer.fbo,
+                framebuffer.textureWidth,
+                framebuffer.textureHeight
+        );
     }
 
     private static void renderFirstPartyShaderFrame(long nowNanos) {
@@ -123,10 +148,13 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         int sourceDepthTexture = framebuffer.useDepthAttachment
                 ? framebuffer.getDepthAttachment()
                 : 0;
+        var gbuffer = shaders.endGBufferFrame(targetFramebuffer);
         float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
         shaders.renderPostProcess(
                 targetFramebuffer,
                 sourceDepthTexture,
+                gbuffer.texture1(),
+                gbuffer.texture2(),
                 width,
                 height,
                 timeSeconds
