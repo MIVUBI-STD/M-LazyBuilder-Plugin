@@ -922,6 +922,22 @@ public final class FirstPartyShaderRuntime {
                 return false;
             }
 
+            int requiredGbuffers = current.gbufferAttachments();
+            boolean gbufferMissing = (requiredGbuffers >= 1 && gbufferTexture1 <= 0)
+                    || (requiredGbuffers >= 2 && gbufferTexture2 <= 0);
+            if (gbufferMissing) {
+                String nextError = "Required GBuffer attachment is unavailable for this frame.";
+                boolean changed = lastFrameApplied
+                        || !nextError.equals(gbufferError)
+                        || !"gbuffer-fallback".equals(stage);
+                lastFrameApplied = false;
+                gbufferError = nextError;
+                lastError = primaryError();
+                stage = "gbuffer-fallback";
+                if (changed) revision++;
+                return false;
+            }
+
             ShaderMemoryBudget.Estimate budget = frameBudget(current, width, height);
             if (!budget.allowed()) {
                 FirstPartyShaderPostProcessor previous = postProcessor;
