@@ -41,6 +41,10 @@ public final class TerrainShaderSourceTransformer {
     public static void observeResource(Identifier id, CompiledShader.Type type, String packId) {
         if (!isTerrainResource(id, type)) return;
 
+        if (type == CompiledShader.Type.VERTEX) {
+            PerformanceManagerClient.invalidateShaderTerrainForResourceReload();
+        }
+
         RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
         boolean safe = renderer.terrainSubmissionSafe();
         boolean vanilla = VANILLA_PACK_ID.equals(packId);
