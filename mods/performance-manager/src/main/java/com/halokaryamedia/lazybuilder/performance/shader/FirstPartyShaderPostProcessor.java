@@ -9,6 +9,7 @@ import org.lwjgl.opengl.GL30C;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 
 /**
  * Applies LazyBuilder-native composite/final programs to the currently rendered frame.
@@ -260,8 +261,18 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int viewportHeight
     ) {
         static GlState capture() {
-            int[] viewport = new int[4];
-            GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
+            int viewportX;
+            int viewportY;
+            int viewportWidth;
+            int viewportHeight;
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                IntBuffer viewport = stack.mallocInt(4);
+                GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
+                viewportX = viewport.get(0);
+                viewportY = viewport.get(1);
+                viewportWidth = viewport.get(2);
+                viewportHeight = viewport.get(3);
+            }
 
             int activeTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
 
@@ -293,10 +304,10 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                     GL11C.glIsEnabled(GL11C.GL_BLEND),
                     GL11C.glIsEnabled(GL11C.GL_CULL_FACE),
                     GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST),
-                    viewport[0],
-                    viewport[1],
-                    viewport[2],
-                    viewport[3]
+                    viewportX,
+                    viewportY,
+                    viewportWidth,
+                    viewportHeight
             );
         }
 
