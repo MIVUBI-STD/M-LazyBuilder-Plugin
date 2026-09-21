@@ -21,15 +21,21 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
     private final Map<String, FirstPartyShaderProgram> programs;
     private final int gbufferAttachments;
     private final String terrainSourceFingerprint;
+    private final String terrainVertexSource;
+    private final String terrainFragmentSource;
 
     private FirstPartyShaderPipeline(
             Map<String, FirstPartyShaderProgram> programs,
             int gbufferAttachments,
-            String terrainSourceFingerprint
+            String terrainSourceFingerprint,
+            String terrainVertexSource,
+            String terrainFragmentSource
     ) {
         this.programs = Collections.unmodifiableMap(new LinkedHashMap<>(programs));
         this.gbufferAttachments = Math.max(0, Math.min(2, gbufferAttachments));
         this.terrainSourceFingerprint = terrainSourceFingerprint == null ? "" : terrainSourceFingerprint;
+        this.terrainVertexSource = terrainVertexSource == null ? "" : terrainVertexSource;
+        this.terrainFragmentSource = terrainFragmentSource == null ? "" : terrainFragmentSource;
     }
 
     public static FirstPartyShaderPipeline compile(ShaderPackSource source)
@@ -96,10 +102,16 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
                         )
                 );
             }
+            PreparedProgram terrain = prepared.programs().get("terrain");
+            if (terrain == null) {
+                throw new IllegalArgumentException("Prepared terrain shader is unavailable.");
+            }
             return new FirstPartyShaderPipeline(
                     compiled,
                     prepared.gbufferAttachments(),
-                    prepared.terrainSourceFingerprint()
+                    prepared.terrainSourceFingerprint(),
+                    terrain.vertexSource(),
+                    terrain.fragmentSource()
             );
         } catch (FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
             for (FirstPartyShaderProgram program : compiled.values()) {
@@ -143,6 +155,10 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
 
     public boolean has(String name) {
         return programs.containsKey(name);
+    }
+
+    public String terrainSource(boolean vertex) {
+        return vertex ? terrainVertexSource : terrainFragmentSource;
     }
 
     public String terrainSourceFingerprint() {
