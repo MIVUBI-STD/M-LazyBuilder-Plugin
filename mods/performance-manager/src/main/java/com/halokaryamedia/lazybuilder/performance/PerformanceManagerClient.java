@@ -88,6 +88,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 (BiConsumer<String, String>) PerformanceManagerClient::updateShaderOption
         );
         share.put(
+                "lazybuilder-performance-manager:shader-options-update",
+                (Consumer<Map<String, String>>) PerformanceManagerClient::updateShaderOptions
+        );
+        share.put(
                 "lazybuilder-performance-manager:shader-options-apply",
                 (Runnable) PerformanceManagerClient::applyShaderOptions
         );
@@ -309,6 +313,12 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (shaders == null) return;
         shaders.updateOption(optionId, value, false);
+    }
+
+    private static void updateShaderOptions(Map<String, String> values) {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null || values == null || values.isEmpty()) return;
+        shaders.updateOptions(values, false);
     }
 
     private static void applyShaderOptions() {
