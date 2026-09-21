@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -9,15 +11,18 @@ import java.util.Map;
 /**
  * Runtime authority for LazyBuilder-owned shader packs.
  *
- * This first stage owns discovery/selection/source preprocessing only. It deliberately
- * reports renderingReady=false until the compiler/framebuffer/pass pipeline is wired.
+ * Pack selection and source ownership are independent from the active compiled
+ * pipeline. A failed reload never replaces the last known-good pipeline.
  */
 public final class FirstPartyShaderRuntime {
     private final ShaderPackCatalog catalog;
     private volatile List<ShaderPackDescriptor> packs = List.of();
     private volatile String selectedPackId = "";
+    private volatile String activePackId = "";
+    private volatile String stage = "source-ready";
     private volatile String lastError = "";
     private volatile long revision;
+    private FirstPartyShaderPipeline pipeline;
 
     public FirstPartyShaderRuntime(Path shaderpacksDirectory) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
@@ -32,10 +37,17 @@ public final class FirstPartyShaderRuntime {
                     && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
                 selectedPackId = "";
             }
+            if (!activePackId.isBlank()
+                    && packs.stream().noneMatch(pack -> pack.id().equals(activePackId))) {
+                closePipelineLocked();
+                activePackId = "";
+            }
             lastError = "";
+            if (pipeline == null) stage = "source-ready";
         } catch (RuntimeException error) {
             packs = List.of();
             lastError = safeMessage(error);
+            stage = "catalog-error";
         }
         revision++;
     }
@@ -45,6 +57,7 @@ public final class FirstPartyShaderRuntime {
         if (requested.isBlank()) {
             selectedPackId = "";
             lastError = "";
+            stage = pipeline == null ? "source-ready" : "active";
             revision++;
             return true;
         }
@@ -52,14 +65,107 @@ public final class FirstPartyShaderRuntime {
         boolean exists = packs.stream().anyMatch(pack -> pack.id().equals(requested));
         if (!exists) {
             lastError = "Shader pack is no longer available.";
+            stage = "selection-error";
             revision++;
             return false;
         }
 
         selectedPackId = requested;
         lastError = "";
+        stage = requested.equals(activePackId) && pipeline != null ? "active" : "selected";
         revision++;
         return true;
+    }
+
+    public void compileSelected() {
+        String requested;
+        synchronized (this) {
+            requested = selectedPackId;
+            if (requested == null || requested.isBlank()) {
+                lastError = "No shader pack selected.";
+                stage = "selection-error";
+                revision++;
+                return;
+            }
+            stage = "compile-queued";
+            lastError = "";
+            revision++;
+        }
+
+        if (!RenderSystem.isOnRenderThread()) {
+            String target = requested;
+            RenderSystem.recordRenderCall(() -> compileSelectedOnRenderThread(target));
+            return;
+        }
+        compileSelectedOnRenderThread(requested);
+    }
+
+    private void compileSelectedOnRenderThread(String requestedPackId) {
+        RenderSystem.assertOnRenderThread();
+
+        ShaderPackDescriptor descriptor;
+        synchronized (this) {
+            descriptor = packById(requestedPackId);
+            if (descriptor == null) {
+                lastError = "Shader pack is no longer available.";
+                stage = "selection-error";
+                revision++;
+                return;
+            }
+            stage = "compiling";
+            revision++;
+        }
+
+        FirstPartyShaderPipeline candidate = null;
+        try {
+            candidate = FirstPartyShaderPipeline.compile(ShaderPackSource.open(descriptor));
+
+            synchronized (this) {
+                if (!requestedPackId.equals(selectedPackId)) {
+                    candidate.close();
+                    stage = pipeline == null ? "selected" : "active";
+                    revision++;
+                    return;
+                }
+
+                FirstPartyShaderPipeline previous = pipeline;
+                pipeline = candidate;
+                candidate = null;
+                activePackId = requestedPackId;
+                lastError = "";
+                stage = "active";
+                revision++;
+
+                if (previous != null) previous.close();
+            }
+        } catch (Exception error) {
+            if (candidate != null) candidate.close();
+            synchronized (this) {
+                lastError = safeMessage(error);
+                stage = "compile-error";
+                revision++;
+            }
+        }
+    }
+
+    public synchronized void disable() {
+        closePipelineLocked();
+        activePackId = "";
+        stage = "disabled";
+        lastError = "";
+        revision++;
+    }
+
+    /**
+     * Minecraft resource reload invalidates GL program identity. Selection is kept,
+     * but the compiled pipeline is released and must be compiled again explicitly.
+     */
+    public synchronized void invalidateForResourceReload() {
+        closePipelineLocked();
+        activePackId = "";
+        stage = selectedPackId.isBlank() ? "source-ready" : "selected";
+        lastError = "";
+        revision++;
     }
 
     public synchronized SourcePreview preprocess(String relativePath) {
@@ -85,15 +191,18 @@ public final class FirstPartyShaderRuntime {
         }
     }
 
-    public Snapshot snapshot() {
+    public synchronized Snapshot snapshot() {
         ShaderPackDescriptor selected = selectedPack();
+        ShaderPackDescriptor active = packById(activePackId);
         return new Snapshot(
                 revision,
                 "lazybuilder",
-                "source-ready",
-                false,
+                stage,
+                pipeline != null,
                 selected == null ? "" : selected.id(),
                 selected == null ? "" : selected.displayName(),
+                active == null ? "" : active.id(),
+                active == null ? "" : active.displayName(),
                 packs.stream().map(ShaderPackDescriptor::id).toList(),
                 packs.stream().map(ShaderPackDescriptor::displayName).toList(),
                 catalog.directory(),
@@ -110,6 +219,8 @@ public final class FirstPartyShaderRuntime {
         values.put("renderingReady", snapshot.renderingReady());
         values.put("selectedPackId", snapshot.selectedPackId());
         values.put("selectedPackName", snapshot.selectedPackName());
+        values.put("activePackId", snapshot.activePackId());
+        values.put("activePackName", snapshot.activePackName());
         values.put("packIds", snapshot.packIds());
         values.put("packNames", snapshot.packNames());
         values.put("shaderpacksDirectory", snapshot.shaderpacksDirectory().toString());
@@ -118,12 +229,21 @@ public final class FirstPartyShaderRuntime {
     }
 
     private ShaderPackDescriptor selectedPack() {
-        String selected = selectedPackId;
-        if (selected == null || selected.isBlank()) return null;
+        return packById(selectedPackId);
+    }
+
+    private ShaderPackDescriptor packById(String id) {
+        if (id == null || id.isBlank()) return null;
         return packs.stream()
-                .filter(pack -> pack.id().equals(selected))
+                .filter(pack -> pack.id().equals(id))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private void closePipelineLocked() {
+        FirstPartyShaderPipeline current = pipeline;
+        pipeline = null;
+        if (current != null) current.close();
     }
 
     private static String safeMessage(Throwable error) {
@@ -139,6 +259,8 @@ public final class FirstPartyShaderRuntime {
             boolean renderingReady,
             String selectedPackId,
             String selectedPackName,
+            String activePackId,
+            String activePackName,
             List<String> packIds,
             List<String> packNames,
             Path shaderpacksDirectory,
@@ -149,6 +271,8 @@ public final class FirstPartyShaderRuntime {
             stage = stage == null ? "" : stage;
             selectedPackId = selectedPackId == null ? "" : selectedPackId;
             selectedPackName = selectedPackName == null ? "" : selectedPackName;
+            activePackId = activePackId == null ? "" : activePackId;
+            activePackName = activePackName == null ? "" : activePackName;
             packIds = packIds == null ? List.of() : List.copyOf(packIds);
             packNames = packNames == null ? List.of() : List.copyOf(packNames);
             lastError = lastError == null ? "" : lastError;
