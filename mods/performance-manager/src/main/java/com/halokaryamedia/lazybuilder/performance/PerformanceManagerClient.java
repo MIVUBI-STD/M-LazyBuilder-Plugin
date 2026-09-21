@@ -109,6 +109,13 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             }
         });
 
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            shaderTerrainReloadInFlight = false;
+            FirstPartyShaderRuntime shaders = shaderRuntime;
+            shaderRuntime = null;
+            if (shaders != null) shaders.shutdown();
+        });
+
         WorldRenderEvents.START.register(context -> beginFirstPartyShaderFrame());
         WorldRenderEvents.AFTER_SETUP.register(PerformanceManagerClient::renderFirstPartyShadow);
         WorldRenderEvents.END.register(context -> {
