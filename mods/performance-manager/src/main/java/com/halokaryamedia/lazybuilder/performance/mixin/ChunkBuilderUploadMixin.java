@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
+import com.halokaryamedia.lazybuilder.performance.StageTimingMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadDrainPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkUploadTask;
@@ -89,19 +90,29 @@ abstract class ChunkBuilderUploadMixin {
                         ? Integer.MAX_VALUE
                         : PerformanceManagerClient.governorProfile().chunkUploadBudget()
         );
-        int processed = 0;
-        Runnable runnable;
-        while (processed < budget && (runnable = this.uploadQueue.poll()) != null) {
-            if (!(runnable instanceof ChunkUploadTask task)) {
-                runnable.run();
-                processed++;
-                continue;
+        long timingStart = StageTimingMetrics.enabled() ? System.nanoTime() : 0L;
+        try {
+            int processed = 0;
+            Runnable runnable;
+            while (processed < budget && (runnable = this.uploadQueue.poll()) != null) {
+                if (!(runnable instanceof ChunkUploadTask task)) {
+                    runnable.run();
+                    processed++;
+                    continue;
+                }
+                processed += lazybuilder$runUploadBatch(task, budget - processed);
             }
-            processed += lazybuilder$runUploadBatch(task, budget - processed);
-        }
 
-        if (!this.stopped && !this.uploadQueue.isEmpty()) {
-            ChunkPipelineMetrics.recordUploadBudgetStop();
+            if (!this.stopped && !this.uploadQueue.isEmpty()) {
+                ChunkPipelineMetrics.recordUploadBudgetStop();
+            }
+        } finally {
+            if (timingStart > 0L) {
+                StageTimingMetrics.record(
+                        StageTimingMetrics.Stage.CHUNK_UPLOAD,
+                        System.nanoTime() - timingStart
+                );
+            }
         }
         ci.cancel();
     }
