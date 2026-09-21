@@ -46,7 +46,7 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
     protected void init() {
         super.init();
 
-        PackScreenAccessor access = (PackScreenAccessor) this;
+        PackScreenAccessor access = (PackScreenAccessor) (Object) this;
         PackListWidget available = access.lazybuilder$getAvailablePackList();
         PackListWidget active = access.lazybuilder$getSelectedPackList();
 
@@ -93,7 +93,7 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
         context.fill(0, 0, width, 38, TOP_BAR);
         context.fill(0, height - 40, width, height, TOP_BAR);
 
-        PackScreenAccessor access = (PackScreenAccessor) this;
+        PackScreenAccessor access = (PackScreenAccessor) (Object) this;
         drawListPanel(context, access.lazybuilder$getAvailablePackList(), false);
         drawListPanel(context, access.lazybuilder$getSelectedPackList(), true);
     }
@@ -127,7 +127,7 @@ public final class LazyBuilderResourcePackScreen extends PackScreen {
                 LazyBuilderSettingsScreen.TEXT_MUTED
         );
 
-        PackScreenAccessor access = (PackScreenAccessor) this;
+        PackScreenAccessor access = (PackScreenAccessor) (Object) this;
         PackListWidget active = access.lazybuilder$getSelectedPackList();
         if (active != null) {
             int x = active.getX();
