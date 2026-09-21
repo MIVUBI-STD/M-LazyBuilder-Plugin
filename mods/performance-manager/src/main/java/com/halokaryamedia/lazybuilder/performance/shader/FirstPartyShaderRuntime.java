@@ -1079,11 +1079,6 @@ public final class FirstPartyShaderRuntime {
                     health.postProcess("");
                     changed = true;
                 }
-                String nextError = health.primary();
-                if (!nextError.equals(health.primary())) {
-
-                    changed = true;
-                }
                 if (!health.primary().isBlank()) nextStage = "degraded";
                 if (!nextStage.equals(stage)) {
                     stage = nextStage;
@@ -1316,7 +1311,7 @@ public final class FirstPartyShaderRuntime {
         values.put("packIds", snapshot.packIds());
         values.put("packNames", snapshot.packNames());
         values.put("shaderpacksDirectory", snapshot.shaderpacksDirectory().toString());
-        values.put("health.primary()", snapshot.health.primary()());
+        values.put("lastError", snapshot.lastError());
         values.put("invalidPacks", catalog.invalidEntries());
         values.put("health", health.snapshot());
         boolean shadowDeclared = pipeline != null && pipeline.has("shadow");
