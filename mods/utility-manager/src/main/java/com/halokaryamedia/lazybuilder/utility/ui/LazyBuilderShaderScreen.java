@@ -243,14 +243,14 @@ public final class LazyBuilderShaderScreen extends Screen {
                         : 0xFFFFA7A7
         );
 
-        if (state.invalidPackCount() > 0) {
+        if (!compact && !state.shadowStatus().isBlank() && !"not-configured".equals(state.shadowStatus())) {
             textY += 14;
             context.drawTextWithShadow(
                     textRenderer,
-                    Text.literal(state.invalidPackCount() + " invalid shader pack(s) skipped"),
+                    Text.literal(textRenderer.trimToWidth(shadowLabel(state), shell - 210)),
                     textX,
                     textY,
-                    0xFFFFC97A
+                    LazyBuilderSettingsScreen.TEXT_MUTED
             );
         }
 
@@ -258,7 +258,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             textY += 14;
             String details = "Terrain " + yesNo(state.terrainIntegrated())
                     + "  •  Post " + yesNo(state.postProcessReady())
-                    + "  •  Shadow " + yesNo(state.shadowReady());
+                    + "  •  " + shadowLabel(state);
             context.drawTextWithShadow(
                     textRenderer,
                     Text.literal(textRenderer.trimToWidth(details, shell - 24)),
@@ -387,6 +387,8 @@ public final class LazyBuilderShaderScreen extends Screen {
                 booleanValue(values, "compiledReady", false),
                 booleanValue(values, "postProcessReady", false),
                 booleanValue(values, "shadowReady", false),
+                stringValue(values, "shadowStatus", ""),
+                intValue(values, "shadowResolution", 0),
                 booleanValue(values, "renderingReady", false),
                 booleanValue(values, "terrainIntegrated", false),
                 booleanValue(values, "configuredEnabled", false),
@@ -423,6 +425,21 @@ public final class LazyBuilderShaderScreen extends Screen {
         return "Off";
     }
 
+    private static String shadowLabel(ShaderState state) {
+        String status = state.shadowStatus();
+        if ("ready-solid-only".equals(status) || state.shadowReady()) {
+            String resolution = state.shadowResolution() > 0
+                    ? " · " + state.shadowResolution() + "px"
+                    : "";
+            return "Shadow: Solid terrain" + resolution;
+        }
+        if ("no-visible-terrain".equals(status)) return "Shadow: Waiting for visible terrain";
+        if (status == null || status.isBlank() || "not-configured".equals(status)) {
+            return "Shadow: Off";
+        }
+        return "Shadow: " + status.replace('-', ' ');
+    }
+
     private static String yesNo(boolean value) {
         return value ? "Ready" : "Off";
     }
@@ -435,6 +452,11 @@ public final class LazyBuilderShaderScreen extends Screen {
     private static boolean booleanValue(Map<?, ?> values, String key, boolean fallback) {
         Object value = values.get(key);
         return value instanceof Boolean bool ? bool : fallback;
+    }
+
+    private static int intValue(Map<?, ?> values, String key, int fallback) {
+        Object value = values.get(key);
+        return value instanceof Number number ? number.intValue() : fallback;
     }
 
     private static long longValue(Map<?, ?> values, String key, long fallback) {
@@ -474,6 +496,8 @@ public final class LazyBuilderShaderScreen extends Screen {
             boolean compiledReady,
             boolean postProcessReady,
             boolean shadowReady,
+            String shadowStatus,
+            int shadowResolution,
             boolean renderingReady,
             boolean terrainIntegrated,
             boolean configuredEnabled,
@@ -492,7 +516,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         static ShaderState unavailable() {
             return new ShaderState(
                     false, 0L, "runtime-unavailable",
-                    false, false, false, false, false, false,
+                    false, false, false, "", 0, false, false, false,
                     "", "", "", "", "", "", 0, 0, false, "", List.of()
             );
         }
