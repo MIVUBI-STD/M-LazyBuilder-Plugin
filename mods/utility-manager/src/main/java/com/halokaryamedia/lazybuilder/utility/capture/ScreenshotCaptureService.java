@@ -95,6 +95,14 @@ public final class ScreenshotCaptureService {
 
     public void shutdown() {
         encoder.shutdown();
+        try {
+            if (!encoder.awaitTermination(3L, TimeUnit.SECONDS)) {
+                encoder.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            encoder.shutdownNow();
+        }
     }
 
     private static void encodeAndPublish(
