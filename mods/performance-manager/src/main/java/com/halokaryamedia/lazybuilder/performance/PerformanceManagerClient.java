@@ -93,7 +93,13 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             renderFirstPartyShaderFrame(now);
         });
 
-        ClientTickEvents.END_CLIENT_TICK.register(runtime::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            runtime.tick(client);
+            FirstPartyShaderRuntime shaders = shaderRuntime;
+            if (shaders != null && shaders.consumeTerrainReloadRequest()) {
+                client.reloadResources();
+            }
+        });
     }
 
     private static void renderFirstPartyShaderFrame(long nowNanos) {
@@ -166,8 +172,29 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         if (shaderRuntime != null) shaderRuntime.disable();
     }
 
-    public static void invalidateShaderRuntimeForResourceReload() {
-        if (shaderRuntime != null) shaderRuntime.invalidateForResourceReload();
+    public static void invalidateShaderTerrainForResourceReload() {
+        if (shaderRuntime != null) shaderRuntime.invalidateTerrainIntegrationForResourceReload();
+    }
+
+    public static FirstPartyShaderRuntime.TerrainSource firstPartyTerrainSource(boolean vertex) {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        return shaders == null
+                ? new FirstPartyShaderRuntime.TerrainSource(false, "", "", "Shader runtime unavailable.")
+                : shaders.terrainSource(vertex);
+    }
+
+    public static void recordFirstPartyTerrainCompile(
+            boolean vertex,
+            boolean success,
+            String error
+    ) {
+        if (shaderRuntime != null) {
+            shaderRuntime.recordTerrainCompile(vertex, success, error);
+        }
+    }
+
+    public static void recordFirstPartyTerrainProgramLinked() {
+        if (shaderRuntime != null) shaderRuntime.recordTerrainProgramLinked();
     }
 
     private static Map<String, Object> preprocessShaderSource(String path) {
