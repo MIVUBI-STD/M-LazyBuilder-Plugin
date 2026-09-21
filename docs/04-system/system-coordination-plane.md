@@ -41,11 +41,17 @@ Launcher UI / diagnostics / workflow routing
 The first implementation lives in:
 
 ~~~text
-apps/launcher/src-tauri/src/engine/system_kernel.rs
+apps/launcher/src-tauri/src/engine/system/
+├── snapshot.rs
+├── capabilities.rs
+├── context.rs
+└── activity.rs
+
 apps/launcher/src-tauri/src/commands/system.rs
+apps/launcher/src-tauri/src/commands/system_activity.rs
 ~~~
 
-SystemKernel is a composition service. It stores no duplicate durable business state and runs no background worker.
+System coordination is split by cohesive projection responsibility. The services store no duplicate durable business state and run no background worker.
 
 ## SystemSnapshot
 
@@ -109,8 +115,8 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 
 ## Ownership invariants
 
-1. No subsystem moves its durable state into SystemKernel.
-2. SystemKernel may read owners but must not reimplement their domain rules.
+1. No subsystem moves its durable state into the system coordination package.
+2. System projection services may read owners but must not reimplement their domain rules.
 3. No global mutable event bus is introduced.
 4. No idle poller or watcher is introduced merely to keep the snapshot fresh.
 5. UI may use capability/readiness projection for presentation, but execution commands revalidate.
@@ -127,5 +133,7 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 5. Extend capability discovery to Fabric managers using their existing versioned boundaries — next.
 6. Typed invalidation signals refresh only affected projections — next.
 7. Runtime proof verifies degraded/recovery transitions on a real Windows/Minecraft environment — acceptance layer.
+
+Frontend activity observation also has one shared feed (`app/operations/activityFeed.ts`) so the Activity page and navigation badge do not create duplicate polling loops.
 
 Do not jump directly to a generic event bus, distributed state store, or universal scheduler.
