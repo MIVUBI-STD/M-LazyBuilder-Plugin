@@ -55,6 +55,9 @@ Axiom remains the primary builder editor/interaction owner. FAWE, FastAsyncVoxel
 13. Shared execution abstractions require a real repeated responsibility; Builder Utilities keeps its operation lifecycle inside its own module.
 14. Cross-component coordination uses typed contracts or read-only projections; do not introduce a generic mutable event bus or duplicate state store.
 15. A projected capability never replaces execution-time validation by the semantic owner.
+16. Tauri command modules stay transport-thin; cross-owner composition belongs in `engine/system/`.
+17. Repeated UI observation of the same projection uses one shared feed rather than parallel polling loops.
+18. Large integration owners may split internal transport/types/status files while preserving one external semantic owner.
 
 ## Dependency direction
 
