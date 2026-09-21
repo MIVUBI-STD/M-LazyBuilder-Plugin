@@ -609,6 +609,57 @@ public final class FirstPartyShaderRuntime {
                 : current.snapshot();
     }
 
+    private static ShaderMemoryBudget.Estimate frameBudget(
+            FirstPartyShaderPipeline pipeline,
+            int width,
+            int height
+    ) {
+        if (pipeline == null) {
+            return new ShaderMemoryBudget.Estimate(false, 0L, 0L, "missing-pipeline");
+        }
+
+        boolean composite = pipeline.has("composite");
+        boolean post = composite || pipeline.has("final");
+        if (!pipeline.has("shadow")) {
+            return ShaderMemoryBudget.estimate(
+                    width,
+                    height,
+                    pipeline.gbufferAttachments(),
+                    composite,
+                    post,
+                    false,
+                    0
+            );
+        }
+
+        ShaderMemoryBudget.ShadowPlan shadow = ShaderMemoryBudget.planShadow(
+                width,
+                height,
+                pipeline.gbufferAttachments(),
+                composite,
+                post,
+                2048
+        );
+        if (!shadow.allowed()) {
+            return new ShaderMemoryBudget.Estimate(
+                    false,
+                    shadow.estimatedBytes(),
+                    shadow.limitBytes(),
+                    shadow.status()
+            );
+        }
+
+        return ShaderMemoryBudget.estimate(
+                width,
+                height,
+                pipeline.gbufferAttachments(),
+                composite,
+                post,
+                true,
+                shadow.resolution()
+        );
+    }
+
     public boolean beginGBufferFrame(
             int targetFramebuffer,
             int width,
@@ -624,15 +675,7 @@ public final class FirstPartyShaderRuntime {
                 return false;
             }
 
-            ShaderMemoryBudget.Estimate budget = ShaderMemoryBudget.estimate(
-                    width,
-                    height,
-                    current.gbufferAttachments(),
-                    current.has("composite"),
-                    current.has("composite") || current.has("final"),
-                    current.has("shadow"),
-                    2048
-            );
+            ShaderMemoryBudget.Estimate budget = frameBudget(current, width, height);
             if (!budget.allowed()) {
                 FirstPartyShaderGBuffer previous = gbuffer;
                 gbuffer = null;
@@ -724,15 +767,7 @@ public final class FirstPartyShaderRuntime {
                 return false;
             }
 
-            ShaderMemoryBudget.Estimate budget = ShaderMemoryBudget.estimate(
-                    width,
-                    height,
-                    current.gbufferAttachments(),
-                    current.has("composite"),
-                    current.has("composite") || current.has("final"),
-                    current.has("shadow"),
-                    2048
-            );
+            ShaderMemoryBudget.Estimate budget = frameBudget(current, width, height);
             if (!budget.allowed()) {
                 FirstPartyShaderPostProcessor previous = postProcessor;
                 postProcessor = null;
