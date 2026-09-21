@@ -10,6 +10,8 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 
 /** Persistence owner for first-party shader selection and enabled state. */
@@ -38,13 +40,25 @@ public final class ShaderRuntimeConfigStore {
 
         String selected = properties.getProperty("shader.selected_pack", "").trim();
         boolean enabled = readBoolean(properties, "shader.enabled", false);
-        return new ShaderRuntimePreferences(selected, enabled);
+
+        Map<String, String> optionValues = new LinkedHashMap<>();
+        String prefix = "shader.option.";
+        for (String key : properties.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) continue;
+            String optionKey = key.substring(prefix.length()).trim();
+            if (optionKey.isBlank() || !optionKey.contains("::")) continue;
+            optionValues.put(optionKey, properties.getProperty(key, "").trim());
+        }
+        return new ShaderRuntimePreferences(selected, enabled, Map.copyOf(optionValues));
     }
 
     public void save(ShaderRuntimePreferences preferences) {
         Properties properties = new Properties();
         properties.setProperty("shader.selected_pack", preferences.selectedPackId());
         properties.setProperty("shader.enabled", Boolean.toString(preferences.enabled()));
+        for (Map.Entry<String, String> option : preferences.optionValues().entrySet()) {
+            properties.setProperty("shader.option." + option.getKey(), option.getValue());
+        }
 
         Path parent = configFile.getParent();
         Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
