@@ -6,6 +6,7 @@ import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.util.math.ChunkSectionPos;
 
 import java.util.IdentityHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Runtime bridge from Minecraft terrain buffers into residency, arena, and draw-state ownership. */
 public final class TerrainGpuResidencyTracker {
@@ -19,7 +20,7 @@ public final class TerrainGpuResidencyTracker {
             new IdentityHashMap<>();
     private static volatile Object sessionOwner;
     private static volatile long sessionGeneration;
-    private static volatile long terrainContentRevision;
+    private static final AtomicLong TERRAIN_CONTENT_REVISION = new AtomicLong();
     private static volatile String sessionStatus = "unowned";
 
     private TerrainGpuResidencyTracker() {
@@ -224,9 +225,7 @@ public final class TerrainGpuResidencyTracker {
         TerrainDrawTransformStream.clear();
         TerrainArenaDrawDiagnostics.clear();
         DRAW_COMMANDS.clear();
-        terrainContentRevision = terrainContentRevision == Long.MAX_VALUE
-                ? 1L
-                : terrainContentRevision + 1L;
+        TERRAIN_CONTENT_REVISION.incrementAndGet();
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
@@ -234,11 +233,11 @@ public final class TerrainGpuResidencyTracker {
     }
 
     public static long contentRevision() {
-        return terrainContentRevision;
+        return TERRAIN_CONTENT_REVISION.get();
     }
 
     private static void markTerrainContentChanged() {
-        if (terrainContentRevision != Long.MAX_VALUE) terrainContentRevision++;
+        TERRAIN_CONTENT_REVISION.incrementAndGet();
     }
 
     private static void invalidateDrawCommand(VertexBuffer buffer) {
