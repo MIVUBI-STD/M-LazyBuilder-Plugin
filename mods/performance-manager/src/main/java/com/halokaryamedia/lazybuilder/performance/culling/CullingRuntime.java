@@ -228,8 +228,12 @@ public final class CullingRuntime {
         entities.put(entity, new CacheEntry(
                 visible ? VisibilityDecision.VISIBLE : VisibilityDecision.OCCLUDED,
                 System.nanoTime(),
-                camera,
-                center
+                camera.x,
+                camera.y,
+                camera.z,
+                center.x,
+                center.y,
+                center.z
         ));
     }
 
@@ -247,8 +251,12 @@ public final class CullingRuntime {
         blockEntities.put(blockEntity, new CacheEntry(
                 visible ? VisibilityDecision.VISIBLE : VisibilityDecision.OCCLUDED,
                 System.nanoTime(),
-                camera,
-                center
+                camera.x,
+                camera.y,
+                camera.z,
+                center.x,
+                center.y,
+                center.z
         ));
     }
 
@@ -311,14 +319,39 @@ public final class CullingRuntime {
     ) {
         return entry != null
                 && now - entry.createdNanos <= MAX_AGE_NANOS
-                && entry.camera.squaredDistanceTo(camera) <= MAX_CAMERA_MOVE_SQ
-                && squaredDistance(entry.target, targetX, targetY, targetZ) <= MAX_TARGET_MOVE_SQ;
+                && squaredDistance(
+                        entry.cameraX,
+                        entry.cameraY,
+                        entry.cameraZ,
+                        camera.x,
+                        camera.y,
+                        camera.z
+                ) <= MAX_CAMERA_MOVE_SQ
+                && squaredDistance(
+                        entry.targetX,
+                        entry.targetY,
+                        entry.targetZ,
+                        targetX,
+                        targetY,
+                        targetZ
+                ) <= MAX_TARGET_MOVE_SQ;
     }
 
     private static double squaredDistance(Vec3d origin, double x, double y, double z) {
-        double dx = origin.x - x;
-        double dy = origin.y - y;
-        double dz = origin.z - z;
+        return squaredDistance(origin.x, origin.y, origin.z, x, y, z);
+    }
+
+    private static double squaredDistance(
+            double ax,
+            double ay,
+            double az,
+            double bx,
+            double by,
+            double bz
+    ) {
+        double dx = ax - bx;
+        double dy = ay - by;
+        double dz = az - bz;
         return dx * dx + dy * dy + dz * dz;
     }
 
@@ -335,7 +368,11 @@ public final class CullingRuntime {
     private record CacheEntry(
             VisibilityDecision decision,
             long createdNanos,
-            Vec3d camera,
-            Vec3d target
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            double targetX,
+            double targetY,
+            double targetZ
     ) {}
 }
