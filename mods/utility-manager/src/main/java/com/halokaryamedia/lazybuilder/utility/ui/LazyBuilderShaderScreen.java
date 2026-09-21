@@ -246,14 +246,19 @@ public final class LazyBuilderShaderScreen extends Screen {
         return "Active Shader";
     }
 
+    private Class<?> irisApiClass() throws ClassNotFoundException {
+        return Class.forName("net.irisshaders.iris.api.v0.IrisApi");
+    }
+
     private Object irisApi() throws ReflectiveOperationException {
-        Class<?> api = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-        return api.getMethod("getInstance").invoke(null);
+        Class<?> apiClass = irisApiClass();
+        return apiClass.getMethod("getInstance").invoke(null);
     }
 
     private Object irisConfig() throws ReflectiveOperationException {
-        Object api = irisApi();
-        return api.getClass().getMethod("getConfig").invoke(api);
+        Class<?> apiClass = irisApiClass();
+        Object api = apiClass.getMethod("getInstance").invoke(null);
+        return apiClass.getMethod("getConfig").invoke(api);
     }
 
     private void toggleShaders() {
@@ -275,8 +280,9 @@ public final class LazyBuilderShaderScreen extends Screen {
         failure = null;
         failedAction = FailedAction.NONE;
         try {
-            Object api = irisApi();
-            Object screen = api.getClass().getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
+            Class<?> apiClass = irisApiClass();
+            Object api = apiClass.getMethod("getInstance").invoke(null);
+            Object screen = apiClass.getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
             if (screen instanceof Screen irisScreen && client != null) {
                 client.setScreen(irisScreen);
                 return;
