@@ -141,7 +141,8 @@ public final class LazyBuilderShaderScreen extends Screen {
         }
 
         int viewportBottom = footerTop - 8;
-        int contentHeight = state.packs().size() * (ROW_HEIGHT + ROW_GAP);
+        int contentHeight = (state.packs().size() + state.invalidPacks().size())
+                * (ROW_HEIGHT + ROW_GAP);
         int viewportHeight = Math.max(1, viewportBottom - listTop);
         maxScroll = Math.max(0, contentHeight - viewportHeight);
         scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
@@ -163,6 +164,22 @@ public final class LazyBuilderShaderScreen extends Screen {
                                 ? LazyBuilderSettingsControlWidget.Kind.STATUS
                                 : LazyBuilderSettingsControlWidget.Kind.ACTION,
                         () -> selectAndCompile(pack.id())
+                ));
+            }
+            y += ROW_HEIGHT + ROW_GAP;
+        }
+
+        for (String invalid : state.invalidPacks()) {
+            if (y + ROW_HEIGHT > listTop && y < viewportBottom) {
+                addDrawableChild(new LazyBuilderSettingsControlWidget(
+                        left,
+                        y,
+                        shell,
+                        ROW_HEIGHT - 2,
+                        Text.literal("Invalid • " + invalid),
+                        false,
+                        LazyBuilderSettingsControlWidget.Kind.STATUS,
+                        () -> {}
                 ));
             }
             y += ROW_HEIGHT + ROW_GAP;
@@ -268,7 +285,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             );
         }
 
-        if (state.packs().isEmpty() && state.available()) {
+        if (state.packs().isEmpty() && state.invalidPacks().isEmpty() && state.available()) {
             context.drawCenteredTextWithShadow(
                     textRenderer,
                     Text.literal("No LazyBuilder shader packs found."),
@@ -402,7 +419,8 @@ public final class LazyBuilderShaderScreen extends Screen {
                 listSize(values.get("options")),
                 booleanValue(values, "compatibilityBlocked", false),
                 stringValue(values, "compatibilityOwner", ""),
-                List.copyOf(packs)
+                List.copyOf(packs),
+                stringList(values.get("invalidPacks"))
         );
     }
 
@@ -516,7 +534,8 @@ public final class LazyBuilderShaderScreen extends Screen {
             int optionCount,
             boolean compatibilityBlocked,
             String compatibilityOwner,
-            List<ShaderPack> packs
+            List<ShaderPack> packs,
+            List<String> invalidPacks
     ) {
         static ShaderState unavailable() {
             return new ShaderState(
