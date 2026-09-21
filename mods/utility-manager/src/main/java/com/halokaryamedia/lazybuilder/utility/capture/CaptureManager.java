@@ -138,12 +138,12 @@ public final class CaptureManager {
 
     public static void shutdown() {
         SCREENSHOTS.shutdown();
-        VIDEO.shutdown();
         if (RenderSystem.isOnRenderThread()) {
             readbackRing.dropPending();
             readbackRing.close();
-            VIDEO.markReadbackDrained();
         }
+        VIDEO.markReadbackDrained();
+        VIDEO.shutdown();
     }
 
     private static void notify(MinecraftClient client, Text text) {
