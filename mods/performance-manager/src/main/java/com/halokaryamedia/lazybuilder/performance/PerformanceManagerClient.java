@@ -163,13 +163,6 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (!firstPartyShaderOwnershipAllowed() || shaders == null) return;
 
-        FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
-        if (!snapshot.compiledReady()
-                || !snapshot.postProcessReady()
-                || snapshot.gbufferAttachments() <= 0) {
-            return;
-        }
-
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getWindow().isMinimized()) return;
 
@@ -189,9 +182,6 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     ) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (!firstPartyShaderOwnershipAllowed() || shaders == null) return;
-
-        FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
-        if (!snapshot.compiledReady() || !snapshot.postProcessReady()) return;
 
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getWindow().isMinimized()) return;
