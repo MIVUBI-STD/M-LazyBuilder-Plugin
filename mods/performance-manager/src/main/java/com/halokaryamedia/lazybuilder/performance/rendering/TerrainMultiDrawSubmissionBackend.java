@@ -193,10 +193,18 @@ public final class TerrainMultiDrawSubmissionBackend {
                     offsets,
                     baseVertices
             );
-            TerrainPhysicalArenaManager.recordMultiDrawSuccess(run.commandView());
+            TerrainPhysicalArenaManager.recordMultiDrawSuccess(
+                    run.commands,
+                    run.start,
+                    run.end
+            );
             return true;
         } catch (RuntimeException ex) {
-            TerrainPhysicalArenaManager.recordMultiDrawFailure(run.commandView());
+            TerrainPhysicalArenaManager.recordMultiDrawFailure(
+                    run.commands,
+                    run.start,
+                    run.end
+            );
             return false;
         } finally {
             TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
@@ -327,10 +335,6 @@ public final class TerrainMultiDrawSubmissionBackend {
                 throw new IndexOutOfBoundsException(index);
             }
             return commands.get(start + index);
-        }
-
-        List<TerrainMultiDrawCommandStream.PackedCommand> commandView() {
-            return commands.subList(start, end);
         }
 
         public int commandCount() {
