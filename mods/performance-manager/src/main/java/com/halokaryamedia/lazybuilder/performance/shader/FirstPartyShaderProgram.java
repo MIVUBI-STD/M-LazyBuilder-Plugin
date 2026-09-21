@@ -40,6 +40,15 @@ public final class FirstPartyShaderProgram implements AutoCloseable {
         GL20C.glUseProgram(0);
     }
 
+    public void prewarmUniforms(String... uniforms) {
+        RenderSystem.assertOnRenderThread();
+        if (programId == 0 || uniforms == null) return;
+        for (String uniform : uniforms) {
+            if (uniform == null || uniform.isBlank() || uniformLocations.containsKey(uniform)) continue;
+            uniformLocations.put(uniform, GL20C.glGetUniformLocation(programId, uniform));
+        }
+    }
+
     public int uniformLocation(String uniform) {
         RenderSystem.assertOnRenderThread();
         if (programId == 0 || uniform == null || uniform.isBlank()) return -1;
