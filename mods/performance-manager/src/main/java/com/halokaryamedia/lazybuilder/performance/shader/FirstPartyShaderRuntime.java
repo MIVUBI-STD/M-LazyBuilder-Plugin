@@ -275,6 +275,7 @@ public final class FirstPartyShaderRuntime {
 
     public boolean renderPostProcess(
             int targetFramebuffer,
+            int sourceDepthTexture,
             int width,
             int height,
             float timeSeconds
@@ -298,6 +299,7 @@ public final class FirstPartyShaderRuntime {
             boolean applied = processor.render(
                     current,
                     targetFramebuffer,
+                    sourceDepthTexture,
                     width,
                     height,
                     timeSeconds
