@@ -2,7 +2,10 @@ use crate::engine::operations::OperationSnapshot;
 use crate::engine::server_health::ServerReadinessSnapshot;
 use crate::engine::server_runtime_registry::ServerRuntimeSummary;
 use crate::engine::workspace_registry::WorkspaceEntry;
+use crate::engine::world_manager;
 use serde::Serialize;
+
+use super::context::SystemContext;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,6 +13,48 @@ pub struct CapabilityStatus {
     pub key: String,
     pub available: bool,
     pub reason: String,
+}
+
+
+pub async fn append_world_capability(
+    capabilities: &mut Vec<CapabilityStatus>,
+    warnings: &mut Vec<String>,
+    context: &SystemContext<'_>,
+) -> Result<(), String> {
+    if context.workspace.is_none() {
+        capabilities.push(world_capability(false, "Open a workspace first."));
+        return Ok(());
+    }
+    if !context.world_bridge_may_be_available() {
+        capabilities.push(world_capability(false, "Start the Paper server first."));
+        return Ok(());
+    }
+
+    let status = tauri::async_runtime::spawn_blocking(world_manager::bridge_status)
+        .await
+        .map_err(|error| format!("World capability query failed: {error}"))?;
+
+    match status {
+        Ok(status) => {
+            let required = ["world.list", "world.tasks"];
+            let available = required
+                .iter()
+                .all(|required| status.capabilities.iter().any(|value| value == required));
+            capabilities.push(world_capability(
+                available,
+                if available {
+                    "World Manager advertised the required world-control capabilities."
+                } else {
+                    "World Manager is connected but does not advertise the required world-control capabilities."
+                },
+            ));
+        }
+        Err(error) => {
+            warnings.push(format!("World capability handshake is unavailable: {error}"));
+            capabilities.push(world_capability(false, "World Manager capability handshake is unavailable."));
+        }
+    }
+    Ok(())
 }
 
 pub fn local_capabilities(
