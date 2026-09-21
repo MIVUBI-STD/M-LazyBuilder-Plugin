@@ -12,6 +12,8 @@ import java.util.zip.ZipFile;
 
 /** Read-only normalized source access for folder and ZIP shader packs. */
 public interface ShaderPackSource {
+    int MAX_SOURCE_BYTES = 4 * 1024 * 1024;
+
     boolean exists(String relativePath) throws IOException;
 
     String readText(String relativePath) throws IOException;
@@ -71,7 +73,12 @@ public interface ShaderPackSource {
 
         @Override
         public String readText(String relativePath) throws IOException {
-            return Files.readString(resolve(relativePath), StandardCharsets.UTF_8);
+            Path resolved = resolve(relativePath);
+            long size = Files.size(resolved);
+            if (size > MAX_SOURCE_BYTES) {
+                throw new IOException("Shader source exceeds size limit: " + relativePath);
+            }
+            return Files.readString(resolved, StandardCharsets.UTF_8);
         }
 
         private Path resolve(String relativePath) {
@@ -97,7 +104,12 @@ public interface ShaderPackSource {
 
         @Override
         public String readText(String relativePath) throws IOException {
-            return Files.readString(resolve(relativePath), StandardCharsets.UTF_8);
+            Path resolved = resolve(relativePath);
+            long size = Files.size(resolved);
+            if (size > MAX_SOURCE_BYTES) {
+                throw new IOException("Shader source exceeds size limit: " + relativePath);
+            }
+            return Files.readString(resolved, StandardCharsets.UTF_8);
         }
 
         private Path resolve(String relativePath) {
@@ -114,7 +126,6 @@ public interface ShaderPackSource {
     }
 
     final class ZipSession implements Session {
-        private static final int MAX_ENTRY_BYTES = 4 * 1024 * 1024;
         private final ZipFile file;
 
         ZipSession(Path zip) throws IOException {
@@ -136,7 +147,7 @@ public interface ShaderPackSource {
             }
 
             long declaredSize = entry.getSize();
-            if (declaredSize > MAX_ENTRY_BYTES) {
+            if (declaredSize > MAX_SOURCE_BYTES) {
                 throw new IOException("Shader source exceeds size limit: " + target);
             }
 
@@ -151,7 +162,7 @@ public interface ShaderPackSource {
                 int read;
                 while ((read = input.read(buffer)) >= 0) {
                     total += read;
-                    if (total > MAX_ENTRY_BYTES) {
+                    if (total > MAX_SOURCE_BYTES) {
                         throw new IOException("Shader source exceeds size limit: " + target);
                     }
                     output.write(buffer, 0, read);
@@ -167,7 +178,6 @@ public interface ShaderPackSource {
     }
 
     final class ZipSource implements ShaderPackSource {
-        private static final int MAX_ENTRY_BYTES = 4 * 1024 * 1024;
         private final Path zip;
 
         ZipSource(Path zip) {
@@ -194,7 +204,7 @@ public interface ShaderPackSource {
                 if (!capture) return new byte[0];
 
                 long declaredSize = entry.getSize();
-                if (declaredSize > MAX_ENTRY_BYTES) {
+                if (declaredSize > MAX_SOURCE_BYTES) {
                     throw new IOException("Shader source exceeds size limit: " + target);
                 }
 
@@ -209,7 +219,7 @@ public interface ShaderPackSource {
                     int read;
                     while ((read = input.read(buffer)) >= 0) {
                         total += read;
-                        if (total > MAX_ENTRY_BYTES) {
+                        if (total > MAX_SOURCE_BYTES) {
                             throw new IOException("Shader source exceeds size limit: " + target);
                         }
                         output.write(buffer, 0, read);
