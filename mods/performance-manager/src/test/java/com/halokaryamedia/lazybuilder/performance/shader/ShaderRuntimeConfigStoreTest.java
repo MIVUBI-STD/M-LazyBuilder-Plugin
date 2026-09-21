@@ -43,4 +43,27 @@ final class ShaderRuntimeConfigStoreTest {
         assertFalse(changed.enabled());
         assertEquals("2", changed.optionValue("pack-a", "quality", ""));
     }
+    @Test
+    void migratePackIdMovesSelectionAndOptionKeys() {
+        ShaderRuntimePreferences original = ShaderRuntimePreferences.defaults()
+                .withSelectedPack("legacy-pack")
+                .withOption("legacy-pack", "exposure", "1.25")
+                .withEnabled(true);
+
+        ShaderRuntimePreferences migrated = original.migratePackId(
+                "legacy-pack",
+                "legacy-pack-a1b2c3d4"
+        );
+
+        assertEquals("legacy-pack-a1b2c3d4", migrated.selectedPackId());
+        assertTrue(migrated.enabled());
+        assertEquals(
+                "1.25",
+                migrated.optionValue("legacy-pack-a1b2c3d4", "exposure", "")
+        );
+        assertEquals(
+                "",
+                migrated.optionValue("legacy-pack", "exposure", "")
+        );
+    }
 }
