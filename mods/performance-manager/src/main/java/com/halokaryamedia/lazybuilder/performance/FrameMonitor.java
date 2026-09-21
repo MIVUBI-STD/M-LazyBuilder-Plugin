@@ -138,64 +138,6 @@ public final class FrameMonitor {
         return sampleCount;
     }
 
-    /**
-     * On-demand distribution snapshot. Sorting happens only when diagnostics/proof asks for it,
-     * never on the per-frame hot path.
-     */
-    public TimingSnapshot timingSnapshot() {
-        if (sampleCount == 0) return TimingSnapshot.EMPTY;
-
-        double[] sorted = java.util.Arrays.copyOf(frameTimes, sampleCount);
-        java.util.Arrays.sort(sorted);
-
-        int over16 = 0;
-        int over25 = 0;
-        int over33 = 0;
-        int over50 = 0;
-        for (double value : sorted) {
-            if (value > 16.67D) over16++;
-            if (value > 25.0D) over25++;
-            if (value > 33.33D) over33++;
-            if (value > 50.0D) over50++;
-        }
-
-        return new TimingSnapshot(
-                percentile(sorted, 0.50D),
-                percentile(sorted, 0.90D),
-                percentile(sorted, 0.95D),
-                percentile(sorted, 0.99D),
-                percentile(sorted, 0.999D),
-                over16,
-                over25,
-                over33,
-                over50,
-                sampleCount
-        );
-    }
-
-    private static double percentile(double[] sorted, double percentile) {
-        if (sorted == null || sorted.length == 0) return 0.0D;
-        double clamped = Math.max(0.0D, Math.min(1.0D, percentile));
-        int index = (int) Math.ceil(clamped * sorted.length) - 1;
-        return sorted[Math.max(0, Math.min(sorted.length - 1, index))];
-    }
-
-    public record TimingSnapshot(
-            double p50Ms,
-            double p90Ms,
-            double p95Ms,
-            double p99Ms,
-            double p999Ms,
-            int framesOver16_67Ms,
-            int framesOver25Ms,
-            int framesOver33_33Ms,
-            int framesOver50Ms,
-            int samples
-    ) {
-        private static final TimingSnapshot EMPTY =
-                new TimingSnapshot(0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0, 0, 0, 0, 0);
-    }
-
     private void updatePressure(double currentFrameMs, double targetFrameMs) {
         double averageMs = averageFrameTimeMs();
         double elevatedAverageMs = Math.max(ELEVATED_FLOOR_MS, targetFrameMs * ELEVATED_MULTIPLIER);
