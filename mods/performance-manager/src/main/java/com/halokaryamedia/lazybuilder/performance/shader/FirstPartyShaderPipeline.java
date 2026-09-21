@@ -26,12 +26,20 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
 
     public static FirstPartyShaderPipeline compile(ShaderPackSource source)
             throws IOException, FirstPartyShaderCompiler.ShaderCompileException {
+        return compile(source, Map.of());
+    }
+
+    public static FirstPartyShaderPipeline compile(
+            ShaderPackSource source,
+            Map<String, String> defines
+    ) throws IOException, FirstPartyShaderCompiler.ShaderCompileException {
         RenderSystem.assertOnRenderThread();
 
         ShaderPipelineDefinition.Result definition = ShaderPipelineDefinition.discover(source);
         String terrainFragment = ShaderSourcePreprocessor.preprocess(
                 source,
-                definition.terrain().fragmentPath()
+                definition.terrain().fragmentPath(),
+                defines
         ).source();
         int gbufferAttachments = TerrainShaderContract.gbufferAttachmentCount(terrainFragment);
         Map<String, FirstPartyShaderProgram> compiled = new LinkedHashMap<>();
@@ -40,7 +48,7 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
             for (ShaderPipelineDefinition.Program program : definition.programs()) {
                 compiled.put(
                         program.name(),
-                        FirstPartyShaderCompiler.compile(source, program)
+                        FirstPartyShaderCompiler.compile(source, program, defines)
                 );
             }
             return new FirstPartyShaderPipeline(compiled, gbufferAttachments);
