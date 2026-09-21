@@ -2,6 +2,8 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
+import com.halokaryamedia.lazybuilder.utility.capture.CaptureManager;
+import com.halokaryamedia.lazybuilder.utility.capture.CapturePreferences;
 import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
 import com.halokaryamedia.lazybuilder.utility.mixin.SimpleOptionAccessor;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
@@ -41,6 +43,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         CONTROLS("Controls"),
         CHAT("Chat"),
         INTERFACE("Interface"),
+        CAPTURE("Capture"),
         ACCESSIBILITY("Accessibility"),
         TOOLS("Tools");
 
@@ -183,6 +186,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case CONTROLS -> buildControlsSections();
             case CHAT -> buildChatSections();
             case INTERFACE -> buildInterfaceSections();
+            case CAPTURE -> buildCaptureSections();
             case ACCESSIBILITY -> buildAccessibilitySections();
             case TOOLS -> buildToolsSections();
         }
@@ -912,15 +916,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(hud);
 
-        Section capture = new Section("SCREENSHOTS");
-        capture.rows.add(Row.toggle(
-                "Contextual Screenshot Names",
-                "Add world or server context to automatic screenshot names.",
-                prefs.contextualScreenshotNames(),
-                enabled -> updateInterface(prefs.withContextualScreenshotNames(enabled))
-        ));
-        sections.add(capture);
-
         Section creative = new Section("CREATIVE MODE");
         creative.rows.add(Row.toggle(
                 "Quick Creative Search",
@@ -938,6 +933,39 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 enabled -> updateInterface(prefs.withReconnectButton(enabled))
         ));
         sections.add(multiplayer);
+    }
+
+    private void buildCaptureSections() {
+        UtilityPreferences utility = UtilityManagerClient.preferences();
+        CapturePreferences capture = CaptureManager.preferences();
+
+        Section screenshot = new Section("SCREENSHOT");
+        screenshot.rows.add(Row.value(
+                "Screenshot Quality",
+                "Choose smaller JPEG captures, high-quality JPEG, or lossless PNG.",
+                capture.screenshotQuality().label(),
+                this::openScreenshotQualityChoice
+        ));
+        screenshot.rows.add(Row.toggle(
+                "Contextual Names",
+                "Add world or server context to screenshot filenames.",
+                utility.contextualScreenshotNames(),
+                enabled -> updateInterface(utility.withContextualScreenshotNames(enabled))
+        ));
+        sections.add(screenshot);
+
+        Section behavior = new Section("CAPTURE BEHAVIOR");
+        behavior.rows.add(Row.status(
+                "Screenshot Encoder",
+                "Image compression and disk writes run on a bounded worker so F2 capture does not keep the render thread busy.",
+                "Ready"
+        ));
+        behavior.rows.add(Row.status(
+                "Video Recording",
+                "Video capture is being added on the same capture pipeline after screenshot acceptance.",
+                "Not Enabled Yet"
+        ));
+        sections.add(behavior);
     }
 
     private String currentLanguageLabel() {
@@ -1385,7 +1413,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
             UtilityPreferences defaults = UtilityPreferences.defaults();
             UtilityPreferences current = UtilityManagerClient.preferences()
                     .withCompactDebugHud(defaults.compactDebugHud())
-                    .withContextualScreenshotNames(defaults.contextualScreenshotNames())
                     .withInstantCreativeSearch(defaults.instantCreativeSearch())
                     .withReconnectButton(defaults.reconnectButton());
             UtilityManagerClient.updatePreferences(current);
@@ -1393,6 +1420,17 @@ public final class LazyBuilderSettingsScreen extends Screen {
             resetOption(client.options.getGuiScale());
             client.options.write();
             client.onResolutionChanged();
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.CAPTURE) {
+            UtilityPreferences utilityDefaults = UtilityPreferences.defaults();
+            UtilityManagerClient.updatePreferences(
+                    UtilityManagerClient.preferences()
+                            .withContextualScreenshotNames(utilityDefaults.contextualScreenshotNames())
+            );
+            CaptureManager.updatePreferences(CapturePreferences.defaults());
             refreshCategory();
             return;
         }
@@ -1577,6 +1615,25 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private static boolean presetHiddenObjectSkipping(GraphicsPreset preset) {
         return preset == GraphicsPreset.LOW;
+    }
+
+    private void openScreenshotQualityChoice() {
+        CapturePreferences currentPreferences = CaptureManager.preferences();
+        CapturePreferences.ScreenshotQuality current = currentPreferences.screenshotQuality();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (CapturePreferences.ScreenshotQuality quality : CapturePreferences.ScreenshotQuality.values()) {
+            choices.add(new DropdownChoice(
+                    quality.label(),
+                    quality == current,
+                    () -> {
+                        CaptureManager.updatePreferences(
+                                CaptureManager.preferences().withScreenshotQuality(quality)
+                        );
+                        refreshCategory();
+                    }
+            ));
+        }
+        openDropdown("Screenshot Quality", choices);
     }
 
     private void openGraphicsPresetChoice() {
@@ -1969,7 +2026,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 case AUDIO -> "Master volume and the main Minecraft sound categories.";
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case CHAT -> "Chat behavior, appearance, search, and message controls.";
-                case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
+                case INTERFACE -> "Builder-facing HUD and Creative-mode preferences.";
+                case CAPTURE -> "Simple screenshot and recording quality controls for documentation and content creation.";
                 case ACCESSIBILITY -> "Subtitles, narrator behavior, readability, and visual comfort settings.";
                 case TOOLS -> "Tool-specific setup stays close to the workflow that owns it.";
             };
