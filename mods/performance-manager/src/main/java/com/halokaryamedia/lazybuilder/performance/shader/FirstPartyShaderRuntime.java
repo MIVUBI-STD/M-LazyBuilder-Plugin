@@ -217,8 +217,10 @@ public final class FirstPartyShaderRuntime {
             compileRequestGeneration++;
             cancelPreparationLocked();
             selectedPackId = "";
-            persisted = persisted.withSelectedPack("");
-            configStore.save(persisted);
+            if (pipeline == null && activePackId.isBlank()) {
+                persisted = persisted.withSelectedPack("");
+                configStore.save(persisted);
+            }
             controlError = "";
             lastError = primaryError();
             stage = lastError.isBlank()
@@ -243,9 +245,10 @@ public final class FirstPartyShaderRuntime {
         terrainReloadActiveGeneration = -1L;
         pendingTerrainPackId = "";
         clearTerrainRollbackLocked();
+        // Selection is a runtime candidate until compile/link/terrain activation succeeds.
+        // Persisted active state remains last-known-good so a failed candidate cannot
+        // change the next-launch shader configuration.
         selectedPackId = requested;
-        persisted = persisted.withSelectedPack(requested);
-        configStore.save(persisted);
         controlError = "";
         lastError = primaryError();
         stage = lastError.isBlank()
@@ -1151,7 +1154,8 @@ public final class FirstPartyShaderRuntime {
                     || "compile-queued".equals(stage)
                     || "compiling".equals(stage);
             boolean activeEnabled = persisted.enabled()
-                    && selected.id().equals(activePackId);
+                    && pipeline != null
+                    && !activePackId.isBlank();
 
             compileRequestGeneration++;
             cancelPreparationLocked();
@@ -1414,8 +1418,8 @@ public final class FirstPartyShaderRuntime {
         if (failed != null) failed.close();
         if (previous != null && previous != failed) previous.close();
 
-        persisted = persisted.withEnabled(false);
-        configStore.save(persisted);
+        // The candidate never became authoritative. Keep the persisted
+        // last-known-good configuration unchanged; only this failed candidate is discarded.
         releaseAllAuxiliariesLocked();
 
         terrainError = failure == null ? "" : failure;
