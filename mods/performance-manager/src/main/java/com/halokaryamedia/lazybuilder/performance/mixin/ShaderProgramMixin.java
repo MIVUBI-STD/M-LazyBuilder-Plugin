@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderCompileFallbackState;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import com.mojang.blaze3d.platform.GlStateManager;
 import net.minecraft.client.gl.CompiledShader;
@@ -42,7 +43,7 @@ abstract class ShaderProgramMixin {
             return;
         }
 
-        if (CompiledShaderMixin.lazybuilder$restoreFirstPartyStagesForLinkFallback()) {
+        if (TerrainShaderCompileFallbackState.restoreFirstPartyStagesForLinkFallback()) {
             GlStateManager.glLinkProgram(program);
         }
     }
@@ -63,6 +64,6 @@ abstract class ShaderProgramMixin {
         }
 
         PerformanceManagerClient.recordFirstPartyTerrainProgramLinked();
-        CompiledShaderMixin.lazybuilder$clearTerrainFallbackStateAfterLink();
+        TerrainShaderCompileFallbackState.clearAfterLink();
     }
 }
