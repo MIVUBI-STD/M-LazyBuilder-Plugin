@@ -265,6 +265,19 @@ public final class LazyBuilderShaderScreen extends Screen {
             );
         }
 
+        if (state.invalidPackCount() > 0) {
+            String warning = state.invalidPackCount() == 1
+                    ? "1 invalid shader pack was skipped."
+                    : state.invalidPackCount() + " invalid shader packs were skipped.";
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal(warning),
+                    left,
+                    height - FOOTER_HEIGHT - 18,
+                    0xFFFFC47A
+            );
+        }
+
         if (!state.available()) {
             context.drawCenteredTextWithShadow(
                     textRenderer,
@@ -362,6 +375,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                 stringValue(values, "activePackName", ""),
                 stringValue(values, "shaderpacksDirectory", ""),
                 stringValue(values, "lastError", ""),
+                listSize(values.get("invalidPacks")),
                 listSize(values.get("options")),
                 booleanValue(values, "compatibilityBlocked", false),
                 stringValue(values, "compatibilityOwner", ""),
@@ -445,6 +459,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             String activePackName,
             String directory,
             String lastError,
+            int invalidPackCount,
             int optionCount,
             boolean compatibilityBlocked,
             String compatibilityOwner,
@@ -454,7 +469,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             return new ShaderState(
                     false, 0L, "runtime-unavailable",
                     false, false, false, false, false, false,
-                    "", "", "", "", "", "", 0, false, "", List.of()
+                    "", "", "", "", "", "", 0, 0, false, "", List.of()
             );
         }
     }
