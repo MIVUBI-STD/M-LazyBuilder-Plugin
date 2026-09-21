@@ -110,6 +110,8 @@ final class PerformanceRuntimeProofLogger {
                 shaderCompileGeneration,
                 terrainReloadPending
         );
+    }
+
     private static long longValue(java.util.Map<String, Object> values, String key) {
         Object value = values.get(key);
         return value instanceof Number number ? number.longValue() : 0L;
@@ -118,7 +120,5 @@ final class PerformanceRuntimeProofLogger {
     private static int intValue(java.util.Map<String, Object> values, String key) {
         Object value = values.get(key);
         return value instanceof Number number ? number.intValue() : 0;
-    }
-
     }
 }
