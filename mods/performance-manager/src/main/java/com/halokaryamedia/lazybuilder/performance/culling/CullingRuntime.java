@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.culling;
 
 import com.halokaryamedia.lazybuilder.performance.FramePressure;
 import com.halokaryamedia.lazybuilder.performance.PerformancePreferences;
+import com.halokaryamedia.lazybuilder.performance.StageTimingMetrics;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
@@ -149,7 +150,7 @@ public final class CullingRuntime {
             if (entity == null) break;
             queuedEntities.remove(entity);
             if (!preferences.entityCulling() || !eligible(client, entity)) continue;
-            evaluateEntity(client, entity);
+            evaluateEntityTimed(client, entity);
         }
         for (int i = 0; i < blockEntityBudget; i++) {
             BlockEntity blockEntity = blockEntityQueue.poll();
@@ -160,7 +161,7 @@ public final class CullingRuntime {
                     || !isVanillaBlockEntity(blockEntity)) {
                 continue;
             }
-            evaluateBlockEntity(client, blockEntity);
+            evaluateBlockEntityTimed(client, blockEntity);
         }
     }
 
@@ -246,6 +247,38 @@ public final class CullingRuntime {
         boolean vanilla = Registries.BLOCK_ENTITY_TYPE.getId(type).getNamespace().equals("minecraft");
         VANILLA_BLOCK_ENTITY_TYPES.put(type, vanilla);
         return vanilla;
+    }
+
+    private void evaluateEntityTimed(MinecraftClient client, Entity entity) {
+        if (!StageTimingMetrics.enabled()) {
+            evaluateEntity(client, entity);
+            return;
+        }
+        long started = System.nanoTime();
+        try {
+            evaluateEntity(client, entity);
+        } finally {
+            StageTimingMetrics.record(
+                    StageTimingMetrics.Stage.ENTITY_CULLING,
+                    System.nanoTime() - started
+            );
+        }
+    }
+
+    private void evaluateBlockEntityTimed(MinecraftClient client, BlockEntity blockEntity) {
+        if (!StageTimingMetrics.enabled()) {
+            evaluateBlockEntity(client, blockEntity);
+            return;
+        }
+        long started = System.nanoTime();
+        try {
+            evaluateBlockEntity(client, blockEntity);
+        } finally {
+            StageTimingMetrics.record(
+                    StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING,
+                    System.nanoTime() - started
+            );
+        }
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
