@@ -25,6 +25,10 @@ public final class FirstPartyShaderRuntime {
     private volatile String lastError = "";
     private volatile long revision;
     private volatile boolean lastFrameApplied;
+    private volatile boolean terrainVertexCompiled;
+    private volatile boolean terrainFragmentCompiled;
+    private volatile boolean terrainIntegrated;
+    private volatile boolean terrainReloadPending;
     private FirstPartyShaderPipeline pipeline;
     private FirstPartyShaderPostProcessor postProcessor;
 
@@ -159,6 +163,10 @@ public final class FirstPartyShaderRuntime {
                 persisted = new ShaderRuntimePreferences(requestedPackId, true);
                 configStore.save(persisted);
                 lastFrameApplied = false;
+                terrainVertexCompiled = false;
+                terrainFragmentCompiled = false;
+                terrainIntegrated = false;
+                terrainReloadPending = true;
                 lastError = "";
                 stage = "compiled";
                 revision++;
@@ -188,21 +196,80 @@ public final class FirstPartyShaderRuntime {
         persisted = persisted.withEnabled(false);
         configStore.save(persisted);
         lastFrameApplied = false;
+        terrainVertexCompiled = false;
+        terrainFragmentCompiled = false;
+        terrainIntegrated = false;
+        terrainReloadPending = false;
         stage = "disabled";
         lastError = "";
         revision++;
     }
 
     /**
-     * Minecraft resource reload invalidates GL program identity. Selection is kept,
-     * but the compiled pipeline is released and must be compiled again explicitly.
+     * Minecraft resource reload replaces Minecraft ShaderProgram identities.
+     * The independent LazyBuilder post-process pipeline stays alive; only terrain
+     * link proof is reset so the active first-party sources can participate in
+     * the same reload.
      */
-    public synchronized void invalidateForResourceReload() {
-        closePipelineLocked();
-        activePackId = "";
-        lastFrameApplied = false;
-        stage = selectedPackId.isBlank() ? "source-ready" : "selected";
+    public synchronized void invalidateTerrainIntegrationForResourceReload() {
+        terrainVertexCompiled = false;
+        terrainFragmentCompiled = false;
+        terrainIntegrated = false;
+        if (pipeline != null) stage = "terrain-reloading";
+        revision++;
+    }
+
+    public synchronized boolean consumeTerrainReloadRequest() {
+        if (!terrainReloadPending) return false;
+        terrainReloadPending = false;
+        return true;
+    }
+
+    public synchronized TerrainSource terrainSource(boolean vertex) {
+        ShaderPackDescriptor active = packById(activePackId);
+        if (pipeline == null || active == null) return TerrainSource.NONE;
+
+        String path = vertex ? "shaders/terrain.vsh" : "shaders/terrain.fsh";
+        try {
+            ShaderSourcePreprocessor.Result result = ShaderSourcePreprocessor.preprocess(
+                    ShaderPackSource.open(active),
+                    path
+            );
+            return new TerrainSource(true, result.source(), activePackId, "");
+        } catch (Exception error) {
+            String message = safeMessage(error);
+            lastError = message;
+            stage = "terrain-source-error";
+            revision++;
+            return new TerrainSource(false, "", activePackId, message);
+        }
+    }
+
+    public synchronized void recordTerrainCompile(boolean vertex, boolean success, String error) {
+        if (success) {
+            if (vertex) terrainVertexCompiled = true;
+            else terrainFragmentCompiled = true;
+            if (terrainVertexCompiled && terrainFragmentCompiled) {
+                stage = "terrain-linking";
+            }
+            if (error == null || error.isBlank()) lastError = "";
+        } else {
+            if (vertex) terrainVertexCompiled = false;
+            else terrainFragmentCompiled = false;
+            terrainIntegrated = false;
+            lastError = error == null || error.isBlank()
+                    ? "First-party terrain shader fell back to Minecraft."
+                    : error;
+            stage = "terrain-fallback";
+        }
+        revision++;
+    }
+
+    public synchronized void recordTerrainProgramLinked() {
+        if (pipeline == null || !terrainVertexCompiled || !terrainFragmentCompiled) return;
+        terrainIntegrated = true;
         lastError = "";
+        stage = lastFrameApplied ? "terrain+postprocess-active" : "terrain-active";
         revision++;
     }
 
@@ -240,9 +307,16 @@ public final class FirstPartyShaderRuntime {
                 boolean changed = lastFrameApplied != applied;
                 lastFrameApplied = applied;
 
-                String nextStage = applied
-                        ? "postprocess-active"
-                        : ("postprocess-active".equals(stage) ? "compiled" : stage);
+                String nextStage;
+                if (applied && terrainIntegrated) {
+                    nextStage = "terrain+postprocess-active";
+                } else if (applied) {
+                    nextStage = "postprocess-active";
+                } else if (terrainIntegrated) {
+                    nextStage = "terrain-active";
+                } else {
+                    nextStage = ("postprocess-active".equals(stage) ? "compiled" : stage);
+                }
                 if (!nextStage.equals(stage)) {
                     stage = nextStage;
                     changed = true;
@@ -302,8 +376,8 @@ public final class FirstPartyShaderRuntime {
                 true,
                 pipeline != null,
                 pipeline != null && (pipeline.has("composite") || pipeline.has("final")),
-                lastFrameApplied,
-                false,
+                lastFrameApplied || terrainIntegrated,
+                terrainIntegrated,
                 selected == null ? "" : selected.id(),
                 selected == null ? "" : selected.displayName(),
                 active == null ? "" : active.id(),
@@ -394,6 +468,21 @@ public final class FirstPartyShaderRuntime {
             packIds = packIds == null ? List.of() : List.copyOf(packIds);
             packNames = packNames == null ? List.of() : List.copyOf(packNames);
             lastError = lastError == null ? "" : lastError;
+        }
+    }
+
+    public record TerrainSource(
+            boolean available,
+            String source,
+            String packId,
+            String error
+    ) {
+        private static final TerrainSource NONE = new TerrainSource(false, "", "", "");
+
+        public TerrainSource {
+            source = source == null ? "" : source;
+            packId = packId == null ? "" : packId;
+            error = error == null ? "" : error;
         }
     }
 
