@@ -211,7 +211,6 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         OptimizationCompatibility.Policy policy = OptimizationCompatibility.evaluate(
                 renderer,
                 loader.isModLoaded("immediatelyfast"),
-                loader.isModLoaded("ferritecore"),
                 loader.isModLoaded("entityculling")
         );
         FirstPartyRendererReadiness.Snapshot readiness =
