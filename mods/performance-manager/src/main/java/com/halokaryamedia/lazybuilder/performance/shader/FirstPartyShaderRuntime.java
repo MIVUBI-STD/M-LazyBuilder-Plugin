@@ -16,6 +16,8 @@ import java.util.Map;
  */
 public final class FirstPartyShaderRuntime {
     private final ShaderPackCatalog catalog;
+    private final ShaderRuntimeConfigStore configStore;
+    private volatile ShaderRuntimePreferences persisted;
     private volatile List<ShaderPackDescriptor> packs = List.of();
     private volatile String selectedPackId = "";
     private volatile String activePackId = "";
@@ -26,9 +28,23 @@ public final class FirstPartyShaderRuntime {
     private FirstPartyShaderPipeline pipeline;
     private FirstPartyShaderPostProcessor postProcessor;
 
-    public FirstPartyShaderRuntime(Path shaderpacksDirectory) {
+    public FirstPartyShaderRuntime(Path shaderpacksDirectory, Path configDirectory) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
+        this.configStore = new ShaderRuntimeConfigStore(configDirectory);
+        this.persisted = configStore.load();
+        this.selectedPackId = persisted.selectedPackId();
         refresh();
+        if (!selectedPackId.isBlank()
+                && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
+            selectedPackId = "";
+            persisted = ShaderRuntimePreferences.defaults();
+            configStore.save(persisted);
+        }
+    }
+
+    /** Test-only/runtime-local constructor with a config directory beside the pack root. */
+    FirstPartyShaderRuntime(Path shaderpacksDirectory) {
+        this(shaderpacksDirectory, shaderpacksDirectory.resolve(".lazybuilder-test-config"));
     }
 
     public synchronized void refresh() {
@@ -38,6 +54,8 @@ public final class FirstPartyShaderRuntime {
             if (!selectedPackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
                 selectedPackId = "";
+                persisted = ShaderRuntimePreferences.defaults();
+                configStore.save(persisted);
             }
             if (!activePackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(activePackId))) {
@@ -58,8 +76,10 @@ public final class FirstPartyShaderRuntime {
         String requested = packId == null ? "" : packId.trim();
         if (requested.isBlank()) {
             selectedPackId = "";
+            persisted = ShaderRuntimePreferences.defaults();
+            configStore.save(persisted);
             lastError = "";
-            stage = pipeline == null ? "source-ready" : "active";
+            stage = pipeline == null ? "source-ready" : "compiled";
             revision++;
             return true;
         }
@@ -73,8 +93,10 @@ public final class FirstPartyShaderRuntime {
         }
 
         selectedPackId = requested;
+        persisted = persisted.withSelectedPack(requested);
+        configStore.save(persisted);
         lastError = "";
-        stage = requested.equals(activePackId) && pipeline != null ? "active" : "selected";
+        stage = requested.equals(activePackId) && pipeline != null ? "compiled" : "selected";
         revision++;
         return true;
     }
@@ -134,6 +156,8 @@ public final class FirstPartyShaderRuntime {
                 pipeline = candidate;
                 candidate = null;
                 activePackId = requestedPackId;
+                persisted = new ShaderRuntimePreferences(requestedPackId, true);
+                configStore.save(persisted);
                 lastFrameApplied = false;
                 lastError = "";
                 stage = "compiled";
@@ -151,9 +175,18 @@ public final class FirstPartyShaderRuntime {
         }
     }
 
+    public void activateConfiguredSelection() {
+        ShaderRuntimePreferences preferences = persisted;
+        if (preferences.enabled() && !preferences.selectedPackId().isBlank()) {
+            compileSelected();
+        }
+    }
+
     public synchronized void disable() {
         closePipelineLocked();
         activePackId = "";
+        persisted = persisted.withEnabled(false);
+        configStore.save(persisted);
         lastFrameApplied = false;
         stage = "disabled";
         lastError = "";
@@ -293,6 +326,7 @@ public final class FirstPartyShaderRuntime {
         values.put("postProcessReady", snapshot.postProcessReady());
         values.put("renderingReady", snapshot.renderingReady());
         values.put("terrainIntegrated", snapshot.terrainIntegrated());
+        values.put("configuredEnabled", persisted.enabled());
         values.put("selectedPackId", snapshot.selectedPackId());
         values.put("selectedPackName", snapshot.selectedPackName());
         values.put("activePackId", snapshot.activePackId());
