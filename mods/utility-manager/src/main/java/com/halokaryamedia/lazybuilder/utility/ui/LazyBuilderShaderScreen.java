@@ -31,6 +31,7 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     private final Screen parent;
     private long observedRevision = Long.MIN_VALUE;
+    private ShaderState currentState = ShaderState.unavailable();
     private int scrollOffset;
     private int maxScroll;
 
@@ -42,6 +43,7 @@ public final class LazyBuilderShaderScreen extends Screen {
     @Override
     protected void init() {
         ShaderState state = state();
+        currentState = state;
         observedRevision = state.revision();
 
         int shell = Math.min(760, Math.max(280, width - 24));
@@ -182,9 +184,9 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     @Override
     public void tick() {
-        ShaderState current = state();
-        if (current.revision() != observedRevision) {
-            observedRevision = current.revision();
+        long revision = snapshotRevision();
+        if (revision != observedRevision) {
+            observedRevision = revision;
             clearAndInit();
         }
     }
@@ -198,7 +200,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         context.fill(0, 0, width, 36, TOP_BAR);
         context.fill(0, height - FOOTER_HEIGHT, width, height, TOP_BAR);
 
-        ShaderState state = state();
+        ShaderState state = currentState;
         int shell = Math.min(760, Math.max(280, width - 24));
         int left = (width - shell) / 2;
         int right = left + shell;
@@ -349,6 +351,14 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     private static Object share(String key) {
         return FabricLoader.getInstance().getObjectShare().get(key);
+    }
+
+    private long snapshotRevision() {
+        Object shared = share("lazybuilder-performance-manager:shader-snapshot");
+        if (!(shared instanceof Supplier<?> supplier)) return Long.MIN_VALUE;
+        Object raw = supplier.get();
+        if (!(raw instanceof Map<?, ?> values)) return Long.MIN_VALUE;
+        return longValue(values, "revision", 0L);
     }
 
     @SuppressWarnings("unchecked")
