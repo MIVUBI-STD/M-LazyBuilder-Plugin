@@ -10,6 +10,7 @@ pub mod server_health;
 pub mod server_manager;
 pub mod server_tools;
 pub mod startup;
+pub mod system;
 pub mod workspace;
 pub mod workspace_creation;
 pub mod workspace_location;
