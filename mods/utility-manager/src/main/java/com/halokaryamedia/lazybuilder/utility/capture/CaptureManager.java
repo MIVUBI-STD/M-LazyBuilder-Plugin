@@ -28,6 +28,7 @@ public final class CaptureManager {
     public static void initialize(Path configDirectory) {
         configStore = new CaptureConfigStore(configDirectory);
         preferences = configStore.load();
+        CaptureRecovery.start(FabricLoader.getInstance().getGameDir());
     }
 
     public static CapturePreferences preferences() {
@@ -198,8 +199,13 @@ public final class CaptureManager {
         return VIDEO.droppedFrames();
     }
 
+    public static String recoveryStatus() {
+        return CaptureRecovery.status();
+    }
+
     public static void shutdown() {
         cleanScreenshotRequested = false;
+        CaptureRecovery.shutdown();
         SCREENSHOTS.shutdown();
         if (RenderSystem.isOnRenderThread()) {
             FrameReadbackRing ring = readbackRing;
