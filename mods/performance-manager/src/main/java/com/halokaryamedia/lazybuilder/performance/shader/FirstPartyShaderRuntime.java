@@ -179,18 +179,31 @@ public final class FirstPartyShaderRuntime {
                 }
 
                 FirstPartyShaderPipeline previous = pipeline;
+                boolean previousTerrainIntegrated = terrainIntegrated;
+                boolean terrainChanged = previous == null
+                        || !previous.terrainSourceFingerprint()
+                        .equals(candidate.terrainSourceFingerprint());
+                boolean requiresTerrainReload = terrainChanged || !previousTerrainIntegrated;
+
                 pipeline = candidate;
                 candidate = null;
                 activePackId = requestedPackId;
                 persisted = persisted.withSelectedPack(requestedPackId).withEnabled(true);
                 configStore.save(persisted);
                 lastFrameApplied = false;
-                terrainVertexCompiled = false;
-                terrainFragmentCompiled = false;
-                terrainIntegrated = false;
-                terrainReloadPending = true;
+
+                if (requiresTerrainReload) {
+                    terrainVertexCompiled = false;
+                    terrainFragmentCompiled = false;
+                    terrainIntegrated = false;
+                    terrainReloadPending = true;
+                    stage = "compiled";
+                } else {
+                    terrainReloadPending = false;
+                    stage = "terrain-active";
+                }
+
                 lastError = "";
-                stage = "compiled";
                 revision++;
 
                 if (previous != null) previous.close();
