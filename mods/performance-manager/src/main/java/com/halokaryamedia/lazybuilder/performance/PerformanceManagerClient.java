@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationComp
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuCapabilityProfile;
 import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime;
@@ -120,6 +121,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             shaderTerrainReloadInFlight = false;
             shaderTerrainReloadGeneration = -1L;
+            GpuStageTimer.shutdown();
+            GpuCapabilityProfile.invalidate();
             FirstPartyShaderRuntime shaders = shaderRuntime;
             shaderRuntime = null;
             if (shaders != null) shaders.shutdown();
