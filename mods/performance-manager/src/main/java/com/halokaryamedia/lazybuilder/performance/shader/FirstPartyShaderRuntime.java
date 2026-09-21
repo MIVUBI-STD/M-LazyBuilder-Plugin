@@ -1184,6 +1184,24 @@ public final class FirstPartyShaderRuntime {
         if (shadows != null) shadows.close();
     }
 
+    public synchronized void shutdown() {
+        compileRequestGeneration++;
+        cancelPreparationLocked();
+        stagedOptionsRequireCompile = false;
+        terrainReloadPending = false;
+        closePipelineLocked();
+
+        activePackId = "";
+        terrainVertexCompiled = false;
+        terrainFragmentCompiled = false;
+        terrainIntegrated = false;
+        lastFrameApplied = false;
+        stage = "stopped";
+        cachedSnapshotMapRevision = Long.MIN_VALUE;
+        cachedSnapshotMap = Map.of();
+        revision++;
+    }
+
     private void cancelPreparationLocked() {
         Thread worker = preparationThread;
         preparationThread = null;
