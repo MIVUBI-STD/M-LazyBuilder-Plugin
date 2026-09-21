@@ -67,6 +67,12 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void refresh() {
+        // A catalog refresh changes the authority set behind any in-flight
+        // descriptor/source preparation. Invalidate the old generation before
+        // touching the filesystem so stale work can never publish afterwards.
+        compileRequestGeneration++;
+        cancelPreparationLocked();
+
         try {
             List<ShaderPackDescriptor> scanned = catalog.scan();
             packs = List.copyOf(scanned);
