@@ -43,8 +43,8 @@ final class ShaderMemoryBudgetTest {
     @Test
     void adaptiveShadowResolutionDropsBeforeRejectingTheFrame() {
         ShaderMemoryBudget.ShadowPlan plan = ShaderMemoryBudget.planShadow(
-                6144,
-                3456,
+                5120,
+                2880,
                 2,
                 true,
                 true,
