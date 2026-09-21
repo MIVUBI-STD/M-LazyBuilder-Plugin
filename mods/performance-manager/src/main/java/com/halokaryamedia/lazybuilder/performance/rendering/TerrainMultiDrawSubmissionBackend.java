@@ -151,7 +151,7 @@ public final class TerrainMultiDrawSubmissionBackend {
             previous = command;
         }
         flushRun(runs, commands, runStart, commands.size());
-        return List.copyOf(runs);
+        return runs;
     }
 
     private static boolean submit(Run run) {
