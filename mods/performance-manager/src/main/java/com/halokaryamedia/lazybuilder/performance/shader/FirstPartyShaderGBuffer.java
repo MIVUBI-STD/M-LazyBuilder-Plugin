@@ -18,6 +18,9 @@ import java.nio.IntBuffer;
  * G-buffer output fails open for that frame.
  */
 public final class FirstPartyShaderGBuffer implements AutoCloseable {
+    private static int cachedMaxColorAttachments = -1;
+    private static int cachedMaxDrawBuffers = -1;
+
     private final int[] textures = new int[2];
     private int width;
     private int height;
@@ -44,9 +47,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             return false;
         }
 
-        int maxAttachments = GL11C.glGetInteger(GL30C.GL_MAX_COLOR_ATTACHMENTS);
-        int maxDrawBuffers = GL11C.glGetInteger(GL20C.GL_MAX_DRAW_BUFFERS);
-        if (maxAttachments < count + 1 || maxDrawBuffers < count + 1) {
+        ensureCapabilities();
+        if (cachedMaxColorAttachments < count + 1 || cachedMaxDrawBuffers < count + 1) {
             status = "insufficient-attachments";
             return false;
         }
@@ -139,6 +141,12 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                 activeCount >= 2 ? textures[1] : 0,
                 staleFrameRecoveries
         );
+    }
+
+    private static void ensureCapabilities() {
+        if (cachedMaxColorAttachments >= 0 && cachedMaxDrawBuffers >= 0) return;
+        cachedMaxColorAttachments = GL11C.glGetInteger(GL30C.GL_MAX_COLOR_ATTACHMENTS);
+        cachedMaxDrawBuffers = GL11C.glGetInteger(GL20C.GL_MAX_DRAW_BUFFERS);
     }
 
     private void ensureTextures(int width, int height, int count) {
