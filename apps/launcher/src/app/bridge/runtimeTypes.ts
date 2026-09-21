@@ -41,6 +41,7 @@ export type CapabilityStatus = { key: string; available: boolean; reason: string
 export type SystemSnapshot = {
   readiness: SystemReadiness;
   workspace?: WorkspaceEntry | null;
+  recentWorkspaces: WorkspaceEntry[];
   serverHealth?: ServerReadinessSnapshot | null;
   runtimes: ServerRuntimeSummary[];
   activeOperations: LauncherOperationSnapshot[];
