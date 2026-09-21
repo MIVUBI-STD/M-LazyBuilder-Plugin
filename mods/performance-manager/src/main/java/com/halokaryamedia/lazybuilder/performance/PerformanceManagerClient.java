@@ -137,7 +137,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             FirstPartyShaderRuntime shaders = shaderRuntime;
             if (firstPartyShaderOwnershipAllowed()
                     && shaders != null
-                    && !shaderTerrainReloadInFlight) {
+                    && !shaderTerrainReloadInFlight
+                    && client.getOverlay() == null) {
                 long reloadGeneration = shaders.consumeTerrainReloadGeneration();
                 if (reloadGeneration >= 0L) {
                     shaderTerrainReloadInFlight = true;
