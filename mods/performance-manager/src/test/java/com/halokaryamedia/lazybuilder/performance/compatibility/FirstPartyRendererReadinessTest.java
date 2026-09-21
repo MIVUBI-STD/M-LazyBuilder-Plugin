@@ -11,7 +11,7 @@ final class FirstPartyRendererReadinessTest {
     @Test
     void standaloneMinecraftFabricPathIsFirstPartyReady() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
 
@@ -22,7 +22,7 @@ final class FirstPartyRendererReadinessTest {
     @Test
     void irisBlocksStandaloneTerrainSubmissionUntilFirstPartyShaderRuntimeOwnsIt() {
         var renderer = new RendererCompatibility.Snapshot(true, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
 
@@ -33,11 +33,21 @@ final class FirstPartyRendererReadinessTest {
     @Test
     void declaredCustomRendererRemainsCompatibilityOwnerWhenInstalled() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of("sodium"));
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
 
         assertFalse(readiness.ready());
         assertTrue(readiness.blockers().stream().anyMatch(value -> value.contains("custom-renderer-owner")));
+    }
+    @Test
+    void ferriteCorePresenceDoesNotBlockFirstPartyReadiness() {
+        var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
+
+        var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
+
+        assertTrue(readiness.ready());
+        assertTrue(policy.owns(OptimizationCompatibility.OptimizationDomain.MODEL_MEMORY));
     }
 }
