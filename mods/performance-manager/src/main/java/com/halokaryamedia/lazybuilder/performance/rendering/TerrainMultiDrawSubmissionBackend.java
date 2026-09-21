@@ -14,6 +14,11 @@ import java.util.List;
 
 /** Guarded true multi-draw submission for shaders satisfying the LazyBuilder transform contract. */
 public final class TerrainMultiDrawSubmissionBackend {
+    // Vanilla LazyBuilder terrain augmentation exposes 1024 vec4 transforms.
+    // Keep each planned run within that portable contract; smaller custom blocks
+    // still fail only that run at runtime rather than disabling the whole layer.
+    private static final int MAX_COMMANDS_PER_RUN = 1024;
+
     private static final ArrayList<Run> RUN_POOL = new ArrayList<>();
     private static final ArrayList<Run> PLANNED_RUNS = new ArrayList<>();
     private static int runPoolCursor;
@@ -225,7 +230,9 @@ public final class TerrainMultiDrawSubmissionBackend {
         if (state == null
                 || !TerrainPerDrawShaderBackend.beginMultiDraw(
                 activeProgram,
-                run.transformIndexAt(0)
+                run.packet,
+                run.start,
+                run.end
         )) {
             return false;
         }
@@ -309,16 +316,23 @@ public final class TerrainMultiDrawSubmissionBackend {
     ) {
         if (packet == null || start < 0 || end - start <= 1) return;
 
-        Run run;
-        if (runPoolCursor < RUN_POOL.size()) {
-            run = RUN_POOL.get(runPoolCursor);
-        } else {
-            run = new Run();
-            RUN_POOL.add(run);
+        int cursor = start;
+        while (end - cursor > 1) {
+            int chunkEnd = Math.min(end, cursor + MAX_COMMANDS_PER_RUN);
+            if (chunkEnd - cursor <= 1) break;
+
+            Run run;
+            if (runPoolCursor < RUN_POOL.size()) {
+                run = RUN_POOL.get(runPoolCursor);
+            } else {
+                run = new Run();
+                RUN_POOL.add(run);
+            }
+            runPoolCursor++;
+            run.reset(packet, cursor, chunkEnd);
+            PLANNED_RUNS.add(run);
+            cursor = chunkEnd;
         }
-        runPoolCursor++;
-        run.reset(packet, start, end);
-        PLANNED_RUNS.add(run);
     }
 
     private static boolean runtimeSourcesPresent(Run run) {
@@ -434,10 +448,6 @@ public final class TerrainMultiDrawSubmissionBackend {
 
         int baseVertexAt(int index) {
             return packet.baseVertex(start + index);
-        }
-
-        int transformIndexAt(int index) {
-            return packet.transformIndex(start + index);
         }
 
         public int commandCount() {
