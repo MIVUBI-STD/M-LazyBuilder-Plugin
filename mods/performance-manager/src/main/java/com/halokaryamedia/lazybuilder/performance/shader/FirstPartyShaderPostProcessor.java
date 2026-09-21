@@ -138,19 +138,18 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         program.bind();
 
         bindTexture(program, "LazyBuilderColorTexture", 0, input.colorTextureId());
-        if (sourceDepthTexture > 0) {
-            bindTexture(program, "LazyBuilderDepthTexture", 1, sourceDepthTexture);
-        }
-        if (gbufferTexture1 > 0) {
-            bindTexture(program, "LazyBuilderGBuffer1", 2, gbufferTexture1);
-        }
-        if (gbufferTexture2 > 0) {
-            bindTexture(program, "LazyBuilderGBuffer2", 3, gbufferTexture2);
-        }
+        bindTexture(program, "LazyBuilderDepthTexture", 1, Math.max(0, sourceDepthTexture));
+        bindTexture(program, "LazyBuilderGBuffer1", 2, Math.max(0, gbufferTexture1));
+        bindTexture(program, "LazyBuilderGBuffer2", 3, Math.max(0, gbufferTexture2));
 
         boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
+        bindTexture(
+                program,
+                "LazyBuilderShadowTexture",
+                4,
+                shadowReady ? shadow.textureId() : 0
+        );
         if (shadowReady) {
-            bindTexture(program, "LazyBuilderShadowTexture", 4, shadow.textureId());
             uploadMatrix(program, "LazyBuilderShadowViewProjection", shadow.lightViewProjection());
 
             int shadowCenter = program.uniformLocation("LazyBuilderShadowCenter");
@@ -201,20 +200,16 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         for (String name : POST_PROCESS_PROGRAMS) {
             FirstPartyShaderProgram program = pipeline.program(name);
             if (program == null) continue;
-            if (sourceDepthTexture > 0
-                    && program.uniformLocation("LazyBuilderDepthTexture") >= 0) {
+            if (program.uniformLocation("LazyBuilderDepthTexture") >= 0) {
                 highest = Math.max(highest, 1);
             }
-            if (gbufferTexture1 > 0
-                    && program.uniformLocation("LazyBuilderGBuffer1") >= 0) {
+            if (program.uniformLocation("LazyBuilderGBuffer1") >= 0) {
                 highest = Math.max(highest, 2);
             }
-            if (gbufferTexture2 > 0
-                    && program.uniformLocation("LazyBuilderGBuffer2") >= 0) {
+            if (program.uniformLocation("LazyBuilderGBuffer2") >= 0) {
                 highest = Math.max(highest, 3);
             }
-            if (shadowReady
-                    && program.uniformLocation("LazyBuilderShadowTexture") >= 0) {
+            if (program.uniformLocation("LazyBuilderShadowTexture") >= 0) {
                 highest = Math.max(highest, 4);
             }
         }
