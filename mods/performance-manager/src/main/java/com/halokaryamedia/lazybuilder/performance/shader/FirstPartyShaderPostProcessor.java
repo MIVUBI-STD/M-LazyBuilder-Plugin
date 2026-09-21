@@ -188,7 +188,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                     texture0,
                     texture1,
                     GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST),
-                    GL11C.glGetBoolean(GL11C.GL_DEPTH_WRITEMASK),
+                    GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0,
                     GL11C.glIsEnabled(GL11C.GL_BLEND),
                     GL11C.glIsEnabled(GL11C.GL_CULL_FACE),
                     GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST),
