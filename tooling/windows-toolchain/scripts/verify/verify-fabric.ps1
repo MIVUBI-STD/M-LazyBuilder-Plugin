@@ -16,6 +16,10 @@ $GradleWrapper = Join-Path $RepoRoot 'gradlew.bat'
 if (-not (Test-Path -LiteralPath $GradleWrapper -PathType Leaf)) {
     throw "Repository Gradle wrapper is missing: $GradleWrapper"
 }
+$GradleBuildVerifier = Join-Path $RepoRoot 'tooling\windows-toolchain\scripts\verify\invoke-gradle-build.ps1'
+if (-not (Test-Path -LiteralPath $GradleBuildVerifier -PathType Leaf)) {
+    throw "Repository Gradle verification helper is missing: $GradleBuildVerifier"
+}
 
 # Establish the Gradle/Java runtime environment in this verification process so
 # DEV.cmd -> dev.ps1 -> verify-fabric.ps1 and direct PowerShell runs are identical.
@@ -43,7 +47,7 @@ Push-Location $RepoRoot
 try {
     foreach ($Manager in $Managers) {
         Write-Host "[fabric] Verifying $($Manager.Name)..." -ForegroundColor Cyan
-        & $GradleWrapper -p $Manager.Path --no-daemon build
+        & $GradleBuildVerifier -RepoRoot $RepoRoot -ProjectPath $Manager.Path
         if ($LASTEXITCODE -ne 0) {
             throw "$($Manager.Name) verification failed with exit code $LASTEXITCODE."
         }
