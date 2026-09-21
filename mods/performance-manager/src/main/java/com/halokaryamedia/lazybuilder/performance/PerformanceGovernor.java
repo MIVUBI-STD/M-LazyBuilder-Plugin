@@ -39,9 +39,9 @@ public final class PerformanceGovernor {
 
         int cullingBudgetPercent = cullingBudgetPercent(safe);
         profile = switch (mode) {
-            case THROUGHPUT -> new Profile(mode, 64, 24, cullingBudgetPercent, true, 1);
-            case BALANCED -> new Profile(mode, 48, 16, cullingBudgetPercent, true, 2);
-            case PROTECTIVE -> new Profile(mode, 12, 2, Math.min(50, cullingBudgetPercent), false, 4);
+            case THROUGHPUT -> new Profile(mode, 64, 24, cullingBudgetPercent, 1);
+            case BALANCED -> new Profile(mode, 48, 16, cullingBudgetPercent, 2);
+            case PROTECTIVE -> new Profile(mode, 12, 2, Math.min(50, cullingBudgetPercent), 4);
         };
         return profile;
     }
@@ -95,7 +95,6 @@ public final class PerformanceGovernor {
             int chunkUploadBudget,
             int rebuildReleaseBudget,
             int cullingBudgetPercent,
-            boolean optionalGpuWorkAllowed,
             int shadowReuseMultiplier
     ) {
         public Profile {
@@ -107,7 +106,7 @@ public final class PerformanceGovernor {
         }
 
         public static Profile balanced() {
-            return new Profile(Mode.BALANCED, 48, 16, 100, true, 2);
+            return new Profile(Mode.BALANCED, 48, 16, 100, 2);
         }
     }
 
