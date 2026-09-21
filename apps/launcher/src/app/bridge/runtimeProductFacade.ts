@@ -1,6 +1,6 @@
 import { runtimeApi, RuntimeError } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
-import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary } from './runtimeApi';
+import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary, SystemSnapshot } from './runtimeApi';
 
 const previewBackup: ServerBackupSummary = {
   id: 'backup-1788400100000-1000',
@@ -14,6 +14,44 @@ const previewBackup: ServerBackupSummary = {
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
 const productionRuntimeProduct = runtimeApi;
+
+async function previewSystemSnapshot(): Promise<SystemSnapshot> {
+  const [workspace, runtimes, operations] = await Promise.all([
+    runtimePreviewProduct.workspace.state(),
+    previewRuntimeSummaries(),
+    runtimePreviewProduct.operations.list()
+  ]);
+  const active = workspace.active ?? null;
+  const serverHealth = active ? await runtimePreviewProduct.health.server(active.id) : null;
+  const busy = operations.some((operation) =>
+    operation.state === 'RUNNING'
+    || operation.state === 'QUEUED'
+    || operation.state === 'CANCELLING'
+  );
+  const running = runtimes.some((runtime) =>
+    active?.id === runtime.workspaceId
+    && ['Starting', 'Online', 'Stopping', 'Detached'].includes(runtime.state)
+  );
+  return {
+    readiness: !active ? 'NO_WORKSPACE' : busy ? 'BUSY' : serverHealth?.ready ? 'READY' : 'NEEDS_ATTENTION',
+    workspace: active,
+    serverHealth,
+    runtimes,
+    activeOperations: operations.filter((operation) =>
+      !['SUCCEEDED', 'FAILED', 'CANCELLED', 'RECOVERY_REQUIRED'].includes(operation.state)
+    ),
+    capabilities: [
+      { key: 'workspace.manage', available: !busy, reason: busy ? 'A workspace operation is active.' : 'Workspace library is available.' },
+      { key: 'server.inspect', available: Boolean(active), reason: active ? 'An active workspace is selected.' : 'Open a workspace first.' },
+      { key: 'server.start', available: Boolean(active && serverHealth?.ready && !running && !busy), reason: active && serverHealth?.ready && !running && !busy ? 'Server start requirements are satisfied.' : 'Server start requirements are not currently satisfied.' },
+      { key: 'server.stop', available: running, reason: running ? 'A server runtime is active.' : 'No active server runtime.' },
+      { key: 'world.manage', available: Boolean(active && running && !busy), reason: active && running && !busy ? 'World control can use the active Paper runtime.' : 'World control is not currently available.' },
+      { key: 'client.sync', available: Boolean(active && !busy), reason: active && !busy ? 'Client Setup may inspect or synchronize the selected profile.' : 'Open an idle workspace first.' },
+      { key: 'diagnostics.export', available: true, reason: 'Launcher diagnostics are always available.' }
+    ],
+    warnings: []
+  };
+}
 
 async function previewRuntimeSummaries(): Promise<ServerRuntimeSummary[]> {
   const snapshot = await runtimePreviewProduct.server.snapshot();
@@ -30,6 +68,7 @@ async function previewRuntimeSummaries(): Promise<ServerRuntimeSummary[]> {
 }
 
 const previewRuntimeProduct = {
+  system: { snapshot: previewSystemSnapshot },
   ...runtimePreviewProduct,
   readiness: runtimePreviewProduct.health,
   diagnostics: {
