@@ -319,9 +319,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         }
     }
 
-    @Override
-    public void close() {
-        shadowMap.close();
+    public void invalidateCache() {
         snapshot = Snapshot.EMPTY;
         lastVisibleRevision = Long.MIN_VALUE;
         lastTerrainContentRevision = Long.MIN_VALUE;
@@ -332,6 +330,12 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         lastCenterX = Float.NaN;
         lastCenterY = Float.NaN;
         lastCenterZ = Float.NaN;
+    }
+
+    @Override
+    public void close() {
+        shadowMap.close();
+        invalidateCache();
         reusedFrames = 0L;
     }
 
