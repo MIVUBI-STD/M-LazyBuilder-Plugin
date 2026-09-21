@@ -83,6 +83,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 (BiConsumer<String, String>) PerformanceManagerClient::updateShaderOption
         );
         share.put(
+                "lazybuilder-performance-manager:shader-options-apply",
+                (Runnable) PerformanceManagerClient::applyShaderOptions
+        );
+        share.put(
                 "lazybuilder-performance-manager:shader-preprocess",
                 (Function<String, Map<String, Object>>) PerformanceManagerClient::preprocessShaderSource
         );
@@ -285,7 +289,13 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     private static void updateShaderOption(String optionId, String value) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (shaders == null) return;
-        shaders.updateOption(optionId, value, firstPartyShaderOwnershipAllowed());
+        shaders.updateOption(optionId, value, false);
+    }
+
+    private static void applyShaderOptions() {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null || !firstPartyShaderOwnershipAllowed()) return;
+        shaders.recompileIfEnabled();
     }
 
     public static void invalidateShaderTerrainForResourceReload() {
