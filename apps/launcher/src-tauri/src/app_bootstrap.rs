@@ -4,7 +4,7 @@ use crate::engine::operations::OperationRegistry;
 use crate::engine::plugin_manager::PluginManagerState;
 use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::startup;
-use crate::engine::system_kernel::SystemKernel;
+use crate::engine::system::{SystemActivityService, SystemSnapshotService};
 use rfd::{MessageButtons, MessageDialog, MessageLevel};
 
 pub fn run() {
@@ -57,7 +57,8 @@ pub fn run() {
         .manage(PluginManagerState::default())
         .manage(operation_registry)
         .manage(startup_report)
-        .manage(SystemKernel)
+        .manage(SystemSnapshotService::default())
+        .manage(SystemActivityService::default())
         .invoke_handler(tauri::generate_handler![
             commands::diagnostics::diagnostics_summary,
             commands::diagnostics::diagnostics_export_support_bundle,
