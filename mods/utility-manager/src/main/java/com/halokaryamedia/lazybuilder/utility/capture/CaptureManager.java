@@ -20,7 +20,7 @@ public final class CaptureManager {
 
     private static CaptureConfigStore configStore;
     private static volatile CapturePreferences preferences = CapturePreferences.defaults();
-    private static FrameReadbackRing readbackRing = new FrameReadbackRing();
+    private static FrameReadbackRing readbackRing;
 
     private CaptureManager() {}
 
@@ -73,7 +73,7 @@ public final class CaptureManager {
         }
 
         if (RenderSystem.isOnRenderThread()) {
-            readbackRing.close();
+            if (readbackRing != null) readbackRing.close();
             readbackRing = new FrameReadbackRing();
         }
 
@@ -94,6 +94,10 @@ public final class CaptureManager {
         VideoCaptureSession.State state = VIDEO.state();
 
         if (state == VideoCaptureSession.State.RECORDING) {
+            if (readbackRing == null) {
+                if (!RenderSystem.isOnRenderThread()) return;
+                readbackRing = new FrameReadbackRing();
+            }
             readbackRing.drainReady(VIDEO);
 
             if (!VIDEO.sourceMatches(framebuffer)) {
@@ -109,8 +113,13 @@ public final class CaptureManager {
         }
 
         if (state == VideoCaptureSession.State.STOPPING) {
-            readbackRing.drainReady(VIDEO);
-            if (!readbackRing.hasPending()) VIDEO.markReadbackDrained();
+            FrameReadbackRing ring = readbackRing;
+            if (ring == null) {
+                VIDEO.markReadbackDrained();
+                return;
+            }
+            ring.drainReady(VIDEO);
+            if (!ring.hasPending()) VIDEO.markReadbackDrained();
             return;
         }
 
@@ -118,8 +127,12 @@ public final class CaptureManager {
                 || state == VideoCaptureSession.State.FAILED
                 || state == VideoCaptureSession.State.IDLE)
                 && RenderSystem.isOnRenderThread()) {
-            readbackRing.dropPending();
-            readbackRing.close();
+            FrameReadbackRing ring = readbackRing;
+            if (ring != null) {
+                ring.dropPending();
+                ring.close();
+                readbackRing = null;
+            }
         }
     }
 
@@ -139,8 +152,12 @@ public final class CaptureManager {
     public static void shutdown() {
         SCREENSHOTS.shutdown();
         if (RenderSystem.isOnRenderThread()) {
-            readbackRing.dropPending();
-            readbackRing.close();
+            FrameReadbackRing ring = readbackRing;
+            if (ring != null) {
+                ring.dropPending();
+                ring.close();
+                readbackRing = null;
+            }
         }
         VIDEO.markReadbackDrained();
         VIDEO.shutdown();
