@@ -524,7 +524,19 @@ public final class FirstPartyShaderRuntime {
             double cameraZ,
             long timeOfDay
     ) {
+        return renderShadow(cameraX, cameraY, cameraZ, timeOfDay, 1, 1);
+    }
+
+    public FirstPartyShadowRenderer.Snapshot renderShadow(
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            long timeOfDay,
+            int framebufferWidth,
+            int framebufferHeight
+    ) {
         FirstPartyShaderPipeline current;
+        ShaderMemoryBudget.ShadowPlan shadowPlan;
         synchronized (this) {
             current = pipeline;
             if (current == null || !current.has("shadow")) {
@@ -533,6 +545,28 @@ public final class FirstPartyShaderRuntime {
                 if (previous != null) previous.close();
                 return FirstPartyShadowRenderer.emptySnapshot();
             }
+
+            shadowPlan = ShaderMemoryBudget.planShadow(
+                    framebufferWidth,
+                    framebufferHeight,
+                    current.gbufferAttachments(),
+                    current.has("composite"),
+                    current.has("composite") || current.has("final"),
+                    2048
+            );
+            if (!shadowPlan.allowed()) {
+                FirstPartyShadowRenderer previous = shadowRenderer;
+                shadowRenderer = null;
+                if (previous != null) previous.close();
+                shadowError = shadowPlan.status()
+                        + ":" + shadowPlan.estimatedBytes()
+                        + "/" + shadowPlan.limitBytes();
+                lastError = primaryError();
+                stage = "memory-budget";
+                revision++;
+                return FirstPartyShadowRenderer.emptySnapshot();
+            }
+
             if (shadowRenderer == null) shadowRenderer = new FirstPartyShadowRenderer();
         }
 
@@ -541,7 +575,8 @@ public final class FirstPartyShaderRuntime {
                 cameraX,
                 cameraY,
                 cameraZ,
-                timeOfDay
+                timeOfDay,
+                shadowPlan.resolution()
         );
 
         synchronized (this) {
