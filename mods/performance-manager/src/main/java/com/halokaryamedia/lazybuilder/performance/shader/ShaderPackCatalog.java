@@ -79,11 +79,8 @@ public final class ShaderPackCatalog {
                 path,
                 zip ? ShaderPackDescriptor.Kind.ZIP : ShaderPackDescriptor.Kind.DIRECTORY
         );
-        try {
-            ShaderPackManifest manifest = ShaderPackManifest.load(
-                    ShaderPackSource.open(draft),
-                    display
-            );
+        try (ShaderPackSource.Session source = ShaderPackSource.openSession(draft)) {
+            ShaderPackManifest manifest = ShaderPackManifest.load(source, display);
             String manifestName = manifest.name().isBlank() ? display : manifest.name();
             return new ShaderPackDescriptor(
                     draft.id(),
