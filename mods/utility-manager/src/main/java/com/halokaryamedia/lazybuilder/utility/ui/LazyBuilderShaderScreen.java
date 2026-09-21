@@ -252,11 +252,6 @@ public final class LazyBuilderShaderScreen extends Screen {
         return Class.forName("net.irisshaders.iris.api.v0.IrisApi");
     }
 
-    private Object irisApi() throws ReflectiveOperationException {
-        Class<?> apiClass = irisApiClass();
-        return apiClass.getMethod("getInstance").invoke(null);
-    }
-
     private Class<?> irisConfigClass() throws ClassNotFoundException {
         return Class.forName("net.irisshaders.iris.api.v0.IrisApiConfig");
     }
