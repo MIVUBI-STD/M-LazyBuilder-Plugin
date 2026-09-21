@@ -3,7 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.compatibility;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain;
+import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain;
 
 /** Truthful readiness summary for running the core renderer without migration-source mods. */
 public final class FirstPartyRendererReadiness {
