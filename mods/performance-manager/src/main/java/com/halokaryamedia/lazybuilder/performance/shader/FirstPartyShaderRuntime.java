@@ -192,10 +192,12 @@ public final class FirstPartyShaderRuntime {
 
         FirstPartyShaderPipeline candidate = null;
         try {
-            candidate = FirstPartyShaderPipeline.compile(
-                    ShaderPackSource.open(descriptor),
-                    optionDefines(descriptor)
-            );
+            try (ShaderPackSource.Session source = ShaderPackSource.openSession(descriptor)) {
+                candidate = FirstPartyShaderPipeline.compile(
+                        source,
+                        optionDefines(descriptor)
+                );
+            }
 
             synchronized (this) {
                 if (generation != compileRequestGeneration
@@ -319,11 +321,14 @@ public final class FirstPartyShaderRuntime {
 
         String path = vertex ? "shaders/terrain.vsh" : "shaders/terrain.fsh";
         try {
-            ShaderSourcePreprocessor.Result result = ShaderSourcePreprocessor.preprocess(
-                    ShaderPackSource.open(active),
-                    path,
-                    optionDefines(active)
-            );
+            ShaderSourcePreprocessor.Result result;
+            try (ShaderPackSource.Session source = ShaderPackSource.openSession(active)) {
+                result = ShaderSourcePreprocessor.preprocess(
+                        source,
+                        path,
+                        optionDefines(active)
+                );
+            }
             return new TerrainSource(true, result.source(), activePackId, "");
         } catch (Exception error) {
             String message = safeMessage(error);
@@ -642,11 +647,14 @@ public final class FirstPartyShaderRuntime {
         }
 
         try {
-            ShaderSourcePreprocessor.Result result = ShaderSourcePreprocessor.preprocess(
-                    ShaderPackSource.open(selected),
-                    relativePath,
-                    optionDefines(selected)
-            );
+            ShaderSourcePreprocessor.Result result;
+            try (ShaderPackSource.Session source = ShaderPackSource.openSession(selected)) {
+                result = ShaderSourcePreprocessor.preprocess(
+                        source,
+                        relativePath,
+                        optionDefines(selected)
+                );
+            }
             List<String> dependencies = new ArrayList<>(result.dependencies());
             dependencies.sort(String::compareTo);
             previewError = "";
