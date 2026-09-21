@@ -117,6 +117,7 @@ shaderpacks/MyPack/
 Optional `shader.properties` metadata uses a deliberately small typed option model:
 
 ```properties
+id=mivubi.studio
 name=Studio Shader
 author=MIVUBI
 description=Example first-party shader
@@ -142,7 +143,7 @@ option.steps.step=1
 
 Options are validated, quantized, persisted per pack, and injected after the GLSL `#version` line as deterministic defines such as `LB_OPT_SHADOWS`, `LB_OPT_EXPOSURE`, and `LB_OPT_STEPS`. Utility Manager stages edits locally and applies them in one recompilation instead of recompiling continuously while a slider is dragged.
 
-Native pack identity is persistent and deterministic from the source filename, including a short fingerprint from the beginning rather than only after a collision occurs. This prevents adding a similarly named pack later from changing the identity of an already configured pack. Legacy pre-fingerprint IDs are migrated during catalog refresh, including per-pack option values.
+Native pack identity is persistent and deterministic. Packs may declare a stable lowercase `id=` in `shader.properties`; this is preferred because it survives folder/ZIP rename. Without an explicit ID, LazyBuilder derives one from the source filename plus a deterministic fingerprint. Duplicate explicit IDs are rejected rather than aliased. Legacy pre-fingerprint and prior filename-derived IDs are migrated during catalog refresh, including per-pack option values.
 
 Pack discovery distinguishes an empty folder from broken candidates. Folder/ZIP entries that look like shader packs but are missing required stages, have malformed manifests, or contain invalid option declarations remain visible to the manager as invalid entries with an actionable reason instead of silently disappearing.
 
