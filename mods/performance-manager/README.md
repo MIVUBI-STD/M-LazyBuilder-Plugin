@@ -103,7 +103,7 @@ fabric-renderer-api-v1:contains_renderer
 
 LazyBuilder uses the same ownership marker used by Fabric Indigo. Any custom FRAPI renderer owner disables first-party chunk/meshing mixins. Terrain submission has an additional Iris gate. Compatibility uncertainty also disables first-party chunk ownership.
 
-For the current builder stack this resolves to `iris+sodium`; Axiom and WorldEditCUI remain consumers/overlays rather than global renderer owners.
+The target core renderer path is Minecraft/Fabric + LazyBuilder Performance Manager without Sodium or another renderer mod. When a third-party FRAPI renderer is installed, LazyBuilder still fails open to that declared owner for compatibility. Axiom and WorldEditCUI remain consumers/overlays rather than global renderer owners.
 
 Entity and block-entity culling now cache vanilla renderer ownership by type identity and avoid duplicate queue-membership lookups. This keeps the conservative culling contract unchanged while reducing repeated registry/namespace work in the render path.
 
@@ -134,7 +134,7 @@ Correctness proof should show physical draws when the first-party path is active
 
 ## Migration rule
 
-External performance mods remain migration references until matching first-party behavior is implemented and proven in representative builder workloads. Custom FRAPI renderer owners keep control of the chunk pipeline while installed, Iris keeps shader-sensitive terrain submission, ImmediatelyFast keeps overlapping render/upload hooks, and FerriteCore keeps baked-quad deduplication.
+External performance mods are compatibility peers, not required runtime owners. Custom FRAPI renderer owners still take precedence while installed because they explicitly claim the Fabric renderer boundary. Iris currently keeps shader-sensitive terrain submission until the first-party shader engine replaces that path. ImmediatelyFast may keep overlapping hooks when installed to avoid duplicate interception, but LazyBuilder must remain functional without it. Baked-quad vertex deduplication is already first-party through MemoryDeduplicator and does not require FerriteCore.
 
 ## Configuration
 
