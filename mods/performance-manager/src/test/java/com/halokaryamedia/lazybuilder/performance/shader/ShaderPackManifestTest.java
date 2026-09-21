@@ -66,7 +66,7 @@ final class ShaderPackManifestTest {
     }
 
     @Test
-    void invalidOptionDefinitionsAreIgnored() throws Exception {
+    void invalidDeclaredOptionRejectsTheManifest() throws Exception {
         Files.createDirectories(temp.resolve("shaders"));
         Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
         Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
@@ -76,8 +76,6 @@ final class ShaderPackManifestTest {
                 option.bad.min=0
                 option.bad.max=2
                 option.bad.step=0
-                option.good.type=boolean
-                option.good.default=true
                 """);
 
         ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
@@ -86,15 +84,11 @@ final class ShaderPackManifestTest {
                 temp,
                 ShaderPackDescriptor.Kind.DIRECTORY
         );
-        ShaderPackManifest manifest = ShaderPackManifest.load(
-                ShaderPackSource.open(descriptor),
-                "Pack"
-        );
 
-        assertEquals(1, manifest.options().size());
-        assertEquals("good", manifest.options().getFirst().id());
-        assertTrue(manifest.defines("pack", ShaderRuntimePreferences.defaults())
-                .containsKey("LB_OPT_GOOD"));
+        assertThrows(
+                java.io.IOException.class,
+                () -> ShaderPackManifest.load(ShaderPackSource.open(descriptor), "Pack")
+        );
     }
     @Test
     void rejectsOptionDefineNameCollisions() throws Exception {
