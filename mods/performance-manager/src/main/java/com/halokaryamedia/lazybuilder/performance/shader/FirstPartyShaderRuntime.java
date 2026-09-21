@@ -591,7 +591,9 @@ public final class FirstPartyShaderRuntime {
                 lastError = primaryError();
                 stage = "shadow-error";
                 if (changed) revision++;
-            } else if (result.ready() && "shadow-error".equals(stage)) {
+            } else if (result.ready()) {
+                boolean hadShadowError = !shadowError.isEmpty();
+                String previousStage = stage;
                 shadowError = "";
                 lastError = primaryError();
                 stage = lastError.isBlank()
@@ -599,7 +601,7 @@ public final class FirstPartyShaderRuntime {
                         ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
                         : (lastFrameApplied ? "postprocess-active" : "compiled"))
                         : "degraded";
-                revision++;
+                if (hadShadowError || !stage.equals(previousStage)) revision++;
             }
         }
         return result;
