@@ -45,11 +45,10 @@ public final class TerrainMultiDrawCommandStream {
         float[] offsetZ = new float[capacity];
 
         int count = 0;
-        for (int orderIndex = 0; orderIndex < layer.commands().size(); orderIndex++) {
-            TerrainDrawTransformStream.Command transform = layer.commands().get(orderIndex);
-            if (transform == null || !transform.physicalReady()) continue;
+        for (int orderIndex = 0; orderIndex < layer.commandCount(); orderIndex++) {
+            TerrainArenaDrawPlanner.Command arena = layer.arenaCommand(orderIndex);
+            if (!TerrainPhysicalArenaPolicy.isDrawReady(arena)) continue;
 
-            TerrainArenaDrawPlanner.Command arena = transform.arenaCommand();
             TerrainArenaDrawStateRegistry.DrawState state = arena == null ? null : arena.state();
             if (arena == null || state == null) continue;
 
@@ -59,16 +58,16 @@ public final class TerrainMultiDrawCommandStream {
             long indexOffset = state.indexPayloadBytes() > 0 ? arena.indexByteOffset() : 0L;
             if (indexOffset < 0L) continue;
 
-            sources[count] = transform.source();
+            sources[count] = layer.source(orderIndex);
             arenas[count] = arena;
             indexCounts[count] = state.indexCount();
             indexByteOffsets[count] = indexOffset;
             baseVertices[count] = baseVertex;
             transformIndices[count] = count;
             orderIndices[count] = orderIndex;
-            offsetX[count] = transform.modelOffsetX();
-            offsetY[count] = transform.modelOffsetY();
-            offsetZ[count] = transform.modelOffsetZ();
+            offsetX[count] = layer.modelOffsetX(orderIndex);
+            offsetY[count] = layer.modelOffsetY(orderIndex);
+            offsetZ[count] = layer.modelOffsetZ(orderIndex);
             count++;
         }
 
