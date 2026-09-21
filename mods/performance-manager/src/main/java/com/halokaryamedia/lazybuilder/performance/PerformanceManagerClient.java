@@ -63,6 +63,14 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 (Consumer<String>) PerformanceManagerClient::selectShaderPack
         );
         share.put(
+                "lazybuilder-performance-manager:shader-compile",
+                (Runnable) PerformanceManagerClient::compileSelectedShaderPack
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-disable",
+                (Runnable) PerformanceManagerClient::disableShaderPipeline
+        );
+        share.put(
                 "lazybuilder-performance-manager:shader-preprocess",
                 (Function<String, Map<String, Object>>) PerformanceManagerClient::preprocessShaderSource
         );
@@ -111,6 +119,18 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static void selectShaderPack(String packId) {
         if (shaderRuntime != null) shaderRuntime.select(packId);
+    }
+
+    private static void compileSelectedShaderPack() {
+        if (shaderRuntime != null) shaderRuntime.compileSelected();
+    }
+
+    private static void disableShaderPipeline() {
+        if (shaderRuntime != null) shaderRuntime.disable();
+    }
+
+    public static void invalidateShaderRuntimeForResourceReload() {
+        if (shaderRuntime != null) shaderRuntime.invalidateForResourceReload();
     }
 
     private static Map<String, Object> preprocessShaderSource(String path) {
