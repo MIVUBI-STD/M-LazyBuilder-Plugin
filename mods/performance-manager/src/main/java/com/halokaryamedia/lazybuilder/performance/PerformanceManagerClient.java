@@ -233,7 +233,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                     position.getZ(),
                     context.world().getTimeOfDay(),
                     width,
-                    height
+                    height,
+                    governorProfile().shadowReuseMultiplier()
             );
         } finally {
             GpuStageTimer.end(GpuStageTimer.Stage.SHADOW);
