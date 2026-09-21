@@ -58,6 +58,7 @@ public final class LazyBuilderLanguageScreen extends Screen {
             clearAndInit();
         });
         addDrawableChild(searchField);
+        setInitialFocus(searchField);
 
         rebuildEntries();
 
@@ -198,8 +199,8 @@ public final class LazyBuilderLanguageScreen extends Screen {
             context.drawTextWithShadow(
                     textRenderer,
                     Text.literal("Could not apply language: " + textRenderer.trimToWidth(failure, shell - 150)),
-                    left,
-                    height - 26,
+                    left + (failedLanguageCode != null ? 104 : 0),
+                    height - FOOTER_HEIGHT - 18,
                     0xFFFFA7A7
             );
         }
