@@ -181,6 +181,7 @@ public final class FirstPartyShaderRuntime {
 
             if (!activePackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(activePackId))) {
+                String removedActivePackId = activePackId;
                 closePipelineLocked();
                 activePackId = "";
                 terrainVertexCompiled = false;
@@ -188,6 +189,11 @@ public final class FirstPartyShaderRuntime {
                 terrainIntegrated = false;
                 terrainGeneration++;
                 terrainReloadPending = true;
+
+                if (persisted.selectedPackId().equals(removedActivePackId)) {
+                    persisted = persisted.withSelectedPack("");
+                    configStore.save(persisted);
+                }
             }
 
             catalogError = "";
