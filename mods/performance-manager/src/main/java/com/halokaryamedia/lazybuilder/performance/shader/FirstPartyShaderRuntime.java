@@ -37,6 +37,7 @@ public final class FirstPartyShaderRuntime {
     private volatile Map<String, Object> cachedSnapshotMap = Map.of();
     private volatile long compileRequestGeneration;
     private volatile Thread preparationThread;
+    private volatile boolean stagedOptionsRequireCompile;
     private volatile boolean lastFrameApplied;
     private volatile boolean terrainVertexCompiled;
     private volatile boolean terrainFragmentCompiled;
@@ -136,6 +137,9 @@ public final class FirstPartyShaderRuntime {
             return false;
         }
 
+        compileRequestGeneration++;
+        cancelPreparationLocked();
+        stagedOptionsRequireCompile = false;
         selectedPackId = requested;
         persisted = persisted.withSelectedPack(requested);
         configStore.save(persisted);
@@ -174,6 +178,7 @@ public final class FirstPartyShaderRuntime {
             }
 
             generation = ++compileRequestGeneration;
+            stagedOptionsRequireCompile = false;
             defines = optionDefines(descriptor);
             stage = "prepare-queued";
             controlError = "";
@@ -356,9 +361,20 @@ public final class FirstPartyShaderRuntime {
         }
     }
 
+    public void applyStagedOptions() {
+        boolean shouldCompile;
+        synchronized (this) {
+            shouldCompile = stagedOptionsRequireCompile
+                    || (persisted.enabled() && !persisted.selectedPackId().isBlank());
+            stagedOptionsRequireCompile = false;
+        }
+        if (shouldCompile) compileSelected();
+    }
+
     public synchronized void disable() {
         compileRequestGeneration++;
         cancelPreparationLocked();
+        stagedOptionsRequireCompile = false;
         boolean restoreMinecraftTerrain = pipeline != null
                 || terrainVertexCompiled
                 || terrainFragmentCompiled
@@ -839,14 +855,27 @@ public final class FirstPartyShaderRuntime {
                 return true;
             }
 
+            boolean compilePending = preparationThread != null
+                    || "prepare-queued".equals(stage)
+                    || "preparing".equals(stage)
+                    || "compile-queued".equals(stage)
+                    || "compiling".equals(stage);
+            boolean activeEnabled = persisted.enabled()
+                    && selected.id().equals(activePackId);
+
+            compileRequestGeneration++;
+            cancelPreparationLocked();
+            stagedOptionsRequireCompile = compilePending || activeEnabled;
+
             persisted = next;
             configStore.save(persisted);
             controlError = "";
             lastError = primaryError();
-            recompile = allowRecompile
-                    && persisted.enabled()
-                    && selected.id().equals(activePackId);
-            stage = recompile ? "option-recompile-queued" : "selected";
+            recompile = allowRecompile && stagedOptionsRequireCompile;
+            if (recompile) stagedOptionsRequireCompile = false;
+            stage = recompile
+                    ? "option-recompile-queued"
+                    : stagedOptionsRequireCompile ? "option-recompile-pending" : "selected";
             revision++;
         }
 
