@@ -48,4 +48,22 @@ final class UtilityPreferencesTest {
         assertEquals(original.compactDebugHud(), updated.compactDebugHud());
     }
 
+    @Test
+    void chatAndWindowUpdatesChangeOnlyTheirOwnedPreference() {
+        UtilityPreferences original = UtilityPreferences.defaults();
+
+        UtilityPreferences chat = original.withChatSearch(false);
+        assertFalse(chat.chatSearch());
+        assertEquals(original.borderlessWindow(), chat.borderlessWindow());
+        assertEquals(original.keepChatDraft(), chat.keepChatDraft());
+        assertEquals(original.chatTimestamps(), chat.chatTimestamps());
+        assertEquals(original.suppressNarrator(), chat.suppressNarrator());
+
+        UtilityPreferences window = original.withBorderlessWindow(true);
+        assertTrue(window.borderlessWindow());
+        assertEquals(original.chatSearch(), window.chatSearch());
+        assertEquals(original.compactDebugHud(), window.compactDebugHud());
+        assertEquals(original.reconnectButton(), window.reconnectButton());
+    }
+
 }
