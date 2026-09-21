@@ -124,7 +124,7 @@ public final class CullingRuntime {
 
         CacheEntry entry = blockEntities.get(blockEntity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
-        if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
+        if (!fresh(entry, camera, targetX, targetY, targetZ, now, lastPressure)) {
             blockEntityCacheStales++;
             enqueue(blockEntity);
             return true;
