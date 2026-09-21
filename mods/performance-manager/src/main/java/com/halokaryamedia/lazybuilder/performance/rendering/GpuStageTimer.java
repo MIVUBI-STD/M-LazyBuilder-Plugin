@@ -23,6 +23,7 @@ public final class GpuStageTimer {
     private static final Map<Stage, State> STATES = new EnumMap<>(Stage.class);
     private static Stage activeStage;
     private static int activeQuery;
+    private static long sessionGeneration = 1L;
     private static volatile boolean enabled =
             Boolean.getBoolean("lazybuilder.performance.metrics")
                     || Boolean.getBoolean("lazybuilder.performance.proof");
@@ -57,6 +58,7 @@ public final class GpuStageTimer {
         int query = state.ensureQuery(slot);
         GL33C.glBeginQuery(GL33C.GL_TIME_ELAPSED, query);
         state.pending[slot] = true;
+        state.pendingGeneration[slot] = sessionGeneration;
         state.cursor = (slot + 1) % RING_SIZE;
         activeStage = stage;
         activeQuery = query;
@@ -89,15 +91,28 @@ public final class GpuStageTimer {
         return STATES.get(stage).snapshot();
     }
 
+    /**
+     * Starts a new gameplay evidence generation without blocking on outstanding GPU queries.
+     * Late results from the previous world are drained but ignored, so benchmark samples do
+     * not bleed across teleport/world-session boundaries.
+     */
+    public static void resetSession() {
+        sessionGeneration++;
+        if (sessionGeneration <= 0L) sessionGeneration = 1L;
+        for (State state : STATES.values()) state.resetCounters();
+    }
+
     static void resetForTest() {
         activeStage = null;
         activeQuery = 0;
+        sessionGeneration = 1L;
         for (State state : STATES.values()) state.resetCounters();
     }
 
     private static final class State {
         private final int[] queries = new int[RING_SIZE];
         private final boolean[] pending = new boolean[RING_SIZE];
+        private final long[] pendingGeneration = new long[RING_SIZE];
         private int cursor;
         private long samples;
         private long totalNanos;
@@ -129,7 +144,9 @@ public final class GpuStageTimer {
 
                 long elapsed = GL33C.glGetQueryObjecti64(query, GL15C.GL_QUERY_RESULT);
                 pending[slot] = false;
-                if (elapsed <= 0L) continue;
+                long generation = pendingGeneration[slot];
+                pendingGeneration[slot] = 0L;
+                if (generation != sessionGeneration || elapsed <= 0L) continue;
                 samples++;
                 totalNanos += elapsed;
                 maxNanos = Math.max(maxNanos, elapsed);
