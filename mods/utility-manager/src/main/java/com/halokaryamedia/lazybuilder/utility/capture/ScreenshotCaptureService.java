@@ -36,7 +36,7 @@ import java.util.function.Consumer;
  */
 public final class ScreenshotCaptureService {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Capture/Screenshot");
-    private static final int MAX_QUEUED_CAPTURES = 4;
+    private static final int MAX_QUEUED_CAPTURES = 2;
 
     private final ThreadPoolExecutor encoder = new ThreadPoolExecutor(
             1,
