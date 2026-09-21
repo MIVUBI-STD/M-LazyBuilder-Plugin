@@ -35,6 +35,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static PerformanceRuntime runtime;
     private static FirstPartyShaderRuntime shaderRuntime;
+    private static volatile boolean shaderTerrainReloadInFlight;
 
     @Override
     public void onInitializeClient() {
@@ -116,8 +117,25 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             FirstPartyShaderRuntime shaders = shaderRuntime;
             if (firstPartyShaderOwnershipAllowed()
                     && shaders != null
+                    && !shaderTerrainReloadInFlight
                     && shaders.consumeTerrainReloadRequest()) {
-                client.reloadResources();
+                shaderTerrainReloadInFlight = true;
+                client.reloadResources().whenComplete((ignored, error) ->
+                        client.execute(() -> {
+                            shaderTerrainReloadInFlight = false;
+                            FirstPartyShaderRuntime current = shaderRuntime;
+                            if (current == null) return;
+                            Throwable cause = error == null
+                                    ? null
+                                    : (error.getCause() == null ? error : error.getCause());
+                            current.recordTerrainReloadCompletion(
+                                    cause == null,
+                                    cause == null || cause.getMessage() == null
+                                            ? ""
+                                            : cause.getMessage()
+                            );
+                        })
+                );
             }
         });
     }
