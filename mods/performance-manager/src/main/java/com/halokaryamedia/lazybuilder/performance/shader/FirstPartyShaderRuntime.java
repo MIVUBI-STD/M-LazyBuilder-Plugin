@@ -276,7 +276,12 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void recordTerrainProgramLinked() {
-        if (pipeline == null || !terrainVertexCompiled || !terrainFragmentCompiled) return;
+        if (pipeline == null
+                || !terrainVertexCompiled
+                || !terrainFragmentCompiled
+                || terrainIntegrated) {
+            return;
+        }
         terrainIntegrated = true;
         lastError = "";
         stage = lastFrameApplied ? "terrain+postprocess-active" : "terrain-active";
@@ -292,6 +297,7 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             current = pipeline;
             if (current == null
+                    || !terrainIntegrated
                     || current.gbufferAttachments() <= 0
                     || (!current.has("composite") && !current.has("final"))) {
                 return false;
@@ -443,7 +449,7 @@ public final class FirstPartyShaderRuntime {
                 revision,
                 "lazybuilder",
                 stage,
-                true,
+                !"catalog-error".equals(stage),
                 pipeline != null,
                 pipeline != null && (pipeline.has("composite") || pipeline.has("final")),
                 pipeline == null ? 0 : pipeline.gbufferAttachments(),
