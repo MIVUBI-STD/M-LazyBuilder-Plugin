@@ -5,6 +5,7 @@ import net.minecraft.client.gl.VertexBuffer;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Per-layer stream of terrain translations in exact vanilla draw order.
@@ -17,7 +18,8 @@ public final class TerrainDrawTransformStream {
     private static final int LAYER_COUNT = 5;
     private static final int TRANSFORM_BYTES = Float.BYTES * 4;
     private static final LayerSnapshot[] EMPTY_LAYERS = emptyLayers();
-    private static volatile LayerSnapshot[] current = EMPTY_LAYERS.clone();
+    private static final AtomicReferenceArray<LayerSnapshot> current =
+            new AtomicReferenceArray<>(EMPTY_LAYERS);
 
     private TerrainDrawTransformStream() {
     }
@@ -217,28 +219,24 @@ public final class TerrainDrawTransformStream {
 
     public static synchronized void publish(LayerSnapshot snapshot) {
         if (snapshot == null || snapshot.layerSlot() < 0 || snapshot.layerSlot() >= LAYER_COUNT) return;
-        LayerSnapshot[] next = current.clone();
-        next[snapshot.layerSlot()] = snapshot;
-        current = next;
+        current.set(snapshot.layerSlot(), snapshot);
         TerrainMultiDrawCommandStream.publish(snapshot);
     }
 
     public static LayerSnapshot layer(int layerSlot) {
-        LayerSnapshot[] snapshot = current;
-        if (layerSlot < 0 || layerSlot >= snapshot.length) return LayerSnapshot.empty(layerSlot, false);
-        return snapshot[layerSlot];
+        if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return LayerSnapshot.empty(layerSlot, false);
+        LayerSnapshot snapshot = current.get(layerSlot);
+        return snapshot == null ? LayerSnapshot.empty(layerSlot, false) : snapshot;
     }
 
     public static synchronized void clearLayer(int layerSlot) {
         if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return;
-        LayerSnapshot existing = current[layerSlot];
+        LayerSnapshot existing = current.get(layerSlot);
         if (existing != null && existing.commandCount() == 0) {
             TerrainMultiDrawCommandStream.clearLayer(layerSlot);
             return;
         }
-        LayerSnapshot[] next = current.clone();
-        next[layerSlot] = EMPTY_LAYERS[layerSlot];
-        current = next;
+        current.set(layerSlot, EMPTY_LAYERS[layerSlot]);
         TerrainMultiDrawCommandStream.clearLayer(layerSlot);
     }
 
@@ -250,7 +248,9 @@ public final class TerrainDrawTransformStream {
         long potentialDrawReduction = 0L;
         long packedBytes = 0L;
 
-        for (LayerSnapshot layer : current) {
+        for (int layerIndex = 0; layerIndex < LAYER_COUNT; layerIndex++) {
+            LayerSnapshot layer = current.get(layerIndex);
+            if (layer == null) continue;
             commands += layer.commandCount();
             physicalReady += layer.physicalReadyCommands();
             transformBlocked += layer.transformBlockedCommands();
@@ -270,7 +270,9 @@ public final class TerrainDrawTransformStream {
     }
 
     public static synchronized void clear() {
-        current = EMPTY_LAYERS.clone();
+        for (int index = 0; index < LAYER_COUNT; index++) {
+            current.set(index, EMPTY_LAYERS[index]);
+        }
         TerrainMultiDrawCommandStream.clear();
     }
 
