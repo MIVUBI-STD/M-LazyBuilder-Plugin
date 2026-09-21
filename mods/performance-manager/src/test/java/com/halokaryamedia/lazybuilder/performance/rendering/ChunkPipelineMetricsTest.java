@@ -30,7 +30,7 @@ final class ChunkPipelineMetricsTest {
         ChunkPipelineMetrics.recordUploadBudgetStop();
         assertEquals(0L, ChunkPipelineMetrics.uploadBudgetStops());
 
-        ChunkPipelineMetrics.enableDetailedMetrics();
+        ChunkPipelineMetrics.setDetailedMetricsEnabledForTest(true);
         assertTrue(ChunkPipelineMetrics.detailedMetricsEnabled());
         ChunkPipelineMetrics.recordSectionVisibilityCacheHit();
         ChunkPipelineMetrics.recordTerrainBufferLookupHit();
@@ -41,6 +41,18 @@ final class ChunkPipelineMetricsTest {
         assertEquals(1L, ChunkPipelineMetrics.terrainBufferLookupHits());
         assertEquals(3L, ChunkPipelineMetrics.avoidedUploadBufferBinds());
         assertEquals(1L, ChunkPipelineMetrics.uploadBudgetStops());
+    }
+
+    @Test
+    void sessionResetClearsCountersWithoutChangingMetricsPolicy() {
+        ChunkPipelineMetrics.recordCoalescedRebuild();
+        ChunkPipelineMetrics.recordUploadBudgetStop();
+
+        ChunkPipelineMetrics.resetSession();
+
+        assertEquals(0L, ChunkPipelineMetrics.coalescedRebuildRequests());
+        assertEquals(0L, ChunkPipelineMetrics.uploadBudgetStops());
+        assertTrue(ChunkPipelineMetrics.detailedMetricsEnabled());
     }
 
     @Test
