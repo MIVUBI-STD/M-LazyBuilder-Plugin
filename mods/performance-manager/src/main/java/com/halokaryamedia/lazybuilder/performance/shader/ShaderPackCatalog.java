@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
+import java.util.zip.ZipFile;
 
 /** Discovers folder and ZIP shader packs without depending on Iris. */
 public final class ShaderPackCatalog {
@@ -40,10 +41,19 @@ public final class ShaderPackCatalog {
 
     private boolean isCandidate(Path path) {
         if (Files.isDirectory(path)) {
-            return Files.isDirectory(path.resolve("shaders"));
+            return Files.isRegularFile(path.resolve("shaders/terrain.vsh"))
+                    && Files.isRegularFile(path.resolve("shaders/terrain.fsh"));
         }
+
         String name = fileName(path).toLowerCase(Locale.ROOT);
-        return Files.isRegularFile(path) && name.endsWith(".zip");
+        if (!Files.isRegularFile(path) || !name.endsWith(".zip")) return false;
+
+        try (ZipFile zip = new ZipFile(path.toFile())) {
+            return zip.getEntry("shaders/terrain.vsh") != null
+                    && zip.getEntry("shaders/terrain.fsh") != null;
+        } catch (IOException error) {
+            return false;
+        }
     }
 
     private ShaderPackDescriptor descriptor(Path path) {
