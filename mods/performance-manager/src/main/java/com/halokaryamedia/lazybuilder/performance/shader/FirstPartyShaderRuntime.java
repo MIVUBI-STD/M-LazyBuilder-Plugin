@@ -604,6 +604,19 @@ public final class FirstPartyShaderRuntime {
             return;
         }
 
+        // A normal Minecraft/resource reload may complete while LazyBuilder has no
+        // terrain candidate at all. That is not a failed first-party integration.
+        if (pipeline == null
+                && pendingTerrainPackId.isBlank()
+                && activePackId.isBlank()
+                && terrainRollbackPipeline == null) {
+            terrainReloadPending = false;
+            terrainError = "";
+            lastError = primaryError();
+            revision++;
+            return;
+        }
+
         if (pipeline != null && terrainIntegrated) {
             activePackId = pendingTerrainPackId.isBlank()
                     ? activePackId
