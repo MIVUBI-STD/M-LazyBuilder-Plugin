@@ -58,6 +58,14 @@ public final class CullingRuntime {
     private final Set<Entity> queuedEntities = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<BlockEntity> queuedBlockEntities = Collections.newSetFromMap(new IdentityHashMap<>());
     private World lastWorld;
+    private long entityCacheHits;
+    private long entityCacheStales;
+    private long blockEntityCacheHits;
+    private long blockEntityCacheStales;
+    private long entityEvaluations;
+    private long blockEntityEvaluations;
+    private long entityQueueDrops;
+    private long blockEntityQueueDrops;
 
     public boolean shouldRender(
             Entity entity,
@@ -78,9 +86,11 @@ public final class CullingRuntime {
         CacheEntry entry = entities.get(entity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
         if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
+            entityCacheStales++;
             enqueue(entity);
             return true;
         }
+        entityCacheHits++;
         return entry.decision != VisibilityDecision.OCCLUDED;
     }
 
@@ -108,9 +118,11 @@ public final class CullingRuntime {
         CacheEntry entry = blockEntities.get(blockEntity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
         if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
+            blockEntityCacheStales++;
             enqueue(blockEntity);
             return true;
         }
+        blockEntityCacheHits++;
         return entry.decision != VisibilityDecision.OCCLUDED;
     }
 
@@ -164,6 +176,23 @@ public final class CullingRuntime {
         return NORMAL_BLOCK_ENTITY_BUDGET;
     }
 
+    public Snapshot snapshot() {
+        return new Snapshot(
+                entities.size(),
+                blockEntities.size(),
+                entityQueue.size(),
+                blockEntityQueue.size(),
+                entityCacheHits,
+                entityCacheStales,
+                blockEntityCacheHits,
+                blockEntityCacheStales,
+                entityEvaluations,
+                blockEntityEvaluations,
+                entityQueueDrops,
+                blockEntityQueueDrops
+        );
+    }
+
     public void clear() {
         entities.clear();
         blockEntities.clear();
@@ -172,6 +201,14 @@ public final class CullingRuntime {
         queuedEntities.clear();
         queuedBlockEntities.clear();
         lastWorld = null;
+        entityCacheHits = 0L;
+        entityCacheStales = 0L;
+        blockEntityCacheHits = 0L;
+        blockEntityCacheStales = 0L;
+        entityEvaluations = 0L;
+        blockEntityEvaluations = 0L;
+        entityQueueDrops = 0L;
+        blockEntityQueueDrops = 0L;
     }
 
     private static boolean eligible(MinecraftClient client, Entity entity) {
@@ -212,6 +249,7 @@ public final class CullingRuntime {
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
+        entityEvaluations++;
         Vec3d camera = client.gameRenderer.getCamera().getPos();
         Box box = entity.getBoundingBox();
         Vec3d center = box.getCenter();
@@ -238,6 +276,7 @@ public final class CullingRuntime {
     }
 
     private void evaluateBlockEntity(MinecraftClient client, BlockEntity blockEntity) {
+        blockEntityEvaluations++;
         Vec3d camera = client.gameRenderer.getCamera().getPos();
         Vec3d center = Vec3d.ofCenter(blockEntity.getPos());
         double sample = 0.42D;
@@ -356,14 +395,39 @@ public final class CullingRuntime {
     }
 
     private void enqueue(Entity entity) {
-        if (entityQueue.size() >= MAX_ENTITY_QUEUE || !queuedEntities.add(entity)) return;
+        if (queuedEntities.contains(entity)) return;
+        if (entityQueue.size() >= MAX_ENTITY_QUEUE) {
+            entityQueueDrops++;
+            return;
+        }
+        queuedEntities.add(entity);
         entityQueue.add(entity);
     }
 
     private void enqueue(BlockEntity blockEntity) {
-        if (blockEntityQueue.size() >= MAX_BLOCK_ENTITY_QUEUE || !queuedBlockEntities.add(blockEntity)) return;
+        if (queuedBlockEntities.contains(blockEntity)) return;
+        if (blockEntityQueue.size() >= MAX_BLOCK_ENTITY_QUEUE) {
+            blockEntityQueueDrops++;
+            return;
+        }
+        queuedBlockEntities.add(blockEntity);
         blockEntityQueue.add(blockEntity);
     }
+
+    public record Snapshot(
+            int trackedEntities,
+            int trackedBlockEntities,
+            int queuedEntities,
+            int queuedBlockEntities,
+            long entityCacheHits,
+            long entityCacheStales,
+            long blockEntityCacheHits,
+            long blockEntityCacheStales,
+            long entityEvaluations,
+            long blockEntityEvaluations,
+            long entityQueueDrops,
+            long blockEntityQueueDrops
+    ) {}
 
     private record CacheEntry(
             VisibilityDecision decision,
