@@ -86,7 +86,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 && Float.compare(lastCenterY, centerY) == 0
                 && Float.compare(lastCenterZ, centerZ) == 0) {
             reusedFrames++;
-            return snapshot.withReusedFrames(reusedFrames);
+            snapshot = snapshot.withReusedFrames(reusedFrames);
+            return snapshot;
         }
 
         GlState state = GlState.capture();
