@@ -1417,11 +1417,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
         resetOption(client.options.getEnableVsync());
         resetOption(client.options.getMaxFps());
         resetOption(client.options.getGamma());
+        boolean defaultBorderless = UtilityPreferences.defaults().borderlessWindow();
         UtilityManagerClient.updatePreferences(
-                UtilityManagerClient.preferences().withBorderlessWindow(
-                        UtilityPreferences.defaults().borderlessWindow()
-                )
+                UtilityManagerClient.preferences().withBorderlessWindow(defaultBorderless)
         );
+        if (BorderlessWindowController.isApplied() != defaultBorderless) {
+            UtilityNotifications.show(
+                    "Window Mode",
+                    "The default window mode will be applied on the next game launch."
+            );
+        }
 
         boolean defaultFullscreen = defaultValue(client.options.getFullscreen());
         if (previousFullscreen != defaultFullscreen) {
