@@ -5,6 +5,7 @@ import net.minecraft.client.render.VertexFormats;
 import org.lwjgl.opengl.GL20C;
 
 import java.io.IOException;
+import java.util.Map;
 
 /** Compiles and links LazyBuilder-native shader programs on the render thread. */
 public final class FirstPartyShaderCompiler {
@@ -17,15 +18,25 @@ public final class FirstPartyShaderCompiler {
             ShaderPackSource source,
             ShaderPipelineDefinition.Program program
     ) throws IOException, ShaderCompileException {
+        return compile(source, program, Map.of());
+    }
+
+    public static FirstPartyShaderProgram compile(
+            ShaderPackSource source,
+            ShaderPipelineDefinition.Program program,
+            Map<String, String> defines
+    ) throws IOException, ShaderCompileException {
         RenderSystem.assertOnRenderThread();
 
         ShaderSourcePreprocessor.Result vertex = ShaderSourcePreprocessor.preprocess(
                 source,
-                program.vertexPath()
+                program.vertexPath(),
+                defines
         );
         ShaderSourcePreprocessor.Result fragment = ShaderSourcePreprocessor.preprocess(
                 source,
-                program.fragmentPath()
+                program.fragmentPath(),
+                defines
         );
 
         if ("terrain".equals(program.name())) {
