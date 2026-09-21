@@ -176,4 +176,47 @@ final class ShaderPackManifestTest {
                 )
         );
     }
+    @Test
+    void parsesExplicitStablePackId() throws Exception {
+        Files.createDirectories(temp.resolve("shaders"));
+        Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shader.properties"), """
+                id=mivubi.studio
+                name=Studio Shader
+                """);
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "filename-derived",
+                "Studio Shader",
+                temp,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+        ShaderPackManifest manifest = ShaderPackManifest.load(
+                ShaderPackSource.open(descriptor),
+                "Fallback"
+        );
+
+        assertEquals("mivubi.studio", manifest.id());
+    }
+
+    @Test
+    void rejectsInvalidExplicitPackId() throws Exception {
+        Files.createDirectories(temp.resolve("shaders"));
+        Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shader.properties"), "id=bad id with spaces\n");
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "filename-derived",
+                "Studio Shader",
+                temp,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+
+        assertThrows(
+                java.io.IOException.class,
+                () -> ShaderPackManifest.load(ShaderPackSource.open(descriptor), "Fallback")
+        );
+    }
 }
