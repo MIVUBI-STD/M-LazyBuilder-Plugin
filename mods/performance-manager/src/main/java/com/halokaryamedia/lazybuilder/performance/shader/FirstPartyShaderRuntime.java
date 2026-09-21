@@ -157,6 +157,7 @@ public final class FirstPartyShaderRuntime {
 
             packs = scan.packs();
             catalogError = scan.error();
+            migratePersistedPackIdsLocked();
 
             if (!catalogError.isBlank()) {
                 lastError = primaryError();
@@ -1213,6 +1214,20 @@ public final class FirstPartyShaderRuntime {
         cachedSnapshotMap = immutable;
         cachedSnapshotMapRevision = currentRevision;
         return immutable;
+    }
+
+    private void migratePersistedPackIdsLocked() {
+        ShaderRuntimePreferences migrated = persisted;
+        for (ShaderPackDescriptor pack : packs) {
+            String legacyId = ShaderPackCatalog.legacyId(pack);
+            if (legacyId.isBlank() || legacyId.equals(pack.id())) continue;
+            migrated = migrated.migratePackId(legacyId, pack.id());
+        }
+
+        if (migrated.equals(persisted)) return;
+        persisted = migrated;
+        selectedPackId = migrated.selectedPackId();
+        configStore.save(migrated);
     }
 
     private ShaderPackDescriptor selectedPack() {
