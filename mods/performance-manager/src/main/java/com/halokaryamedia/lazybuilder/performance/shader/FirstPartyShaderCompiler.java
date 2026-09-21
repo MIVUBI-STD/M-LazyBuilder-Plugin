@@ -81,6 +81,13 @@ public final class FirstPartyShaderCompiler {
             );
 
             linkedProgram = GL20C.glCreateProgram();
+            if (linkedProgram == 0) {
+                throw new ShaderCompileException(
+                        programName,
+                        Stage.LINK,
+                        "OpenGL could not allocate a shader program."
+                );
+            }
             GL20C.glAttachShader(linkedProgram, vertexShader);
             GL20C.glAttachShader(linkedProgram, fragmentShader);
 
@@ -115,6 +122,13 @@ public final class FirstPartyShaderCompiler {
             String source
     ) throws ShaderCompileException {
         int shader = GL20C.glCreateShader(type);
+        if (shader == 0) {
+            throw new ShaderCompileException(
+                    name,
+                    type == GL20C.GL_VERTEX_SHADER ? Stage.VERTEX : Stage.FRAGMENT,
+                    "OpenGL could not allocate a shader object."
+            );
+        }
         GL20C.glShaderSource(shader, source);
         GL20C.glCompileShader(shader);
 
