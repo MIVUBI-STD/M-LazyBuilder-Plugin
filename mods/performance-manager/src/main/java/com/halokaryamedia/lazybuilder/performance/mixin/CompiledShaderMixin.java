@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * source if the transformed first-party stage fails compilation.
  */
 @Mixin(CompiledShader.class)
-abstract class CompiledShaderMixin {
+public abstract class CompiledShaderMixin {
     private static final Map<Integer, OriginalSource> lazybuilder$originalSources =
             new ConcurrentHashMap<>();
     private static final Map<CompiledShader.Type, RestorableStage> lazybuilder$successfulFirstPartyStages =
@@ -86,7 +86,7 @@ abstract class CompiledShaderMixin {
         lazybuilder$restoreOtherFirstPartyStages(original.type());
     }
 
-    static void lazybuilder$resetTerrainFallbackState() {
+    public static void lazybuilder$resetTerrainFallbackState() {
         lazybuilder$originalSources.clear();
         lazybuilder$successfulFirstPartyStages.clear();
     }
