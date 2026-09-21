@@ -100,7 +100,7 @@ final class PerformanceRuntimeProofLogger {
                         + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
                         + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={} "
                         + "governor_mode={} governor_upload_budget={} governor_rebuild_budget={} "
-                        + "governor_culling_budget={} governor_optional_gpu={}",
+                        + "governor_culling_budget={} governor_shadow_reuse={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -160,7 +160,7 @@ final class PerformanceRuntimeProofLogger {
                 governor.chunkUploadBudget(),
                 governor.rebuildReleaseBudget(),
                 governor.cullingBudgetPercent(),
-                governor.optionalGpuWorkAllowed()
+                governor.shadowReuseMultiplier()
         );
     }
 
