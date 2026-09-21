@@ -63,6 +63,51 @@ public final class ShaderMemoryBudget {
         }
     }
 
+    public static ShadowPlan planShadow(
+            int width,
+            int height,
+            int gbufferAttachments,
+            boolean compositePass,
+            boolean postProcessPass,
+            int requestedShadowResolution
+    ) {
+        int requested = Math.max(256, Math.min(4096, requestedShadowResolution));
+        int resolution = requested;
+
+        while (resolution >= 256) {
+            Estimate estimate = estimate(
+                    width,
+                    height,
+                    gbufferAttachments,
+                    compositePass,
+                    postProcessPass,
+                    true,
+                    resolution
+            );
+            if (estimate.allowed()) {
+                return new ShadowPlan(
+                        true,
+                        resolution,
+                        resolution == requested ? "ready" : "shadow-resolution-reduced",
+                        estimate.estimatedBytes(),
+                        estimate.limitBytes()
+                );
+            }
+            if (resolution == 256) {
+                return new ShadowPlan(
+                        false,
+                        0,
+                        estimate.status(),
+                        estimate.estimatedBytes(),
+                        estimate.limitBytes()
+                );
+            }
+            resolution = Math.max(256, resolution / 2);
+        }
+
+        return new ShadowPlan(false, 0, "shadow-memory-budget-exceeded", 0L, limitBytes());
+    }
+
     static long limitBytes() {
         return MAX_AUXILIARY_BYTES;
     }
@@ -78,6 +123,15 @@ public final class ShaderMemoryBudget {
             long estimatedBytes,
             long limitBytes,
             String status
+    ) {
+    }
+
+    public record ShadowPlan(
+            boolean allowed,
+            int resolution,
+            String status,
+            long estimatedBytes,
+            long limitBytes
     ) {
     }
 }
