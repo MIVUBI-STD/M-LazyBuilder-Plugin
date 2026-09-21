@@ -27,15 +27,18 @@ of opening separate vanilla settings screens. Interface preferences remain Utili
 while Performance preferences are exposed through a narrow JDK-only Fabric ObjectShare
 contract so Performance Manager keeps runtime/config ownership without a package dependency.
 
-The shell uses one visual language across Video, Controls, Interface, and Tools: sectioned
-single-column rows, contextual help, switches, sliders, dropdowns, key capture, responsive
-scrolling, reset confirmation, and a fixed footer.
+The shell uses one visual language across Video, Audio, Controls, Chat, Interface,
+Accessibility, and Tools: sectioned single-column rows, contextual help, switches,
+sliders, dropdowns, key capture, responsive scrolling, reset confirmation, and a
+fixed footer. Global Search is available from the footer and through Ctrl+F; selecting
+a result opens the owning category/page, scrolls the exact setting into view, and
+highlights it. Navigation tabs wrap on compact widths instead of overflowing the shell.
 
 ### Video settings information architecture
 
 The Video surface follows a game-style hierarchy without duplicating concepts:
 
-- **Display** owns window/frame-pacing and visibility controls such as fullscreen, V-Sync, frame-rate limit, and brightness.
+- **Display** owns window/frame-pacing and visibility controls such as Window Mode (Windowed/Borderless/Fullscreen), V-Sync, frame-rate limit, and brightness. Borderless changes remain startup-applied and are reported as requiring the next game launch.
 - **Quality** owns the Graphics Preset plus individual visual-detail controls. Graphics Preset coordinates visual detail with the matching LazyBuilder performance policy; Graphics Mode is only Minecraft's Fast/Fancy/Fabulous rendering mode and is not a second preset system.
 - **View** owns render distance, simulation distance, entity distance, and field of view.
 - **Performance** owns LazyBuilder efficiency controls and background FPS limits. These controls stay independent from the visual-quality preset so choosing Low/Medium/High never silently changes optimization policy.
@@ -46,6 +49,17 @@ The Video surface follows a game-style hierarchy without duplicating concepts:
 Graphics presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled visual or performance preference no longer matches a known profile, the UI reports Custom. View distance, display preferences, camera settings, and background FPS limits remain independent. Presets write visual settings through Minecraft GameOptions and performance policy through the existing Performance Manager ObjectShare contract; no duplicate graphics or performance configuration file is introduced.
 
 The stable preset policy is conservative: High targets high detail with Minecraft's Fancy renderer, while Fabulous remains an explicit manual Graphics Mode choice. This avoids making a convenience preset opt the user into the most compatibility-sensitive renderer path.
+
+### Settings navigation and feedback
+
+- Audio exposes Minecraft's existing sound-category options without a second audio config.
+- Chat exposes existing Utility chat behavior plus Minecraft chat appearance controls; signing/report controls are worded as visible presentation choices rather than internal hide flags.
+- Accessibility exposes subtitles, narrator policy, readability, FOV/distortion comfort controls, lightning-flash reduction, and monochrome-logo behavior through existing Minecraft options.
+- Key Bindings support search plus All / Modified / Conflicts filters while Minecraft KeyBinding remains authoritative.
+- Reconnect behavior is discoverable under Interface > Multiplayer.
+- The legacy Screenshot Settings entry point redirects into Interface so there is only one visible settings system.
+- Non-instant changes use concise feedback: Resource Packs show an applying notice and the existing resource-reload listener reports completion; Borderless window changes state that the next launch is required.
+- Reset is only exposed where LazyBuilder has an authoritative default source. Do not invent or hard-code guessed Minecraft defaults merely to make every tab show a Reset button.
 
 ### Visual management
 
