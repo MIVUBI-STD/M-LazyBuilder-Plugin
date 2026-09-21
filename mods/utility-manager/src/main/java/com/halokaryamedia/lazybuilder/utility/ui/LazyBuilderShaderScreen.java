@@ -225,7 +225,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         if (!isIrisAvailable()) return false;
         try {
             Object config = irisConfig();
-            return (boolean) config.getClass().getMethod("areShadersEnabled").invoke(config);
+            return (boolean) irisConfigClass().getMethod("areShadersEnabled").invoke(config);
         } catch (ReflectiveOperationException | RuntimeException error) {
             return false;
         }
@@ -253,6 +253,10 @@ public final class LazyBuilderShaderScreen extends Screen {
         return apiClass.getMethod("getInstance").invoke(null);
     }
 
+    private Class<?> irisConfigClass() throws ClassNotFoundException {
+        return Class.forName("net.irisshaders.iris.api.v0.IrisApiConfig");
+    }
+
     private Object irisConfig() throws ReflectiveOperationException {
         Class<?> apiClass = irisApiClass();
         Object api = apiClass.getMethod("getInstance").invoke(null);
@@ -264,8 +268,9 @@ public final class LazyBuilderShaderScreen extends Screen {
         failedAction = FailedAction.NONE;
         try {
             Object config = irisConfig();
-            Method currentMethod = config.getClass().getMethod("areShadersEnabled");
-            Method applyMethod = config.getClass().getMethod("setShadersEnabledAndApply", boolean.class);
+            Class<?> configClass = irisConfigClass();
+            Method currentMethod = configClass.getMethod("areShadersEnabled");
+            Method applyMethod = configClass.getMethod("setShadersEnabledAndApply", boolean.class);
             boolean current = (boolean) currentMethod.invoke(config);
             applyMethod.invoke(config, !current);
             clearAndInit();
