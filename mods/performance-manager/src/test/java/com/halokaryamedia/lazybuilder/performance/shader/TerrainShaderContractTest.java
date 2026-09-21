@@ -88,4 +88,42 @@ final class TerrainShaderContractTest {
                 TerrainShaderContract.gbufferAttachmentCount(two)
         );
     }
+    @Test
+    void commentedDeclarationsDoNotSatisfyContract() {
+        String vertex = """
+                #version 150
+                // in vec3 Position;
+                // in vec4 Color;
+                // in vec2 UV0;
+                // in ivec2 UV2;
+                // in vec3 Normal;
+                // uniform sampler2D Sampler2;
+                // uniform mat4 ModelViewMat;
+                // uniform mat4 ProjMat;
+                // uniform vec3 ModelOffset;
+                // uniform int FogShape;
+                // out float vertexDistance;
+                // out vec4 vertexColor;
+                // out vec2 texCoord0;
+                void main() {}
+                """;
+        String fragment = """
+                #version 150
+                // uniform sampler2D Sampler0;
+                // uniform vec4 ColorModulator;
+                // uniform float FogStart;
+                // uniform float FogEnd;
+                // uniform vec4 FogColor;
+                // in float vertexDistance;
+                // in vec4 vertexColor;
+                // in vec2 texCoord0;
+                // out vec4 fragColor;
+                void main() {}
+                """;
+
+        assertThrows(
+                java.io.IOException.class,
+                () -> TerrainShaderContract.validate(vertex, fragment)
+        );
+    }
 }
