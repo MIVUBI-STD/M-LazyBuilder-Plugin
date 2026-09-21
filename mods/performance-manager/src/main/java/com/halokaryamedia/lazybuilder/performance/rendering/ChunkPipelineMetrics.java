@@ -31,11 +31,6 @@ public final class ChunkPipelineMetrics {
     private ChunkPipelineMetrics() {
     }
 
-    /** Enables high-frequency diagnostics for the remainder of the session. */
-    public static void enableDetailedMetrics() {
-        detailedMetricsEnabled = true;
-    }
-
     public static boolean detailedMetricsEnabled() {
         return detailedMetricsEnabled;
     }
@@ -92,9 +87,26 @@ public final class ChunkPipelineMetrics {
     public static long terrainGpuReclaimedBytes() { return TERRAIN_GPU_RECLAIMED_BYTES.sum(); }
     public static long terrainGpuReclaimedBuffers() { return TERRAIN_GPU_RECLAIMED_BUFFERS.sum(); }
 
+    public static void resetSession() {
+        COALESCED_REBUILD_REQUESTS.reset();
+        BUFFER_ACQUIRE_MISSES.reset();
+        AVOIDED_UPLOAD_BUFFER_BINDS.reset();
+        STORAGE_SECTIONS_REMAPPED.reset();
+        SECTION_VISIBILITY_CACHE_HITS.reset();
+        AVOIDED_TRANSLUCENT_SORT_TASKS.reset();
+        AVOIDED_TERRAIN_SECTION_VISITS.reset();
+        SECTION_BUILDER_BUFFER_LOOKUP_HITS.reset();
+        TERRAIN_BUFFER_LOOKUP_HITS.reset();
+        UPLOAD_BUDGET_STOPS.reset();
+        REBUILD_BACKPRESSURE_DEFERRALS.reset();
+        REBUILD_BACKPRESSURE_RELEASES.reset();
+        TERRAIN_GPU_RECLAIMED_BYTES.reset();
+        TERRAIN_GPU_RECLAIMED_BUFFERS.reset();
+    }
+
     static void resetForTest() {
         detailedMetricsEnabled = true;
-        COALESCED_REBUILD_REQUESTS.reset();
+        resetSession();
         BUFFER_ACQUIRE_MISSES.reset();
         AVOIDED_UPLOAD_BUFFER_BINDS.reset();
         STORAGE_SECTIONS_REMAPPED.reset();
