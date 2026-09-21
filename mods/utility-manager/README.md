@@ -62,7 +62,9 @@ The stable preset policy is conservative: High targets high detail with Minecraf
 - Windowed/Fullscreen changes use a 15-second keep/revert confirmation so an unusable display change recovers automatically.
 - Shader management uses a LazyBuilder shell for status, enable/disable, pack management, Iris settings, folder access, and inline failure/retry; Iris public API remains the shader/config authority and its internal pack-selection UI is not cloned.
 - Language uses Minecraft LanguageManager, provides search, reload feedback, and retry on failure; GameOptions remains the persisted language owner.
-- Reset is only exposed where LazyBuilder has an authoritative default source. Do not invent or hard-code guessed Minecraft defaults merely to make every tab show a Reset button.
+- Reset reads vanilla defaults from each Minecraft SimpleOption's own defaultValue through a read-only accessor, while Utility/Performance resets use their existing defaults objects. No duplicate vanilla-default table is maintained.
+- Modified indicators use the same authoritative sources. Settings without a trustworthy default owner (for example Language, Resource Packs, and Shader selection) are not given fake modified/default markers.
+- Controls reset is intentionally split: the main Controls page resets mouse/movement options, while Key Bindings retains its separate Reset All action.
 
 ### Visual management
 
