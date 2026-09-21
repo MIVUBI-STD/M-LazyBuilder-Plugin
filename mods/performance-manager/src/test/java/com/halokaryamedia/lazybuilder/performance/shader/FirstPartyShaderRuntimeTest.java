@@ -83,4 +83,42 @@ final class FirstPartyShaderRuntimeTest {
         assertTrue(snapshot.lastError().isBlank());
         assertFalse(snapshot.terrainIntegrated());
     }
+    @Test
+    void pendingSelectionDoesNotOverwriteLastKnownGoodConfig() throws IOException {
+        Path packs = temp.resolve("packs");
+        Path config = temp.resolve("config");
+        Path first = packs.resolve("First");
+        Path second = packs.resolve("Second");
+        Files.createDirectories(first.resolve("shaders"));
+        Files.createDirectories(second.resolve("shaders"));
+
+        for (Path pack : java.util.List.of(first, second)) {
+            Files.writeString(pack.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+            Files.writeString(pack.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        }
+
+        ShaderPackCatalog catalog = new ShaderPackCatalog(packs);
+        var discovered = catalog.scan();
+        String firstId = discovered.stream()
+                .filter(pack -> pack.displayName().equals("First"))
+                .findFirst()
+                .orElseThrow()
+                .id();
+        String secondId = discovered.stream()
+                .filter(pack -> pack.displayName().equals("Second"))
+                .findFirst()
+                .orElseThrow()
+                .id();
+
+        ShaderRuntimeConfigStore store = new ShaderRuntimeConfigStore(config);
+        store.save(new ShaderRuntimePreferences(firstId, true));
+
+        FirstPartyShaderRuntime runtime = new FirstPartyShaderRuntime(packs, config);
+        assertTrue(runtime.select(secondId));
+
+        ShaderRuntimePreferences persisted = store.load();
+        assertEquals(firstId, persisted.selectedPackId());
+        assertTrue(persisted.enabled());
+        assertEquals(secondId, runtime.snapshot().selectedPackId());
+    }
 }
