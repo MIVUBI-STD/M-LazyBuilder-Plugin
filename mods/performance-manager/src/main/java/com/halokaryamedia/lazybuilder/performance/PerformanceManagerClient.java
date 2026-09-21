@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationComp
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -132,7 +133,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                                     cause == null,
                                     cause == null || cause.getMessage() == null
                                             ? ""
-                                            : cause.getMessage()
+                                            : cause.getMessage(),
+                                    TerrainShaderSourceTransformer.status()
                             );
                         })
                 );
