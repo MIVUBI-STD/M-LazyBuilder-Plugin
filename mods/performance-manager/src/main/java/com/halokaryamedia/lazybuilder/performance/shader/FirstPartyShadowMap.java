@@ -26,60 +26,62 @@ public final class FirstPartyShadowMap implements AutoCloseable {
         deleteNow();
         size = safeSize;
 
-        framebufferId = GL30C.glGenFramebuffers();
-        if (framebufferId == 0) {
-            deleteNow();
-            throw new IllegalStateException("OpenGL could not allocate shadow framebuffer.");
-        }
-        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
+        try {
+            framebufferId = GL30C.glGenFramebuffers();
+            if (framebufferId == 0) {
+                throw new IllegalStateException("OpenGL could not allocate shadow framebuffer.");
+            }
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
 
-        depthTextureId = GL11C.glGenTextures();
-        if (depthTextureId == 0) {
-            deleteNow();
-            throw new IllegalStateException("OpenGL could not allocate shadow depth texture.");
-        }
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, depthTextureId);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL13C.GL_CLAMP_TO_BORDER);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL13C.GL_CLAMP_TO_BORDER);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            FloatBuffer border = stack.floats(1.0F, 1.0F, 1.0F, 1.0F);
-            GL11C.glTexParameterfv(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_BORDER_COLOR, border);
-        }
-        GL11C.glTexImage2D(
-                GL11C.GL_TEXTURE_2D,
-                0,
-                GL30C.GL_DEPTH_COMPONENT32F,
-                safeSize,
-                safeSize,
-                0,
-                GL11C.GL_DEPTH_COMPONENT,
-                GL11C.GL_FLOAT,
-                0L
-        );
-
-        GL30C.glFramebufferTexture2D(
-                GL30C.GL_FRAMEBUFFER,
-                GL30C.GL_DEPTH_ATTACHMENT,
-                GL11C.GL_TEXTURE_2D,
-                depthTextureId,
-                0
-        );
-        GL11C.glDrawBuffer(GL11C.GL_NONE);
-        GL11C.glReadBuffer(GL11C.GL_NONE);
-
-        int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
-        GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
-        GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
-
-        if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-            deleteNow();
-            throw new IllegalStateException(
-                    "First-party shadow framebuffer incomplete: 0x"
-                            + Integer.toHexString(status)
+            depthTextureId = GL11C.glGenTextures();
+            if (depthTextureId == 0) {
+                throw new IllegalStateException("OpenGL could not allocate shadow depth texture.");
+            }
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, depthTextureId);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL13C.GL_CLAMP_TO_BORDER);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL13C.GL_CLAMP_TO_BORDER);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                FloatBuffer border = stack.floats(1.0F, 1.0F, 1.0F, 1.0F);
+                GL11C.glTexParameterfv(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_BORDER_COLOR, border);
+            }
+            GL11C.glTexImage2D(
+                    GL11C.GL_TEXTURE_2D,
+                    0,
+                    GL30C.GL_DEPTH_COMPONENT32F,
+                    safeSize,
+                    safeSize,
+                    0,
+                    GL11C.GL_DEPTH_COMPONENT,
+                    GL11C.GL_FLOAT,
+                    0L
             );
+
+            GL30C.glFramebufferTexture2D(
+                    GL30C.GL_FRAMEBUFFER,
+                    GL30C.GL_DEPTH_ATTACHMENT,
+                    GL11C.GL_TEXTURE_2D,
+                    depthTextureId,
+                    0
+            );
+            GL11C.glDrawBuffer(GL11C.GL_NONE);
+            GL11C.glReadBuffer(GL11C.GL_NONE);
+
+            int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
+            if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException(
+                        "First-party shadow framebuffer incomplete: 0x"
+                                + Integer.toHexString(status)
+                );
+            }
+        } catch (RuntimeException error) {
+            deleteNow();
+            throw error;
+        } finally {
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
         }
     }
 
