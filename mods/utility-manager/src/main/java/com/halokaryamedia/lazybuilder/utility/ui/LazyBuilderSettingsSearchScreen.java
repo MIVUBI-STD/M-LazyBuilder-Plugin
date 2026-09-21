@@ -182,9 +182,9 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
     ) {
         String path() {
             if (category == LazyBuilderSettingsScreen.Category.VIDEO) {
-                return "Video > " + videoPage.label;
+                return "Video > " + videoPage.text().getString();
             }
-            return category.label;
+            return category.text().getString();
         }
 
         String searchText() {
@@ -202,8 +202,6 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
     }
 
     private static List<SearchEntry> entries() {
-        var C = LazyBuilderSettingsScreen.Category.class;
-        var V = LazyBuilderSettingsScreen.VideoPage.class;
         List<SearchEntry> values = new ArrayList<>();
 
         values.add(e("Fullscreen", "window display", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
