@@ -38,13 +38,21 @@ public final class ShaderPackCatalog {
                 entries.forEach(path -> {
                     if (!looksLikePack(path)) return;
                     try {
-                        if (isCandidate(path)) {
+                        String issue = candidateIssue(path);
+                        if (issue.isBlank()) {
                             raw.add(descriptor(path));
                         } else {
-                            invalid.add(fileName(path));
+                            invalid.add(fileName(path) + ": " + issue);
                         }
                     } catch (RuntimeException error) {
-                        invalid.add(fileName(path));
+                        String message = error.getMessage();
+                        invalid.add(
+                                fileName(path)
+                                        + ": "
+                                        + (message == null || message.isBlank()
+                                        ? error.getClass().getSimpleName()
+                                        : message)
+                        );
                     }
                 });
 
@@ -85,20 +93,34 @@ public final class ShaderPackCatalog {
         return Files.isRegularFile(path) && name.endsWith(".zip");
     }
 
-    private boolean isCandidate(Path path) {
+    private String candidateIssue(Path path) {
         if (Files.isDirectory(path)) {
-            return Files.isRegularFile(path.resolve("shaders/terrain.vsh"))
-                    && Files.isRegularFile(path.resolve("shaders/terrain.fsh"));
+            if (!Files.isRegularFile(path.resolve("shaders/terrain.vsh"))) {
+                return "missing shaders/terrain.vsh";
+            }
+            if (!Files.isRegularFile(path.resolve("shaders/terrain.fsh"))) {
+                return "missing shaders/terrain.fsh";
+            }
+            return "";
         }
 
         String name = fileName(path).toLowerCase(Locale.ROOT);
-        if (!Files.isRegularFile(path) || !name.endsWith(".zip")) return false;
+        if (!Files.isRegularFile(path) || !name.endsWith(".zip")) {
+            return "unsupported pack source";
+        }
 
         try (ZipFile zip = new ZipFile(path.toFile())) {
-            return zip.getEntry("shaders/terrain.vsh") != null
-                    && zip.getEntry("shaders/terrain.fsh") != null;
+            if (zip.getEntry("shaders/terrain.vsh") == null) {
+                return "missing shaders/terrain.vsh";
+            }
+            if (zip.getEntry("shaders/terrain.fsh") == null) {
+                return "missing shaders/terrain.fsh";
+            }
+            return "";
         } catch (IOException error) {
-            return false;
+            String message = error.getMessage();
+            return "invalid ZIP"
+                    + (message == null || message.isBlank() ? "" : " (" + message + ")");
         }
     }
 
