@@ -22,6 +22,7 @@ import org.joml.Matrix4f;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -76,6 +77,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         share.put(
                 "lazybuilder-performance-manager:shader-disable",
                 (Runnable) PerformanceManagerClient::disableShaderPipeline
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-option-update",
+                (BiConsumer<String, String>) PerformanceManagerClient::updateShaderOption
         );
         share.put(
                 "lazybuilder-performance-manager:shader-preprocess",
@@ -275,6 +280,12 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static void disableShaderPipeline() {
         if (shaderRuntime != null) shaderRuntime.disable();
+    }
+
+    private static void updateShaderOption(String optionId, String value) {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null) return;
+        shaders.updateOption(optionId, value, firstPartyShaderOwnershipAllowed());
     }
 
     public static void invalidateShaderTerrainForResourceReload() {
