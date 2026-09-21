@@ -40,4 +40,33 @@ final class ShaderMemoryBudgetTest {
                 0, 1080, 0, false, true, false, 0
         ).allowed());
     }
+    @Test
+    void adaptiveShadowResolutionDropsBeforeRejectingTheFrame() {
+        ShaderMemoryBudget.ShadowPlan plan = ShaderMemoryBudget.planShadow(
+                6144,
+                3456,
+                2,
+                true,
+                true,
+                4096
+        );
+
+        assertTrue(plan.allowed());
+        assertTrue(plan.resolution() <= 4096);
+        assertTrue(plan.resolution() >= 256);
+    }
+
+    @Test
+    void impossibleFrameStillFailsAfterShadowIsReduced() {
+        ShaderMemoryBudget.ShadowPlan plan = ShaderMemoryBudget.planShadow(
+                8192,
+                8192,
+                2,
+                true,
+                true,
+                4096
+        );
+
+        assertFalse(plan.allowed());
+    }
 }
