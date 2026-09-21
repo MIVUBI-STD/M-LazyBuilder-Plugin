@@ -167,6 +167,10 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         return snapshot;
     }
 
+    public static Snapshot emptySnapshot() {
+        return Snapshot.EMPTY;
+    }
+
     private static Matrix4f lightViewProjection(long timeOfDay) {
         float day = Math.floorMod(timeOfDay, 24000L) / 24000.0F;
         float angle = day * ((float) Math.PI * 2.0F) - ((float) Math.PI / 2.0F);
