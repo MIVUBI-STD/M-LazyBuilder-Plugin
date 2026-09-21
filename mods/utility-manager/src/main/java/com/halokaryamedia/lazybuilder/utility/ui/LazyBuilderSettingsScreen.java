@@ -1690,6 +1690,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private int videoTabRows() {
         int gap = 2;
         int minimum = VideoPage.values().length * 58 + gap * (VideoPage.values().length - 1);
+        if (height < 300) return 1;
         return panelWidth() < minimum ? 2 : 1;
     }
 
