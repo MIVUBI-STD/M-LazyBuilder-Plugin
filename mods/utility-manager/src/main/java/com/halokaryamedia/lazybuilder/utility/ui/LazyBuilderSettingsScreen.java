@@ -200,22 +200,32 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int width = panelWidth();
         Category[] values = Category.values();
         int gap = 2;
-        int tabWidth = Math.max(58, (width - gap * (values.length - 1)) / values.length);
-        int x = left;
+        int rows = categoryTabRows();
+        int firstRowCount = rows == 1 ? values.length : (values.length + 1) / 2;
 
-        for (int i = 0; i < values.length; i++) {
-            Category value = values[i];
-            int actual = i == values.length - 1 ? left + width - x : tabWidth;
-            this.addDrawableChild(new LazyBuilderSettingsTabWidget(
-                    x,
-                    TAB_TOP,
-                    actual,
-                    TAB_HEIGHT,
-                    value.text(),
-                    value == category,
-                    () -> openCategory(value)
-            ));
-            x += actual + gap;
+        for (int row = 0; row < rows; row++) {
+            int start = row == 0 ? 0 : firstRowCount;
+            int count = row == 0 ? firstRowCount : values.length - firstRowCount;
+            if (count <= 0) continue;
+
+            int x = left;
+            int tabWidth = Math.max(1, (width - gap * (count - 1)) / count);
+            int y = TAB_TOP + row * (TAB_HEIGHT + gap);
+
+            for (int index = 0; index < count; index++) {
+                Category value = values[start + index];
+                int actual = index == count - 1 ? left + width - x : tabWidth;
+                this.addDrawableChild(new LazyBuilderSettingsTabWidget(
+                        x,
+                        y,
+                        actual,
+                        TAB_HEIGHT,
+                        value.text(),
+                        value == category,
+                        () -> openCategory(value)
+                ));
+                x += actual + gap;
+            }
         }
     }
 
@@ -224,22 +234,32 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int width = panelWidth();
         VideoPage[] values = VideoPage.values();
         int gap = 2;
-        int tabWidth = Math.max(58, (width - gap * (values.length - 1)) / values.length);
-        int x = left;
+        int rows = videoTabRows();
+        int firstRowCount = rows == 1 ? values.length : (values.length + 1) / 2;
 
-        for (int i = 0; i < values.length; i++) {
-            VideoPage value = values[i];
-            int actual = i == values.length - 1 ? left + width - x : tabWidth;
-            this.addDrawableChild(new LazyBuilderSettingsTabWidget(
-                    x,
-                    VIDEO_TAB_TOP,
-                    actual,
-                    TAB_HEIGHT,
-                    value.text(),
-                    value == videoPage,
-                    () -> openVideoPage(value)
-            ));
-            x += actual + gap;
+        for (int row = 0; row < rows; row++) {
+            int start = row == 0 ? 0 : firstRowCount;
+            int count = row == 0 ? firstRowCount : values.length - firstRowCount;
+            if (count <= 0) continue;
+
+            int x = left;
+            int tabWidth = Math.max(1, (width - gap * (count - 1)) / count);
+            int y = videoTabTop() + row * (TAB_HEIGHT + gap);
+
+            for (int index = 0; index < count; index++) {
+                VideoPage value = values[start + index];
+                int actual = index == count - 1 ? left + width - x : tabWidth;
+                this.addDrawableChild(new LazyBuilderSettingsTabWidget(
+                        x,
+                        y,
+                        actual,
+                        TAB_HEIGHT,
+                        value.text(),
+                        value == videoPage,
+                        () -> openVideoPage(value)
+                ));
+                x += actual + gap;
+            }
         }
     }
 
@@ -1520,7 +1540,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             };
         }
 
-        int contextY = category == Category.VIDEO ? 114 : 84;
+        int contextY = contentTop() + 2;
         context.drawTextWithShadow(textRenderer, Text.literal(title), x, contextY, TEXT_PRIMARY);
         int y = contextY + 18;
         for (var line : textRenderer.wrapLines(Text.literal(description), available)) {
@@ -1661,12 +1681,30 @@ public final class LazyBuilderSettingsScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
+    private int categoryTabRows() {
+        int gap = 2;
+        int minimum = Category.values().length * 58 + gap * (Category.values().length - 1);
+        return panelWidth() < minimum ? 2 : 1;
+    }
+
+    private int videoTabRows() {
+        int gap = 2;
+        int minimum = VideoPage.values().length * 58 + gap * (VideoPage.values().length - 1);
+        return panelWidth() < minimum ? 2 : 1;
+    }
+
+    private int videoTabTop() {
+        return TAB_TOP + categoryTabRows() * (TAB_HEIGHT + 2) + 4;
+    }
+
     private int contentTop() {
-        return category == Category.VIDEO ? VIDEO_CONTENT_TOP : DEFAULT_CONTENT_TOP;
+        int afterCategoryTabs = TAB_TOP + categoryTabRows() * (TAB_HEIGHT + 2);
+        if (category != Category.VIDEO) return afterCategoryTabs + 14;
+        return videoTabTop() + videoTabRows() * (TAB_HEIGHT + 2) + 14;
     }
 
     private int viewportTop() {
-        return category == Category.VIDEO ? VIDEO_VIEWPORT_TOP : DEFAULT_VIEWPORT_TOP;
+        return contentTop() - 8;
     }
 
     private int viewportBottom() {
