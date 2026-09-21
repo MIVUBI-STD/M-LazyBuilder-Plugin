@@ -1332,7 +1332,7 @@ public final class FirstPartyShaderRuntime {
         );
         values.put("runtimeMode", runtimeMode.id());
         values.put("degraded", runtimeMode == ShaderRuntimeMode.FALLBACK
-                || (health.values().stream().anyMatch(value -> !value.isBlank())
+                || (health.snapshot().values().stream().anyMatch(value -> !value.isBlank())
                 && runtimeMode != ShaderRuntimeMode.DISABLED));
 
         ShaderPackDescriptor selected = selectedPack();
