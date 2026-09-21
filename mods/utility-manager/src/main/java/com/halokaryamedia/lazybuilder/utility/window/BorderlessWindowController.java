@@ -13,7 +13,13 @@ import org.lwjgl.glfw.GLFWVidMode;
  * Performance Manager responsibilities.
  */
 public final class BorderlessWindowController {
+    private static boolean applied;
+
     private BorderlessWindowController() {
+    }
+
+    public static boolean isApplied() {
+        return applied;
     }
 
     public static void applyIfEnabled(MinecraftClient client, boolean enabled) {
@@ -44,6 +50,7 @@ public final class BorderlessWindowController {
                 videoMode.height(),
                 GLFW.GLFW_DONT_CARE
         );
+        applied = true;
     }
 
     private static long findBestMonitor(long window) {
