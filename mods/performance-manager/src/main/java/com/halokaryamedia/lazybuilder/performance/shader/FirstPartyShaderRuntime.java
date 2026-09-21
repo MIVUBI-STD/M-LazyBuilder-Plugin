@@ -543,6 +543,7 @@ public final class FirstPartyShaderRuntime {
         terrainVertexCompiled = false;
         terrainFragmentCompiled = false;
         terrainIntegrated = false;
+        if (shadowRenderer != null) shadowRenderer.invalidateCache();
         if (pipeline != null) stage = "terrain-reloading";
         revision++;
     }
