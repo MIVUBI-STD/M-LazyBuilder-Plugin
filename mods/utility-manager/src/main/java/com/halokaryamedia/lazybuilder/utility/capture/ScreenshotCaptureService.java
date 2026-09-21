@@ -62,6 +62,9 @@ public final class ScreenshotCaptureService {
         if (gameDirectory == null || framebuffer == null || messageReceiver == null || quality == null) {
             return false;
         }
+        if (encoder.getQueue().remainingCapacity() == 0 && encoder.getActiveCount() >= 1) {
+            return false;
+        }
 
         NativeImage nativeImage = ScreenshotRecorder.takeScreenshot(framebuffer);
         if (nativeImage == null) return false;
@@ -178,10 +181,18 @@ public final class ScreenshotCaptureService {
     }
 
     private static String normalizeExtension(String fileName, String extension) {
-        int slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
-        int dot = fileName.lastIndexOf('.');
-        if (dot > slash) fileName = fileName.substring(0, dot);
-        return fileName + extension;
+        String safeName;
+        try {
+            Path parsed = Path.of(fileName).getFileName();
+            safeName = parsed == null ? "minecraft" : parsed.toString();
+        } catch (RuntimeException invalidPath) {
+            safeName = "minecraft";
+        }
+
+        int dot = safeName.lastIndexOf('.');
+        if (dot > 0) safeName = safeName.substring(0, dot);
+        safeName = CaptureNaming.sanitize(safeName);
+        return safeName + extension;
     }
 
     private static void publish(Consumer<Text> receiver, Text message) {
