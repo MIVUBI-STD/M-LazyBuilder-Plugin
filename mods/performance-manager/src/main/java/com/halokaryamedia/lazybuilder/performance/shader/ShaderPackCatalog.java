@@ -146,8 +146,12 @@ public final class ShaderPackCatalog {
                     draft.kind(),
                     manifest
             );
-        } catch (IOException | RuntimeException ignored) {
-            return draft;
+        } catch (IOException error) {
+            throw new IllegalArgumentException(
+                    "invalid shader.properties: "
+                            + (error.getMessage() == null ? "unable to read manifest" : error.getMessage()),
+                    error
+            );
         }
     }
 
