@@ -198,7 +198,9 @@ public final class FirstPartyShaderRuntime {
                 revision,
                 "lazybuilder",
                 stage,
+                true,
                 pipeline != null,
+                false,
                 selected == null ? "" : selected.id(),
                 selected == null ? "" : selected.displayName(),
                 active == null ? "" : active.id(),
@@ -216,6 +218,8 @@ public final class FirstPartyShaderRuntime {
         values.put("revision", snapshot.revision());
         values.put("owner", snapshot.owner());
         values.put("stage", snapshot.stage());
+        values.put("sourceReady", snapshot.sourceReady());
+        values.put("compiledReady", snapshot.compiledReady());
         values.put("renderingReady", snapshot.renderingReady());
         values.put("selectedPackId", snapshot.selectedPackId());
         values.put("selectedPackName", snapshot.selectedPackName());
@@ -256,6 +260,8 @@ public final class FirstPartyShaderRuntime {
             long revision,
             String owner,
             String stage,
+            boolean sourceReady,
+            boolean compiledReady,
             boolean renderingReady,
             String selectedPackId,
             String selectedPackName,
