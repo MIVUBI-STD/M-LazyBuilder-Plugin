@@ -279,6 +279,7 @@ final class VideoCaptureSession {
         List<String> command = encoderCommand(
                 capabilities,
                 preferences.videoQuality(),
+                preferences.videoResolution(),
                 sourceWidth,
                 sourceHeight,
                 fps,
@@ -400,6 +401,7 @@ final class VideoCaptureSession {
     private static List<String> encoderCommand(
             FfmpegCapabilities.Snapshot capabilities,
             CapturePreferences.VideoQuality quality,
+            CapturePreferences.VideoResolution resolution,
             int width,
             int height,
             int fps,
@@ -417,7 +419,7 @@ final class VideoCaptureSession {
                 "-an"
         ));
 
-        int[] outputSize = preferences.videoResolution().resolve(width, height);
+        int[] outputSize = resolution.resolve(width, height);
         int outputWidth = outputSize[0];
         int outputHeight = outputSize[1];
 
