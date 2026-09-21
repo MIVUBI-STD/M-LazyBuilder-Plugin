@@ -1330,7 +1330,21 @@ public final class FirstPartyShaderRuntime {
         health.put("control", controlError);
         health.put("preview", previewError);
         values.put("health", Map.copyOf(health));
-        values.put("degraded", health.values().stream().anyMatch(value -> !value.isBlank()));
+        boolean shadowDeclared = pipeline != null && pipeline.has("shadow");
+        boolean postDeclared = pipeline != null && (pipeline.has("composite") || pipeline.has("final"));
+        ShaderRuntimeMode runtimeMode = ShaderRuntimeMode.evaluate(
+                persisted.enabled(),
+                pipeline != null,
+                terrainIntegrated,
+                shadowDeclared,
+                snapshot.shadowReady(),
+                postDeclared,
+                lastFrameApplied
+        );
+        values.put("runtimeMode", runtimeMode.id());
+        values.put("degraded", runtimeMode == ShaderRuntimeMode.FALLBACK
+                || (health.values().stream().anyMatch(value -> !value.isBlank())
+                && runtimeMode != ShaderRuntimeMode.DISABLED));
 
         ShaderPackDescriptor selected = selectedPack();
         if (selected != null) {
