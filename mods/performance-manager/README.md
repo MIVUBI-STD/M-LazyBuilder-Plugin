@@ -89,7 +89,7 @@ transform = LazyBuilderDrawTransforms[LazyBuilderDrawBase + gl_DrawID]
 
 `TerrainMultiDrawSubmissionBackend` then groups only consecutive vanilla-order commands with the same region/layer arena, vertex format, draw mode, index type, and sequential/custom-index mode. It validates every mirrored source before suppressing any vanilla draw, binds the physical arena once, sets the packet-relative transform base, and issues `glMultiDrawElementsBaseVertex` for the run. Any capability, residency, or submission failure immediately returns that run to the existing physical/vanilla per-section path.
 
-The Performance Manager does not currently bundle a replacement vanilla terrain shader resource. Therefore ordinary vanilla/Indigo shaders still fail the handshake and continue using their authoritative `ModelOffset` path. This keeps shader ownership explicit instead of silently overriding resource-pack or renderer behavior. Iris, custom FRAPI renderers, and compatibility-uncertain states remain hard gates.
+Performance Manager now owns a first-party shader runtime in addition to the guarded vanilla/Indigo multi-draw path. With no selected LazyBuilder shader pack, built-in Minecraft terrain source is augmented only for the per-draw transform contract and falls back to ModelOffset semantics when the contract is unavailable. With an active LazyBuilder-native pack, terrain vertex/fragment stages can be substituted during Minecraft shader compilation while retaining exact-source fallback on compile/link failure. External shader/renderer owners and compatibility-uncertain states remain hard gates so two authoritative pipelines never run simultaneously.
 
 Diagnostics report packed command/transform bytes, capability reason, prepare attempts, eligible prepared runs, submitted multi-draw batches/commands, actual draw-call reductions, and submission failures.
 
@@ -101,7 +101,7 @@ Fabric Renderer API 5.x lets renderer replacements declare ownership with:
 fabric-renderer-api-v1:contains_renderer
 ```
 
-LazyBuilder uses the same ownership marker used by Fabric Indigo. Any custom FRAPI renderer owner disables first-party chunk/meshing mixins. Terrain submission has an additional Iris gate. Compatibility uncertainty also disables first-party chunk ownership.
+LazyBuilder uses the same ownership marker used by Fabric Indigo. Any custom FRAPI renderer owner disables first-party chunk/meshing mixins. Iris remains an optional compatibility owner when installed, not a dependency: its presence gates first-party shader-sensitive terrain submission to prevent double ownership. Compatibility uncertainty also disables first-party chunk ownership.
 
 The target core renderer path is Minecraft/Fabric + LazyBuilder Performance Manager without Sodium or another renderer mod. When a third-party FRAPI renderer is installed, LazyBuilder still fails open to that declared owner for compatibility. Axiom and WorldEditCUI remain consumers/overlays rather than global renderer owners.
 
@@ -134,7 +134,7 @@ Correctness proof should show physical draws when the first-party path is active
 
 ## Migration rule
 
-External performance mods are compatibility peers, not required runtime owners. Custom FRAPI renderer owners still take precedence while installed because they explicitly claim the Fabric renderer boundary. Iris currently keeps shader-sensitive terrain submission until the first-party shader engine replaces that path. ImmediatelyFast may keep overlapping hooks when installed to avoid duplicate interception, but LazyBuilder must remain functional without it. Baked-quad vertex deduplication is already first-party through MemoryDeduplicator and does not require FerriteCore.
+External performance mods are compatibility peers, not required runtime owners. Custom FRAPI renderer owners still take precedence while installed because they explicitly claim the Fabric renderer boundary. Iris is treated the same way for shader-sensitive terrain ownership: when present it gates the first-party shader path for coexistence, but LazyBuilder's own shader runtime is the standalone path. ImmediatelyFast may keep overlapping hooks when installed to avoid duplicate interception, while LazyBuilder remains functional without it. Baked-quad vertex deduplication is first-party through MemoryDeduplicator and does not require FerriteCore.
 
 ## Configuration
 
