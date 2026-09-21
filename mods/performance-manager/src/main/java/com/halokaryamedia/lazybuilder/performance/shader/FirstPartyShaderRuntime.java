@@ -30,6 +30,8 @@ public final class FirstPartyShaderRuntime {
     private volatile String gbufferError = "";
     private volatile String shadowError = "";
     private volatile String postProcessError = "";
+    private volatile String controlError = "";
+    private volatile String previewError = "";
     private volatile long revision;
     private volatile long compileRequestGeneration;
     private volatile boolean lastFrameApplied;
@@ -92,7 +94,8 @@ public final class FirstPartyShaderRuntime {
             if (pipeline == null) stage = lastError.isBlank() ? "source-ready" : "degraded";
         } catch (RuntimeException error) {
             packs = List.of();
-            lastError = safeMessage(error);
+            catalogError = safeMessage(error);
+            lastError = primaryError();
             stage = "catalog-error";
         }
         revision++;
@@ -105,15 +108,19 @@ public final class FirstPartyShaderRuntime {
             selectedPackId = "";
             persisted = persisted.withSelectedPack("");
             configStore.save(persisted);
-            lastError = "";
-            stage = pipeline == null ? "source-ready" : "compiled";
+            controlError = "";
+            lastError = primaryError();
+            stage = lastError.isBlank()
+                    ? (pipeline == null ? "source-ready" : "compiled")
+                    : "degraded";
             revision++;
             return true;
         }
 
         boolean exists = packs.stream().anyMatch(pack -> pack.id().equals(requested));
         if (!exists) {
-            lastError = "Shader pack is no longer available.";
+            controlError = "Shader pack is no longer available.";
+            lastError = primaryError();
             stage = "selection-error";
             revision++;
             return false;
@@ -122,8 +129,11 @@ public final class FirstPartyShaderRuntime {
         selectedPackId = requested;
         persisted = persisted.withSelectedPack(requested);
         configStore.save(persisted);
-        lastError = "";
-        stage = requested.equals(activePackId) && pipeline != null ? "compiled" : "selected";
+        controlError = "";
+        lastError = primaryError();
+        stage = lastError.isBlank()
+                ? (requested.equals(activePackId) && pipeline != null ? "compiled" : "selected")
+                : "degraded";
         revision++;
         return true;
     }
@@ -134,14 +144,17 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             requested = selectedPackId;
             if (requested == null || requested.isBlank()) {
-                lastError = "No shader pack selected.";
+                controlError = "No shader pack selected.";
+                lastError = primaryError();
                 stage = "selection-error";
                 revision++;
                 return;
             }
             generation = ++compileRequestGeneration;
             stage = "compile-queued";
-            lastError = "";
+            controlError = "";
+            compileError = "";
+            lastError = primaryError();
             revision++;
         }
 
@@ -167,7 +180,8 @@ public final class FirstPartyShaderRuntime {
             }
             descriptor = packById(requestedPackId);
             if (descriptor == null) {
-                lastError = "Shader pack is no longer available.";
+                controlError = "Shader pack is no longer available.";
+                lastError = primaryError();
                 stage = "selection-error";
                 revision++;
                 return;
@@ -218,6 +232,7 @@ public final class FirstPartyShaderRuntime {
                 }
 
                 compileError = "";
+                controlError = "";
                 terrainError = requiresTerrainReload ? terrainError : "";
                 lastError = primaryError();
                 revision++;
@@ -266,6 +281,14 @@ public final class FirstPartyShaderRuntime {
         terrainIntegrated = false;
         terrainReloadPending = restoreMinecraftTerrain;
         stage = "disabled";
+        catalogError = "";
+        compileError = "";
+        terrainError = "";
+        gbufferError = "";
+        shadowError = "";
+        postProcessError = "";
+        controlError = "";
+        previewError = "";
         lastError = "";
         revision++;
     }
@@ -458,7 +481,8 @@ public final class FirstPartyShaderRuntime {
             return current.end(targetFramebuffer);
         } catch (RuntimeException error) {
             synchronized (this) {
-                lastError = safeMessage(error);
+                gbufferError = safeMessage(error);
+                lastError = primaryError();
                 stage = "gbuffer-error";
                 revision++;
             }
@@ -539,6 +563,10 @@ public final class FirstPartyShaderRuntime {
                     changed = true;
                 }
                 if (!lastError.isBlank()) nextStage = "degraded";
+                if (!nextStage.equals(stage)) {
+                    stage = nextStage;
+                    changed = true;
+                }
                 if (changed) revision++;
             }
             return applied;
@@ -567,7 +595,8 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             ShaderPackDescriptor selected = selectedPack();
             if (selected == null) {
-                lastError = "No shader pack selected.";
+                controlError = "No shader pack selected.";
+                lastError = primaryError();
                 stage = "selection-error";
                 revision++;
                 return false;
@@ -578,7 +607,8 @@ public final class FirstPartyShaderRuntime {
                     .findFirst()
                     .orElse(null);
             if (option == null) {
-                lastError = "Shader option is no longer available: " + optionId;
+                controlError = "Shader option is no longer available: " + optionId;
+                lastError = primaryError();
                 stage = "option-error";
                 revision++;
                 return false;
@@ -587,7 +617,8 @@ public final class FirstPartyShaderRuntime {
             String sanitized = option.sanitize(rawValue);
             persisted = persisted.withOption(selected.id(), option.id(), sanitized);
             configStore.save(persisted);
-            lastError = "";
+            controlError = "";
+            lastError = primaryError();
             recompile = allowRecompile
                     && persisted.enabled()
                     && selected.id().equals(activePackId);
@@ -618,11 +649,13 @@ public final class FirstPartyShaderRuntime {
             );
             List<String> dependencies = new ArrayList<>(result.dependencies());
             dependencies.sort(String::compareTo);
-            lastError = "";
+            previewError = "";
+            lastError = primaryError();
             return new SourcePreview(true, result.source(), List.copyOf(dependencies), "");
         } catch (Exception error) {
-            lastError = safeMessage(error);
-            return new SourcePreview(false, "", List.of(), lastError);
+            previewError = safeMessage(error);
+            lastError = primaryError();
+            return new SourcePreview(false, "", List.of(), previewError);
         } finally {
             revision++;
         }
@@ -689,6 +722,8 @@ public final class FirstPartyShaderRuntime {
         health.put("gbuffer", gbufferError);
         health.put("shadow", shadowError);
         health.put("postProcess", postProcessError);
+        health.put("control", controlError);
+        health.put("preview", previewError);
         values.put("health", Map.copyOf(health));
         values.put("degraded", health.values().stream().anyMatch(value -> !value.isBlank()));
 
@@ -762,7 +797,9 @@ public final class FirstPartyShaderRuntime {
                 terrainError,
                 gbufferError,
                 shadowError,
-                postProcessError
+                postProcessError,
+                controlError,
+                previewError
         )) {
             if (error != null && !error.isBlank()) return error;
         }
