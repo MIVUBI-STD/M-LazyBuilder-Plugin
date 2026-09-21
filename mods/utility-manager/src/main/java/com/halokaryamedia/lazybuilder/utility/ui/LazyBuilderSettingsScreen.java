@@ -148,6 +148,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private final List<Section> sections = new ArrayList<>();
     private int scrollOffset;
     private int maxScroll;
+    private int contextlessFooterLegendX = -1;
     private DropdownState dropdown;
 
     public LazyBuilderSettingsScreen(Screen parent) {
@@ -1246,6 +1247,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
             ));
         }
 
+        if (shellWidth() >= 560) {
+            int legendX = left + 228;
+            contextlessFooterLegendX = legendX;
+        }
+
         this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                 shellRight - 100,
                 y,
@@ -1560,6 +1566,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 ? "VIDEO SETTINGS"
                 : category.label.toUpperCase(Locale.ROOT) + " SETTINGS";
         context.drawTextWithShadow(textRenderer, Text.literal(heading), shellLeft() + 8, 15, TEXT_PRIMARY);
+        if (contextlessFooterLegendX >= 0) {
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal("• Modified"),
+                    contextlessFooterLegendX,
+                    height - 24,
+                    TEXT_MUTED
+            );
+        }
         if (hasContextPane()) {
             context.fill(panelRight + 14, viewportTop(), panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
         }
@@ -1725,6 +1740,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
             context.drawTextWithShadow(textRenderer, line, x, y, TEXT_MUTED);
             y += 11;
         }
+        if (highlightedRow != null && isAuthoritativelyModified(highlightedRow)) {
+            y += 8;
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal("• Modified from LazyBuilder default"),
+                    x,
+                    y,
+                    ACCENT
+            );
+        }
     }
 
     private void renderDropdown(DrawContext context, int mouseX, int mouseY) {
@@ -1883,6 +1908,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private int categoryTabRows() {
         int gap = 2;
         int minimum = Category.values().length * 58 + gap * (Category.values().length - 1);
+        if (height < 300) return 1;
         return panelWidth() < minimum ? 2 : 1;
     }
 
