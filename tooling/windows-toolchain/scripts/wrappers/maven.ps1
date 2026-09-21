@@ -30,10 +30,8 @@ $ArchiveUrl = "$BaseUrl/apache-maven-$Version-bin.zip"
 $ChecksumUrl = "$ArchiveUrl.sha512"
 $LockPath = Join-Path $CacheRoot '.install.lock'
 
-function Invoke-Download([string]$Uri, [string]$OutFile) {
-    Write-Host "Downloading $Uri" -ForegroundColor Cyan
-    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile
-}
+$DownloadHelper = Join-Path $PSScriptRoot 'download.ps1'
+. $DownloadHelper
 
 function Get-FileDigest([string]$Path, [string]$Algorithm) {
     $stream = [System.IO.File]::OpenRead($Path)
@@ -62,8 +60,8 @@ function Ensure-Maven {
         $lock = [System.IO.File]::Open($LockPath, 'OpenOrCreate', 'ReadWrite', 'None')
         if (Test-Path $Executable) { return }
 
-        Invoke-Download $ArchiveUrl $Archive
-        Invoke-Download $ChecksumUrl $ChecksumFile
+        Invoke-LazyBuilderDownload -Uri $ArchiveUrl -OutFile $Archive
+        Invoke-LazyBuilderDownload -Uri $ChecksumUrl -OutFile $ChecksumFile
         $Expected = ((Get-Content $ChecksumFile -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
         $Actual = Get-FileDigest $Archive 'SHA512'
         if ($Actual -ne $Expected) {
