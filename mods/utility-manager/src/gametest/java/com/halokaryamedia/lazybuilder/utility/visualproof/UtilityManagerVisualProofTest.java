@@ -144,6 +144,10 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-620x480-gui2");
+            captureLanguageManager(context, 1440, 900, 2,
+                    "utility-language-1440x900-gui2");
+            captureLanguageManager(context, 620, 480, 2,
+                    "utility-language-620x480-gui2");
             captureScrolledSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.INTERFACE,
                     "utility-settings-interface-scrolled-620x480-gui2");
@@ -442,6 +446,23 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                 page
         ));
         context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureLanguageManager(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderLanguageScreen(null));
+        context.waitForScreen(LazyBuilderLanguageScreen.class);
         context.waitTicks(8);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
