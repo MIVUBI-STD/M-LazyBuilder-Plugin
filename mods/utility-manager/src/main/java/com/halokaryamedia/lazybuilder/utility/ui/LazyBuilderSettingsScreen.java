@@ -1032,7 +1032,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         String code = client.getLanguageManager().getLanguage();
         var definition = client.getLanguageManager().getLanguage(code);
         if (definition == null) return code;
-        String name = definition.getName();
+        String name = definition.name();
         return name == null || name.isBlank() ? code : name;
     }
 
