@@ -21,7 +21,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
             Map.entry("WorldRendererMixin", OptimizationDomain.ENTITY_CULLING),
             Map.entry("BlockEntityRenderDispatcherMixin", OptimizationDomain.ENTITY_CULLING),
             Map.entry("VertexBufferMixin", OptimizationDomain.TERRAIN_BUILD),
-            Map.entry("VertexBufferGrowthMixin", OptimizationDomain.IMMEDIATE_RENDERING),
+            Map.entry("VertexBufferGrowthMixin", OptimizationDomain.DYNAMIC_BUFFER_GROWTH),
             Map.entry("ChunkBuilderUploadMixin", OptimizationDomain.TERRAIN_UPLOAD),
             Map.entry("WorldRendererTerrainSubmissionMixin", OptimizationDomain.TERRAIN_SUBMISSION),
             Map.entry("ShaderLoaderSourceMixin", OptimizationDomain.TERRAIN_SUBMISSION),
@@ -39,8 +39,8 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
             Map.entry("BlockBufferBuilderPoolMixin", OptimizationDomain.TERRAIN_BUILD),
             Map.entry("BlockColorsMixin", OptimizationDomain.TERRAIN_BUILD),
             Map.entry("BlockSideVisibilityMixin", OptimizationDomain.TERRAIN_BUILD),
-            Map.entry("BakedQuadAccessor", OptimizationDomain.MODEL_MEMORY),
-            Map.entry("BasicBakedModelBuilderMixin", OptimizationDomain.MODEL_MEMORY)
+            Map.entry("BakedQuadAccessor", OptimizationDomain.BAKED_QUAD_MEMORY),
+            Map.entry("BasicBakedModelBuilderMixin", OptimizationDomain.BAKED_QUAD_MEMORY)
     );
 
     private OptimizationCompatibility.Policy policy;
