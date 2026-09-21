@@ -19,6 +19,7 @@ public final class TerrainGpuResidencyTracker {
             new IdentityHashMap<>();
     private static volatile Object sessionOwner;
     private static volatile long sessionGeneration;
+    private static volatile long terrainContentRevision;
     private static volatile String sessionStatus = "unowned";
 
     private TerrainGpuResidencyTracker() {
@@ -110,6 +111,7 @@ public final class TerrainGpuResidencyTracker {
         }
         LEDGER.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
         ARENAS.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
+        markTerrainContentChanged();
         invalidateAllDrawCommands();
 
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
@@ -133,6 +135,7 @@ public final class TerrainGpuResidencyTracker {
     ) {
         if (buffer == null || buffer.isClosed()) return;
         DRAW_STATES.recordVertexUpload(buffer, parameters, vertexPayloadBytes, indexPayloadBytes);
+        markTerrainContentChanged();
         invalidateDrawCommand(buffer);
     }
 
@@ -142,12 +145,14 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
+        markTerrainContentChanged();
         invalidateAllDrawCommands();
     }
 
     public static void recordIndexDrawState(VertexBuffer buffer, int indexPayloadBytes) {
         if (buffer == null || buffer.isClosed()) return;
         DRAW_STATES.recordIndexUpload(buffer, indexPayloadBytes);
+        markTerrainContentChanged();
         invalidateDrawCommand(buffer);
     }
 
@@ -157,6 +162,7 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
+        markTerrainContentChanged();
         invalidateAllDrawCommands();
     }
 
@@ -189,6 +195,7 @@ public final class TerrainGpuResidencyTracker {
     public static void release(VertexBuffer buffer) {
         if (buffer == null) return;
         DRAW_COMMANDS.remove(buffer);
+        markTerrainContentChanged();
         TerrainPhysicalArenaManager.release(buffer);
         LEDGER.release(buffer);
         ARENAS.release(buffer);
@@ -217,10 +224,21 @@ public final class TerrainGpuResidencyTracker {
         TerrainDrawTransformStream.clear();
         TerrainArenaDrawDiagnostics.clear();
         DRAW_COMMANDS.clear();
+        terrainContentRevision = terrainContentRevision == Long.MAX_VALUE
+                ? 1L
+                : terrainContentRevision + 1L;
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
         return true;
+    }
+
+    public static long contentRevision() {
+        return terrainContentRevision;
+    }
+
+    private static void markTerrainContentChanged() {
+        if (terrainContentRevision != Long.MAX_VALUE) terrainContentRevision++;
     }
 
     private static void invalidateDrawCommand(VertexBuffer buffer) {
