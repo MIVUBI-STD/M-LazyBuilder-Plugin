@@ -24,22 +24,20 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
 
-        deleteNow();
-        this.width = safeWidth;
-        this.height = safeHeight;
-
+        int candidateFramebuffer = 0;
+        int candidateColor = 0;
         try {
-            framebufferId = GL30C.glGenFramebuffers();
-            if (framebufferId == 0) {
+            candidateFramebuffer = GL30C.glGenFramebuffers();
+            if (candidateFramebuffer == 0) {
                 throw new IllegalStateException("OpenGL could not allocate shader framebuffer.");
             }
-            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, candidateFramebuffer);
 
-            colorTextureId = GL11C.glGenTextures();
-            if (colorTextureId == 0) {
+            candidateColor = GL11C.glGenTextures();
+            if (candidateColor == 0) {
                 throw new IllegalStateException("OpenGL could not allocate shader color texture.");
             }
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, colorTextureId);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, candidateColor);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
@@ -59,7 +57,7 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
                     GL30C.GL_FRAMEBUFFER,
                     GL30C.GL_COLOR_ATTACHMENT0,
                     GL11C.GL_TEXTURE_2D,
-                    colorTextureId,
+                    candidateColor,
                     0
             );
 
@@ -70,8 +68,17 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
                                 + Integer.toHexString(status)
                 );
             }
+
+            framebufferId = candidateFramebuffer;
+            colorTextureId = candidateColor;
+            this.width = safeWidth;
+            this.height = safeHeight;
+            candidateFramebuffer = 0;
+            candidateColor = 0;
+
+            delete(oldFramebuffer, oldColorTexture);
         } catch (RuntimeException error) {
-            deleteNow();
+            delete(candidateFramebuffer, candidateColor);
             throw error;
         } finally {
             int restoreTexture = previousTexture == oldColorTexture ? 0 : previousTexture;
