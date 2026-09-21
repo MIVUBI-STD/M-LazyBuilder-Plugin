@@ -36,8 +36,8 @@ public final class FirstPartyShaderCompiler {
                 program.fragmentPath(),
                 defines
         );
-        validate(program.name(), vertex.source(), fragmentSource);
-        return compilePrepared(program.name(), vertex.source(), fragmentSource);
+        validate(program.name(), vertex.source(), fragment.source());
+        return compilePrepared(program.name(), vertex.source(), fragment.source());
     }
 
     static void validate(
