@@ -65,6 +65,10 @@ public final class FirstPartyShaderRuntime {
                     && packs.stream().noneMatch(pack -> pack.id().equals(activePackId))) {
                 closePipelineLocked();
                 activePackId = "";
+                terrainVertexCompiled = false;
+                terrainFragmentCompiled = false;
+                terrainIntegrated = false;
+                terrainReloadPending = true;
             }
             lastError = "";
             if (pipeline == null) stage = "source-ready";
@@ -191,6 +195,11 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void disable() {
+        boolean restoreMinecraftTerrain = pipeline != null
+                || terrainVertexCompiled
+                || terrainFragmentCompiled
+                || terrainIntegrated;
+
         closePipelineLocked();
         activePackId = "";
         persisted = persisted.withEnabled(false);
@@ -199,7 +208,7 @@ public final class FirstPartyShaderRuntime {
         terrainVertexCompiled = false;
         terrainFragmentCompiled = false;
         terrainIntegrated = false;
-        terrainReloadPending = false;
+        terrainReloadPending = restoreMinecraftTerrain;
         stage = "disabled";
         lastError = "";
         revision++;
