@@ -27,4 +27,25 @@ final class UtilityPreferencesTest {
         assertEquals(original.instantCreativeSearch(), updated.instantCreativeSearch());
         assertEquals(original.compactDebugHud(), updated.compactDebugHud());
     }
+    @Test
+    void narratorSuppressionUpdatePreservesEveryOtherPreference() {
+        UtilityPreferences original = UtilityPreferences.defaults();
+
+        UtilityPreferences updated = original.withSuppressNarrator(false);
+
+        assertFalse(updated.suppressNarrator());
+        assertTrue(original.suppressNarrator());
+        assertEquals(original.borderlessWindow(), updated.borderlessWindow());
+        assertEquals(original.extendedChatHistory(), updated.extendedChatHistory());
+        assertEquals(original.keepChatDraft(), updated.keepChatDraft());
+        assertEquals(original.chatSearch(), updated.chatSearch());
+        assertEquals(original.chatTimestamps(), updated.chatTimestamps());
+        assertEquals(original.hideChatSigningIndicators(), updated.hideChatSigningIndicators());
+        assertEquals(original.hideChatReportButton(), updated.hideChatReportButton());
+        assertEquals(original.reconnectButton(), updated.reconnectButton());
+        assertEquals(original.contextualScreenshotNames(), updated.contextualScreenshotNames());
+        assertEquals(original.instantCreativeSearch(), updated.instantCreativeSearch());
+        assertEquals(original.compactDebugHud(), updated.compactDebugHud());
+    }
+
 }
