@@ -3,9 +3,13 @@ package com.halokaryamedia.lazybuilder.performance.shader;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL20C;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /** Render-thread-owned OpenGL program created by the first-party shader compiler. */
 public final class FirstPartyShaderProgram implements AutoCloseable {
     private final String name;
+    private final Map<String, Integer> uniformLocations = new HashMap<>();
     private int programId;
 
     FirstPartyShaderProgram(String name, int programId) {
@@ -38,8 +42,12 @@ public final class FirstPartyShaderProgram implements AutoCloseable {
 
     public int uniformLocation(String uniform) {
         RenderSystem.assertOnRenderThread();
-        if (programId == 0) return -1;
-        return GL20C.glGetUniformLocation(programId, uniform);
+        if (programId == 0 || uniform == null || uniform.isBlank()) return -1;
+        Integer cached = uniformLocations.get(uniform);
+        if (cached != null) return cached;
+        int location = GL20C.glGetUniformLocation(programId, uniform);
+        uniformLocations.put(uniform, location);
+        return location;
     }
 
     @Override
@@ -48,11 +56,13 @@ public final class FirstPartyShaderProgram implements AutoCloseable {
         if (!RenderSystem.isOnRenderThread()) {
             int id = programId;
             programId = 0;
+            uniformLocations.clear();
             RenderSystem.recordRenderCall(() -> GL20C.glDeleteProgram(id));
             return;
         }
 
         GL20C.glDeleteProgram(programId);
         programId = 0;
+        uniformLocations.clear();
     }
 }
