@@ -16,10 +16,7 @@ public final class StageTimingMetrics {
         ENTITY_CULLING,
         BLOCK_ENTITY_CULLING,
         CHUNK_UPLOAD,
-        TERRAIN_SUBMISSION,
-        SHADOW,
-        COMPOSITE,
-        FINAL
+        TERRAIN_SUBMISSION
     }
 
     private static final Map<Stage, Counter> COUNTERS = new EnumMap<>(Stage.class);
@@ -36,10 +33,6 @@ public final class StageTimingMetrics {
 
     public static boolean enabled() {
         return enabled;
-    }
-
-    public static void enable() {
-        enabled = true;
     }
 
     public static void record(Stage stage, long elapsedNanos) {
