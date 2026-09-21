@@ -142,7 +142,17 @@ option.steps.step=1
 
 Options are validated, quantized, persisted per pack, and injected after the GLSL `#version` line as deterministic defines such as `LB_OPT_SHADOWS`, `LB_OPT_EXPOSURE`, and `LB_OPT_STEPS`. Utility Manager stages edits locally and applies them in one recompilation instead of recompiling continuously while a slider is dragged.
 
+Native pack identity is persistent and deterministic from the source filename, including a short fingerprint from the beginning rather than only after a collision occurs. This prevents adding a similarly named pack later from changing the identity of an already configured pack. Legacy pre-fingerprint IDs are migrated during catalog refresh, including per-pack option values.
+
+Pack discovery distinguishes an empty folder from broken candidates. Folder/ZIP entries that look like shader packs but are missing required stages, have malformed manifests, or contain invalid option declarations remain visible to the manager as invalid entries with an actionable reason instead of silently disappearing.
+
+A declared option is strict product input: malformed type/default/range/step data rejects the manifest instead of silently dropping the setting. A pack may expose at most 128 options, and option IDs that collapse to the same GLSL define are rejected.
+
 The first-party runtime uses atomic candidate publication: every declared program must compile/link before the new pipeline replaces the previous one. Terrain stage substitution also retains the exact original Minecraft source for compile/link fallback.
+
+When a compiled LazyBuilder pack changes its terrain source, Performance Manager now reloads only Minecraft's `ShaderLoader` using the public resource-reloader boundary. It invalidates LazyBuilder's shader-sensitive transform/multi-draw/fallback state explicitly, prepares a complete replacement Minecraft shader cache, and swaps it only after the ShaderLoader apply phase succeeds. It does **not** call the full `MinecraftClient.reloadResources()` path for a terrain-shader change, so textures, models, audio, and unrelated client resources are not reloaded merely because a shader option changed.
+
+Non-terrain shader changes avoid even that targeted Minecraft shader reload when the prepared terrain-source fingerprint is unchanged.
 
 ## FRAPI and shader compatibility boundary
 
@@ -181,7 +191,7 @@ baseline  -> rendering.optimizations=false
 optimized -> rendering.optimizations=true
 ```
 
-Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. Each structured sample also reports whether the strict standalone renderer is first-party-ready, its blocker/status string, the first-party shader stage, shader rendering readiness, and terrain-shader integration. FPS alone is not the acceptance criterion; average/worst frame time, ownership readiness, shader integration, and recovery health are equally important.
+Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. Each structured sample also reports whether the strict standalone renderer is first-party-ready, its blocker/status string, the first-party shader stage, shader rendering readiness, terrain-shader integration, shadow-cache reuse, stale-GBuffer recovery, shader-only reload requests/failures, and invalid shader-pack count. FPS alone is not the acceptance criterion; average/worst frame time, ownership readiness, shader integration, and recovery health are equally important.
 
 ## Migration rule
 
