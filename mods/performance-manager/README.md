@@ -187,6 +187,37 @@ Correctness proof should show physical draws when the first-party path is active
 
 External performance mods are compatibility peers, not required runtime owners. Custom FRAPI renderer owners still take precedence while installed because they explicitly claim the Fabric renderer boundary. Iris is treated the same way for shader-sensitive terrain ownership: when present it gates the first-party shader path for coexistence, but LazyBuilder's own shader runtime is the standalone path. ImmediatelyFast may keep overlapping hooks when installed to avoid duplicate interception, while LazyBuilder remains functional without it. Baked-quad vertex deduplication is first-party through MemoryDeduplicator and does not require FerriteCore.
 
+## Standalone readiness versus feature parity
+
+`first-party-ready` is an ownership/correctness statement for the optimization domains LazyBuilder actually implements. It does **not** claim feature-for-feature parity with every migration-source mod.
+
+Current boundaries are explicit:
+
+- ImmediatelyFast parity is partial. LazyBuilder owns its current text-render lookup reuse, dynamic GPU-buffer growth, terrain upload/render paths, and other first-party domains, but does not yet claim equivalent generic batching for every entity, block-entity, particle, HUD, GUI, or map rendering workload.
+- FerriteCore parity is partial. LazyBuilder owns baked-quad vertex-array canonicalization plus its own terrain/memory systems, but does not currently claim FerriteCore's broader blockstate/property, multipart-model/predicate, model-resource-string, or shape-cache memory optimizations.
+- The first-party shadow path currently reports `ready-solid-only`: opaque terrain is supported, while cutout/entity/block-entity shadow coverage remains intentionally deferred until the required texture/material bindings are verified.
+- LazyBuilder-native shader packs are a first-party format. Existing Iris/OptiFine shader packs are not assumed compatible and must not be advertised as such until a verified compatibility/import layer exists.
+- Terrain-stage changes still require Minecraft client-resource shader reload. Fingerprinting and reload coalescing avoid unnecessary reloads, but a targeted terrain-program-only reload is not yet claimed.
+
+### Pre-local-test acceptance gate
+
+Before the standalone renderer/shader path is accepted for release, representative local workloads must prove all of the following on the exact candidate revision:
+
+```text
+standalone_renderer_ready=true
+renderer owner = fabric-indigo / first-party-safe path
+no Sodium/Iris/ImmediatelyFast/FerriteCore requirement
+first-party terrain source links or falls back without corruption
+zero exclusive terrain recovery failures
+no missing/corrupt terrain across reload, teleport, world switch, resize and shader toggle
+shader auxiliary memory remains within policy
+GBuffer stale-frame recoveries remain exceptional rather than continuous
+shadow reuse occurs when visibility/content/light keys are unchanged
+shader compile generations discard stale preparation safely
+```
+
+Performance comparison must use identical world, camera route, resolution, render distance, resource pack, shader selection, and FPS target. Average/worst frame time and correctness are primary evidence; FPS alone is insufficient.
+
 ## Configuration
 
 Performance Manager does not own a separate settings screen. User-facing performance
