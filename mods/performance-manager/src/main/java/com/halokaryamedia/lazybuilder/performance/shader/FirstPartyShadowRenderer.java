@@ -12,6 +12,7 @@ import org.lwjgl.opengl.GL30C;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 
 /**
  * Single-cascade native terrain shadow renderer.
@@ -328,8 +329,18 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             int viewportHeight
     ) {
         static GlState capture() {
-            int[] viewport = new int[4];
-            GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
+            int viewportX;
+            int viewportY;
+            int viewportWidth;
+            int viewportHeight;
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                IntBuffer viewport = stack.mallocInt(4);
+                GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
+                viewportX = viewport.get(0);
+                viewportY = viewport.get(1);
+                viewportWidth = viewport.get(2);
+                viewportHeight = viewport.get(3);
+            }
             return new GlState(
                     GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING),
                     GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM),
@@ -340,10 +351,10 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     GL11C.glIsEnabled(GL11C.GL_BLEND),
                     GL11C.glIsEnabled(GL11C.GL_CULL_FACE),
                     GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE),
-                    viewport[0],
-                    viewport[1],
-                    viewport[2],
-                    viewport[3]
+                    viewportX,
+                    viewportY,
+                    viewportWidth,
+                    viewportHeight
             );
         }
 
