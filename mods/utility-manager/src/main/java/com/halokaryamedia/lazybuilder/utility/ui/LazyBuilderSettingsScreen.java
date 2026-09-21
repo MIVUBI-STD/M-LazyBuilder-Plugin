@@ -128,11 +128,6 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private static final int HEADER_HEIGHT = 34;
     private static final int TAB_HEIGHT = 24;
     private static final int TAB_TOP = 42;
-    private static final int VIDEO_TAB_TOP = 72;
-    private static final int DEFAULT_CONTENT_TOP = 82;
-    private static final int VIDEO_CONTENT_TOP = 112;
-    private static final int DEFAULT_VIEWPORT_TOP = 74;
-    private static final int VIDEO_VIEWPORT_TOP = 104;
     private static final int SECTION_HEIGHT = 16;
     private static final int SECTION_GAP = 8;
     private static final int ROW_HEIGHT = 32;
