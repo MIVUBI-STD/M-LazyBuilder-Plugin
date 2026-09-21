@@ -18,7 +18,6 @@ import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
 import net.minecraft.resource.ResourcePackProfile;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -1621,6 +1620,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         renderScrollBar(context, panelRight + 6);
         renderContextPane(context, panelRight + 30, highlightedRow);
+        renderCompactHelp(context, highlightedRow);
         super.render(context, mouseX, mouseY, delta);
         // Flush widget/text render layers before painting the popup so values from
         // rows behind the dropdown cannot bleed through due to batched GUI layers.
@@ -1684,6 +1684,22 @@ public final class LazyBuilderSettingsScreen extends Screen {
             }
         }
         return null;
+    }
+
+    private void renderCompactHelp(DrawContext context, Row highlightedRow) {
+        if (hasContextPane() || highlightedRow == null) return;
+
+        int left = panelLeft();
+        int available = panelWidth();
+        int y = viewportBottom() + 7;
+        String copy = textRenderer.trimToWidth(highlightedRow.description, available);
+        context.drawTextWithShadow(
+                textRenderer,
+                Text.literal(copy),
+                left,
+                y,
+                TEXT_MUTED
+        );
     }
 
     private void renderContextPane(DrawContext context, int x, Row highlightedRow) {
@@ -1918,7 +1934,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private int viewportBottom() {
-        return Math.max(viewportTop() + 1, height - FOOTER_HEIGHT - 6);
+        int helpReserve = hasContextPane() ? 0 : 24;
+        return Math.max(viewportTop() + 1, height - FOOTER_HEIGHT - 6 - helpReserve);
     }
 
     private int shellWidth() {
