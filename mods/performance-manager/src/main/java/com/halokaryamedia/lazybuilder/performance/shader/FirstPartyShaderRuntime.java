@@ -31,6 +31,7 @@ public final class FirstPartyShaderRuntime {
     private volatile boolean terrainReloadPending;
     private FirstPartyShaderPipeline pipeline;
     private FirstPartyShaderPostProcessor postProcessor;
+    private FirstPartyShaderGBuffer gbuffer;
 
     public FirstPartyShaderRuntime(Path shaderpacksDirectory, Path configDirectory) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
@@ -282,9 +283,65 @@ public final class FirstPartyShaderRuntime {
         revision++;
     }
 
+    public boolean beginGBufferFrame(
+            int targetFramebuffer,
+            int width,
+            int height
+    ) {
+        FirstPartyShaderPipeline current;
+        synchronized (this) {
+            current = pipeline;
+            if (current == null
+                    || current.gbufferAttachments() <= 0
+                    || (!current.has("composite") && !current.has("final"))) {
+                return false;
+            }
+            if (gbuffer == null) gbuffer = new FirstPartyShaderGBuffer();
+        }
+
+        try {
+            return gbuffer.begin(
+                    targetFramebuffer,
+                    width,
+                    height,
+                    current.gbufferAttachments()
+            );
+        } catch (RuntimeException error) {
+            synchronized (this) {
+                lastError = safeMessage(error);
+                stage = "gbuffer-error";
+                revision++;
+            }
+            return false;
+        }
+    }
+
+    public FirstPartyShaderGBuffer.Snapshot endGBufferFrame(int targetFramebuffer) {
+        FirstPartyShaderGBuffer current;
+        synchronized (this) {
+            current = gbuffer;
+        }
+        if (current == null) {
+            return new FirstPartyShaderGBuffer.Snapshot(false, "inactive", 0, 0, 0);
+        }
+
+        try {
+            return current.end(targetFramebuffer);
+        } catch (RuntimeException error) {
+            synchronized (this) {
+                lastError = safeMessage(error);
+                stage = "gbuffer-error";
+                revision++;
+            }
+            return new FirstPartyShaderGBuffer.Snapshot(false, "error", 0, 0, 0);
+        }
+    }
+
     public boolean renderPostProcess(
             int targetFramebuffer,
             int sourceDepthTexture,
+            int gbufferTexture1,
+            int gbufferTexture2,
             int width,
             int height,
             float timeSeconds
@@ -309,6 +366,8 @@ public final class FirstPartyShaderRuntime {
                     current,
                     targetFramebuffer,
                     sourceDepthTexture,
+                    gbufferTexture1,
+                    gbufferTexture2,
                     width,
                     height,
                     timeSeconds
@@ -387,6 +446,7 @@ public final class FirstPartyShaderRuntime {
                 true,
                 pipeline != null,
                 pipeline != null && (pipeline.has("composite") || pipeline.has("final")),
+                pipeline == null ? 0 : pipeline.gbufferAttachments(),
                 lastFrameApplied || terrainIntegrated,
                 terrainIntegrated,
                 selected == null ? "" : selected.id(),
@@ -409,6 +469,7 @@ public final class FirstPartyShaderRuntime {
         values.put("sourceReady", snapshot.sourceReady());
         values.put("compiledReady", snapshot.compiledReady());
         values.put("postProcessReady", snapshot.postProcessReady());
+        values.put("gbufferAttachments", snapshot.gbufferAttachments());
         values.put("renderingReady", snapshot.renderingReady());
         values.put("terrainIntegrated", snapshot.terrainIntegrated());
         values.put("configuredEnabled", persisted.enabled());
@@ -443,6 +504,10 @@ public final class FirstPartyShaderRuntime {
         FirstPartyShaderPostProcessor processor = postProcessor;
         postProcessor = null;
         if (processor != null) processor.close();
+
+        FirstPartyShaderGBuffer frameGBuffer = gbuffer;
+        gbuffer = null;
+        if (frameGBuffer != null) frameGBuffer.close();
     }
 
     private static String safeMessage(Throwable error) {
@@ -458,6 +523,7 @@ public final class FirstPartyShaderRuntime {
             boolean sourceReady,
             boolean compiledReady,
             boolean postProcessReady,
+            int gbufferAttachments,
             boolean renderingReady,
             boolean terrainIntegrated,
             String selectedPackId,
