@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationComp
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime;
 import net.fabricmc.api.ClientModInitializer;
@@ -224,14 +225,19 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         int height = framebuffer == null ? 1 : Math.max(1, framebuffer.textureHeight);
 
         var position = context.camera().getPos();
-        shaders.renderShadow(
-                position.getX(),
-                position.getY(),
-                position.getZ(),
-                context.world().getTimeOfDay(),
-                width,
-                height
-        );
+        GpuStageTimer.begin(GpuStageTimer.Stage.SHADOW);
+        try {
+            shaders.renderShadow(
+                    position.getX(),
+                    position.getY(),
+                    position.getZ(),
+                    context.world().getTimeOfDay(),
+                    width,
+                    height
+            );
+        } finally {
+            GpuStageTimer.end(GpuStageTimer.Stage.SHADOW);
+        }
     }
 
     private static void beginFirstPartyShaderFrame() {
@@ -295,19 +301,24 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         }
 
         float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
-        shaders.renderPostProcess(
-                targetFramebuffer,
-                sourceDepthTexture,
-                gbuffer.texture1(),
-                gbuffer.texture2(),
-                inverseViewProjection,
-                cameraX,
-                cameraY,
-                cameraZ,
-                width,
-                height,
-                timeSeconds
-        );
+        GpuStageTimer.begin(GpuStageTimer.Stage.POST_PROCESS);
+        try {
+            shaders.renderPostProcess(
+                    targetFramebuffer,
+                    sourceDepthTexture,
+                    gbuffer.texture1(),
+                    gbuffer.texture2(),
+                    inverseViewProjection,
+                    cameraX,
+                    cameraY,
+                    cameraZ,
+                    width,
+                    height,
+                    timeSeconds
+            );
+        } finally {
+            GpuStageTimer.end(GpuStageTimer.Stage.POST_PROCESS);
+        }
     }
 
     private static Map<String, Object> rendererReadinessSnapshot() {
