@@ -4,6 +4,7 @@
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { operationTitle } from '../app/operations/operationPresentation';
   import { refreshActivityFeed, subscribeActivityFeed } from '../app/operations/activityFeed';
+  import { formatIsoTime, formatProgress, formatUnixTime, hasTechnicalDetails, launcherOperationActive, launcherStateLabel, progressPercent, worldTaskActive, worldTaskStateLabel, worldTaskTitle } from '../app/operations/activityPresentation';
   import type { LauncherOperationSnapshot, StartupReport, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   let operations: LauncherOperationSnapshot[] = [];
@@ -16,70 +17,7 @@
   let historyVisibleLimit = 40;
   let activityUnsubscribe: (() => void) | null = null;
 
-  const ACTIVE_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
   const HISTORY_PAGE_SIZE = 40;
-
-  function isActive(operation: LauncherOperationSnapshot) {
-    return ACTIVE_STATES.has(operation.state);
-  }
-
-  function worldTaskActive(task: WorldTaskSnapshot) {
-    return task.state === 'QUEUED' || task.state === 'RUNNING';
-  }
-
-  function worldTaskTitle(task: WorldTaskSnapshot) {
-    const label = task.taskType.toLowerCase().replace(/_/g, ' ');
-    return label.replace(/\b\w/g, (letter) => letter.toUpperCase());
-  }
-
-  function worldTaskStateLabel(state: WorldTaskSnapshot['state']) {
-    return { QUEUED: 'Queued', RUNNING: 'Running', SUCCEEDED: 'Completed', FAILED: 'Failed' }[state];
-  }
-
-  function formatIsoTime(value: string) {
-    const parsed = Date.parse(value);
-    if (!Number.isFinite(parsed)) return '';
-    return new Date(parsed).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  }
-
-  function stateLabel(state: LauncherOperationSnapshot['state']) {
-    return {
-      QUEUED: 'Queued',
-      RUNNING: 'Running',
-      SUCCEEDED: 'Completed',
-      FAILED: 'Failed',
-      CANCELLING: 'Cancelling',
-      CANCELLED: 'Cancelled',
-      RECOVERY_REQUIRED: 'Recovery required'
-    }[state];
-  }
-
-  function formatTime(seconds?: number | null) {
-    if (!seconds) return '';
-    return new Date(seconds * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  }
-
-  function progressPercent(operation: LauncherOperationSnapshot) {
-    const progress = operation.progress;
-    if (!progress?.total || progress.total <= 0) return null;
-    return Math.max(0, Math.min(100, Math.round((progress.current / progress.total) * 100)));
-  }
-
-  function formatProgress(operation: LauncherOperationSnapshot) {
-    const progress = operation.progress;
-    if (!progress) return '';
-    if (progress.unit === 'bytes') {
-      const format = (value: number) => value >= 1024 ** 3
-        ? `${(value / 1024 ** 3).toFixed(1)} GB`
-        : `${Math.ceil(value / 1024 ** 2)} MB`;
-      return progress.total ? `${format(progress.current)} / ${format(progress.total)}` : format(progress.current);
-    }
-    return progress.total ? `${progress.current} / ${progress.total} ${progress.unit}` : `${progress.current} ${progress.unit}`;
-  }
-
-  function hasTechnicalDetails(operation: LauncherOperationSnapshot) {
-    return Boolean(operation.phase || operation.details || operation.warnings.length || operation.error?.details || operation.correlationId);
-  }
 
   async function loadStartup() {
     try { startup = await runtimeProduct.startup.status(); }
@@ -119,7 +57,7 @@
   $: activeOperations = operations.filter(isActive);
   $: activeWorldTasks = worldTasks.filter(worldTaskActive);
   $: worldTaskHistory = worldTasks.filter((task) => !worldTaskActive(task));
-  $: history = operations.filter((operation) => !isActive(operation));
+  $: history = operations.filter((operation) => !launcherOperationActive(operation));
   $: visibleHistory = history.slice(0, historyVisibleLimit);
 </script>
 
@@ -153,7 +91,7 @@
               <div class="operation-main">
                 <div class="operation-title-row">
                   <div><strong>{operationTitle(operation.kind)}</strong><span class="operation-phase">{operation.status || 'Working…'}</span></div>
-                  <span class:warning-state={operation.state === 'CANCELLING'} class="state-badge">{stateLabel(operation.state)}</span>
+                  <span class:warning-state={operation.state === 'CANCELLING'} class="state-badge">{launcherStateLabel(operation.state)}</span>
                 </div>
                 {#if operation.details}<p class="operation-details">{operation.details}</p>{/if}
                 {#if progressPercent(operation) !== null}
@@ -205,7 +143,7 @@
                 {operation.state === 'SUCCEEDED' ? '✓' : operation.state === 'CANCELLED' ? '–' : '!'}
               </div>
               <div class="history-copy">
-                <div class="history-title"><strong>{operationTitle(operation.kind)}</strong><span>{stateLabel(operation.state)}</span></div>
+                <div class="history-title"><strong>{operationTitle(operation.kind)}</strong><span>{launcherStateLabel(operation.state)}</span></div>
                 <span class="history-status">{operation.error?.message || operation.status || 'No additional details.'}</span>
                 {#if operation.state === 'RECOVERY_REQUIRED'}<span class="recovery-note">Open the affected server before retrying or changing its files.</span>{/if}
                 {#if hasTechnicalDetails(operation)}
@@ -221,7 +159,7 @@
                   </details>
                 {/if}
               </div>
-              <time datetime={operation.completedAtUnixSeconds ? new Date(operation.completedAtUnixSeconds * 1000).toISOString() : undefined}>{formatTime(operation.completedAtUnixSeconds ?? operation.updatedAtUnixSeconds)}</time>
+              <time datetime={operation.completedAtUnixSeconds ? new Date(operation.completedAtUnixSeconds * 1000).toISOString() : undefined}>{formatUnixTime(operation.completedAtUnixSeconds ?? operation.updatedAtUnixSeconds)}</time>
             </article>
           {/each}
           {#each worldTaskHistory as task (task.taskId)}
