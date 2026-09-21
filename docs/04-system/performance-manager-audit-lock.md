@@ -157,8 +157,10 @@ Terrain runtime state is scoped to the active `ChunkBuilder` session. A new rend
 session generation; reset rotates that generation, stop clears only if the caller still owns the
 active session, and queued upload work carries the owner+generation token it was created under.
 Stale upload work is discarded before any GL bind or residency mutation. World identity changes also
-reset frame-pressure history and culling state so one world cannot bias scheduling decisions in the
-next.
+reset frame-pressure history, culling state, CPU stage timing, adaptive-governor state, and GPU proof
+counters so one world cannot bias scheduling or benchmark evidence in the next. Outstanding GPU timer
+queries are allowed to drain asynchronously but carry an evidence generation; results from an older
+world generation are ignored instead of being attributed to the new session.
 
 Physical terrain arenas use session-scoped failure containment. Structural GL/provisioning failures
 are isolated to the affected resident whenever possible; repeated failures open a small circuit
