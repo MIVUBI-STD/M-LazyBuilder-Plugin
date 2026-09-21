@@ -35,10 +35,6 @@ public final class GpuStageTimer {
     private GpuStageTimer() {
     }
 
-    public static void enable() {
-        enabled = true;
-    }
-
     public static boolean enabled() {
         return enabled;
     }
@@ -115,7 +111,12 @@ public final class GpuStageTimer {
         activeQuery = 0;
     }
 
+    static void setEnabledForTest(boolean value) {
+        enabled = value;
+    }
+
     static void resetForTest() {
+        enabled = true;
         activeStage = null;
         activeQuery = 0;
         sessionGeneration = 1L;
