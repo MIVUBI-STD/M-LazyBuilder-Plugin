@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
+import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -37,6 +38,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         VIDEO("Video"),
         AUDIO("Audio"),
         CONTROLS("Controls"),
+        CHAT("Chat"),
         INTERFACE("Interface"),
         ACCESSIBILITY("Accessibility"),
         TOOLS("Tools");
@@ -94,6 +96,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
             this.cloudMode = cloudMode;
             this.particlesMode = particlesMode;
             this.mipmapLevels = mipmapLevels;
+        }
+    }
+
+    private enum WindowMode {
+        WINDOWED("Windowed"),
+        BORDERLESS("Borderless"),
+        FULLSCREEN("Fullscreen");
+
+        private final String label;
+
+        WindowMode(String label) {
+            this.label = label;
         }
     }
 
@@ -159,6 +173,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case VIDEO -> buildVideoSections();
             case AUDIO -> buildAudioSections();
             case CONTROLS -> buildControlsSections();
+            case CHAT -> buildChatSections();
             case INTERFACE -> buildInterfaceSections();
             case ACCESSIBILITY -> buildAccessibilitySections();
             case TOOLS -> buildToolsSections();
@@ -229,11 +244,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void buildVideoDisplaySections() {
         Section display = new Section("DISPLAY");
-        display.rows.add(Row.toggle(
-                "Fullscreen",
-                "Use Minecraft in fullscreen mode.",
-                client.options.getFullscreen().getValue(),
-                value -> setOption(client.options.getFullscreen(), value)
+        display.rows.add(Row.value(
+                "Window Mode",
+                "Choose Windowed, Borderless, or Fullscreen. Borderless mode is applied on the next game launch.",
+                currentWindowMode().label,
+                this::openWindowModeChoice
         ));
         display.rows.add(Row.toggle(
                 "V-Sync",
@@ -638,6 +653,142 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 }
         ));
         sections.add(bindings);
+    }
+
+    private void buildChatSections() {
+        if (client == null) return;
+
+        UtilityPreferences prefs = UtilityManagerClient.preferences();
+
+        Section general = new Section("GENERAL");
+        general.rows.add(Row.toggle(
+                "Keep Unsent Message",
+                "Keep unfinished chat text when the chat screen is closed without sending.",
+                prefs.keepChatDraft(),
+                enabled -> updateUtilityPreference(value -> value.withKeepChatDraft(enabled))
+        ));
+        general.rows.add(Row.toggle(
+                "Search Chat",
+                "Enable Ctrl+F search through chat history while the chat screen is open.",
+                prefs.chatSearch(),
+                enabled -> updateUtilityPreference(value -> value.withChatSearch(enabled))
+        ));
+        general.rows.add(Row.toggle(
+                "Extended History",
+                "Keep a longer local chat history for navigation and search during the current session.",
+                prefs.extendedChatHistory(),
+                enabled -> updateUtilityPreference(value -> value.withExtendedChatHistory(enabled))
+        ));
+        general.rows.add(Row.toggle(
+                "Timestamps",
+                "Show local timestamps beside chat messages.",
+                prefs.chatTimestamps(),
+                enabled -> updateUtilityPreference(value -> value.withChatTimestamps(enabled))
+        ));
+        sections.add(general);
+
+        Section appearance = new Section("APPEARANCE");
+        appearance.rows.add(Row.slider(
+                "Chat Opacity",
+                "Adjust chat message opacity.",
+                client.options.getChatOpacity().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getChatOpacity(), value)
+        ));
+        appearance.rows.add(Row.slider(
+                "Chat Scale",
+                "Adjust the overall size of the chat panel.",
+                client.options.getChatScale().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getChatScale(), value)
+        ));
+        appearance.rows.add(Row.slider(
+                "Chat Width",
+                "Adjust the width of the chat panel.",
+                client.options.getChatWidth().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getChatWidth(), value)
+        ));
+        appearance.rows.add(Row.slider(
+                "Line Spacing",
+                "Adjust spacing between chat lines.",
+                client.options.getChatLineSpacing().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getChatLineSpacing(), value)
+        ));
+        sections.add(appearance);
+
+        Section privacy = new Section("MESSAGE CONTROLS");
+        privacy.rows.add(Row.toggle(
+                "Show Signing Indicators",
+                "Show Minecraft's message signing indicators when they are available.",
+                !prefs.hideChatSigningIndicators(),
+                enabled -> updateUtilityPreference(value -> value.withHideChatSigningIndicators(!enabled))
+        ));
+        privacy.rows.add(Row.toggle(
+                "Show Report Button",
+                "Show Minecraft's built-in report action in supported social and chat surfaces.",
+                !prefs.hideChatReportButton(),
+                enabled -> updateUtilityPreference(value -> value.withHideChatReportButton(!enabled))
+        ));
+        sections.add(privacy);
+    }
+
+    private void updateUtilityPreference(java.util.function.UnaryOperator<UtilityPreferences> updater) {
+        UtilityManagerClient.updatePreferences(updater.apply(UtilityManagerClient.preferences()));
+        refreshCategory();
+    }
+
+    private WindowMode currentWindowMode() {
+        if (client != null && client.options.getFullscreen().getValue()) return WindowMode.FULLSCREEN;
+        return UtilityManagerClient.preferences().borderlessWindow()
+                ? WindowMode.BORDERLESS
+                : WindowMode.WINDOWED;
+    }
+
+    private void openWindowModeChoice() {
+        WindowMode current = currentWindowMode();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (WindowMode mode : WindowMode.values()) {
+            choices.add(new DropdownChoice(
+                    mode.label,
+                    mode == current,
+                    () -> applyWindowMode(mode)
+            ));
+        }
+        openDropdown("Window Mode", choices);
+    }
+
+    private void applyWindowMode(WindowMode mode) {
+        if (client == null) return;
+
+        boolean borderless = mode == WindowMode.BORDERLESS;
+        UtilityPreferences updated = UtilityManagerClient.preferences().withBorderlessWindow(borderless);
+        UtilityManagerClient.updatePreferences(updated);
+
+        boolean fullscreen = mode == WindowMode.FULLSCREEN;
+        client.options.getFullscreen().setValue(fullscreen);
+        client.options.write();
+
+        if (mode == WindowMode.BORDERLESS || currentWindowMode() == WindowMode.BORDERLESS) {
+            UtilityNotifications.show(
+                    "Window Mode",
+                    "Borderless window changes apply on the next game launch."
+            );
+        }
+        refreshCategory();
     }
 
     private void buildInterfaceSections() {
@@ -1294,6 +1445,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 };
                 case AUDIO -> "Master volume and the main Minecraft sound categories.";
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
+                case CHAT -> "Chat behavior, appearance, search, and message controls.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
                 case ACCESSIBILITY -> "Subtitles, narrator behavior, readability, and visual comfort settings.";
                 case TOOLS -> "Tool-specific setup stays close to the workflow that owns it.";
