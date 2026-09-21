@@ -311,7 +311,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     }
 
     private static void refreshShaderPacks() {
-        if (shaderRuntime != null) shaderRuntime.refresh();
+        if (shaderRuntime != null) shaderRuntime.refreshAsync();
     }
 
     private static void selectShaderPack(String packId) {
