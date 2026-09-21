@@ -20,6 +20,7 @@ public final class CaptureManager {
 
     private static CaptureConfigStore configStore;
     private static volatile CapturePreferences preferences = CapturePreferences.defaults();
+    private static volatile boolean cleanScreenshotRequested;
     private static FrameReadbackRing readbackRing;
 
     private CaptureManager() {}
@@ -37,6 +38,30 @@ public final class CaptureManager {
         preferences = Objects.requireNonNull(updated, "updated");
         CaptureConfigStore store = configStore;
         if (store != null) store.save(updated);
+    }
+
+    public static void requestCleanScreenshot(MinecraftClient client) {
+        if (client == null || client.world == null || client.getFramebuffer() == null) return;
+        cleanScreenshotRequested = true;
+        notify(client, Text.literal("Clean screenshot queued."));
+    }
+
+    public static boolean consumeCleanScreenshotRequest() {
+        if (!cleanScreenshotRequested) return false;
+        cleanScreenshotRequested = false;
+        return true;
+    }
+
+    public static void captureCleanScreenshot(MinecraftClient client) {
+        if (client == null || client.getFramebuffer() == null) return;
+        SCREENSHOTS.capture(
+                FabricLoader.getInstance().getGameDir().toFile(),
+                null,
+                client.getFramebuffer(),
+                text -> notify(client, text),
+                preferences.screenshotQuality(),
+                UtilityManagerClient.preferences().contextualScreenshotNames()
+        );
     }
 
     public static boolean captureScreenshot(
@@ -174,6 +199,7 @@ public final class CaptureManager {
     }
 
     public static void shutdown() {
+        cleanScreenshotRequested = false;
         SCREENSHOTS.shutdown();
         if (RenderSystem.isOnRenderThread()) {
             FrameReadbackRing ring = readbackRing;
