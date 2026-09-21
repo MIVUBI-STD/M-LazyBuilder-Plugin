@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainVisibleDrawSnapshot;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -33,6 +34,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     private final GlState glState = new GlState();
     private volatile Snapshot snapshot = Snapshot.EMPTY;
     private long lastVisibleRevision = Long.MIN_VALUE;
+    private long lastTerrainContentRevision = Long.MIN_VALUE;
     private long lastTimeOfDay = Long.MIN_VALUE;
     private int lastProgramId = -1;
     private float lastCenterX = Float.NaN;
@@ -80,10 +82,12 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         float centerX = snap((float) cameraX);
         float centerY = snap((float) cameraY);
         float centerZ = snap((float) cameraZ);
+        long terrainContentRevision = TerrainGpuResidencyTracker.contentRevision();
 
         long quantizedTime = quantizeTime(timeOfDay);
         if (snapshot.ready()
                 && lastVisibleRevision == visible.revision()
+                && lastTerrainContentRevision == terrainContentRevision
                 && lastProgramId == program.programId()
                 && lastTimeOfDay == quantizedTime
                 && Float.compare(lastCenterX, centerX) == 0
@@ -167,6 +171,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     reusedFrames
             );
             lastVisibleRevision = visible.revision();
+            lastTerrainContentRevision = terrainContentRevision;
             lastProgramId = program.programId();
             lastTimeOfDay = quantizedTime;
             lastCenterX = centerX;
@@ -262,6 +267,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         shadowMap.close();
         snapshot = Snapshot.EMPTY;
         lastVisibleRevision = Long.MIN_VALUE;
+        lastTerrainContentRevision = Long.MIN_VALUE;
         lastTimeOfDay = Long.MIN_VALUE;
         lastProgramId = -1;
         lastCenterX = Float.NaN;
@@ -306,6 +312,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     }
 
     private static final class GlState {
+        private int readFramebuffer;
         private int drawFramebuffer;
         private int program;
         private int vao;
@@ -330,6 +337,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 viewportHeight = viewport.get(3);
             }
 
+            readFramebuffer = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
             drawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
             program = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
             vao = GL11C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
@@ -342,6 +350,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         }
 
         void restore() {
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, readFramebuffer);
             GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
             GL20C.glUseProgram(program);
             GL30C.glBindVertexArray(vao);
