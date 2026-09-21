@@ -74,7 +74,6 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
         return OptimizationCompatibility.evaluate(
                 RendererCompatibility.detect(),
                 loader.isModLoaded("immediatelyfast"),
-                loader.isModLoaded("ferritecore"),
                 loader.isModLoaded("entityculling")
         );
     }
