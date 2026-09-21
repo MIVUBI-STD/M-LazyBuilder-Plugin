@@ -80,6 +80,10 @@ public final class PerformanceRuntime {
         return frameMonitor.pressure();
     }
 
+    public CullingRuntime.Snapshot cullingSnapshot() {
+        return cullingRuntime.snapshot();
+    }
+
     public PerformancePreferences preferences() {
         return preferences;
     }
