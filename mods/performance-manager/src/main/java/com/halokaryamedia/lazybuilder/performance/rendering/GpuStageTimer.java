@@ -70,6 +70,17 @@ public final class GpuStageTimer {
         activeQuery = 0;
     }
 
+    /**
+     * Frame-boundary guard for exceptional render exits. Completing the query is safer than
+     * leaving GL_TIME_ELAPSED active and poisoning later instrumentation.
+     */
+    public static void recoverStaleQuery() {
+        if (activeStage == null || activeQuery == 0 || !RenderSystem.isOnRenderThread()) return;
+        GL33C.glEndQuery(GL33C.GL_TIME_ELAPSED);
+        activeStage = null;
+        activeQuery = 0;
+    }
+
     public static Snapshot snapshot(Stage stage) {
         if (stage == null) return Snapshot.EMPTY;
         if (RenderSystem.isOnRenderThread() && GpuCapabilityProfile.current().timerQueries()) {
