@@ -14,9 +14,14 @@ import java.util.Map;
  */
 public final class FirstPartyShaderPipeline implements AutoCloseable {
     private final Map<String, FirstPartyShaderProgram> programs;
+    private final int gbufferAttachments;
 
-    private FirstPartyShaderPipeline(Map<String, FirstPartyShaderProgram> programs) {
+    private FirstPartyShaderPipeline(
+            Map<String, FirstPartyShaderProgram> programs,
+            int gbufferAttachments
+    ) {
         this.programs = Map.copyOf(programs);
+        this.gbufferAttachments = Math.max(0, Math.min(2, gbufferAttachments));
     }
 
     public static FirstPartyShaderPipeline compile(ShaderPackSource source)
@@ -24,6 +29,11 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
         RenderSystem.assertOnRenderThread();
 
         ShaderPipelineDefinition.Result definition = ShaderPipelineDefinition.discover(source);
+        String terrainFragment = ShaderSourcePreprocessor.preprocess(
+                source,
+                definition.terrain().fragmentPath()
+        ).source();
+        int gbufferAttachments = TerrainShaderContract.gbufferAttachmentCount(terrainFragment);
         Map<String, FirstPartyShaderProgram> compiled = new LinkedHashMap<>();
 
         try {
@@ -33,7 +43,7 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
                         FirstPartyShaderCompiler.compile(source, program)
                 );
             }
-            return new FirstPartyShaderPipeline(compiled);
+            return new FirstPartyShaderPipeline(compiled, gbufferAttachments);
         } catch (IOException | FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
             for (FirstPartyShaderProgram program : compiled.values()) {
                 program.close();
@@ -54,6 +64,10 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
 
     public boolean has(String name) {
         return programs.containsKey(name);
+    }
+
+    public int gbufferAttachments() {
+        return gbufferAttachments;
     }
 
     @Override
