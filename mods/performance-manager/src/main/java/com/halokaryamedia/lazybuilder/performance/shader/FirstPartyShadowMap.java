@@ -19,6 +19,10 @@ public final class FirstPartyShadowMap implements AutoCloseable {
         int safeSize = Math.max(256, Math.min(4096, requestedSize));
         if (framebufferId != 0 && size == safeSize) return;
 
+        int previousReadFramebuffer = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+        int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+        int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+
         deleteNow();
         size = safeSize;
 
@@ -66,8 +70,9 @@ public final class FirstPartyShadowMap implements AutoCloseable {
         GL11C.glReadBuffer(GL11C.GL_NONE);
 
         int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, 0);
-        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, 0);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
+        GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
+        GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
 
         if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
             deleteNow();
