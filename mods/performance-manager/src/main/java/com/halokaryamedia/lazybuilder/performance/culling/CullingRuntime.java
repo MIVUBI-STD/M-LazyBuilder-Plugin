@@ -69,9 +69,10 @@ public final class CullingRuntime {
     private long entityOccludedDecisions;
     private long blockEntityOccludedDecisions;
     private FramePressure lastPressure = FramePressure.NORMAL;
+    private static final double COST_EMA_ALPHA = 0.125D;
     private long timingSampleCursor;
     private long sampledEvaluationCount;
-    private long sampledEvaluationNanos;
+    private double sampledEvaluationEmaMs;
 
     public boolean shouldRender(
             Entity entity,
@@ -241,7 +242,7 @@ public final class CullingRuntime {
         blockEntityOccludedDecisions = 0L;
         timingSampleCursor = 0L;
         sampledEvaluationCount = 0L;
-        sampledEvaluationNanos = 0L;
+        sampledEvaluationEmaMs = 0.0D;
         lastPressure = FramePressure.NORMAL;
     }
 
@@ -328,14 +329,22 @@ public final class CullingRuntime {
 
     private void recordSampledRuntimeCost(long elapsedNanos) {
         if (elapsedNanos <= 0L) return;
+        double elapsedMs = elapsedNanos / 1_000_000.0D;
         sampledEvaluationCount++;
-        sampledEvaluationNanos += elapsedNanos;
+        sampledEvaluationEmaMs = sampledEvaluationCount == 1L
+                ? elapsedMs
+                : sampledEvaluationEmaMs
+                        + COST_EMA_ALPHA * (elapsedMs - sampledEvaluationEmaMs);
     }
 
+    /**
+     * Recent-cost estimate used by the adaptive governor.
+     *
+     * This intentionally uses an EMA rather than a session-lifetime average so a short period of
+     * expensive or cheap culling does not bias the optimizer for the rest of a long builder session.
+     */
     private double sampledAverageEvaluationMs() {
-        return sampledEvaluationCount <= 0L
-                ? 0.0D
-                : (sampledEvaluationNanos / (double) sampledEvaluationCount) / 1_000_000.0D;
+        return sampledEvaluationEmaMs;
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
