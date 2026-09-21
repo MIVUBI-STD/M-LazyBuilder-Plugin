@@ -143,12 +143,16 @@ Diagnostic consumers should prefer the stable grouped views exposed by `Performa
 (`frameStats`, `resourceStats`, `chunkStats`, and `compatibilityStats`) instead of coupling new
 code to the complete flat diagnostic schema.
 
-Pipeline telemetry is disabled by default and becomes active only when proof mode is enabled, the
-explicit metrics system property is set, or an on-demand diagnostics snapshot is requested. This
-keeps observability useful without paying permanent LongAdder traffic on meshing/render hot paths.
+Pipeline telemetry is disabled by default and becomes active only when proof mode or the explicit
+metrics system property is enabled at process start. An on-demand diagnostics snapshot is
+observer-neutral: reading a snapshot does not permanently activate high-frequency counters or CPU
+timers. This keeps observability useful without paying permanent LongAdder/timing traffic on
+meshing/render hot paths.
 
 Entity/block-entity culling is opt-in by default because its raycast cost must be proven on the
-representative builder workload before becoming a default optimization. When disabled, runtime tick
+representative builder workload before becoming a default optimization. Adaptive profitability uses
+a recent-cost EMA rather than a session-lifetime average so old workload phases do not permanently
+bias current culling budgets. When disabled, runtime tick
 work and block-entity renderer lookup are bypassed. When an external EntityCulling owner is present,
 LazyBuilder's corresponding render mixins do not apply. Culling ray evaluation uses lazy sample
 construction and primitive direction math to reduce short-lived allocation churn.
@@ -157,8 +161,9 @@ Terrain runtime state is scoped to the active `ChunkBuilder` session. A new rend
 session generation; reset rotates that generation, stop clears only if the caller still owns the
 active session, and queued upload work carries the owner+generation token it was created under.
 Stale upload work is discarded before any GL bind or residency mutation. World identity changes also
-reset frame-pressure history, culling state, CPU stage timing, adaptive-governor state, and GPU proof
-counters so one world cannot bias scheduling or benchmark evidence in the next. Outstanding GPU timer
+reset frame-pressure history, culling state, CPU stage timing, chunk-pipeline proof counters,
+adaptive-governor state, and GPU proof counters so one world cannot bias scheduling or benchmark
+evidence in the next. Outstanding GPU timer
 queries are allowed to drain asynchronously but carry an evidence generation; results from an older
 world generation are ignored instead of being attributed to the new session.
 
