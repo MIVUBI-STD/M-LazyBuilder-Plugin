@@ -17,8 +17,16 @@ public final class CaptureNaming {
     private CaptureNaming() {}
 
     public static String screenshotFileName(boolean contextual, CapturePreferences.ScreenshotQuality quality) {
+        return captureStem(contextual) + quality.extension();
+    }
+
+    public static String videoFileStem(boolean contextual) {
+        return captureStem(contextual);
+    }
+
+    private static String captureStem(boolean contextual) {
         String prefix = contextual ? resolveContext(MinecraftClient.getInstance()) : "minecraft";
-        return sanitize(prefix) + "_" + timestamp() + quality.extension();
+        return sanitize(prefix) + "_" + timestamp();
     }
 
     static String sanitize(String value) {
