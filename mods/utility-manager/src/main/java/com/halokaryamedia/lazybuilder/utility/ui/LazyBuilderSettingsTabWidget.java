@@ -45,9 +45,17 @@ final class LazyBuilderSettingsTabWidget extends PressableWidget {
             context.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x331F252C);
         }
 
+        Text visible = getMessage();
+        int available = Math.max(8, getWidth() - 10);
+        if (renderer.getWidth(visible) > available) {
+            String ellipsis = "…";
+            int labelWidth = Math.max(0, available - renderer.getWidth(ellipsis));
+            visible = Text.literal(renderer.trimToWidth(visible.getString(), labelWidth) + ellipsis);
+        }
+
         context.drawCenteredTextWithShadow(
                 renderer,
-                getMessage(),
+                visible,
                 getX() + getWidth() / 2,
                 getY() + (getHeight() - 8) / 2,
                 textColor
