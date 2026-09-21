@@ -4,10 +4,8 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
-import net.minecraft.util.Util;
 
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 
 /**
  * LazyBuilder presentation shell for Iris shader management.
@@ -25,8 +23,7 @@ public final class LazyBuilderShaderScreen extends Screen {
     private enum FailedAction {
         NONE,
         TOGGLE,
-        OPEN_MANAGER,
-        OPEN_FOLDER
+        OPEN_MANAGER
     }
 
     private final Screen parent;
@@ -77,34 +74,10 @@ public final class LazyBuilderShaderScreen extends Screen {
                     y,
                     rowWidth,
                     22,
-                    Text.literal("Manage Shader Packs"),
+                    Text.literal("Manage Shaders"),
                     true,
                     LazyBuilderSettingsControlWidget.Kind.ACTION,
                     this::openIrisManager
-            ));
-
-            y += compact ? 28 : 34;
-            addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    actionX,
-                    y,
-                    rowWidth,
-                    22,
-                    Text.literal("Open Iris Settings"),
-                    true,
-                    LazyBuilderSettingsControlWidget.Kind.ACTION,
-                    this::openIrisManager
-            ));
-
-            y += compact ? 28 : 34;
-            addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    actionX,
-                    y,
-                    rowWidth,
-                    22,
-                    Text.literal("Open Shader Folder"),
-                    true,
-                    LazyBuilderSettingsControlWidget.Kind.ACTION,
-                    this::openShaderFolder
             ));
 
             if (failure != null) {
@@ -187,7 +160,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         textY += 24;
         String description = !isIrisAvailable()
                 ? "Install Iris to use shader packs. LazyBuilder does not provide its own shader renderer."
-                : "Iris owns shader packs and shader-specific options. Use Manage Shader Packs for selection or Open Iris Settings for advanced options.";
+                : "Iris owns shader pack selection, pack-specific options, and its shader folder. Use Manage Shaders to continue in the authoritative Iris screen.";
         int descriptionWidth = compact ? Math.max(100, shell - 28) : Math.max(100, shell - 230);
         for (var line : textRenderer.wrapLines(Text.literal(description), descriptionWidth)) {
             context.drawTextWithShadow(
@@ -237,15 +210,7 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     private String shaderName() {
         if (!isIrisAvailable()) return "Unavailable";
-        if (!shadersEnabled()) return "No Shader";
-
-        try {
-            Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
-            Object name = iris.getMethod("getCurrentPackName").invoke(null);
-            if (name instanceof String value && !value.isBlank()) return value;
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
-        return "Active Shader";
+        return shadersEnabled() ? "Shader Enabled" : "No Shader";
     }
 
     private Class<?> irisApiClass() throws ClassNotFoundException {
@@ -297,24 +262,6 @@ public final class LazyBuilderShaderScreen extends Screen {
         }
     }
 
-    private void openShaderFolder() {
-        failure = null;
-        failedAction = FailedAction.NONE;
-        try {
-            Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
-            Object path = iris.getMethod("getShaderpacksDirectory").invoke(null);
-            if (path instanceof Path shaderPath) {
-                Util.getOperatingSystem().open(shaderPath);
-                return;
-            }
-            failure = "Shader folder is unavailable.";
-            failedAction = FailedAction.OPEN_FOLDER;
-            clearAndInit();
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error, FailedAction.OPEN_FOLDER);
-        }
-    }
-
     private void retry() {
         FailedAction action = failedAction;
         failure = null;
@@ -322,7 +269,6 @@ public final class LazyBuilderShaderScreen extends Screen {
         switch (action) {
             case TOGGLE -> toggleShaders();
             case OPEN_MANAGER -> openIrisManager();
-            case OPEN_FOLDER -> openShaderFolder();
             case NONE -> clearAndInit();
         }
     }
