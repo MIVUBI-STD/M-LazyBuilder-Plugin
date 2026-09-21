@@ -130,6 +130,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             GL11C.glEnable(GL11C.GL_DEPTH_TEST);
             GL11C.glDepthMask(true);
             GL11C.glDepthFunc(GL11C.GL_LEQUAL);
+            GL11C.glEnable(GL11C.GL_POLYGON_OFFSET_FILL);
+            GL11C.glPolygonOffset(1.1F, 4.0F);
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
             GL11C.glEnable(GL11C.GL_CULL_FACE);
@@ -181,7 +183,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
 
             snapshot = new Snapshot(
                     drawn > 0,
-                    drawn > 0 ? "ready" : "no-drawable-terrain",
+                    drawn > 0 ? "ready-solid-only" : "no-drawable-terrain",
                     shadowMap.depthTextureId(),
                     shadowMap.size(),
                     new Matrix4f(lightViewProjection),
@@ -346,6 +348,9 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         private boolean blend;
         private boolean cull;
         private boolean scissor;
+        private boolean polygonOffsetFill;
+        private float polygonOffsetFactor;
+        private float polygonOffsetUnits;
         private int cullFace;
         private int viewportX;
         private int viewportY;
@@ -372,6 +377,9 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             blend = GL11C.glIsEnabled(GL11C.GL_BLEND);
             cull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
             scissor = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
+            polygonOffsetFill = GL11C.glIsEnabled(GL11C.GL_POLYGON_OFFSET_FILL);
+            polygonOffsetFactor = GL11C.glGetFloat(GL11C.GL_POLYGON_OFFSET_FACTOR);
+            polygonOffsetUnits = GL11C.glGetFloat(GL11C.GL_POLYGON_OFFSET_UNITS);
             cullFace = GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE);
         }
 
@@ -390,6 +398,9 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             else GL11C.glDisable(GL11C.GL_CULL_FACE);
             if (scissor) GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
             else GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
+            if (polygonOffsetFill) GL11C.glEnable(GL11C.GL_POLYGON_OFFSET_FILL);
+            else GL11C.glDisable(GL11C.GL_POLYGON_OFFSET_FILL);
+            GL11C.glPolygonOffset(polygonOffsetFactor, polygonOffsetUnits);
             GL11C.glCullFace(cullFace);
             GL11C.glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
         }
