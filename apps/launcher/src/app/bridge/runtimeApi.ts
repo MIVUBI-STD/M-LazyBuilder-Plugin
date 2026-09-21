@@ -17,6 +17,7 @@ export * from './runtimeTypes';
  * without growing a second application/runtime authority in Svelte.
  */
 export const runtimeApi = {
+  system: appApi.system,
   diagnostics: appApi.diagnostics,
   startup: appApi.startup,
   settings: appApi.settings,
