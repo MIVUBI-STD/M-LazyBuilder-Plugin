@@ -49,10 +49,9 @@ public final class OptimizationCompatibility {
             decisions.put(OptimizationDomain.TERRAIN_SUBMISSION, Decision.external(safeRenderer.ownerSummary()));
         }
 
-        if (ferriteCorePresent) {
-            decisions.put(OptimizationDomain.MODEL_MEMORY, Decision.external("ferritecore"));
-        }
-
+        // MODEL_MEMORY is first-party owned. FerriteCore may coexist, but its
+        // presence is not an ownership reason because LazyBuilder already canonicalizes
+        // vanilla baked-quad vertex storage independently.
         return new Policy(Map.copyOf(decisions));
     }
 
