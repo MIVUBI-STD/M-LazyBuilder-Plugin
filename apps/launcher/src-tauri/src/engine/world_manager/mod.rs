@@ -120,11 +120,13 @@ pub struct WorldTaskSnapshot {
     pub updated_at: String,
 }
 
-#[derive(Deserialize)]
-struct StatusResponse {
-    status: String,
-    #[serde(rename = "protocolVersion")]
-    protocol_version: u32,
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldBridgeStatus {
+    pub status: String,
+    pub protocol_version: u32,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -383,8 +385,8 @@ pub fn upload_world_import(file_path: &str) -> Result<String, String> {
     }
 }
 
-fn ensure_bridge_compatible() -> Result<(), String> {
-    let status: StatusResponse = request_json("GET", "/v1/status", Option::<&()>::None)?;
+pub fn bridge_status() -> Result<WorldBridgeStatus, String> {
+    let status: WorldBridgeStatus = request_json("GET", "/v1/status", Option::<&()>::None)?;
     if status.status != "ready" {
         return Err(format!("World-Manager desktop bridge is not ready: {}", status.status));
     }
@@ -394,7 +396,11 @@ fn ensure_bridge_compatible() -> Result<(), String> {
             status.protocol_version
         ));
     }
-    Ok(())
+    Ok(status)
+}
+
+fn ensure_bridge_compatible() -> Result<(), String> {
+    bridge_status().map(|_| ())
 }
 
 fn start_world_task(operation: &str, world_id: &str) -> Result<WorldTaskSnapshot, String> {
