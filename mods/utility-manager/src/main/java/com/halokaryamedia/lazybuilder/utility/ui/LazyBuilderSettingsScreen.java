@@ -494,6 +494,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this,
                 client.getResourcePackManager(),
                 manager -> {
+                    UtilityNotifications.show(
+                            "Resource Packs",
+                            "Applying resource pack changes..."
+                    );
                     client.options.refreshResourcePacks(manager);
                     client.reloadResources();
                 },
