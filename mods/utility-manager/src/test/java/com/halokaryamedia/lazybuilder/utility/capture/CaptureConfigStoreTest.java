@@ -31,6 +31,7 @@ final class CaptureConfigStoreTest {
         CapturePreferences expected = new CapturePreferences(
                 CapturePreferences.ScreenshotQuality.MAXIMUM,
                 CapturePreferences.VideoQuality.PRODUCTION,
+                CapturePreferences.VideoResolution.QHD_1440,
                 CapturePreferences.VideoFrameRate.FPS_120,
                 CapturePreferences.VideoEncoderMode.SOFTWARE
         );
