@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.rendering;
 
+import com.halokaryamedia.lazybuilder.performance.mixin.CompiledShaderMixin;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
@@ -21,6 +22,8 @@ public final class PerformanceShaderReloadInvalidator implements SimpleSynchrono
 
     @Override
     public void reload(ResourceManager manager) {
+        CompiledShaderMixin.lazybuilder$resetTerrainFallbackState();
+        TerrainShaderSourceTransformer.invalidateForResourceReload();
         TerrainMultiDrawSubmissionBackend.invalidateForShaderReload();
         TerrainPerDrawShaderBackend.clear();
         TerrainDrawTransformStream.clear();
