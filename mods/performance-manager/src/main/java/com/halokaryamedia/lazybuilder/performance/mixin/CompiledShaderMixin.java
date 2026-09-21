@@ -95,6 +95,24 @@ abstract class CompiledShaderMixin {
         lazybuilder$successfulFirstPartyStages.clear();
     }
 
+    static boolean lazybuilder$restoreFirstPartyStagesForLinkFallback() {
+        if (lazybuilder$successfulFirstPartyStages.isEmpty()) return false;
+
+        boolean restored = false;
+        for (RestorableStage stage : lazybuilder$successfulFirstPartyStages.values()) {
+            GlStateManager.glShaderSource(stage.shaderHandle(), stage.originalSource());
+            GlStateManager.glCompileShader(stage.shaderHandle());
+
+            boolean success = GlStateManager.glGetShaderi(stage.shaderHandle(), 35713) != 0;
+            if (success) {
+                restored = true;
+                TerrainShaderSourceTransformer.recordCompileFallback(stage.type());
+            }
+        }
+        lazybuilder$successfulFirstPartyStages.clear();
+        return restored;
+    }
+
     private static void lazybuilder$restoreOtherFirstPartyStages(CompiledShader.Type failedType) {
         for (RestorableStage stage : lazybuilder$successfulFirstPartyStages.values()) {
             if (stage.type() == failedType) continue;
