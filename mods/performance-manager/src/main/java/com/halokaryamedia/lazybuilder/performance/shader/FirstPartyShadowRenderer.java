@@ -29,6 +29,13 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
 
     private final FirstPartyShadowMap shadowMap = new FirstPartyShadowMap();
     private volatile Snapshot snapshot = Snapshot.EMPTY;
+    private long lastVisibleRevision = Long.MIN_VALUE;
+    private long lastTimeOfDay = Long.MIN_VALUE;
+    private int lastProgramId = -1;
+    private float lastCenterX = Float.NaN;
+    private float lastCenterY = Float.NaN;
+    private float lastCenterZ = Float.NaN;
+    private long reusedFrames;
 
     public Snapshot render(
             FirstPartyShaderPipeline pipeline,
@@ -55,7 +62,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     0.0F,
                     0.0F,
                     0,
-                    0
+                    0,
+                    reusedFrames
             );
             return snapshot;
         }
@@ -66,13 +74,24 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             return snapshot;
         }
 
-        GlState state = GlState.capture();
-        int drawn = 0;
-        int skipped = 0;
-
         float centerX = snap((float) cameraX);
         float centerY = snap((float) cameraY);
         float centerZ = snap((float) cameraZ);
+
+        if (snapshot.ready()
+                && lastVisibleRevision == visible.revision()
+                && lastProgramId == program.programId()
+                && lastTimeOfDay == timeOfDay
+                && Float.compare(lastCenterX, centerX) == 0
+                && Float.compare(lastCenterY, centerY) == 0
+                && Float.compare(lastCenterZ, centerZ) == 0) {
+            reusedFrames++;
+            return snapshot.withReusedFrames(reusedFrames);
+        }
+
+        GlState state = GlState.capture();
+        int drawn = 0;
+        int skipped = 0;
         Matrix4f lightViewProjection = lightViewProjection(timeOfDay);
 
         try {
@@ -140,8 +159,15 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     centerY,
                     centerZ,
                     drawn,
-                    skipped
+                    skipped,
+                    reusedFrames
             );
+            lastVisibleRevision = visible.revision();
+            lastProgramId = program.programId();
+            lastTimeOfDay = timeOfDay;
+            lastCenterX = centerX;
+            lastCenterY = centerY;
+            lastCenterZ = centerZ;
             return snapshot;
         } catch (RuntimeException error) {
             TerrainPhysicalArenaManager.noteExternalBind();
@@ -155,7 +181,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     centerY,
                     centerZ,
                     drawn,
-                    skipped
+                    skipped,
+                    reusedFrames
             );
             return snapshot;
         } finally {
@@ -225,6 +252,13 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     public void close() {
         shadowMap.close();
         snapshot = Snapshot.EMPTY;
+        lastVisibleRevision = Long.MIN_VALUE;
+        lastTimeOfDay = Long.MIN_VALUE;
+        lastProgramId = -1;
+        lastCenterX = Float.NaN;
+        lastCenterY = Float.NaN;
+        lastCenterZ = Float.NaN;
+        reusedFrames = 0L;
     }
 
     public record Snapshot(
@@ -237,8 +271,24 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             float centerY,
             float centerZ,
             int drawnBuffers,
-            int skippedBuffers
+            int skippedBuffers,
+            long reusedFrames
     ) {
+        public Snapshot withReusedFrames(long reused) {
+            return new Snapshot(
+                    ready,
+                    status,
+                    textureId,
+                    resolution,
+                    lightViewProjection,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    drawnBuffers,
+                    skippedBuffers,
+                    reused
+            );
+        }
         private static final Snapshot EMPTY = new Snapshot(
                 false,
                 "not-configured",
@@ -249,7 +299,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 0.0F,
                 0.0F,
                 0,
-                0
+                0,
+                0L
         );
 
         public Snapshot {
