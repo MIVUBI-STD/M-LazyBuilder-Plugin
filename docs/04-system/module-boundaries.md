@@ -15,7 +15,7 @@ LazyBuilder is a suite. Each component owns one responsibility and must remain m
 | Performance Manager | `mods/performance-manager/` | Fabric | first-party client performance behavior, renderer/chunk/resource policy and diagnostics | Map/Utility workload ownership, build editing |
 | Builder Utilities | `mods/builder-utilities/` | Fabric + Axiom | Axiom-first extension capabilities, bounded mutation lifecycle, history/recovery and builder-specific execution | replacing Axiom's primary editor, becoming a fourth core Manager, generic client QoL/performance ownership |
 | Shared Protocol | `shared/protocol/` | Paper + Fabric | neutral versioned request/result/value contracts | Paper/Fabric implementation logic |
-| System Kernel | `apps/launcher/src-tauri/src/engine/system_kernel.rs` | Desktop | read-only system snapshot, readiness/capability projection, composition | durable domain state, business logic, bypassing owner validation |
+| System Coordination | `apps/launcher/src-tauri/src/engine/system/` | Desktop | read-only system snapshot, readiness/capability/activity projection, composition | durable domain state, business logic, bypassing owner validation |
 
 ## Product lanes
 
@@ -45,7 +45,7 @@ Axiom remains the primary builder editor/interaction owner. FAWE, FastAsyncVoxel
 3. One core Fabric Manager = one deployable mod/JAR.
 4. Builder Utilities is an independent extension artifact, not a fourth core Manager.
 5. Each deployable component owns only its own configuration and tests.
-6. LazyBuilder has no master business runtime component. The Launcher may host a thin composition/system-kernel layer that reads existing authorities and projects system readiness/capabilities without owning their domain state.
+6. LazyBuilder has no master business runtime component. The Launcher may host a thin composition/system-coordination layer that reads existing authorities and projects system readiness/capabilities without owning their domain state.
 7. Only contract/protocol packages are public cross-runtime boundaries by default.
 8. Feature growth stays inside the owning component.
 9. Shared protocol evolution is explicit and versioned.
