@@ -29,7 +29,10 @@ final class CaptureConfigStoreTest {
     void qualityRoundTripsAtomically() {
         CaptureConfigStore store = new CaptureConfigStore(tempDir);
         CapturePreferences expected = new CapturePreferences(
-                CapturePreferences.ScreenshotQuality.MAXIMUM
+                CapturePreferences.ScreenshotQuality.MAXIMUM,
+                CapturePreferences.VideoQuality.PRODUCTION,
+                CapturePreferences.VideoFrameRate.FPS_120,
+                CapturePreferences.VideoEncoderMode.SOFTWARE
         );
 
         store.save(expected);
