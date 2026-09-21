@@ -14,7 +14,9 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.resource.ResourceReloader;
 import net.minecraft.resource.ResourceType;
+import net.minecraft.util.Util;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
@@ -23,6 +25,7 @@ import org.joml.Matrix4f;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -132,25 +135,61 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                     && !shaderTerrainReloadInFlight
                     && shaders.consumeTerrainReloadRequest()) {
                 shaderTerrainReloadInFlight = true;
-                client.reloadResources().whenComplete((ignored, error) ->
+                reloadMinecraftShaders(client).whenComplete((ignored, error) ->
                         client.execute(() -> {
                             shaderTerrainReloadInFlight = false;
                             FirstPartyShaderRuntime current = shaderRuntime;
                             if (current == null) return;
-                            Throwable cause = error == null
-                                    ? null
-                                    : (error.getCause() == null ? error : error.getCause());
+                            Throwable cause = unwrap(error);
                             current.recordTerrainReloadCompletion(
                                     cause == null,
-                                    cause == null || cause.getMessage() == null
-                                            ? ""
-                                            : cause.getMessage(),
+                                    cause == null ? "" : safeThrowableMessage(cause),
                                     TerrainShaderSourceTransformer.status()
                             );
                         })
                 );
             }
         });
+    }
+
+    private static CompletableFuture<Void> reloadMinecraftShaders(MinecraftClient client) {
+        if (client == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Minecraft client is unavailable.")
+            );
+        }
+
+        PerformanceShaderReloadInvalidator.invalidateShaderSensitiveState();
+        ResourceReloader.Synchronizer synchronizer = new ResourceReloader.Synchronizer() {
+            @Override
+            public <T> CompletableFuture<T> whenPrepared(T prepared) {
+                return CompletableFuture.completedFuture(prepared);
+            }
+        };
+
+        try {
+            return client.getShaderLoader().reload(
+                    synchronizer,
+                    client.getResourceManager(),
+                    Util.getMainWorkerExecutor(),
+                    client
+            );
+        } catch (RuntimeException error) {
+            return CompletableFuture.failedFuture(error);
+        }
+    }
+
+    private static Throwable unwrap(Throwable error) {
+        if (error == null) return null;
+        return error.getCause() == null ? error : error.getCause();
+    }
+
+    private static String safeThrowableMessage(Throwable error) {
+        if (error == null) return "";
+        String message = error.getMessage();
+        return message == null || message.isBlank()
+                ? error.getClass().getSimpleName()
+                : message;
     }
 
     private static void renderFirstPartyShadow(WorldRenderContext context) {
