@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.culling.CullingRuntime;
+import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressure;
 import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
@@ -52,6 +53,7 @@ public final class PerformanceRuntime {
             frameMonitor.resetSession();
             StageTimingMetrics.resetSession();
             GpuStageTimer.resetSession();
+            ChunkPipelineMetrics.resetSession();
             cullingRuntime.clear();
             governor.reset();
         }
