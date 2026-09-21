@@ -111,7 +111,10 @@ public final class PerformanceRuntime {
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
         long cacheHits = culling.entityCacheHits() + culling.blockEntityCacheHits();
         long occluded = culling.entityOccludedDecisions() + culling.blockEntityOccludedDecisions();
-        double cullingCpu = Math.max(entityTiming.averageMs(), blockTiming.averageMs());
+        double cullingCpu = Math.max(
+                culling.sampledAverageEvaluationMs(),
+                Math.max(entityTiming.averageMs(), blockTiming.averageMs())
+        );
 
         return governor.update(new PerformanceGovernor.Input(
                 frameMonitor.pressure(),
