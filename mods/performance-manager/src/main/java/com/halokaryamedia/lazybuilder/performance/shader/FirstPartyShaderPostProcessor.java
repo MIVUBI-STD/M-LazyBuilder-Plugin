@@ -22,6 +22,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
 
     private final FirstPartyShaderFramebuffer scene = new FirstPartyShaderFramebuffer();
     private final FirstPartyShaderFramebuffer scratch = new FirstPartyShaderFramebuffer();
+    private final GlState glState = new GlState();
     private int fullscreenVao;
 
     public boolean render(
@@ -55,7 +56,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                 shadowReady
         );
 
-        GlState state = GlState.capture(highestTextureUnit);
+        glState.capture(highestTextureUnit);
         try {
             scene.ensureSize(width, height);
             if (hasComposite) scratch.ensureSize(width, height);
@@ -106,7 +107,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             }
             return true;
         } finally {
-            state.restore();
+            glState.restore();
         }
     }
 
@@ -283,32 +284,28 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         fullscreenVao = 0;
     }
 
-    private record GlState(
-            int readFramebuffer,
-            int drawFramebuffer,
-            int program,
-            int vao,
-            int activeTexture,
-            int texture0,
-            int texture1,
-            int texture2,
-            int texture3,
-            int texture4,
-            boolean depthTest,
-            boolean depthMask,
-            boolean blend,
-            boolean cull,
-            boolean scissor,
-            int viewportX,
-            int viewportY,
-            int viewportWidth,
-            int viewportHeight
-    ) {
-        static GlState capture(int highestTextureUnit) {
-            int viewportX;
-            int viewportY;
-            int viewportWidth;
-            int viewportHeight;
+    private static final class GlState {
+        private int readFramebuffer;
+        private int drawFramebuffer;
+        private int program;
+        private int vao;
+        private int activeTexture;
+        private int texture0;
+        private int texture1;
+        private int texture2;
+        private int texture3;
+        private int texture4;
+        private boolean depthTest;
+        private boolean depthMask;
+        private boolean blend;
+        private boolean cull;
+        private boolean scissor;
+        private int viewportX;
+        private int viewportY;
+        private int viewportWidth;
+        private int viewportHeight;
+
+        void capture(int highestTextureUnit) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 IntBuffer viewport = stack.mallocInt(4);
                 GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
@@ -318,17 +315,16 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                 viewportHeight = viewport.get(3);
             }
 
-            int activeTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
-
+            activeTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
             int boundedHighest = Math.max(0, Math.min(4, highestTextureUnit));
 
             GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
-            int texture0 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            texture0 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
 
-            int texture1 = -1;
-            int texture2 = -1;
-            int texture3 = -1;
-            int texture4 = -1;
+            texture1 = -1;
+            texture2 = -1;
+            texture3 = -1;
+            texture4 = -1;
             if (boundedHighest >= 1) {
                 GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
                 texture1 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
@@ -347,27 +343,15 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             }
             GL13C.glActiveTexture(activeTexture);
 
-            return new GlState(
-                    GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING),
-                    GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING),
-                    GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM),
-                    GL11C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING),
-                    activeTexture,
-                    texture0,
-                    texture1,
-                    texture2,
-                    texture3,
-                    texture4,
-                    GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST),
-                    GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0,
-                    GL11C.glIsEnabled(GL11C.GL_BLEND),
-                    GL11C.glIsEnabled(GL11C.GL_CULL_FACE),
-                    GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST),
-                    viewportX,
-                    viewportY,
-                    viewportWidth,
-                    viewportHeight
-            );
+            readFramebuffer = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+            drawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+            program = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+            vao = GL11C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
+            depthTest = GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST);
+            depthMask = GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0;
+            blend = GL11C.glIsEnabled(GL11C.GL_BLEND);
+            cull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
+            scissor = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
         }
 
         void restore() {
