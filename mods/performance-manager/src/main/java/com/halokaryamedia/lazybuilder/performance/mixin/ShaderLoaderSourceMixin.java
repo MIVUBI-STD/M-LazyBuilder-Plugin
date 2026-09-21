@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Map;
 
-/** Records whether the active Minecraft terrain shader source still comes from the built-in pack. */
+/** Records vanilla ownership of each Minecraft terrain shader stage before substitution. */
 @Mixin(ShaderLoader.class)
 abstract class ShaderLoaderSourceMixin {
     @Inject(method = "loadShaderSource", at = @At("HEAD"))
