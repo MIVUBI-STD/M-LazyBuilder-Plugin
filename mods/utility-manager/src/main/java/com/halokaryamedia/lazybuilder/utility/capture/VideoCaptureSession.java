@@ -60,7 +60,7 @@ final class VideoCaptureSession {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Capture/Video");
-    private static final int FRAME_POOL_SIZE = 4;
+    private static final int FRAME_POOL_SIZE = 3;
     private static final long MIN_FREE_DISK_BYTES = 1024L * 1024L * 1024L;
 
     private final ArrayBlockingQueue<FramePacket> freeFrames = new ArrayBlockingQueue<>(FRAME_POOL_SIZE);
