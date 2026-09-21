@@ -17,6 +17,9 @@ import java.util.List;
 public final class TerrainMultiDrawSubmissionBackend {
     private static final IdentityHashMap<VertexBuffer, Run> STARTS = new IdentityHashMap<>();
     private static final IdentityHashMap<VertexBuffer, Run> MEMBERS = new IdentityHashMap<>();
+    private static final ArrayList<Run> RUN_POOL = new ArrayList<>();
+    private static final ArrayList<Run> PLANNED_RUNS = new ArrayList<>();
+    private static int runPoolCursor;
 
     private static ShaderProgram activeProgram;
     private static Run pendingRun;
@@ -127,11 +130,11 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     static List<Run> planRuns(TerrainMultiDrawCommandStream.LayerPacket packet) {
-        if (packet == null || packet.commandCount() == 0) return List.of();
+        PLANNED_RUNS.clear();
+        runPoolCursor = 0;
+        if (packet == null || packet.commandCount() == 0) return PLANNED_RUNS;
 
-        List<Run> runs = new ArrayList<>();
         int runStart = -1;
-
         for (int index = 0; index < packet.commandCount(); index++) {
             if (runStart < 0) {
                 runStart = index;
@@ -139,13 +142,13 @@ public final class TerrainMultiDrawSubmissionBackend {
             }
 
             if (!sameRun(packet, index - 1, index)) {
-                flushRun(runs, packet, runStart, index);
+                flushRun(packet, runStart, index);
                 runStart = index;
             }
         }
 
-        flushRun(runs, packet, runStart, packet.commandCount());
-        return runs;
+        flushRun(packet, runStart, packet.commandCount());
+        return PLANNED_RUNS;
     }
 
     private static boolean submit(Run run) {
@@ -234,14 +237,22 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     private static void flushRun(
-            List<Run> runs,
             TerrainMultiDrawCommandStream.LayerPacket packet,
             int start,
             int end
     ) {
-        if (packet != null && start >= 0 && end - start > 1) {
-            runs.add(new Run(packet, start, end));
+        if (packet == null || start < 0 || end - start <= 1) return;
+
+        Run run;
+        if (runPoolCursor < RUN_POOL.size()) {
+            run = RUN_POOL.get(runPoolCursor);
+        } else {
+            run = new Run();
+            RUN_POOL.add(run);
         }
+        runPoolCursor++;
+        run.reset(packet, start, end);
+        PLANNED_RUNS.add(run);
     }
 
     private static boolean runtimeSourcesPresent(Run run) {
@@ -314,13 +325,16 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     static final class Run {
-        private final TerrainMultiDrawCommandStream.LayerPacket packet;
-        private final int start;
-        private final int end;
+        private TerrainMultiDrawCommandStream.LayerPacket packet;
+        private int start;
+        private int end;
         private boolean submitted;
         private boolean failed;
 
-        private Run(
+        private Run() {
+        }
+
+        private void reset(
                 TerrainMultiDrawCommandStream.LayerPacket packet,
                 int start,
                 int end
@@ -328,6 +342,8 @@ public final class TerrainMultiDrawSubmissionBackend {
             this.packet = packet;
             this.start = start;
             this.end = end;
+            this.submitted = false;
+            this.failed = false;
         }
 
         VertexBuffer sourceAt(int index) {
