@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -54,7 +56,22 @@ public final class ShaderPackCatalog {
                     }
                 });
 
-                List<ShaderPackDescriptor> result = new ArrayList<>(raw);
+                Map<String, Integer> idCounts = new HashMap<>();
+                for (ShaderPackDescriptor pack : raw) {
+                    idCounts.merge(pack.id(), 1, Integer::sum);
+                }
+
+                List<ShaderPackDescriptor> result = new ArrayList<>();
+                for (ShaderPackDescriptor pack : raw) {
+                    if (idCounts.getOrDefault(pack.id(), 0) > 1) {
+                        invalid.add(
+                                fileName(pack.path())
+                                        + ": duplicate shader pack id '" + pack.id() + "'"
+                        );
+                        continue;
+                    }
+                    result.add(pack);
+                }
                 result.sort(Comparator.comparing(
                         ShaderPackDescriptor::displayName,
                         String.CASE_INSENSITIVE_ORDER
@@ -137,8 +154,9 @@ public final class ShaderPackCatalog {
         try (ShaderPackSource.Session source = ShaderPackSource.openSession(draft)) {
             ShaderPackManifest manifest = ShaderPackManifest.load(source, display);
             String manifestName = manifest.name().isBlank() ? display : manifest.name();
+            String resolvedId = manifest.id().isBlank() ? draft.id() : manifest.id();
             return new ShaderPackDescriptor(
-                    draft.id(),
+                    resolvedId,
                     manifestName,
                     path,
                     draft.kind(),
@@ -156,6 +174,11 @@ public final class ShaderPackCatalog {
     static String persistentId(String fileName) {
         String base = stableId(fileName);
         return base + "-" + nameFingerprint(fileName);
+    }
+
+    static String sourceDerivedId(ShaderPackDescriptor descriptor) {
+        if (descriptor == null || descriptor.path() == null) return "";
+        return persistentId(fileName(descriptor.path()));
     }
 
     static String legacyId(ShaderPackDescriptor descriptor) {
