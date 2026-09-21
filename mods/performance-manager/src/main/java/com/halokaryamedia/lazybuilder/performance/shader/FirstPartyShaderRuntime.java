@@ -33,6 +33,8 @@ public final class FirstPartyShaderRuntime {
     private volatile String controlError = "";
     private volatile String previewError = "";
     private volatile long revision;
+    private volatile long cachedSnapshotMapRevision = Long.MIN_VALUE;
+    private volatile Map<String, Object> cachedSnapshotMap = Map.of();
     private volatile long compileRequestGeneration;
     private volatile Thread preparationThread;
     private volatile boolean lastFrameApplied;
@@ -842,7 +844,12 @@ public final class FirstPartyShaderRuntime {
         );
     }
 
-    public Map<String, Object> snapshotMap() {
+    public synchronized Map<String, Object> snapshotMap() {
+        long currentRevision = revision;
+        if (cachedSnapshotMapRevision == currentRevision) {
+            return cachedSnapshotMap;
+        }
+
         Snapshot snapshot = snapshot();
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("revision", snapshot.revision());
@@ -910,7 +917,10 @@ public final class FirstPartyShaderRuntime {
             values.put("selectedPackDescription", "");
             values.put("options", List.of());
         }
-        return Map.copyOf(values);
+        Map<String, Object> immutable = Map.copyOf(values);
+        cachedSnapshotMap = immutable;
+        cachedSnapshotMapRevision = currentRevision;
+        return immutable;
     }
 
     private ShaderPackDescriptor selectedPack() {
@@ -950,18 +960,14 @@ public final class FirstPartyShaderRuntime {
     }
 
     private String primaryError() {
-        for (String error : List.of(
-                catalogError,
-                compileError,
-                terrainError,
-                gbufferError,
-                shadowError,
-                postProcessError,
-                controlError,
-                previewError
-        )) {
-            if (error != null && !error.isBlank()) return error;
-        }
+        if (!catalogError.isBlank()) return catalogError;
+        if (!compileError.isBlank()) return compileError;
+        if (!terrainError.isBlank()) return terrainError;
+        if (!gbufferError.isBlank()) return gbufferError;
+        if (!shadowError.isBlank()) return shadowError;
+        if (!postProcessError.isBlank()) return postProcessError;
+        if (!controlError.isBlank()) return controlError;
+        if (!previewError.isBlank()) return previewError;
         return "";
     }
 
