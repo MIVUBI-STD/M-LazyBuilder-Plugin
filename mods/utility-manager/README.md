@@ -43,7 +43,7 @@ The Video surface follows a game-style hierarchy without duplicating concepts:
 - **View** owns render distance, simulation distance, entity distance, and field of view.
 - **Performance** owns LazyBuilder efficiency controls and background FPS limits. These controls stay independent from the visual-quality preset so choosing Low/Medium/High never silently changes optimization policy.
 - **Interface** owns GUI Scale because interface sizing is not a video-quality decision.
-- **Visual** owns Resource Pack and Shader selection. The row shows the current selection and opens the authoritative manager when activated. Resource Packs use Minecraft's own pack manager; Shaders use Iris when available. Visual choices never become part of the Graphics Preset.
+- **Visual** owns Resource Pack and Shader selection. Resource Packs use Minecraft's own pack manager; Shaders use the LazyBuilder first-party shader runtime exposed by Performance Manager. Visual choices never become part of the Graphics Preset.
 
 
 Graphics presets are deliberately limited to Low, Medium, and High. Custom is a derived state, not a selectable preset: if any preset-controlled visual or performance preference no longer matches a known profile, the UI reports Custom. View distance, display preferences, camera settings, and background FPS limits remain independent. Presets write visual settings through Minecraft GameOptions and performance policy through the existing Performance Manager ObjectShare contract; no duplicate graphics or performance configuration file is introduced.
@@ -60,7 +60,7 @@ The stable preset policy is conservative: High targets high detail with Minecraf
 - The legacy Screenshot Settings entry point redirects into Interface so there is only one visible settings system.
 - Non-instant changes use concise feedback: Resource Packs show an applying notice and the existing resource-reload listener reports completion; Borderless window changes state that the next launch is required.
 - Windowed/Fullscreen changes use a 15-second keep/revert confirmation so an unusable display change recovers automatically.
-- Shader management uses a LazyBuilder shell for status, enable/disable, pack management, Iris settings, folder access, and inline failure/retry; Iris public API remains the shader/config authority and its internal pack-selection UI is not cloned.
+- Shader management uses a LazyBuilder shell for first-party pack discovery, selection, compilation, enable/disable, folder access, runtime status, and failure/retry. Performance Manager owns the shader runtime; Utility Manager only presents its ObjectShare contract.
 - Language uses Minecraft LanguageManager, provides search, reload feedback, and retry on failure; GameOptions remains the persisted language owner.
 - Reset reads vanilla defaults from each Minecraft SimpleOption's own defaultValue through a read-only accessor, while Utility/Performance resets use their existing defaults objects. No duplicate vanilla-default table is maintained.
 - Modified indicators use the same authoritative sources. Settings without a trustworthy default owner (for example Language, Resource Packs, and Shader selection) are not given fake modified/default markers.
@@ -80,8 +80,8 @@ The Resource Pack manager deliberately keeps Minecraft's familiar two-column mod
 
 
 - Resource Pack shows Default, the active pack name, or the count of active packs. Opening it delegates to Minecraft's native Resource Pack screen so ordering, compatibility, file watching, and resource reload remain Minecraft-owned.
-- Shader shows Off, the active shader name when available, or Unavailable when no compatible shader renderer is installed. Opening it delegates to Iris through its public GUI API when Iris is present; shader-specific configuration remains Iris-owned.
-- Shader-specific profiles and individual shader options stay inside the shader manager. LazyBuilder does not clone or persist those settings.
+- Shader shows Off, the selected/active LazyBuilder shader pack, compile progress, or Error. The dedicated manager uses Performance Manager's first-party shader catalog/runtime and never requires Iris.
+- If an external renderer/shader owner such as Iris is installed, the first-party shader runtime fails open and the manager reports that compatibility owner instead of running two shader pipelines simultaneously.
 - Resource Packs and Shaders do not change Graphics Preset, View settings, or Performance preferences automatically.
 - Technical renderer/compatibility state remains internal unless the user needs an actionable explanation.
 
