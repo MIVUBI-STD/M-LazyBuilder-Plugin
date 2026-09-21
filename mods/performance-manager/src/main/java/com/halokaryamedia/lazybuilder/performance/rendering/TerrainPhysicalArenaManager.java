@@ -379,20 +379,34 @@ public final class TerrainPhysicalArenaManager {
         }
 
         VaoState vao = arena.vaos.get(firstState.format());
-        try {
-            if (vao == null) {
+        if (vao == null) {
+            try {
                 vao = createVao(arena, firstState.format());
                 arena.vaos.put(firstState.format(), vao);
-            } else if (boundArena == arena && boundVao == vao.id) {
-                physicalBindReuses++;
-            } else {
+            } catch (RuntimeException error) {
+                vaoCreationFailures++;
+                PHYSICAL_PATH_BREAKER.recordFailure();
+                noteExternalBind();
+                return false;
+            }
+        } else if (boundArena == arena && boundVao == vao.id) {
+            physicalBindReuses++;
+        } else {
+            try {
                 BufferRenderer.resetCurrentVertexBuffer();
                 GlStateManager._glBindVertexArray(vao.id);
                 boundArena = arena;
                 boundVao = vao.id;
                 physicalBufferBinds++;
+            } catch (RuntimeException error) {
+                vaoCreationFailures++;
+                PHYSICAL_PATH_BREAKER.recordFailure();
+                noteExternalBind();
+                return false;
             }
+        }
 
+        try {
             if (customIndices) {
                 if (!vao.customIndexBound) {
                     arena.indexBuffer.bind();
