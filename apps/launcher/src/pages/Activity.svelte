@@ -3,6 +3,7 @@
   import StartupRecoveryCenter from '../components/StartupRecoveryCenter.svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
   import { operationTitle } from '../app/operations/operationPresentation';
+  import { refreshActivityFeed, subscribeActivityFeed } from '../app/operations/activityFeed';
   import type { LauncherOperationSnapshot, StartupReport, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   let operations: LauncherOperationSnapshot[] = [];
@@ -13,11 +14,9 @@
   let error = '';
   let cancellingId = '';
   let historyVisibleLimit = 40;
-  let refreshInFlight = false;
+  let activityUnsubscribe: (() => void) | null = null;
 
   const ACTIVE_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
-  const ACTIVE_POLL_MS = 2000;
-  const IDLE_POLL_MS = 10000;
   const HISTORY_PAGE_SIZE = 40;
 
   function isActive(operation: LauncherOperationSnapshot) {
@@ -82,24 +81,6 @@
     return Boolean(operation.phase || operation.details || operation.warnings.length || operation.error?.details || operation.correlationId);
   }
 
-  async function refresh(showLoading = false) {
-    if (refreshInFlight) return;
-    refreshInFlight = true;
-    if (showLoading) loading = true;
-    try {
-      const snapshot = await runtimeProduct.system.activity();
-      operations = snapshot.launcherOperations;
-      worldTasks = snapshot.worldTasks;
-      activityWarnings = snapshot.warnings;
-      error = '';
-    } catch (value) {
-      error = value instanceof Error ? value.message : 'Could not load activity.';
-    } finally {
-      refreshInFlight = false;
-      if (showLoading) loading = false;
-    }
-  }
-
   async function loadStartup() {
     try { startup = await runtimeProduct.startup.status(); }
     catch { startup = null; }
@@ -111,7 +92,7 @@
     error = '';
     try {
       await runtimeProduct.operations.cancel(operation.id);
-      await refresh();
+      await refreshActivityFeed();
     } catch (value) {
       error = value instanceof Error ? value.message : 'Could not cancel this task.';
     } finally {
@@ -120,43 +101,18 @@
   }
 
   onMount(() => {
-    let disposed = false;
-    let timer: number | null = null;
-
-    const schedule = () => {
-      if (disposed || document.hidden) return;
-      const hasActive = operations.some(isActive) || worldTasks.some(worldTaskActive);
-      timer = window.setTimeout(async () => {
-        timer = null;
-        if (disposed || document.hidden) return;
-        await refresh();
-        schedule();
-      }, hasActive ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    };
-
-    const refreshNow = () => {
-      if (disposed || document.hidden) return;
-      if (timer !== null) { window.clearTimeout(timer); timer = null; }
-      void refresh().finally(schedule);
-    };
-
-    const handleVisibility = () => {
-      if (document.hidden) {
-        if (timer !== null) { window.clearTimeout(timer); timer = null; }
-        return;
-      }
-      refreshNow();
-    };
-
-    void Promise.all([refresh(true), loadStartup()]).finally(schedule);
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', refreshNow);
+    activityUnsubscribe = subscribeActivityFeed((next) => {
+      loading = next.loading;
+      error = next.error;
+      operations = next.snapshot?.launcherOperations ?? [];
+      worldTasks = next.snapshot?.worldTasks ?? [];
+      activityWarnings = next.snapshot?.warnings ?? [];
+    });
+    void loadStartup();
 
     return () => {
-      disposed = true;
-      if (timer !== null) window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', refreshNow);
+      activityUnsubscribe?.();
+      activityUnsubscribe = null;
     };
   });
 
