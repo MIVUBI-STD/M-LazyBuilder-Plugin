@@ -1,11 +1,16 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 
@@ -26,16 +31,17 @@ public final class ShaderPackCatalog {
         try {
             Files.createDirectories(directory);
             try (Stream<Path> entries = Files.list(directory)) {
-                List<ShaderPackDescriptor> result = entries
+                List<ShaderPackDescriptor> raw = entries
                         .filter(this::isCandidate)
                         .map(this::descriptor)
-                        .sorted(Comparator.comparing(
-                                ShaderPackDescriptor::displayName,
-                                String.CASE_INSENSITIVE_ORDER
-                        ))
                         .toList();
+                List<ShaderPackDescriptor> result = resolveIdCollisions(raw);
+                result.sort(Comparator.comparing(
+                        ShaderPackDescriptor::displayName,
+                        String.CASE_INSENSITIVE_ORDER
+                ));
                 lastScanError = "";
-                return result;
+                return List.copyOf(result);
             }
         } catch (IOException error) {
             String message = error.getMessage();
@@ -92,6 +98,43 @@ public final class ShaderPackCatalog {
         } catch (IOException ignored) {
             return draft;
         }
+    }
+
+    private static List<ShaderPackDescriptor> resolveIdCollisions(
+            List<ShaderPackDescriptor> descriptors
+    ) {
+        if (descriptors == null || descriptors.isEmpty()) return new ArrayList<>();
+
+        Map<String, Integer> counts = new HashMap<>();
+        for (ShaderPackDescriptor descriptor : descriptors) {
+            counts.merge(descriptor.id(), 1, Integer::sum);
+        }
+
+        List<ShaderPackDescriptor> resolved = new ArrayList<>(descriptors.size());
+        for (ShaderPackDescriptor descriptor : descriptors) {
+            if (counts.getOrDefault(descriptor.id(), 0) <= 1) {
+                resolved.add(descriptor);
+                continue;
+            }
+
+            String suffix = pathFingerprint(descriptor.path());
+            resolved.add(new ShaderPackDescriptor(
+                    descriptor.id() + "-" + suffix,
+                    descriptor.displayName(),
+                    descriptor.path(),
+                    descriptor.kind(),
+                    descriptor.manifest()
+            ));
+        }
+        return resolved;
+    }
+
+    private static String pathFingerprint(Path path) {
+        String normalized = path.toAbsolutePath().normalize().toString();
+        String uuid = UUID.nameUUIDFromBytes(
+                normalized.getBytes(StandardCharsets.UTF_8)
+        ).toString();
+        return uuid.substring(0, 8);
     }
 
     static String stableId(String fileName) {
