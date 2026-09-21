@@ -59,6 +59,9 @@ The stable preset policy is conservative: High targets high detail with Minecraf
 - Reconnect behavior is discoverable under Interface > Multiplayer.
 - The legacy Screenshot Settings entry point redirects into Interface so there is only one visible settings system.
 - Non-instant changes use concise feedback: Resource Packs show an applying notice and the existing resource-reload listener reports completion; Borderless window changes state that the next launch is required.
+- Windowed/Fullscreen changes use a 15-second keep/revert confirmation so an unusable display change recovers automatically.
+- Shader management uses a LazyBuilder shell for status, enable/disable, pack management, Iris settings, folder access, and inline failure/retry; Iris public API remains the shader/config authority and its internal pack-selection UI is not cloned.
+- Language uses Minecraft LanguageManager, provides search, reload feedback, and retry on failure; GameOptions remains the persisted language owner.
 - Reset is only exposed where LazyBuilder has an authoritative default source. Do not invent or hard-code guessed Minecraft defaults merely to make every tab show a Reset button.
 
 ### Visual management
