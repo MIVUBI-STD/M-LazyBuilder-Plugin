@@ -27,6 +27,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     private static final float LIGHT_DISTANCE = 256.0F;
     private static final float DEPTH_RANGE = 640.0F;
     private static final float CENTER_SNAP = 4.0F;
+    private static final long TIME_SNAP_TICKS = 20L;
 
     private final FirstPartyShadowMap shadowMap = new FirstPartyShadowMap();
     private volatile Snapshot snapshot = Snapshot.EMPTY;
@@ -79,10 +80,11 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         float centerY = snap((float) cameraY);
         float centerZ = snap((float) cameraZ);
 
+        long quantizedTime = quantizeTime(timeOfDay);
         if (snapshot.ready()
                 && lastVisibleRevision == visible.revision()
                 && lastProgramId == program.programId()
-                && lastTimeOfDay == timeOfDay
+                && lastTimeOfDay == quantizedTime
                 && Float.compare(lastCenterX, centerX) == 0
                 && Float.compare(lastCenterY, centerY) == 0
                 && Float.compare(lastCenterZ, centerZ) == 0) {
@@ -94,7 +96,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         GlState state = GlState.capture();
         int drawn = 0;
         int skipped = 0;
-        Matrix4f lightViewProjection = lightViewProjection(timeOfDay);
+        Matrix4f lightViewProjection = lightViewProjection(quantizedTime);
 
         try {
             shadowMap.ensureSize(DEFAULT_RESOLUTION);
@@ -166,7 +168,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             );
             lastVisibleRevision = visible.revision();
             lastProgramId = program.programId();
-            lastTimeOfDay = timeOfDay;
+            lastTimeOfDay = quantizedTime;
             lastCenterX = centerX;
             lastCenterY = centerY;
             lastCenterZ = centerZ;
@@ -230,6 +232,11 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 up.x, up.y, up.z
         );
         return projection.mul(view, new Matrix4f());
+    }
+
+    private static long quantizeTime(long timeOfDay) {
+        long normalized = Math.floorMod(timeOfDay, 24000L);
+        return (normalized / TIME_SNAP_TICKS) * TIME_SNAP_TICKS;
     }
 
     private static float snap(float value) {
