@@ -13,6 +13,7 @@ import java.util.List;
  */
 public final class TerrainVisibleDrawSnapshot {
     private static volatile Snapshot current = Snapshot.EMPTY;
+    private static volatile long currentFingerprint;
 
     private TerrainVisibleDrawSnapshot() {
     }
@@ -22,7 +23,18 @@ public final class TerrainVisibleDrawSnapshot {
     }
 
     public static void publish(Snapshot snapshot) {
-        current = snapshot == null ? Snapshot.EMPTY : snapshot;
+        Snapshot next = snapshot == null ? Snapshot.EMPTY : snapshot;
+        long fingerprint = fingerprint(next.entries());
+
+        Snapshot previous = current;
+        if (previous.entries().size() == next.entries().size()
+                && currentFingerprint == fingerprint
+                && previous.entries().equals(next.entries())) {
+            return;
+        }
+
+        current = new Snapshot(previous.revision() + 1L, next.entries());
+        currentFingerprint = fingerprint;
     }
 
     public static Snapshot current() {
@@ -31,6 +43,24 @@ public final class TerrainVisibleDrawSnapshot {
 
     public static void clear() {
         current = Snapshot.EMPTY;
+        currentFingerprint = 0L;
+    }
+
+    private static long fingerprint(List<Entry> entries) {
+        long hash = 0xcbf29ce484222325L;
+        for (Entry entry : entries) {
+            hash ^= System.identityHashCode(entry.buffer());
+            hash *= 0x100000001b3L;
+            hash ^= entry.layerSlot();
+            hash *= 0x100000001b3L;
+            hash ^= entry.originX();
+            hash *= 0x100000001b3L;
+            hash ^= entry.originY();
+            hash *= 0x100000001b3L;
+            hash ^= entry.originZ();
+            hash *= 0x100000001b3L;
+        }
+        return hash;
     }
 
     public record Entry(
