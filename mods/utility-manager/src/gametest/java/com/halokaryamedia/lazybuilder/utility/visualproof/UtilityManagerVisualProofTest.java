@@ -4,8 +4,10 @@ import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionC
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderDisplayConfirmScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderResourcePackScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderShaderScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsSearchScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -76,6 +78,12 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-resource-packs-1440x900-gui2");
             captureResourcePackManager(context, 620, 480, 2,
                     "utility-resource-packs-620x480-gui2");
+            captureShaderManager(context, 1440, 900, 2,
+                    "utility-shaders-1440x900-gui2");
+            captureShaderManager(context, 620, 480, 2,
+                    "utility-shaders-620x480-gui2");
+            captureDisplayRecovery(context, 1440, 900, 2,
+                    "utility-display-recovery-1440x900-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.AUDIO,
                     "utility-settings-audio-1440x900-gui2");
@@ -435,6 +443,44 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         ));
         context.waitForScreen(LazyBuilderSettingsScreen.class);
         context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureShaderManager(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderShaderScreen(null));
+        context.waitForScreen(LazyBuilderShaderScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureDisplayRecovery(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderDisplayConfirmScreen(
+                null,
+                () -> {},
+                () -> {}
+        ));
+        context.waitForScreen(LazyBuilderDisplayConfirmScreen.class);
+        context.waitTicks(20);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
