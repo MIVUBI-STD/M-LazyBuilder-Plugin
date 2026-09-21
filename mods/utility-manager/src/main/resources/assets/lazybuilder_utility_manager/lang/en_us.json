@@ -1,4 +1,5 @@
 {
   "key.categories.lazybuilder": "LazyBuilder",
-  "key.lazybuilder.capture.toggle_recording": "Toggle Video Recording"
+  "key.lazybuilder.capture.toggle_recording": "Toggle Video Recording",
+  "key.lazybuilder.capture.clean_screenshot": "Clean Screenshot"
 }
