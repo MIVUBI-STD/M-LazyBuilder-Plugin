@@ -419,7 +419,12 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     }
 
     public static void invalidateShaderTerrainForResourceReload() {
-        if (shaderRuntime != null) shaderRuntime.invalidateTerrainIntegrationForResourceReload();
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders != null) {
+            shaders.invalidateTerrainIntegrationForResourceReload(
+                    terrainCallbackGeneration(shaders)
+            );
+        }
     }
 
     public static FirstPartyShaderRuntime.TerrainSource firstPartyTerrainSource(boolean vertex) {
