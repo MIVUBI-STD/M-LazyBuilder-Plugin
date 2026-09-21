@@ -25,6 +25,7 @@ public final class FirstPartyShaderRuntime {
     private volatile String stage = "source-ready";
     private volatile String lastError = "";
     private volatile long revision;
+    private volatile long compileRequestGeneration;
     private volatile boolean lastFrameApplied;
     private volatile boolean terrainVertexCompiled;
     private volatile boolean terrainFragmentCompiled;
@@ -86,6 +87,7 @@ public final class FirstPartyShaderRuntime {
     public synchronized boolean select(String packId) {
         String requested = packId == null ? "" : packId.trim();
         if (requested.isBlank()) {
+            compileRequestGeneration++;
             selectedPackId = "";
             persisted = persisted.withSelectedPack("");
             configStore.save(persisted);
@@ -114,6 +116,7 @@ public final class FirstPartyShaderRuntime {
 
     public void compileSelected() {
         String requested;
+        long generation;
         synchronized (this) {
             requested = selectedPackId;
             if (requested == null || requested.isBlank()) {
@@ -122,6 +125,7 @@ public final class FirstPartyShaderRuntime {
                 revision++;
                 return;
             }
+            generation = ++compileRequestGeneration;
             stage = "compile-queued";
             lastError = "";
             revision++;
@@ -129,17 +133,24 @@ public final class FirstPartyShaderRuntime {
 
         if (!RenderSystem.isOnRenderThread()) {
             String target = requested;
-            RenderSystem.recordRenderCall(() -> compileSelectedOnRenderThread(target));
+            long targetGeneration = generation;
+            RenderSystem.recordRenderCall(
+                    () -> compileSelectedOnRenderThread(target, targetGeneration)
+            );
             return;
         }
-        compileSelectedOnRenderThread(requested);
+        compileSelectedOnRenderThread(requested, generation);
     }
 
-    private void compileSelectedOnRenderThread(String requestedPackId) {
+    private void compileSelectedOnRenderThread(String requestedPackId, long generation) {
         RenderSystem.assertOnRenderThread();
 
         ShaderPackDescriptor descriptor;
         synchronized (this) {
+            if (generation != compileRequestGeneration
+                    || !requestedPackId.equals(selectedPackId)) {
+                return;
+            }
             descriptor = packById(requestedPackId);
             if (descriptor == null) {
                 lastError = "Shader pack is no longer available.";
@@ -159,7 +170,8 @@ public final class FirstPartyShaderRuntime {
             );
 
             synchronized (this) {
-                if (!requestedPackId.equals(selectedPackId)) {
+                if (generation != compileRequestGeneration
+                        || !requestedPackId.equals(selectedPackId)) {
                     candidate.close();
                     stage = pipeline == null ? "selected" : "active";
                     revision++;
@@ -208,6 +220,7 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void disable() {
+        compileRequestGeneration++;
         boolean restoreMinecraftTerrain = pipeline != null
                 || terrainVertexCompiled
                 || terrainFragmentCompiled
