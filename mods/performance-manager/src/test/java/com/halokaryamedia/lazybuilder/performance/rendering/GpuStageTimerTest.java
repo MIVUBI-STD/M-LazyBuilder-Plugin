@@ -14,7 +14,7 @@ final class GpuStageTimerTest {
 
     @Test
     void sessionResetPreservesInstrumentationPolicyAndClearsEvidence() {
-        GpuStageTimer.enable();
+        GpuStageTimer.setEnabledForTest(true);
 
         GpuStageTimer.resetSession();
 
