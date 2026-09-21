@@ -241,6 +241,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         return Map.copyOf(values);
     }
 
+    public static Map<String, Object> currentShaderSnapshot() {
+        return shaderSnapshot();
+    }
+
     private static Map<String, Object> shaderSnapshot() {
         if (shaderRuntime == null) {
             return Map.of(
