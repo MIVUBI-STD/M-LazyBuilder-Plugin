@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderDisplayConfirmScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderLanguageScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderResourcePackScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderShaderOptionsScreen;
