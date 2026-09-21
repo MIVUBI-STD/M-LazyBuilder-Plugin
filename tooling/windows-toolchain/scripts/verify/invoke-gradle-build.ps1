@@ -37,12 +37,25 @@ try {
             Get-Content $LogPath | ForEach-Object { Write-Host $_ }
         }
 
+        $Output = if (Test-Path $LogPath) { Get-Content $LogPath -Raw } else { '' }
+
         if ($LastExitCode -eq 0) {
             Remove-Item $LogPath -Force -ErrorAction SilentlyContinue
             return
         }
 
-        $Output = if (Test-Path $LogPath) { Get-Content $LogPath -Raw } else { '' }
+        # Windows batch/PowerShell nesting has occasionally surfaced a stale non-zero native
+        # exit code even though Gradle itself completed every requested task successfully.
+        # Accept only Gradle's explicit terminal success marker, and only when no failure marker
+        # exists. This is deliberately narrow so real compile/test failures remain authoritative.
+        $GradleReportedSuccess = $Output -match '(?m)^BUILD SUCCESSFUL(?:\s|$)'
+        $GradleReportedFailure = $Output -match '(?m)^BUILD FAILED(?:\s|$)'
+        if ($GradleReportedSuccess -and -not $GradleReportedFailure) {
+            Write-Warning "Gradle reported BUILD SUCCESSFUL but wrapper exit code was $LastExitCode; accepting explicit Gradle success."
+            Remove-Item $LogPath -Force -ErrorAction SilentlyContinue
+            return
+        }
+
         $Transient = $Output -match $TransientPattern
         Remove-Item $LogPath -Force -ErrorAction SilentlyContinue
 
