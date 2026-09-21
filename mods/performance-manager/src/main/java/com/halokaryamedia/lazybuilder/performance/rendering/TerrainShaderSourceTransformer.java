@@ -203,6 +203,15 @@ public final class TerrainShaderSourceTransformer {
         return status;
     }
 
+    public static void invalidateForResourceReload() {
+        builtInVertexSource = false;
+        builtInFragmentSource = false;
+        firstPartyVertexApplied = false;
+        firstPartyFragmentApplied = false;
+        compileFallbackActive = false;
+        status = "shader-reload";
+    }
+
     public static void reset() {
         builtInVertexSource = false;
         builtInFragmentSource = false;
