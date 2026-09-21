@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
+import com.halokaryamedia.lazybuilder.utility.mixin.SimpleOptionAccessor;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
@@ -1216,14 +1217,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this::openSettingsSearch
         ));
 
-        if (category == Category.INTERFACE || category == Category.CHAT
-                || (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE)) {
+        if (canResetCurrentSurface()) {
             this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                     left + 108,
                     y,
                     108,
                     22,
-                    Text.literal(category == Category.VIDEO ? "Reset" : "Reset Helpers"),
+                    Text.literal(resetButtonLabel()),
                     true,
                     LazyBuilderSettingsControlWidget.Kind.FOOTER,
                     this::confirmResetCurrentCategory
@@ -1251,24 +1251,41 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (client != null) client.setScreen(new LazyBuilderSettingsSearchScreen(this));
     }
 
+    private boolean canResetCurrentSurface() {
+        if (category == Category.VIDEO) {
+            return videoPage != VideoPage.VISUAL;
+        }
+        return category == Category.AUDIO
+                || category == Category.CHAT
+                || category == Category.INTERFACE
+                || category == Category.ACCESSIBILITY;
+    }
+
+    private String resetButtonLabel() {
+        if (category == Category.INTERFACE) return "Reset Layout";
+        return "Reset";
+    }
+
     private void confirmResetCurrentCategory() {
-        if (client == null) return;
+        if (client == null || !canResetCurrentSurface()) return;
 
         String title;
         String body;
-        String confirm;
-        if (category == Category.INTERFACE) {
-            title = "Reset Interface Helpers";
-            body = "Restore LazyBuilder Interface helpers to their defaults? GUI Scale and Language will not change.";
-            confirm = "Reset Helpers";
+        if (category == Category.VIDEO) {
+            title = "Reset " + videoPage.label;
+            body = "Restore " + videoPage.label + " settings to their Minecraft or LazyBuilder defaults?";
+        } else if (category == Category.AUDIO) {
+            title = "Reset Audio";
+            body = "Restore all visible audio levels to Minecraft defaults?";
         } else if (category == Category.CHAT) {
-            title = "Reset Chat Helpers";
-            body = "Restore LazyBuilder Chat helpers to their defaults? Minecraft chat appearance settings will not change.";
-            confirm = "Reset Helpers";
-        } else if (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE) {
-            title = "Reset Performance";
-            body = "Restore LazyBuilder Performance settings to their defaults?";
-            confirm = "Reset";
+            title = "Reset Chat";
+            body = "Restore Chat helpers and visible chat appearance settings to their defaults?";
+        } else if (category == Category.INTERFACE) {
+            title = "Reset Interface Layout";
+            body = "Restore GUI Scale and LazyBuilder Interface helpers to their defaults? Language will not change.";
+        } else if (category == Category.ACCESSIBILITY) {
+            title = "Reset Accessibility";
+            body = "Restore visible Accessibility settings to their Minecraft or LazyBuilder defaults?";
         } else {
             return;
         }
@@ -1277,20 +1294,33 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this,
                 title,
                 body,
-                confirm,
+                "Reset",
                 this::resetCurrentCategory
         ));
     }
 
     private void resetCurrentCategory() {
-        if (category == Category.INTERFACE) {
-            UtilityPreferences defaults = UtilityPreferences.defaults();
-            UtilityPreferences current = UtilityManagerClient.preferences()
-                    .withCompactDebugHud(defaults.compactDebugHud())
-                    .withContextualScreenshotNames(defaults.contextualScreenshotNames())
-                    .withInstantCreativeSearch(defaults.instantCreativeSearch())
-                    .withReconnectButton(defaults.reconnectButton());
-            UtilityManagerClient.updatePreferences(current);
+        if (client == null) return;
+
+        if (category == Category.VIDEO) {
+            switch (videoPage) {
+                case DISPLAY -> resetDisplay();
+                case QUALITY -> resetQuality();
+                case VIEW -> resetView();
+                case PERFORMANCE -> resetPerformance();
+                case VISUAL -> { return; }
+            }
+            client.options.write();
+            client.options.sendClientSettings();
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.AUDIO) {
+            for (SoundCategory sound : SoundCategory.values()) {
+                resetOption(client.options.getSoundVolumeOption(sound));
+            }
+            client.options.write();
             refreshCategory();
             return;
         }
@@ -1305,21 +1335,138 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     .withHideChatSigningIndicators(defaults.hideChatSigningIndicators())
                     .withHideChatReportButton(defaults.hideChatReportButton());
             UtilityManagerClient.updatePreferences(current);
+
+            resetOption(client.options.getChatOpacity());
+            resetOption(client.options.getChatScale());
+            resetOption(client.options.getChatWidth());
+            resetOption(client.options.getChatLineSpacing());
+            client.options.write();
+            client.options.sendClientSettings();
             refreshCategory();
             return;
         }
 
-        if (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE) {
-            writePerformanceState(new PerformanceState(
-                    true,
-                    30,
-                    10,
-                    false,
-                    true,
-                    true
-            ));
+        if (category == Category.INTERFACE) {
+            UtilityPreferences defaults = UtilityPreferences.defaults();
+            UtilityPreferences current = UtilityManagerClient.preferences()
+                    .withCompactDebugHud(defaults.compactDebugHud())
+                    .withContextualScreenshotNames(defaults.contextualScreenshotNames())
+                    .withInstantCreativeSearch(defaults.instantCreativeSearch())
+                    .withReconnectButton(defaults.reconnectButton());
+            UtilityManagerClient.updatePreferences(current);
+
+            resetOption(client.options.getGuiScale());
+            client.options.write();
+            client.onResolutionChanged();
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.ACCESSIBILITY) {
+            UtilityPreferences defaults = UtilityPreferences.defaults();
+            UtilityManagerClient.updatePreferences(
+                    UtilityManagerClient.preferences().withSuppressNarrator(defaults.suppressNarrator())
+            );
+
+            resetOption(client.options.getShowSubtitles());
+            resetOption(client.options.getTextBackgroundOpacity());
+            resetOption(client.options.getBackgroundForChatOnly());
+            resetOption(client.options.getFovEffectScale());
+            resetOption(client.options.getDistortionEffectScale());
+            resetOption(client.options.getHideLightningFlashes());
+            resetOption(client.options.getMonochromeLogo());
+
+            if (defaults.suppressNarrator()) {
+                client.options.getNarrator().setValue(NarratorMode.OFF);
+                client.options.getNarratorHotkey().setValue(false);
+            } else {
+                resetOption(client.options.getNarrator());
+                resetOption(client.options.getNarratorHotkey());
+            }
+
+            client.options.write();
+            client.options.sendClientSettings();
             refreshCategory();
         }
+    }
+
+    private void resetDisplay() {
+        boolean previousFullscreen = client.options.getFullscreen().getValue();
+
+        resetOption(client.options.getEnableVsync());
+        resetOption(client.options.getMaxFps());
+        resetOption(client.options.getGamma());
+        UtilityManagerClient.updatePreferences(
+                UtilityManagerClient.preferences().withBorderlessWindow(
+                        UtilityPreferences.defaults().borderlessWindow()
+                )
+        );
+
+        boolean defaultFullscreen = defaultValue(client.options.getFullscreen());
+        if (previousFullscreen != defaultFullscreen) {
+            client.options.getFullscreen().setValue(defaultFullscreen);
+            LazyBuilderSettingsScreen returnScreen = new LazyBuilderSettingsScreen(
+                    parent,
+                    Category.VIDEO,
+                    VideoPage.DISPLAY,
+                    "Window Mode"
+            );
+            client.setScreen(new LazyBuilderDisplayConfirmScreen(
+                    returnScreen,
+                    () -> {
+                        if (client != null) {
+                            client.options.getFullscreen().setValue(defaultFullscreen);
+                            client.options.write();
+                        }
+                    },
+                    () -> {
+                        if (client != null) {
+                            client.options.getFullscreen().setValue(previousFullscreen);
+                            client.options.write();
+                        }
+                    }
+            ));
+        } else {
+            resetOption(client.options.getFullscreen());
+        }
+    }
+
+    private void resetQuality() {
+        resetOption(client.options.getGraphicsMode());
+        resetOption(client.options.getCloudRenderMode());
+        resetOption(client.options.getParticles());
+        resetOption(client.options.getMipmapLevels());
+    }
+
+    private void resetView() {
+        resetOption(client.options.getViewDistance());
+        resetOption(client.options.getSimulationDistance());
+        resetOption(client.options.getEntityDistanceScaling());
+        resetOption(client.options.getFov());
+    }
+
+    private void resetPerformance() {
+        writePerformanceState(new PerformanceState(
+                true,
+                30,
+                10,
+                false,
+                true,
+                true
+        ));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T defaultValue(SimpleOption<T> option) {
+        return (T) ((SimpleOptionAccessor) (Object) option).lazybuilder$getDefaultValue();
+    }
+
+    private static <T> void resetOption(SimpleOption<T> option) {
+        option.setValue(defaultValue(option));
+    }
+
+    private static boolean isOptionModified(SimpleOption<?> option) {
+        return !java.util.Objects.equals(option.getValue(), defaultValue(option));
     }
 
     private <T> void setOption(SimpleOption<T> option, T value) {
@@ -1631,6 +1778,56 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private boolean isAuthoritativelyModified(Row row) {
         UtilityPreferences current = UtilityManagerClient.preferences();
         UtilityPreferences defaults = UtilityPreferences.defaults();
+
+        if (client != null) {
+            switch (row.title) {
+                case "V-Sync" -> { return isOptionModified(client.options.getEnableVsync()); }
+                case "Frame Rate Limit" -> { return isOptionModified(client.options.getMaxFps()); }
+                case "Brightness" -> { return isOptionModified(client.options.getGamma()); }
+                case "Graphics Mode" -> { return isOptionModified(client.options.getGraphicsMode()); }
+                case "Cloud Quality" -> { return isOptionModified(client.options.getCloudRenderMode()); }
+                case "Particles" -> { return isOptionModified(client.options.getParticles()); }
+                case "Mipmap Levels" -> { return isOptionModified(client.options.getMipmapLevels()); }
+                case "Render Distance" -> { return isOptionModified(client.options.getViewDistance()); }
+                case "Simulation Distance" -> { return isOptionModified(client.options.getSimulationDistance()); }
+                case "Entity Distance" -> { return isOptionModified(client.options.getEntityDistanceScaling()); }
+                case "Field of View" -> { return isOptionModified(client.options.getFov()); }
+                case "Master Volume" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.MASTER)); }
+                case "Music" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.MUSIC)); }
+                case "Jukebox & Note Blocks" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.RECORDS)); }
+                case "Weather" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.WEATHER)); }
+                case "Blocks" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.BLOCKS)); }
+                case "Hostile Creatures" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.HOSTILE)); }
+                case "Friendly Creatures" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.NEUTRAL)); }
+                case "Players" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.PLAYERS)); }
+                case "Ambient" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.AMBIENT)); }
+                case "Voice / Speech" -> { return isOptionModified(client.options.getSoundVolumeOption(SoundCategory.VOICE)); }
+                case "Sensitivity" -> { return isOptionModified(client.options.getMouseSensitivity()); }
+                case "Invert Mouse" -> { return isOptionModified(client.options.getInvertYMouse()); }
+                case "Raw Input" -> { return isOptionModified(client.options.getRawMouseInput()); }
+                case "Discrete Mouse Scroll" -> { return isOptionModified(client.options.getDiscreteMouseScroll()); }
+                case "Mouse Wheel Sensitivity" -> { return isOptionModified(client.options.getMouseWheelSensitivity()); }
+                case "Auto Jump" -> { return isOptionModified(client.options.getAutoJump()); }
+                case "Toggle Sneak" -> { return isOptionModified(client.options.getSneakToggled()); }
+                case "Toggle Sprint" -> { return isOptionModified(client.options.getSprintToggled()); }
+                case "Chat Opacity" -> { return isOptionModified(client.options.getChatOpacity()); }
+                case "Chat Scale" -> { return isOptionModified(client.options.getChatScale()); }
+                case "Chat Width" -> { return isOptionModified(client.options.getChatWidth()); }
+                case "Line Spacing" -> { return isOptionModified(client.options.getChatLineSpacing()); }
+                case "GUI Scale" -> { return isOptionModified(client.options.getGuiScale()); }
+                case "Subtitles" -> { return isOptionModified(client.options.getShowSubtitles()); }
+                case "Text Background" -> { return isOptionModified(client.options.getTextBackgroundOpacity()); }
+                case "Chat Background Only" -> { return isOptionModified(client.options.getBackgroundForChatOnly()); }
+                case "FOV Effects" -> { return isOptionModified(client.options.getFovEffectScale()); }
+                case "Distortion Effects" -> { return isOptionModified(client.options.getDistortionEffectScale()); }
+                case "Hide Lightning Flashes" -> { return isOptionModified(client.options.getHideLightningFlashes()); }
+                case "Monochrome Logo" -> { return isOptionModified(client.options.getMonochromeLogo()); }
+                case "Window Mode" -> {
+                    return current.borderlessWindow() != defaults.borderlessWindow()
+                            || isOptionModified(client.options.getFullscreen());
+                }
+            }
+        }
 
         return switch (row.title) {
             case "Keep Unsent Message" -> current.keepChatDraft() != defaults.keepChatDraft();
