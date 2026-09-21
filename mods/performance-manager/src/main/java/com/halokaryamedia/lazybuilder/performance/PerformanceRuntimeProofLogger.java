@@ -23,6 +23,7 @@ final class PerformanceRuntimeProofLogger {
     private static final int SAMPLE_INTERVAL_FRAMES = 120;
 
     private final boolean enabled = Boolean.getBoolean("lazybuilder.performance.proof");
+    private final FrameProofHistogram proofHistogram = new FrameProofHistogram();
     private Object worldIdentity;
     private int framesUntilSample = SAMPLE_INTERVAL_FRAMES;
     private long sample;
@@ -34,8 +35,11 @@ final class PerformanceRuntimeProofLogger {
             worldIdentity = client.world;
             framesUntilSample = SAMPLE_INTERVAL_FRAMES;
             sample = 0L;
+            proofHistogram.reset();
             LOGGER.info("LB_PERF_PROOF_BEGIN interval_frames={}", SAMPLE_INTERVAL_FRAMES);
         }
+
+        proofHistogram.record(frameMonitor.currentFrameTimeMs());
 
         if (--framesUntilSample > 0) return;
         framesUntilSample = SAMPLE_INTERVAL_FRAMES;
@@ -55,7 +59,7 @@ final class PerformanceRuntimeProofLogger {
         var shader = PerformanceManagerClient.currentShaderSnapshot();
         var shaderDiagnostics = PerformanceManagerClient.currentShaderDiagnostics();
         var cullingDiagnostics = PerformanceManagerClient.currentCullingDiagnostics();
-        FrameMonitor.TimingSnapshot timing = frameMonitor.timingSnapshot();
+        FrameProofHistogram.Snapshot timing = proofHistogram.snapshot();
         StageTimingMetrics.Snapshot entityCullTiming =
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
         StageTimingMetrics.Snapshot blockEntityCullTiming =
@@ -106,6 +110,7 @@ final class PerformanceRuntimeProofLogger {
                         + "block_entity_cull_cache_hit={} block_entity_cull_cache_stale={} "
                         + "entity_cull_queue_drop={} block_entity_cull_queue_drop={} "
                         + "frame_p50_ms={} frame_p95_ms={} frame_p99_ms={} frame_p999_ms={} "
+                        + "frame_proof_samples={} frame_proof_max_ms={} "
                         + "stutter_16ms={} stutter_25ms={} stutter_33ms={} stutter_50ms={} "
                         + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
                         + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={} "
@@ -164,6 +169,8 @@ final class PerformanceRuntimeProofLogger {
                 timing.p95Ms(),
                 timing.p99Ms(),
                 timing.p999Ms(),
+                timing.samples(),
+                timing.maxMs(),
                 timing.framesOver16_67Ms(),
                 timing.framesOver25Ms(),
                 timing.framesOver33_33Ms(),
