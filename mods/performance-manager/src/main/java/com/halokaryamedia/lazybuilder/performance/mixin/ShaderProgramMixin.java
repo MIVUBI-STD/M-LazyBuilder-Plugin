@@ -32,5 +32,6 @@ abstract class ShaderProgramMixin {
         }
 
         PerformanceManagerClient.recordFirstPartyTerrainProgramLinked();
+        CompiledShaderMixin.lazybuilder$clearTerrainFallbackStateAfterLink();
     }
 }
