@@ -30,6 +30,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     private static final long TIME_SNAP_TICKS = 20L;
 
     private final FirstPartyShadowMap shadowMap = new FirstPartyShadowMap();
+    private final GlState glState = new GlState();
     private volatile Snapshot snapshot = Snapshot.EMPTY;
     private long lastVisibleRevision = Long.MIN_VALUE;
     private long lastTimeOfDay = Long.MIN_VALUE;
@@ -89,11 +90,10 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 && Float.compare(lastCenterY, centerY) == 0
                 && Float.compare(lastCenterZ, centerZ) == 0) {
             reusedFrames++;
-            snapshot = snapshot.withReusedFrames(reusedFrames);
             return snapshot;
         }
 
-        GlState state = GlState.capture();
+        glState.capture();
         int drawn = 0;
         int skipped = 0;
         Matrix4f lightViewProjection = lightViewProjection(quantizedTime);
@@ -190,7 +190,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             );
             return snapshot;
         } finally {
-            state.restore();
+            glState.restore();
         }
     }
 
@@ -283,21 +283,6 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             int skippedBuffers,
             long reusedFrames
     ) {
-        public Snapshot withReusedFrames(long reused) {
-            return new Snapshot(
-                    ready,
-                    status,
-                    textureId,
-                    resolution,
-                    lightViewProjection,
-                    centerX,
-                    centerY,
-                    centerZ,
-                    drawnBuffers,
-                    skippedBuffers,
-                    reused
-            );
-        }
         private static final Snapshot EMPTY = new Snapshot(
                 false,
                 "not-configured",
@@ -320,26 +305,22 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         }
     }
 
-    private record GlState(
-            int drawFramebuffer,
-            int program,
-            int vao,
-            boolean depthTest,
-            boolean depthMask,
-            int depthFunc,
-            boolean blend,
-            boolean cull,
-            int cullFace,
-            int viewportX,
-            int viewportY,
-            int viewportWidth,
-            int viewportHeight
-    ) {
-        static GlState capture() {
-            int viewportX;
-            int viewportY;
-            int viewportWidth;
-            int viewportHeight;
+    private static final class GlState {
+        private int drawFramebuffer;
+        private int program;
+        private int vao;
+        private boolean depthTest;
+        private boolean depthMask;
+        private int depthFunc;
+        private boolean blend;
+        private boolean cull;
+        private int cullFace;
+        private int viewportX;
+        private int viewportY;
+        private int viewportWidth;
+        private int viewportHeight;
+
+        void capture() {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 IntBuffer viewport = stack.mallocInt(4);
                 GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
@@ -348,21 +329,16 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 viewportWidth = viewport.get(2);
                 viewportHeight = viewport.get(3);
             }
-            return new GlState(
-                    GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING),
-                    GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM),
-                    GL11C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING),
-                    GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST),
-                    GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0,
-                    GL11C.glGetInteger(GL11C.GL_DEPTH_FUNC),
-                    GL11C.glIsEnabled(GL11C.GL_BLEND),
-                    GL11C.glIsEnabled(GL11C.GL_CULL_FACE),
-                    GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE),
-                    viewportX,
-                    viewportY,
-                    viewportWidth,
-                    viewportHeight
-            );
+
+            drawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+            program = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+            vao = GL11C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
+            depthTest = GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST);
+            depthMask = GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0;
+            depthFunc = GL11C.glGetInteger(GL11C.GL_DEPTH_FUNC);
+            blend = GL11C.glIsEnabled(GL11C.GL_BLEND);
+            cull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
+            cullFace = GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE);
         }
 
         void restore() {
