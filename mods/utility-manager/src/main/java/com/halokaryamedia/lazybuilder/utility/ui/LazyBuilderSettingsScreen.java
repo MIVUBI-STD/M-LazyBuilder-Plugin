@@ -837,6 +837,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 enabled -> updateInterface(prefs.withInstantCreativeSearch(enabled))
         ));
         sections.add(creative);
+
+        Section multiplayer = new Section("MULTIPLAYER");
+        multiplayer.rows.add(Row.toggle(
+                "Reconnect Button",
+                "Show a reconnect action after leaving or losing connection to a multiplayer server.",
+                prefs.reconnectButton(),
+                enabled -> updateInterface(prefs.withReconnectButton(enabled))
+        ));
+        sections.add(multiplayer);
     }
 
     private void buildAccessibilitySections() {
