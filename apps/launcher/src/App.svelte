@@ -47,12 +47,9 @@
     if (showLoading) loadingWorkspace = true;
     workspaceError = '';
     try {
-      const [nextWorkspaceState, nextRuntimes] = await Promise.all([
-        runtimeProduct.workspace.state(),
-        runtimeProduct.server.runtimes().catch(() => [] as ServerRuntimeSummary[])
-      ]);
-      workspaceState = nextWorkspaceState;
-      serverRuntimes = nextRuntimes;
+      const snapshot = await runtimeProduct.system.snapshot();
+      workspaceState = { active: snapshot.workspace ?? null, recent: snapshot.recentWorkspaces };
+      serverRuntimes = snapshot.runtimes;
       provisioning = workspaceState.active
         ? await runtimeProduct.workspace.provisioningStatus().catch(() => null)
         : null;
