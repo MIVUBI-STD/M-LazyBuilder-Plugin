@@ -1232,13 +1232,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this::openSettingsSearch
         ));
 
-        if (category == Category.INTERFACE) {
+        if (category == Category.INTERFACE || category == Category.CHAT
+                || (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE)) {
             this.addDrawableChild(new LazyBuilderSettingsControlWidget(
                     left + 108,
                     y,
-                    92,
+                    108,
                     22,
-                    Text.literal("Reset"),
+                    Text.literal(category == Category.VIDEO ? "Reset" : "Reset Helpers"),
                     true,
                     LazyBuilderSettingsControlWidget.Kind.FOOTER,
                     this::confirmResetCurrentCategory
@@ -1262,25 +1263,74 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private void confirmResetCurrentCategory() {
-        if (category != Category.INTERFACE || client == null) return;
+        if (client == null) return;
+
+        String title;
+        String body;
+        String confirm;
+        if (category == Category.INTERFACE) {
+            title = "Reset Interface Helpers";
+            body = "Restore LazyBuilder Interface helpers to their defaults? GUI Scale and Language will not change.";
+            confirm = "Reset Helpers";
+        } else if (category == Category.CHAT) {
+            title = "Reset Chat Helpers";
+            body = "Restore LazyBuilder Chat helpers to their defaults? Minecraft chat appearance settings will not change.";
+            confirm = "Reset Helpers";
+        } else if (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE) {
+            title = "Reset Performance";
+            body = "Restore LazyBuilder Performance settings to their defaults?";
+            confirm = "Reset";
+        } else {
+            return;
+        }
+
         client.setScreen(new LazyBuilderConfirmScreen(
                 this,
-                "Reset Interface",
-                "Restore all Interface settings to their defaults?",
-                "Reset",
+                title,
+                body,
+                confirm,
                 this::resetCurrentCategory
         ));
     }
 
     private void resetCurrentCategory() {
-        if (category != Category.INTERFACE) return;
-        UtilityPreferences defaults = UtilityPreferences.defaults();
-        UtilityPreferences current = UtilityManagerClient.preferences()
-                .withCompactDebugHud(defaults.compactDebugHud())
-                .withContextualScreenshotNames(defaults.contextualScreenshotNames())
-                .withInstantCreativeSearch(defaults.instantCreativeSearch());
-        UtilityManagerClient.updatePreferences(current);
-        refreshCategory();
+        if (category == Category.INTERFACE) {
+            UtilityPreferences defaults = UtilityPreferences.defaults();
+            UtilityPreferences current = UtilityManagerClient.preferences()
+                    .withCompactDebugHud(defaults.compactDebugHud())
+                    .withContextualScreenshotNames(defaults.contextualScreenshotNames())
+                    .withInstantCreativeSearch(defaults.instantCreativeSearch())
+                    .withReconnectButton(defaults.reconnectButton());
+            UtilityManagerClient.updatePreferences(current);
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.CHAT) {
+            UtilityPreferences defaults = UtilityPreferences.defaults();
+            UtilityPreferences current = UtilityManagerClient.preferences()
+                    .withExtendedChatHistory(defaults.extendedChatHistory())
+                    .withKeepChatDraft(defaults.keepChatDraft())
+                    .withChatSearch(defaults.chatSearch())
+                    .withChatTimestamps(defaults.chatTimestamps())
+                    .withHideChatSigningIndicators(defaults.hideChatSigningIndicators())
+                    .withHideChatReportButton(defaults.hideChatReportButton());
+            UtilityManagerClient.updatePreferences(current);
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.VIDEO && videoPage == VideoPage.PERFORMANCE) {
+            writePerformanceState(new PerformanceState(
+                    true,
+                    30,
+                    10,
+                    false,
+                    true,
+                    true
+            ));
+            refreshCategory();
+        }
     }
 
     private <T> void setOption(SimpleOption<T> option, T value) {
