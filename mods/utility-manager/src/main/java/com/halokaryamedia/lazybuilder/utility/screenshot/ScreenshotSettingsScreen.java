@@ -23,9 +23,9 @@ public final class ScreenshotSettingsScreen extends Screen {
         if (client != null) {
             client.setScreen(new LazyBuilderSettingsScreen(
                     parent,
-                    LazyBuilderSettingsScreen.Category.INTERFACE,
+                    LazyBuilderSettingsScreen.Category.CAPTURE,
                     LazyBuilderSettingsScreen.VideoPage.QUALITY,
-                    "Contextual Screenshot Names"
+                    "Screenshot Quality"
             ));
         }
     }
