@@ -79,18 +79,21 @@ public final class FirstPartyShaderRuntime {
     public void refreshAsync() {
         Thread workerToStart = null;
         synchronized (this) {
+            compileRequestGeneration++;
+            cancelPreparationLocked();
             catalogRefreshRequested = true;
+
             if (catalogRefreshThread == null || !catalogRefreshThread.isAlive()) {
                 Thread worker = Thread.ofVirtual()
                         .name("LazyBuilder-Shader-Catalog")
                         .unstarted(this::catalogRefreshLoop);
                 catalogRefreshThread = worker;
                 workerToStart = worker;
-            } else {
-                if (!"catalog-refresh-pending".equals(stage)) {
-                    stage = "catalog-refresh-pending";
-                    revision++;
-                }
+                stage = "catalog-refresh-queued";
+                revision++;
+            } else if (!"catalog-refresh-pending".equals(stage)) {
+                stage = "catalog-refresh-pending";
+                revision++;
             }
         }
         if (workerToStart != null) workerToStart.start();
