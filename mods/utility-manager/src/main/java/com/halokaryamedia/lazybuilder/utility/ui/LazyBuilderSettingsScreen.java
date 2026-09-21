@@ -954,6 +954,39 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         sections.add(screenshot);
 
+        Section video = new Section("VIDEO RECORDING");
+        video.rows.add(Row.value(
+                "Video Quality",
+                "Choose a simple recording quality preset. Encoder-specific tuning stays automatic.",
+                capture.videoQuality().label(),
+                this::openVideoQualityChoice
+        ));
+        video.rows.add(Row.value(
+                "Frame Rate",
+                "Use a stable recording frame rate independent from Minecraft's current FPS.",
+                capture.videoFrameRate().label(),
+                this::openVideoFrameRateChoice
+        ));
+        video.rows.add(Row.value(
+                "Encoder",
+                "Automatic prefers NVIDIA, AMD, or Intel hardware encoding and falls back to software.",
+                CaptureManager.videoEncoderLabel(),
+                this::openVideoEncoderChoice
+        ));
+        video.rows.add(Row.status(
+                "Recording",
+                "Press F9 to start or stop. Recording uses crash-safe MKV internally and remuxes to MP4 when finished.",
+                CaptureManager.videoStatus()
+        ));
+        if (CaptureManager.videoDroppedFrames() > 0L) {
+            video.rows.add(Row.status(
+                    "Dropped Capture Frames",
+                    "Minecraft rendering remains prioritized when the encoder cannot keep up.",
+                    Long.toString(CaptureManager.videoDroppedFrames())
+            ));
+        }
+        sections.add(video);
+
         Section behavior = new Section("CAPTURE BEHAVIOR");
         behavior.rows.add(Row.status(
                 "Screenshot Encoder",
@@ -961,9 +994,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 "Ready"
         ));
         behavior.rows.add(Row.status(
-                "Video Recording",
-                "Video capture is being added on the same capture pipeline after screenshot acceptance.",
-                "Not Enabled Yet"
+                "Video Readback",
+                "Triple-buffered GPU readback drops capture work instead of blocking Minecraft when pressure is high.",
+                "Non-blocking"
         ));
         sections.add(behavior);
     }
@@ -1615,6 +1648,60 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private static boolean presetHiddenObjectSkipping(GraphicsPreset preset) {
         return preset == GraphicsPreset.LOW;
+    }
+
+    private void openVideoQualityChoice() {
+        CapturePreferences.VideoQuality current = CaptureManager.preferences().videoQuality();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (CapturePreferences.VideoQuality quality : CapturePreferences.VideoQuality.values()) {
+            choices.add(new DropdownChoice(
+                    quality.label(),
+                    quality == current,
+                    () -> {
+                        CaptureManager.updatePreferences(
+                                CaptureManager.preferences().withVideoQuality(quality)
+                        );
+                        refreshCategory();
+                    }
+            ));
+        }
+        openDropdown("Video Quality", choices);
+    }
+
+    private void openVideoFrameRateChoice() {
+        CapturePreferences.VideoFrameRate current = CaptureManager.preferences().videoFrameRate();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (CapturePreferences.VideoFrameRate frameRate : CapturePreferences.VideoFrameRate.values()) {
+            choices.add(new DropdownChoice(
+                    frameRate.label(),
+                    frameRate == current,
+                    () -> {
+                        CaptureManager.updatePreferences(
+                                CaptureManager.preferences().withVideoFrameRate(frameRate)
+                        );
+                        refreshCategory();
+                    }
+            ));
+        }
+        openDropdown("Frame Rate", choices);
+    }
+
+    private void openVideoEncoderChoice() {
+        CapturePreferences.VideoEncoderMode current = CaptureManager.preferences().videoEncoderMode();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (CapturePreferences.VideoEncoderMode mode : CapturePreferences.VideoEncoderMode.values()) {
+            choices.add(new DropdownChoice(
+                    mode.label(),
+                    mode == current,
+                    () -> {
+                        CaptureManager.updatePreferences(
+                                CaptureManager.preferences().withVideoEncoderMode(mode)
+                        );
+                        refreshCategory();
+                    }
+            ));
+        }
+        openDropdown("Encoder", choices);
     }
 
     private void openScreenshotQualityChoice() {
