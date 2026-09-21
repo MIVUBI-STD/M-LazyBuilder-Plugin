@@ -404,6 +404,14 @@ public final class FirstPartyShaderRuntime {
             boolean success,
             String error
     ) {
+        recordTerrainReloadCompletion(success, error, "");
+    }
+
+    public synchronized void recordTerrainReloadCompletion(
+            boolean success,
+            String error,
+            String sourceStatus
+    ) {
         if (!success) {
             terrainError = error == null || error.isBlank()
                     ? "Minecraft resource reload failed while applying the terrain shader."
@@ -415,7 +423,18 @@ public final class FirstPartyShaderRuntime {
         }
 
         if (pipeline != null && !terrainIntegrated && terrainError.isBlank()) {
-            terrainError = "Resource reload completed without first-party terrain integration.";
+            terrainError = switch (sourceStatus == null ? "" : sourceStatus) {
+                case "external-resource-pack" ->
+                        "A Resource Pack overrides Minecraft's terrain shader; LazyBuilder terrain integration stayed disabled.";
+                case "renderer-owned" ->
+                        "Another renderer owns Minecraft's terrain shader path.";
+                case "contract-missing" ->
+                        "The active terrain shader does not expose the LazyBuilder transform contract.";
+                case "compile-fallback", "first-party-compile-fallback" ->
+                        "First-party terrain source fell back to Minecraft after compilation failed.";
+                default ->
+                        "Resource reload completed without first-party terrain integration.";
+            };
             lastError = primaryError();
             stage = "terrain-reload-incomplete";
             revision++;
