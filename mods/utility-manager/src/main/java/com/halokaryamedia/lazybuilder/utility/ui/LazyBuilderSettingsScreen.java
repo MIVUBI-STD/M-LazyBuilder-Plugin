@@ -9,7 +9,9 @@ import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.option.GraphicsMode;
+import net.minecraft.client.option.NarratorMode;
 import net.minecraft.particle.ParticlesMode;
+import net.minecraft.sound.SoundCategory;
 import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
 import net.minecraft.resource.ResourcePackProfile;
@@ -33,8 +35,10 @@ import java.util.function.Supplier;
 public final class LazyBuilderSettingsScreen extends Screen {
     public enum Category {
         VIDEO("Video"),
+        AUDIO("Audio"),
         CONTROLS("Controls"),
         INTERFACE("Interface"),
+        ACCESSIBILITY("Accessibility"),
         TOOLS("Tools");
 
         private final String label;
@@ -153,8 +157,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         switch (category) {
             case VIDEO -> buildVideoSections();
+            case AUDIO -> buildAudioSections();
             case CONTROLS -> buildControlsSections();
             case INTERFACE -> buildInterfaceSections();
+            case ACCESSIBILITY -> buildAccessibilitySections();
             case TOOLS -> buildToolsSections();
         }
 
@@ -517,6 +523,44 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
+    private void buildAudioSections() {
+        if (client == null) return;
+
+        Section main = new Section("VOLUME");
+        main.rows.add(soundSlider(
+                "Master Volume",
+                "Controls the overall game volume.",
+                SoundCategory.MASTER
+        ));
+        sections.add(main);
+
+        Section mix = new Section("SOUND MIX");
+        mix.rows.add(soundSlider("Music", "Controls background music.", SoundCategory.MUSIC));
+        mix.rows.add(soundSlider("Jukebox & Note Blocks", "Controls jukeboxes and note blocks.", SoundCategory.RECORDS));
+        mix.rows.add(soundSlider("Weather", "Controls rain, thunder, and weather sounds.", SoundCategory.WEATHER));
+        mix.rows.add(soundSlider("Blocks", "Controls block interaction and environment sounds.", SoundCategory.BLOCKS));
+        mix.rows.add(soundSlider("Hostile Creatures", "Controls hostile creature sounds.", SoundCategory.HOSTILE));
+        mix.rows.add(soundSlider("Friendly Creatures", "Controls passive and neutral creature sounds.", SoundCategory.NEUTRAL));
+        mix.rows.add(soundSlider("Players", "Controls player-related sounds.", SoundCategory.PLAYERS));
+        mix.rows.add(soundSlider("Ambient", "Controls ambient world sounds.", SoundCategory.AMBIENT));
+        mix.rows.add(soundSlider("Voice / Speech", "Controls voice and speech sounds.", SoundCategory.VOICE));
+        sections.add(mix);
+    }
+
+    private Row soundSlider(String title, String description, SoundCategory category) {
+        var option = client.options.getSoundVolumeOption(category);
+        return Row.slider(
+                title,
+                description,
+                option.getValue(),
+                0.0,
+                1.0,
+                0.01,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(option, value)
+        );
+    }
+
     private void buildControlsSections() {
         if (client == null) return;
 
@@ -641,6 +685,117 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 enabled -> updateInterface(prefs.withInstantCreativeSearch(enabled))
         ));
         sections.add(creative);
+    }
+
+    private void buildAccessibilitySections() {
+        if (client == null) return;
+
+        UtilityPreferences prefs = UtilityManagerClient.preferences();
+
+        Section hearing = new Section("HEARING");
+        hearing.rows.add(Row.toggle(
+                "Subtitles",
+                "Show directional text captions for nearby sounds.",
+                client.options.getShowSubtitles().getValue(),
+                value -> setOption(client.options.getShowSubtitles(), value)
+        ));
+        sections.add(hearing);
+
+        Section narrator = new Section("NARRATOR");
+        narrator.rows.add(Row.toggle(
+                "Keep Narrator Off",
+                "Keep Minecraft's narrator disabled and disable the narrator shortcut.",
+                prefs.suppressNarrator(),
+                enabled -> updateNarratorSuppression(enabled)
+        ));
+        if (!prefs.suppressNarrator()) {
+            narrator.rows.add(Row.value(
+                    "Narrator Mode",
+                    "Choose which interface or chat text Minecraft reads aloud.",
+                    humanize(client.options.getNarrator().getValue()),
+                    this::openNarratorChoice
+            ));
+        }
+        sections.add(narrator);
+
+        Section readability = new Section("READABILITY");
+        readability.rows.add(Row.slider(
+                "Text Background",
+                "Adjust the background opacity behind readable text.",
+                client.options.getTextBackgroundOpacity().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getTextBackgroundOpacity(), value)
+        ));
+        readability.rows.add(Row.toggle(
+                "Chat Background Only",
+                "Limit text background styling to chat instead of other text surfaces.",
+                client.options.getBackgroundForChatOnly().getValue(),
+                value -> setOption(client.options.getBackgroundForChatOnly(), value)
+        ));
+        sections.add(readability);
+
+        Section comfort = new Section("VISUAL COMFORT");
+        comfort.rows.add(Row.slider(
+                "FOV Effects",
+                "Reduce camera field-of-view changes caused by movement and gameplay effects.",
+                client.options.getFovEffectScale().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getFovEffectScale(), value)
+        ));
+        comfort.rows.add(Row.slider(
+                "Distortion Effects",
+                "Reduce screen distortion from portals and similar effects.",
+                client.options.getDistortionEffectScale().getValue(),
+                0.0,
+                1.0,
+                0.05,
+                LazyBuilderSettingsScreen::percentage,
+                value -> setOptionLive(client.options.getDistortionEffectScale(), value)
+        ));
+        comfort.rows.add(Row.toggle(
+                "Hide Lightning Flashes",
+                "Reduce bright lightning flashes during storms.",
+                client.options.getHideLightningFlashes().getValue(),
+                value -> setOption(client.options.getHideLightningFlashes(), value)
+        ));
+        comfort.rows.add(Row.toggle(
+                "Monochrome Logo",
+                "Use Minecraft's monochrome logo presentation where supported.",
+                client.options.getMonochromeLogo().getValue(),
+                value -> setOption(client.options.getMonochromeLogo(), value)
+        ));
+        sections.add(comfort);
+    }
+
+    private void updateNarratorSuppression(boolean enabled) {
+        UtilityPreferences updated = UtilityManagerClient.preferences().withSuppressNarrator(enabled);
+        UtilityManagerClient.updatePreferences(updated);
+        if (enabled && client != null) {
+            client.options.getNarrator().setValue(NarratorMode.OFF);
+            client.options.getNarratorHotkey().setValue(false);
+            client.options.write();
+        }
+        refreshCategory();
+    }
+
+    private void openNarratorChoice() {
+        if (client == null) return;
+        List<DropdownChoice> choices = new ArrayList<>();
+        NarratorMode current = client.options.getNarrator().getValue();
+        for (NarratorMode value : NarratorMode.values()) {
+            choices.add(new DropdownChoice(
+                    humanize(value),
+                    value == current,
+                    () -> setOption(client.options.getNarrator(), value)
+            ));
+        }
+        openDropdown("Narrator Mode", choices);
     }
 
     private void buildToolsSections() {
@@ -1122,8 +1277,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     case PERFORMANCE -> "Advanced performance overrides. Most players can leave these managed by the Graphics Preset.";
                     case VISUAL -> "Manage Resource Packs and Shaders. Visual content stays separate from graphics quality and performance tuning.";
                 };
+                case AUDIO -> "Master volume and the main Minecraft sound categories.";
                 case CONTROLS -> "Mouse, movement and all registered key bindings.";
                 case INTERFACE -> "Builder-facing HUD, screenshot and Creative-mode preferences.";
+                case ACCESSIBILITY -> "Subtitles, narrator behavior, readability, and visual comfort settings.";
                 case TOOLS -> "Tool-specific setup stays close to the workflow that owns it.";
             };
         }
