@@ -57,6 +57,9 @@ public final class ShaderSourcePreprocessor {
             ExpansionBudget budget,
             int depth
     ) throws IOException {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new IOException("Shader preparation cancelled.");
+        }
         if (depth > MAX_DEPTH) {
             throw new IOException("Shader include depth exceeds " + MAX_DEPTH + ": " + path);
         }
@@ -72,6 +75,9 @@ public final class ShaderSourcePreprocessor {
         String[] lines = text.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
 
         for (String line : lines) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IOException("Shader preparation cancelled.");
+            }
             Matcher matcher = INCLUDE.matcher(line);
             if (!matcher.matches()) {
                 append(output, line);
