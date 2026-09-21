@@ -397,6 +397,28 @@ public final class FirstPartyShaderRuntime {
         return true;
     }
 
+    public synchronized void recordTerrainReloadCompletion(
+            boolean success,
+            String error
+    ) {
+        if (!success) {
+            terrainError = error == null || error.isBlank()
+                    ? "Minecraft resource reload failed while applying the terrain shader."
+                    : error;
+            lastError = primaryError();
+            stage = "terrain-reload-error";
+            revision++;
+            return;
+        }
+
+        if (pipeline != null && !terrainIntegrated && terrainError.isBlank()) {
+            terrainError = "Resource reload completed without first-party terrain integration.";
+            lastError = primaryError();
+            stage = "terrain-reload-incomplete";
+            revision++;
+        }
+    }
+
     public synchronized TerrainSource terrainSource(boolean vertex) {
         ShaderPackDescriptor active = packById(activePackId);
         if (pipeline == null || active == null) return TerrainSource.NONE;
