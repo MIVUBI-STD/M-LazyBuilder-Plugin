@@ -13,23 +13,25 @@ public final class PostProcessShaderContract {
             String fragmentSource
     ) throws IOException {
         String name = program == null || program.isBlank() ? "post-process" : program;
+        String vertexCode = ShaderSourceSyntax.codeOnly(vertexSource);
+        String fragmentCode = ShaderSourceSyntax.codeOnly(fragmentSource);
 
-        if (vertexSource == null || !vertexSource.stripLeading().startsWith("#version")) {
+        if (!ShaderSourceSyntax.startsWithVersion(vertexSource)) {
             throw new IOException(name + " vertex shader is missing #version");
         }
-        if (!vertexSource.contains("gl_VertexID")) {
+        if (!vertexCode.contains("gl_VertexID")) {
             throw new IOException(name + " vertex shader must generate its fullscreen triangle from gl_VertexID");
         }
-        if (vertexSource.contains("in vec")
-                || vertexSource.contains("in ivec")
-                || vertexSource.contains("in uvec")) {
+        if (vertexCode.contains("in vec")
+                || vertexCode.contains("in ivec")
+                || vertexCode.contains("in uvec")) {
             throw new IOException(name + " vertex shader must not require vertex-buffer attributes");
         }
 
-        if (fragmentSource == null || !fragmentSource.stripLeading().startsWith("#version")) {
+        if (!ShaderSourceSyntax.startsWithVersion(fragmentSource)) {
             throw new IOException(name + " fragment shader is missing #version");
         }
-        if (!fragmentSource.contains("out vec4 fragColor")) {
+        if (!fragmentCode.contains("out vec4 fragColor")) {
             throw new IOException(name + " fragment shader must expose out vec4 fragColor");
         }
     }
