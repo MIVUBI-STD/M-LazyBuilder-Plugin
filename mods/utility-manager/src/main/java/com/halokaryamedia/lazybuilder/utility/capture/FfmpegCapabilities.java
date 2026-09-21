@@ -38,8 +38,39 @@ final class FfmpegCapabilities {
 
     private static volatile Snapshot automaticCache;
     private static volatile Snapshot softwareCache;
+    private static volatile String executableCache = "";
 
     private FfmpegCapabilities() {}
+
+    static String findExecutable(Path gameDirectory) {
+        String cached = executableCache;
+        if (!cached.isBlank()) return cached;
+
+        for (String executable : candidates(gameDirectory)) {
+            Process process = null;
+            try {
+                process = new ProcessBuilder(executable, "-hide_banner", "-version")
+                        .redirectErrorStream(true)
+                        .start();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    continue;
+                }
+                if (process.exitValue() == 0) {
+                    executableCache = executable;
+                    return executable;
+                }
+            } catch (IOException | InterruptedException error) {
+                if (error instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                    return "";
+                }
+            } finally {
+                if (process != null && process.isAlive()) process.destroyForcibly();
+            }
+        }
+        return "";
+    }
 
     static Snapshot detect(Path gameDirectory, CapturePreferences.VideoEncoderMode mode) {
         Snapshot cached = mode == CapturePreferences.VideoEncoderMode.SOFTWARE
