@@ -39,6 +39,25 @@ public record ShaderRuntimePreferences(
         return new ShaderRuntimePreferences(selectedPackId, enabled, Map.copyOf(updated));
     }
 
+    public ShaderRuntimePreferences migratePackId(String oldPackId, String newPackId) {
+        String oldId = oldPackId == null ? "" : oldPackId.trim();
+        String newId = newPackId == null ? "" : newPackId.trim();
+        if (oldId.isBlank() || newId.isBlank() || oldId.equals(newId)) return this;
+
+        Map<String, String> updated = new LinkedHashMap<>(optionValues);
+        String oldPrefix = oldId + "::";
+        String newPrefix = newId + "::";
+        for (Map.Entry<String, String> entry : optionValues.entrySet()) {
+            if (!entry.getKey().startsWith(oldPrefix)) continue;
+            String suffix = entry.getKey().substring(oldPrefix.length());
+            updated.putIfAbsent(newPrefix + suffix, entry.getValue());
+            updated.remove(entry.getKey());
+        }
+
+        String selected = selectedPackId.equals(oldId) ? newId : selectedPackId;
+        return new ShaderRuntimePreferences(selected, enabled, Map.copyOf(updated));
+    }
+
     public String optionValue(String packId, String optionId, String fallback) {
         return optionValues.getOrDefault(optionKey(packId, optionId), fallback);
     }
