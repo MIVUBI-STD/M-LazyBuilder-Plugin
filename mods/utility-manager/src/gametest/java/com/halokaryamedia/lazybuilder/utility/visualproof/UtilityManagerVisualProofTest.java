@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderKeybindSettingsScree
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderDisplayConfirmScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderResourcePackScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsScreen;
+import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderShaderOptionsScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderShaderScreen;
 import com.halokaryamedia.lazybuilder.utility.ui.LazyBuilderSettingsSearchScreen;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -39,6 +40,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -83,6 +85,10 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-shaders-1440x900-gui2");
             captureShaderManager(context, 620, 480, 2,
                     "utility-shaders-620x480-gui2");
+            captureShaderOptions(context, 1440, 900, 2,
+                    "utility-shader-options-1440x900-gui2");
+            captureShaderOptions(context, 620, 480, 2,
+                    "utility-shader-options-620x480-gui2");
             captureDisplayRecovery(context, 1440, 900, 2,
                     "utility-display-recovery-1440x900-gui2");
             captureSettings(context, 1440, 900, 2,
@@ -211,6 +217,79 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             share.put(
                     "lazybuilder-performance-manager:settings-status",
                     (Supplier<String>) () -> "applied"
+            );
+
+            AtomicReference<Map<String, Object>> shaderState = new AtomicReference<>(Map.ofEntries(
+                    Map.entry("revision", 1L),
+                    Map.entry("owner", "lazybuilder"),
+                    Map.entry("stage", "terrain+postprocess-active"),
+                    Map.entry("sourceReady", true),
+                    Map.entry("compiledReady", true),
+                    Map.entry("postProcessReady", true),
+                    Map.entry("shadowReady", true),
+                    Map.entry("renderingReady", true),
+                    Map.entry("terrainIntegrated", true),
+                    Map.entry("configuredEnabled", true),
+                    Map.entry("selectedPackId", "studio-shader"),
+                    Map.entry("selectedPackName", "Studio Shader"),
+                    Map.entry("activePackId", "studio-shader"),
+                    Map.entry("activePackName", "Studio Shader"),
+                    Map.entry("packIds", List.of("studio-shader")),
+                    Map.entry("packNames", List.of("Studio Shader")),
+                    Map.entry("shaderpacksDirectory", client.runDirectory.toPath().resolve("shaderpacks").toString()),
+                    Map.entry("lastError", ""),
+                    Map.entry("compatibilityBlocked", false),
+                    Map.entry("compatibilityOwner", ""),
+                    Map.entry("options", List.of(
+                            Map.of(
+                                    "id", "shadows",
+                                    "label", "Shadows",
+                                    "type", "boolean",
+                                    "value", "true",
+                                    "default", "true",
+                                    "min", "",
+                                    "max", "",
+                                    "step", ""
+                            ),
+                            Map.of(
+                                    "id", "exposure",
+                                    "label", "Exposure",
+                                    "type", "float",
+                                    "value", "1.0",
+                                    "default", "1.0",
+                                    "min", "0.5",
+                                    "max", "2.0",
+                                    "step", "0.25"
+                            )
+                    ))
+            ));
+            share.put(
+                    "lazybuilder-performance-manager:shader-snapshot",
+                    (Supplier<Map<String, Object>>) shaderState::get
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-refresh",
+                    (Runnable) () -> {}
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-select",
+                    (Consumer<String>) value -> {}
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-compile",
+                    (Runnable) () -> {}
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-disable",
+                    (Runnable) () -> {}
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-option-update",
+                    (BiConsumer<String, String>) (id, value) -> {}
+            );
+            share.put(
+                    "lazybuilder-performance-manager:shader-options-apply",
+                    (Runnable) () -> {}
             );
         });
     }
@@ -466,6 +545,23 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         configureViewport(context, width, height, guiScale);
         context.setScreen(() -> new LazyBuilderLanguageScreen(null));
         context.waitForScreen(LazyBuilderLanguageScreen.class);
+        context.waitTicks(8);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureShaderOptions(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderShaderOptionsScreen(null));
+        context.waitForScreen(LazyBuilderShaderOptionsScreen.class);
         context.waitTicks(8);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
