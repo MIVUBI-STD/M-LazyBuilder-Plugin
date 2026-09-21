@@ -22,7 +22,9 @@ public final class FirstPartyShaderRuntime {
     private volatile String stage = "source-ready";
     private volatile String lastError = "";
     private volatile long revision;
+    private volatile boolean lastFrameApplied;
     private FirstPartyShaderPipeline pipeline;
+    private FirstPartyShaderPostProcessor postProcessor;
 
     public FirstPartyShaderRuntime(Path shaderpacksDirectory) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
@@ -132,8 +134,9 @@ public final class FirstPartyShaderRuntime {
                 pipeline = candidate;
                 candidate = null;
                 activePackId = requestedPackId;
+                lastFrameApplied = false;
                 lastError = "";
-                stage = "active";
+                stage = "compiled";
                 revision++;
 
                 if (previous != null) previous.close();
@@ -151,6 +154,7 @@ public final class FirstPartyShaderRuntime {
     public synchronized void disable() {
         closePipelineLocked();
         activePackId = "";
+        lastFrameApplied = false;
         stage = "disabled";
         lastError = "";
         revision++;
@@ -163,9 +167,62 @@ public final class FirstPartyShaderRuntime {
     public synchronized void invalidateForResourceReload() {
         closePipelineLocked();
         activePackId = "";
+        lastFrameApplied = false;
         stage = selectedPackId.isBlank() ? "source-ready" : "selected";
         lastError = "";
         revision++;
+    }
+
+    public boolean renderPostProcess(
+            int targetFramebuffer,
+            int width,
+            int height,
+            float timeSeconds
+    ) {
+        FirstPartyShaderPipeline current;
+        synchronized (this) {
+            current = pipeline;
+            if (current == null) {
+                lastFrameApplied = false;
+                return false;
+            }
+        }
+
+        try {
+            FirstPartyShaderPostProcessor processor;
+            synchronized (this) {
+                if (postProcessor == null) postProcessor = new FirstPartyShaderPostProcessor();
+                processor = postProcessor;
+            }
+
+            boolean applied = processor.render(
+                    current,
+                    targetFramebuffer,
+                    width,
+                    height,
+                    timeSeconds
+            );
+
+            synchronized (this) {
+                lastFrameApplied = applied;
+                if (applied) {
+                    stage = "postprocess-active";
+                    lastError = "";
+                } else if ("postprocess-active".equals(stage)) {
+                    stage = "compiled";
+                }
+                revision++;
+            }
+            return applied;
+        } catch (RuntimeException error) {
+            synchronized (this) {
+                lastFrameApplied = false;
+                lastError = safeMessage(error);
+                stage = "render-error";
+                revision++;
+            }
+            return false;
+        }
     }
 
     public synchronized SourcePreview preprocess(String relativePath) {
@@ -200,6 +257,8 @@ public final class FirstPartyShaderRuntime {
                 stage,
                 true,
                 pipeline != null,
+                pipeline != null && (pipeline.has("composite") || pipeline.has("final")),
+                lastFrameApplied,
                 false,
                 selected == null ? "" : selected.id(),
                 selected == null ? "" : selected.displayName(),
@@ -220,7 +279,9 @@ public final class FirstPartyShaderRuntime {
         values.put("stage", snapshot.stage());
         values.put("sourceReady", snapshot.sourceReady());
         values.put("compiledReady", snapshot.compiledReady());
+        values.put("postProcessReady", snapshot.postProcessReady());
         values.put("renderingReady", snapshot.renderingReady());
+        values.put("terrainIntegrated", snapshot.terrainIntegrated());
         values.put("selectedPackId", snapshot.selectedPackId());
         values.put("selectedPackName", snapshot.selectedPackName());
         values.put("activePackId", snapshot.activePackId());
@@ -248,6 +309,10 @@ public final class FirstPartyShaderRuntime {
         FirstPartyShaderPipeline current = pipeline;
         pipeline = null;
         if (current != null) current.close();
+
+        FirstPartyShaderPostProcessor processor = postProcessor;
+        postProcessor = null;
+        if (processor != null) processor.close();
     }
 
     private static String safeMessage(Throwable error) {
@@ -262,7 +327,9 @@ public final class FirstPartyShaderRuntime {
             String stage,
             boolean sourceReady,
             boolean compiledReady,
+            boolean postProcessReady,
             boolean renderingReady,
+            boolean terrainIntegrated,
             String selectedPackId,
             String selectedPackName,
             String activePackId,
