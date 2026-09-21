@@ -54,9 +54,10 @@ public final class TerrainMultiDrawSubmissionBackend {
         List<Run> runs = planRuns(packet);
         for (Run run : runs) {
             if (run.commandCount() < 2 || !runtimeSourcesPresent(run)) continue;
-            VertexBuffer first = run.commands().get(0).source();
+            VertexBuffer first = run.commandAt(0).source();
             STARTS.put(first, run);
-            for (TerrainMultiDrawCommandStream.PackedCommand command : run.commands()) {
+            for (int index = 0; index < run.commandCount(); index++) {
+                TerrainMultiDrawCommandStream.PackedCommand command = run.commandAt(index);
                 MEMBERS.put(command.source(), run);
             }
         }
@@ -81,7 +82,8 @@ public final class TerrainMultiDrawSubmissionBackend {
         Run startRun = STARTS.get(source);
         if (startRun == null || startRun.failed) return BindAction.NONE;
 
-        for (TerrainMultiDrawCommandStream.PackedCommand command : startRun.commands()) {
+        for (int index = 0; index < startRun.commandCount(); index++) {
+            TerrainMultiDrawCommandStream.PackedCommand command = startRun.commandAt(index);
             if (command.source() == null || !TerrainPhysicalArenaManager.bind(command.source())) {
                 startRun.failed = true;
                 status = "physical-residency-fallback";
@@ -106,7 +108,7 @@ public final class TerrainMultiDrawSubmissionBackend {
 
         Run run = pendingRun;
         pendingRun = null;
-        if (run == null || run.failed || run.commands().get(0).source() != source) return DrawAction.NONE;
+        if (run == null || run.failed || run.commandAt(0).source() != source) return DrawAction.NONE;
 
         if (!submit(run)) {
             run.failed = true;
@@ -128,26 +130,33 @@ public final class TerrainMultiDrawSubmissionBackend {
     static List<Run> planRuns(TerrainMultiDrawCommandStream.LayerPacket packet) {
         if (packet == null || packet.commands().isEmpty()) return List.of();
 
+        List<TerrainMultiDrawCommandStream.PackedCommand> commands = packet.commands();
         List<Run> runs = new ArrayList<>();
-        List<TerrainMultiDrawCommandStream.PackedCommand> current = new ArrayList<>();
+        int runStart = -1;
         TerrainMultiDrawCommandStream.PackedCommand previous = null;
 
-        for (TerrainMultiDrawCommandStream.PackedCommand command : packet.commands()) {
-            if (command == null) continue;
-            if (previous == null || !sameRun(previous, command)) {
-                flushRun(runs, current);
-                current = new ArrayList<>();
+        for (int index = 0; index < commands.size(); index++) {
+            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
+            if (command == null) {
+                flushRun(runs, commands, runStart, index);
+                runStart = -1;
+                previous = null;
+                continue;
             }
-            current.add(command);
+
+            if (previous == null || !sameRun(previous, command)) {
+                flushRun(runs, commands, runStart, index);
+                runStart = index;
+            }
             previous = command;
         }
-        flushRun(runs, current);
+        flushRun(runs, commands, runStart, commands.size());
         return List.copyOf(runs);
     }
 
     private static boolean submit(Run run) {
-        if (run == null || activeProgram == null || run.commands().size() < 2) return false;
-        TerrainMultiDrawCommandStream.PackedCommand first = run.commands().get(0);
+        if (run == null || activeProgram == null || run.commandCount() < 2) return false;
+        TerrainMultiDrawCommandStream.PackedCommand first = run.commandAt(0);
         TerrainArenaDrawStateRegistry.DrawState state = first.arenaCommand().state();
         if (state == null || !TerrainPerDrawShaderBackend.beginMultiDraw(activeProgram, first.transformIndex())) {
             return false;
@@ -162,12 +171,13 @@ public final class TerrainMultiDrawSubmissionBackend {
         }
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            int count = run.commands().size();
+            int count = run.commandCount();
             IntBuffer counts = stack.mallocInt(count);
             PointerBuffer offsets = stack.mallocPointer(count);
             IntBuffer baseVertices = stack.mallocInt(count);
 
-            for (TerrainMultiDrawCommandStream.PackedCommand command : run.commands()) {
+            for (int commandIndex = 0; commandIndex < run.commandCount(); commandIndex++) {
+                TerrainMultiDrawCommandStream.PackedCommand command = run.commandAt(commandIndex);
                 counts.put(command.indexCount());
                 offsets.put(customIndices ? command.indexByteOffset() : 0L);
                 baseVertices.put(command.baseVertex());
@@ -183,10 +193,10 @@ public final class TerrainMultiDrawSubmissionBackend {
                     offsets,
                     baseVertices
             );
-            TerrainPhysicalArenaManager.recordMultiDrawSuccess(run.commands());
+            TerrainPhysicalArenaManager.recordMultiDrawSuccess(run.commandView());
             return true;
         } catch (RuntimeException ex) {
-            TerrainPhysicalArenaManager.recordMultiDrawFailure(run.commands());
+            TerrainPhysicalArenaManager.recordMultiDrawFailure(run.commandView());
             return false;
         } finally {
             TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
@@ -215,13 +225,20 @@ public final class TerrainMultiDrawSubmissionBackend {
                 && (leftState.indexPayloadBytes() > 0) == (rightState.indexPayloadBytes() > 0);
     }
 
-    private static void flushRun(List<Run> runs, List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
-        if (commands != null && commands.size() > 1) runs.add(new Run(List.copyOf(commands)));
+    private static void flushRun(
+            List<Run> runs,
+            List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            int start,
+            int end
+    ) {
+        if (commands != null && start >= 0 && end - start > 1) {
+            runs.add(new Run(commands, start, end));
+        }
     }
 
     private static boolean runtimeSourcesPresent(Run run) {
-        for (TerrainMultiDrawCommandStream.PackedCommand command : run.commands()) {
-            if (command.source() == null) return false;
+        for (int index = 0; index < run.commandCount(); index++) {
+            if (run.commandAt(index).source() == null) return false;
         }
         return true;
     }
@@ -290,19 +307,34 @@ public final class TerrainMultiDrawSubmissionBackend {
 
     static final class Run {
         private final List<TerrainMultiDrawCommandStream.PackedCommand> commands;
+        private final int start;
+        private final int end;
         private boolean submitted;
         private boolean failed;
 
-        private Run(List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
+        private Run(
+                List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+                int start,
+                int end
+        ) {
             this.commands = commands;
+            this.start = start;
+            this.end = end;
         }
 
-        public List<TerrainMultiDrawCommandStream.PackedCommand> commands() {
-            return commands;
+        TerrainMultiDrawCommandStream.PackedCommand commandAt(int index) {
+            if (index < 0 || index >= commandCount()) {
+                throw new IndexOutOfBoundsException(index);
+            }
+            return commands.get(start + index);
+        }
+
+        List<TerrainMultiDrawCommandStream.PackedCommand> commandView() {
+            return commands.subList(start, end);
         }
 
         public int commandCount() {
-            return commands.size();
+            return end - start;
         }
     }
 
