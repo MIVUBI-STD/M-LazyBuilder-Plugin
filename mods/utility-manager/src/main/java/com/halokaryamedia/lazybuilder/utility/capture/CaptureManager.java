@@ -43,6 +43,10 @@ public final class CaptureManager {
 
     public static void requestCleanScreenshot(MinecraftClient client) {
         if (client == null || client.world == null || client.getFramebuffer() == null) return;
+        if (client.currentScreen != null) {
+            notify(client, Text.literal("Close the current screen before taking a clean screenshot."));
+            return;
+        }
         cleanScreenshotRequested = true;
         notify(client, Text.literal("Clean screenshot queued."));
     }
@@ -55,7 +59,7 @@ public final class CaptureManager {
 
     public static void captureCleanScreenshot(MinecraftClient client) {
         if (client == null || client.getFramebuffer() == null) return;
-        SCREENSHOTS.capture(
+        boolean accepted = SCREENSHOTS.capture(
                 FabricLoader.getInstance().getGameDir().toFile(),
                 null,
                 client.getFramebuffer(),
@@ -63,6 +67,9 @@ public final class CaptureManager {
                 preferences.screenshotQuality(),
                 UtilityManagerClient.preferences().contextualScreenshotNames()
         );
+        if (!accepted) {
+            notify(client, Text.literal("Clean screenshot skipped because the screenshot encoder is busy."));
+        }
     }
 
     public static boolean captureScreenshot(
