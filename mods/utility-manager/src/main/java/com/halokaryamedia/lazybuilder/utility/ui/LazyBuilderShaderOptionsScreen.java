@@ -29,6 +29,7 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
     private final Map<String, String> staged = new LinkedHashMap<>();
     private String packId = "";
     private String packName = "";
+    private OptionState currentState = OptionState.EMPTY;
     private int scrollOffset;
     private int maxScroll;
     private LazyBuilderSettingsControlWidget applyButton;
@@ -41,6 +42,7 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
     @Override
     protected void init() {
         OptionState state = readState();
+        currentState = state;
         if (!state.packId().equals(packId)) {
             packId = state.packId();
             packName = state.packName();
@@ -181,7 +183,7 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
             );
         }
 
-        OptionState state = readState();
+        OptionState state = currentState;
         int y = LIST_TOP - scrollOffset;
         int viewportBottom = height - FOOTER_HEIGHT - 8;
         for (OptionRow option : state.options()) {
