@@ -296,6 +296,7 @@ public final class FirstPartyShaderRuntime {
 
                 pipeline = candidate;
                 candidate = null;
+                releaseUnusedAuxiliariesLocked(pipeline);
                 activePackId = requestedPackId;
                 persisted = persisted.withSelectedPack(requestedPackId).withEnabled(true);
                 configStore.save(persisted);
@@ -494,6 +495,9 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             current = pipeline;
             if (current == null || !current.has("shadow")) {
+                FirstPartyShadowRenderer previous = shadowRenderer;
+                shadowRenderer = null;
+                if (previous != null) previous.close();
                 return FirstPartyShadowRenderer.emptySnapshot();
             }
             if (shadowRenderer == null) shadowRenderer = new FirstPartyShadowRenderer();
@@ -562,6 +566,9 @@ public final class FirstPartyShaderRuntime {
                     2048
             );
             if (!budget.allowed()) {
+                FirstPartyShaderGBuffer previous = gbuffer;
+                gbuffer = null;
+                if (previous != null) previous.close();
                 gbufferError = budget.status()
                         + ":" + budget.estimatedBytes()
                         + "/" + budget.limitBytes();
@@ -641,6 +648,13 @@ public final class FirstPartyShaderRuntime {
                 lastFrameApplied = false;
                 return false;
             }
+            if (!current.has("composite") && !current.has("final")) {
+                FirstPartyShaderPostProcessor previous = postProcessor;
+                postProcessor = null;
+                if (previous != null) previous.close();
+                lastFrameApplied = false;
+                return false;
+            }
 
             ShaderMemoryBudget.Estimate budget = ShaderMemoryBudget.estimate(
                     width,
@@ -652,6 +666,9 @@ public final class FirstPartyShaderRuntime {
                     2048
             );
             if (!budget.allowed()) {
+                FirstPartyShaderPostProcessor previous = postProcessor;
+                postProcessor = null;
+                if (previous != null) previous.close();
                 lastFrameApplied = false;
                 postProcessError = budget.status()
                         + ":" + budget.estimatedBytes()
@@ -933,6 +950,29 @@ public final class FirstPartyShaderRuntime {
                 .filter(pack -> pack.id().equals(id))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private void releaseUnusedAuxiliariesLocked(FirstPartyShaderPipeline next) {
+        if (next == null) return;
+
+        if (!next.has("shadow")) {
+            FirstPartyShadowRenderer shadows = shadowRenderer;
+            shadowRenderer = null;
+            if (shadows != null) shadows.close();
+        }
+
+        if (!next.has("composite") && !next.has("final")) {
+            FirstPartyShaderPostProcessor processor = postProcessor;
+            postProcessor = null;
+            if (processor != null) processor.close();
+        }
+
+        if (next.gbufferAttachments() <= 0
+                || (!next.has("composite") && !next.has("final"))) {
+            FirstPartyShaderGBuffer frameGBuffer = gbuffer;
+            gbuffer = null;
+            if (frameGBuffer != null) frameGBuffer.close();
+        }
     }
 
     private void closePipelineLocked() {
