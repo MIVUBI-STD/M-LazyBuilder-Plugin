@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.capture;
 
+import com.halokaryamedia.lazybuilder.utility.mixin.FramebufferAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.text.Text;
@@ -181,9 +182,10 @@ final class VideoCaptureSession {
     }
 
     boolean sourceMatches(Framebuffer framebuffer) {
-        return framebuffer != null
-                && framebuffer.textureWidth == sourceWidth
-                && framebuffer.textureHeight == sourceHeight;
+        if (framebuffer == null) return false;
+        FramebufferAccessor access = (FramebufferAccessor) (Object) framebuffer;
+        return access.lazybuilder$getTextureWidth() == sourceWidth
+                && access.lazybuilder$getTextureHeight() == sourceHeight;
     }
 
     FramePacket acquireFramePacket(int capacity) {
