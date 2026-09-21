@@ -42,8 +42,6 @@ public final class CullingRuntime {
     private static final int HEAVY_BLOCK_ENTITY_BUDGET = 1;
     private static final int MAX_ENTITY_QUEUE = 64;
     private static final int MAX_BLOCK_ENTITY_QUEUE = 32;
-    private static final int MAX_TRANSPARENT_PASSES = 8;
-    private static final long MAX_AGE_NANOS = 250_000_000L;
     private static final double MAX_CAMERA_MOVE_SQ = 0.75D * 0.75D;
     private static final double MAX_TARGET_MOVE_SQ = 0.5D * 0.5D;
     private static final double ALWAYS_VISIBLE_DISTANCE_SQ = 4.0D * 4.0D;
@@ -67,6 +65,9 @@ public final class CullingRuntime {
     private long blockEntityEvaluations;
     private long entityQueueDrops;
     private long blockEntityQueueDrops;
+    private long entityOccludedDecisions;
+    private long blockEntityOccludedDecisions;
+    private FramePressure lastPressure = FramePressure.NORMAL;
 
     public boolean shouldRender(
             Entity entity,
@@ -86,12 +87,13 @@ public final class CullingRuntime {
 
         CacheEntry entry = entities.get(entity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
-        if (!fresh(entry, camera, targetX, targetY, targetZ, now)) {
+        if (!fresh(entry, camera, targetX, targetY, targetZ, now, lastPressure)) {
             entityCacheStales++;
             enqueue(entity);
             return true;
         }
         entityCacheHits++;
+        if (entry.decision == VisibilityDecision.OCCLUDED) entityOccludedDecisions++;
         return entry.decision != VisibilityDecision.OCCLUDED;
     }
 
@@ -124,6 +126,7 @@ public final class CullingRuntime {
             return true;
         }
         blockEntityCacheHits++;
+        if (entry.decision == VisibilityDecision.OCCLUDED) blockEntityOccludedDecisions++;
         return entry.decision != VisibilityDecision.OCCLUDED;
     }
 
@@ -142,8 +145,9 @@ public final class CullingRuntime {
         }
         if (!preferences.entityCulling() && !preferences.blockEntityCulling()) return;
 
-        int entityBudget = entityBudget(pressure);
-        int blockEntityBudget = blockEntityBudget(pressure);
+        lastPressure = pressure == null ? FramePressure.NORMAL : pressure;
+        int entityBudget = entityBudget(lastPressure);
+        int blockEntityBudget = blockEntityBudget(lastPressure);
 
         for (int i = 0; i < entityBudget; i++) {
             Entity entity = entityQueue.poll();
@@ -189,6 +193,8 @@ public final class CullingRuntime {
                 blockEntityCacheStales,
                 entityEvaluations,
                 blockEntityEvaluations,
+                entityOccludedDecisions,
+                blockEntityOccludedDecisions,
                 entityQueueDrops,
                 blockEntityQueueDrops
         );
@@ -210,6 +216,9 @@ public final class CullingRuntime {
         blockEntityEvaluations = 0L;
         entityQueueDrops = 0L;
         blockEntityQueueDrops = 0L;
+        entityOccludedDecisions = 0L;
+        blockEntityOccludedDecisions = 0L;
+        lastPressure = FramePressure.NORMAL;
     }
 
     private static boolean eligible(MinecraftClient client, Entity entity) {
@@ -289,13 +298,39 @@ public final class CullingRuntime {
         double xInset = Math.min(0.2D, Math.max(0.03D, (box.maxX - box.minX) * 0.2D));
         double yInset = Math.min(0.2D, Math.max(0.05D, (box.maxY - box.minY) * 0.2D));
         double zInset = Math.min(0.2D, Math.max(0.03D, (box.maxZ - box.minZ) * 0.2D));
-        boolean visible = rayVisible(client, camera, center, null)
-                || rayVisible(client, camera, new Vec3d(center.x, box.maxY - yInset, center.z), null)
-                || rayVisible(client, camera, new Vec3d(center.x, box.minY + yInset, center.z), null)
-                || rayVisible(client, camera, new Vec3d(box.minX + xInset, center.y, center.z), null)
-                || rayVisible(client, camera, new Vec3d(box.maxX - xInset, center.y, center.z), null)
-                || rayVisible(client, camera, new Vec3d(center.x, center.y, box.minZ + zInset), null)
-                || rayVisible(client, camera, new Vec3d(center.x, center.y, box.maxZ - zInset), null);
+        double dx = box.maxX - box.minX;
+        double dy = box.maxY - box.minY;
+        double dz = box.maxZ - box.minZ;
+        double distanceSquared = camera.squaredDistanceTo(center);
+        int sampleLimit = CullingPolicy.entitySampleLimit(
+                lastPressure,
+                distanceSquared,
+                dx * dx + dy * dy + dz * dz
+        );
+        int transparentPasses = CullingPolicy.transparentPassLimit(lastPressure, distanceSquared);
+
+        boolean visible = rayVisible(client, camera, center, null, transparentPasses);
+        if (!visible && sampleLimit >= 3) {
+            visible = rayVisible(
+                    client, camera, new Vec3d(center.x, box.maxY - yInset, center.z), null, transparentPasses
+            ) || rayVisible(
+                    client, camera, new Vec3d(center.x, box.minY + yInset, center.z), null, transparentPasses
+            );
+        }
+        if (!visible && sampleLimit >= 5) {
+            visible = rayVisible(
+                    client, camera, new Vec3d(box.minX + xInset, center.y, center.z), null, transparentPasses
+            ) || rayVisible(
+                    client, camera, new Vec3d(box.maxX - xInset, center.y, center.z), null, transparentPasses
+            );
+        }
+        if (!visible && sampleLimit >= 7) {
+            visible = rayVisible(
+                    client, camera, new Vec3d(center.x, center.y, box.minZ + zInset), null, transparentPasses
+            ) || rayVisible(
+                    client, camera, new Vec3d(center.x, center.y, box.maxZ - zInset), null, transparentPasses
+            );
+        }
         entities.put(entity, new CacheEntry(
                 visible ? VisibilityDecision.VISIBLE : VisibilityDecision.OCCLUDED,
                 System.nanoTime(),
@@ -313,13 +348,19 @@ public final class CullingRuntime {
         Vec3d camera = client.gameRenderer.getCamera().getPos();
         Vec3d center = Vec3d.ofCenter(blockEntity.getPos());
         double sample = 0.42D;
-        boolean visible = rayVisible(client, camera, center, blockEntity)
-                || rayVisible(client, camera, center.add(sample, 0.0D, 0.0D), blockEntity)
-                || rayVisible(client, camera, center.add(-sample, 0.0D, 0.0D), blockEntity)
-                || rayVisible(client, camera, center.add(0.0D, sample, 0.0D), blockEntity)
-                || rayVisible(client, camera, center.add(0.0D, -sample, 0.0D), blockEntity)
-                || rayVisible(client, camera, center.add(0.0D, 0.0D, sample), blockEntity)
-                || rayVisible(client, camera, center.add(0.0D, 0.0D, -sample), blockEntity);
+        double distanceSquared = camera.squaredDistanceTo(center);
+        int sampleLimit = CullingPolicy.blockEntitySampleLimit(lastPressure, distanceSquared);
+        int transparentPasses = CullingPolicy.transparentPassLimit(lastPressure, distanceSquared);
+
+        boolean visible = rayVisible(client, camera, center, blockEntity, transparentPasses);
+        if (!visible && sampleLimit >= 3) {
+            visible = rayVisible(client, camera, center.add(sample, 0.0D, 0.0D), blockEntity, transparentPasses)
+                    || rayVisible(client, camera, center.add(-sample, 0.0D, 0.0D), blockEntity, transparentPasses);
+        }
+        if (!visible && sampleLimit >= 5) {
+            visible = rayVisible(client, camera, center.add(0.0D, sample, 0.0D), blockEntity, transparentPasses)
+                    || rayVisible(client, camera, center.add(0.0D, -sample, 0.0D), blockEntity, transparentPasses);
+        }
         blockEntities.put(blockEntity, new CacheEntry(
                 visible ? VisibilityDecision.VISIBLE : VisibilityDecision.OCCLUDED,
                 System.nanoTime(),
@@ -337,7 +378,7 @@ public final class CullingRuntime {
      * Glass, slabs, foliage, fences, and other partial/transparent collision shapes are stepped through.
      * Hitting too many such shapes fails open and renders the target.
      */
-    private static boolean rayVisible(MinecraftClient client, Vec3d camera, Vec3d target, BlockEntity targetBlockEntity) {
+    private static boolean rayVisible(MinecraftClient client, Vec3d camera, Vec3d target, BlockEntity targetBlockEntity, int maxTransparentPasses) {
         Entity context = client.gameRenderer.getCamera().getFocusedEntity();
         if (context == null) context = client.player;
         if (context == null || client.world == null) return true;
@@ -353,7 +394,7 @@ public final class CullingRuntime {
         double directionZ = dz * inverseLength;
         Vec3d start = camera;
 
-        for (int pass = 0; pass < MAX_TRANSPARENT_PASSES; pass++) {
+        for (int pass = 0; pass < Math.max(1, maxTransparentPasses); pass++) {
             BlockHitResult hit = client.world.raycast(new RaycastContext(
                     start,
                     target,
@@ -387,10 +428,11 @@ public final class CullingRuntime {
             double targetX,
             double targetY,
             double targetZ,
-            long now
+            long now,
+            FramePressure pressure
     ) {
         return entry != null
-                && now - entry.createdNanos <= MAX_AGE_NANOS
+                && now - entry.createdNanos <= CullingPolicy.cacheTtlNanos(entry.decision, pressure)
                 && squaredDistance(
                         entry.cameraX,
                         entry.cameraY,
@@ -458,6 +500,8 @@ public final class CullingRuntime {
             long blockEntityCacheStales,
             long entityEvaluations,
             long blockEntityEvaluations,
+            long entityOccludedDecisions,
+            long blockEntityOccludedDecisions,
             long entityQueueDrops,
             long blockEntityQueueDrops
     ) {}
