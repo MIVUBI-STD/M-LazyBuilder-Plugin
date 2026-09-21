@@ -51,7 +51,7 @@ SystemKernel is a composition service. It stores no duplicate durable business s
 
 The snapshot currently composes:
 
-- active workspace;
+- active workspace and recent workspace library;
 - server readiness;
 - live/detached server runtime summaries;
 - active Launcher operations;
@@ -120,7 +120,7 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 ## Next integration stages
 
 1. Launcher SystemSnapshot and local capability projection — implemented.
-2. UI consumes the snapshot for global readiness instead of rebuilding orchestration rules — next.
+2. Launcher shell consumes the snapshot for workspace/runtime composition instead of rebuilding those joins in Svelte — implemented.
 3. Paper task snapshots are projected into a unified activity view without moving task ownership — next.
 4. Cross-runtime capability handshake is added to the existing versioned protocols — later.
 5. Typed invalidation signals refresh only affected projections — later.
