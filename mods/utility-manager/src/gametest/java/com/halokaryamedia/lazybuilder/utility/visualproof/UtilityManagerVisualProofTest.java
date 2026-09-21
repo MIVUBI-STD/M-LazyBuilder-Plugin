@@ -88,6 +88,15 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettings(context, 620, 480, 2,
                     LazyBuilderSettingsScreen.Category.ACCESSIBILITY,
                     "utility-settings-accessibility-620x480-gui2");
+            captureSettings(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.CHAT,
+                    "utility-settings-chat-1440x900-gui2");
+            captureSettings(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.CHAT,
+                    "utility-settings-chat-620x480-gui2");
+            captureKeybindSearch(context, 1440, 900, 2,
+                    "jump",
+                    "utility-keybinds-search-jump-1440x900-gui2");
             captureSettingsSearch(context, 1440, 900, 2,
                     "render",
                     "utility-settings-search-render-1440x900-gui2");
@@ -315,6 +324,37 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             });
             context.waitTicks(4);
         }
+    }
+
+    private static void captureKeybindSearch(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String query,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderKeybindSettingsScreen(null));
+        context.waitForScreen(LazyBuilderKeybindSettingsScreen.class);
+        context.waitTicks(4);
+        context.runOnClient(client -> {
+            if (!(client.currentScreen instanceof LazyBuilderKeybindSettingsScreen screen)) {
+                throw new AssertionError("Expected LazyBuilderKeybindSettingsScreen");
+            }
+            for (Element element : screen.children()) {
+                if (element instanceof TextFieldWidget field) {
+                    field.setText(query);
+                    return;
+                }
+            }
+            throw new AssertionError("Expected key binding search field");
+        });
+        context.waitTicks(6);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
     }
 
     private static void captureSettingsSearch(
