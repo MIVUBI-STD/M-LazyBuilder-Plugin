@@ -15,6 +15,7 @@ import net.minecraft.resource.ResourceType;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
+import org.lwjgl.opengl.GL30C;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -78,11 +79,39 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
                 .registerReloadListener(new PerformanceShaderReloadInvalidator());
 
-        WorldRenderEvents.END.register(context ->
-                runtime.recordFrame(System.nanoTime())
-        );
+        WorldRenderEvents.END.register(context -> {
+            long now = System.nanoTime();
+            runtime.recordFrame(now);
+            renderFirstPartyShaderFrame(now);
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(runtime::tick);
+    }
+
+    private static void renderFirstPartyShaderFrame(long nowNanos) {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null) return;
+
+        FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
+        if (!snapshot.compiledReady() || !snapshot.postProcessReady()) return;
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null || client.getWindow().isMinimized()) return;
+
+        int width = client.getWindow().getFramebufferWidth();
+        int height = client.getWindow().getFramebufferHeight();
+        if (width <= 0 || height <= 0) return;
+
+        int targetFramebuffer = org.lwjgl.opengl.GL11C.glGetInteger(
+                GL30C.GL_DRAW_FRAMEBUFFER_BINDING
+        );
+        float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
+        shaders.renderPostProcess(
+                targetFramebuffer,
+                width,
+                height,
+                timeSeconds
+        );
     }
 
     private static Map<String, Object> rendererReadinessSnapshot() {
