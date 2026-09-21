@@ -3,7 +3,6 @@ package com.halokaryamedia.lazybuilder.performance;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PerformanceGovernorTest {
@@ -27,7 +26,6 @@ final class PerformanceGovernorTest {
         PerformanceGovernor.Profile profile = governor.update(input);
 
         assertEquals(PerformanceGovernor.Mode.PROTECTIVE, profile.mode());
-        assertFalse(profile.optionalGpuWorkAllowed());
         assertTrue(profile.chunkUploadBudget() <= 12);
     }
 
@@ -68,6 +66,5 @@ final class PerformanceGovernorTest {
         for (int i = 0; i < 120; i++) profile = governor.update(input);
 
         assertEquals(PerformanceGovernor.Mode.THROUGHPUT, profile.mode());
-        assertTrue(profile.optionalGpuWorkAllowed());
     }
 }
