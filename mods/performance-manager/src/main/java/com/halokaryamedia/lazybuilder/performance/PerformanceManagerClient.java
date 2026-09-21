@@ -324,7 +324,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     private static void applyShaderOptions() {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (shaders == null || !firstPartyShaderOwnershipAllowed()) return;
-        shaders.recompileIfEnabled();
+        shaders.applyStagedOptions();
     }
 
     public static void invalidateShaderTerrainForResourceReload() {
