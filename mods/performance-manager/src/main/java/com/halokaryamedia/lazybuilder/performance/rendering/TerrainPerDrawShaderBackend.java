@@ -22,6 +22,9 @@ public final class TerrainPerDrawShaderBackend {
     private static final int CAPACITY_QUANTUM = 4096;
 
     private static TerrainPhysicalBuffer transformBuffer;
+    private static int cachedProbeProgramRef = -1;
+    private static Probe cachedProbe;
+    private static int drawIdSupport = -1;
     private static volatile String status = "model-offset-uniform";
     private static volatile int activeProgramRef = -1;
     private static volatile int activeDrawBaseLocation = -1;
@@ -38,35 +41,75 @@ public final class TerrainPerDrawShaderBackend {
         if (program == null) return new Probe(false, "missing-shader", -1, 0, -1, -1);
         if (!RenderSystem.isOnRenderThread()) return new Probe(false, "wrong-thread", -1, 0, -1, -1);
 
-        var capabilities = GL.getCapabilities();
-        if (!capabilities.GL_ARB_shader_draw_parameters) {
+        if (drawIdSupport < 0) {
+            drawIdSupport = GL.getCapabilities().GL_ARB_shader_draw_parameters ? 1 : 0;
+        }
+        if (drawIdSupport == 0) {
             return new Probe(false, "draw-id-unsupported", -1, 0, -1, -1);
         }
 
         int programRef = program.getGlRef();
-        int blockIndex = GL31C.glGetUniformBlockIndex(programRef, TRANSFORM_BLOCK_NAME);
-        if (blockIndex == -1) return new Probe(false, "transform-block-missing", -1, 0, -1, -1);
+        Probe base = cachedProbe;
+        if (base == null || cachedProbeProgramRef != programRef) {
+            int blockIndex = GL31C.glGetUniformBlockIndex(programRef, TRANSFORM_BLOCK_NAME);
+            if (blockIndex == -1) {
+                base = new Probe(false, "transform-block-missing", -1, 0, -1, -1);
+            } else {
+                int blockBytes = GL31C.glGetActiveUniformBlocki(
+                        programRef,
+                        blockIndex,
+                        GL31C.GL_UNIFORM_BLOCK_DATA_SIZE
+                );
 
-        int blockBytes = GL31C.glGetActiveUniformBlocki(
-                programRef,
-                blockIndex,
-                GL31C.GL_UNIFORM_BLOCK_DATA_SIZE
-        );
-        if (requiredBytes > 0 && blockBytes < requiredBytes) {
-            return new Probe(false, "transform-block-too-small", blockIndex, blockBytes, -1, -1);
+                int drawBaseLocation = GL20C.glGetUniformLocation(programRef, DRAW_BASE_UNIFORM);
+                if (drawBaseLocation < 0) {
+                    base = new Probe(
+                            false,
+                            "draw-base-uniform-missing",
+                            blockIndex,
+                            blockBytes,
+                            -1,
+                            -1
+                    );
+                } else {
+                    int drawEnabledLocation = GL20C.glGetUniformLocation(
+                            programRef,
+                            DRAW_ENABLED_UNIFORM
+                    );
+                    base = drawEnabledLocation < 0
+                            ? new Probe(
+                            false,
+                            "draw-enabled-uniform-missing",
+                            blockIndex,
+                            blockBytes,
+                            drawBaseLocation,
+                            -1
+                    )
+                            : new Probe(
+                            true,
+                            "ready",
+                            blockIndex,
+                            blockBytes,
+                            drawBaseLocation,
+                            drawEnabledLocation
+                    );
+                }
+            }
+            cachedProbeProgramRef = programRef;
+            cachedProbe = base;
         }
 
-        int drawBaseLocation = GL20C.glGetUniformLocation(programRef, DRAW_BASE_UNIFORM);
-        if (drawBaseLocation < 0) {
-            return new Probe(false, "draw-base-uniform-missing", blockIndex, blockBytes, -1, -1);
+        if (base.ready() && requiredBytes > 0 && base.blockBytes() < requiredBytes) {
+            return new Probe(
+                    false,
+                    "transform-block-too-small",
+                    base.blockIndex(),
+                    base.blockBytes(),
+                    base.drawBaseLocation(),
+                    base.drawEnabledLocation()
+            );
         }
-
-        int drawEnabledLocation = GL20C.glGetUniformLocation(programRef, DRAW_ENABLED_UNIFORM);
-        if (drawEnabledLocation < 0) {
-            return new Probe(false, "draw-enabled-uniform-missing", blockIndex, blockBytes, drawBaseLocation, -1);
-        }
-
-        return new Probe(true, "ready", blockIndex, blockBytes, drawBaseLocation, drawEnabledLocation);
+        return base;
     }
 
     /** Upload and bind the current layer transform payload for a compatible first-party shader. */
@@ -157,6 +200,8 @@ public final class TerrainPerDrawShaderBackend {
             transformBuffer = null;
         }
         status = "model-offset-uniform";
+        cachedProbeProgramRef = -1;
+        cachedProbe = null;
         activeProgramRef = -1;
         activeDrawBaseLocation = -1;
         activeDrawEnabledLocation = -1;
