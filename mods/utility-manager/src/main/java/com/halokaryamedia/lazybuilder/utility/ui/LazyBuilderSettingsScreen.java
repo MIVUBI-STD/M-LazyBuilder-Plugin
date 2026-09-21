@@ -520,7 +520,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
                             "Applying resource pack changes..."
                     );
                     client.options.refreshResourcePacks(manager);
-                    client.reloadResources();
+                    client.reloadResources().whenComplete((ignored, error) -> {
+                        if (error != null) {
+                            UtilityNotifications.show(
+                                    "Resource Packs",
+                                    "Could not apply resource pack changes. Previous resources remain in use where possible."
+                            );
+                        }
+                    });
                 },
                 client.getResourcePackDir()
         ));
@@ -560,19 +567,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private void openShaderManager() {
-        if (client == null || !shaderSupportAvailable()) return;
-
-        try {
-            Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-            Object api = apiClass.getMethod("getInstance").invoke(null);
-            Object screen = apiClass.getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
-            if (screen instanceof Screen shaderScreen) {
-                client.setScreen(shaderScreen);
-            }
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            // Fail open: the Settings screen remains usable if the optional shader
-            // integration changes or is unavailable at runtime.
-        }
+        if (client == null) return;
+        client.setScreen(new LazyBuilderShaderScreen(this));
     }
 
     private void buildAudioSections() {
@@ -824,21 +820,61 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (client == null) return;
 
         WindowMode previous = currentWindowMode();
-        boolean borderless = mode == WindowMode.BORDERLESS;
-        UtilityPreferences updated = UtilityManagerClient.preferences().withBorderlessWindow(borderless);
-        UtilityManagerClient.updatePreferences(updated);
+        boolean previousFullscreen = client.options.getFullscreen().getValue();
+        boolean previousBorderless = UtilityManagerClient.preferences().borderlessWindow();
+
+        if (mode == WindowMode.BORDERLESS) {
+            UtilityManagerClient.updatePreferences(
+                    UtilityManagerClient.preferences().withBorderlessWindow(true)
+            );
+            if (previousFullscreen) {
+                client.options.getFullscreen().setValue(false);
+                client.options.write();
+            }
+            UtilityNotifications.show(
+                    "Window Mode",
+                    "Borderless mode will be applied on the next game launch."
+            );
+            refreshCategory();
+            return;
+        }
+
+        UtilityManagerClient.updatePreferences(
+                UtilityManagerClient.preferences().withBorderlessWindow(false)
+        );
 
         boolean fullscreen = mode == WindowMode.FULLSCREEN;
         client.options.getFullscreen().setValue(fullscreen);
         client.options.write();
 
-        if (mode == WindowMode.BORDERLESS || previous == WindowMode.BORDERLESS) {
-            UtilityNotifications.show(
-                    "Window Mode",
-                    "Borderless window changes apply on the next game launch."
-            );
+        if (previousFullscreen == fullscreen && !previousBorderless) {
+            refreshCategory();
+            return;
         }
-        refreshCategory();
+
+        LazyBuilderSettingsScreen returnScreen = new LazyBuilderSettingsScreen(
+                parent,
+                Category.VIDEO,
+                VideoPage.DISPLAY,
+                "Window Mode"
+        );
+        client.setScreen(new LazyBuilderDisplayConfirmScreen(
+                returnScreen,
+                () -> {
+                    if (client != null) {
+                        client.options.getFullscreen().setValue(fullscreen);
+                        client.options.write();
+                    }
+                },
+                () -> {
+                    if (client == null) return;
+                    UtilityManagerClient.updatePreferences(
+                            UtilityManagerClient.preferences().withBorderlessWindow(previousBorderless)
+                    );
+                    client.options.getFullscreen().setValue(previousFullscreen);
+                    client.options.write();
+                }
+        ));
     }
 
     private void buildInterfaceSections() {
