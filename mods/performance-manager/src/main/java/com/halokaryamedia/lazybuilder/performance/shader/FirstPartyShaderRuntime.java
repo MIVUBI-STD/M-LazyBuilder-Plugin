@@ -1369,28 +1369,7 @@ public final class FirstPartyShaderRuntime {
     }
 
     private void migratePersistedPackIdsLocked() {
-        ShaderRuntimePreferences migrated = persisted;
-
-        Map<String, Integer> legacyCounts = new LinkedHashMap<>();
-        for (ShaderPackDescriptor pack : packs) {
-            String legacyId = ShaderPackCatalog.legacyId(pack);
-            if (!legacyId.isBlank()) legacyCounts.merge(legacyId, 1, Integer::sum);
-        }
-
-        for (ShaderPackDescriptor pack : packs) {
-            String legacyId = ShaderPackCatalog.legacyId(pack);
-            if (!legacyId.isBlank()
-                    && !legacyId.equals(pack.id())
-                    && legacyCounts.getOrDefault(legacyId, 0) == 1) {
-                migrated = migrated.migratePackId(legacyId, pack.id());
-            }
-
-            String sourceDerivedId = ShaderPackCatalog.sourceDerivedId(pack);
-            if (!sourceDerivedId.isBlank() && !sourceDerivedId.equals(pack.id())) {
-                migrated = migrated.migratePackId(sourceDerivedId, pack.id());
-            }
-        }
-
+        ShaderRuntimePreferences migrated = ShaderPackPreferenceMigrator.migrate(persisted, packs);
         if (migrated.equals(persisted)) return;
         persisted = migrated;
         selectedPackId = migrated.selectedPackId();
