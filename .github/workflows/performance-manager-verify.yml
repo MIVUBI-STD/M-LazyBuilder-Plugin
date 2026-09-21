@@ -6,11 +6,21 @@ on:
     paths:
       - 'mods/performance-manager/**'
       - '.github/workflows/performance-manager-verify.yml'
+      - 'tooling/windows-toolchain/scripts/verify/invoke-gradle-build.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/gradle.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/gradle-environment.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/download.ps1'
+      - 'toolchain.json'
   pull_request:
     branches: [Local, main]
     paths:
       - 'mods/performance-manager/**'
       - '.github/workflows/performance-manager-verify.yml'
+      - 'tooling/windows-toolchain/scripts/verify/invoke-gradle-build.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/gradle.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/gradle-environment.ps1'
+      - 'tooling/windows-toolchain/scripts/wrappers/download.ps1'
+      - 'toolchain.json'
   workflow_dispatch:
 
 permissions:
