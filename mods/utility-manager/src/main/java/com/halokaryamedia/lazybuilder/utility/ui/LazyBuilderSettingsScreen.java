@@ -539,24 +539,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
         try {
             Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
             Object api = apiClass.getMethod("getInstance").invoke(null);
-            boolean enabled = (boolean) apiClass.getMethod("isShaderPackInUse").invoke(api);
-            if (!enabled) return "Off";
+            boolean inUse = (boolean) apiClass.getMethod("isShaderPackInUse").invoke(api);
+            if (inUse) return "Active";
 
-            // The public Iris API intentionally does not require consumers to know
-            // the selected pack name. Use a best-effort label only when Iris exposes
-            // its current pack name, otherwise report the truthful active state.
-            try {
-                Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
-                Method currentName = irisClass.getMethod("getCurrentPackName");
-                Object name = currentName.invoke(null);
-                if (name instanceof String shaderName && !shaderName.isBlank()) {
-                    return shaderName;
-                }
-            } catch (ReflectiveOperationException ignored) {
-                // Keep the stable public API path authoritative.
-            }
-
-            return "On";
+            Object config = apiClass.getMethod("getConfig").invoke(api);
+            Class<?> configClass = Class.forName("net.irisshaders.iris.api.v0.IrisApiConfig");
+            boolean enabled = (boolean) configClass.getMethod("areShadersEnabled").invoke(config);
+            return enabled ? "Enabled" : "Off";
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             return "Available";
         }
