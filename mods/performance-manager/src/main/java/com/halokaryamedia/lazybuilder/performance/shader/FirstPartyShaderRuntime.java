@@ -1134,6 +1134,8 @@ public final class FirstPartyShaderRuntime {
         values.put("gbufferStaleFrameRecoveries", gbufferSnapshot.staleFrameRecoveries());
         values.put("compileGeneration", compileRequestGeneration);
         values.put("terrainReloadPending", terrainReloadPending);
+        values.put("invalidPackCount", catalog.invalidEntries().size());
+        values.put("catalogHealthy", catalogError.isBlank());
         return Map.copyOf(values);
     }
 
